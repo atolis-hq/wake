@@ -4,7 +4,9 @@ import { createEventDraft, EventSourceKind, type EventJournal } from '../../kern
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
+  ResourceCorrelationRole,
   resourceStream,
+  type ResourceService,
 } from '../../resources/index.js';
 import type { ActivityDefinition, ActivityInvocation } from '../contracts/activity.js';
 import { ActivityEventType } from '../contracts/events.js';
@@ -15,45 +17,87 @@ import {
   BuiltInActivityName,
 } from '../contracts/vocabulary.js';
 
-const inputSchema = z.object({ target: z.literal(ActivityResourceRole.Primary).default(ActivityResourceRole.Primary) }).strict();
+const inputSchema = z
+  .object({ target: z.literal(ActivityResourceRole.Primary).default(ActivityResourceRole.Primary) })
+  .strict();
 
 type IssueCompleteOutcome =
-  | { readonly kind: typeof ActivityOutcomeKind.Waiting; readonly data: { readonly intentEventId: string; readonly signalKind: 'delivery-result' } }
-  | { readonly kind: typeof ActivityOutcomeKind.Blocked; readonly data: { readonly reason: 'missing-completable-primary-issue' } };
+  | {
+      readonly kind: typeof ActivityOutcomeKind.Waiting;
+      readonly data: { readonly intentEventId: string; readonly signalKind: 'delivery-result' };
+    }
+  | {
+      readonly kind: typeof ActivityOutcomeKind.Blocked;
+      readonly data: { readonly reason: 'missing-completable-primary-issue' };
+    };
 
 const outcomeSchema: z.ZodType<IssueCompleteOutcome> = z.union([
-  z.object({ kind: z.literal(ActivityOutcomeKind.Waiting), data: z.object({ intentEventId: z.string(), signalKind: z.literal('delivery-result') }).strict() }).strict(),
-  z.object({ kind: z.literal(ActivityOutcomeKind.Blocked), data: z.object({ reason: z.literal('missing-completable-primary-issue') }).strict() }).strict(),
+  z
+    .object({
+      kind: z.literal(ActivityOutcomeKind.Waiting),
+      data: z
+        .object({ intentEventId: z.string(), signalKind: z.literal('delivery-result') })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal(ActivityOutcomeKind.Blocked),
+      data: z.object({ reason: z.literal('missing-completable-primary-issue') }).strict(),
+    })
+    .strict(),
 ]);
 
 /** Requests completion of the one primary issue only; delivery owns provider effects. */
 export function createIssueCompleteActivity(
   journal: EventJournal,
-): ActivityDefinition<typeof BuiltInActivityName.IssueComplete, { readonly target: 'primary' }, IssueCompleteOutcome> {
+  resources: ResourceService,
+): ActivityDefinition<
+  typeof BuiltInActivityName.IssueComplete,
+  { readonly target: 'primary' },
+  IssueCompleteOutcome
+> {
   return {
     name: BuiltInActivityName.IssueComplete,
     inputSchema,
     outcomeSchema,
-    outcomeKinds: [ActivityOutcomeKind.Waiting, ActivityOutcomeKind.Done, ActivityOutcomeKind.Blocked],
+    outcomeKinds: [ActivityOutcomeKind.Waiting, ActivityOutcomeKind.Blocked],
     resources: [],
     executionKind: ActivityExecutionKind.Deterministic,
-    handler: { execute: (invocation, context) => execute(journal, invocation, context.occurredAt) },
+    handler: {
+      execute: (invocation, context) => execute(journal, resources, invocation, context.occurredAt),
+    },
   };
 }
 
 async function execute(
   journal: EventJournal,
+  resources: ResourceService,
   invocation: ActivityInvocation<{ readonly target: 'primary' }>,
   occurredAt: string,
 ): Promise<IssueCompleteOutcome> {
-  const resource = invocation.resources.filter(
-    (candidate) =>
+  const candidates = await Promise.all(
+    invocation.resources.map(async (candidate) => ({
+      candidate,
+      correlations: await resources.correlations(candidate.resourceId),
+    })),
+  );
+  const resource = candidates.filter(
+    ({ candidate, correlations }) =>
       candidate.kind === BuiltInResourceKind.Issue &&
-      candidate.capabilities.includes(BuiltInResourceCapability.Completable),
+      candidate.capabilities.includes(BuiltInResourceCapability.Completable) &&
+      correlations.some(
+        (correlation) =>
+          correlation.role === ResourceCorrelationRole.Primary &&
+          correlation.workItemId === invocation.workItemId,
+      ),
   );
   if (resource.length !== 1)
-    return { kind: ActivityOutcomeKind.Blocked, data: { reason: 'missing-completable-primary-issue' } };
-  const target = resource[0]!;
+    return {
+      kind: ActivityOutcomeKind.Blocked,
+      data: { reason: 'missing-completable-primary-issue' },
+    };
+  const target = resource[0]!.candidate;
   const eventId = `${invocation.activationId}:${ActivityEventType.IssueCompleteRequested}`;
   const stream = resourceStream(target.resourceId);
   const existing = await journal.readStream(stream);
@@ -77,5 +121,8 @@ async function execute(
       }),
     ]);
   }
-  return { kind: ActivityOutcomeKind.Waiting, data: { intentEventId: eventId, signalKind: 'delivery-result' } };
+  return {
+    kind: ActivityOutcomeKind.Waiting,
+    data: { intentEventId: eventId, signalKind: 'delivery-result' },
+  };
 }

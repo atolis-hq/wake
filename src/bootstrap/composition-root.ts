@@ -2,8 +2,8 @@ import {
   ActivityRegistry,
   agentActivityDefinition,
   createAgentActivity,
-  createPullRequestApproveActivity,
   createIssueCompleteActivity,
+  createPullRequestApproveActivity,
   createPullRequestMergeActivity,
   createPullRequestService,
 } from '../activities/index.js';
@@ -622,7 +622,7 @@ function createBuiltInActivityRegistry(
     ),
   });
   activities.register(createStatusPublishActivity(journal));
-  activities.register(createIssueCompleteActivity(journal));
+  activities.register(createIssueCompleteActivity(journal, resources));
   activities.register(createPullRequestApproveActivity(journal, pullRequests));
   activities.register(createPullRequestMergeActivity(journal, pullRequests));
   return activities;

@@ -5,10 +5,10 @@ import {
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
-import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
-import { deliveryStream } from '../../contracts/streams.js';
 import type { RunRepository } from '../../../execution/index.js';
 import {
+  createEventDraft,
+  EventSourceKind,
   UlidIdGenerator,
   type CheckpointStore,
   type EventJournal,
@@ -31,6 +31,8 @@ import { concludeObservedWork } from '../../application/work-conclusion.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rules.js';
 import type { WorkConclusion, WorkflowRouter } from '../../contracts/provider.js';
+import { deliveryStream } from '../../contracts/streams.js';
+import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
@@ -258,11 +260,10 @@ export class InboundTranslator {
         },
         context,
       );
-      if (
-        payload.outcome !== undefined &&
-        this.conclusion !== undefined &&
-        !(await this.isWakeCompletion(resourceIdValue))
-      ) {
+      const wakeCompletion = await this.unconsumedWakeCompletion(resourceIdValue);
+      if (payload.outcome !== undefined && wakeCompletion !== null) {
+        await this.consumeWakeCompletion(resourceIdValue, wakeCompletion, context);
+      } else if (payload.outcome !== undefined && this.conclusion !== undefined) {
         await concludeObservedWork(
           { work: this.work!, conclusion: this.conclusion },
           {
@@ -280,12 +281,21 @@ export class InboundTranslator {
       );
   }
 
-  /** A provider close confirmed for our intent is an activity result, not a human cancellation. */
-  private async isWakeCompletion(resourceIdValue: ResourceId): Promise<boolean> {
-    const intents = (await this.journal!.readStream(resourceStream(resourceIdValue))).filter(
+  /** A confirmed completion consumes exactly one matching terminal observation. */
+  private async unconsumedWakeCompletion(resourceIdValue: ResourceId): Promise<string | null> {
+    const events = await this.journal!.readStream(resourceStream(resourceIdValue));
+    const intents = events.filter(
       (event) => event.eventType === ActivityEventType.IssueCompleteRequested,
     );
     for (const intent of intents) {
+      if (
+        events.some(
+          (event) =>
+            event.eventType === 'integration.github.issue-completion-observation-consumed' &&
+            String(event.causationId) === String(intent.eventId),
+        )
+      )
+        continue;
       const deliveries = await this.journal!.readStream(deliveryStream(intent.eventId));
       if (
         deliveries.some((event) => {
@@ -293,9 +303,31 @@ export class InboundTranslator {
           return delivery?.eventType === DeliveryEventType.Confirmed;
         })
       )
-        return true;
+        return intent.eventId;
     }
-    return false;
+    return null;
+  }
+
+  private async consumeWakeCompletion(
+    resourceIdValue: ResourceId,
+    intentEventId: string,
+    context: ReturnType<typeof commandContext>,
+  ): Promise<void> {
+    const stream = resourceStream(resourceIdValue);
+    const events = await this.journal!.readStream(stream);
+    await this.journal!.append(stream, events.length, [
+      createEventDraft({
+        eventId: `${context.commandId}:issue-completion-observation-consumed`,
+        eventType: 'integration.github.issue-completion-observation-consumed',
+        occurredAt: context.occurredAt,
+        correlationId: context.correlationId,
+        causationId: intentEventId,
+        actor: context.actor,
+        source: { kind: EventSourceKind.Internal, id: this.adapter },
+        stream,
+        payload: { intentEventId },
+      }),
+    ]);
   }
 
   private mintIdentity(externalKey: { readonly adapter: string; readonly key: string }) {

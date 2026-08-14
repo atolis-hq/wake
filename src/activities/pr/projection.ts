@@ -103,6 +103,7 @@ function ignorePullRequestEvent(
   >,
 ): PullRequestView | null {
   switch (event.eventType) {
+    case ActivityEventType.IssueCompleteRequested:
     case ActivityEventType.ReviewAcceptanceSignalRecorded:
     case ActivityEventType.PrReviewRejected:
     case ActivityEventType.PrMergeDenied:
@@ -164,6 +165,7 @@ function ignoreAcceptedSignalFact(
     case ActivityEventType.PrMergeAuthorized:
     case ActivityEventType.PrApproveRequested:
     case ActivityEventType.PrMergeRequested:
+    case ActivityEventType.IssueCompleteRequested:
       return previous;
     default:
       return assertNever(event);

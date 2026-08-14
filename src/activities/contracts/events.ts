@@ -44,7 +44,9 @@ export type ActivityEventTypes = typeof ActivityEventType;
 export interface PullRequestDiscoveredPayload {
   readonly workItemId: WorkItemId;
   readonly state:
-    typeof PullRequestState.Open | typeof PullRequestState.Closed | typeof PullRequestState.Merged;
+    | typeof PullRequestState.Open
+    | typeof PullRequestState.Closed
+    | typeof PullRequestState.Merged;
   readonly headRevision: string;
   readonly baseRevision: string;
   readonly checks:
@@ -69,7 +71,10 @@ export interface PullRequestDenialPayload {
   readonly resourceId?: ResourceId | null | undefined;
   readonly revision?: string | null | undefined;
   readonly method?:
-    typeof MergeMethod.Merge | typeof MergeMethod.Squash | typeof MergeMethod.Rebase | undefined;
+    | typeof MergeMethod.Merge
+    | typeof MergeMethod.Squash
+    | typeof MergeMethod.Rebase
+    | undefined;
   readonly body?: string | null | undefined;
 }
 
