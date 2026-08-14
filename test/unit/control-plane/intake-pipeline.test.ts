@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createIntakePipeline } from '../../../src/control-plane/application/intake-pipeline.js';
 
 describe('IntakePipeline', () => {
@@ -25,7 +25,7 @@ describe('IntakePipeline', () => {
 
     await expect(pipeline.run(new AbortController().signal)).resolves.toEqual({ processed: false });
     expect({ projectionCatchUps, polls, translations }).toEqual({
-      projectionCatchUps: 1,
+      projectionCatchUps: 2,
       polls: 0,
       translations: 0,
     });
@@ -33,10 +33,13 @@ describe('IntakePipeline', () => {
 
   it('does not translate inbound work after maintenance acquires during a poll', async () => {
     let paused = false;
+    let projectionCatchUps = 0;
     let translations = 0;
     const pipeline = createIntakePipeline({
       isPaused: async () => paused,
-      catchUpProjections: async () => undefined,
+      catchUpProjections: async () => {
+        projectionCatchUps += 1;
+      },
       poll: async () => {
         paused = true;
         return 1;
@@ -48,6 +51,7 @@ describe('IntakePipeline', () => {
     });
 
     await expect(pipeline.run(new AbortController().signal)).resolves.toEqual({ processed: false });
+    expect(projectionCatchUps).toBe(2);
     expect(translations).toBe(0);
   });
 
@@ -88,21 +92,22 @@ describe('IntakePipeline', () => {
   });
 
   it('skips poll and reports no progress while paused', async () => {
-    let polled = false;
+    const catchUpProjections = vi.fn(async () => undefined);
+    const poll = vi.fn(async () => 1);
+    const translateInbound = vi.fn(async () => 0);
     const pipeline = createIntakePipeline({
       isPaused: async () => true,
-      catchUpProjections: async () => undefined,
-      poll: async () => {
-        polled = true;
-        return 1;
-      },
-      translateInbound: async () => 0,
+      catchUpProjections,
+      poll,
+      translateInbound,
     });
 
     await expect(pipeline.run(new AbortController().signal)).resolves.toEqual({
       processed: false,
     });
-    expect(polled).toBe(false);
+    expect(catchUpProjections).toHaveBeenCalledOnce();
+    expect(poll).not.toHaveBeenCalled();
+    expect(translateInbound).not.toHaveBeenCalled();
   });
 
   it('catches projections up even when poll fails', async () => {

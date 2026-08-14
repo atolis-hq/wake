@@ -46,9 +46,9 @@ application's own responses — it only decides when to serve them.
   independent of either one's own cadence, so a run's projected state (e.g.
   the board's active-run card) reflects progress made mid-run rather than
   only its state before and after.
-- Both pipelines MUST no-op entirely — including skipping their own
-  projection catch-up — while the composed control plane reports itself
-  paused; `tick`, `start`'s two resident loops, and the API surface
+- Both pipelines MUST stop operational work while the composed control plane
+  reports itself paused, while still catching projections up from durable
+  events; `tick`, `start`'s two resident loops, and the API surface
   application's own `advance` command all observe this same pause state.
 - `start` MUST start an HTTP server before entering its resident loops
   whenever either the web surface or the API surface is enabled in

@@ -24,7 +24,10 @@ export interface RunnerPipeline {
 export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeline {
   const isPaused = async () => (await stages.isPaused?.()) ?? false;
   const runOnce = async (options: AdvanceOptions, signal: AbortSignal): Promise<AdvanceResult> => {
-    if (await isPaused()) return { kind: 'paused' };
+    if (await isPaused()) {
+      await stages.catchUpProjections();
+      return { kind: 'paused' };
+    }
     await stages.catchUpProjections();
     try {
       if (await isPaused()) return { kind: 'paused' };
@@ -45,7 +48,7 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
       await stages.react();
       return result;
     } finally {
-      if (!(await isPaused())) await stages.catchUpProjections();
+      await stages.catchUpProjections();
     }
   };
   // The API's manual Tick Now endpoint and the resident tick host share this
