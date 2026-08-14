@@ -86,7 +86,7 @@ defineScenario(
     ]);
     await writeFile(
       join(artifact.wakeRoot, 'config.workflows.yaml'),
-      `default:\n  stages:\n    report:\n      activity: agent\n      with: { prompt: report an artifact }\n      execution: { workspace: none, runnerPool: standard }\n      on:\n        done: { then: merge }\n    merge:\n      activity: pr.merge\n      with: { target: primary, method: squash, requireChecks: true }\n      on:\n        done: { then: done }\n        blocked: { then: done }\n`,
+      `default:\n  stages:\n    report:\n      activity: agent\n      with: { prompt: report an artifact }\n      execution: { workspace: none, runnerPool: standard }\n      on:\n        done: { then: merge }\n    merge:\n      activity: pr.merge\n      with: { target: primary, method: squash, requireChecks: true }\n      on:\n        done: { then: done }\n        blocked: { then: await-human }\n`,
     );
     await writeFile(
       join(artifact.wakeRoot, 'fake-scenarios.yaml'),
