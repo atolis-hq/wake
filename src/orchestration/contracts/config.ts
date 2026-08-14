@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ApprovalAuthorityKind, WorkflowStatus } from './vocabulary.js';
 
-import { type ActivityName } from '../../activities/index.js';
+import { PullRequestCheckState, type ActivityName } from '../../activities/index.js';
 import { WorkspaceMode, type WorkspaceMode as WorkspaceModeType } from '../../execution/index.js';
 import { MatchMode } from '../../kernel/index.js';
 import type { CommandName, SignalName, StageName, WatchId, WorkflowName } from './identifiers.js';
@@ -44,6 +44,9 @@ const watchGateConfigSchema = z.union([
 const commandName = z.string().regex(/^\/[a-z][a-z0-9-]*$/);
 const canonicalEventName = z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/);
 const watchStatus = z.enum([WorkflowStatus.Active, WorkflowStatus.Waiting, WorkflowStatus.Blocked]);
+const failingChecksWatchPredicateSchema = z
+  .object({ checks: z.literal(PullRequestCheckState.Failing) })
+  .strict();
 
 export const watchConfigSchema = z
   .object({
@@ -58,6 +61,7 @@ export const watchConfigSchema = z
       .object({ events: z.array(canonicalEventName).min(1).readonly() })
       .strict()
       .optional(),
+    where: failingChecksWatchPredicateSchema.optional(),
     schedule: z.object({ cron: identifier }).strict().optional(),
     workflow: identifier,
     maxPerGroup: z.number().int().positive(),

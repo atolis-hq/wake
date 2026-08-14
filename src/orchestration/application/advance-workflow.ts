@@ -1,4 +1,9 @@
-import type { ActivationId } from '../../activities/index.js';
+import {
+  ActivityEventType,
+  PullRequestCheckState,
+  selectActivityEvent,
+  type ActivationId,
+} from '../../activities/index.js';
 import { EventSourceKind, createEventDraft, type CommandContext } from '../../kernel/index.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
@@ -24,6 +29,8 @@ export class OperatorRetryIneligibleError extends Error {
     this.name = 'OperatorRetryIneligibleError';
   }
 }
+
+type PersistedEvent = Parameters<typeof selectActivityEvent>[0];
 
 export class AdvanceWorkflow {
   constructor(
@@ -192,17 +199,30 @@ export class AdvanceWorkflow {
     return (await this.repository.list()).filter((view) => view !== null);
   }
 
-  async listWatchMatches(eventType: string) {
+  async listWatchMatches(event: PersistedEvent) {
     return (await this.listAll()).flatMap((parent) => {
       const definition = this.workflows.definition(parent.workflowName);
       return definition.watches
         .filter(
           (watch) =>
-            watch.on?.events.includes(eventType) === true &&
+            watch.on?.events.includes(event.eventType) === true &&
             watch.while.stages.includes(parent.currentStage) &&
-            watch.while.statuses.some((status) => status === parent.status),
+            watch.while.statuses.some((status) => status === parent.status) &&
+            matchesWatchPredicate(watch.where, event),
         )
         .map((watch) => ({ parent, watch }));
     });
   }
+}
+
+function matchesWatchPredicate(
+  predicate: { readonly checks: typeof PullRequestCheckState.Failing } | undefined,
+  event: PersistedEvent,
+): boolean {
+  if (predicate === undefined) return true;
+  const activityEvent = selectActivityEvent(event);
+  return (
+    activityEvent?.eventType === ActivityEventType.PrChecksChanged &&
+    activityEvent.payload.checks === PullRequestCheckState.Failing
+  );
 }

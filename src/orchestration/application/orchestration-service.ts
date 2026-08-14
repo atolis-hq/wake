@@ -162,8 +162,8 @@ export class OrchestrationService {
     );
   }
 
-  listWatchMatches(eventType: string) {
-    return this.advanceWorkflow.listWatchMatches(eventType);
+  listWatchMatches(event: Parameters<AdvanceWorkflow['listWatchMatches']>[0]) {
+    return this.advanceWorkflow.listWatchMatches(event);
   }
 }
 

@@ -296,6 +296,55 @@ workflows:
         maxPerGroup: 1
 ```
 
+### Repair a newly failing CI check
+
+This pattern starts a bounded, branch-based repair workflow when Wake observes
+a `pr.checks-changed` event whose checks are `failing` while the parent
+implementation stage is active:
+
+```yaml
+workflows:
+  default:
+    stages:
+      implement:
+        activity: agent
+        with: { template: implement }
+        execution: { workspace: branch, runnerPool: standard }
+        on:
+          done: { then: done }
+          blocked: { then: await-human }
+    watches:
+      - id: repair-failing-ci
+        while:
+          stages: [implement]
+          statuses: [active]
+        on: { events: [pr.checks-changed] }
+        where: { checks: failing }
+        workflow: ci-fix
+        maxPerGroup: 1
+
+  ci-fix:
+    stages:
+      repair:
+        activity: agent
+        with: { template: ci-fix }
+        execution: { workspace: branch, runnerPool: standard }
+        requiresApproval: false
+        on:
+          done: { then: done }
+          blocked: { then: await-human }
+          failed: { then: await-human }
+```
+
+`pr.checks-changed` is emitted only when Wake observes a changed check state.
+With `where: { checks: failing }`, this watch starts only for that observed
+change to failing; it does not trigger from arbitrary event data or CI logs.
+The dedicated `ci-fix` template receives the current pull request's bounded
+check-run and status diagnostics in its untrusted structured context, so it
+can target the repair without treating provider data as instructions. Keep
+`maxPerGroup` small to prevent repeated CI updates from starting unbounded
+repair runs.
+
 A watch has:
 
 | Field | Meaning |
@@ -303,7 +352,8 @@ A watch has:
 | `id` | Unique identity used by `watchGates` and watch-based approval authority. |
 | `while.stages` | Non-empty parent-stage list where the watch is eligible. |
 | `while.statuses` | Non-empty list drawn from `active`, `waiting`, and `blocked`. |
-| `on.events` | Optional non-empty canonical event-name trigger list. |
+| `on.events` | Optional non-empty list of canonical event-name strings. |
+| `where` | Optional failure-only predicate: `{ checks: failing }`, valid only when `on.events` contains only `pr.checks-changed`. |
 | `schedule.cron` | Optional cron trigger. At least one of `on` or `schedule` is required. |
 | `workflow` | Existing workflow to start as the child. |
 | `maxPerGroup` | Positive upper bound on child starts for the group and this watch. |

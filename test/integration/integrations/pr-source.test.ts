@@ -196,6 +196,7 @@ it.each([
       headRevision: 'head-a',
       baseRevision: 'base-a',
       checks: expected,
+      raw: { checkRuns, statuses },
     });
   },
 );
@@ -319,6 +320,36 @@ it('fails checks closed to unknown when either evidence endpoint is unavailable'
   const [event] = await source.poll(new AbortController().signal);
 
   expect(event?.payload).toMatchObject({ checks: 'unknown' });
+});
+
+it('bounds persisted diagnostic check evidence before recording the observation', async () => {
+  const client = fakeClient({
+    checkRuns: async () =>
+      Array.from({ length: 21 }, (_, index) => ({
+        name: `check-${index + 1}`,
+        status: 'completed',
+        conclusion: 'failure',
+        details_url: 'x'.repeat(100_000),
+        unexpected: 'do not persist',
+      })),
+    statuses: async () => [
+      { context: 'deploy', state: 'failure', target_url: 'x'.repeat(100_000) },
+    ],
+  });
+  const source = createGitHubPullRequestSource({
+    client,
+    repository: 'owner/repo',
+    maxResults: 10,
+  });
+
+  const [event] = await source.poll(new AbortController().signal);
+  const raw = event?.payload.raw as {
+    readonly checkRuns: readonly Record<string, unknown>[];
+    readonly statuses: readonly Record<string, unknown>[];
+  };
+
+  expect(raw.checkRuns).toHaveLength(0);
+  expect(raw.statuses).toHaveLength(0);
 });
 
 it('bounds enrichment concurrency for 100 pull requests', async () => {

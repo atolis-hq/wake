@@ -9,6 +9,7 @@ import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kern
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
+import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import {
@@ -108,7 +109,11 @@ function pullRequestObservation(input: {
     },
     labels: gitHubLabelNames(pullRequest),
     assignees: gitHubAssigneeLogins(pullRequest),
-    raw: { number: pullRequest.number },
+    raw: {
+      number: pullRequest.number,
+      checkRuns: boundedDiagnosticEvidence(input.evidence.checkRuns),
+      statuses: boundedDiagnosticEvidence(input.evidence.statuses),
+    },
   };
   const fingerprint = evidenceFingerprint(payload, input.evidence);
   return createEventDraft({
