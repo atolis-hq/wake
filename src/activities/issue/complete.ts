@@ -34,9 +34,19 @@ type IssueCompleteOutcome =
   | {
       readonly kind: typeof ActivityOutcomeKind.Blocked;
       readonly data: { readonly reason: 'missing-completable-primary-issue' };
+    }
+  | {
+      readonly kind: typeof ActivityOutcomeKind.Done;
+      readonly data: { readonly deliveryEventId: string };
     };
 
 const outcomeSchema: z.ZodType<IssueCompleteOutcome> = z.union([
+  z
+    .object({
+      kind: z.literal(ActivityOutcomeKind.Done),
+      data: z.object({ deliveryEventId: z.string() }).strict(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Waiting),
@@ -66,7 +76,11 @@ export function createIssueCompleteActivity(
     name: BuiltInActivityName.IssueComplete,
     inputSchema,
     outcomeSchema,
-    outcomeKinds: [ActivityOutcomeKind.Waiting, ActivityOutcomeKind.Blocked],
+    outcomeKinds: [
+      ActivityOutcomeKind.Waiting,
+      ActivityOutcomeKind.Done,
+      ActivityOutcomeKind.Blocked,
+    ],
     resources: [],
     executionKind: ActivityExecutionKind.Deterministic,
     handler: {

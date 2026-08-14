@@ -22,11 +22,11 @@ export interface DeliveryIntentView {
         readonly body?: string;
       }
     | {
-      readonly kind: typeof DeliveryIntentKind.PrMerge;
+        readonly kind: typeof DeliveryIntentKind.PrMerge;
         readonly revision: string;
         readonly method: MergeMethod;
-      readonly autoMerge: boolean;
-    }
+        readonly autoMerge: boolean;
+      }
     | { readonly kind: typeof DeliveryIntentKind.IssueComplete }
     | { readonly kind: typeof DeliveryIntentKind.StatusPublish; readonly body: string }
     | { readonly kind: typeof DeliveryIntentKind.ReplyPublish; readonly body: string }
