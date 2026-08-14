@@ -100,6 +100,7 @@ export class DeliveryService {
     const occurrence: DeliveryOccurrence = { ordinal: intent.occurrenceOrdinal + 1 };
     if (intent.state === DeliveryState.Ambiguous || intent.attempts > 0) {
       const reconciled = await adapter.reconcile(
+        intent,
         intent.reconciliationKey ?? intent.intentEventId,
         signal,
       );

@@ -66,6 +66,9 @@ function applyResourceEvent(
     case ResourceEventType.WorkCorrelationRetracted:
       active.delete(event.payload.workItemId);
       break;
+    case ResourceEventType.IssueCompletionObservationConsumed:
+    case ResourceEventType.IssueCompletionObservationSuperseded:
+      break;
     default:
       assertNever(event);
   }

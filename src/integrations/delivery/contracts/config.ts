@@ -3,7 +3,11 @@ import type { DeliveryResultKind } from './vocabulary.js';
 
 export interface ExternalDeliveryAdapter {
   deliver(intent: DeliveryIntentView, signal: AbortSignal): Promise<DeliveryResult>;
-  reconcile(reconciliationKey: string, signal: AbortSignal): Promise<ReconciliationResult>;
+  reconcile(
+    intent: DeliveryIntentView,
+    reconciliationKey: string,
+    signal: AbortSignal,
+  ): Promise<ReconciliationResult>;
 }
 
 export type DeliveryResult =

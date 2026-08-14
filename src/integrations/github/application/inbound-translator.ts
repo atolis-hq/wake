@@ -1,5 +1,6 @@
 /* eslint-disable max-lines */
 import {
+  ActivityEventType,
   createPullRequestService,
   type ObservePullRequest,
   type PullRequestService,
@@ -17,7 +18,9 @@ import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
   ResourceCorrelationRole,
+  ResourceEventType,
   resourceId,
+  resourceStream,
   type ResourceId,
 } from '../../../resources/index.js';
 import type { WorkService } from '../../../work/index.js';
@@ -27,6 +30,8 @@ import { concludeObservedWork } from '../../application/work-conclusion.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rules.js';
 import type { WorkConclusion, WorkflowRouter } from '../../contracts/provider.js';
+import { deliveryStream } from '../../contracts/streams.js';
+import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
@@ -208,7 +213,7 @@ export class InboundTranslator {
               BuiltInResourceCapability.Revisioned,
               BuiltInResourceCapability.ChangedFiles,
             ]
-          : [BuiltInResourceCapability.Commentable],
+          : [BuiltInResourceCapability.Commentable, BuiltInResourceCapability.Completable],
         objective: payload.title,
         tags: intake.tags,
         revision: payload.revision,
@@ -254,7 +259,12 @@ export class InboundTranslator {
         },
         context,
       );
-      if (payload.outcome !== undefined && this.conclusion !== undefined) {
+      const wakeCompletion = await this.unconsumedWakeCompletion(resourceIdValue);
+      if (payload.outcome === undefined && wakeCompletion !== null) {
+        await this.supersedeWakeCompletion(resourceIdValue, wakeCompletion, context);
+      } else if (payload.outcome !== undefined && wakeCompletion !== null) {
+        await this.consumeWakeCompletion(resourceIdValue, wakeCompletion, context);
+      } else if (payload.outcome !== undefined && this.conclusion !== undefined) {
         await concludeObservedWork(
           { work: this.work!, conclusion: this.conclusion },
           {
@@ -270,6 +280,53 @@ export class InboundTranslator {
         observePullRequest(current.resourceId, workItemIdValue, payload),
         context,
       );
+  }
+
+  /** A confirmed completion consumes exactly one matching terminal observation. */
+  private async unconsumedWakeCompletion(resourceIdValue: ResourceId): Promise<string | null> {
+    const events = await this.journal!.readStream(resourceStream(resourceIdValue));
+    const intents = events.filter(
+      (event) => event.eventType === ActivityEventType.IssueCompleteRequested,
+    );
+    for (const intent of intents) {
+      if (
+        events.some(
+          (event) =>
+            (event.eventType === ResourceEventType.IssueCompletionObservationConsumed ||
+              event.eventType === ResourceEventType.IssueCompletionObservationSuperseded) &&
+            event.payload !== null &&
+            typeof event.payload === 'object' &&
+            'intentEventId' in event.payload &&
+            event.payload.intentEventId === intent.eventId,
+        )
+      )
+        continue;
+      const deliveries = await this.journal!.readStream(deliveryStream(intent.eventId));
+      if (
+        deliveries.some((event) => {
+          const delivery = selectDeliveryEvent(event);
+          return delivery?.eventType === DeliveryEventType.Confirmed;
+        })
+      )
+        return intent.eventId;
+    }
+    return null;
+  }
+
+  private async consumeWakeCompletion(
+    resourceIdValue: ResourceId,
+    intentEventId: string,
+    context: ReturnType<typeof commandContext>,
+  ): Promise<void> {
+    await this.resources!.consumeIssueCompletion(resourceIdValue, intentEventId, context);
+  }
+
+  private async supersedeWakeCompletion(
+    resourceIdValue: ResourceId,
+    intentEventId: string,
+    context: ReturnType<typeof commandContext>,
+  ): Promise<void> {
+    await this.resources!.supersedeIssueCompletion(resourceIdValue, intentEventId, context);
   }
 
   private mintIdentity(externalKey: { readonly adapter: string; readonly key: string }) {

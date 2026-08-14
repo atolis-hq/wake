@@ -75,6 +75,7 @@ export const GitHubOutboundAction = {
   Merge: MergeMethod.Merge,
   Status: 'status',
   Reply: 'reply',
+  Close: 'close',
 } as const;
 
 export type GitHubOutboundAction = ValueOf<typeof GitHubOutboundAction>;

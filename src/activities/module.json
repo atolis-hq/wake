@@ -4,7 +4,7 @@
   "dependencies": ["kernel", "work", "resources"],
   "publicEntry": "./index.ts",
   "namespaces": {
-    "events": ["activities.", "pr.", "review."],
+    "events": ["activities.", "issue.", "pr.", "review."],
     "config": ["activities"],
     "relations": ["activity."],
     "streams": ["activity-decision"]

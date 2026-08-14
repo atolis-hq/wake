@@ -118,6 +118,23 @@ rather than following an ordinary `on.waiting` route. The resolved outcome is
 authority checks fail, or `failed` when Wake cannot durably record the intent.
 Route those resolved outcomes explicitly.
 
+### Completing a linked issue
+
+`issue.complete` is an opt-in deterministic Activity for the WorkItem's primary
+issue Resource. Its only input is `target: primary` (the default). It records
+an idempotent delivery request and waits for confirmation; GitHub closes the
+issue. It returns `blocked` when the primary resource is not an issue or does
+not advertise the `completable` capability. Place it at any stage: a confirmed
+completion does not end the workflow, so later configured stages still run.
+
+```yaml
+activity: issue.complete
+with: { target: primary }
+on:
+  done: { then: publish-release-notes }
+  blocked: { then: await-human }
+```
+
 ## Outcome routes and their evaluation order
 
 Every `on.<outcome>` route requires `then`: another stage, `done`, or

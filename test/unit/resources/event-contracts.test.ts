@@ -22,6 +22,8 @@ const samples = [
     },
   ],
   [ResourceEventType.ResourceRevisionObserved, { revision: 'def' }],
+  [ResourceEventType.IssueCompletionObservationConsumed, { intentEventId: 'complete-intent' }],
+  [ResourceEventType.IssueCompletionObservationSuperseded, { intentEventId: 'complete-intent' }],
   [
     ResourceEventType.WorkCorrelationEstablished,
     { workItemId: workId('one'), role: 'primary', provenance: 'provider-observed' },
@@ -37,6 +39,21 @@ const samples = [
 ] as const;
 
 describe('Resource event contract', () => {
+  it('decodes an issue-completion marker superseded by a later non-terminal observation', () => {
+    expect(
+      decodeResourceEvent(
+        eventEnvelope(
+          'resources.issue-completion-observation-superseded',
+          { intentEventId: 'complete-intent' },
+          stream,
+        ),
+      ),
+    ).toMatchObject({
+      eventType: 'resources.issue-completion-observation-superseded',
+      payload: { intentEventId: 'complete-intent' },
+    });
+  });
+
   it('decodes every declared event with its exact payload and stream', () => {
     expect(
       samples.map(([type, payload]) => decodeResourceEvent(eventEnvelope(type, payload, stream))),

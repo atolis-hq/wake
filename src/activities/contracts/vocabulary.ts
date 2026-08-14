@@ -86,4 +86,5 @@ export const BuiltInActivityName = {
   Agent: activityName(ActivityExecutionKind.Agent),
   PullRequestApprove: activityName('pr.approve'),
   PullRequestMerge: activityName('pr.merge'),
+  IssueComplete: activityName('issue.complete'),
 } as const;

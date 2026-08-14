@@ -1,3 +1,4 @@
+import { BuiltInActivityName, PullRequestState } from '../../activities/index.js';
 import { BuiltInResourceCapability, resourceId, resourceKind } from '../../resources/index.js';
 import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
 import type { ProviderDefinition } from '../contracts/provider.js';
@@ -31,12 +32,23 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         getLabels: client.getIssueLabels,
         setLabels: client.setIssueLabels,
       }),
-      delivery: createGitHubDelivery(async (intent, idempotencyKey) => {
-        const resource = await services.resources.get(resourceId(intent.resourceId));
-        if (resource === null)
-          throw new Error(`GitHub resource ${intent.resourceId} is unavailable`);
-        return client.deliver({ ...translateGitHubOutbound(resource, intent), idempotencyKey });
-      }),
+      delivery: createGitHubDelivery(
+        async (intent, idempotencyKey) => {
+          const resource = await services.resources.get(resourceId(intent.resourceId));
+          if (resource === null)
+            throw new Error(`GitHub resource ${intent.resourceId} is unavailable`);
+          return client.deliver({ ...translateGitHubOutbound(resource, intent), idempotencyKey });
+        },
+        async (intent) => {
+          if (intent.kind !== BuiltInActivityName.IssueComplete) return null;
+          const resource = await services.resources.get(resourceId(intent.resourceId));
+          if (resource === null) return null;
+          const parsed = parsePullRequestKey(resource.externalKey.key);
+          if (parsed === null) return null;
+          const issue = await client.getIssue(parsed.owner, parsed.repo, parsed.number);
+          return issue.state === PullRequestState.Closed ? issue.id : null;
+        },
+      ),
       verifyArtifact: async (kind, externalKey, context) => {
         if (kind !== resourceKind('pull-request')) return ArtifactVerificationResult.NotFound;
         const parsed = parsePullRequestKey(externalKey.key);

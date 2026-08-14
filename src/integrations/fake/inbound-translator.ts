@@ -98,7 +98,7 @@ export class FakeInboundTranslator {
                 ? []
                 : [BuiltInResourceCapability.ChangedFiles]),
             ]
-          : [BuiltInResourceCapability.Commentable],
+          : [BuiltInResourceCapability.Commentable, BuiltInResourceCapability.Completable],
         objective: evidence.title,
         tags: evidence.tags ?? [],
         ...(evidence.revision === undefined ? {} : { revision: evidence.revision }),
@@ -145,6 +145,9 @@ export class FakeInboundTranslator {
         event,
         context,
       );
+    // Fake issue evidence has no terminal state, so its existing behaviour is
+    // intentionally unchanged; production inbound suppression lives with the
+    // provider observation that carries the terminal outcome.
     return true;
   }
 

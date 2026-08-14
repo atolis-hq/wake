@@ -9,6 +9,7 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
     return owned === null ? null : { key: owned.stream.id };
   },
   initial: () => null,
+  // eslint-disable-next-line complexity
   project(previous, event) {
     const owned = selectResourceEvent(event);
     if (owned === null) return previous;
@@ -37,6 +38,8 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
             };
       case ResourceEventType.WorkCorrelationEstablished:
       case ResourceEventType.WorkCorrelationRetracted:
+      case ResourceEventType.IssueCompletionObservationConsumed:
+      case ResourceEventType.IssueCompletionObservationSuperseded:
         return previous;
       default:
         return assertNever(owned);
@@ -74,6 +77,8 @@ export const resourceCorrelationProjection: ProjectionDefinition<
       case ResourceEventType.ResourceDiscovered:
       case ResourceEventType.ResourceRevisionObserved:
       case ResourceEventType.WorkCorrelationConflicted:
+      case ResourceEventType.IssueCompletionObservationConsumed:
+      case ResourceEventType.IssueCompletionObservationSuperseded:
         return previous;
       default:
         return assertNever(owned);

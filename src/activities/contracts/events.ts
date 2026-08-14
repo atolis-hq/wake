@@ -21,6 +21,7 @@ import { type ActivityDecisionStreamRef, type PullRequestDecisionAction } from '
 import type { ActivityOutcomeKind } from './vocabulary.js';
 
 export const ActivityEventType = {
+  IssueCompleteRequested: 'issue.complete-requested',
   PrDiscovered: 'pr.discovered',
   PrRevisionChanged: 'pr.revision-changed',
   PrStateChanged: 'pr.state-changed',
@@ -139,6 +140,12 @@ type PullRequestDecisionClaimPayload<Action extends PullRequestDecisionAction> =
     };
 
 export interface ActivityEventPayloads {
+  readonly [ActivityEventType.IssueCompleteRequested]: {
+    readonly idempotencyKey: string;
+    readonly activationId: ActivationId;
+    readonly workflowInstanceId: string;
+    readonly resourceId: ResourceId;
+  };
   readonly [ActivityEventType.PrDiscovered]: PullRequestDiscoveredPayload;
   readonly [ActivityEventType.PrRevisionChanged]: {
     readonly headRevision: string;
@@ -182,6 +189,7 @@ export interface ActivityEventPayloads {
 }
 
 type ResourceFactType =
+  | typeof ActivityEventType.IssueCompleteRequested
   | typeof ActivityEventType.PrDiscovered
   | typeof ActivityEventType.PrRevisionChanged
   | typeof ActivityEventType.PrStateChanged
@@ -253,6 +261,7 @@ export function decodeActivityEventDraft(draft: EventDraft): ActivityEventDraft 
 function ownsActivityEventType(eventType: string): boolean {
   return (
     eventType.startsWith('activities.') ||
+    eventType.startsWith('issue.') ||
     eventType.startsWith('pr.') ||
     eventType.startsWith('review.')
   );
