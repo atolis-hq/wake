@@ -9,6 +9,7 @@ import {
   listCheckRunsForRef,
   listIssueComments,
   listIssues,
+  listPullRequestFiles,
   listPullRequests,
   listReviewComments,
   listReviews,
@@ -76,6 +77,8 @@ export function createGitHubClient(token: string) {
       listReviews(octokit, cache, owner, repo, pullNumber, pageSize),
     listCheckRunsForRef: (owner: string, repo: string, ref: string) =>
       listCheckRunsForRef(octokit, cache, owner, repo, ref),
+    listPullRequestFiles: (owner: string, repo: string, pullNumber: number) =>
+      listPullRequestFiles(octokit, cache, owner, repo, pullNumber),
     getCombinedStatusForRef: (owner: string, repo: string, ref: string) =>
       getCombinedStatusForRef(octokit, cache, owner, repo, ref),
     branch: (owner: string, repo: string, name: string) =>

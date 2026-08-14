@@ -15,5 +15,6 @@ export function observePullRequest(
     headRevision: payload.headRevision ?? payload.revision,
     baseRevision: payload.baseRevision ?? 'unknown',
     checks: payload.checks ?? 'unknown',
+    ...(payload.changedFiles === undefined ? {} : { changedFiles: payload.changedFiles }),
   };
 }

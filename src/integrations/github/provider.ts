@@ -53,6 +53,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
               BuiltInResourceCapability.Approvable,
               BuiltInResourceCapability.Mergeable,
               BuiltInResourceCapability.Revisioned,
+              BuiltInResourceCapability.ChangedFiles,
             ],
             ...(pullRequest.head.sha === undefined ? {} : { revision: pullRequest.head.sha }),
           };

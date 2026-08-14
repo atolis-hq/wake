@@ -46,6 +46,8 @@ export interface ExternalWorkObservedPayload {
   // Optional so observations recorded before intake matching still decode.
   readonly labels?: readonly string[] | undefined;
   readonly assignees?: readonly string[] | undefined;
+  // Files the head revision changed, when the provider could fetch them.
+  readonly changedFiles?: readonly string[] | undefined;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -174,6 +176,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
         actor: actorSchema,
         labels: z.array(z.string()).readonly().optional(),
         assignees: z.array(z.string()).readonly().optional(),
+        changedFiles: z.array(z.string()).readonly().optional(),
         raw: rawSchema,
       })
       .strict(),

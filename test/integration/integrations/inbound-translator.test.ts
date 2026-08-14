@@ -156,6 +156,42 @@ describe('InboundTranslator', () => {
     ).not.toBeNull();
   });
 
+  it('grants changed-files capability to a newly admitted pull request', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const event = createEventDraft({
+      eventId: 'github:pr:owner/repo#11:v1',
+      eventType: 'integration.github.work-observed',
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'github:owner/repo#11',
+      causationId: 'github:owner/repo#11:v1',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: { ...observation(), kind: 'pull-request', externalKey: 'owner/repo#11' },
+    });
+    await journal.append(event.stream, 0, [event]);
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
+
+    await translator.runOnce();
+
+    const resourceId = await lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#11',
+    });
+    await expect(resources.get(resourceId!)).resolves.toMatchObject({
+      capabilities: expect.arrayContaining(['changed-files']),
+    });
+  });
+
   it('captures the observed title on the discovered resource', async () => {
     const clock = new FakeClock();
     const journal = new InMemoryEventJournal(clock);

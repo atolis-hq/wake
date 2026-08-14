@@ -63,6 +63,9 @@ it('validates GitHub polling configuration and isolates a failed repository', as
     async getCombinedStatusForRef() {
       return [];
     },
+    async listPullRequestFiles() {
+      return [];
+    },
   });
 
   await expect(source.poll(new AbortController().signal)).resolves.toHaveLength(1);
@@ -158,6 +161,9 @@ it('polls pull request reviews into comment-observed review signals', async () =
     async getCombinedStatusForRef() {
       return [];
     },
+    async listPullRequestFiles() {
+      return [];
+    },
   });
   const events = await source.poll(new AbortController().signal);
   expect(events.map((event) => event.eventType)).toContain('integration.github.comment-observed');
@@ -249,6 +255,9 @@ it('flows a tracked PR review from GitHub source polling through Activities acce
         return [];
       },
       async getCombinedStatusForRef() {
+        return [];
+      },
+      async listPullRequestFiles() {
         return [];
       },
     },
@@ -599,6 +608,9 @@ it('polls issue comments, including an /approved command', async () => {
       async getCombinedStatusForRef() {
         return [];
       },
+      async listPullRequestFiles() {
+        return [];
+      },
     },
   );
 
@@ -649,6 +661,9 @@ it('does not append a new work observation when only the GitHub revision and Wak
         return [];
       },
       async getCombinedStatusForRef() {
+        return [];
+      },
+      async listPullRequestFiles() {
         return [];
       },
     },

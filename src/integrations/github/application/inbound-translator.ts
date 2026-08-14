@@ -206,6 +206,7 @@ export class InboundTranslator {
               BuiltInResourceCapability.Commentable,
               BuiltInResourceCapability.Reviewable,
               BuiltInResourceCapability.Revisioned,
+              BuiltInResourceCapability.ChangedFiles,
             ]
           : [BuiltInResourceCapability.Commentable],
         objective: payload.title,

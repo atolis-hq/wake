@@ -31,6 +31,7 @@ const octokit = vi.hoisted(() => ({
   listPullRequests: vi.fn(),
   listCheckRunsForRef: vi.fn(),
   getCombinedStatusForRef: vi.fn(),
+  listPullRequestFiles: vi.fn(),
 }));
 
 vi.mock('@octokit/rest', () => ({
@@ -38,7 +39,7 @@ vi.mock('@octokit/rest', () => ({
     return {
       paginate: Object.assign(octokit.paginate, { iterator: octokit.paginateIterator }),
       rest: {
-        pulls: { list: octokit.listPullRequests },
+        pulls: { list: octokit.listPullRequests, listFiles: octokit.listPullRequestFiles },
         checks: { listForRef: octokit.listCheckRunsForRef },
         repos: { getCombinedStatusForRef: octokit.getCombinedStatusForRef },
         issues: { listForRepo: vi.fn() },
@@ -96,6 +97,30 @@ it('stops PR pagination at maxResults and reads every check-run page', async () 
   expect(pullRequests).toHaveLength(3);
   expect(checkRuns).toHaveLength(125);
   expect(statuses).toHaveLength(125);
+});
+
+it('lists every page of changed file paths for a pull request', async () => {
+  octokit.paginateIterator.mockImplementation((endpoint) =>
+    endpoint === octokit.listPullRequestFiles
+      ? pagesOf(
+          { data: [{ filename: 'a.ts' }, { filename: 'b.ts' }] },
+          { data: [{ filename: 'c.ts' }] },
+        )
+      : pagesOf({ data: [] }),
+  );
+  const client = createGitHubClient('token');
+
+  await expect(client.listPullRequestFiles('owner', 'repo', 7)).resolves.toEqual([
+    'a.ts',
+    'b.ts',
+    'c.ts',
+  ]);
+  expect(octokit.paginateIterator).toHaveBeenCalledWith(octokit.listPullRequestFiles, {
+    owner: 'owner',
+    repo: 'repo',
+    pull_number: 7,
+    per_page: 100,
+  });
 });
 
 it('conditionally polls check runs for an unchanged head revision', async () => {
@@ -159,11 +184,11 @@ it.each([
 ] as const)(
   'queries real head evidence and normalizes %s with failure-first precedence',
   async (expected, checkRuns, statuses) => {
-    octokit.paginateIterator.mockImplementation((endpoint) =>
-      endpoint === octokit.listPullRequests
-        ? pagesOf({ data: [pullRequest()] })
-        : pagesOf({ data: checkRuns }),
-    );
+    octokit.paginateIterator.mockImplementation((endpoint) => {
+      if (endpoint === octokit.listPullRequests) return pagesOf({ data: [pullRequest()] });
+      if (endpoint === octokit.listPullRequestFiles) return pagesOf({ data: [] });
+      return pagesOf({ data: checkRuns });
+    });
     octokit.getCombinedStatusForRef.mockResolvedValue({ data: { statuses } });
     const source = createGitHubPullRequestSource({
       client: createGitHubClient('token'),
@@ -322,6 +347,40 @@ it('fails checks closed to unknown when either evidence endpoint is unavailable'
   expect(event?.payload).toMatchObject({ checks: 'unknown' });
 });
 
+it('reports the changed file paths for a pull request', async () => {
+  const client = fakeClient({
+    changedFiles: async () => ['src/example.ts', 'docs/example.md'],
+  });
+  const source = createGitHubPullRequestSource({
+    client,
+    repository: 'owner/repo',
+    maxResults: 10,
+  });
+
+  const [event] = await source.poll(new AbortController().signal);
+
+  expect(event?.payload).toMatchObject({
+    changedFiles: ['src/example.ts', 'docs/example.md'],
+  });
+});
+
+it('omits changed files rather than failing the observation when the provider call errors', async () => {
+  const client = fakeClient({
+    changedFiles: async () => {
+      throw Object.assign(new Error('forbidden'), { status: 403 });
+    },
+  });
+  const source = createGitHubPullRequestSource({
+    client,
+    repository: 'owner/repo',
+    maxResults: 10,
+  });
+
+  const [event] = await source.poll(new AbortController().signal);
+
+  expect(event?.payload).not.toHaveProperty('changedFiles');
+});
+
 it('bounds persisted diagnostic check evidence before recording the observation', async () => {
   const client = fakeClient({
     checkRuns: async () =>
@@ -398,11 +457,13 @@ function fakeClient(overrides: {
   pullRequests?: GitHubPullRequestSourceClient['listPullRequests'];
   checkRuns?: GitHubPullRequestSourceClient['listCheckRunsForRef'];
   statuses?: GitHubPullRequestSourceClient['getCombinedStatusForRef'];
+  changedFiles?: GitHubPullRequestSourceClient['listPullRequestFiles'];
 }): GitHubPullRequestSourceClient {
   return {
     listPullRequests: overrides.pullRequests ?? (async () => [pullRequest()]),
     listCheckRunsForRef: overrides.checkRuns ?? (async () => []),
     getCombinedStatusForRef: overrides.statuses ?? (async () => []),
+    listPullRequestFiles: overrides.changedFiles ?? (async () => []),
   };
 }
 

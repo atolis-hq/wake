@@ -141,6 +141,28 @@ export async function listReviewComments(
   }));
 }
 
+export async function listPullRequestFiles(
+  octokit: Octokit,
+  cache: ReturnType<typeof createEtagCache>,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+): Promise<readonly string[]> {
+  const files = await fetchPaginatedWithEtag({
+    cache,
+    key: `pull-files:${owner}/${repo}#${pullNumber}`,
+    pages: (headers) =>
+      octokit.paginate.iterator(octokit.rest.pulls.listFiles, {
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+        ...(headers === undefined ? {} : { headers }),
+      }),
+  });
+  return files.map((file) => file.filename);
+}
+
 export function listCheckRunsForRef(
   octokit: Octokit,
   cache: ReturnType<typeof createEtagCache>,

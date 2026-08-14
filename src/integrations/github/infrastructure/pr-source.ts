@@ -49,6 +49,7 @@ export interface GitHubPullRequestSourceClient {
     repo: string,
     ref: string,
   ): Promise<readonly GitHubCommitStatusPayload[]>;
+  listPullRequestFiles(owner: string, repo: string, pullNumber: number): Promise<readonly string[]>;
 }
 
 export function createGitHubPullRequestSource(input: {
@@ -66,11 +67,15 @@ export function createGitHubPullRequestSource(input: {
       return mapConcurrent(pullRequests, input.maxConcurrency ?? 4, async (pullRequest) => {
         signal.throwIfAborted();
         const headRevision = fallback(pullRequest.head?.sha, pullRequest.updated_at);
-        const evidence = await readCheckEvidence(input.client, owner, repo, headRevision);
+        const [evidence, changedFiles] = await Promise.all([
+          readCheckEvidence(input.client, owner, repo, headRevision),
+          readChangedFiles(input.client, owner, repo, pullRequest.number),
+        ]);
         return pullRequestObservation({
           repository: input.repository,
           pullRequest,
           evidence,
+          changedFiles,
           ...(input.adapter === undefined ? {} : { adapter: input.adapter }),
         });
       });
@@ -82,6 +87,7 @@ function pullRequestObservation(input: {
   readonly repository: string;
   readonly pullRequest: GitHubPullRequestPayload;
   readonly evidence: CheckEvidence;
+  readonly changedFiles: readonly string[] | undefined;
   readonly adapter?: AdapterId;
 }): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
   const pullRequest = input.pullRequest;
@@ -109,6 +115,7 @@ function pullRequestObservation(input: {
     },
     labels: gitHubLabelNames(pullRequest),
     assignees: gitHubAssigneeLogins(pullRequest),
+    ...(input.changedFiles === undefined ? {} : { changedFiles: input.changedFiles }),
     raw: {
       number: pullRequest.number,
       checkRuns: boundedDiagnosticEvidence(input.evidence.checkRuns),
@@ -157,6 +164,19 @@ async function readCheckEvidence(
     return { available: true, checkRuns, statuses };
   } catch {
     return { available: false, checkRuns: [], statuses: [] };
+  }
+}
+
+async function readChangedFiles(
+  client: GitHubPullRequestSourceClient,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+): Promise<readonly string[] | undefined> {
+  try {
+    return await client.listPullRequestFiles(owner, repo, pullNumber);
+  } catch {
+    return undefined;
   }
 }
 
