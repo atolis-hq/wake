@@ -270,7 +270,7 @@ export class TestWorld {
     return this.resources.discover(input, this.command());
   }
 
-  correlateResource(resourceId: string, workItemId: WorkItemId, role: 'primary' | 'related') {
+  correlateResource(resourceId: string, workItemId: WorkItemId, role: 'primary' | 'secondary') {
     return this.resources.correlate(resourceId as never, workItemId, role, this.command());
   }
 
