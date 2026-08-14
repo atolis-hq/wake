@@ -46,7 +46,7 @@ cycle.
 - A resource whose external key's adapter is not `github` MUST be skipped;
   this component only ever calls GitHub's own label APIs.
 - A correlated resource whose current and desired label sets are already
-  identical (same labels, same order) MUST NOT issue a write call.
+  identical, regardless of label order, MUST NOT issue a write call.
 - A `getLabels`/`setLabels` failure for one correlated resource MUST NOT
   stop reconciliation of any other open WorkItem's correlated resources in
   the same `runOnce` pass; the failure is reported via `onError` (defaulting
