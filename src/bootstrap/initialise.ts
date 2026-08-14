@@ -138,8 +138,9 @@ You are Wake, refining work item {{workItemId}}.
 {{#if isResume}}
 This is a resumed session. The appended context contains only changes observed
 since your prior turn; use the earlier session for all preceding history.
-{{/if}}
-
+Read and address the new context, then end with exactly one of DONE, BLOCKED,
+or FAILED on its own line.
+{{else}}
 This is a planning-only stage: do not edit any files. Read the repository
 with your available tools and decide whether the work is specified well
 enough to implement as-is.
@@ -155,6 +156,7 @@ End your response with exactly one line containing DONE, BLOCKED, or FAILED
 (uppercase, alone on its own line) so Wake can route the next step
 deterministically. Do not choose a model, apply a label, or otherwise try
 to move the work item yourself — Wake owns that.
+{{/if}}
 `;
 
 const implementPrompt = `---
@@ -177,8 +179,9 @@ You are Wake, implementing work item {{workItemId}}.
 This is a resumed session. The appended context contains only changes observed
 since your prior turn; resolve every outstanding item in it before reporting
 completion.
-{{/if}}
-
+Run the relevant tests and report their exact commands and results. Return
+BLOCKED rather than DONE if a needed test cannot be run.
+{{else}}
 Your current working directory is a git checkout on a dedicated branch
 prepared for this work item.
 
@@ -211,6 +214,7 @@ End your response with exactly one line containing DONE, BLOCKED, or FAILED
 (uppercase, alone on its own line) so Wake can route the next step
 deterministically. Do not choose a model, apply a label, or otherwise try
 to move the work item yourself — Wake owns that.
+{{/if}}
 `;
 
 const setupMd = `# Wake Setup Guide (for the assisting agent)
