@@ -7,13 +7,18 @@ import {
   type EventJournal,
 } from '../../kernel/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
-import { type ChildWorkflowRequest, type OrchestrationEvent } from '../contracts/events.js';
+import {
+  OrchestrationEventType,
+  type ChildWorkflowRequest,
+  type OrchestrationEvent,
+} from '../contracts/events.js';
 import {
   workflowInstanceId,
   workflowName,
   type WorkflowInstanceId,
   type WorkflowName,
 } from '../contracts/identifiers.js';
+import { isWorkflowInstanceStream } from '../contracts/streams.js';
 
 type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
 
@@ -52,7 +57,7 @@ export function createWatchReactor(
   return {
     async react(event: PersistedEvent, context: CommandContext): Promise<void> {
       const causalCycle = orchestrationCausalCycleId(selectOrchestrationEvent(event));
-      const sourceWorkflowInstanceId = await resolveRunWorkflowInstanceId(event, runs);
+      const sourceWorkflowInstanceId = await resolveTriggerWorkflowInstanceId(event, runs);
       for (const match of await orchestration.listWatchMatches(event, context)) {
         if (
           sourceWorkflowInstanceId !== undefined &&
@@ -116,11 +121,30 @@ function commandContext(event: PersistedEvent): CommandContext {
 /**
  * A run-lifecycle event (e.g. `execution.run-succeeded`) fires for every run
  * in the system, including a watch's own spawned child re-running its own
- * activity on retry. Without this, `listWatchMatches` would treat any
+ * activity on retry. Without scoping, `listWatchMatches` would treat any
  * currently-eligible parent's declared event type as a match regardless of
  * which run actually produced it, causing a child's own retry (or an
  * unrelated workflow's run) to spuriously re-trigger the same watch.
+ *
+ * For orchestration events, only `SignalWaitStarted` is scoped to its
+ * stream's instance; this is currently the only orchestration event type
+ * known to benefit from stream-based filtering. Other orchestration events
+ * like `ChildCompleted` are cross-instance coordination facts by design and
+ * must fall through unchanged to the async resolver to preserve their
+ * existing multi-instance coordination paths.
  */
+async function resolveTriggerWorkflowInstanceId(
+  event: PersistedEvent,
+  runs: Pick<RunRepository, 'load'> | undefined,
+): Promise<string | undefined> {
+  if (
+    event.eventType === OrchestrationEventType.SignalWaitStarted &&
+    isWorkflowInstanceStream(event.stream)
+  )
+    return event.stream.id;
+  return resolveRunWorkflowInstanceId(event, runs);
+}
+
 async function resolveRunWorkflowInstanceId(
   event: PersistedEvent,
   runs: Pick<RunRepository, 'load'> | undefined,

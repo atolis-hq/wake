@@ -81,16 +81,25 @@ it is given.
 
 **Reacting to a Watch match**
 
-- When the triggering event is a run-lifecycle fact (e.g.
-  `execution.run-succeeded`), the reactor first resolves the run's own
-  owning WorkflowInstance id and discards any (parent, Watch) match whose
-  parent is not that run's own instance. A run-lifecycle event fires for
-  every run in the system, including one belonging to a Watch's own
-  already-started child re-running its Activity on retry; without this
-  scoping, any currently-eligible parent's declared event type would match
-  regardless of which run actually produced it, spuriously re-triggering
-  the Watch. A triggering event that is not a run-lifecycle fact is not
-  scoped this way.
+- When the triggering event is `orchestration.signal-wait-started`, the
+  reactor resolves the owning WorkflowInstance id directly from that
+  event's own stream — a state-transition event is always appended on the
+  stream of the instance it describes, so no lookup is needed. When the
+  triggering event is instead a run-lifecycle fact (e.g.
+  `execution.run-succeeded`), the reactor resolves the run's own owning
+  WorkflowInstance id, because a run-lifecycle event fires for every run in
+  the system, including one belonging to a Watch's own already-started
+  child re-running its own Activity on retry. In either case, the reactor
+  discards any (parent, Watch) match whose parent is not that resolved
+  instance; without this scoping, any currently-eligible parent's declared
+  event type would match regardless of which instance actually produced the
+  triggering event, spuriously re-triggering the Watch. A triggering event
+  that is neither `orchestration.signal-wait-started` nor a run-lifecycle
+  fact — including other orchestration-namespace events such as
+  `orchestration.child-completed`, which is recorded on a Watch's spawned
+  child's own stream but is meant to trigger the parent's Watch — is not
+  scoped this way; those events remain intentionally unscoped so that
+  cross-instance coordination facts keep working.
 - For each (parent, Watch) match returned for a triggering event, the
   child's causal cycle is the triggering event's own `causalCycleId` when
   its payload carries one, or the derived request identity itself
