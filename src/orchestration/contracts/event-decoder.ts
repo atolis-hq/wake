@@ -5,6 +5,8 @@ import {
   activityName,
   ActivityEventType,
   ActivityOutcomeKind,
+  PullRequestCheckState,
+  PullRequestState,
 } from '../../activities/index.js';
 import { WorkspaceMode } from '../../execution/index.js';
 import {
@@ -143,8 +145,17 @@ const transitionTargetSchema = z.discriminatedUnion('kind', [
 ]);
 const eventTransitionSchema = z
   .object({
-    event: z.enum([ActivityEventType.PrReviewAccepted, ActivityEventType.PrStateChanged, ActivityEventType.PrChecksChanged]),
-    where: z.union([z.object({ state: z.literal('merged') }).strict(), z.object({ checks: z.literal('failing') }).strict()]).optional(),
+    event: z.enum([
+      ActivityEventType.PrReviewAccepted,
+      ActivityEventType.PrStateChanged,
+      ActivityEventType.PrChecksChanged,
+    ]),
+    where: z
+      .union([
+        z.object({ state: z.literal(PullRequestState.Merged) }).strict(),
+        z.object({ checks: z.literal(PullRequestCheckState.Failing) }).strict(),
+      ])
+      .optional(),
     target: transitionTargetSchema,
   })
   .strict();
