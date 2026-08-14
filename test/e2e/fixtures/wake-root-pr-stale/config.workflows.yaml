@@ -10,4 +10,4 @@ default:
       with: { target: primary, method: squash, requireChecks: true }
       on:
         done: { then: done }
-        blocked: { then: done }
+        blocked: { then: await-human }

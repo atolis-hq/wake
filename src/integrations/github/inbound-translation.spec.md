@@ -60,10 +60,12 @@ poll GitHub itself — GitHub Inbound Evidence does.
   adapter and external key, after `discover` and before any pull-request
   observation for that same event.
 - A newly admitted object MUST be granted `commentable` capability always;
-  a pull request MUST additionally be granted `reviewable` and
-  `revisioned`; an issue is granted no further capability. This component
-  does not grant `approvable`, `mergeable`, or `changed-files` capability to
-  a newly admitted pull request.
+  a pull request MUST additionally be granted `reviewable`, `revisioned`,
+  and `changed-files`; an issue is granted no further capability. This
+  component does not grant `approvable` or `mergeable` to a newly admitted
+  pull request — those are granted separately, when Artifact Verification
+  (`provider.ts`'s `verifyArtifact`) is the path that first discovers the
+  Resource for a Wake-created PR.
 - A newly admitted pull request's initial PR Observation MUST be recorded
   as Work Admission's `beforeStart` hook, so it is visible before the
   WorkItem's workflow starts.
@@ -131,9 +133,11 @@ poll GitHub itself — GitHub Inbound Evidence does.
 
 ## Decisions, exclusions, and deferred capability
 
-- This component's granted pull-request capability list is
-  `commentable`, `reviewable`, `revisioned`; it does not currently grant
-  `approvable`, `mergeable`, or `changed-files`. No built-in Activity
-  currently declares a `ResourceRequirement` that checks for them, so this
-  has no observed functional effect today, but a caller that adds such a
-  requirement in future would need this component updated too.
+- This component's granted pull-request capability list is `commentable`,
+  `reviewable`, `revisioned`, `changed-files`; it does not currently grant
+  `approvable` or `mergeable` (Artifact Verification grants those instead,
+  for the Wake-created-PR discovery path). Activities' PR merge policy reads
+  `changed-files` capability/evidence to authorize `maxFilesChanged` and
+  `blockedPaths` checks, so this component's changed-files evidence (fetched
+  per poll in `pr-source.ts` and forwarded through `ExternalWorkObservedPayload.changedFiles`)
+  is load-bearing for that policy, not merely descriptive.

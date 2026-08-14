@@ -139,6 +139,9 @@ function fakeClient(input: {
     async getCombinedStatusForRef() {
       return [];
     },
+    async listPullRequestFiles() {
+      return [];
+    },
   };
 }
 
