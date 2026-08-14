@@ -15,6 +15,7 @@ import {
   RunStatus,
   runStream,
   type Runner,
+  type ExecutionConfig,
   type RunView,
 } from '../../../src/execution/index.js';
 import { createEventDraft, EventActorKind, EventSourceKind } from '../../../src/kernel/index.js';
@@ -134,6 +135,42 @@ describe('Execution runner selection', () => {
     await service.attempt(activation(), context());
 
     expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
+  });
+
+  it('starts fresh when the selected runner does not support session resume', async () => {
+    const standard = capturingRunner('standard', false);
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'prior-standard', 'fake', 'session-1');
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(activation(), context());
+
+    expect(standard.requests).toEqual([
+      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+    ]);
+  });
+
+  it('starts fresh when a different configured runner is selected', async () => {
+    const replacement = capturingRunner('replacement');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'paused-runner', 'fake', 'session-1', undefined, 'paused');
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['replacement'] }, { replacement }),
+      {
+        paused: { kind: 'fake', model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
+        replacement: { kind: 'fake', model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
+      },
+    );
+
+    await service.attempt(activation(), context());
+
+    expect(replacement.requests).toEqual([
+      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+    ]);
   });
 
   it('forwards the accumulated usage baseline for a resumed session', async () => {
@@ -476,16 +513,18 @@ function fixture(runners: RunnerRegistry) {
   return fixtureWithJournal(new InMemoryEventJournal(new FakeClock()), runners);
 }
 
-function fixtureWithJournal(journal: InMemoryEventJournal, runners: RunnerRegistry) {
+function fixtureWithJournal(
+  journal: InMemoryEventJournal,
+  runners: RunnerRegistry,
+  agentRunners: NonNullable<ExecutionConfig['agentRunners']> = standardAgentRunners,
+) {
   const registry = new ActivityRegistry();
   registry.register(agentActivityDefinition);
   return createExecutionService(
     journal,
     registry,
     {
-      agentRunners: {
-        standard: { kind: 'fake', model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
-      },
+      agentRunners,
       runnerPools: { standard: ['standard'], premium: ['premium'] },
       defaultRunnerPool: 'standard',
     },
@@ -497,9 +536,17 @@ function fixtureWithJournal(journal: InMemoryEventJournal, runners: RunnerRegist
   );
 }
 
-function capturingRunner(name: string): Runner & { readonly requests: readonly unknown[] } {
+const standardAgentRunners = {
+  standard: { kind: 'fake' as const, model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
+} satisfies NonNullable<ExecutionConfig['agentRunners']>;
+
+function capturingRunner(
+  name: string,
+  supportsSessionResume = true,
+): Runner & { readonly requests: readonly unknown[] } {
   const requests: unknown[] = [];
   return {
+    supportsSessionResume,
     get requests() {
       return requests;
     },
@@ -524,6 +571,7 @@ async function seedPriorRun(
         readonly testStatus?: 'started' | 'ambiguous';
       })
     | undefined,
+  runnerName = 'standard',
 ) {
   const clock = new FakeClock();
   const stream = runStream(runId(id));
@@ -546,7 +594,7 @@ async function seedPriorRun(
         orchestrationGroupId: orchestrationGroupId('group-1'),
         attempt: 1,
         startedAt: clock.now().toISOString(),
-        runner: { name: 'standard', cli },
+        runner: { name: runnerName, cli },
       },
     }),
     createEventDraft({

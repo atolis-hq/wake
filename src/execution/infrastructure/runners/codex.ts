@@ -11,6 +11,7 @@ export function createCodexRunner(options: CliRunnerOptions = {}): Runner {
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseCodexOutput,
+      supportsSessionResume: true,
     },
   );
 }

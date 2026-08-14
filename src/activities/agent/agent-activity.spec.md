@@ -86,7 +86,8 @@ supplies.
   `isStart`, `isResume`, plus the resolved `issueTitle`, `issueBody`, and
   `comments`, defaulting to `''`, `''`, and `[]` when no `AgentContextReader`
   is configured (resolution still happens; it isn't skipped). `isResume` is
-  true only when Execution supplied a prior adapter session.
+  true only when Execution selected a prior session compatible with the
+  resolved runner; a fresh or different runner receives the complete context.
 - When Execution supplies a prior session start time, the Activity MUST ask
   its context reader only for comments observed after that time. This delta
   spans every correlated resource, while the resumed runner session retains

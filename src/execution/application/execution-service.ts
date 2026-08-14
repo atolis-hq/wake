@@ -90,13 +90,17 @@ async function attemptExecution(
     stage: activation.stage,
     ...(context.sessionPolicy === undefined ? {} : { policy: context.sessionPolicy }),
   };
-  const resumedRun = resumeRunFor(resumeCandidates, runner.cli, resumeScope);
+  const resumedRun =
+    runner.supportsSessionResume === true
+      ? resumeRunFor(resumeCandidates, runner.cli, runner.name, resumeScope)
+      : undefined;
   const resumeSessionId = resumedRun?.agent?.metadata.sessionId as string | undefined;
   const usageBaseline = usageBaselineFor(
     resumeCandidates,
     runner.cli,
     resumeSessionId,
     resumeScope,
+    runner.name,
   );
   const existing = existingRun(prior, runtime.dependencies.clock, owner);
   if (existing !== undefined) return existing;
@@ -341,13 +345,15 @@ export function resumeSessionIdFor(
     readonly workflowInstanceId: string;
     readonly stage?: string | undefined;
   },
+  runnerName?: string,
 ) {
-  return resumeRunFor(prior, cli, scope)?.agent?.metadata.sessionId as string | undefined;
+  return resumeRunFor(prior, cli, runnerName, scope)?.agent?.metadata.sessionId as string | undefined;
 }
 
 function resumeRunFor(
   prior: readonly RunView[],
   cli: string | undefined,
+  runnerName: string | undefined,
   scope?: {
     readonly policy?: 'fresh' | 'resume-stage';
     readonly workflowInstanceId: string;
@@ -361,6 +367,7 @@ function resumeRunFor(
     .find(
       (run) =>
         run.runner?.cli === cli &&
+        (runnerName === undefined || run.runner?.name === runnerName) &&
         typeof run.agent?.metadata.sessionId === 'string' &&
         run.agent.metadata.sessionId.trim().length > 0,
     );
@@ -375,12 +382,14 @@ export function usageBaselineFor(
     readonly workflowInstanceId: string;
     readonly stage?: string | undefined;
   },
+  runnerName?: string,
 ) {
   if (cli === undefined || sessionId === undefined) return undefined;
   const matching = resumeEligibleRuns(prior, scope).filter(
     (run) =>
       isResumeTerminal(run.status) &&
       run.runner?.cli === cli &&
+      (runnerName === undefined || run.runner?.name === runnerName) &&
       run.agent?.metadata.sessionId === sessionId,
   );
   if (matching.length === 0) return undefined;
@@ -491,6 +500,7 @@ function describeResolvedRunner(
     effort: runtime.config.agentRunners?.[resolved.name]?.effort,
     pool,
     cli: runtime.config.agentRunners?.[resolved.name]?.kind,
+    supportsSessionResume: resolved.runner.supportsSessionResume === true,
   };
 }
 
