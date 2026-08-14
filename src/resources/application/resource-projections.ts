@@ -12,6 +12,7 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
   project(previous, event) {
     const owned = selectResourceEvent(event);
     if (owned === null) return previous;
+    if (isIssueCompletionMarker(owned.eventType)) return previous;
     switch (owned.eventType) {
       case ResourceEventType.ResourceDiscovered:
         return {
@@ -37,7 +38,6 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
             };
       case ResourceEventType.WorkCorrelationEstablished:
       case ResourceEventType.WorkCorrelationRetracted:
-      case ResourceEventType.IssueCompletionObservationConsumed:
         return previous;
       default:
         return assertNever(owned);
@@ -76,6 +76,7 @@ export const resourceCorrelationProjection: ProjectionDefinition<
       case ResourceEventType.ResourceRevisionObserved:
       case ResourceEventType.WorkCorrelationConflicted:
       case ResourceEventType.IssueCompletionObservationConsumed:
+      case ResourceEventType.IssueCompletionObservationSuperseded:
         return previous;
       default:
         return assertNever(owned);
@@ -85,4 +86,11 @@ export const resourceCorrelationProjection: ProjectionDefinition<
 
 function assertNever(value: never): never {
   throw new Error(`Unhandled Resource event: ${JSON.stringify(value)}`);
+}
+
+function isIssueCompletionMarker(eventType: string): boolean {
+  return (
+    eventType === ResourceEventType.IssueCompletionObservationConsumed ||
+    eventType === ResourceEventType.IssueCompletionObservationSuperseded
+  );
 }

@@ -260,7 +260,9 @@ export class InboundTranslator {
         context,
       );
       const wakeCompletion = await this.unconsumedWakeCompletion(resourceIdValue);
-      if (payload.outcome !== undefined && wakeCompletion !== null) {
+      if (payload.outcome === undefined && wakeCompletion !== null) {
+        await this.supersedeWakeCompletion(resourceIdValue, wakeCompletion, context);
+      } else if (payload.outcome !== undefined && wakeCompletion !== null) {
         await this.consumeWakeCompletion(resourceIdValue, wakeCompletion, context);
       } else if (payload.outcome !== undefined && this.conclusion !== undefined) {
         await concludeObservedWork(
@@ -290,7 +292,8 @@ export class InboundTranslator {
       if (
         events.some(
           (event) =>
-            event.eventType === ResourceEventType.IssueCompletionObservationConsumed &&
+            (event.eventType === ResourceEventType.IssueCompletionObservationConsumed ||
+              event.eventType === ResourceEventType.IssueCompletionObservationSuperseded) &&
             event.payload !== null &&
             typeof event.payload === 'object' &&
             'intentEventId' in event.payload &&
@@ -316,6 +319,14 @@ export class InboundTranslator {
     context: ReturnType<typeof commandContext>,
   ): Promise<void> {
     await this.resources!.consumeIssueCompletion(resourceIdValue, intentEventId, context);
+  }
+
+  private async supersedeWakeCompletion(
+    resourceIdValue: ResourceId,
+    intentEventId: string,
+    context: ReturnType<typeof commandContext>,
+  ): Promise<void> {
+    await this.resources!.supersedeIssueCompletion(resourceIdValue, intentEventId, context);
   }
 
   private mintIdentity(externalKey: { readonly adapter: string; readonly key: string }) {

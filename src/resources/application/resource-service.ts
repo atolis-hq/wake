@@ -45,6 +45,11 @@ export interface ResourceService {
     intentEventId: string,
     context: CommandContext,
   ): Promise<void>;
+  supersedeIssueCompletion(
+    resourceId: ResourceId,
+    intentEventId: string,
+    context: CommandContext,
+  ): Promise<void>;
 }
 
 export function createResourceService(
@@ -81,6 +86,15 @@ export function createResourceService(
         repository,
         resourceId,
         resourceDraft(resourceId, context, ResourceEventType.IssueCompletionObservationConsumed, {
+          intentEventId,
+        }),
+      );
+    },
+    async supersedeIssueCompletion(resourceId, intentEventId, context) {
+      await appendResourceEvent(
+        repository,
+        resourceId,
+        resourceDraft(resourceId, context, ResourceEventType.IssueCompletionObservationSuperseded, {
           intentEventId,
         }),
       );

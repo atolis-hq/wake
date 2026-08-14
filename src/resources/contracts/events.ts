@@ -30,6 +30,7 @@ export const ResourceEventType = {
   WorkCorrelationRetracted: 'resources.work-correlation-retracted',
   WorkCorrelationConflicted: 'resources.work-correlation-conflicted',
   IssueCompletionObservationConsumed: 'resources.issue-completion-observation-consumed',
+  IssueCompletionObservationSuperseded: 'resources.issue-completion-observation-superseded',
 } as const;
 
 export interface ResourceDiscoveredPayload {
@@ -54,6 +55,9 @@ export interface ResourceEventPayloads {
     readonly existingWorkItemId: WorkItemId;
   };
   readonly [ResourceEventType.IssueCompletionObservationConsumed]: {
+    readonly intentEventId: string;
+  };
+  readonly [ResourceEventType.IssueCompletionObservationSuperseded]: {
     readonly intentEventId: string;
   };
 }
@@ -126,6 +130,11 @@ const eventSchema = z.discriminatedUnion('eventType', [
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ResourceEventType.IssueCompletionObservationConsumed),
+    stream: streamSchema,
+    payload: z.object({ intentEventId: z.string().min(1) }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ResourceEventType.IssueCompletionObservationSuperseded),
     stream: streamSchema,
     payload: z.object({ intentEventId: z.string().min(1) }).strict(),
   }),
