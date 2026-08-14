@@ -162,5 +162,10 @@ function parseGitHubIssueKey(
 }
 
 function sameLabels(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((label, index) => label === right[index]);
+  const normalizedLeft = [...left].sort();
+  const normalizedRight = [...right].sort();
+  return (
+    normalizedLeft.length === normalizedRight.length &&
+    normalizedLeft.every((label, index) => label === normalizedRight[index])
+  );
 }

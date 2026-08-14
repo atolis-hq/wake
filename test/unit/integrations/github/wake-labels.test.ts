@@ -62,6 +62,33 @@ function openWorkItem(): WorkItemView {
 }
 
 describe('createGitHubWakeLabelReconciler', () => {
+  it('does not write when GitHub returns an equivalent label set in another order', async () => {
+    const item = workItemId(`work-${ulid('0')}`);
+    const resource = resourceId(`resource-${ulid('0')}`);
+    const setLabelsCalls: number[] = [];
+    const reconciler = createGitHubWakeLabelReconciler({
+      orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
+      resources: {
+        correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
+        get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
+      },
+      work: { get: async () => openWorkItem() },
+      getLabels: async () => [
+        'keep-me',
+        'wake:stage.implement',
+        'wake:workflow.default',
+        'wake:status.working',
+      ],
+      setLabels: async (_owner, _repo, number) => {
+        setLabelsCalls.push(number);
+      },
+    });
+
+    await reconciler.runOnce();
+
+    expect(setLabelsCalls).toEqual([]);
+  });
+
   it('continues reconciling other open work items after one setLabels call fails', async () => {
     const failingItem = workItemId(`work-${ulid('1')}`);
     const okItem = workItemId(`work-${ulid('2')}`);

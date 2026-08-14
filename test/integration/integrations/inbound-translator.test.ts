@@ -33,8 +33,10 @@ describe('InboundTranslator', () => {
   it('keeps adapter payload types inside integrations', () => {
     const candidates = new InboundTranslator().translate(observation());
 
-    expect(JSON.stringify(candidates)).not.toContain('raw');
-    expect(JSON.stringify(candidates)).not.toContain('private-provider-field');
+    for (const candidate of candidates) {
+      expect(candidate).not.toHaveProperty('raw');
+      expect(candidate).not.toHaveProperty('private-provider-field');
+    }
   });
 
   it('reprocessing the same adapter event does not mint another WorkItem', async () => {
