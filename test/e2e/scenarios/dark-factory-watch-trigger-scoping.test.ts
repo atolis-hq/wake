@@ -9,24 +9,24 @@ import { TestWorld } from '../support/world.js';
 defineScenario(
   {
     id: 'E2E-DARKFACTORY-004',
-    title: "a watch child's own retry does not re-trigger its own watch",
+    title: "one WorkflowInstance's own wait-state transition does not re-trigger a sibling's watch",
     given: [
-      "a watchGate whose watch subscribes to the generic 'execution.run-succeeded' event " +
-        '(the real production trigger, not a synthetic test-only event name)',
+      "a watchGate whose watch subscribes to 'orchestration.signal-wait-started' (the real " +
+        'production trigger, not a synthetic test-only event name), declared on a workflow ' +
+        'shared by two independent, unrelated WorkItems',
     ],
     when: [
-      "the spawned review child's own first activation fails and is retried within that " +
-        'same child instance, producing a second run-succeeded event',
+      'both sibling instances independently reach the same watched stage and enter waiting ' +
+        'around the same time, each producing its own signal-wait-started event',
     ],
     then: [
-      'only one child is ever requested for the watch (its own retry is not mistaken for a ' +
-        'second independent trigger), the group budget is never exhausted, and the parent ' +
-        "advances past the gate once the child's real verdict resolves it",
+      'each sibling gets exactly its own child requested for its own trigger — one signal-wait ' +
+        '-started event never spawns a watch child for the other, unrelated instance — and both ' +
+        'parents advance past the gate once their own child resolves it',
     ],
   },
   async () => {
     const world = new TestWorld();
-    let reviewAttempts = 0;
     world.registerActivity({
       name: activityName('work'),
       inputSchema: z.object({}).strict(),
@@ -43,14 +43,13 @@ defineScenario(
     world.registerActivity({
       name: activityName('review'),
       inputSchema: z.object({}).strict(),
-      outcomeSchema: z.object({ kind: z.enum(['done', 'failed']) }).strict(),
-      outcomeKinds: ['done', 'failed'],
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
       resources: [],
       executionKind: 'deterministic',
       handler: {
         async execute() {
-          reviewAttempts += 1;
-          return reviewAttempts === 1 ? { kind: 'failed' } : { kind: 'done' };
+          return { kind: 'done' } as const;
         },
       },
     });
@@ -59,10 +58,7 @@ defineScenario(
         check: {
           activity: 'review',
           with: {},
-          on: {
-            done: { then: 'done' },
-            failed: { retry: { max: 1 }, then: 'await-human' },
-          },
+          on: { done: { then: 'done' } },
         },
       },
     });
@@ -78,46 +74,55 @@ defineScenario(
         {
           id: 'review',
           while: { stages: ['work'], statuses: ['waiting'] },
-          on: { events: ['execution.run-succeeded'] },
+          on: { events: ['orchestration.signal-wait-started'] },
           workflow: 'review',
           maxPerGroup: 1,
         },
       ],
     });
 
-    const work = await world.createWork({ objective: 'prove watch trigger scoping' });
-    const parent = await world.startWorkflow({
-      workItemId: work.workItemId,
+    const workA = await world.createWork({ objective: 'prove watch trigger scoping (a)' });
+    const workB = await world.createWork({ objective: 'prove watch trigger scoping (b)' });
+    const parentA = await world.startWorkflow({
+      workItemId: workA.workItemId,
+      workflowName: workflowName('parent'),
+    });
+    const parentB = await world.startWorkflow({
+      workItemId: workB.workItemId,
       workflowName: workflowName('parent'),
     });
 
-    await world.advance(work.workItemId);
-    await world.advance(work.workItemId);
-    await world.advance(work.workItemId);
+    await world.advance(workA.workItemId);
+    await world.advance(workB.workItemId);
+    await world.advance(workA.workItemId);
+    await world.advance(workB.workItemId);
 
     const requests = await world.events('orchestration.child-requested');
     const budgetExhausted = await world.events('orchestration.group-budget-exhausted');
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(2);
     expect(budgetExhausted).toHaveLength(0);
 
-    const parentView = await world.viewWorkflow(parent.workflowInstanceId);
-    expect(parentView?.status).not.toBe('blocked');
-
-    const child = (await world.orchestration.listAll()).find(
-      (workflow) => workflow.parentWorkflowInstanceId === parent.workflowInstanceId,
+    const childA = (await world.orchestration.listAll()).find(
+      (workflow) => workflow.parentWorkflowInstanceId === parentA.workflowInstanceId,
     );
-    expect(child).toBeDefined();
-    await world.acceptSignal(parent.workflowInstanceId, {
-      kind: WatchGateVerdictSignal,
-      outcome: 'done',
-      authority: { kind: 'watch', watch: watchId('review') },
-      actorId: 'test',
-      actorDecision: { authorized: true, evidenceId: 'review-verdict' },
-      providerEventId: 'review-verdict',
-    });
+    const childB = (await world.orchestration.listAll()).find(
+      (workflow) => workflow.parentWorkflowInstanceId === parentB.workflowInstanceId,
+    );
+    expect(childA).toBeDefined();
+    expect(childB).toBeDefined();
+    expect(childA?.workflowInstanceId).not.toBe(childB?.workflowInstanceId);
 
-    const resolved = await world.viewWorkflow(parent.workflowInstanceId);
-    expect(resolved?.status).toBe('completed');
-    expect(reviewAttempts).toBe(2);
+    for (const parent of [parentA, parentB]) {
+      await world.acceptSignal(parent.workflowInstanceId, {
+        kind: WatchGateVerdictSignal,
+        outcome: 'done',
+        authority: { kind: 'watch', watch: watchId('review') },
+        actorId: 'test',
+        actorDecision: { authorized: true, evidenceId: `${parent.workflowInstanceId}-verdict` },
+        providerEventId: `${parent.workflowInstanceId}-verdict`,
+      });
+      const resolved = await world.viewWorkflow(parent.workflowInstanceId);
+      expect(resolved?.status).toBe('completed');
+    }
   },
 );
