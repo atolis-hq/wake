@@ -153,7 +153,7 @@ it('rejects a causal event instead of dispatching another child', async () => {
         requestId: 'request-1',
         childWorkflowInstanceId: workflowInstanceId('workflow-child'),
       },
-      workflowInstanceStream(workflowInstanceId('workflow-child')),
+      workflowInstanceStream(workflowInstanceId('parent-1')),
     ),
     {
       commandId: 'react-1',
@@ -373,4 +373,46 @@ it('replays the identical child request after checkpoint persistence fails', asy
   expect(await durable.load('reactor:orchestration.watch')).toBe(1);
   expect(requests).toBe(2);
   expect(rejections).toBe(0);
+});
+
+it('scopes an orchestration state-transition event to its own stream, not an unrelated match', async () => {
+  const requested: string[] = [];
+  const reactor = createWatchReactor({
+    async listWatchMatches() {
+      return [
+        {
+          parent: { workflowInstanceId: workflowInstanceId('primary:work-a') },
+          watch: { id: 'plan-review', workflow: workflowName('plan-review'), maxPerGroup: 1 },
+        },
+        {
+          parent: { workflowInstanceId: workflowInstanceId('primary:work-b') },
+          watch: { id: 'plan-review', workflow: workflowName('plan-review'), maxPerGroup: 1 },
+        },
+      ];
+    },
+    async requestChild(request) {
+      requested.push(request.parentWorkflowInstanceId);
+      return {};
+    },
+    async rejectCausalActivation() {
+      throw new Error('must not reject; the unrelated match should simply be skipped');
+    },
+  });
+
+  await reactor.react(
+    canonicalEvent(
+      OrchestrationEventType.SignalWaitStarted,
+      'signal-wait-a',
+      { signalKind: 'orchestration.watch-gate-verdict', from: [{ kind: 'watch', watch: 'plan-review' }] },
+      workflowInstanceStream(workflowInstanceId('primary:work-a')),
+    ),
+    {
+      commandId: 'react-signal-wait-a',
+      correlationId: 'corr-1' as never,
+      occurredAt: '2026-08-14T20:07:41.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+
+  expect(requested).toEqual(['primary:work-a']);
 });
