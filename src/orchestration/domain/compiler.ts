@@ -208,7 +208,7 @@ function compileEventTransitions(
       throw new Error(`Unknown eventTransitions target: ${then}`);
     return Object.freeze({
       event: entry.events[0],
-      ...(entry.where === undefined ? {} : { where: entry.where }),
+      ...(!('where' in entry) || entry.where === undefined ? {} : { where: entry.where }),
       target: compileTarget(then, outcomeKind),
     });
   }));

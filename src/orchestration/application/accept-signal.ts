@@ -25,13 +25,6 @@ export class AcceptSignal {
     expectation: SignalExpectation,
     context: CommandContext,
   ) {
-    if (
-      (await this.resolveEventTransitions?.(context, {
-        workflowInstanceId,
-        providerEventId: signal.providerEventId,
-      })) === true
-    )
-      return (await this.repository.loadRequired(workflowInstanceId)).view;
     const loaded = await this.repository.loadRequired(workflowInstanceId);
     const decision = decideSignalWait(loaded.view, expectation, {
       occurredAt: context.occurredAt,
@@ -47,6 +40,13 @@ export class AcceptSignal {
     signal: OrchestrationSignal,
     context: CommandContext,
   ) {
+    if (
+      (await this.resolveEventTransitions?.(context, {
+        workflowInstanceId,
+        providerEventId: signal.providerEventId,
+      })) === true
+    )
+      return (await this.repository.loadRequired(workflowInstanceId)).view;
     const loaded = await this.repository.loadRequired(workflowInstanceId);
     const item = await this.work.get(loaded.view.workItemId);
     const definition = await this.workflows.definitionForOperation(
