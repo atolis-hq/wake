@@ -4,7 +4,6 @@ import {
   EventActorKind,
   type CheckpointStore,
   type CommandContext,
-  type EventEnvelope,
   type EventJournal,
 } from '../../kernel/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
@@ -16,6 +15,8 @@ import {
   type WorkflowName,
 } from '../contracts/identifiers.js';
 
+type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
+
 interface WatchMatch {
   readonly parent: { readonly workflowInstanceId: WorkflowInstanceId };
   readonly watch: {
@@ -26,7 +27,7 @@ interface WatchMatch {
 }
 
 interface WatchOrchestrationPort {
-  listWatchMatches(event: EventEnvelope): Promise<readonly WatchMatch[]>;
+  listWatchMatches(event: PersistedEvent): Promise<readonly WatchMatch[]>;
   requestChild(
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
@@ -41,8 +42,6 @@ interface WatchOrchestrationPort {
 }
 
 const checkpoint = 'reactor:orchestration.watch';
-
-type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
 
 export function createWatchReactor(
   orchestration: WatchOrchestrationPort,
