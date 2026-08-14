@@ -1,4 +1,12 @@
 import { expect, it } from 'vitest';
+import { activationId, activityName } from '../../../src/activities/index.js';
+import {
+  ExecutionEventType,
+  runId,
+  RunStatus,
+  runStream,
+  type RunRepository,
+} from '../../../src/execution/index.js';
 import { createEventDraft, eventId, type EntityRef } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
@@ -403,7 +411,10 @@ it('scopes an orchestration state-transition event to its own stream, not an unr
     canonicalEvent(
       OrchestrationEventType.SignalWaitStarted,
       'signal-wait-a',
-      { signalKind: 'orchestration.watch-gate-verdict', from: [{ kind: 'watch', watch: 'plan-review' }] },
+      {
+        signalKind: 'orchestration.watch-gate-verdict',
+        from: [{ kind: 'watch', watch: 'plan-review' }],
+      },
       workflowInstanceStream(workflowInstanceId('primary:work-a')),
     ),
     {
@@ -415,4 +426,66 @@ it('scopes an orchestration state-transition event to its own stream, not an unr
   );
 
   expect(requested).toEqual(['primary:work-a']);
+});
+
+it('scopes a run-lifecycle event to the run owner, not an unrelated match', async () => {
+  const requested: string[] = [];
+  const runs: Pick<RunRepository, 'load'> = {
+    async load() {
+      return {
+        sequence: 1,
+        view: {
+          runId: runId('run-1'),
+          activationId: activationId('activation-1'),
+          activity: activityName('ci-repair'),
+          workflowInstanceId: workflowInstanceId('primary:work-other'),
+          orchestrationGroupId: orchestrationGroupId('group-1'),
+          attempt: 1,
+          status: RunStatus.Succeeded,
+          ambiguityAttempts: 0,
+          escalated: false,
+          startedAt: '2026-08-14T20:00:00.000Z',
+        },
+      };
+    },
+  };
+  const reactor = createWatchReactor(
+    {
+      async listWatchMatches() {
+        return [
+          {
+            parent: { workflowInstanceId: workflowInstanceId('primary:work-a') },
+            watch: { id: 'ci-repair', workflow: workflowName('ci-repair'), maxPerGroup: 1 },
+          },
+        ];
+      },
+      async requestChild(request) {
+        requested.push(request.parentWorkflowInstanceId);
+        return {};
+      },
+      async rejectCausalActivation() {
+        throw new Error('must not reject; the unrelated match should simply be skipped');
+      },
+    },
+    undefined,
+    undefined,
+    runs,
+  );
+
+  await reactor.react(
+    canonicalEvent(
+      ExecutionEventType.RunSucceeded,
+      'run-succeeded-1',
+      { outcome: { kind: 'ci-green' }, finishedAt: '2026-08-14T20:07:41.000Z' },
+      runStream(runId('run-1')),
+    ),
+    {
+      commandId: 'react-run-succeeded-1',
+      correlationId: 'corr-1' as never,
+      occurredAt: '2026-08-14T20:07:41.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+
+  expect(requested).toEqual([]);
 });
