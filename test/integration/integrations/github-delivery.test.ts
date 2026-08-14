@@ -163,9 +163,8 @@ describe('GitHub outbound delivery', () => {
 
 describe('GitHub agent-run comments', () => {
   it('formats a terminal agent result with durable Wake markers, outcome, and resume footer', async () => {
-    const { formatAgentRunComment } = await import(
-      '../../../src/integrations/github/application/agent-run-comment.js'
-    );
+    const { formatAgentRunComment } =
+      await import('../../../src/integrations/github/application/agent-run-comment.js');
     expect(
       formatAgentRunComment({
         idempotencyKey: 'run-1',
