@@ -19,6 +19,8 @@ export const BuiltInResourceCapability = {
   Mergeable: resourceCapability('mergeable'),
   Revisioned: resourceCapability('revisioned'),
   Editable: resourceCapability('editable'),
+  /** Provider can move an issue to its completed terminal state. */
+  Completable: resourceCapability('completable'),
   // Provider can report which file paths a revision changed.
   ChangedFiles: resourceCapability('changed-files'),
 } as const;

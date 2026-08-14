@@ -54,6 +54,23 @@ function intentView(event: EventEnvelope): IntentViewResult {
 
 function activityIntentView(event: EventEnvelope): IntentViewResult {
   const intent = selectActivityEvent(event);
+  if (intent?.eventType === ActivityEventType.IssueCompleteRequested)
+    return {
+      eventId: intent.eventId,
+      view: {
+        intentEventId: intent.eventId,
+        globalPosition: intent.globalPosition,
+        workflowInstanceId: intent.payload.workflowInstanceId,
+        activationId: intent.payload.activationId,
+        kind: DeliveryIntentKind.IssueComplete,
+        resourceId: intent.payload.resourceId,
+        payload: { kind: DeliveryIntentKind.IssueComplete },
+        state: DeliveryState.Pending,
+        attempts: 0,
+        occurrenceOrdinal: 0,
+        reconciliationAttempts: 0,
+      },
+    };
   if (intent?.eventType === ActivityEventType.PrApproveRequested)
     return {
       eventId: intent.eventId,

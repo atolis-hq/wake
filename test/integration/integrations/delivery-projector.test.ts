@@ -14,6 +14,26 @@ import { eventEnvelope } from '../../support/event-envelope.js';
 import { resId } from '../../support/identities.js';
 
 describe('delivery projector', () => {
+  it('projects an issue completion request as a durable delivery intent', () => {
+    const [view] = projectDeliveries([
+      eventEnvelope(
+        ActivityEventType.IssueCompleteRequested,
+        {
+          idempotencyKey: 'complete-intent',
+          activationId: activationId('activation-complete'),
+          workflowInstanceId: 'workflow-complete',
+          resourceId: resId('1'),
+        },
+        resourceStream(resId('1')),
+        1,
+      ),
+    ]);
+    expect(view).toMatchObject({
+      kind: DeliveryIntentKind.IssueComplete,
+      payload: { kind: DeliveryIntentKind.IssueComplete },
+    });
+  });
+
   it('preserves an auto-merge request in the projected delivery intent', () => {
     const [view] = projectDeliveries([
       eventEnvelope(

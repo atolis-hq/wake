@@ -97,6 +97,25 @@ describe('GitHub outbound delivery', () => {
     ).toMatchObject({ issue_number: 3, action: 'status' });
   });
 
+  it('translates issue completion to GitHub issue closure', () => {
+    expect(
+      translateGitHubOutbound(
+        {
+          resourceId: resId('2'),
+          kind: BuiltInResourceKind.Issue,
+          externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r#3' },
+          capabilities: [],
+        },
+        {
+          ...mergeIntent,
+          resourceId: resId('2'),
+          kind: DeliveryIntentKind.IssueComplete,
+          payload: { kind: DeliveryIntentKind.IssueComplete },
+        },
+      ),
+    ).toMatchObject({ issue_number: 3, action: 'close' });
+  });
+
   it('translates an agent-run publication into a GitHub reply', () => {
     expect(
       translateGitHubOutbound(

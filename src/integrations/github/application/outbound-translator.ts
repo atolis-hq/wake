@@ -61,6 +61,8 @@ function outboundAction(intent: DeliveryIntentView): GitHubOutboundActionValue {
       return 'autoMerge' in intent.payload && intent.payload.autoMerge
         ? GitHubOutboundAction.EnableAutoMerge
         : GitHubOutboundAction.Merge;
+    case DeliveryIntentKind.IssueComplete:
+      return GitHubOutboundAction.Close;
     case DeliveryIntentKind.StatusPublish:
       return GitHubOutboundAction.Status;
     case DeliveryIntentKind.ReplyPublish:

@@ -19,6 +19,7 @@ type PullRequestEventName<Suffix extends string> = `pr.${Suffix}`;
 type ReviewEventName<Suffix extends string> = `review.${Suffix}`;
 
 export interface ActivityEventTypes {
+  readonly IssueCompleteRequested: 'issue.complete-requested';
   readonly PrDiscovered: PullRequestEventName<'discovered'>;
   readonly PrRevisionChanged: PullRequestEventName<'revision-changed'>;
   readonly PrStateChanged: PullRequestEventName<'state-changed'>;
@@ -153,6 +154,15 @@ export const deniedOutcomeSchema = z
 
 export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
   return [
+    resourceFactDraft(
+      eventTypes.IssueCompleteRequested,
+      z.object({
+        idempotencyKey: z.string(),
+        activationId: brandedStringSchema(activationId),
+        workflowInstanceId: z.string().min(1),
+        resourceId: resourceIdSchema,
+      }).strict(),
+    ),
     resourceFactDraft(
       eventTypes.PrDiscovered,
       z

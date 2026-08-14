@@ -4,6 +4,8 @@ export * from './agent/agent-activity.js';
 
 export * from './agent/agent-result.js';
 
+export * from './issue/complete.js';
+
 export * from './contracts/activity.js';
 
 export * from './contracts/config.js';

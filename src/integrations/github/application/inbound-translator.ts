@@ -1,9 +1,12 @@
 /* eslint-disable max-lines */
 import {
+  ActivityEventType,
   createPullRequestService,
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
+import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
+import { deliveryStream } from '../../contracts/streams.js';
 import type { RunRepository } from '../../../execution/index.js';
 import {
   UlidIdGenerator,
@@ -18,6 +21,7 @@ import {
   BuiltInResourceKind,
   ResourceCorrelationRole,
   resourceId,
+  resourceStream,
   type ResourceId,
 } from '../../../resources/index.js';
 import type { WorkService } from '../../../work/index.js';
@@ -208,7 +212,7 @@ export class InboundTranslator {
               BuiltInResourceCapability.Revisioned,
               BuiltInResourceCapability.ChangedFiles,
             ]
-          : [BuiltInResourceCapability.Commentable],
+          : [BuiltInResourceCapability.Commentable, BuiltInResourceCapability.Completable],
         objective: payload.title,
         tags: intake.tags,
         revision: payload.revision,
@@ -254,7 +258,11 @@ export class InboundTranslator {
         },
         context,
       );
-      if (payload.outcome !== undefined && this.conclusion !== undefined) {
+      if (
+        payload.outcome !== undefined &&
+        this.conclusion !== undefined &&
+        !(await this.isWakeCompletion(resourceIdValue))
+      ) {
         await concludeObservedWork(
           { work: this.work!, conclusion: this.conclusion },
           {
@@ -270,6 +278,24 @@ export class InboundTranslator {
         observePullRequest(current.resourceId, workItemIdValue, payload),
         context,
       );
+  }
+
+  /** A provider close confirmed for our intent is an activity result, not a human cancellation. */
+  private async isWakeCompletion(resourceIdValue: ResourceId): Promise<boolean> {
+    const intents = (await this.journal!.readStream(resourceStream(resourceIdValue))).filter(
+      (event) => event.eventType === ActivityEventType.IssueCompleteRequested,
+    );
+    for (const intent of intents) {
+      const deliveries = await this.journal!.readStream(deliveryStream(intent.eventId));
+      if (
+        deliveries.some((event) => {
+          const delivery = selectDeliveryEvent(event);
+          return delivery?.eventType === DeliveryEventType.Confirmed;
+        })
+      )
+        return true;
+    }
+    return false;
   }
 
   private mintIdentity(externalKey: { readonly adapter: string; readonly key: string }) {

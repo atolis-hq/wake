@@ -23,6 +23,7 @@ export type DeliveryResultKind = ValueOf<typeof DeliveryResultKind>;
 export const DeliveryIntentKind = {
   PrApprove: BuiltInActivityName.PullRequestApprove,
   PrMerge: BuiltInActivityName.PullRequestMerge,
+  IssueComplete: BuiltInActivityName.IssueComplete,
   StatusPublish: 'status.publish',
   ReplyPublish: 'reply.publish',
   AgentRunPublish: 'agent-run.publish',

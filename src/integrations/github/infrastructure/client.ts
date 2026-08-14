@@ -119,6 +119,16 @@ async function deliver(octokit: Octokit, command: GitHubDeliveryCommand): Promis
   if (command.action === GitHubOutboundAction.EnableAutoMerge) {
     return enableAutoMerge(octokit, command);
   }
+  if (command.action === GitHubOutboundAction.Close) {
+    if (command.issue_number === undefined) throw new Error('GitHub issue completion requires an issue');
+    const response = await octokit.rest.issues.update({
+      owner: command.owner,
+      repo: command.repo,
+      issue_number: command.issue_number,
+      state: 'closed',
+    });
+    return String(response.data.id);
+  }
   const issueNumber = command.issue_number ?? command.pull_number;
   if (issueNumber === undefined)
     throw new Error('GitHub comment requires an issue or pull request');
