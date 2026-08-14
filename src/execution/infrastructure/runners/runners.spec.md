@@ -172,7 +172,7 @@ component's responsibility.
 | `workspacePath` | string, optional | Working directory for a spawned process. |
 | `allowedTools` | list of string | Claude forwards its established tool option; Codex, Cursor, and fake adapters do not read it. |
 | `maxTurns` | integer, optional | Claude forwards its established turn option; Codex, Cursor, and fake adapters do not read it. |
-| `resumeSessionId` | string, optional | Opaque prior-session reference selected by Execution. Claude, Codex, and Cursor each pass it in their own vendor-supported resume shape while still forwarding the complete current prompt; generic command and fake runners do not manufacture or interpret it. |
+| `resumeSessionId` | string, optional | Opaque prior-session reference selected by Execution only when the resolved adapter declares resume support and its configured runner identity matches the prior session. Claude, Codex, and Cursor each pass it in their own vendor-supported resume shape while still forwarding the complete current prompt; generic command and fake runners do not manufacture or interpret it. |
 | `usageBaseline` | `{input, output, cacheRead?, cacheWrite?}`, optional | Previous per-invocation usage totals selected by Execution for the resumed session. Only Codex consumes it, subtracting it from its cumulative resumed-session snapshot to report this invocation's delta. |
 
 **AgentRunnerResult**

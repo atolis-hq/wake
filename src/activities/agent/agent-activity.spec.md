@@ -82,10 +82,16 @@ supplies.
 - Only a `template` invocation resolves untrusted ticket context and
   receives an untrusted-data block; a literal `prompt` invocation MUST NOT
   consult `AgentContextReader` and MUST NOT have such a block appended.
-- For a `template` invocation, the renderer MUST receive `workItemId` plus
-  the resolved `issueTitle`, `issueBody`, and `comments`, defaulting to `''`,
-  `''`, and `[]` when no `AgentContextReader` is configured (resolution
-  still happens; it isn't skipped).
+- For a `template` invocation, the renderer MUST receive `workItemId`,
+  `isStart`, `isResume`, plus the resolved `issueTitle`, `issueBody`, and
+  `comments`, defaulting to `''`, `''`, and `[]` when no `AgentContextReader`
+  is configured (resolution still happens; it isn't skipped). `isResume` is
+  true only when Execution selected a prior session compatible with the
+  resolved runner; a fresh or different runner receives the complete context.
+- When Execution supplies a prior session start time, the Activity MUST ask
+  its context reader only for comments observed after that time. This delta
+  spans every correlated resource, while the resumed runner session retains
+  the earlier conversation.
 - The rendered prompt MUST have the untrusted ticket context appended as a
   delimited `<wake-untrusted-data>` block of escaped JSON (`<`, `>`, `&` as
   Unicode escapes) preceded by an explicit notice that the data is not

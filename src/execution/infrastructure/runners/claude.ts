@@ -17,6 +17,7 @@ export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseClaudeOutput,
+      supportsSessionResume: true,
     },
   );
 }
@@ -102,6 +103,7 @@ export function cliRunner(
   options: {
     readonly timeoutMs?: number;
     readonly defaultModel?: string;
+    readonly supportsSessionResume?: boolean;
     readonly parseSuccessfulOutput?: (
       stdout: string,
       request: RunnerRequest,
@@ -109,6 +111,7 @@ export function cliRunner(
   } = {},
 ): Runner {
   return {
+    supportsSessionResume: options.supportsSessionResume === true,
     async start(request, signal): Promise<RunnerExecution> {
       const process = runProcess(
         command,

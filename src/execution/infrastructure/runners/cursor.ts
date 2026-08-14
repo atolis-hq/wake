@@ -14,6 +14,7 @@ export function createCursorRunner(options: CliRunnerOptions = {}): Runner {
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseCursorOutput,
+      supportsSessionResume: true,
     },
   );
 }

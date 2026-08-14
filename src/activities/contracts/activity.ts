@@ -112,6 +112,8 @@ export interface ActivityExecutionContext {
   readonly runId?: string;
   /** Opaque prior adapter session selected by Execution for this activation. */
   readonly resumeSessionId?: string;
+  /** Start time of the prior session turn, used to select resume-context deltas. */
+  readonly resumeStartedAt?: string;
   readonly usageBaseline?: {
     readonly input: number;
     readonly output: number;

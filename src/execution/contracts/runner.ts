@@ -91,5 +91,7 @@ export interface RunnerExecution {
 }
 
 export interface Runner {
+  /** Whether this adapter can continue an earlier session with its opaque session ID. */
+  readonly supportsSessionResume?: boolean;
   start(request: RunnerRequest, signal: AbortSignal): Promise<RunnerExecution>;
 }

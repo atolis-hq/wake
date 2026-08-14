@@ -16,7 +16,10 @@ export interface CommentHistoryEntry {
 }
 
 export interface CommentHistoryReader {
-  forWorkItem(workItemId: WorkItemId): Promise<readonly CommentHistoryEntry[]>;
+  forWorkItem(
+    workItemId: WorkItemId,
+    options?: { readonly observedSince?: string },
+  ): Promise<readonly CommentHistoryEntry[]>;
 }
 
 export function createCommentHistoryReader(
@@ -24,7 +27,7 @@ export function createCommentHistoryReader(
   resources: Pick<ResourceService, 'correlationsForWork' | 'get'>,
 ): CommentHistoryReader {
   return {
-    async forWorkItem(workItemId) {
+    async forWorkItem(workItemId, options) {
       const keys = new Set(
         (
           await Promise.all(
@@ -39,6 +42,8 @@ export function createCommentHistoryReader(
       );
       if (keys.size === 0) return [];
       return (await journal.readAll(0)).flatMap((event) => {
+        if (options?.observedSince !== undefined && event.occurredAt <= options.observedSince)
+          return [];
         const observed = selectGitHubAdapterEvent(event);
         if (observed?.eventType !== GitHubEventType.CommentObserved) return [];
         if (!keys.has(`${observed.stream.id}:${observed.payload.externalKey}`)) return [];

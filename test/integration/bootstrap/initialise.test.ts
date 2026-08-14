@@ -93,6 +93,8 @@ describe('target initialise root', () => {
       expect(template.frontmatter.allowedTools?.length).toBeGreaterThan(0);
       const rendered = renderPromptTemplate(template, {
         workItemId: 'work-01test0000000000000000',
+        isStart: true,
+        isResume: false,
       });
       expect(rendered).toContain('work-01test0000000000000000');
       expect(rendered).toMatch(/DONE, BLOCKED, or FAILED/);
@@ -100,6 +102,14 @@ describe('target initialise root', () => {
         expect(rendered).toContain('Include every pull request URL in the normal prose response.');
         expect(rendered).toContain('Then repeat each URL in this exact artifact fence');
         expect(rendered).toContain('```wake-artifacts');
+        const resumed = renderPromptTemplate(template, {
+          workItemId: 'work-01test0000000000000000',
+          isStart: false,
+          isResume: true,
+        });
+        expect(resumed).toContain('This is a resumed session.');
+        expect(resumed).not.toContain('Your current working directory is a git checkout');
+        expect(resumed).not.toContain('```wake-artifacts');
       }
     }
   });

@@ -275,6 +275,8 @@ describe('agent activity template context', () => {
     expect(rendered).toEqual([
       {
         workItemId: 'work-00000000000000000000000001',
+        isStart: true,
+        isResume: false,
         issueTitle: injectedTitle,
         issueBody: injectedBody,
         comments: [
@@ -310,6 +312,8 @@ describe('agent activity template context', () => {
     expect(rendered).toEqual([
       {
         workItemId: 'work-00000000000000000000000001',
+        isStart: true,
+        isResume: false,
         issueTitle: '',
         issueBody: '',
         comments: [],
@@ -366,17 +370,27 @@ describe('agent activity template context', () => {
     expect(prompt.split('</wake-untrusted-data>')).toHaveLength(2);
   });
 
-  it('forwards an opaque resume session with the fully rendered current prompt', async () => {
+  it('renders resume context with only comments observed since the prior session started', async () => {
     const requests: Array<{ readonly prompt: string; readonly resumeSessionId?: string }> = [];
+    const rendered: unknown[] = [];
+    const contextRequests: unknown[] = [];
     const activity = createAgentActivity(
       {
-        async render() {
+        async render(_name, context) {
+          rendered.push(context);
           return { prompt: 'Current instructions' };
         },
       },
       {
-        async forWorkItem() {
-          return { title: 'Current ticket', body: 'Current body', comments: [] };
+        async forWorkItem(_workItemId, request) {
+          contextRequests.push(request);
+          return {
+            title: 'Current ticket',
+            body: 'Current body',
+            comments: [
+              { author: 'reviewer', occurredAt: '2026-08-09T00:00:00.000Z', body: 'Fix this' },
+            ],
+          };
         },
       },
     );
@@ -386,6 +400,7 @@ describe('agent activity template context', () => {
       (request) => requests.push(request),
       { template: 'implement' },
       'session-1',
+      '2026-08-08T12:00:00.000Z',
     );
 
     expect(requests).toEqual([
@@ -395,7 +410,19 @@ describe('agent activity template context', () => {
       }),
     ]);
     expect(requests[0]!.prompt).toContain('Current instructions');
-    expect(requests[0]!.prompt).toContain('Current ticket');
+    expect(requests[0]!.prompt).not.toContain('Current ticket');
+    expect(requests[0]!.prompt).not.toContain('Current body');
+    expect(requests[0]!.prompt).toContain('Fix this');
+    expect(rendered).toEqual([
+      expect.objectContaining({
+        isResume: true,
+        isStart: false,
+        comments: [
+          { author: 'reviewer', occurredAt: '2026-08-09T00:00:00.000Z', body: 'Fix this' },
+        ],
+      }),
+    ]);
+    expect(contextRequests).toEqual([{ observedSince: '2026-08-08T12:00:00.000Z' }]);
   });
 
   it('does not append ticket context to a direct input prompt', async () => {
@@ -481,11 +508,13 @@ async function execute(
   recordRequest?: (request: RunnerRequest) => void,
   input: { prompt?: string; template?: string } = { template: 'implement' },
   resumeSessionId?: string,
+  resumeStartedAt?: string,
 ) {
   await activity.execute(invocation(input), {
     signal: new AbortController().signal,
     occurredAt: '2026-08-08T00:00:00.000Z',
     ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+    ...(resumeStartedAt === undefined ? {} : { resumeStartedAt }),
     runner: {
       async start(request) {
         recordRequest?.(request);

@@ -22,8 +22,8 @@ export function createGitHubAgentContextReader(
 ): AgentContextReader {
   const commentHistory = createCommentHistoryReader(journal, resources);
   return {
-    async forWorkItem(workItemId) {
-      const comments = await commentHistory.forWorkItem(workItemId as WorkItemId);
+    async forWorkItem(workItemId, options) {
+      const comments = await commentHistory.forWorkItem(workItemId as WorkItemId, options);
       return {
         ...(await currentWorkItemContent(journal, resources, workItemId as WorkItemId)),
         comments,
