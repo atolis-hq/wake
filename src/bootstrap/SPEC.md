@@ -107,8 +107,9 @@ Bootstrap does not own:
   a poll. Bootstrap decides what each stage does by supplying it a concrete
   implementation; it does not itself decide whether a stage runs.
 - Both pipelines MUST check the composed control-plane's pause state before
-  doing anything else, including their own projection catch-up; a paused
-  pipeline invocation MUST be a complete no-op.
+  operational work; a paused pipeline invocation MUST not poll, schedule,
+  react, advance, execute, recover, reconcile, or deliver. Projection
+  catch-up remains enabled so read models fold pause and resume facts.
 - The composed projection runner's catch-up MUST be safe to call
   concurrently from every in-process caller that shares it (the runner
   pipeline's own catch-up, the API's manual tick, a CLI resident
@@ -139,8 +140,9 @@ Bootstrap does not own:
   calls for without the operator re-running init after a mode change.
 - A source-mode self-update MUST acquire its durable maintenance lease before
   inspecting active Runs or checking out source. While any lease exists, the
-  one composed pause supplier makes intake, projection pumping, runner/tick
-  work, recovery, reconciliation, and delivery complete no-ops.
+  one composed pause supplier makes intake and runner/tick operational work,
+  recovery, reconciliation, and delivery complete no-ops, while projections
+  continue catching up so read models reflect maintenance and its resolution.
 - Maintenance state is operational JSON under `.wake`, with unique attempt
   id, target tag, start time, failure, and closed phases `quiescing`,
   `updating`, `rolling-back`, or `failed`. State mutation is atomic. A
