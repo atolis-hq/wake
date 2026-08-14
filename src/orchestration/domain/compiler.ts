@@ -1,4 +1,5 @@
 import {
+  ActivityEventType,
   activityName,
   ActivityOutcomeKind,
   type ActivityRegistry,
@@ -74,6 +75,12 @@ function compileWatches(
       throw new Error(`Unknown watch stage: ${unknownStages.join(', ')}`);
     if (!knownWorkflowNames.includes(watch.workflow))
       throw new Error(`Unknown watch workflow: ${watch.workflow}`);
+    if (
+      watch.where !== undefined &&
+      (watch.on === undefined ||
+        watch.on.events.some((event) => event !== ActivityEventType.PrChecksChanged))
+    )
+      throw new Error('Watch where.checks is only valid with pr.checks-changed');
     return Object.freeze({
       ...watch,
       id: watchId(watch.id),

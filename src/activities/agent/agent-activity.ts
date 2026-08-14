@@ -16,7 +16,14 @@ export interface AgentContextReader {
     readonly title: string;
     readonly body: string;
     readonly comments: readonly AgentContextComment[];
+    readonly pullRequest?: AgentContextPullRequest;
   }>;
+}
+
+export interface AgentContextPullRequest {
+  readonly checks: string;
+  readonly checkRuns: readonly Readonly<Record<string, unknown>>[];
+  readonly statuses: readonly Readonly<Record<string, unknown>>[];
 }
 
 export interface AgentContextComment {
@@ -235,6 +242,7 @@ interface AgentUntrustedContext {
   readonly issueTitle: string;
   readonly issueBody: string;
   readonly comments: readonly AgentContextComment[];
+  readonly pullRequest?: AgentContextPullRequest;
 }
 
 async function buildUntrustedContext(
@@ -247,6 +255,7 @@ async function buildUntrustedContext(
     issueTitle: context.title,
     issueBody: context.body,
     comments: context.comments,
+    ...(context.pullRequest === undefined ? {} : { pullRequest: context.pullRequest }),
   };
 }
 
@@ -261,6 +270,7 @@ function untrustedDataBlock(context: AgentUntrustedContext): string {
         {
           issue: { title: context.issueTitle, body: context.issueBody },
           comments: context.comments,
+          ...(context.pullRequest === undefined ? {} : { pullRequest: context.pullRequest }),
         },
         null,
         2,

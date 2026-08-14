@@ -51,6 +51,8 @@ export interface GitHubCheckRunPayload {
   readonly conclusion?: string | null;
   readonly started_at?: string | null;
   readonly completed_at?: string | null;
+  readonly details_url?: string | null;
+  readonly html_url?: string | null;
 }
 
 export interface GitHubCommitStatusPayload {
@@ -59,6 +61,7 @@ export interface GitHubCommitStatusPayload {
   readonly state?: string;
   readonly created_at?: string;
   readonly updated_at?: string;
+  readonly target_url?: string | null;
 }
 
 export interface GitHubReviewPayload {

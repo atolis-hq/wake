@@ -1,4 +1,9 @@
-import type { ActivationId } from '../../activities/index.js';
+import {
+  ActivityEventType,
+  PullRequestCheckState,
+  selectActivityEvent,
+  type ActivationId,
+} from '../../activities/index.js';
 import { EventSourceKind, createEventDraft, type CommandContext } from '../../kernel/index.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
@@ -24,6 +29,8 @@ export class OperatorRetryIneligibleError extends Error {
     this.name = 'OperatorRetryIneligibleError';
   }
 }
+
+type PersistedEvent = Parameters<typeof selectActivityEvent>[0];
 
 export class AdvanceWorkflow {
   constructor(
@@ -209,7 +216,7 @@ export class AdvanceWorkflow {
     );
   }
 
-  async listWatchMatches(eventType: string, context?: CommandContext) {
+  async listWatchMatches(event: PersistedEvent, context?: CommandContext) {
     const matches = await Promise.all(
       (await this.listAllLoaded()).map(async ({ view: parent, sequence }) => {
         const definition =
@@ -220,13 +227,26 @@ export class AdvanceWorkflow {
         return definition.watches
           .filter(
             (watch) =>
-              watch.on?.events.includes(eventType) === true &&
+              watch.on?.events.includes(event.eventType) === true &&
               watch.while.stages.includes(parent.currentStage) &&
-              watch.while.statuses.some((status) => status === parent.status),
+              watch.while.statuses.some((status) => status === parent.status) &&
+              matchesWatchPredicate(watch.where, event),
           )
           .map((watch) => ({ parent, watch }));
       }),
     );
     return matches.flat();
   }
+}
+
+function matchesWatchPredicate(
+  predicate: { readonly checks: typeof PullRequestCheckState.Failing } | undefined,
+  event: PersistedEvent,
+): boolean {
+  if (predicate === undefined) return true;
+  const activityEvent = selectActivityEvent(event);
+  return (
+    activityEvent?.eventType === ActivityEventType.PrChecksChanged &&
+    activityEvent.payload.checks === PullRequestCheckState.Failing
+  );
 }

@@ -26,8 +26,9 @@ execution:
     fake: { kind: fake }
     claude-haiku: { kind: claude-cli, command: claude, model: haiku, timeoutMs: 1800000 }
     claude-opus: { kind: claude-cli, command: claude, model: claude-opus-4-8, timeoutMs: 1800000 }
-    codex-mini: { kind: codex-cli, command: codex, model: gpt-5.4-mini, timeoutMs: 1800000 }
-    codex-flagship: { kind: codex-cli, command: codex, model: gpt-5.5, timeoutMs: 1800000 }
+    codex-luna: { kind: codex-cli, command: codex, model: gpt-5.6-luna, timeoutMs: 1800000 }
+    codex-terra: { kind: codex-cli, command: codex, model: gpt-5.6-terra, timeoutMs: 1800000 }
+    codex-sol: { kind: codex-cli, command: codex, model: gpt-5.6-sol, timeoutMs: 1800000 }
     cursor-composer: { kind: cursor-cli, command: cursor, model: composer-2.5, timeoutMs: 1800000 }
   runnerPools:
     light: [fake]
@@ -216,7 +217,7 @@ Ask the user which agent CLI(s) they have authenticated on this host:
 Claude, Codex, and/or Cursor.
 
 \`config.yaml\` already has example \`execution.agentRunners\` entries for
-\`claude-haiku\`, \`claude-opus\`, \`codex-mini\`, \`codex-flagship\`, and
+\`claude-haiku\`, \`claude-opus\`, \`codex-luna\`, \`codex-terra\`, \`codex-sol\`, and
 \`cursor-composer\`, but every runnerPool (\`light\`/\`standard\`/\`deep\`, with
 \`defaultRunnerPool: standard\`) still points only at the placeholder
 \`fake\` runner — none of them route to a real runner yet. Don't rewrite

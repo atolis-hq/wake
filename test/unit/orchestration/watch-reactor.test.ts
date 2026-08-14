@@ -93,6 +93,31 @@ it('does not inspect an unrelated domain payload for causal metadata', async () 
   expect(requestedCycle).toBe('parent-1:watch:review:trigger:review-opaque');
 });
 
+it('passes the persisted event to watch matching so predicates can decode its payload', async () => {
+  let matchedEvent: { readonly eventType: string; readonly payload: unknown } | undefined;
+  const event = canonicalEvent('pr.checks-changed', 'checks-failed', { checks: 'failing' });
+  const reactor = createWatchReactor({
+    async listWatchMatches(candidate) {
+      matchedEvent = candidate;
+      return [];
+    },
+    async requestChild() {},
+    async rejectCausalActivation() {},
+  });
+
+  await reactor.react(event, {
+    commandId: 'react-checks',
+    correlationId: 'corr-1' as never,
+    occurredAt: '2026-07-30T12:00:00.000Z',
+    actor: { kind: 'system', id: 'test' },
+  });
+
+  expect(matchedEvent).toMatchObject({
+    eventType: 'pr.checks-changed',
+    payload: { checks: 'failing' },
+  });
+});
+
 it('rejects a causal event instead of dispatching another child', async () => {
   const rejected: string[] = [];
   const reactor = createWatchReactor({

@@ -15,6 +15,8 @@ import {
   type WorkflowName,
 } from '../contracts/identifiers.js';
 
+type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
+
 interface WatchMatch {
   readonly parent: { readonly workflowInstanceId: WorkflowInstanceId };
   readonly watch: {
@@ -25,7 +27,10 @@ interface WatchMatch {
 }
 
 interface WatchOrchestrationPort {
-  listWatchMatches(eventType: string, context?: CommandContext): Promise<readonly WatchMatch[]>;
+  listWatchMatches(
+    event: PersistedEvent,
+    context?: CommandContext,
+  ): Promise<readonly WatchMatch[]>;
   requestChild(
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
@@ -41,8 +46,6 @@ interface WatchOrchestrationPort {
 
 const checkpoint = 'reactor:orchestration.watch';
 
-type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
-
 export function createWatchReactor(
   orchestration: WatchOrchestrationPort,
   journal?: EventJournal,
@@ -53,7 +56,7 @@ export function createWatchReactor(
     async react(event: PersistedEvent, context: CommandContext): Promise<void> {
       const causalCycle = orchestrationCausalCycleId(selectOrchestrationEvent(event));
       const sourceWorkflowInstanceId = await resolveRunWorkflowInstanceId(event, runs);
-      for (const match of await orchestration.listWatchMatches(event.eventType, context)) {
+      for (const match of await orchestration.listWatchMatches(event, context)) {
         if (
           sourceWorkflowInstanceId !== undefined &&
           match.parent.workflowInstanceId !== sourceWorkflowInstanceId

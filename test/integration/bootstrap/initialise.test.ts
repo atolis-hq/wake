@@ -16,6 +16,11 @@ describe('target initialise root', () => {
     expect(config).toContain('sandbox:');
     expect(config).toContain('containerName: wake-sandbox');
     expect(config).toContain('transcripts:\n  enabled: false\n  retentionMs: 86400000');
+    expect(config).toContain('codex-luna: { kind: codex-cli, command: codex, model: gpt-5.6-luna');
+    expect(config).toContain(
+      'codex-terra: { kind: codex-cli, command: codex, model: gpt-5.6-terra',
+    );
+    expect(config).toContain('codex-sol: { kind: codex-cli, command: codex, model: gpt-5.6-sol');
     expect(await readdir(join(root, '.wake'))).toEqual(
       expect.arrayContaining([
         'events',

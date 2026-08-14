@@ -94,10 +94,10 @@ execution:
       model: haiku
       timeoutMs: 1800000
       args: []
-    codex-flagship:
+    codex-terra:
       kind: codex-cli
       command: codex
-      model: gpt-5.5
+      model: gpt-5.6-terra
       effort: high
       timeoutMs: 1800000
       args: []
@@ -284,7 +284,7 @@ silently switch to another pool.
 execution:
   agentRunners:
     fake: { kind: fake }
-    codex: { kind: codex-cli, command: codex, model: gpt-5.5, timeoutMs: 1800000 }
+    codex: { kind: codex-cli, command: codex, model: gpt-5.6-terra, timeoutMs: 1800000 }
   runnerPools:
     light: [fake]
     standard: [codex, fake]

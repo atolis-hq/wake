@@ -20,9 +20,11 @@ import {
   InMemoryProjectionStore,
   ProjectionRunner,
 } from '../../../src/persistence/index.js';
+import { resourceStream } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
-import { workId } from '../../support/identities.js';
+import { eventEnvelope } from '../../support/event-envelope.js';
+import { resId, workId } from '../../support/identities.js';
 
 it('uses the Work status vocabulary when checking whether work is open', async () => {
   const source = await readFile(
@@ -263,4 +265,81 @@ it('blocks multiple instances with unresolvable definitions in one watch batch w
   expect((await withoutDefinitions.get(second.workflowInstanceId))?.blockReason).toBe(
     'workflow-definition-unavailable',
   );
+});
+
+it('matches a failing-checks watch only for failed check events', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const context = {
+    commandId: 'watch-matching',
+    correlationId: correlationId('watch-matching'),
+    occurredAt: '2026-07-30T12:00:00Z',
+    actor: { kind: 'operator' as const, id: 'test' },
+  };
+  await createWorkService(journal).create(
+    { workItemId: workId('watch'), objective: 'ship' },
+    context,
+  );
+  const registry = new ActivityRegistry();
+  registry.register({
+    name: activityName('implement'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: 'done' };
+      },
+    },
+  });
+  const definition = compileWorkflow(
+    'default',
+    {
+      stages: {
+        implement: {
+          activity: 'implement',
+          with: {},
+          on: { done: { then: 'done' } },
+          requiresApproval: false,
+        },
+      },
+      watches: [
+        {
+          id: 'failed-checks',
+          while: { stages: ['implement'], statuses: ['active'] },
+          on: { events: ['pr.checks-changed'] },
+          where: { checks: 'failing' },
+          workflow: 'default',
+          maxPerGroup: 1,
+        },
+      ],
+    },
+    registry,
+  );
+  const service = createOrchestrationService(journal, createWorkService(journal), {
+    default: definition,
+  });
+  await service.start(
+    {
+      workflowInstanceId: workflowInstanceId('watch-workflow'),
+      workItemId: workId('watch'),
+      workflowName: workflowName('default'),
+      orchestrationGroupId: orchestrationGroupId('watch-group'),
+    },
+    context,
+  );
+  const stream = resourceStream(resId('watch'));
+
+  await expect(
+    service.listWatchMatches(eventEnvelope('pr.checks-changed', { checks: 'failing' }, stream)),
+  ).resolves.toHaveLength(1);
+  await expect(
+    service.listWatchMatches(eventEnvelope('pr.checks-changed', { checks: 'passing' }, stream)),
+  ).resolves.toHaveLength(0);
+  await expect(
+    service.listWatchMatches(
+      eventEnvelope('pr.review-accepted', { revision: 'revision-1', actorId: 'reviewer' }, stream),
+    ),
+  ).resolves.toHaveLength(0);
 });

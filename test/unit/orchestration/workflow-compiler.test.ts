@@ -135,6 +135,64 @@ describe('compileWorkflow', () => {
     });
   });
 
+  it('compiles a failing-checks watch predicate', () => {
+    const compiled = compileWorkflow(
+      'parent',
+      {
+        stages: {
+          implement: {
+            activity: 'implement',
+            with: { prompt: 'x' },
+            on: { done: { then: 'done' } },
+          },
+        },
+        watches: [
+          {
+            id: 'failed-checks',
+            while: { stages: ['implement'], statuses: ['active'] },
+            on: { events: ['pr.checks-changed'] },
+            where: { checks: 'failing' },
+            workflow: 'pr-review',
+            maxPerGroup: 1,
+          },
+        ],
+      },
+      registry(),
+      ['parent', 'pr-review'],
+    );
+
+    expect(compiled.watches[0]?.where).toEqual({ checks: 'failing' });
+  });
+
+  it('rejects a failing-checks watch predicate on a different event', () => {
+    expect(() =>
+      compileWorkflow(
+        'parent',
+        {
+          stages: {
+            implement: {
+              activity: 'implement',
+              with: { prompt: 'x' },
+              on: { done: { then: 'done' } },
+            },
+          },
+          watches: [
+            {
+              id: 'failed-checks',
+              while: { stages: ['implement'], statuses: ['active'] },
+              on: { events: ['review.requested'] },
+              where: { checks: 'failing' },
+              workflow: 'pr-review',
+              maxPerGroup: 1,
+            },
+          ],
+        },
+        registry(),
+        ['parent', 'pr-review'],
+      ),
+    ).toThrow(/where\.checks.*pr\.checks-changed/i);
+  });
+
   it('validates watchGate references and multiplicity', () => {
     const base = {
       stages: {
