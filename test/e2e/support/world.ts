@@ -102,6 +102,7 @@ export class TestWorld {
     this.work,
     this.definitions,
     this.projections,
+    this.pullRequests,
   );
 
   // resolve() falls back to this projection for historical (non-current) workflow
@@ -269,6 +270,18 @@ export class TestWorld {
     return this.resources.discover(input, this.command());
   }
 
+  correlateResource(resourceId: string, workItemId: WorkItemId, role: 'primary' | 'related') {
+    return this.resources.correlate(resourceId as never, workItemId, role, this.command());
+  }
+
+  observePullRequest(input: Parameters<typeof this.pullRequests.observe>[0]) {
+    return this.pullRequests.observe(input, this.command());
+  }
+
+  resolveEventTransitions() {
+    return this.orchestration.resolveEventTransitions(this.command());
+  }
+
   private async syncWorkflowDefinitions(): Promise<void> {
     await this.definitionProjections.runOnce(workflowDefinitionsProjection);
   }
@@ -362,6 +375,7 @@ export class TestWorld {
       maxProgress: 1,
     });
     await this.watchReactor.runOnce();
+    await this.resolveEventTransitions();
     return result;
   }
 

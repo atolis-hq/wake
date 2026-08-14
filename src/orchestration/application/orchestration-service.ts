@@ -42,8 +42,10 @@ export class OrchestrationService {
       work,
       new WorkflowDefinitionRegistry(journal, projections, definitions),
     );
-    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow, pullRequests);
+    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work, (context, candidate) =>
+      this.advanceWorkflow.resolveEventTransitions(context, candidate),
+    );
     this.childWorkflows = new RequestChild(
       repository,
       claims,

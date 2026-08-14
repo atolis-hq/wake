@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { activationId, activityName, ActivityOutcomeKind } from '../../activities/index.js';
+import {
+  activationId,
+  activityName,
+  ActivityEventType,
+  ActivityOutcomeKind,
+} from '../../activities/index.js';
 import { WorkspaceMode } from '../../execution/index.js';
 import {
   brandedStringSchema,

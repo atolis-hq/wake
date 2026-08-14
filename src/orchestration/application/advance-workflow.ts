@@ -5,7 +5,7 @@ import {
   PullRequestState,
   selectActivityEvent,
   type PullRequestService,
-  selectActivityEvent,
+  type ActivityEvent,
   type ActivationId,
 } from '../../activities/index.js';
 import { EventSourceKind, createEventDraft, type CommandContext } from '../../kernel/index.js';
@@ -240,10 +240,19 @@ export class AdvanceWorkflow {
     return (await this.listAllLoaded()).map(({ view }) => view);
   }
 
-  async resolveEventTransitions(context: CommandContext) {
-    if (this.pullRequests === undefined) return;
+  async resolveEventTransitions(
+    context: CommandContext,
+    candidate?: { readonly workflowInstanceId: WorkflowInstanceId; readonly providerEventId: string },
+  ): Promise<boolean> {
+    if (this.pullRequests === undefined) return false;
     const events = await this.repository.readAll();
+    const candidatePosition =
+      candidate === undefined
+        ? undefined
+        : events.find((event) => event.eventId === candidate.providerEventId)?.globalPosition;
+    let resolvedCandidate = false;
     for (const { view, sequence } of await this.listAllLoaded()) {
+      if (candidate !== undefined && view.workflowInstanceId !== candidate.workflowInstanceId) continue;
       const transitions = view.waitingFor?.eventTransitions;
       if (transitions === undefined) continue;
       const input = await this.pullRequests.authorityInput(view.workItemId);
@@ -260,14 +269,19 @@ export class AdvanceWorkflow {
       const pr = input.pullRequests.find((candidate) => candidate.resourceId === resourceId);
       if (pr === undefined) continue;
       const fact = events.find((event) => {
+        if (candidatePosition !== undefined && event.globalPosition >= candidatePosition) return false;
         const activity = selectActivityEvent(event);
         if (activity === null || activity.stream.id !== resourceId) return false;
-        const transition = transitions.find((candidate) => candidate.event === activity.eventType && matchesEventTransition(candidate, activity.eventType, pr, input.acceptedSignals));
+        const transition = transitions.find((candidate) =>
+          matchesEventTransition(candidate, activity, pr, input.acceptedSignals),
+        );
         return transition !== undefined;
       });
       if (fact === undefined) continue;
       const activity = selectActivityEvent(fact)!;
-      const transition = transitions.find((candidate) => candidate.event === activity.eventType && matchesEventTransition(candidate, activity.eventType, pr, input.acceptedSignals))!;
+      const transition = transitions.find((candidate) =>
+        matchesEventTransition(candidate, activity, pr, input.acceptedSignals),
+      )!;
       const definition = await this.workflows.definitionForOperation(view, sequence, context);
       if (definition === null) continue;
       const decision = decideSignal(definition, { ...view, waitingFor: { ...view.waitingFor!, resume: transition.target } }, {
@@ -275,7 +289,9 @@ export class AdvanceWorkflow {
         occurredAt: context.occurredAt, causationId: `${context.commandId}:${fact.eventId}`, consent: true,
       });
       if (decision.kind === 'append') await this.repository.append(view.workflowInstanceId, sequence, decision.events);
+      resolvedCandidate ||= candidate?.workflowInstanceId === view.workflowInstanceId;
     }
+    return resolvedCandidate;
   }
 
   // One shared load per live instance, reused for both the watch match and
@@ -313,15 +329,37 @@ export class AdvanceWorkflow {
 
 function matchesEventTransition(
   transition: CompiledEventTransition,
-  eventType: string,
+  event: ActivityEvent,
   pr: { readonly resourceId: string; readonly state: string; readonly checks: string; readonly headRevision: string; readonly acceptedReview?: { readonly revision: string } },
   signals: readonly { readonly resourceId: string; readonly revision: string; readonly trusted: boolean }[],
 ): boolean {
-  if (transition.event !== eventType) return false;
-  if (eventType === ActivityEventType.PrReviewAccepted)
-    return pr.acceptedReview?.revision === pr.headRevision && signals.some((signal) => signal.resourceId === pr.resourceId && signal.revision === pr.headRevision && signal.trusted);
-  if (eventType === ActivityEventType.PrStateChanged) return pr.state === PullRequestState.Merged;
-  return pr.checks === PullRequestCheckState.Failing;
+  if (transition.event !== event.eventType) return false;
+  if (event.eventType === ActivityEventType.PrReviewAccepted)
+    return (
+      event.payload.revision === pr.headRevision &&
+      pr.acceptedReview?.revision === pr.headRevision &&
+      signals.some(
+        (signal) =>
+          signal.resourceId === pr.resourceId &&
+          signal.revision === pr.headRevision &&
+          signal.trusted,
+      )
+    );
+  if (event.eventType === ActivityEventType.PrStateChanged)
+    return (
+      transition.where !== undefined &&
+      'state' in transition.where &&
+      transition.where.state === event.payload.state &&
+      event.payload.state === PullRequestState.Merged &&
+      pr.state === PullRequestState.Merged
+    );
+  return (
+    transition.where !== undefined &&
+    'checks' in transition.where &&
+    transition.where.checks === event.payload.checks &&
+    event.payload.checks === PullRequestCheckState.Failing &&
+    pr.checks === PullRequestCheckState.Failing
+  );
 }
 
 function matchesWatchPredicate(
