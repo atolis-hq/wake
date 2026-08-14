@@ -23,7 +23,10 @@ export function createIntakePipeline(stages: IntakePipelineStages): IntakePipeli
   const isPaused = async () => (await stages.isPaused?.()) ?? false;
   return {
     async run(signal) {
-      if (await isPaused()) return { processed: false };
+      if (await isPaused()) {
+        await stages.catchUpProjections();
+        return { processed: false };
+      }
       await stages.catchUpProjections();
       try {
         if (await isPaused()) return { processed: false };

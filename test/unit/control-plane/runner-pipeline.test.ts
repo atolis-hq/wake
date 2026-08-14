@@ -2,6 +2,32 @@ import { describe, expect, it, vi } from 'vitest';
 import { createRunnerPipeline } from '../../../src/control-plane/application/runner-pipeline.js';
 
 describe('RunnerPipeline', () => {
+  it('catches projections up once without running operational stages while paused', async () => {
+    const catchUpProjections = vi.fn(async () => undefined);
+    const runSchedules = vi.fn(async () => undefined);
+    const react = vi.fn(async () => undefined);
+    const advance = vi.fn(async () => ({ kind: 'no-work' as const }));
+    const publishAgentRuns = vi.fn(async () => undefined);
+    const deliver = vi.fn(async () => undefined);
+    const pipeline = createRunnerPipeline({
+      isPaused: async () => true,
+      catchUpProjections,
+      runSchedules,
+      react,
+      advance,
+      publishAgentRuns,
+      deliver,
+    });
+
+    await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
+    expect(catchUpProjections).toHaveBeenCalledOnce();
+    expect(runSchedules).not.toHaveBeenCalled();
+    expect(react).not.toHaveBeenCalled();
+    expect(advance).not.toHaveBeenCalled();
+    expect(publishAgentRuns).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
   it('serializes overlapping ticks', async () => {
     let releaseFirstCatchUp: (() => void) | undefined;
     const firstCatchUpStarted = new Promise<void>((resolve) => {

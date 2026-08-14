@@ -118,6 +118,12 @@ own aggregate remains the source of that state.
   time regardless of outcome, including when an earlier stage throws.
 - `RunnerPipeline.run`'s `signal` parameter defaults to a fresh,
   never-aborted `AbortController`'s signal when the caller omits one.
+- When the shared pause is already active at the start of a Runner or Intake
+  pipeline call, the pipeline MUST catch projections up exactly once before
+  returning its paused/no-progress result. It MUST NOT invoke any operational
+  stage (`runSchedules`, Advancement, reactors, publication, delivery, poll,
+  or inbound translation). This makes durable pause/resume facts visible
+  without allowing paused operational work to proceed.
 
 ## Conceptual schema
 

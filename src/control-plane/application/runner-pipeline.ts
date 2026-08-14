@@ -24,7 +24,10 @@ export interface RunnerPipeline {
 export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeline {
   const isPaused = async () => (await stages.isPaused?.()) ?? false;
   const runOnce = async (options: AdvanceOptions, signal: AbortSignal): Promise<AdvanceResult> => {
-    if (await isPaused()) return { kind: 'paused' };
+    if (await isPaused()) {
+      await stages.catchUpProjections();
+      return { kind: 'paused' };
+    }
     await stages.catchUpProjections();
     try {
       if (await isPaused()) return { kind: 'paused' };
