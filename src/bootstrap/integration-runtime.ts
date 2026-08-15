@@ -1,13 +1,15 @@
-import { createPullRequestService } from '../activities/index.js';
+import type { createPullRequestService } from '../activities/index.js';
 import {
   ControlStreamKind,
   ScheduleService,
   createIntakePipeline,
   createRunnerPipeline,
   createWorkCancellationPolicy,
+  type AdvanceOnce,
   type IntakePipeline,
   type RunnerPipeline,
   type ScheduleCheckpointStore,
+  type createControlPlaneService,
 } from '../control-plane/index.js';
 import { RunRepository, type createExecutionService } from '../execution/index.js';
 import {
@@ -37,20 +39,20 @@ import {
 } from '../kernel/index.js';
 import {
   compileWorkflowSelectors,
-  createOrchestrationService,
   createPullRequestTransitionEvidence,
   createResourceTransitionReactor,
   createWatchReactor,
   selectWorkflow,
   workflowName,
+  type createOrchestrationService,
 } from '../orchestration/index.js';
 import {
   BuiltInResourceCapability,
-  createResourceLookup,
-  createResourceService,
   resourceId,
+  type createResourceLookup,
+  type createResourceService,
 } from '../resources/index.js';
-import { createWorkService } from '../work/index.js';
+import type { createWorkService } from '../work/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
@@ -76,10 +78,8 @@ export interface IntegrationRuntimeInput {
   readonly work: ReturnType<typeof createWorkService>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
-  readonly advanceOnce: ReturnType<typeof import('../control-plane/index.js').createAdvanceOnce>;
-  readonly controlPlane: ReturnType<
-    typeof import('../control-plane/index.js').createControlPlaneService
-  >;
+  readonly advanceOnce: AdvanceOnce;
+  readonly controlPlane: ReturnType<typeof createControlPlaneService>;
   readonly isPaused: () => Promise<boolean>;
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;

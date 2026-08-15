@@ -6,7 +6,7 @@ import {
   createIssueCompleteActivity,
   createPullRequestApproveActivity,
   createPullRequestMergeActivity,
-  createPullRequestService,
+  type createPullRequestService,
 } from '../activities/index.js';
 import { loadPromptTemplate, renderPromptTemplate } from '../execution/index.js';
 import type { EventJournal } from '../kernel/index.js';

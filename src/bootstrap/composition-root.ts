@@ -1,4 +1,4 @@
-import { ActivityRegistry, createPullRequestService } from '../activities/index.js';
+import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
 import {
   ControlStreamKind,
   DispatchPolicy,
@@ -28,12 +28,12 @@ import {
   gitHubProviderDefinition,
   resolveGitHubResourceUrl,
 } from '../integrations/github/index.js';
-import {
+import type {
   DeliveryService,
-  type DurableFakeDeliveryProvider,
-  type ExternalDeliveryAdapter,
-  type ProviderCompositionFailure,
-  type ProviderInstance,
+  DurableFakeDeliveryProvider,
+  ExternalDeliveryAdapter,
+  ProviderCompositionFailure,
+  ProviderInstance,
 } from '../integrations/index.js';
 import {
   SystemClock,
@@ -57,7 +57,7 @@ import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime } from './integration-runtime.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { composePersistence } from './persistence-composition.js';
-import { createRuntimeProjectionRunner } from './projection-runtime.js';
+import type { createRuntimeProjectionRunner } from './projection-runtime.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import { FileScheduleCheckpointStore } from './schedule-checkpoint-store.js';
@@ -92,6 +92,7 @@ export interface CompositionRootOptions {
   /** A real fake-provider adapter for deterministic composed integration evidence. */
   readonly fakeDeliveryProvider?: DurableFakeDeliveryProvider;
 }
+
 export interface CompositionRoot {
   readonly config: ResolvedWakeModulesConfig;
   readonly fakeScenarios: FakeScenarioResolver;
@@ -120,15 +121,15 @@ export interface CompositionRoot {
   readonly runnerPipeline: RunnerPipeline;
   readonly resolveResourceLink: ResourceLinkResolver;
 }
+
 const resourceLinkResolvers: Record<string, ResourceLinkResolver> = {
   github: resolveGitHubResourceUrl,
 };
-function resolveResourceLink(externalKey: {
-  readonly adapter: string;
-  readonly key: string;
-}): string | null {
+
+function resolveResourceLink(externalKey: Parameters<ResourceLinkResolver>[0]): string | null {
   return resourceLinkResolvers[externalKey.adapter]?.(externalKey) ?? null;
 }
+
 // Composition is deliberately the one place that assembles every module.
 // eslint-disable-next-line complexity
 export async function createCompositionRoot(
@@ -210,7 +211,7 @@ export async function createCompositionRoot(
   );
   const controlPlane = createControlPlaneService({ journal, clock, ids });
   const isRuntimePaused = async () =>
-    (await controlPlane.isPaused()) || (await maintenanceBlocksRuntime(maintenance));
+    (await controlPlane.isPaused()) || (await maintenance.read()) !== null;
   const runnerControls = createRunnerControlService({
     journal,
     clock,
@@ -292,8 +293,4 @@ export async function createCompositionRoot(
     resolveResourceLink,
     ...runtime,
   };
-}
-
-async function maintenanceBlocksRuntime(maintenance: UpdateMaintenanceLease): Promise<boolean> {
-  return (await maintenance.read()) !== null;
 }
