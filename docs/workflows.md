@@ -183,10 +183,14 @@ on:
         then: implement
 ```
 
-Wake evaluates the correlated primary PR's current durable facts when this
-route begins waiting, as well as later observations. It fails closed when the
-primary PR is missing or ambiguous. An approval must be a trusted provider
-review for the current revision; issue-comment commands do not satisfy it.
+Wake processes `resourceTransitions` through two durable reactor paths. A
+matching resource fact observed while the route is waiting is evaluated as it
+arrives. When `orchestration.signal-wait-started` is recorded, the reactor also
+asks for a durable-fact catch-up, so an eligible fact that predates the wait
+can satisfy it. The subject is the WorkItem's correlated primary resource;
+missing or ambiguous primary subjects fail closed. An approval must be a
+trusted provider review for the current revision; issue-comment commands do
+not satisfy it.
 
 ```yaml
 on:

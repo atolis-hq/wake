@@ -230,7 +230,7 @@ export async function composeIntegrationRuntime(
     await projectionRunner.runRegisteredOnce();
   };
   // Only poll hits a rate-limited external API, so only this half of the
-  // tick needs a backing-off host â€” see bootstrap/surface-cli-applications.ts.
+  // Tick needs a backing-off host; see bootstrap/surface-cli-applications.ts.
   const intakePipeline = createIntakePipeline({
     isPaused: input.isPaused,
     catchUpProjections,

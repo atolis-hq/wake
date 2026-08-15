@@ -1,5 +1,5 @@
 ---
-asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
+asOf: 44e76baf9445272ab69f42b745a38ec6d06325f7
 ---
 
 # Orchestration — Module Specification
@@ -85,6 +85,17 @@ Orchestration does not own:
   Await nor a Watch gate compiles an implicit human-approval Await (the
   `approved` Signal, from `human`); a Stage opts out with
   `requiresApproval: false`.
+- **Resource transition** is a `done` OutcomeRoute's configured alternate
+  wait resolution, compiled from its `resourceTransitions` entries. A
+  transition names a supported external resource-fact event, an optional
+  closed predicate, and its own target (or the enclosing route's target).
+- **Resource-transition reactor** is the checkpointed application process
+  that tails configured evidence triggers. A fact observed while an instance
+  waits is offered as live evidence; a `SignalWaitStarted` fact asks evidence
+  to recall durable facts that predate the wait. Generic matching only
+  determines which Waiting instances declared the event/predicate; an
+  injected evidence policy must still authorise the fact and select the
+  transition before it can be applied.
 - **Supplemental activity** — an Activity requested out-of-band against an
   Active WorkflowInstance by a configured Command, queued and run before the
   WorkflowInstance's own pending Stage activity resumes.
@@ -143,6 +154,23 @@ Orchestration does not own:
   WorkflowInstance's status, MUST derive it from the module's own
   `isApprovalAwaitingSignalKind` predicate and `orchestrationStatusTransitions`
   table respectively, rather than hand-matching event or signal types itself.
+- A `done` route may declare `resourceTransitions` but no other outcome kind
+  may. Such a route starts the reserved
+  `orchestration.resource-transition` Signal wait, retaining the compiled
+  transition list with the wait expectation. The configured transitions are
+  an alternative to the route's Watch gate, not a second generic signal
+  authority.
+- Resource-transition matching is intentionally resource-agnostic:
+  Orchestration narrows a live fact by the configured event/predicate and
+  sends the candidate instance, WorkItem, transition list, and optional live
+  fact to an injected evidence policy. The policy returns either no evidence
+  or one transition plus the durable evidence identifier. Orchestration never
+  imports Resources or re-derives resource correlation, capabilities, or
+  provider trust itself.
+- Before accepting any ordinary signal, the composed service may run a
+  pre-accept barrier. Production composition drains the resource-transition
+  reactor through that barrier, so a transition fact already in the journal
+  is considered before a later signal can resolve the same wait.
 
 ## Event catalogue
 
@@ -207,6 +235,7 @@ Orchestration does not own:
 | [Child workflow policy](domain/child-workflow-policy.spec.md) | policy/process | Deriving a child's deterministic request identity; claiming its group budget; detecting and rejecting causal repeats; reconciling a completed child back to its parent as a Signal | Depends on OrchestrationGroup for the budget claim and on WorkflowInstance to actually start the child. |
 | [Workflow compiler](domain/compiler.spec.md) | adapter | Validating and compiling configured workflow definitions into the immutable runtime form every other component consumes, including Watch gates and approval-by-default | The boundary where operator-authored configuration becomes typed, branded, invariant-checked data. |
 | [Workflow selector](domain/workflow-selector.spec.md) | policy/process | Matching a WorkItem's tags/kind/adapter facts to a configured workflow name | Consumed by another module's port, not by anything inside Orchestration itself. |
+| Resource-transition matcher, evidence port, and reactor | application process | Generic waiting-instance matching, evidence-policy contract, checkpointed fact/wait-start processing, and transition application | The matcher supplies candidates to the injected policy without resource knowledge. The reactor processes both live configured facts and `SignalWaitStarted` catch-up; Bootstrap supplies its journal/checkpoint stores and the concrete capability-dispatched evidence policy. |
 | [Orchestration projection](application/orchestration-projection.spec.md) | projection | A checkpointed, queryable `WorkflowInstanceView` per WorkflowInstance | Rebuilds purely from `orchestration.*` facts on workflow-instance streams; read by other modules' surfaces rather than by Orchestration's own command handling, which reloads state directly from the stream. |
 
 ## Dependencies and system role
@@ -227,6 +256,10 @@ Orchestration does not own:
   resolved through Execution's Run repository so a match is scoped to the
   run that actually produced the triggering event. Orchestration does not
   itself run or provision anything.
+- Bootstrap (depends on this module) composes the resource-transition reactor
+  with a concrete evidence policy and its journal/checkpoint stores. That
+  policy is the boundary that knows resource capability and correlation;
+  Bootstrap also installs the reactor drain as the pre-accept signal barrier.
 - Control-plane (depends on this module) — decides when to advance a
   WorkflowInstance, cancels or blocks one on a WorkItem cancellation, and
   reads its projection for tick and read-model purposes.
