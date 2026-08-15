@@ -305,6 +305,11 @@ Each `controlPlane.schedules[]` entry requires `id`, `workflow`, `cron`, and
 `workflow` names a configured workflow, `cron` is its schedule expression, and
 `objective` becomes the new scheduled work item's objective.
 
+Schedule expressions use five whitespace-separated cron fields: minute, hour,
+day-of-month, month, and day-of-week. They are evaluated in UTC. Wake supports
+lists, ranges, steps, and the `JAN`-`DEC` and `SUN`-`SAT` aliases. Expressions
+with a seconds field and per-schedule time-zone configuration are not supported.
+
 ## `orchestration`
 
 `orchestration` defaults to `{ workflows: {}, workflowSelectors: [], default:
