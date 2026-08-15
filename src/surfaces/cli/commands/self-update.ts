@@ -12,7 +12,12 @@ export interface SelfUpdateDependencies {
 export async function runSelfUpdate(input: SelfUpdateDependencies): Promise<boolean> {
   if (!input.force && (await input.readLedger()) === input.tag) return false;
   const priorTag = await input.readLedger();
-  await input.update(input.tag);
+  try {
+    await input.update(input.tag);
+  } catch (error) {
+    if (priorTag !== null && input.rollback !== undefined) await input.rollback(priorTag);
+    throw error;
+  }
   if (input.health !== undefined && !(await input.health())) {
     if (priorTag !== null && input.rollback !== undefined) await input.rollback(priorTag);
     throw new Error('Update ' + input.tag + ' failed health verification');
