@@ -45,7 +45,7 @@ function minute(value: Date): number {
 }
 
 function hasUnsupportedSyntax(field: string): boolean {
-  return /[?#]|(^|[,*\/-])H(?=$|[,*\/-])|(^|[,*\/-])L(?=$|[,*\/-])|\dL\b/i.test(field);
+  return /[?#]|(^|[,*/-])H(?=$|[,*/-])|(^|[,*/-])L(?=$|[,*/-])|\dL\b/i.test(field);
 }
 
 function fieldExpression(fields: readonly string[], index: number, wildcardIndex: number) {
