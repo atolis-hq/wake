@@ -9,6 +9,7 @@ import type { TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
+import type { OperationCoordinator } from './orchestration-service.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 import type { ResourceTransitionMatch } from './resource-transition-matching.js';
 
@@ -32,14 +33,14 @@ export function createResourceTransitionReactor(
   evidence: ResourceTransitionEvidence,
   journal?: EventJournal,
   checkpoints?: CheckpointStore,
+  coordinate?: OperationCoordinator,
 ) {
   let queue: Promise<unknown> = Promise.resolve();
   const react = async (event: PersistedEvent, context: CommandContext): Promise<void> => {
     const orchestrationEvent = selectOrchestrationEvent(event);
-    const fact =
-      orchestrationEvent?.eventType === OrchestrationEventType.SignalWaitStarted
-        ? undefined
-        : event;
+    const isWaitStart = orchestrationEvent?.eventType === OrchestrationEventType.SignalWaitStarted;
+    if (!isWaitStart && !evidence.triggers.includes(event.eventType)) return;
+    const fact = isWaitStart ? undefined : event;
     for (const match of await orchestration.listResourceTransitionMatches(event)) {
       const resolved = await evidence.resolve({
         workItemId: match.workItemId,
@@ -73,10 +74,10 @@ export function createResourceTransitionReactor(
   return {
     react,
     runOnce(limit = batchSize): Promise<number> {
-      return serialize(() => runBatch(limit));
+      return (coordinate ?? serialize)(() => runBatch(limit));
     },
     drain(): Promise<number> {
-      return serialize(async () => {
+      return (coordinate ?? serialize)(async () => {
         let total = 0;
         let processed: number;
         do {

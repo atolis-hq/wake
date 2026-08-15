@@ -167,9 +167,10 @@ Orchestration does not own:
   or one transition plus the durable evidence identifier. Orchestration never
   imports Resources or re-derives resource correlation, capabilities, or
   provider trust itself.
-- Before accepting any ordinary signal, the composed service may run a
-  pre-accept barrier. Production composition drains the resource-transition
-  reactor through that barrier, so a transition fact already in the journal
+- The composed service may run an entire ordinary signal acceptance through
+  an operation coordinator. Production composition holds its shared
+  resource-transition ordering coordinator across the reactor drain and the
+  complete signal acceptance operation, so a transition fact already in the journal
   is considered before a later signal can resolve the same wait.
 
 ## Event catalogue
@@ -259,7 +260,8 @@ Orchestration does not own:
 - Bootstrap (depends on this module) composes the resource-transition reactor
   with a concrete evidence policy and its journal/checkpoint stores. That
   policy is the boundary that knows resource capability and correlation;
-  Bootstrap also installs the reactor drain as the pre-accept signal barrier.
+  Bootstrap installs one ordering coordinator around every reactor run and around
+  the combined reactor drain plus complete signal acceptance operation.
 - Control-plane (depends on this module) — decides when to advance a
   WorkflowInstance, cancels or blocks one on a WorkItem cancellation, and
   reads its projection for tick and read-model purposes.

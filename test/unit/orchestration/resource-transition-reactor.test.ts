@@ -91,6 +91,30 @@ it('does not apply a resource transition when evidence declines it', async () =>
   expect(applied).toBe(false);
 });
 
+it('does not query orchestration or evidence for an irrelevant event', async () => {
+  let matchingCalls = 0;
+  let evidenceCalls = 0;
+  const reactor = createResourceTransitionReactor(
+    {
+      async listResourceTransitionMatches() {
+        matchingCalls += 1;
+        throw new Error('irrelevant events must not reach matching');
+      },
+      async applyResourceTransition() {},
+    },
+    evidence(async () => {
+      evidenceCalls += 1;
+      throw new Error('irrelevant events must not reach evidence');
+    }),
+  );
+  const irrelevant = eventEnvelope('work.unrelated', {}, stream);
+
+  await expect(reactor.react(irrelevant, context)).resolves.toBeUndefined();
+
+  expect(matchingCalls).toBe(0);
+  expect(evidenceCalls).toBe(0);
+});
+
 it('asks evidence to search history when a resource-transition wait starts', async () => {
   let receivedFact: unknown = 'not-called';
   const reactor = createResourceTransitionReactor(

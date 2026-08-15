@@ -31,7 +31,7 @@ const transition: CompiledResourceTransition = {
   target: { kind: TransitionTargetKind.Complete },
 };
 
-it('dispatches each capability policy only to its matching primary resource', async () => {
+it('fails closed without invoking policies when work has multiple primary resources', async () => {
   let pullRequestPolicyCalls = 0;
   let completablePolicyCalls = 0;
   const fact = eventEnvelope(
@@ -154,9 +154,37 @@ it('dispatches each capability policy only to its matching primary resource', as
     ActivityEventType.PrChecksChanged,
     'issue.completed',
   ]);
-  expect(resolved).toEqual({ transition, evidenceId: fact.eventId });
-  expect(pullRequestPolicyCalls).toBe(1);
+  expect(resolved).toBeNull();
+  expect(pullRequestPolicyCalls).toBe(0);
   expect(completablePolicyCalls).toBe(0);
+});
+
+it('fails closed without invoking policies when work has no primary resource', async () => {
+  let policyCalls = 0;
+  const evidence = createCapabilityResourceTransitionEvidence({
+    resources: {
+      async correlationsForWork() {
+        return [];
+      },
+    } as unknown as ResourceService,
+    policies: [
+      {
+        capabilities: [BuiltInResourceCapability.Completable],
+        policy: {
+          triggers: ['issue.completed'],
+          async resolve() {
+            policyCalls += 1;
+            return null;
+          },
+        },
+      },
+    ],
+  });
+
+  await expect(
+    evidence.resolve({ workItemId: workItem, transitions: [transition] }),
+  ).resolves.toBeNull();
+  expect(policyCalls).toBe(0);
 });
 
 it('does not invoke the pull-request policy for a completable resource', async () => {

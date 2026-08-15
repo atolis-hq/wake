@@ -5,6 +5,11 @@ import {
   FileProjectionStore,
 } from '../persistence/index.js';
 import type { WakePaths } from './paths.js';
+import {
+  createResourceTransitionOrdering,
+  createTriggerAwareEventJournal,
+  createTriggerRegistry,
+} from './resource-transition-ordering.js';
 
 export interface PersistenceCompositionOptions {
   readonly journal?: EventJournal;
@@ -19,6 +24,8 @@ export interface PersistenceComposition {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
+  readonly resourceTransitionOrdering: ReturnType<typeof createResourceTransitionOrdering>;
+  readonly resourceTransitionTriggers: ReturnType<typeof createTriggerRegistry>;
 }
 
 function identity<T>(value: T): T {
@@ -30,15 +37,28 @@ export function composePersistence(
   clock: Clock,
   options: PersistenceCompositionOptions,
 ): PersistenceComposition {
-  return {
-    journal: (options.decorateJournal ?? identity)(
+  const resourceTransitionOrdering = createResourceTransitionOrdering(
+    options.journal === undefined
+      ? `${paths.locksRoot}/resource-transition-ordering.lock`
+      : undefined,
+  );
+  const resourceTransitionTriggers = createTriggerRegistry();
+  const journal = createTriggerAwareEventJournal(
+    (options.decorateJournal ?? identity)(
       options.journal ?? new FileEventJournal(paths.dataRoot, clock),
     ),
+    resourceTransitionTriggers,
+    resourceTransitionOrdering,
+  );
+  return {
+    journal,
     projections: (options.decorateProjections ?? identity)(
       options.projections ?? new FileProjectionStore(paths.dataRoot),
     ),
     checkpoints: (options.decorateCheckpoints ?? identity)(
       options.checkpoints ?? new FileCheckpointStore(paths.dataRoot),
     ),
+    resourceTransitionOrdering,
+    resourceTransitionTriggers,
   };
 }

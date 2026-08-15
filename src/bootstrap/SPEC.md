@@ -120,10 +120,12 @@ Bootstrap does not own:
   no primary resource, an ambiguous primary subject, or no matching policy
   produces no transition. The built-in pull-request policy is registered for
   `mergeable`, `reviewable`, and `approvable` capabilities.
-- Bootstrap installs `resourceTransitions.drain()` as Orchestration's
-  pre-accept signal barrier. Consequently, accepting any signal drains the
-  transition journal backlog first, preventing a later signal from
-  leapfrogging earlier eligible resource evidence for the same wait.
+- Bootstrap owns one re-entrant ordering coordinator backed in production by
+  a distinct cross-process file lock. A trigger-aware journal decorator routes
+  every append containing a frozen evidence trigger through it. The same
+  coordinator covers each reactor checkpoint lifecycle and the combined
+  reactor drain plus signal-acceptance operation, so a later signal cannot
+  leapfrog earlier eligible resource evidence for the same wait.
 - The composition root retains root-scoped configuration, paths, services,
   execution/recovery, and control-plane setup. Dedicated Bootstrap
   composition components select/decorate persistence, register built-in

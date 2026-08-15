@@ -20,9 +20,6 @@ import {
   type FakeScenarioResolver,
   type Runner,
 } from '../execution/index.js';
-// The shared Integration barrel must not re-export a provider namespace
-// (see provider-locality); composition-root is the exempt production
-// composition point that is allowed to name it directly.
 import {
   createGitHubAgentContextReader,
   gitHubProviderDefinition,
@@ -130,7 +127,6 @@ function resolveResourceLink(externalKey: Parameters<ResourceLinkResolver>[0]): 
   return resourceLinkResolvers[externalKey.adapter]?.(externalKey) ?? null;
 }
 
-// Composition is deliberately the one place that assembles every module.
 // eslint-disable-next-line complexity
 export async function createCompositionRoot(
   wakeRoot: string,
@@ -142,7 +138,13 @@ export async function createCompositionRoot(
   const maintenance = createUpdateMaintenanceLease(paths.wakeRoot);
   const clock = options.clock ?? new SystemClock();
   const ids = new UlidIdGenerator();
-  const { journal, projections, checkpoints } = composePersistence(paths, clock, options);
+  const {
+    journal,
+    projections,
+    checkpoints,
+    resourceTransitionOrdering,
+    resourceTransitionTriggers,
+  } = composePersistence(paths, clock, options);
   const work = createWorkService(journal);
   const lookup = createResourceLookup({ journal, projections });
   const resources = createResourceService(journal, lookup);
@@ -196,9 +198,7 @@ export async function createCompositionRoot(
     clock,
     {
       async inspect() {
-        // Runner adapters do not yet expose a portable process-inspection API.
-        // Preserve safety on restart: unknown external work is reconciled through
-        // the existing ambiguity path rather than being guessed as absent.
+        // Unknown external work follows the safe ambiguity path until runners expose inspection.
         return {
           kind: ExternalExecutionState.Unknown,
           reason: 'External execution inspection is not configured for this runtime',
@@ -263,6 +263,8 @@ export async function createCompositionRoot(
     wakeRoot,
     scheduleCheckpoints:
       options.scheduleCheckpoints ?? new FileScheduleCheckpointStore(paths.dataRoot),
+    resourceTransitionOrdering,
+    resourceTransitionTriggers,
     ...(options.decorateDeliveryAdapter === undefined
       ? {}
       : { decorateDeliveryAdapter: options.decorateDeliveryAdapter }),
