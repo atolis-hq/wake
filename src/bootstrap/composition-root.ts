@@ -92,7 +92,6 @@ export interface CompositionRootOptions {
   /** A real fake-provider adapter for deterministic composed integration evidence. */
   readonly fakeDeliveryProvider?: DurableFakeDeliveryProvider;
 }
-
 export interface CompositionRoot {
   readonly config: ResolvedWakeModulesConfig;
   readonly fakeScenarios: FakeScenarioResolver;
@@ -121,18 +120,15 @@ export interface CompositionRoot {
   readonly runnerPipeline: RunnerPipeline;
   readonly resolveResourceLink: ResourceLinkResolver;
 }
-
 const resourceLinkResolvers: Record<string, ResourceLinkResolver> = {
   github: resolveGitHubResourceUrl,
 };
-
 function resolveResourceLink(externalKey: {
   readonly adapter: string;
   readonly key: string;
 }): string | null {
   return resourceLinkResolvers[externalKey.adapter]?.(externalKey) ?? null;
 }
-
 // Composition is deliberately the one place that assembles every module.
 // eslint-disable-next-line complexity
 export async function createCompositionRoot(
