@@ -6,8 +6,8 @@ import type {
 } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import {
-  ResourceTransitionSignal,
   OrchestrationEventType,
+  ResourceTransitionSignal,
   WatchGateVerdictSignal,
 } from '../contracts/events.js';
 import type { StageName } from '../contracts/identifiers.js';

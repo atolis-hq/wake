@@ -5,9 +5,9 @@ import {
   type CommandContext,
   type EventJournal,
 } from '../../kernel/index.js';
+import type { TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import type { TransitionTarget } from '../contracts/config.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 import type { ResourceTransitionMatch } from './resource-transition-matching.js';
@@ -15,9 +15,7 @@ import type { ResourceTransitionMatch } from './resource-transition-matching.js'
 type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
 
 interface ResourceTransitionOrchestrationPort {
-  listResourceTransitionMatches(
-    event: PersistedEvent,
-  ): Promise<readonly ResourceTransitionMatch[]>;
+  listResourceTransitionMatches(event: PersistedEvent): Promise<readonly ResourceTransitionMatch[]>;
   applyResourceTransition(
     workflowInstanceId: WorkflowInstanceId,
     target: TransitionTarget,

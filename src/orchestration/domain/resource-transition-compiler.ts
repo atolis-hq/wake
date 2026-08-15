@@ -1,6 +1,6 @@
 import type {
-  CompiledResourceTransition,
   CompiledOutcomeRoute,
+  CompiledResourceTransition,
   ResourceTransitionConfig,
   WorkflowDefinitionConfig,
 } from '../contracts/config.js';

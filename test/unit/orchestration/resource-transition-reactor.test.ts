@@ -16,8 +16,8 @@ import {
   type CompiledResourceTransition,
   type ResourceTransitionEvidence,
 } from '../../../src/orchestration/index.js';
-import { workItemId } from '../../../src/work/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
+import { workItemId } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
 
@@ -42,9 +42,7 @@ const context: CommandContext = {
   actor: { kind: 'system', id: 'test' },
 };
 
-function evidence(
-  resolve: ResourceTransitionEvidence['resolve'],
-): ResourceTransitionEvidence {
+function evidence(resolve: ResourceTransitionEvidence['resolve']): ResourceTransitionEvidence {
   return { triggers: [ActivityEventType.PrStateChanged], resolve };
 }
 
