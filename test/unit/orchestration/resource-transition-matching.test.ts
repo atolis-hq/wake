@@ -161,7 +161,13 @@ it('ignores instances that are not waiting', async () => {
   expect(await service.listResourceTransitionMatches(mergedFact)).toStrictEqual([]);
 });
 
-it('applying the same confirmed evidence twice produces exactly one state change', async () => {
+// Covers "no re-fire once Waiting has already been left" — NOT duplicate-evidence
+// protection. By the second call `loaded.view.waitingFor` is already undefined
+// (the first call's decision already moved the instance on), so
+// acceptResourceTransition's own null-waitingFor guard short-circuits before
+// decideSignal ever runs. See the concurrent test below for the case that
+// actually exercises duplicate evidence arriving while still Waiting.
+it('does not re-fire a second sequential apply once the instance has left Waiting', async () => {
   const { journal, service, instance, baseContext } = await waitingService();
   const mergedFact = eventEnvelope(
     ActivityEventType.PrStateChanged,
@@ -189,4 +195,52 @@ it('applying the same confirmed evidence twice produces exactly one state change
   expect(first?.currentStage).toBe('after-merge');
   expect(afterSecond).toBe(afterFirst);
   expect(second).toStrictEqual(first);
+});
+
+// The genuine duplicate-evidence race: both calls load the instance while it
+// is still Waiting (neither has appended yet), so signal-policy's
+// acceptedSignalIds guard cannot see the other call — it only protects a
+// reload after a prior apply has already landed (see the sequential test
+// above). What actually keeps this safe is that both calls are issued with
+// the same command context, so acceptResourceTransition derives the same
+// causationId/eventId for both, and the journal's append() recognises the
+// second draft as already-recorded (identical eventId and content) instead
+// of re-checking the expected sequence. Two overlapping calls for the same
+// evidence issued with *different* command contexts are NOT protected this
+// way — see the report for that finding.
+it('two overlapping applies of the same confirmed evidence, same command context, produce exactly one state change', async () => {
+  const { journal, service, instance, baseContext } = await waitingService();
+  const mergedFact = eventEnvelope(
+    ActivityEventType.PrStateChanged,
+    { state: PullRequestState.Merged },
+    prStream,
+  );
+  const matches = await service.listResourceTransitionMatches(mergedFact);
+  const target = matches[0]!.transitions[0]!.target;
+  const context = { ...baseContext, commandId: 'apply-concurrent' };
+
+  const [first, second] = await Promise.all([
+    service.applyResourceTransition(
+      instance.workflowInstanceId,
+      target,
+      mergedFact.eventId,
+      context,
+    ),
+    service.applyResourceTransition(
+      instance.workflowInstanceId,
+      target,
+      mergedFact.eventId,
+      context,
+    ),
+  ]);
+
+  expect(first?.currentStage).toBe('after-merge');
+  expect(second?.currentStage).toBe('after-merge');
+  const stageEnteredCount = (await journal.readAll(0)).filter(
+    (event) =>
+      event.eventType === OrchestrationEventType.StageEntered &&
+      event.stream.id === instance.workflowInstanceId &&
+      (event.payload as { stage?: string }).stage === 'after-merge',
+  ).length;
+  expect(stageEnteredCount).toBe(1);
 });
