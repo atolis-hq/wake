@@ -1,6 +1,11 @@
 import type { ActivationId, ActivityName, ActivityOutcome } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
-import type { ApprovalAuthority, StageConfig, TransitionTarget } from './config.js';
+import type {
+  ApprovalAuthority,
+  CompiledResourceTransition,
+  StageConfig,
+  TransitionTarget,
+} from './config.js';
 import type {
   OrchestrationGroupId,
   SignalName,
@@ -30,6 +35,7 @@ export interface SignalExpectationView {
   readonly from?: readonly ApprovalAuthority[];
   readonly resume?: TransitionTarget;
   readonly onRejectResume?: TransitionTarget;
+  readonly resourceTransitions?: readonly CompiledResourceTransition[];
 }
 
 export interface SupplementalActivityView {

@@ -44,12 +44,27 @@ export class OrchestrationRepository {
   }
 
   async list() {
-    const ids = new Set(
-      (await this.journal.readAll(0))
-        .filter((event) => isWorkflowInstanceStream(event.stream))
-        .map((event) => event.stream.id),
-    );
-    return Promise.all([...ids].map((id) => this.load(id)));
+    const events = await this.journal.readAll(0);
+    const streams = new Map<string, (typeof events)[number][]>();
+    for (const event of events) {
+      if (!isWorkflowInstanceStream(event.stream)) continue;
+      const existing = streams.get(event.stream.id);
+      if (existing === undefined) streams.set(event.stream.id, [event]);
+      else existing.push(event);
+    }
+    // `sequence` counts every event on the stream, matching readStream, while the
+    // fold sees only owned orchestration events — exactly what load() computes.
+    return [...streams.values()].map((streamEvents) => ({
+      sequence: streamEvents.length,
+      view: foldWorkflowInstance(
+        streamEvents
+          .map(selectWorkflowOrchestrationEvent)
+          .filter(
+            (event): event is WorkflowOrchestrationEvent =>
+              event !== null && isWorkflowInstanceStream(event.stream),
+          ),
+      ),
+    }));
   }
 }
 

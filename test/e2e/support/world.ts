@@ -4,6 +4,7 @@ import {
   activationId as parseActivationId,
   type ActivityDefinition,
 } from '../../../src/activities/index.js';
+import { createCapabilityResourceTransitionEvidence } from '../../../src/bootstrap/index.js';
 import {
   createAdvanceOnce,
   createWorkCancellationPolicy,
@@ -28,6 +29,8 @@ import {
 import {
   compileWorkflow,
   createOrchestrationService,
+  createPullRequestTransitionEvidence,
+  createResourceTransitionReactor,
   createWatchReactor,
   orchestrationGroupId,
   workflowInstanceId as parseWorkflowInstanceId,
@@ -44,6 +47,7 @@ import {
   ProjectionRunner,
 } from '../../../src/persistence/index.js';
 import {
+  BuiltInResourceCapability,
   createResourceLookup,
   createResourceService,
   type ResourceView,
@@ -142,6 +146,32 @@ export class TestWorld {
     this.checkpoints,
     new RunRepository(this.journal),
   );
+
+  private readonly resourceTransitionReactor = createResourceTransitionReactor(
+    this.orchestration,
+    createCapabilityResourceTransitionEvidence({
+      resources: this.resources,
+      policies: [
+        {
+          capabilities: [
+            BuiltInResourceCapability.Mergeable,
+            BuiltInResourceCapability.Reviewable,
+            BuiltInResourceCapability.Approvable,
+          ],
+          policy: createPullRequestTransitionEvidence(this.pullRequests),
+        },
+      ],
+    }),
+    this.journal,
+    this.checkpoints,
+  );
+
+  constructor() {
+    this.orchestration.setAcceptSignalOperationCoordinator(async (operation) => {
+      await this.resourceTransitionReactor.drain();
+      return operation();
+    });
+  }
 
   private readonly stream: EntityRef<'test', 'scenario'> = {
     kind: 'test',
@@ -269,6 +299,14 @@ export class TestWorld {
     return this.resources.discover(input, this.command());
   }
 
+  correlateResource(resourceId: string, workItemId: WorkItemId, role: 'primary' | 'secondary') {
+    return this.resources.correlate(resourceId as never, workItemId, role, this.command());
+  }
+
+  observePullRequest(input: Parameters<typeof this.pullRequests.observe>[0]) {
+    return this.pullRequests.observe(input, this.command());
+  }
+
   private async syncWorkflowDefinitions(): Promise<void> {
     await this.definitionProjections.runOnce(workflowDefinitionsProjection);
   }
@@ -362,6 +400,7 @@ export class TestWorld {
       maxProgress: 1,
     });
     await this.watchReactor.runOnce();
+    await this.resourceTransitionReactor.runOnce();
     return result;
   }
 

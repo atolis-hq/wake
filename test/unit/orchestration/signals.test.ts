@@ -114,7 +114,7 @@ async function waitingService(input: { readonly watchGate?: boolean } = {}) {
     },
     { ...baseContext, commandId: 'wait' },
   );
-  return { service, baseContext };
+  return { service, baseContext, journal };
 }
 
 async function rejectedApprovalWaitingService(onRejectResume?: {
@@ -216,6 +216,34 @@ it('does not let a human reply reset the retry count', async () => {
   );
   expect(resumed.retryCounts).toEqual({ 'implement:failed': 1 });
   expect(resumed.pendingActivation?.ordinal).toBe(3);
+});
+
+it('runs the complete signal acceptance inside its operation coordinator', async () => {
+  const { service, baseContext, journal } = await waitingService();
+  const before = (await journal.readAll(0)).length;
+  let coordinatorCalls = 0;
+  service.setAcceptSignalOperationCoordinator(async (operation) => {
+    coordinatorCalls += 1;
+    expect(await journal.readAll(0)).toHaveLength(before);
+    const result = await operation();
+    expect((await journal.readAll(0)).length).toBeGreaterThan(before);
+    return result;
+  });
+
+  await service.acceptSignal(
+    workflowInstanceId('workflow-1'),
+    {
+      kind: signalName('accepted'),
+      resourceId: resId('pr-1'),
+      revision: 'abc123',
+      actorId: 'owner',
+      actorDecision: { authorized: true, evidenceId: 'review-decision-1' },
+      providerEventId: 'github-comment-1',
+    },
+    { ...baseContext, commandId: 'signal-1' },
+  );
+
+  expect(coordinatorCalls).toBe(1);
 });
 
 it('restarts the current refine stage when an approval is rejected', async () => {

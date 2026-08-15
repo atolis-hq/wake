@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
-import { activationId, activityName, ActivityOutcomeKind } from '../../activities/index.js';
+import {
+  activationId,
+  ActivityEventType,
+  activityName,
+  ActivityOutcomeKind,
+  PullRequestCheckState,
+  PullRequestState,
+} from '../../activities/index.js';
 import { WorkspaceMode } from '../../execution/index.js';
 import {
   brandedStringSchema,
@@ -136,6 +143,22 @@ const transitionTargetSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
 ]);
+const resourceTransitionSchema = z
+  .object({
+    event: z.enum([
+      ActivityEventType.PrReviewAccepted,
+      ActivityEventType.PrStateChanged,
+      ActivityEventType.PrChecksChanged,
+    ]),
+    where: z
+      .union([
+        z.object({ state: z.literal(PullRequestState.Merged) }).strict(),
+        z.object({ checks: z.literal(PullRequestCheckState.Failing) }).strict(),
+      ])
+      .optional(),
+    target: transitionTargetSchema,
+  })
+  .strict();
 
 export const expectationSchema = z
   .object({
@@ -145,6 +168,7 @@ export const expectationSchema = z
     from: z.array(approvalAuthoritySchema).min(1).optional(),
     resume: transitionTargetSchema.optional(),
     onRejectResume: transitionTargetSchema.optional(),
+    resourceTransitions: z.array(resourceTransitionSchema).min(1).optional(),
   })
   .strict();
 

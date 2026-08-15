@@ -1,5 +1,5 @@
 ---
-asOf: f1cd25e219207b9710ccb19632faac67ee757ae8
+asOf: 15f550dbd4142dbcf86aa5409d13d0291fc43fec
 ---
 
 # Bootstrap — Module Specification
@@ -37,6 +37,10 @@ Bootstrap owns:
   onto its target resource's stream, and resolving a correlated resource's
   adapter-formatted key to a human-followable external URL when that
   adapter's link resolver supports it.
+- Composing capability-dispatched resource-transition evidence policies. This
+  is the only layer that can inspect a WorkItem's primary resource
+  correlations and capabilities while supplying Orchestration with a
+  resource-agnostic evidence port.
 - Assembling the CLI and HTTP API surface applications that translate the
   composed graph's state into the response shapes `surfaces` defines, and
   dispatching commands from those surfaces into the composed services.
@@ -98,14 +102,35 @@ Bootstrap does not own:
   than one fixed sequence: an intake pipeline (catch up projections, poll
   every configured provider, translate polled provider input into facts)
   and a runner pipeline (catch up projections, run configured schedules,
-  react to newly appended facts — watch, artifact-registration,
-  agent-run-publication, and delivery-outcome reactions — advance the
-  control plane by one bounded step, then attempt one outbound delivery).
+  advance the control plane by one bounded step, react to newly appended
+  facts, publish agent runs, then catch up projections and attempt one
+  outbound delivery). The reaction stage runs Watch first, then resource
+  transitions, artifact registration, delivery outcomes, and provider
+  maintenance; it runs again after delivery.
   Only the intake pipeline touches an externally rate-limited API, which is
   why it is kept separate: a caller that only needs runner-side progress
   (the HTTP API's `advance` command, a resident runner loop) never pays for
   a poll. Bootstrap decides what each stage does by supplying it a concrete
   implementation; it does not itself decide whether a stage runs.
+- The composed resource-transition reactor tails its evidence triggers with
+  its own checkpoint. It processes both a matching fact arriving while an
+  instance waits and `orchestration.signal-wait-started`, whose evidence
+  policy recalls durable facts that predate the wait. Bootstrap dispatches
+  that policy from the WorkItem's correlated primary resource capabilities;
+  no primary resource, an ambiguous primary subject, or no matching policy
+  produces no transition. The built-in pull-request policy is registered for
+  `mergeable`, `reviewable`, and `approvable` capabilities.
+- Bootstrap owns one re-entrant ordering coordinator backed in production by
+  a distinct cross-process file lock. A trigger-aware journal decorator routes
+  every append containing a frozen evidence trigger through it. The same
+  coordinator covers each reactor checkpoint lifecycle and the combined
+  reactor drain plus signal-acceptance operation, so a later signal cannot
+  leapfrog earlier eligible resource evidence for the same wait.
+- The composition root retains root-scoped configuration, paths, services,
+  execution/recovery, and control-plane setup. Dedicated Bootstrap
+  composition components select/decorate persistence, register built-in
+  activities, compose integration runtime (providers, reactors, projection
+  runner, delivery, and the two pipelines), and provide transcript retention.
 - Both pipelines MUST check the composed control-plane's pause state before
   operational work; a paused pipeline invocation MUST not poll, schedule,
   react, advance, execute, recover, reconcile, or deliver. Projection
@@ -218,6 +243,8 @@ Bootstrap does not own:
 | [Fake scenario resolution](fake-scenarios.spec.md) | adapter | Loading an optional `fake-scenarios.yaml` into the resolver a `fake`-kind runner scripts its responses from | Given to runner registry composition so a fixture can script a specific fake runner by its configured name. |
 | [Runner quota reporter](runner-quota-reporter.spec.md) | adapter | Translating an execution runner's quota-exhaustion signal into a control-plane fact | Given to execution as a callback; execution never appends control-plane facts itself. |
 | [Status-publish built-in activity](status-publish-activity.spec.md) | adapter | The `status.publish` Activity, available to every workflow without operator configuration | Registered into the activity registry the composition root builds; appends to the target resource's own stream. |
+| Capability resource-transition evidence | adapter | Resolving the correlated primary resource's capabilities to an evidence policy | Composed into Orchestration's generic reactor. The built-in policy recognises pull-request evidence for mergeable, reviewable, and approvable resources; missing or ambiguous primary subjects fail closed. |
+| Integration runtime composition | composition | Provider registry, projection runner, intake/runner pipelines, delivery, and ordered reactors | Receives already-composed module services from the root. It composes the resource-transition reactor and installs its full drain before Orchestration accepts any signal. |
 | [Board projection](board-projection.spec.md) | projection | Folding Work, Orchestration, and Execution events into one per-WorkItem operator-board card | Read by the API surface application's board and status responses; registered for production catch-up/rebuild alongside every other module's own projections. |
 | [Self-update](self-update.spec.md) | policy/process | The maintenance-lease, drain/cancel, update-verify-rollback sequence this installation's source checkout (and, when sandboxed, Docker container) advances through | Invoked by the CLI surface application's `self-update` command with concrete git/Docker collaborators; its failure log is read directly by the API surface application's `system.health` check. |
 | [API surface application](surface-api-applications.spec.md) | surface application | Translating the composed graph's state into the HTTP API's system, control-plane, board, resources, orchestration, execution, events, and observability responses | The only path the HTTP API and the CLI's own HTTP-hosting commands use to reach the composed graph. |

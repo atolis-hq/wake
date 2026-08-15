@@ -5,7 +5,11 @@ import { TransitionTargetKind } from '../contracts/vocabulary.js';
 
 function edges(stages: Readonly<Record<StageName, CompiledStage>>, name: StageName): StageName[] {
   return Object.values(stages[name]!.on).flatMap((route) =>
-    route.target.kind === TransitionTargetKind.Stage ? [route.target.stage] : [],
+    [
+      route.target,
+      ...(route.watchGates ?? []).map((gate) => gate.onRejectTarget),
+      ...(route.resourceTransitions ?? []).map((transition) => transition.target),
+    ].flatMap((target) => (target.kind === TransitionTargetKind.Stage ? [target.stage] : [])),
   );
 }
 

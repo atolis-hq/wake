@@ -28,6 +28,7 @@ import {
 } from '../contracts/identifiers.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
 import { defaultApprovalAwait } from './approval-defaults.js';
+import { compileResourceTransitions } from './resource-transition-compiler.js';
 import { assertCyclesBounded, assertReachable } from './workflow-graph.js';
 
 export function compileWorkflow(
@@ -122,6 +123,8 @@ function compileStages(
   ) as Record<StageName, CompiledStage>;
 }
 
+// The stage compiler keeps route validation and compilation together.
+// eslint-disable-next-line max-lines-per-function
 function compileStage(
   context: StageCompileContext,
   rawStageName: string,
@@ -131,55 +134,75 @@ function compileStage(
   const { workflowName: compiledWorkflowName, activities, declaredWatchIds } = context;
   const definition = activities.describe(activityName(stage.activity));
   const on = Object.fromEntries(
-    Object.entries(stage.on).map(([outcomeKind, route]) => {
-      if (!definition.outcomeKinds.includes(outcomeKind))
-        throw new Error(
-          `Workflow outcome route ${outcomeKind} is not declared by Activity ${definition.name}`,
-        );
-      if (!isReservedTerminal(route.then) && !(route.then in allStages))
-        throw new Error(`Unknown transition target: ${route.then}`);
-      if (route.await !== undefined && route.watchGates !== undefined)
-        throw new Error(
-          `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} cannot configure both await and watchGates`,
-        );
-      const followOns = route.activities?.map((activity) => ({
-        use: activityName(activity.use),
-        with: activities.validateInput(activityName(activity.use), activity.with),
-      }));
-      const target = compileTarget(route.then, outcomeKind);
-      const effectiveAwait = defaultApprovalAwait(stage, outcomeKind, route);
-      const compiled: CompiledOutcomeRoute = Object.freeze({
-        target,
-        ...(route.repeat === undefined ? {} : { repeat: route.repeat }),
-        ...(route.retry === undefined ? {} : { retry: route.retry }),
-        ...(followOns === undefined ? {} : { activities: Object.freeze(followOns) }),
-        ...(effectiveAwait === undefined
-          ? {}
-          : {
-              await: compileAwait(
-                compiledWorkflowName,
-                rawStageName,
-                target,
-                effectiveAwait,
-                declaredWatchIds,
-              ),
-            }),
-        ...(route.watchGates === undefined
-          ? {}
-          : {
-              watchGates: compileWatchGates(
-                compiledWorkflowName,
-                rawStageName,
-                outcomeKind,
-                route.watchGates,
-                declaredWatchIds,
-                allStages,
-              ),
-            }),
-        id: `${compiledWorkflowName}:${rawStageName}:${outcomeKind}`,
-      });
-      return [outcomeKind, compiled];
-    }),
+    Object.entries(stage.on).map(
+      // The route schema is deliberately closed and validated in one compiler pass.
+      // eslint-disable-next-line complexity
+      ([outcomeKind, route]) => {
+        if (!definition.outcomeKinds.includes(outcomeKind))
+          throw new Error(
+            `Workflow outcome route ${outcomeKind} is not declared by Activity ${definition.name}`,
+          );
+        if (!isReservedTerminal(route.then) && !(route.then in allStages))
+          throw new Error(`Unknown transition target: ${route.then}`);
+        if (route.await !== undefined && route.watchGates !== undefined)
+          throw new Error(
+            `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} cannot configure both await and watchGates`,
+          );
+        if (route.resourceTransitions !== undefined && outcomeKind !== ActivityOutcomeKind.Done)
+          throw new Error(
+            `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} resourceTransitions are only valid on done`,
+          );
+        const followOns = route.activities?.map((activity) => ({
+          use: activityName(activity.use),
+          with: activities.validateInput(activityName(activity.use), activity.with),
+        }));
+        const target = compileTarget(route.then, outcomeKind);
+        const effectiveAwait = defaultApprovalAwait(stage, outcomeKind, route);
+        const compiled: CompiledOutcomeRoute = Object.freeze({
+          target,
+          ...(route.repeat === undefined ? {} : { repeat: route.repeat }),
+          ...(route.retry === undefined ? {} : { retry: route.retry }),
+          ...(followOns === undefined ? {} : { activities: Object.freeze(followOns) }),
+          ...(effectiveAwait === undefined
+            ? {}
+            : {
+                await: compileAwait(
+                  compiledWorkflowName,
+                  rawStageName,
+                  target,
+                  effectiveAwait,
+                  declaredWatchIds,
+                ),
+              }),
+          ...(route.watchGates === undefined
+            ? {}
+            : {
+                watchGates: compileWatchGates(
+                  compiledWorkflowName,
+                  rawStageName,
+                  outcomeKind,
+                  route.watchGates,
+                  declaredWatchIds,
+                  allStages,
+                ),
+              }),
+          ...(route.resourceTransitions === undefined
+            ? {}
+            : {
+                resourceTransitions: compileResourceTransitions(
+                  route.resourceTransitions,
+                  route.then,
+                  outcomeKind,
+                  allStages,
+                  isReservedTerminal,
+                  compileTarget,
+                ),
+              }),
+          id: `${compiledWorkflowName}:${rawStageName}:${outcomeKind}`,
+        });
+        return [outcomeKind, compiled];
+      },
+    ),
   );
   return Object.freeze({
     activity: definition.name,

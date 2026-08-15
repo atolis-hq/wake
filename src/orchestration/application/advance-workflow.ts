@@ -1,10 +1,6 @@
-import {
-  ActivityEventType,
-  PullRequestCheckState,
-  selectActivityEvent,
-  type ActivationId,
-} from '../../activities/index.js';
+import type { ActivationId, selectActivityEvent } from '../../activities/index.js';
 import { EventSourceKind, createEventDraft, type CommandContext } from '../../kernel/index.js';
+import type { TransitionTarget } from '../contracts/config.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import {
@@ -22,7 +18,12 @@ import {
 } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import {
+  acceptResourceTransition,
+  matchResourceTransitions,
+} from './resource-transition-matching.js';
 import type { StartWorkflow } from './start-workflow.js';
+import { matchWatches } from './watch-matching.js';
 
 export class OperatorRetryIneligibleError extends Error {
   constructor(detail: string) {
@@ -233,6 +234,22 @@ export class AdvanceWorkflow {
     return (await this.listAllLoaded()).map(({ view }) => view);
   }
 
+  // Matching and application are generic (see resource-transition-matching.ts):
+  // this module holds no resource-kind knowledge.
+  async listResourceTransitionMatches(event: PersistedEvent) {
+    return matchResourceTransitions(await this.listAllLoaded(), event);
+  }
+
+  applyResourceTransition(
+    id: WorkflowInstanceId,
+    target: TransitionTarget,
+    evidenceId: string,
+    context: CommandContext,
+  ) {
+    const { repository, workflows } = this;
+    return acceptResourceTransition(repository, workflows, id, target, evidenceId, context);
+  }
+
   // One shared load per live instance, reused for both the watch match and
   // (when a match needs blocking) the append sequence — avoids reloading
   // every instance a second time just to recover its sequence.
@@ -244,36 +261,6 @@ export class AdvanceWorkflow {
   }
 
   async listWatchMatches(event: PersistedEvent, context?: CommandContext) {
-    const matches = await Promise.all(
-      (await this.listAllLoaded()).map(async ({ view: parent, sequence }) => {
-        const definition =
-          context === undefined
-            ? await this.workflows.definitionFor(parent)
-            : await this.workflows.definitionForOperation(parent, sequence, context);
-        if (definition === null) return [];
-        return definition.watches
-          .filter(
-            (watch) =>
-              watch.on?.events.includes(event.eventType) === true &&
-              watch.while.stages.includes(parent.currentStage) &&
-              watch.while.statuses.some((status) => status === parent.status) &&
-              matchesWatchPredicate(watch.where, event),
-          )
-          .map((watch) => ({ parent, watch }));
-      }),
-    );
-    return matches.flat();
+    return matchWatches(await this.listAllLoaded(), event, this.workflows, context);
   }
-}
-
-function matchesWatchPredicate(
-  predicate: { readonly checks: typeof PullRequestCheckState.Failing } | undefined,
-  event: PersistedEvent,
-): boolean {
-  if (predicate === undefined) return true;
-  const activityEvent = selectActivityEvent(event);
-  return (
-    activityEvent?.eventType === ActivityEventType.PrChecksChanged &&
-    activityEvent.payload.checks === PullRequestCheckState.Failing
-  );
 }

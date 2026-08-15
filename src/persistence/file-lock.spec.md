@@ -21,9 +21,24 @@ the single lock path it is given.
 
 - Acquiring a lock MUST be a single, non-blocking attempt: it MUST either
   succeed or fail immediately, never wait or retry internally.
-- A lock is held by writing lock-metadata to the path using exclusive
-  creation; an acquisition attempt against an existing, non-stale lock file
-  MUST fail.
+- Without `staleRequiresDeadProcess`, the lock retains the legacy single-file
+  representation and time-only recovery behavior. With that option, a lock is
+  held by writing an immutable, uniquely named owner record under the path's
+  owner-record directory. Another live owner record blocks acquisition.
+- The unique record name MUST encode the owner PID and acquisition time so an
+  acquirer can evaluate a record left incomplete by a crash. Incomplete
+  records remain blocking unless their encoded owner is proven dead and stale.
+- While a new owner is active it MUST also hold a legacy-path compatibility
+  record dated far enough in the future that an old binary cannot time-reclaim
+  it. A new binary correlates that record to its unique owner record. If the
+  owner crashes, new binaries can recover under normal stale policy, but the
+  compatibility record intentionally leaves old binaries fail-closed until
+  operator cleanup. This is the bounded rolling-upgrade contract; rollback
+  after such a crash requires removing the abandoned compatibility record.
+  A strict acquirer that encounters a non-compatibility legacy lock fails
+  closed even if its PID appears dead; operator cleanup is required before
+  entering strict mode because old release/delete behavior cannot safely mix
+  with immutable owner records.
 - An acquirer MAY supply a staleness threshold. A lock whose own recorded
   acquisition time is older than that threshold MUST be treated as
   abandoned and reclaimed automatically on the next attempt, without
@@ -33,10 +48,21 @@ the single lock path it is given.
   liveness probe (including permission failure) MUST be treated as live, so
   the lock is retained. Callers that do not opt in retain the time-only stale
   reclamation policy above.
-- Releasing a lock MUST remove the lock file only if it still holds the
-  same lock identity that was acquired; it MUST NOT remove a lock file that
-  has since been reclaimed by a different holder. Release MUST be
-  best-effort: a lock file that is already gone MUST NOT cause an error.
+- Strict stale recovery MUST NOT delete or replace a shared owner pathname. A
+  stale record may be ignored and compacted only when its PID is proven dead.
+  Malformed or unreadable records fail closed. Simultaneous strict contenders
+  may all lose, but MUST NOT both acquire. Without the opt-in, the legacy
+  time-only policy and representation remain unchanged.
+- The bounded helper's default stale threshold still requires its recorded
+  owner's local PID to be proven dead before that record is ignored.
+- Proven-dead unique records are compacted during acquisition. A directory
+  above 1,024 records fails closed so acquisition work stays bounded; PID reuse
+  may temporarily retain a dead record as a safe false positive.
+- Strict release MUST remove only its own unique owner record. It MUST NOT
+  wait on another contender or remove another owner's record. The last current
+  owner removes the compatibility record before its own record; while that
+  owner record remains, a concurrent newcomer must withdraw. Release MUST be
+  best-effort: a record that is already gone MUST NOT cause an error.
 - The bounded helper that acquires a lock, runs an operation, and releases
   it afterward MUST raise an error immediately if the lock could not be
   acquired, without running the operation, and MUST always release an

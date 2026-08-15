@@ -5,7 +5,12 @@ import {
   type ResourceStreamRef,
 } from '../../resources/index.js';
 import { workItemStream, type WorkItemStreamRef, type WorkService } from '../../work/index.js';
-import { ActivityEventType, type ActivityFactDraft } from '../contracts/events.js';
+import {
+  ActivityEventType,
+  selectActivityEvent,
+  type ActivityEvent,
+  type ActivityFactDraft,
+} from '../contracts/events.js';
 import { ActivityResourceRole } from '../contracts/vocabulary.js';
 import { isReviewAuthorized } from '../review/authorization.js';
 import { isPullRequestLikeResource } from './capability.js';
@@ -48,6 +53,7 @@ export interface PullRequestService {
   ): Promise<ReturnType<typeof decidePullRequestAuthority>>;
   authorityInput(workItemId: ObservePullRequest['workItemId']): Promise<PullRequestAuthorityInput>;
   get(resourceId: ObservePullRequest['resourceId']): Promise<PullRequestView | null>;
+  factsFor(resourceId: ObservePullRequest['resourceId']): Promise<readonly ActivityEvent[]>;
 }
 
 export function createPullRequestService(
@@ -71,6 +77,11 @@ class JournalPullRequestService implements PullRequestService {
       (view, event) => pullRequestProjection.project(view, event),
       pullRequestProjection.initial(resourceId),
     );
+  }
+
+  async factsFor(resourceId: ObservePullRequest['resourceId']): Promise<readonly ActivityEvent[]> {
+    const events = await this.journal.readStream(resourceStream(resourceId));
+    return events.map(selectActivityEvent).filter(isPresent);
   }
 
   async observe(command: ObservePullRequest, context: CommandContext): Promise<PullRequestView> {

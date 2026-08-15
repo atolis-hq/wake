@@ -5,7 +5,11 @@ import type {
   TransitionTarget,
 } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
-import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
+import {
+  OrchestrationEventType,
+  ResourceTransitionSignal,
+  WatchGateVerdictSignal,
+} from '../contracts/events.js';
 import type { StageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
@@ -22,6 +26,8 @@ interface DecisionContext {
   readonly causationId: string;
 }
 
+// Route completion combines the mutually exclusive wait, await, and target policies.
+// eslint-disable-next-line complexity
 export function finishRoute(
   events: WorkflowOrchestrationEventDraft[],
   definition: CompiledWorkflow,
@@ -29,21 +35,28 @@ export function finishRoute(
   input: TransitionInput,
   route: CompiledOutcomeRoute,
 ): void {
-  if (route.watchGates !== undefined) {
-    const gate = route.watchGates[0]!;
+  if (route.watchGates !== undefined || route.resourceTransitions !== undefined) {
+    const gate = route.watchGates?.[0];
     events.push(
       stateDraft(
         state,
         input,
         OrchestrationEventType.SignalWaitStarted,
         {
-          signalKind: WatchGateVerdictSignal,
-          from: Object.freeze([
-            { kind: ApprovalAuthorityKind.Watch, watch: gate.watch },
-            { kind: ApprovalAuthorityKind.Human },
-          ]),
+          signalKind: gate === undefined ? ResourceTransitionSignal : WatchGateVerdictSignal,
+          ...(gate === undefined
+            ? {}
+            : {
+                from: Object.freeze([
+                  { kind: ApprovalAuthorityKind.Watch, watch: gate.watch },
+                  { kind: ApprovalAuthorityKind.Human },
+                ]),
+              }),
           resume: route.target,
-          onRejectResume: gate.onRejectTarget,
+          ...(gate === undefined ? {} : { onRejectResume: gate.onRejectTarget }),
+          ...(route.resourceTransitions === undefined
+            ? {}
+            : { resourceTransitions: route.resourceTransitions }),
         },
         events.length + 1,
       ),

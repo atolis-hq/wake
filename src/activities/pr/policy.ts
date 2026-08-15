@@ -79,6 +79,19 @@ function hasPrimaryCorrelationConflict(
   );
 }
 
+// Happy-path wrapper over the same primary-resource and pull-request
+// selection rules `decidePullRequestAuthority` uses, for callers that only
+// need the selected pair and not a specific denial code.
+export function selectPrimaryPullRequest(
+  input: PullRequestAuthorityInput,
+  workItemId: string,
+): { readonly resource: PullRequestResourceView; readonly pullRequest: PullRequestView } | null {
+  const resource = selectResource(input, workItemId, ActivityResourceRole.Primary);
+  if (isDenial(resource)) return null;
+  const pullRequest = selectPullRequest(input, resource, workItemId);
+  return isDenial(pullRequest) ? null : { resource, pullRequest };
+}
+
 function selectResource(
   input: PullRequestAuthorityInput,
   workItemId: string,

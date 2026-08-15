@@ -2,7 +2,7 @@ import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import type { CommandContext, EventJournal, ProjectionStore } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
-import type { CompiledWorkflow } from '../contracts/config.js';
+import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
 import type {
   ChildWorkflowRequest,
   OrchestrationSignal,
@@ -26,6 +26,7 @@ export class OrchestrationService {
   private readonly acceptWorkflowSignal: AcceptSignal;
   private readonly advanceWorkflow: AdvanceWorkflow;
   private readonly childWorkflows: RequestChild;
+  private coordinateAcceptSignal: OperationCoordinator = (operation) => operation();
 
   constructor(
     journal: EventJournal,
@@ -41,8 +42,8 @@ export class OrchestrationService {
       work,
       new WorkflowDefinitionRegistry(journal, projections, definitions),
     );
-    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow);
+    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.childWorkflows = new RequestChild(
       repository,
       claims,
@@ -96,7 +97,13 @@ export class OrchestrationService {
     signal: OrchestrationSignal,
     context: CommandContext,
   ) {
-    return this.acceptWorkflowSignal.execute(workflowInstanceId, signal, context);
+    return this.coordinateAcceptSignal(() =>
+      this.acceptWorkflowSignal.execute(workflowInstanceId, signal, context),
+    );
+  }
+
+  setAcceptSignalOperationCoordinator(coordinator: OperationCoordinator): void {
+    this.coordinateAcceptSignal = coordinator;
   }
 
   requestSupplementalActivity(
@@ -179,7 +186,29 @@ export class OrchestrationService {
   ) {
     return this.advanceWorkflow.listWatchMatches(event, context);
   }
+
+  listResourceTransitionMatches(
+    event: Parameters<AdvanceWorkflow['listResourceTransitionMatches']>[0],
+  ) {
+    return this.advanceWorkflow.listResourceTransitionMatches(event);
+  }
+
+  applyResourceTransition(
+    workflowInstanceId: WorkflowInstanceId,
+    target: TransitionTarget,
+    evidenceId: string,
+    context: CommandContext,
+  ) {
+    return this.advanceWorkflow.applyResourceTransition(
+      workflowInstanceId,
+      target,
+      evidenceId,
+      context,
+    );
+  }
 }
+
+export type OperationCoordinator = <Result>(operation: () => Promise<Result>) => Promise<Result>;
 
 export const createOrchestrationService = (
   journal: EventJournal,
