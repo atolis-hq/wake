@@ -308,7 +308,9 @@ Each `controlPlane.schedules[]` entry requires `id`, `workflow`, `cron`, and
 Schedule expressions use five whitespace-separated cron fields: minute, hour,
 day-of-month, month, and day-of-week. They are evaluated in UTC. Wake supports
 lists, ranges, steps, and the `JAN`-`DEC` and `SUN`-`SAT` aliases. Expressions
-with a seconds field and per-schedule time-zone configuration are not supported.
+with a seconds field, `?`, `H`, `L`, or `#` syntax and per-schedule time-zone
+configuration are not supported. When both day-of-month and day-of-week are
+restricted, both must match.
 
 ## `orchestration`
 

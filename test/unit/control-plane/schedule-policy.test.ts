@@ -75,4 +75,32 @@ describe('SchedulePolicy', () => {
       },
     ]);
   });
+
+  it('requires both day-of-month and day-of-week restrictions to match', () => {
+    const policy = new SchedulePolicy();
+
+    expect(
+      policy.elapsedSlots(
+        { ...config, cron: '0 0 1 * MON' },
+        '2026-06-30T00:00:00.000Z',
+        '2026-05-31T23:59:00.000Z',
+      ),
+    ).toEqual([
+      {
+        identity: 'schedule:nightly:2026-06-01T00:00:00.000Z',
+        at: '2026-06-01T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('rejects undocumented randomized and extended cron syntax', () => {
+    const policy = new SchedulePolicy();
+
+    expect(() =>
+      policy.elapsedSlots({ ...config, cron: 'H * * * *' }, '2026-01-01T00:00:00.000Z', null),
+    ).toThrow();
+    expect(() =>
+      policy.elapsedSlots({ ...config, cron: '? * * * *' }, '2026-01-01T00:00:00.000Z', null),
+    ).toThrow();
+  });
 });

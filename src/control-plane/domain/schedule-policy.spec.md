@@ -36,6 +36,8 @@ once per schedule per host cycle.
   `cron-parser`, constrained to Wake's five-field form. Lists, ranges, steps,
   and `JAN`-`DEC`/`SUN`-`SAT` aliases are supported; invalid expressions MUST
   throw instead of being treated as never matching.
+- `?`, `H`, `L`, and `#` syntax is unsupported. When both day-of-month and
+  day-of-week fields are restricted, both fields MUST match.
 - Occurrences are evaluated in UTC, never in the deriving process's local
   timezone. A seconds field or time-zone configuration is not part of Wake's
   schedule interface.
