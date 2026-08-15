@@ -8,16 +8,27 @@ describe('target test tiers', () => {
     const packageJson = JSON.parse(await read('package.json')) as {
       scripts: Record<string, string>;
     };
-    const [unit, architecture, integration, e2e, live] = await Promise.all([
+    const [unit, architecture, integration, e2e, live, workflow] = await Promise.all([
       read('vitest.unit.config.ts'),
       read('vitest.architecture.config.ts'),
       read('vitest.integration.config.ts'),
       read('vitest.e2e.config.ts'),
       read('vitest.live-e2e.config.ts'),
+      read('.github/workflows/ci-cd.yml'),
     ]);
 
-    expect(packageJson.scripts.test).toBe('vitest run');
-    expect(packageJson.scripts.verify).toContain('npm test');
+    expect(packageJson.scripts.test).toBe('npm run test:unit');
+    expect(packageJson.scripts.verify).toContain('npm run check:specs');
+    expect(packageJson.scripts['check:specs:report']).toBe('node scripts/report-spec-drift.mjs');
+    expect(packageJson.scripts.verify).toContain('npm run check:specs:report');
+    expect(packageJson.scripts.verify).toContain('npm run build');
+    expect(packageJson.scripts.verify).toContain('npm run test:unit');
+    expect(packageJson.scripts).toHaveProperty('verify:ci');
+    expect(packageJson.scripts['verify:ci']).toContain('npm run test:architecture');
+    expect(packageJson.scripts['verify:ci']).toContain('npm run test:integration');
+    expect(packageJson.scripts['verify:ci']).toContain('npm run test:e2e');
+    expect(packageJson.scripts['verify:ci']).toContain('npm run knip');
+    expect(packageJson.scripts['verify:ci']).toContain('npm run test:web');
     expect(packageJson.scripts).not.toHaveProperty('test:next');
     expect(packageJson.scripts).not.toHaveProperty('verify:next');
     expect(unit).toContain("include: ['test/unit/**/*.test.ts']");
@@ -27,5 +38,14 @@ describe('target test tiers', () => {
     expect(e2e).toContain("include: ['test/e2e/**/*.test.ts']");
     expect(e2e).toContain("exclude: ['test/e2e/scenarios/live-*.test.ts']");
     expect(live).toContain("include: ['test/e2e/scenarios/live-*.test.ts']");
+    expect(workflow).toContain('fast-verify:');
+    expect(workflow).toContain('npm run verify && npm run knip');
+    expect(workflow).toContain('integration:');
+    expect(workflow).toContain('npm run test:integration');
+    expect(workflow).toContain('e2e:');
+    expect(workflow).toContain('npm run test:e2e');
+    expect(workflow).toContain('web:');
+    expect(workflow).toContain('npm run test:web');
+    expect(workflow.match(/cache: npm/g) ?? []).toHaveLength(5);
   });
 });

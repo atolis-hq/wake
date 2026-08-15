@@ -6,12 +6,18 @@ import {
   parseFakeScenarios,
   type FakeScenarioResolver,
 } from '../execution/index.js';
+import type { TextFileReader } from './config/load-config.js';
 
-export async function loadFakeScenarios(wakeRoot: string): Promise<FakeScenarioResolver> {
+const nodeFileReader: TextFileReader = { readFile: (path) => readFile(path, 'utf8') };
+
+export async function loadFakeScenarios(
+  wakeRoot: string,
+  fileSystem: TextFileReader = nodeFileReader,
+): Promise<FakeScenarioResolver> {
   const path = join(wakeRoot, 'fake-scenarios.yaml');
   let source: string;
   try {
-    source = await readFile(path, 'utf8');
+    source = await fileSystem.readFile(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyFakeScenarios;
     throw error;
