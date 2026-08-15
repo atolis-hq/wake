@@ -528,6 +528,7 @@ async function composeIntegrationRuntime(
     input.journal,
     input.checkpoints,
   );
+  input.orchestration.setPreAcceptSignalBarrier(() => resourceTransitions.runOnce());
   const outcomes = new DeliveryOutcomeReactor(
     input.journal,
     input.checkpoints,

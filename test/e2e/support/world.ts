@@ -166,6 +166,10 @@ export class TestWorld {
     this.checkpoints,
   );
 
+  constructor() {
+    this.orchestration.setPreAcceptSignalBarrier(() => this.resourceTransitionReactor.runOnce());
+  }
+
   private readonly stream: EntityRef<'test', 'scenario'> = {
     kind: 'test',
     id: 'scenario',

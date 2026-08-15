@@ -26,6 +26,7 @@ export class OrchestrationService {
   private readonly acceptWorkflowSignal: AcceptSignal;
   private readonly advanceWorkflow: AdvanceWorkflow;
   private readonly childWorkflows: RequestChild;
+  private preAcceptSignalBarrier: (() => Promise<unknown>) | undefined;
 
   constructor(
     journal: EventJournal,
@@ -91,12 +92,17 @@ export class OrchestrationService {
     return this.acceptWorkflowSignal.wait(workflowInstanceId, expectation, context);
   }
 
-  acceptSignal(
+  async acceptSignal(
     workflowInstanceId: WorkflowInstanceId,
     signal: OrchestrationSignal,
     context: CommandContext,
   ) {
+    await this.preAcceptSignalBarrier?.();
     return this.acceptWorkflowSignal.execute(workflowInstanceId, signal, context);
+  }
+
+  setPreAcceptSignalBarrier(barrier: () => Promise<unknown>): void {
+    this.preAcceptSignalBarrier = barrier;
   }
 
   requestSupplementalActivity(
