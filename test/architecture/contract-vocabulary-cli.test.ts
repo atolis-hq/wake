@@ -10,7 +10,9 @@ const usage = 'Usage: node scripts/check-contract-vocabulary.mjs [--rules rule,r
 
 afterEach(async () => {
   await Promise.all(
-    fixtureRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+    fixtureRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })),
   );
 });
 

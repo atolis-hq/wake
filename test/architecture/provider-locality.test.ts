@@ -21,7 +21,9 @@ const fixtureRoots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    fixtureRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+    fixtureRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })),
   );
 });
 

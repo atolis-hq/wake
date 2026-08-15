@@ -14,7 +14,11 @@ const roots: string[] = [];
 
 describe('GitWorkspaceProvider workspace recovery', () => {
   afterEach(async () => {
-    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+    await Promise.all(
+      roots
+        .splice(0)
+        .map((root) => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })),
+    );
   });
 
   it('retains an owned workspace for an open WorkItem after a terminal Run', async () => {

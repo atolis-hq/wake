@@ -7,7 +7,11 @@ import { loadPromptTemplate, renderPromptTemplate } from '../../../src/execution
 const roots: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(
+    roots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })),
+  );
 });
 
 describe('E2E-PROMPT-001 loadPromptTemplate', () => {
