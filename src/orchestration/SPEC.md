@@ -1,5 +1,5 @@
 ---
-asOf: 15f550dbd4142dbcf86aa5409d13d0291fc43fec
+asOf: bd8bb1aa03eafa30f725e024ca2d5bf45ad234af
 ---
 
 # Orchestration — Module Specification
@@ -168,10 +168,15 @@ Orchestration does not own:
   imports Resources or re-derives resource correlation, capabilities, or
   provider trust itself.
 - The composed service may run an entire ordinary signal acceptance through
-  an operation coordinator. Production composition holds its shared
-  resource-transition ordering coordinator across the reactor drain and the
-  complete signal acceptance operation, so a transition fact already in the journal
-  is considered before a later signal can resolve the same wait.
+  an operation coordinator. Production composition drains the
+  resource-transition reactor before every signal acceptance, so a
+  transition fact already in the journal is considered before a later
+  signal can resolve the same wait. `acceptResourceTransition` also
+  tolerates two concurrent applications of the same evidence issued under
+  different command identities: on an append conflict it reloads and treats
+  the transition as already applied when the evidence id appears in
+  `acceptedSignalIds` or the instance has left `Waiting`, rethrowing only a
+  genuine conflict.
 
 ## Event catalogue
 
@@ -259,9 +264,9 @@ Orchestration does not own:
   itself run or provision anything.
 - Bootstrap (depends on this module) composes the resource-transition reactor
   with a concrete evidence policy and its journal/checkpoint stores. That
-  policy is the boundary that knows resource capability and correlation;
-  Bootstrap installs one ordering coordinator around every reactor run and around
-  the combined reactor drain plus complete signal acceptance operation.
+  policy is the boundary that knows resource capability and correlation.
+  The reactor serializes its own `runOnce`/`drain` calls in-process; Bootstrap
+  wires signal acceptance to drain the reactor first, with no external lock.
 - Control-plane (depends on this module) — decides when to advance a
   WorkflowInstance, cancels or blocks one on a WorkItem cancellation, and
   reads its projection for tick and read-model purposes.

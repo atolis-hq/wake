@@ -138,13 +138,7 @@ export async function createCompositionRoot(
   const maintenance = createUpdateMaintenanceLease(paths.wakeRoot);
   const clock = options.clock ?? new SystemClock();
   const ids = new UlidIdGenerator();
-  const {
-    journal,
-    projections,
-    checkpoints,
-    resourceTransitionOrdering,
-    resourceTransitionTriggers,
-  } = composePersistence(paths, clock, options);
+  const { journal, projections, checkpoints } = composePersistence(paths, clock, options);
   const work = createWorkService(journal);
   const lookup = createResourceLookup({ journal, projections });
   const resources = createResourceService(journal, lookup);
@@ -263,8 +257,6 @@ export async function createCompositionRoot(
     wakeRoot,
     scheduleCheckpoints:
       options.scheduleCheckpoints ?? new FileScheduleCheckpointStore(paths.dataRoot),
-    resourceTransitionOrdering,
-    resourceTransitionTriggers,
     ...(options.decorateDeliveryAdapter === undefined
       ? {}
       : { decorateDeliveryAdapter: options.decorateDeliveryAdapter }),
