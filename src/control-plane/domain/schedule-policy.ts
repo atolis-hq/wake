@@ -1,3 +1,4 @@
+import { CronExpressionParser } from 'cron-parser';
 import type { ScheduleConfig } from '../contracts/config.js';
 
 export interface ScheduleSlot {
@@ -18,13 +19,21 @@ export class SchedulePolicy {
     const fields = config.cron.trim().split(/\s+/);
     if (fields.length !== 5)
       throw new Error(`Schedule ${config.id} must use a five-field cron expression`);
+    if (fields.some(hasUnsupportedSyntax))
+      throw new Error(`Schedule ${config.id} uses unsupported cron syntax`);
+    const expression = CronExpressionParser.parse(config.cron, {
+      currentDate: new Date(start - 1),
+      endDate: new Date(end),
+      tz: 'UTC',
+    });
+    const dayOfMonth = fieldExpression(fields, 2, 4);
+    const dayOfWeek = fieldExpression(fields, 4, 2);
     const slots: ScheduleSlot[] = [];
-    for (let cursor = start; cursor <= end; cursor += 60_000) {
-      const date = new Date(cursor);
-      if (matches(fields, date)) {
-        const at = date.toISOString();
-        slots.push({ identity: `schedule:${config.id}:${at}`, at });
-      }
+    while (expression.hasNext()) {
+      const date = expression.next().toDate();
+      if (!matchesDays(date, dayOfMonth, dayOfWeek)) continue;
+      const at = date.toISOString();
+      slots.push({ identity: `schedule:${config.id}:${at}`, at });
     }
     return slots;
   }
@@ -35,30 +44,21 @@ function minute(value: Date): number {
   return Math.floor(value.getTime() / 60_000) * 60_000;
 }
 
-function matches(fields: readonly string[], date: Date): boolean {
-  return (
-    matchesField(fields[0]!, date.getUTCMinutes(), 0, 59) &&
-    matchesField(fields[1]!, date.getUTCHours(), 0, 23) &&
-    matchesField(fields[2]!, date.getUTCDate(), 1, 31) &&
-    matchesField(fields[3]!, date.getUTCMonth() + 1, 1, 12) &&
-    matchesField(fields[4]!, date.getUTCDay(), 0, 6)
-  );
+function hasUnsupportedSyntax(field: string): boolean {
+  return /[?#]|(^|[,*/-])H(?=$|[,*/-])|(^|[,*/-])L(?=$|[,*/-])|\dL\b/i.test(field);
 }
 
-function matchesField(
-  expression: string,
-  value: number,
-  minimum: number,
-  maximum: number,
+function fieldExpression(fields: readonly string[], index: number, wildcardIndex: number) {
+  if (fields[index] === '*') return null;
+  const constrained = [...fields];
+  constrained[wildcardIndex] = '*';
+  return CronExpressionParser.parse(constrained.join(' '), { tz: 'UTC' });
+}
+
+function matchesDays(
+  date: Date,
+  dayOfMonth: ReturnType<typeof fieldExpression>,
+  dayOfWeek: ReturnType<typeof fieldExpression>,
 ): boolean {
-  return expression.split(',').some((part) => {
-    const [base, stepText] = part.split('/');
-    const step = stepText === undefined ? 1 : Number(stepText);
-    if (!Number.isInteger(step) || step < 1) throw new Error(`Invalid cron step: ${part}`);
-    if (base === '*') return (value - minimum) % step === 0;
-    const number = Number(base);
-    if (!Number.isInteger(number) || number < minimum || number > maximum)
-      throw new Error(`Invalid cron field: ${part}`);
-    return value === number;
-  });
+  return (dayOfMonth?.includesDate(date) ?? true) && (dayOfWeek?.includesDate(date) ?? true);
 }

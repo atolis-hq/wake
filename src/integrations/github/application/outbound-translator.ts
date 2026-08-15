@@ -26,6 +26,7 @@ interface GitHubOutboundCommand {
 export function translateGitHubOutbound(
   resource: ResourceView,
   intent: DeliveryIntentView,
+  options: { readonly publicUiUrl?: string | undefined } = {},
 ): GitHubOutboundCommand {
   if (resource.externalKey.adapter !== GitHubAdapter)
     throw new Error('Resource is not a GitHub resource');
@@ -43,6 +44,7 @@ export function translateGitHubOutbound(
           body: formatAgentRunComment({
             idempotencyKey: intent.intentEventId,
             ...intent.payload.report,
+            publicUiUrl: options.publicUiUrl,
           }),
         }
       : 'body' in intent.payload

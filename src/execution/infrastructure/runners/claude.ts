@@ -142,10 +142,12 @@ export function cliRunner(
                 output: value.stdout,
                 runner: name,
                 failure: {
-                  kind: value.timedOut ? ExecutionCancellationReason.Timeout : 'process-exit',
+                  kind: value.timedOut
+                    ? ExecutionCancellationReason.Timeout
+                    : (value.failureKind ?? 'process-exit'),
                   message: value.timedOut
                     ? `Runner timed out after ${options.timeoutMs}ms`
-                    : value.stderr || `exit ${value.exitCode}`,
+                    : (value.failureMessage ?? (value.stderr || `exit ${value.exitCode}`)),
                 },
               },
         ),

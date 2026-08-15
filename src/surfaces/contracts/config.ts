@@ -11,7 +11,17 @@ export const surfacesConfigSchema = z
       .strict()
       .default({ enabled: false, host: '127.0.0.1', port: 4317 }),
     web: z
-      .object({ enabled: z.boolean().default(false) })
+      .object({
+        enabled: z.boolean().default(false),
+        publicUrl: z
+          .string()
+          .trim()
+          .url()
+          .refine((value) => new URL(value).protocol === 'https:', {
+            message: 'Web public URL must use HTTPS',
+          })
+          .optional(),
+      })
       .strict()
       .default({ enabled: false }),
   })
@@ -31,7 +41,10 @@ export const surfacesConfigSchema = z
       host: value.api.host ?? '127.0.0.1',
       port: value.api.port ?? 4317,
     },
-    web: { enabled: value.web.enabled ?? false },
+    web: {
+      enabled: value.web.enabled ?? false,
+      ...(value.web.publicUrl === undefined ? {} : { publicUrl: value.web.publicUrl }),
+    },
   }));
 
 export type SurfacesConfig = z.infer<typeof surfacesConfigSchema>;

@@ -173,6 +173,8 @@ surfaces:
     port: 4317
   web:
     enabled: false
+    # Optional stable HTTPS address Wake links from GitHub agent-run reports.
+    # publicUrl: https://wake.example.ngrok.app
 
 transcripts:
   enabled: false
@@ -304,6 +306,13 @@ Each `controlPlane.schedules[]` entry requires `id`, `workflow`, `cron`, and
 `objective`, all non-empty strings. `id` identifies the schedule,
 `workflow` names a configured workflow, `cron` is its schedule expression, and
 `objective` becomes the new scheduled work item's objective.
+
+Schedule expressions use five whitespace-separated cron fields: minute, hour,
+day-of-month, month, and day-of-week. They are evaluated in UTC. Wake supports
+lists, ranges, steps, and the `JAN`-`DEC` and `SUN`-`SAT` aliases. Expressions
+with a seconds field, `?`, `H`, `L`, or `#` syntax and per-schedule time-zone
+configuration are not supported. When both day-of-month and day-of-week are
+restricted, both must match.
 
 ## `orchestration`
 
@@ -468,6 +477,7 @@ fields are for deterministic testing, not normal operation.
 | `surfaces.api.host` | string; default `127.0.0.1` | API bind host. |
 | `surfaces.api.port` | positive integer; default `4317` | API bind port. |
 | `surfaces.web.enabled` | boolean; default `false` | Enables the web surface. It requires `surfaces.api.enabled: true`. |
+| `surfaces.web.publicUrl` | HTTPS URL; optional | Stable operator-managed address for the web UI. When set, GitHub agent-run comments link their **Wake** header to this URL. See [Public UI access](public-ui-access.md). |
 | `transcripts.enabled` | boolean; default `false` | Enables filesystem-only raw agent prompt/response capture. |
 | `transcripts.retentionMs` | non-negative integer; default `86400000` | Transcript retention duration in milliseconds. Raw transcripts are not journal events. |
 

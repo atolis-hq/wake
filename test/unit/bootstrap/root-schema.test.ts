@@ -30,3 +30,23 @@ describe('transcript capture configuration', () => {
     ).toThrow(/retainAfterWorkspaceCleanup/);
   });
 });
+
+describe('web surface configuration', () => {
+  it('accepts an optional HTTPS public URL for GitHub message links', () => {
+    expect(
+      parseRootConfig({
+        ...baseConfig,
+        surfaces: { web: { publicUrl: 'https://wake.example.com' } },
+      }).surfaces.web,
+    ).toEqual({ enabled: false, publicUrl: 'https://wake.example.com' });
+  });
+
+  it('rejects a non-HTTPS public URL', () => {
+    expect(() =>
+      parseRootConfig({
+        ...baseConfig,
+        surfaces: { web: { publicUrl: 'http://wake.example.com' } },
+      }),
+    ).toThrow(/https/i);
+  });
+});

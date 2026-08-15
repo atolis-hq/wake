@@ -37,7 +37,12 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
           const resource = await services.resources.get(resourceId(intent.resourceId));
           if (resource === null)
             throw new Error(`GitHub resource ${intent.resourceId} is unavailable`);
-          return client.deliver({ ...translateGitHubOutbound(resource, intent), idempotencyKey });
+          return client.deliver({
+            ...translateGitHubOutbound(resource, intent, {
+              publicUiUrl: services.publicUiUrl,
+            }),
+            idempotencyKey,
+          });
         },
         async (intent) => {
           if (intent.kind !== BuiltInActivityName.IssueComplete) return null;
