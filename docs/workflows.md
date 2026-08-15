@@ -183,6 +183,13 @@ on:
         then: implement
 ```
 
+A `resourceTransitions` entry that routes back to the same stage is not
+bounded by `repeat` — that option applies only to an ordinary route
+transition, not to a resource-transition resume. If failing checks can route
+back into the stage that produced them, as above, verify the target
+Activity's own behavior bounds retries (for example, a repair template that
+gives up after N attempts), or route to a distinct stage instead of looping.
+
 Wake processes `resourceTransitions` through two durable reactor paths. A
 matching resource fact observed while the route is waiting is evaluated as it
 arrives. When `orchestration.signal-wait-started` is recorded, the reactor also
