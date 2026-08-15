@@ -167,7 +167,7 @@ export class TestWorld {
   );
 
   constructor() {
-    this.orchestration.setPreAcceptSignalBarrier(() => this.resourceTransitionReactor.runOnce());
+    this.orchestration.setPreAcceptSignalBarrier(() => this.resourceTransitionReactor.drain());
   }
 
   private readonly stream: EntityRef<'test', 'scenario'> = {

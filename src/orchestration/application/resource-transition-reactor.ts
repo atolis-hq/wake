@@ -27,6 +27,7 @@ interface ResourceTransitionOrchestrationPort {
 }
 
 const checkpoint = 'reactor:orchestration.resource-transition';
+const batchSize = 100;
 
 export function createResourceTransitionReactor(
   orchestration: ResourceTransitionOrchestrationPort,
@@ -56,7 +57,7 @@ export function createResourceTransitionReactor(
         );
       }
     },
-    async runOnce(limit = 100): Promise<number> {
+    async runOnce(limit = batchSize): Promise<number> {
       if (journal === undefined || checkpoints === undefined)
         throw new Error('ResourceTransitionReactor journal and checkpoints are required to run');
       const events = await journal.readAll(await checkpoints.load(checkpoint), limit);
@@ -65,6 +66,15 @@ export function createResourceTransitionReactor(
         await checkpoints.save(checkpoint, event.globalPosition);
       }
       return events.length;
+    },
+    async drain(): Promise<number> {
+      let total = 0;
+      let processed: number;
+      do {
+        processed = await this.runOnce();
+        total += processed;
+      } while (processed === batchSize);
+      return total;
     },
   };
 }

@@ -199,6 +199,43 @@ it('moves its checkpoint once after each event in journal order', async () => {
   expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(2);
 });
 
+it('drains more than one batch and advances its checkpoint through the final event', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  await journal.append(
+    stream,
+    0,
+    Array.from({ length: 101 }, (_, index) =>
+      createEventDraft({
+        eventId: `event-${index + 1}`,
+        eventType: ActivityEventType.PrStateChanged,
+        occurredAt: '2026-08-15T12:00:00.000Z',
+        correlationId: 'correlation-1',
+        causationId: `cause-${index + 1}`,
+        actor: { kind: 'integration', id: 'test' },
+        source: { kind: 'internal', id: 'test' },
+        stream,
+        payload: { state: 'merged' },
+      }),
+    ),
+  );
+  const reactor = createResourceTransitionReactor(
+    {
+      async listResourceTransitionMatches() {
+        return [];
+      },
+      async applyResourceTransition() {},
+    },
+    evidence(async () => null),
+    journal,
+    checkpoints,
+  );
+
+  await expect(reactor.drain()).resolves.toBe(101);
+  expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(101);
+  await expect(reactor.runOnce()).resolves.toBe(0);
+});
+
 it('does not advance after a failed reaction and reuses its command context on replay', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();

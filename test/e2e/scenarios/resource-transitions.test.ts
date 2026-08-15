@@ -52,6 +52,8 @@ it('uses the earliest matching primary-PR fact before a later watch verdict', as
     baseRevision: 'base',
     checks: 'passing',
   });
+  for (let index = 0; index < 101; index += 1)
+    await world.appendFact('test.backlog', { index }, `backlog-${index}`);
   await world.observePullRequest({
     resourceId,
     workItemId: work.workItemId,
