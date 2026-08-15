@@ -1,10 +1,12 @@
-import { spawn } from 'node:child_process';
+import { execa } from 'execa';
 
 interface ProcessExecutionResult {
   readonly stdout: string;
   readonly stderr: string;
-  readonly exitCode: number | null;
+  readonly exitCode: number | undefined;
   readonly timedOut: boolean;
+  readonly failureKind?: 'output-limit';
+  readonly failureMessage?: string;
 }
 
 export function runProcess(
@@ -14,29 +16,30 @@ export function runProcess(
   signal: AbortSignal,
   timeoutMs?: number,
 ): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
-  const child = spawn(command, args, { cwd, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
-  const result = new Promise<ProcessExecutionResult>((resolve, reject) => {
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-    const timeout =
-      timeoutMs === undefined
-        ? undefined
-        : setTimeout(() => {
-            timedOut = true;
-            child.kill();
-          }, timeoutMs);
-    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
-    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-    child.once('error', (error) => {
-      if (timeout !== undefined) clearTimeout(timeout);
-      reject(error);
-    });
-    child.once('close', (exitCode) => {
-      if (timeout !== undefined) clearTimeout(timeout);
-      resolve({ stdout, stderr, exitCode, timedOut });
-    });
+  const child = execa(command, args, {
+    ...(cwd === undefined ? {} : { cwd }),
+    shell: false,
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+    cancelSignal: signal,
+    ...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
+    reject: false,
+    stripFinalNewline: false,
   });
-  signal.addEventListener('abort', () => child.kill(), { once: true });
-  return { result, cancel: async () => void child.kill() };
+  return {
+    result: child.then((result) => ({
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      ...(result.isMaxBuffer
+        ? {
+            failureKind: 'output-limit' as const,
+            ...(result.shortMessage === undefined ? {} : { failureMessage: result.shortMessage }),
+          }
+        : {}),
+    })),
+    cancel: async () => void child.kill(),
+  };
 }

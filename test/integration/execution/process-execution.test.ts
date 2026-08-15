@@ -186,6 +186,20 @@ describe('cliRunner', () => {
     });
   });
 
+  it('maps a missing command to a typed process-exit failure', async () => {
+    const runner = cliRunner('missing-cli', 'wake-command-that-does-not-exist', () => []);
+    const execution = await runner.start(
+      { runId: 'run-1', prompt: 'ignored', allowedTools: [] },
+      new AbortController().signal,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({
+      transport: 'failed',
+      runner: 'missing-cli',
+      failure: { kind: 'process-exit', message: expect.any(String) },
+    });
+  });
+
   it('keeps Claude invocation usage unchanged when shared parser plumbing receives a baseline', async () => {
     const stdout = JSON.stringify({
       result: 'claude answer',
