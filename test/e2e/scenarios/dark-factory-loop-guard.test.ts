@@ -85,5 +85,17 @@ defineScenario(
     expect(await world.events('orchestration.child-requested')).toHaveLength(3);
     expect(await world.events('orchestration.group-budget-exhausted')).toHaveLength(1);
     expect((await world.viewWorkflow(parent.workflowInstanceId))?.status).toBe('blocked');
+
+    await world.acceptSignal(parent.workflowInstanceId, {
+      kind: WatchGateVerdictSignal,
+      outcome: 'done',
+      actorId: 'human',
+      actorDecision: { authorized: true, evidenceId: 'human-approval' },
+      providerEventId: 'human-approval',
+      authority: { kind: 'human' },
+    });
+
+    expect((await world.viewWorkflow(parent.workflowInstanceId))?.status).toBe('completed');
+    expect(await world.events('orchestration.child-requested')).toHaveLength(3);
   },
 );

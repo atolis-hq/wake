@@ -31,7 +31,9 @@ import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { resId, workId } from '../../support/identities.js';
 
-async function waitingService(input: { readonly watchGate?: boolean } = {}) {
+async function waitingService(
+  input: { readonly watchGate?: boolean; readonly humanAuthority?: boolean } = {},
+) {
   const journal = new InMemoryEventJournal(new FakeClock());
   const work = createWorkService(journal);
   const baseContext = {
@@ -107,7 +109,10 @@ async function waitingService(input: { readonly watchGate?: boolean } = {}) {
       revision: 'abc123',
       ...(input.watchGate
         ? {
-            from: [{ kind: 'watch' as const, watch: watchId('pr-review') }],
+            from: [
+              { kind: 'watch' as const, watch: watchId('pr-review') },
+              ...(input.humanAuthority ? [{ kind: 'human' as const }] : []),
+            ],
             onRejectResume: { kind: 'stage' as const, stage: stageName('implement') },
           }
         : {}),
@@ -302,6 +307,92 @@ it('honors an explicit rejection resume target', async () => {
     OrchestrationEventType.ActivityRequested,
   ]);
   expect(events.at(-1)?.payload).toMatchObject({ activity: 'refine' });
+});
+
+it('lets an explicitly human-authorized signal resolve a retained blocked wait', async () => {
+  const { service, baseContext, journal } = await rejectedApprovalWaitingService();
+  await service.block(workflowInstanceId('workflow-1'), 'group-budget-exhausted', {
+    ...baseContext,
+    commandId: 'exhaust-budget',
+  });
+  const before = (await journal.readAll(0)).length;
+
+  const resumed = await service.acceptSignal(
+    workflowInstanceId('workflow-1'),
+    {
+      kind: ApprovedSignal,
+      resourceId: resId('pr-1'),
+      revision: 'abc123',
+      actorId: 'owner',
+      actorDecision: { authorized: true, evidenceId: 'human-approval' },
+      providerEventId: 'github-comment-approved',
+      authority: { kind: 'human' },
+    },
+    { ...baseContext, commandId: 'approval-after-block' },
+  );
+
+  expect(resumed).toMatchObject({
+    status: WorkflowStatus.Active,
+    currentStage: stageName('implement'),
+    acceptedSignalIds: ['github-comment-approved'],
+    pendingActivation: { activity: activityName('implement') },
+  });
+  expect((await journal.readAll(0)).slice(before).map((event) => event.eventType)).toEqual([
+    OrchestrationEventType.SignalAccepted,
+    OrchestrationEventType.StageEntered,
+    OrchestrationEventType.ActivityRequested,
+  ]);
+});
+
+it('does not let a watch signal resolve a blocked mixed-authority wait', async () => {
+  const { service, baseContext } = await waitingService({ watchGate: true, humanAuthority: true });
+  await service.block(workflowInstanceId('workflow-1'), 'group-budget-exhausted', {
+    ...baseContext,
+    commandId: 'exhaust-budget',
+  });
+
+  const unchanged = await service.acceptSignal(
+    workflowInstanceId('workflow-1'),
+    {
+      kind: WatchGateVerdictSignal,
+      resourceId: resId('pr-1'),
+      revision: 'abc123',
+      outcome: ActivityOutcomeKind.Done,
+      actorId: 'bot',
+      actorDecision: { authorized: true, evidenceId: 'watch-verdict' },
+      providerEventId: 'watch-verdict',
+      authority: { kind: 'watch', watch: watchId('pr-review') },
+    },
+    { ...baseContext, commandId: 'watch-after-block' },
+  );
+
+  expect(unchanged).toMatchObject({ status: WorkflowStatus.Blocked, acceptedSignalIds: [] });
+  expect(unchanged.waitingFor?.from).toContainEqual({ kind: 'human' });
+});
+
+it('does not let a human signal resolve a blocked wait without human authority', async () => {
+  const { service, baseContext } = await waitingService({ watchGate: true });
+  await service.block(workflowInstanceId('workflow-1'), 'group-budget-exhausted', {
+    ...baseContext,
+    commandId: 'exhaust-budget',
+  });
+
+  const unchanged = await service.acceptSignal(
+    workflowInstanceId('workflow-1'),
+    {
+      kind: WatchGateVerdictSignal,
+      resourceId: resId('pr-1'),
+      revision: 'abc123',
+      outcome: ActivityOutcomeKind.Done,
+      actorId: 'human',
+      actorDecision: { authorized: true, evidenceId: 'human-approval' },
+      providerEventId: 'human-approval',
+      authority: { kind: 'human' },
+    },
+    { ...baseContext, commandId: 'human-after-block' },
+  );
+
+  expect(unchanged).toMatchObject({ status: WorkflowStatus.Blocked, acceptedSignalIds: [] });
 });
 
 it('accepts one matching signal while waiting and ignores duplicates', async () => {

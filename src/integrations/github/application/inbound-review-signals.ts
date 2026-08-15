@@ -7,7 +7,7 @@ import {
   type PullRequestService,
 } from '../../../activities/index.js';
 import type { EventJournal, IdGenerator } from '../../../kernel/index.js';
-import { type OrchestrationService } from '../../../orchestration/index.js';
+import { ApprovalAuthorityKind, type OrchestrationService } from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
   BuiltInResourceKind,
@@ -227,6 +227,9 @@ async function applyWorkflowSignal(input: {
             evidenceId: event.eventId,
           },
           providerEventId: event.eventId,
+          ...(event.payload.actor.kind === ReviewActorKind.Human
+            ? { authority: { kind: ApprovalAuthorityKind.Human } }
+            : {}),
         },
         commandContext(event),
       );

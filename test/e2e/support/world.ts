@@ -353,6 +353,14 @@ export class TestWorld {
     );
   }
 
+  blockWorkflow(workflowInstanceId: string, reason: string) {
+    return this.orchestration.block(
+      parseWorkflowInstanceId(workflowInstanceId),
+      reason,
+      this.command({ kind: 'operator', id: 'owner' }),
+    );
+  }
+
   async acceptOutcome(
     workflowInstanceId: string,
     activationId: string,
