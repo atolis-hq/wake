@@ -2,7 +2,7 @@ import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import type { CommandContext, EventJournal, ProjectionStore } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
-import type { CompiledWorkflow } from '../contracts/config.js';
+import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
 import type {
   ChildWorkflowRequest,
   OrchestrationSignal,
@@ -14,10 +14,10 @@ import { AcceptActivityOutcome } from './accept-activity-outcome.js';
 import { AcceptSignal } from './accept-signal.js';
 import { AdvanceWorkflow } from './advance-workflow.js';
 import { CoordinationClaims } from './coordination-claims.js';
-import type { ResourceTransitionResolver } from './resource-transition-resolver.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
 import { RequestChild } from './request-child.js';
+import type { ResourceTransitionResolver } from './resource-transition-resolver.js';
 import { StartWorkflow } from './start-workflow.js';
 import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
@@ -189,6 +189,26 @@ export class OrchestrationService {
     context?: CommandContext,
   ) {
     return this.advanceWorkflow.listWatchMatches(event, context);
+  }
+
+  listResourceTransitionMatches(
+    event: Parameters<AdvanceWorkflow['listResourceTransitionMatches']>[0],
+  ) {
+    return this.advanceWorkflow.listResourceTransitionMatches(event);
+  }
+
+  applyResourceTransition(
+    workflowInstanceId: WorkflowInstanceId,
+    target: TransitionTarget,
+    evidenceId: string,
+    context: CommandContext,
+  ) {
+    return this.advanceWorkflow.applyResourceTransition(
+      workflowInstanceId,
+      target,
+      evidenceId,
+      context,
+    );
   }
 }
 
