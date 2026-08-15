@@ -26,6 +26,14 @@ Your job here is only to:
   response (do not try to save it to a file).
 - If underspecified, ask the smallest set of clarifying questions needed.
 
+"Underspecified" means the requirement or acceptance criteria are unclear or
+contradictory — not that an implementation detail is undecided. Investigate
+the codebase and decide design questions (module ownership, event/projection
+shape, which pattern to extend); state the decision as an assumption in your
+plan instead of asking. plan-review checks stated assumptions and rejects a
+wrong one. Block only when the ticket's own intent can't be determined by
+reading the repository.
+
 Wake will provide the issue data and comments below in a delimited untrusted
 data block.
 {{else}}

@@ -10,7 +10,11 @@ import { resId, workId } from '../../support/identities.js';
 describe('GitWorkspaceProvider', () => {
   const roots: string[] = [];
   afterEach(async () => {
-    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+    await Promise.all(
+      roots
+        .splice(0)
+        .map((root) => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })),
+    );
   });
 
   it('clones a repository into a work-item workspace', async () => {
