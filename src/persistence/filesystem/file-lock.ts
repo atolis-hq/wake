@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, rm, rmdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 export interface FileLockMetadata {
@@ -74,14 +74,29 @@ async function acquireStrictFileLock(
       acquired: true as const,
       metadata,
       async release() {
-        const peers = (await readdir(ownersPath)).filter((candidate) => candidate !== ownerName);
+        let peers: readonly string[];
+        try {
+          peers = (await readdir(ownersPath)).filter((candidate) => candidate !== ownerName);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+          throw error;
+        }
         if (peers.length === 0) await releaseCompatibilityOwner(path);
         await rm(ownerPath, { force: true });
+        await removeEmptyOwnerDirectory(ownersPath);
       },
     };
   } catch (error) {
     await rm(ownerPath, { force: true });
     throw error;
+  }
+}
+
+async function removeEmptyOwnerDirectory(path: string): Promise<void> {
+  try {
+    await rmdir(path);
+  } catch {
+    // A concurrent owner may have populated the directory.
   }
 }
 
@@ -201,7 +216,14 @@ async function releaseCompatibilityOwner(path: string): Promise<void> {
 }
 
 async function createOwnerRecord(path: string, metadata: FileLockMetadata): Promise<void> {
-  const handle = await open(path, 'wx');
+  let handle;
+  try {
+    handle = await open(path, 'wx');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    await mkdir(dirname(path), { recursive: true });
+    handle = await open(path, 'wx');
+  }
   try {
     await handle.writeFile(`${JSON.stringify(metadata)}\n`, 'utf8');
     await handle.sync();

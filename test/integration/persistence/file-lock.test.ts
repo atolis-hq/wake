@@ -22,6 +22,15 @@ it('permits one file-lock owner at a time', async () => {
   }
 });
 
+it('removes an empty strict owner directory after the last release', async () => {
+  const path = await lockPath('strict-cleanup.lock');
+  const owner = await acquireFileLock(path, { staleRequiresDeadProcess: true });
+
+  await owner.release();
+
+  await expect(access(`${path}.owners`)).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
 it('does not reclaim a stale attempt lock while its recorded local owner is alive', async () => {
   const path = await lockPath('attempt.lock');
   const first = await acquireFileLock(path, {
@@ -81,8 +90,8 @@ it('removes the compatibility sentinel after recovering a crashed strict owner',
   expect(recovered.acquired).toBe(true);
   await recovered.release();
   await expect(access(path)).rejects.toThrow();
-  await expect(readdir(`${path}.owners`)).resolves.toEqual([]);
-  await crashed.release();
+  await expect(access(`${path}.owners`)).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(crashed.release()).resolves.toBeUndefined();
 });
 
 it('retains time-only stale recovery when dead-process proof is not requested', async () => {
@@ -151,6 +160,19 @@ it('releases its own record even when another acquisition contends', async () =>
 
   expect(next.acquired).toBe(true);
   await next.release();
+});
+
+it('does not expose last-owner directory cleanup as an acquisition failure', async () => {
+  const strict = { staleRequiresDeadProcess: true } as const;
+  for (let round = 0; round < 100; round += 1) {
+    const path = await lockPath(`last-owner-cleanup-${round}.lock`);
+    const owner = await acquireFileLock(path, strict);
+
+    const [contender] = await Promise.all([acquireFileLock(path, strict), owner.release()]);
+
+    expect(contender.acquired).toBeTypeOf('boolean');
+    await contender.release();
+  }
 });
 
 it(
