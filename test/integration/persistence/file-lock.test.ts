@@ -56,6 +56,29 @@ it('reclaims a stale attempt lock only when its injected owner probe reports dea
   }
 });
 
+it('allows exactly one concurrent contender to recover a dead stale lock', async () => {
+  const path = await lockPath('concurrent-stale.lock');
+  const stale = await acquireFileLock(path, { now: new Date(0) });
+  const contenders = await Promise.all(
+    Array.from({ length: 16 }, () =>
+      acquireFileLock(path, {
+        now: new Date(61_000),
+        staleAfterMs: 60_000,
+        staleRequiresDeadProcess: true,
+        isProcessAlive: () => false,
+      }),
+    ),
+  );
+  const winners = contenders.filter(({ acquired }) => acquired);
+
+  expect(winners).toHaveLength(1);
+  await expect(acquireFileLock(path)).resolves.toMatchObject({ acquired: false });
+
+  await stale.release();
+  await expect(acquireFileLock(path)).resolves.toMatchObject({ acquired: false });
+  await Promise.all(contenders.map(({ release }) => release()));
+});
+
 it('fails closed when an attempt-owner liveness probe is indeterminate', async () => {
   const path = await lockPath('attempt.lock');
   const first = await acquireFileLock(path, { now: new Date(0) });

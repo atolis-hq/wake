@@ -37,6 +37,11 @@ the single lock path it is given.
   same lock identity that was acquired; it MUST NOT remove a lock file that
   has since been reclaimed by a different holder. Release MUST be
   best-effort: a lock file that is already gone MUST NOT cause an error.
+- Acquisition, stale replacement, and release MUST serialize their metadata
+  checks and destructive filesystem steps through one atomic per-lock claim.
+  Claim contention MUST fail immediately. A claim orphaned by a process crash
+  MUST fail closed and require operator cleanup; it MUST NOT be reclaimed by a
+  second non-atomic stale protocol that could compromise mutual exclusion.
 - The bounded helper that acquires a lock, runs an operation, and releases
   it afterward MUST raise an error immediately if the lock could not be
   acquired, without running the operation, and MUST always release an

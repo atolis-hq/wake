@@ -36,11 +36,45 @@ export async function acquireFileLock(path: string, options?: FileLockOptions) {
     acquiredAt: (options?.now ?? new Date()).toISOString(),
     lockId: randomUUID(),
   };
+  if (await existingLockMustBeRetained(path, options)) return unavailableFileLock();
+  const claim = await acquireClaimGuard(path);
+  if (claim === null) return unavailableFileLock();
   try {
-    return await createFileLock(path, metadata);
+    try {
+      return await createFileLock(path, metadata);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      return reclaimStaleFileLock(path, metadata, options);
+    }
+  } finally {
+    await claim();
+  }
+}
+
+async function existingLockMustBeRetained(
+  path: string,
+  options: FileLockOptions | undefined,
+): Promise<boolean> {
+  try {
+    const current = JSON.parse(await readFile(path, 'utf8')) as FileLockMetadata;
+    if (options?.staleAfterMs === undefined || !isStale(current, options)) return true;
+    return Boolean(options.staleRequiresDeadProcess && ownerMayBeAlive(options, current.pid));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    return reclaimStaleFileLock(path, metadata, options);
+    return (
+      (error as NodeJS.ErrnoException).code !== 'ENOENT' && options?.staleAfterMs === undefined
+    );
+  }
+}
+
+async function acquireClaimGuard(path: string): Promise<(() => Promise<void>) | null> {
+  const guardPath = `${path}.claim`;
+  try {
+    const handle = await open(guardPath, 'wx');
+    await handle.close();
+    return () => rm(guardPath, { force: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return null;
+    throw error;
   }
 }
 
@@ -56,11 +90,15 @@ async function createFileLock(path: string, metadata: FileLockMetadata): Promise
 }
 
 async function releaseFileLock(path: string, metadata: FileLockMetadata): Promise<void> {
+  const claim = await acquireClaimGuard(path);
+  if (claim === null) return;
   try {
     const current = JSON.parse(await readFile(path, 'utf8')) as FileLockMetadata;
     if (current.lockId === metadata.lockId) await rm(path, { force: true });
   } catch {
     /* already released */
+  } finally {
+    await claim();
   }
 }
 
@@ -79,7 +117,12 @@ async function reclaimStaleFileLock(
     // A corrupt or vanished lock has no trustworthy owner and can be reclaimed.
   }
   await rm(path, { force: true });
-  return createFileLock(path, metadata);
+  try {
+    return await createFileLock(path, metadata);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return unavailableFileLock();
+    throw error;
+  }
 }
 
 function isStale(prior: FileLockMetadata, options: FileLockOptions): boolean {
