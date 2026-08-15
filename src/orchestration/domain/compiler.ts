@@ -9,13 +9,11 @@ import {
   type ApprovalAuthority,
   type AwaitConfig,
   type CompiledAwait,
-  type CompiledEventTransition,
   type CompiledOutcomeRoute,
   type CompiledStage,
   type CompiledSupplementalCommand,
   type CompiledWatchGate,
   type CompiledWorkflow,
-  type EventTransitionConfig,
   type StageConfig,
   type WatchGateConfig,
   type WorkflowDefinitionConfig,
@@ -30,6 +28,7 @@ import {
 } from '../contracts/identifiers.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
 import { defaultApprovalAwait } from './approval-defaults.js';
+import { compileEventTransitions } from './event-transition-compiler.js';
 import { assertCyclesBounded, assertReachable } from './workflow-graph.js';
 
 export function compileWorkflow(
@@ -124,6 +123,8 @@ function compileStages(
   ) as Record<StageName, CompiledStage>;
 }
 
+// The stage compiler keeps route validation and compilation together.
+// eslint-disable-next-line max-lines-per-function
 function compileStage(
   context: StageCompileContext,
   rawStageName: string,
@@ -193,6 +194,8 @@ function compileStage(
                   route.then,
                   outcomeKind,
                   allStages,
+                  isReservedTerminal,
+                  compileTarget,
                 ),
               }),
           id: `${compiledWorkflowName}:${rawStageName}:${outcomeKind}`,
@@ -207,26 +210,6 @@ function compileStage(
     ...(stage.execution === undefined ? {} : { execution: stage.execution }),
     on: Object.freeze(on),
   });
-}
-
-function compileEventTransitions(
-  entries: readonly EventTransitionConfig[],
-  inheritedThen: string,
-  outcomeKind: string,
-  allStages: WorkflowDefinitionConfig['stages'],
-): readonly CompiledEventTransition[] {
-  return Object.freeze(
-    entries.map((entry) => {
-      const then = entry.then ?? inheritedThen;
-      if (!isReservedTerminal(then) && !(then in allStages))
-        throw new Error(`Unknown eventTransitions target: ${then}`);
-      return Object.freeze({
-        event: entry.events[0],
-        ...(!('where' in entry) || entry.where === undefined ? {} : { where: entry.where }),
-        target: compileTarget(then, outcomeKind),
-      });
-    }),
-  );
 }
 
 function compileWatchGates(
