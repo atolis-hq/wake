@@ -32,13 +32,15 @@ once per schedule per host cycle.
 - A schedule's cron expression MUST have exactly five whitespace-separated
   fields (minute, hour, day-of-month, month, day-of-week); `elapsedSlots`
   MUST throw otherwise.
-- All field matching is against UTC minute/hour/date/month/weekday values,
-  never the deriving process's local timezone.
-- Each field is a comma-separated list of `*` or a fixed value, optionally
-  suffixed `/step`; `*` matches when `(value - minimum) % step === 0`, a
-  fixed value matches only that exact value. `elapsedSlots` MUST throw on a
-  non-integer or out-of-range step or value, rather than treating it as
-  never matching.
+- `SchedulePolicy` delegates expression parsing and occurrence calculation to
+  `cron-parser`, constrained to Wake's five-field form. Lists, ranges, steps,
+  and `JAN`-`DEC`/`SUN`-`SAT` aliases are supported; invalid expressions MUST
+  throw instead of being treated as never matching.
+- `?`, `H`, `L`, and `#` syntax is unsupported. When both day-of-month and
+  day-of-week fields are restricted, both fields MUST match.
+- Occurrences are evaluated in UTC, never in the deriving process's local
+  timezone. A seconds field or time-zone configuration is not part of Wake's
+  schedule interface.
 - When no checkpoint is recorded for a schedule, `elapsedSlots` MUST
   evaluate only the current minute, never backfilling any prior history.
 - When a checkpoint is recorded, `elapsedSlots` MUST evaluate every whole

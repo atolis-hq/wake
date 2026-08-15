@@ -131,3 +131,5 @@ current-state reference documentation. `README.md` and reference docs under
 `docs/` must describe the system as it exists now. Do not rewrite ADRs,
 historical designs, handoffs, plans, reports, `docs/superpowers/`,
 `docs/vision-inputs/`, or specifications merely to reflect a later design.
+
+Do not introduce mojibake; use valid UTF-8 or ASCII text.
