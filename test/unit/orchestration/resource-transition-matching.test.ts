@@ -201,13 +201,12 @@ it('does not re-fire a second sequential apply once the instance has left Waitin
 // is still Waiting (neither has appended yet), so signal-policy's
 // acceptedSignalIds guard cannot see the other call — it only protects a
 // reload after a prior apply has already landed (see the sequential test
-// above). What actually keeps this safe is that both calls are issued with
-// the same command context, so acceptResourceTransition derives the same
+// above). Same command context: acceptResourceTransition derives the same
 // causationId/eventId for both, and the journal's append() recognises the
-// second draft as already-recorded (identical eventId and content) instead
-// of re-checking the expected sequence. Two overlapping calls for the same
-// evidence issued with *different* command contexts are NOT protected this
-// way — see the report for that finding.
+// second draft as already-recorded instead of re-checking the expected
+// sequence. Different command contexts (below) derive different eventIds,
+// so the second append genuinely conflicts on sequence — that's what
+// acceptResourceTransition's local catch-reload-check guard covers.
 it('two overlapping applies of the same confirmed evidence, same command context, produce exactly one state change', async () => {
   const { journal, service, instance, baseContext } = await waitingService();
   const mergedFact = eventEnvelope(
@@ -232,6 +231,38 @@ it('two overlapping applies of the same confirmed evidence, same command context
       mergedFact.eventId,
       context,
     ),
+  ]);
+
+  expect(first?.currentStage).toBe('after-merge');
+  expect(second?.currentStage).toBe('after-merge');
+  const stageEnteredCount = (await journal.readAll(0)).filter(
+    (event) =>
+      event.eventType === OrchestrationEventType.StageEntered &&
+      event.stream.id === instance.workflowInstanceId &&
+      (event.payload as { stage?: string }).stage === 'after-merge',
+  ).length;
+  expect(stageEnteredCount).toBe(1);
+});
+
+it('two overlapping applies of the same confirmed evidence, different command contexts, produce exactly one state change', async () => {
+  const { journal, service, instance, baseContext } = await waitingService();
+  const mergedFact = eventEnvelope(
+    ActivityEventType.PrStateChanged,
+    { state: PullRequestState.Merged },
+    prStream,
+  );
+  const matches = await service.listResourceTransitionMatches(mergedFact);
+  const target = matches[0]!.transitions[0]!.target;
+
+  const [first, second] = await Promise.all([
+    service.applyResourceTransition(instance.workflowInstanceId, target, mergedFact.eventId, {
+      ...baseContext,
+      commandId: 'apply-concurrent-a',
+    }),
+    service.applyResourceTransition(instance.workflowInstanceId, target, mergedFact.eventId, {
+      ...baseContext,
+      commandId: 'apply-concurrent-b',
+    }),
   ]);
 
   expect(first?.currentStage).toBe('after-merge');

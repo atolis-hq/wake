@@ -94,6 +94,19 @@ export async function acceptResourceTransition(
       consent: true,
     },
   );
-  if (decision.kind === 'append') await repository.append(id, loaded.sequence, decision.events);
+  if (decision.kind === 'append') {
+    try {
+      await repository.append(id, loaded.sequence, decision.events);
+    } catch (error) {
+      const reloaded = await repository.load(id);
+      if (
+        reloaded.view !== null &&
+        (reloaded.view.acceptedSignalIds.includes(evidenceId) ||
+          reloaded.view.waitingFor === undefined)
+      )
+        return reloaded.view;
+      throw error;
+    }
+  }
   return (await repository.load(id)).view;
 }
