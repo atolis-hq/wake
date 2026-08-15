@@ -34,11 +34,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/embed-version.mjs && node scripts/check-cli-entrypoint.mjs",
     "prepack": "npm run build && npm run build:web",
-    "test": "vitest run",
+    "test": "npm run test:unit",
     "test:fast": "npm run test:unit",
     "check:catalogue": "node scripts/check-functional-catalogue.mjs",
     "check:scenarios": "node scripts/check-scenario-coverage.mjs",
     "check:specs": "node scripts/check-specs.mjs",
+    "check:specs:report": "node scripts/report-spec-drift.mjs",
     "lint:architecture": "node scripts/check-module-manifests.mjs && node scripts/check-contract-vocabulary.mjs && depcruise --config dependency-cruiser.config.mjs src",
     "build:docker": "tsc -p tsconfig.docker.json && node scripts/embed-version.mjs && npm run build:web",
     "build:web": "npm --workspace @atolis-hq/wake-web run build",
@@ -62,7 +63,8 @@
     "smoke:claude": "tsx src/main.ts smoke claude",
     "smoke:codex": "tsx src/main.ts smoke codex",
     "smoke:cursor": "tsx src/main.ts smoke cursor",
-    "verify": "npm run check:catalogue && npm run check:scenarios && npm run lint:architecture && npm run lint && npm run format:check && npm run build && npm test"
+    "verify": "npm run check:catalogue && npm run check:scenarios && npm run check:specs:report && npm run lint:architecture && npm run lint && npm run format:check && npm run build && npm run test:unit",
+    "verify:ci": "npm run verify && npm run test:architecture && npm run test:integration && npm run test:e2e && npm run knip && npm run test:web"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.0",
