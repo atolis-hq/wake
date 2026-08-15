@@ -18,19 +18,12 @@ export function createSourceUpdatePort(input: {
       return (await execute('git', ['status', '--porcelain'], input.repoRoot)).trim().length === 0;
     },
     async latestTag() {
-      const tag = (await execute('git', ['tag', '--sort=-v:refname'], input.repoRoot))
-        .split(/\r?\n/u)
-        .find((value) => value.trim().length > 0)
-        ?.trim();
+      const tag = (await candidateTags(execute, input.repoRoot)).at(0);
       if (tag === undefined) throw new Error('No source version tag is available');
       return tag;
     },
     async candidateTags() {
-      const output = await execute('git', ['tag', '--sort=-v:refname'], input.repoRoot);
-      return output
-        .split(/\r?\n/u)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
+      return candidateTags(execute, input.repoRoot);
     },
     async checkout(tag) {
       await execute('git', ['checkout', tag], input.repoRoot);
@@ -48,6 +41,18 @@ export function createSourceUpdatePort(input: {
       }
     },
   };
+}
+
+async function candidateTags(
+  execute: SourceUpdateProcess['execute'],
+  repoRoot: string,
+): Promise<readonly string[]> {
+  await execute('git', ['fetch', '--tags'], repoRoot);
+  const output = await execute('git', ['tag', '--list', 'v*', '--sort=-v:refname'], repoRoot);
+  return output
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }
 
 async function runProcess(command: string, args: readonly string[], cwd: string): Promise<string> {

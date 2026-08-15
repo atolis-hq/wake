@@ -21,7 +21,7 @@ describe('target source update port', () => {
     ]);
   });
 
-  it('discovers the latest version tag through the same repository-local process boundary', async () => {
+  it('fetches remote release tags before discovering the latest version tag', async () => {
     const calls: readonly string[][] = [];
     const port = createSourceUpdatePort({
       repoRoot: '/source/wake',
@@ -31,7 +31,10 @@ describe('target source update port', () => {
       },
     });
     await expect(port.latestTag()).resolves.toBe('v2.4.0');
-    expect(calls).toEqual([['tag', '--sort=-v:refname']]);
+    expect(calls).toEqual([
+      ['fetch', '--tags'],
+      ['tag', '--list', 'v*', '--sort=-v:refname'],
+    ]);
   });
 
   it('fails clearly when the repository has no version tag to apply', async () => {
@@ -42,12 +45,20 @@ describe('target source update port', () => {
     await expect(port.latestTag()).rejects.toThrow('No source version tag is available');
   });
 
-  it('lists all candidate tags in version-sorted order (newest first)', async () => {
+  it('fetches and lists only release candidates in version-sorted order (newest first)', async () => {
+    const calls: string[][] = [];
     const port = createSourceUpdatePort({
       repoRoot: '/source/wake',
-      execute: async () => 'v2.4.0\nv2.3.1\nv1.0.0\n',
+      execute: async (_command, args) => {
+        calls.push([...args]);
+        return 'v2.4.0\nv2.3.1\nv1.0.0\n';
+      },
     });
     await expect(port.candidateTags()).resolves.toEqual(['v2.4.0', 'v2.3.1', 'v1.0.0']);
+    expect(calls).toEqual([
+      ['fetch', '--tags'],
+      ['tag', '--list', 'v*', '--sort=-v:refname'],
+    ]);
   });
 
   it('filters empty lines when listing candidate tags', async () => {

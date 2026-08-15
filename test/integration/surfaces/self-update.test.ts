@@ -42,6 +42,27 @@ describe('self-update', () => {
     expect(calls).toEqual(['update:v2', 'rollback:v1']);
   });
 
+  it('rolls back to the last healthy tag when applying the update throws', async () => {
+    const calls: string[] = [];
+    await expect(
+      runSelfUpdate({
+        tag: 'v2',
+        readLedger: async () => 'v1',
+        writeLedger: async () => {
+          calls.push('ledger');
+        },
+        update: async (tag) => {
+          calls.push(`update:${tag}`);
+          throw new Error('checkout failed');
+        },
+        rollback: async (tag) => {
+          calls.push(`rollback:${tag}`);
+        },
+      }),
+    ).rejects.toThrow('checkout failed');
+    expect(calls).toEqual(['update:v2', 'rollback:v1']);
+  });
+
   it('continues after a failed update iteration until the injected wait boundary stops the loop', async () => {
     const { runSelfUpdateLoop } = await import('../../../src/surfaces/cli/commands/self-update.js');
     let updates = 0;
