@@ -25,7 +25,8 @@ npm run test:fast          # Unit suite
 npm run test:integration
 npm run test:e2e
 npm run test:web
-npm run verify             # Full local verification gate
+npm run verify             # Fast local verification gate
+npm run verify:ci          # Full non-live CI verification gate
 npm run tick               # One control-plane pass against the current Wake home
 npm run start              # Resident loop
 npm run ui                 # UI host
@@ -43,9 +44,9 @@ or when explicitly requested. Before handoff, report the checks actually run.
 
 E2E scenarios that use processes or filesystem fixtures run serially; use the
 relevant E2E scenario when changing workflow, persistence, runner, or provider
-behaviour. CI runs `npm run verify`, `npm run knip`, and `npm run test:web` on
-relevant changes. Report focused checks run and checks intentionally left to
-CI.
+behaviour. CI runs the `verify:ci` coverage as separate fast-verification,
+integration, E2E, and web jobs, plus the Docker smoke job, on relevant changes.
+Report focused checks run and checks intentionally left to CI.
 
 ## Architecture
 

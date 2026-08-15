@@ -17,13 +17,17 @@ npm run test:e2e
 npm run test:web
 npm run check:specs
 npm run verify
+npm run verify:ci
 ```
 
-`npm run verify` is the complete local gate: functional-decision and scenario
-coverage, architecture checks, linting, formatting, a TypeScript build, and
-the non-live test suite. For a scoped change, start with the smallest relevant
-test and report the checks actually run. `npm run check:specs` reports module
-specifications whose `asOf` checkpoint needs a source-grounded refresh.
+`npm run verify` is the fast local gate: functional-decision and scenario
+coverage, specification and architecture checks, linting, formatting, a
+TypeScript build, and the filesystem-free unit suite. Run selected integration
+or E2E scenarios when a change touches those boundaries. `npm run verify:ci`
+adds architecture, integration, non-live E2E, unused-code, and web tests. GitHub
+Actions runs those CI lanes separately for faster, attributable feedback, then
+runs the Docker smoke job. `npm run check:specs` reports module specifications
+whose `asOf` checkpoint needs a source-grounded refresh.
 
 `npm run tick`, `npm run start`, `npm run ui`, and `npm run smoke` invoke the
 source entry point against the current Wake home. They use the current directory
@@ -48,8 +52,10 @@ unless `--wake-root` is supplied.
 | `npm run lint:architecture` | Validate module manifests, contract vocabulary, and dependency boundaries. |
 | `npm run check:catalogue` / `npm run check:scenarios` | Validate functional-decision catalogue and scenario coverage. |
 | `npm run check:specs` | Detect module specifications that need source-grounded synchronization. |
+| `npm run check:specs:report` | Report specification drift without failing an aggregate verification command. |
 | `npm run knip` | Check unused files, exports, types, and dependencies. |
 | `npm run verify` | Run the broad local verification gate before a cross-cutting handoff. |
+| `npm run verify:ci` | Run the complete non-live Node.js CI gate. |
 | `npm run tick` / `npm run start` | Run one control-plane pass or the resident loop against a Wake home. |
 | `npm run ui` | Start the source UI host. |
 | `npm run smoke`, `npm run smoke:claude`, `npm run smoke:codex`, `npm run smoke:cursor` | Smoke-test the configured default or a specific runner path. |

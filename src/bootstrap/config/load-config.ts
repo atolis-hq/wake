@@ -5,9 +5,18 @@ import { parseRootConfig, type ResolvedWakeModulesConfig } from './root-schema.j
 
 export type { ResolvedWakeModulesConfig } from './root-schema.js';
 
-export async function loadConfig(wakeRoot: string): Promise<ResolvedWakeModulesConfig> {
-  const main = await readYaml(join(wakeRoot, 'config.yaml'));
-  const workflows = await readYamlIfPresent(join(wakeRoot, 'config.workflows.yaml'));
+export interface TextFileReader {
+  readFile(path: string): Promise<string>;
+}
+
+const nodeFileReader: TextFileReader = { readFile: (path) => readFile(path, 'utf8') };
+
+export async function loadConfig(
+  wakeRoot: string,
+  fileSystem: TextFileReader = nodeFileReader,
+): Promise<ResolvedWakeModulesConfig> {
+  const main = await readYaml(join(wakeRoot, 'config.yaml'), fileSystem);
+  const workflows = await readYamlIfPresent(join(wakeRoot, 'config.workflows.yaml'), fileSystem);
   const merged = merge(main, workflows === undefined ? {} : normalizeWorkflowFile(workflows));
   try {
     return parseRootConfig(merged);
@@ -25,13 +34,16 @@ export async function loadConfig(wakeRoot: string): Promise<ResolvedWakeModulesC
   }
 }
 
-async function readYaml(path: string): Promise<unknown> {
-  return YAML.parse(await readFile(path, 'utf8')) ?? {};
+async function readYaml(path: string, fileSystem: TextFileReader): Promise<unknown> {
+  return YAML.parse(await fileSystem.readFile(path)) ?? {};
 }
 
-async function readYamlIfPresent(path: string): Promise<unknown | undefined> {
+async function readYamlIfPresent(
+  path: string,
+  fileSystem: TextFileReader,
+): Promise<unknown | undefined> {
   try {
-    return await readYaml(path);
+    return await readYaml(path, fileSystem);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
