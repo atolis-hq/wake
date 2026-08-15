@@ -39,6 +39,27 @@ it('is re-entrant and serializes separate coordinators through the shared file l
   expect(order).toEqual(['first-enter', 're-enter', 'first-exit', 'second-enter']);
 });
 
+it('fails closed instead of spinning forever when the lock is held by a live, unresponsive holder', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-resource-ordering-timeout-'));
+  const lockPath = join(root, 'resource-transition-ordering.lock');
+  const first = createResourceTransitionOrdering(lockPath);
+  const second = createResourceTransitionOrdering(lockPath, 50);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+
+  const firstOperation = first(async () => {
+    await held;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  await expect(second(async () => 'unreachable')).rejects.toThrow(
+    /Timed out.*resource-transition ordering lock/,
+  );
+
+  release();
+  await firstOperation;
+});
+
 it('coordinates only appends containing a frozen registered trigger', async () => {
   const registry = createTriggerRegistry();
   registry.register(['pr.state-changed']);

@@ -26,13 +26,26 @@ export function createTriggerRegistry(): TriggerRegistry {
   };
 }
 
-export function createResourceTransitionOrdering(lockPath?: string): OperationCoordinator {
+const defaultLockTimeoutMs = 30_000;
+
+export class ResourceTransitionLockTimeoutError extends Error {
+  constructor(path: string, timeoutMs: number) {
+    super(`Timed out after ${timeoutMs}ms waiting for resource-transition ordering lock: ${path}`);
+    this.name = 'ResourceTransitionLockTimeoutError';
+  }
+}
+
+export function createResourceTransitionOrdering(
+  lockPath?: string,
+  lockTimeoutMs = defaultLockTimeoutMs,
+): OperationCoordinator {
   const active = new AsyncLocalStorage<boolean>();
   let queue: Promise<unknown> = Promise.resolve();
   const coordinate: OperationCoordinator = <Result>(operation: () => Promise<Result>) => {
     if (active.getStore() === true) return operation();
     const result = queue.then(async () => {
-      const lock = lockPath === undefined ? undefined : await waitForFileLock(lockPath);
+      const lock =
+        lockPath === undefined ? undefined : await waitForFileLock(lockPath, lockTimeoutMs);
       try {
         return await active.run(true, operation);
       } finally {
@@ -45,13 +58,15 @@ export function createResourceTransitionOrdering(lockPath?: string): OperationCo
   return coordinate;
 }
 
-async function waitForFileLock(lockPath: string) {
+async function waitForFileLock(lockPath: string, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
   for (;;) {
     const lock = await acquireFileLock(lockPath, {
       staleAfterMs: 60_000,
       staleRequiresDeadProcess: true,
     });
     if (lock.acquired) return lock;
+    if (Date.now() >= deadline) throw new ResourceTransitionLockTimeoutError(lockPath, timeoutMs);
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }
 }
