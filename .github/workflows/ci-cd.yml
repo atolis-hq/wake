@@ -45,6 +45,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
+          cache: npm
       - run: npm ci
       - name: Run fast verification and unused-code checks
         run: npm run verify && npm run knip
@@ -58,6 +59,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
+          cache: npm
       - run: npm ci
       - run: npm run test:integration
 
@@ -70,6 +72,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
+          cache: npm
       - run: npm ci
       - run: npm run test:e2e
 
@@ -82,6 +85,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
+          cache: npm
       - run: npm ci
       - run: npm run test:web
 
@@ -147,6 +151,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
+          cache: npm
       - run: npm ci
       - run: npm run build
         env:

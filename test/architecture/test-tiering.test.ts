@@ -46,5 +46,6 @@ describe('target test tiers', () => {
     expect(workflow).toContain('npm run test:e2e');
     expect(workflow).toContain('web:');
     expect(workflow).toContain('npm run test:web');
+    expect(workflow.match(/cache: npm/g) ?? []).toHaveLength(5);
   });
 });
