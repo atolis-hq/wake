@@ -84,9 +84,12 @@ it('dispatches each capability policy only to its matching primary resource', as
     triggers: ['issue.completed'],
     async resolve(input) {
       completablePolicyCalls += 1;
-      return input.transitions[0] === undefined
+      const transition = input.transitions.find(
+        (candidate) => candidate.event === input.fact?.eventType,
+      );
+      return transition === undefined || input.fact === undefined
         ? null
-        : { transition: input.transitions[0], evidenceId: 'issue-completed' };
+        : { transition, evidenceId: input.fact.eventId };
     },
   };
   const resources = {
@@ -139,7 +142,11 @@ it('dispatches each capability policy only to its matching primary resource', as
     ],
   });
 
-  const resolved = await evidence.resolve({ workItemId: workItem, transitions: [transition] });
+  const resolved = await evidence.resolve({
+    workItemId: workItem,
+    transitions: [transition],
+    fact,
+  });
 
   expect(evidence.triggers).toEqual([
     ActivityEventType.PrReviewAccepted,
@@ -155,6 +162,17 @@ it('dispatches each capability policy only to its matching primary resource', as
 it('does not invoke the pull-request policy for a completable resource', async () => {
   let pullRequestPolicyCalls = 0;
   let completablePolicyCalls = 0;
+  const matchingFact = eventEnvelope(
+    ActivityEventType.PrStateChanged,
+    { state: PullRequestState.Merged },
+    resourceStream(completableResource),
+  );
+  const unrelatedFact = eventEnvelope(
+    ActivityEventType.PrChecksChanged,
+    { checks: PullRequestCheckState.Passing },
+    resourceStream(completableResource),
+    8,
+  );
   const pullRequestPolicy = createPullRequestTransitionEvidence({
     async authorityInput(): Promise<PullRequestAuthorityInput> {
       pullRequestPolicyCalls += 1;
@@ -168,7 +186,12 @@ it('does not invoke the pull-request policy for a completable resource', async (
     triggers: ['issue.completed'],
     async resolve(input) {
       completablePolicyCalls += 1;
-      return { transition: input.transitions[0]!, evidenceId: 'issue-completed' };
+      const transition = input.transitions.find(
+        (candidate) => candidate.event === input.fact?.eventType,
+      );
+      return transition === undefined || input.fact === undefined
+        ? null
+        : { transition, evidenceId: input.fact.eventId };
     },
   };
   const evidence = createCapabilityResourceTransitionEvidence({
@@ -207,11 +230,14 @@ it('does not invoke the pull-request policy for a completable resource', async (
   });
 
   await expect(
-    evidence.resolve({ workItemId: workItem, transitions: [transition] }),
+    evidence.resolve({ workItemId: workItem, transitions: [transition], fact: matchingFact }),
   ).resolves.toEqual({
     transition,
-    evidenceId: 'issue-completed',
+    evidenceId: matchingFact.eventId,
   });
+  await expect(
+    evidence.resolve({ workItemId: workItem, transitions: [transition], fact: unrelatedFact }),
+  ).resolves.toBeNull();
   expect(pullRequestPolicyCalls).toBe(0);
-  expect(completablePolicyCalls).toBe(1);
+  expect(completablePolicyCalls).toBe(2);
 });
