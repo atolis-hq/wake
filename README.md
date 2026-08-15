@@ -173,6 +173,7 @@ any time for the full command list, or see
 - [docs/workflows.md](docs/workflows.md) - how stages, prompts, and runner routes are configured.
 - [docs/prompts.md](docs/prompts.md) - how prompt templates map to workflow stages.
 - [docs/configuration.md](docs/configuration.md) - `config.yaml`/`config.workflows.yaml` options and the operator correlation escape hatch.
+- [docs/public-ui-access.md](docs/public-ui-access.md) - expose the operator UI through ngrok or another secured ingress.
 - [docs/development.md](docs/development.md) - source-checkout dev setup (`wake-dev`), npm scripts, formatting, self-update, GitHub polling.
 - [docs/runner-comparison.md](docs/runner-comparison.md) - capability differences between supported runners.
 

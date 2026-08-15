@@ -15,6 +15,7 @@ export interface AgentRunComment {
   readonly workspacePath?: string | undefined;
   readonly awaitingApproval?: boolean | undefined;
   readonly watchGateVerdict?: { readonly runId: string } | undefined;
+  readonly publicUiUrl?: string | undefined;
 }
 
 export function formatAgentRunComment(value: AgentRunComment): string {
@@ -22,7 +23,7 @@ export function formatAgentRunComment(value: AgentRunComment): string {
   const sections = [
     '<!-- wake:agent -->',
     `<!-- wake:delivery:${value.idempotencyKey} -->`,
-    `**Wake** _(Wake${details ? ` - ${details}` : ''})_`,
+    `**${wakeHeading(value.publicUiUrl)}** _(Wake${details ? ` - ${details}` : ''})_`,
     `**Outcome:** ${value.awaitingApproval === true ? '⏳ Awaiting approval' : outcome(value.outcome)}`,
     value.displayBody.trim() || fallback(value.outcome),
   ];
@@ -39,6 +40,10 @@ export function formatAgentRunComment(value: AgentRunComment): string {
   const marker = watchGateMarkerSection(value);
   if (marker !== undefined) sections.push(marker);
   return sections.join('\n\n');
+}
+
+function wakeHeading(publicUiUrl: string | undefined): string {
+  return publicUiUrl === undefined ? 'Wake' : `[Wake](${publicUiUrl})`;
 }
 
 function watchGateMarkerSection(value: AgentRunComment): string | undefined {
