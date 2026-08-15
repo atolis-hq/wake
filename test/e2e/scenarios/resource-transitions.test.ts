@@ -80,7 +80,7 @@ it('uses the earliest matching primary-PR fact before a later watch verdict', as
           done: {
             then: 'done',
             watchGates: ['review'],
-            eventTransitions: [
+            resourceTransitions: [
               { events: ['pr.state-changed'], where: { state: 'merged' }, then: 'after-merge' },
             ],
           },

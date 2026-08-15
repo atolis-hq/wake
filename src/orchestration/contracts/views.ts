@@ -2,7 +2,7 @@ import type { ActivationId, ActivityName, ActivityOutcome } from '../../activiti
 import type { WorkItemId } from '../../work/index.js';
 import type {
   ApprovalAuthority,
-  CompiledEventTransition,
+  CompiledResourceTransition,
   StageConfig,
   TransitionTarget,
 } from './config.js';
@@ -35,7 +35,7 @@ export interface SignalExpectationView {
   readonly from?: readonly ApprovalAuthority[];
   readonly resume?: TransitionTarget;
   readonly onRejectResume?: TransitionTarget;
-  readonly eventTransitions?: readonly CompiledEventTransition[];
+  readonly resourceTransitions?: readonly CompiledResourceTransition[];
 }
 
 export interface SupplementalActivityView {

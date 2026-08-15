@@ -46,7 +46,7 @@ const watchGateConfigSchema = z.union([
     })
     .strict(),
 ]);
-const eventTransitionConfigSchema = z.union([
+const resourceTransitionConfigSchema = z.union([
   z
     .object({
       events: z.tuple([z.literal(ActivityEventType.PrReviewAccepted)]),
@@ -113,7 +113,7 @@ export const outcomeRouteConfigSchema = z
     retry: bound.optional(),
     await: awaitConfigSchema.optional(),
     watchGates: z.array(watchGateConfigSchema).optional(),
-    eventTransitions: z.array(eventTransitionConfigSchema).min(1).optional(),
+    resourceTransitions: z.array(resourceTransitionConfigSchema).min(1).optional(),
   })
   .strict();
 
@@ -186,7 +186,7 @@ export type AwaitConfig = z.infer<typeof awaitConfigSchema>;
 
 export type WatchGateConfig = z.infer<typeof watchGateConfigSchema>;
 
-export type EventTransitionConfig = z.infer<typeof eventTransitionConfigSchema>;
+export type ResourceTransitionConfig = z.infer<typeof resourceTransitionConfigSchema>;
 
 export type OutcomeRouteConfig = z.infer<typeof outcomeRouteConfigSchema>;
 
@@ -228,17 +228,17 @@ export interface CompiledFollowOnActivity {
 
 export interface CompiledOutcomeRoute extends Omit<
   OutcomeRouteConfig,
-  'activities' | 'then' | 'await' | 'watchGates' | 'eventTransitions'
+  'activities' | 'then' | 'await' | 'watchGates' | 'resourceTransitions'
 > {
   readonly id: string;
   readonly target: TransitionTarget;
   readonly activities?: readonly CompiledFollowOnActivity[];
   readonly await?: CompiledAwait;
   readonly watchGates?: readonly CompiledWatchGate[];
-  readonly eventTransitions?: readonly CompiledEventTransition[];
+  readonly resourceTransitions?: readonly CompiledResourceTransition[];
 }
 
-export interface CompiledEventTransition {
+export interface CompiledResourceTransition {
   readonly event:
     | typeof ActivityEventType.PrReviewAccepted
     | typeof ActivityEventType.PrStateChanged

@@ -64,7 +64,7 @@ describe('compiled workflow contracts', () => {
     expect(
       outcomeRouteConfigSchema.safeParse({
         then: 'done',
-        eventTransitions: [
+        resourceTransitions: [
           { events: ['pr.review-accepted'] },
           { events: ['pr.state-changed'], where: { state: 'merged' } },
           { events: ['pr.checks-changed'], where: { checks: 'failing' }, then: 'implement' },
@@ -74,7 +74,7 @@ describe('compiled workflow contracts', () => {
     expect(
       outcomeRouteConfigSchema.safeParse({
         then: 'done',
-        eventTransitions: [{ events: ['pr.state-changed'], where: { state: 'closed' } }],
+        resourceTransitions: [{ events: ['pr.state-changed'], where: { state: 'closed' } }],
       }).success,
     ).toBe(false);
   });

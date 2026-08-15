@@ -8,7 +8,7 @@ function edges(stages: Readonly<Record<StageName, CompiledStage>>, name: StageNa
     [
       route.target,
       ...(route.watchGates ?? []).map((gate) => gate.onRejectTarget),
-      ...(route.eventTransitions ?? []).map((transition) => transition.target),
+      ...(route.resourceTransitions ?? []).map((transition) => transition.target),
     ].flatMap((target) => (target.kind === TransitionTargetKind.Stage ? [target.stage] : [])),
   );
 }

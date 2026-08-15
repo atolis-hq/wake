@@ -14,7 +14,7 @@ import { AcceptActivityOutcome } from './accept-activity-outcome.js';
 import { AcceptSignal } from './accept-signal.js';
 import { AdvanceWorkflow } from './advance-workflow.js';
 import { CoordinationClaims } from './coordination-claims.js';
-import type { EventTransitionResolver } from './event-transition-resolver.js';
+import type { ResourceTransitionResolver } from './resource-transition-resolver.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
 import { RequestChild } from './request-child.js';
@@ -33,7 +33,7 @@ export class OrchestrationService {
     work: WorkService,
     definitions: Readonly<Record<string, CompiledWorkflow>>,
     projections?: ProjectionStore,
-    eventTransitions?: EventTransitionResolver,
+    eventTransitions?: ResourceTransitionResolver,
   ) {
     const repository = new OrchestrationRepository(journal);
     const claims = new CoordinationClaims(journal);
@@ -48,7 +48,7 @@ export class OrchestrationService {
       repository,
       this.startWorkflow,
       work,
-      (context, candidate) => this.advanceWorkflow.resolveEventTransitions(context, candidate),
+      (context, candidate) => this.advanceWorkflow.resolveResourceTransitions(context, candidate),
     );
     this.childWorkflows = new RequestChild(
       repository,
@@ -162,8 +162,8 @@ export class OrchestrationService {
     return this.advanceWorkflow.listAll();
   }
 
-  resolveEventTransitions(context: CommandContext) {
-    return this.advanceWorkflow.resolveEventTransitions(context);
+  resolveResourceTransitions(context: CommandContext) {
+    return this.advanceWorkflow.resolveResourceTransitions(context);
   }
 
   reconcileChildCompletions(context: CommandContext) {
@@ -197,5 +197,5 @@ export const createOrchestrationService = (
   work: WorkService,
   definitions: Readonly<Record<string, CompiledWorkflow>>,
   projections?: ProjectionStore,
-  eventTransitions?: EventTransitionResolver,
+  eventTransitions?: ResourceTransitionResolver,
 ) => new OrchestrationService(journal, work, definitions, projections, eventTransitions);

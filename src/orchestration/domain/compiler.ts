@@ -28,7 +28,7 @@ import {
 } from '../contracts/identifiers.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
 import { defaultApprovalAwait } from './approval-defaults.js';
-import { compileEventTransitions } from './event-transition-compiler.js';
+import { compileResourceTransitions } from './resource-transition-compiler.js';
 import { assertCyclesBounded, assertReachable } from './workflow-graph.js';
 
 export function compileWorkflow(
@@ -148,9 +148,9 @@ function compileStage(
           throw new Error(
             `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} cannot configure both await and watchGates`,
           );
-        if (route.eventTransitions !== undefined && outcomeKind !== ActivityOutcomeKind.Done)
+        if (route.resourceTransitions !== undefined && outcomeKind !== ActivityOutcomeKind.Done)
           throw new Error(
-            `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} eventTransitions are only valid on done`,
+            `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} resourceTransitions are only valid on done`,
           );
         const followOns = route.activities?.map((activity) => ({
           use: activityName(activity.use),
@@ -186,11 +186,11 @@ function compileStage(
                   allStages,
                 ),
               }),
-          ...(route.eventTransitions === undefined
+          ...(route.resourceTransitions === undefined
             ? {}
             : {
-                eventTransitions: compileEventTransitions(
-                  route.eventTransitions,
+                resourceTransitions: compileResourceTransitions(
+                  route.resourceTransitions,
                   route.then,
                   outcomeKind,
                   allStages,

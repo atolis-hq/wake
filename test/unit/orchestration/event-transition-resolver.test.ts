@@ -1,11 +1,11 @@
 import { expect, it } from 'vitest';
 
 import {
-  selectEarliestEventTransition,
-  type EventTransitionResolution,
+  selectEarliestResourceTransition,
+  type ResourceTransitionResolution,
 } from '../../../src/orchestration/index.js';
 
-const resolution = (evidenceId: string, position: number): EventTransitionResolution => ({
+const resolution = (evidenceId: string, position: number): ResourceTransitionResolution => ({
   evidenceId,
   position,
   target: { kind: 'complete' },
@@ -13,6 +13,6 @@ const resolution = (evidenceId: string, position: number): EventTransitionResolu
 
 it('selects the earliest event transition before an incoming signal', () => {
   expect(
-    selectEarliestEventTransition([resolution('before', 10), resolution('after', 20)], 20),
+    selectEarliestResourceTransition([resolution('before', 10), resolution('after', 20)], 20),
   ).toEqual(resolution('before', 10));
 });

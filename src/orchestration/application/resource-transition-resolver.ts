@@ -8,27 +8,27 @@ import {
   type PullRequestService,
 } from '../../activities/index.js';
 import type { EventJournal } from '../../kernel/index.js';
-import type { CompiledEventTransition, TransitionTarget } from '../contracts/config.js';
+import type { CompiledResourceTransition, TransitionTarget } from '../contracts/config.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 
-export interface EventTransitionResolution {
+export interface ResourceTransitionResolution {
   readonly evidenceId: string;
   readonly position: number;
   readonly target: TransitionTarget;
 }
 
-export interface EventTransitionResolver {
+export interface ResourceTransitionResolver {
   resolve(
     workflow: WorkflowInstanceView,
     beforeEvidenceId?: string,
-  ): Promise<EventTransitionResolution | null>;
+  ): Promise<ResourceTransitionResolution | null>;
 }
 
-export function selectEarliestEventTransition(
-  resolutions: readonly EventTransitionResolution[],
+export function selectEarliestResourceTransition(
+  resolutions: readonly ResourceTransitionResolution[],
   beforePosition?: number,
-): EventTransitionResolution | null {
-  return resolutions.reduce<EventTransitionResolution | null>(
+): ResourceTransitionResolution | null {
+  return resolutions.reduce<ResourceTransitionResolution | null>(
     (earliest, resolution) =>
       beforePosition !== undefined && resolution.position >= beforePosition
         ? earliest
@@ -39,14 +39,14 @@ export function selectEarliestEventTransition(
   );
 }
 
-export function createPrimaryPullRequestEventTransitionResolver(
+export function createPrimaryPullRequestResourceTransitionResolver(
   journal: EventJournal,
   pullRequests: PullRequestService,
-): EventTransitionResolver {
-  return new PrimaryPullRequestEventTransitionResolver(journal, pullRequests);
+): ResourceTransitionResolver {
+  return new PrimaryPullRequestResourceTransitionResolver(journal, pullRequests);
 }
 
-class PrimaryPullRequestEventTransitionResolver implements EventTransitionResolver {
+class PrimaryPullRequestResourceTransitionResolver implements ResourceTransitionResolver {
   constructor(
     private readonly journal: EventJournal,
     private readonly pullRequests: PullRequestService,
@@ -55,8 +55,8 @@ class PrimaryPullRequestEventTransitionResolver implements EventTransitionResolv
   async resolve(
     workflow: WorkflowInstanceView,
     beforeEvidenceId?: string,
-  ): Promise<EventTransitionResolution | null> {
-    const transitions = workflow.waitingFor?.eventTransitions;
+  ): Promise<ResourceTransitionResolution | null> {
+    const transitions = workflow.waitingFor?.resourceTransitions;
     if (transitions === undefined) return null;
     const input = await this.pullRequests.authorityInput(workflow.workItemId);
     const primary = input.resources.filter(
@@ -77,7 +77,7 @@ class PrimaryPullRequestEventTransitionResolver implements EventTransitionResolv
       beforeEvidenceId === undefined
         ? undefined
         : events.find((event) => event.eventId === beforeEvidenceId)?.globalPosition;
-    return selectEarliestEventTransition(
+    return selectEarliestResourceTransition(
       events.flatMap((event) => {
         if (!transitions.some((transition) => transition.event === event.eventType)) return [];
         const activity = selectActivityEvent(event);
@@ -108,7 +108,7 @@ class PrimaryPullRequestEventTransitionResolver implements EventTransitionResolv
 // The closed V1 event union is intentionally matched exhaustively here.
 // eslint-disable-next-line complexity
 function matchesPrimaryPullRequestTransition(
-  transition: CompiledEventTransition,
+  transition: CompiledResourceTransition,
   event: ActivityEvent,
   pullRequest: {
     readonly resourceId: string;

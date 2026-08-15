@@ -17,7 +17,7 @@ export function defaultApprovalAwait(
   if (
     outcomeKind !== ActivityOutcomeKind.Done ||
     route.watchGates !== undefined ||
-    route.eventTransitions !== undefined ||
+    route.resourceTransitions !== undefined ||
     stage.requiresApproval === false
   )
     return undefined;

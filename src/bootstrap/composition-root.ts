@@ -64,7 +64,7 @@ import {
   compileWorkflow,
   compileWorkflowSelectors,
   createOrchestrationService,
-  createPrimaryPullRequestEventTransitionResolver,
+  createPrimaryPullRequestResourceTransitionResolver,
   createWatchReactor,
   selectWorkflow,
   workflowName,
@@ -199,7 +199,7 @@ export async function createCompositionRoot(
     work,
     definitions,
     projections,
-    createPrimaryPullRequestEventTransitionResolver(journal, pullRequests),
+    createPrimaryPullRequestResourceTransitionResolver(journal, pullRequests),
   );
   const workspaces = new GitWorkspaceProvider(paths.workspacesRoot, {
     async cloneLocator(id) {
@@ -552,7 +552,7 @@ async function composeIntegrationRuntime(
     },
     react: async () => {
       await watch.runOnce();
-      await input.orchestration.resolveEventTransitions({
+      await input.orchestration.resolveResourceTransitions({
         commandId: input.ids.next('command'),
         correlationId: 'event-transitions' as never,
         occurredAt: input.clock.now().toISOString(),

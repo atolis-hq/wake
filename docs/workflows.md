@@ -147,7 +147,7 @@ Every `on.<outcome>` route requires `then`: another stage, `done`, or
 | `retry` | `{ max: positive integer }`; retries the current stage for this outcome. |
 | `await` | `{ signal, from }`; waits for a named signal from declared authorities before `then`. |
 | `watchGates` | One named watch, optionally with `onReject: { then }`; waits for a child-workflow verdict. |
-| `eventTransitions` | On `done` only, primary-PR facts that may advance the route instead of its watch gate. |
+| `resourceTransitions` | On `done` only, primary-PR facts that may advance the route instead of its watch gate. |
 
 Wake first records every non-waiting Activity outcome. If the stage does not
 declare a route for it, the instance blocks with `unconfigured outcome <kind>`;
@@ -163,7 +163,7 @@ For another outcome, Wake retries only when the route has `retry` capacity and
 the Activity did not mark the outcome as requiring reconciliation. Otherwise
 it applies the route directly.
 
-`done` routes may additionally declare `eventTransitions`. They are an OR
+`done` routes may additionally declare `resourceTransitions`. They are an OR
 alternative to the configured single `watchGates` verdict and only support
 trusted native PR approvals, an externally merged primary PR, and opted-in
 failing checks. `then` inherits the enclosing route when omitted.
@@ -173,7 +173,7 @@ on:
   done:
     then: merge
     watchGates: [pr-review]
-    eventTransitions:
+    resourceTransitions:
       - events: [pr.review-accepted]
       - events: [pr.state-changed]
         where: { state: merged }

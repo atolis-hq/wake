@@ -266,9 +266,9 @@ function applySignalWaitStarted(
     ...(event.payload.onRejectResume === undefined
       ? {}
       : { onRejectResume: event.payload.onRejectResume }),
-    ...(event.payload.eventTransitions === undefined
+    ...(event.payload.resourceTransitions === undefined
       ? {}
-      : { eventTransitions: event.payload.eventTransitions }),
+      : { resourceTransitions: event.payload.resourceTransitions }),
   };
 }
 

@@ -6,7 +6,7 @@ import type {
 } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import {
-  EventTransitionSignal,
+  ResourceTransitionSignal,
   OrchestrationEventType,
   WatchGateVerdictSignal,
 } from '../contracts/events.js';
@@ -35,7 +35,7 @@ export function finishRoute(
   input: TransitionInput,
   route: CompiledOutcomeRoute,
 ): void {
-  if (route.watchGates !== undefined || route.eventTransitions !== undefined) {
+  if (route.watchGates !== undefined || route.resourceTransitions !== undefined) {
     const gate = route.watchGates?.[0];
     events.push(
       stateDraft(
@@ -43,7 +43,7 @@ export function finishRoute(
         input,
         OrchestrationEventType.SignalWaitStarted,
         {
-          signalKind: gate === undefined ? EventTransitionSignal : WatchGateVerdictSignal,
+          signalKind: gate === undefined ? ResourceTransitionSignal : WatchGateVerdictSignal,
           ...(gate === undefined
             ? {}
             : {
@@ -54,9 +54,9 @@ export function finishRoute(
               }),
           resume: route.target,
           ...(gate === undefined ? {} : { onRejectResume: gate.onRejectTarget }),
-          ...(route.eventTransitions === undefined
+          ...(route.resourceTransitions === undefined
             ? {}
-            : { eventTransitions: route.eventTransitions }),
+            : { resourceTransitions: route.resourceTransitions }),
         },
         events.length + 1,
       ),

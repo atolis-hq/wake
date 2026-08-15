@@ -143,7 +143,7 @@ const transitionTargetSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
 ]);
-const eventTransitionSchema = z
+const resourceTransitionSchema = z
   .object({
     event: z.enum([
       ActivityEventType.PrReviewAccepted,
@@ -168,7 +168,7 @@ export const expectationSchema = z
     from: z.array(approvalAuthoritySchema).min(1).optional(),
     resume: transitionTargetSchema.optional(),
     onRejectResume: transitionTargetSchema.optional(),
-    eventTransitions: z.array(eventTransitionSchema).min(1).optional(),
+    resourceTransitions: z.array(resourceTransitionSchema).min(1).optional(),
   })
   .strict();
 

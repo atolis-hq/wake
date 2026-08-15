@@ -14,7 +14,7 @@ export class AcceptSignal {
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
     private readonly work: WorkService,
-    private readonly resolveEventTransitions?: (
+    private readonly resolveResourceTransitions?: (
       context: CommandContext,
       candidate: {
         readonly workflowInstanceId: WorkflowInstanceId;
@@ -44,7 +44,7 @@ export class AcceptSignal {
     context: CommandContext,
   ) {
     if (
-      (await this.resolveEventTransitions?.(context, {
+      (await this.resolveResourceTransitions?.(context, {
         workflowInstanceId,
         providerEventId: signal.providerEventId,
       })) === true

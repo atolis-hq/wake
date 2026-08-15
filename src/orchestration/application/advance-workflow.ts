@@ -22,7 +22,7 @@ import {
   requestSupplementalActivity as decideSupplementalActivity,
 } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
-import type { EventTransitionResolver } from './event-transition-resolver.js';
+import type { ResourceTransitionResolver } from './resource-transition-resolver.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { StartWorkflow } from './start-workflow.js';
 
@@ -39,7 +39,7 @@ export class AdvanceWorkflow {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
-    private readonly eventTransitions?: EventTransitionResolver,
+    private readonly eventTransitions?: ResourceTransitionResolver,
   ) {}
 
   async requestSupplementalActivity(
@@ -236,7 +236,7 @@ export class AdvanceWorkflow {
     return (await this.listAllLoaded()).map(({ view }) => view);
   }
 
-  async resolveEventTransitions(
+  async resolveResourceTransitions(
     context: CommandContext,
     candidate?: {
       readonly workflowInstanceId: WorkflowInstanceId;
@@ -258,7 +258,7 @@ export class AdvanceWorkflow {
         {
           signal: {
             kind: view.waitingFor!.signalKind,
-            actorId: 'event-transition',
+            actorId: 'resource-transition',
             actorDecision: { authorized: true, evidenceId: resolution.evidenceId },
             providerEventId: resolution.evidenceId,
           },
