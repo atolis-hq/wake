@@ -134,6 +134,72 @@ describe('PullRequestService review evidence', () => {
   });
 });
 
+describe('PullRequestService.factsFor', () => {
+  it('returns a resource stream events in journal order, excluding other resources', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const { resources } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const otherResource = resId('2');
+    await work.create({ workItemId: workItem, objective: 'Merge PR' }, context('work'));
+    for (const id of [resource, otherResource]) {
+      await resources.discover(
+        {
+          resourceId: id,
+          kind: resourceKind('pull-request'),
+          externalKey: { adapter: 'github', key: `o/r#${id}` },
+          capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
+        },
+        context(`resource-${id}`),
+      );
+      await resources.correlate(id, workItem, 'primary', context(`correlation-${id}`));
+    }
+    const service = createPullRequestService(journal, work, resources);
+
+    await service.observe(
+      {
+        resourceId: resource,
+        workItemId: workItem,
+        state: 'open',
+        headRevision: 'head-a',
+        baseRevision: 'base-a',
+        checks: 'pending',
+      },
+      context('observe-a'),
+    );
+    await service.observe(
+      {
+        resourceId: resource,
+        workItemId: workItem,
+        state: 'open',
+        headRevision: 'head-b',
+        baseRevision: 'base-a',
+        checks: 'passing',
+      },
+      context('observe-b'),
+    );
+    await service.observe(
+      {
+        resourceId: otherResource,
+        workItemId: workItem,
+        state: 'open',
+        headRevision: 'head-x',
+        baseRevision: 'base-x',
+        checks: 'passing',
+      },
+      context('observe-other'),
+    );
+
+    const events = await service.factsFor(resource);
+
+    expect(events.map((event) => event.eventType)).toEqual([
+      'pr.discovered',
+      'pr.revision-changed',
+      'pr.checks-changed',
+    ]);
+    expect(events.every((event) => event.stream.id === resource)).toBe(true);
+  });
+});
+
 function context(commandId: string) {
   return {
     commandId,
