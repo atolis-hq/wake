@@ -25,7 +25,7 @@ import { workId } from '../../support/identities.js';
 const reviewWatch = {
   id: 'pr-review',
   while: { stages: ['implement'], statuses: [WorkflowStatus.Waiting] },
-  on: { events: ['execution.run-succeeded'] },
+  on: { events: ['orchestration.signal-wait-started'] },
   workflow: 'default',
   maxPerGroup: 3,
 };

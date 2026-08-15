@@ -334,10 +334,21 @@ workflows:
         while:
           stages: [implement]
           statuses: [waiting]
-        on: { events: [execution.run-succeeded] }
+        on: { events: [orchestration.signal-wait-started] }
         workflow: review
         maxPerGroup: 1
 ```
+
+Use `orchestration.signal-wait-started` as the trigger whenever a watch's
+`while.statuses` includes `waiting` and the watch exists to gate a
+`watchGates` wait — that event is written atomically with the state
+transition it represents, so the watch can never observe a stage/status
+match that hasn't actually happened yet. Reserve a raw domain fact (like
+`execution.run-succeeded` or `pr.checks-changed`) for a watch whose
+`while.statuses` includes `active` and that is reacting to something
+genuinely external to this instance's own advancement — see the failing-CI
+example below, which watches `pr.checks-changed` while the stage is still
+`active`, not waiting on a gate at all.
 
 ### Repair a newly failing CI check
 
