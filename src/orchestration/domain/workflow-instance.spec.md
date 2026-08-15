@@ -68,7 +68,9 @@ then folds.
 - `InstanceBlocked` MUST set status to `blocked`. A caller MAY explicitly
   block an instance directly (independent of any policy decision); doing so
   when the instance is already `blocked` MUST be a no-op that appends no
-  new fact.
+  new fact. It intentionally retains any current wait expectation so an
+  explicitly human-authorized signal can resolve that wait through the signal
+  policy; no other blocked signal is accepted.
 - `InstanceBlocked` MUST record its reason as `blockReason` for operator
   read models. `OperatorRetryRequested` records the originating command's
   identity in `operatorRetryCommandIds`; this list only grows as facts fold.

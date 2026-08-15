@@ -102,6 +102,21 @@ it('rejects a watchGate wait with /changes', async () => {
   expect(workflow?.pendingActivation?.activity).toBe(activityName('implement'));
 });
 
+it('uses a blocked human-authorized wait for a human /approved command', async () => {
+  const fixture = await waitingIssueWorkflow(signalName('approved'), true);
+  await fixture.world.blockWorkflow(fixture.workflowId, 'group-budget-exhausted');
+
+  await applyHumanIssueCommand(fixture, '/approved');
+
+  expect(await fixture.world.viewWorkflow(fixture.workflowId)).toMatchObject({
+    status: 'completed',
+    acceptedSignalIds: [fixture.commandEventId('/approved')],
+  });
+  expect(await acceptedSignal(fixture)).toMatchObject({
+    authority: { kind: 'human' },
+  });
+});
+
 it('retries refinement on /changes and advances to implementation on /approved', async () => {
   const fixture = await twoStageIssueWorkflow();
 
@@ -287,7 +302,10 @@ function issueCommentEvent(body: string) {
   } as never;
 }
 
-async function waitingIssueWorkflow(signalKind: ReturnType<typeof signalName>) {
+async function waitingIssueWorkflow(
+  signalKind: ReturnType<typeof signalName>,
+  humanAuthority = false,
+) {
   const world = new TestWorld();
   world.registerActivity({
     name: activityName('implement'),
@@ -338,6 +356,7 @@ async function waitingIssueWorkflow(signalKind: ReturnType<typeof signalName>) {
   });
   await world.waitForSignal(started.workflowInstanceId, {
     signalKind,
+    ...(humanAuthority ? { from: [{ kind: 'human' as const }] } : {}),
     resume: { kind: TransitionTargetKind.Complete },
     onRejectResume: { kind: TransitionTargetKind.Stage, stage: stageName('implement') },
   });

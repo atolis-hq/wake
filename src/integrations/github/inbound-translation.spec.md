@@ -123,7 +123,9 @@ poll GitHub itself — GitHub Inbound Evidence does.
 - Activities' PR Observation (this component depends on it) — `observe`,
   `acceptReviewSignal`, `requestChangesSignal`.
 - Orchestration (this component depends on it) — `acceptSignal`, for an
-  issue approval command and for a verified watch-gate verdict.
+  issue approval command and for a verified watch-gate verdict. Human issue
+  commands carry explicit `human` authority, so a blocked workflow retaining
+  a human-authorized wait can follow that wait's configured resume target.
 - Execution (this component depends on it) — reads a `RunRepository` view
   to verify a watch-gate verdict marker's claimed run and outcome before
   trusting it.

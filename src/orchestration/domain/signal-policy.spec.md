@@ -45,8 +45,12 @@ and, for `auto` authority, the WorkItem's consent fact.
 - A signal whose `providerEventId` already appears in `acceptedSignalIds`
   MUST be ignored as a duplicate ("provider signal was already accepted");
   redelivery is safe and non-erroring.
-- Acceptance MUST be ignored when the instance is not currently `waiting` or
-  has no `waitingFor` expectation at all.
+- Acceptance MUST be ignored when the instance has no `waitingFor`
+  expectation. Normally it must be `waiting`; the sole exception is a
+  `blocked` instance retaining a wait that explicitly declares `human`, which
+  may accept only a signal that explicitly carries `human` authority. A
+  `watch`, `auto`, or authority-less signal remains ineligible even when the
+  retained wait also names `human`.
 - Acceptance MUST be ignored unless the signal's `kind`, `resourceId`, and
   `revision` all match the current expectation exactly.
 - Acceptance MUST be ignored when the signal lacks decision evidence: a
