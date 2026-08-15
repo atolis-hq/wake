@@ -1,6 +1,7 @@
 import {
   ActivityEventType,
   ActivityResourceRole,
+  decidePullRequestAuthority,
   PullRequestCheckState,
   PullRequestState,
   selectActivityEvent,
@@ -42,13 +43,21 @@ export function createPullRequestTransitionEvidence(
         fact === undefined ? await pullRequests.factsFor(resourceId) : scoped(fact, resourceId);
       if (candidates.length === 0) return null;
 
-      const authorized = (
-        await pullRequests.decideAuthority(workItemId, {
-          target: ActivityResourceRole.Primary,
-          requireAcceptedReview: true,
-          requireChecks: false,
-        })
-      ).allowed;
+      // Only pay for the authority decision when a review-accepted
+      // transition is actually in play; it doesn't vary per candidate, so
+      // it's computed once here rather than inside the matcher. Built from
+      // the `input` snapshot already read above (not re-read via the
+      // service) so the primary-resource selection and the authority
+      // decision can't observe different journal states.
+      const authorized = transitions.some(
+        (transition) => transition.event === ActivityEventType.PrReviewAccepted,
+      )
+        ? decidePullRequestAuthority(input, {
+            target: ActivityResourceRole.Primary,
+            requireAcceptedReview: true,
+            requireChecks: false,
+          }).allowed
+        : false;
 
       return firstMatch(candidates, transitions, selected.pullRequest, authorized);
     },

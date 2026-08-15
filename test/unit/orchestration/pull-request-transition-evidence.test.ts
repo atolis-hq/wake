@@ -142,6 +142,17 @@ describe('createPullRequestTransitionEvidence', () => {
       {
         resourceId: otherResource,
         workItemId: otherWorkItemId,
+        state: 'open',
+        headRevision: 'head-x',
+        baseRevision: 'base-x',
+        checks: 'passing',
+      },
+      context('observe-other-open'),
+    );
+    await pullRequests.observe(
+      {
+        resourceId: otherResource,
+        workItemId: otherWorkItemId,
         state: 'merged',
         headRevision: 'head-x',
         baseRevision: 'base-x',
@@ -151,20 +162,13 @@ describe('createPullRequestTransitionEvidence', () => {
     );
     const otherResourceFact = (await journal.readStream(resourceStream(otherResource))).find(
       (event) => event.eventType === ActivityEventType.PrStateChanged,
-    )!;
-
-    // The work item under test has no primary pull request at all yet; the
-    // scoping check still applies once one exists, so establish it here.
-    await resources.discover(
-      {
-        resourceId: resource,
-        kind: resourceKind('pull-request'),
-        externalKey: { adapter: 'github', key: 'o/r#1' },
-        capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
-      },
-      context('resource'),
     );
-    await resources.correlate(resource, workItemId, 'primary', context('correlation'));
+    if (otherResourceFact === undefined) throw new Error('No pr.state-changed fact recorded');
+
+    // setup() already discovered and primary-correlated `resource` to
+    // `workItemId`. Merge this work item's own PR too, so the merged-state
+    // clause of the matcher can't be what rejects the foreign fact — only
+    // the scoping check (the foreign fact's stream isn't this resource) can.
     await pullRequests.observe(
       {
         resourceId: resource,
@@ -175,6 +179,17 @@ describe('createPullRequestTransitionEvidence', () => {
         checks: 'passing',
       },
       context('observe-a'),
+    );
+    await pullRequests.observe(
+      {
+        resourceId: resource,
+        workItemId,
+        state: 'merged',
+        headRevision: 'head-a',
+        baseRevision: 'base-a',
+        checks: 'passing',
+      },
+      context('observe-merged'),
     );
 
     const evidence = createPullRequestTransitionEvidence(pullRequests);
@@ -305,7 +320,7 @@ describe('createPullRequestTransitionEvidence', () => {
     expect(resolved?.evidenceId).toBe(acceptedFact.eventId);
   });
 
-  it('rejects an approval whose revision is behind the current head', async () => {
+  it('rejects an approval that has since been revoked', async () => {
     const { pullRequests } = await setup();
     await pullRequests.observe(
       {
@@ -330,10 +345,62 @@ describe('createPullRequestTransitionEvidence', () => {
       },
       context('review-a'),
     );
-    const staleApproval = await factOfType(pullRequests, ActivityEventType.PrReviewAccepted);
+    const revokedApproval = await factOfType(pullRequests, ActivityEventType.PrReviewAccepted);
 
-    // A new revision lands after the review was accepted; the approval no
-    // longer speaks for the current head.
+    // Head stays at head-a — only the review authority changes, via a
+    // requested-changes signal at the same revision, which clears
+    // acceptedReview. This isolates the `decideAuthority` guard: nothing
+    // about the fact's own revision changed, so if the guard were skipped
+    // (or hard-coded to `true`), this stale approval would still resolve.
+    await pullRequests.requestChangesSignal(
+      {
+        resourceId: resource,
+        revision: 'head-a',
+        actorId: 'author',
+        requestedEventId: 'changes-a',
+      },
+      context('changes-a'),
+    );
+
+    const evidence = createPullRequestTransitionEvidence(pullRequests);
+    expect(
+      await evidence.resolve({
+        workItemId,
+        transitions: [approvalTransition],
+        fact: revokedApproval,
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects a superseded review-accepted event even when the PR is currently authorized', async () => {
+    const { pullRequests } = await setup();
+    await pullRequests.observe(
+      {
+        resourceId: resource,
+        workItemId,
+        state: 'open',
+        headRevision: 'head-a',
+        baseRevision: 'base-a',
+        checks: 'passing',
+      },
+      context('observe-a'),
+    );
+    await pullRequests.acceptReviewSignal(
+      {
+        resourceId: resource,
+        revision: 'head-a',
+        actorId: 'reviewer',
+        actorKind: 'human',
+        acceptedEventId: 'review-a',
+        resourceAuthorId: 'author',
+        authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
+      },
+      context('review-a'),
+    );
+    const supersededApproval = await factOfType(pullRequests, ActivityEventType.PrReviewAccepted);
+
+    // A new revision lands and is freshly re-approved, so the PR is
+    // currently authorized again — but not by the earlier event.
     await pullRequests.observe(
       {
         resourceId: resource,
@@ -345,13 +412,76 @@ describe('createPullRequestTransitionEvidence', () => {
       },
       context('observe-b'),
     );
+    await pullRequests.acceptReviewSignal(
+      {
+        resourceId: resource,
+        revision: 'head-b',
+        actorId: 'reviewer',
+        actorKind: 'human',
+        acceptedEventId: 'review-b',
+        resourceAuthorId: 'author',
+        authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
+      },
+      context('review-b'),
+    );
 
     const evidence = createPullRequestTransitionEvidence(pullRequests);
     expect(
       await evidence.resolve({
         workItemId,
         transitions: [approvalTransition],
-        fact: staleApproval,
+        fact: supersededApproval,
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects an approval once the pull request is no longer open', async () => {
+    const { pullRequests } = await setup();
+    await pullRequests.observe(
+      {
+        resourceId: resource,
+        workItemId,
+        state: 'open',
+        headRevision: 'head-a',
+        baseRevision: 'base-a',
+        checks: 'passing',
+      },
+      context('observe-a'),
+    );
+    await pullRequests.acceptReviewSignal(
+      {
+        resourceId: resource,
+        revision: 'head-a',
+        actorId: 'reviewer',
+        actorKind: 'human',
+        acceptedEventId: 'review-a',
+        resourceAuthorId: 'author',
+        authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
+      },
+      context('review-a'),
+    );
+    const acceptedFact = await factOfType(pullRequests, ActivityEventType.PrReviewAccepted);
+
+    // The PR is merged after the review was accepted; decidePullRequestAuthority
+    // denies on state !== Open (policy.ts) before it even reaches the review check.
+    await pullRequests.observe(
+      {
+        resourceId: resource,
+        workItemId,
+        state: 'merged',
+        headRevision: 'head-a',
+        baseRevision: 'base-a',
+        checks: 'passing',
+      },
+      context('observe-merged'),
+    );
+
+    const evidence = createPullRequestTransitionEvidence(pullRequests);
+    expect(
+      await evidence.resolve({
+        workItemId,
+        transitions: [approvalTransition],
+        fact: acceptedFact,
       }),
     ).toBeNull();
   });
