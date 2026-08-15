@@ -17,7 +17,11 @@ it('uses the earliest matching primary-PR fact before a later watch verdict', as
     outcomeKinds: ['done'],
     resources: [],
     executionKind: ActivityExecutionKind.Deterministic,
-    handler: { async execute() { return { kind: 'done' } as const; } },
+    handler: {
+      async execute() {
+        return { kind: 'done' } as const;
+      },
+    },
   });
   world.registerActivity({
     name: activityName('after-merge'),
@@ -26,7 +30,11 @@ it('uses the earliest matching primary-PR fact before a later watch verdict', as
     outcomeKinds: ['done'],
     resources: [],
     executionKind: ActivityExecutionKind.Deterministic,
-    handler: { async execute() { return { kind: 'done' } as const; } },
+    handler: {
+      async execute() {
+        return { kind: 'done' } as const;
+      },
+    },
   });
   const work = await world.createWork({ objective: 'event transition' });
   await world.discoverResource({
@@ -39,17 +47,26 @@ it('uses the earliest matching primary-PR fact before a later watch verdict', as
   await world.observePullRequest({
     resourceId,
     workItemId: work.workItemId,
-    state: 'open', headRevision: 'a', baseRevision: 'base', checks: 'passing',
+    state: 'open',
+    headRevision: 'a',
+    baseRevision: 'base',
+    checks: 'passing',
   });
   await world.observePullRequest({
     resourceId,
     workItemId: work.workItemId,
-    state: 'closed', headRevision: 'a', baseRevision: 'base', checks: 'passing',
+    state: 'closed',
+    headRevision: 'a',
+    baseRevision: 'base',
+    checks: 'passing',
   });
   await world.observePullRequest({
     resourceId,
     workItemId: work.workItemId,
-    state: 'merged', headRevision: 'a', baseRevision: 'base', checks: 'passing',
+    state: 'merged',
+    headRevision: 'a',
+    baseRevision: 'base',
+    checks: 'passing',
   });
   world.configureWorkflow('review', {
     stages: { review: { activity: 'implement', with: {}, on: { done: { then: 'done' } } } },
@@ -57,15 +74,34 @@ it('uses the earliest matching primary-PR fact before a later watch verdict', as
   world.configureWorkflow('main', {
     stages: {
       implement: {
-        activity: 'implement', with: {},
-        on: { done: { then: 'done', watchGates: ['review'], eventTransitions: [{ events: ['pr.state-changed'], where: { state: 'merged' }, then: 'after-merge' }] } },
+        activity: 'implement',
+        with: {},
+        on: {
+          done: {
+            then: 'done',
+            watchGates: ['review'],
+            eventTransitions: [
+              { events: ['pr.state-changed'], where: { state: 'merged' }, then: 'after-merge' },
+            ],
+          },
+        },
       },
       'after-merge': { activity: 'after-merge', with: {}, on: { done: { then: 'done' } } },
     },
-    watches: [{ id: 'review', while: { stages: ['implement'], statuses: ['waiting'] }, on: { events: ['review.requested'] }, workflow: 'review', maxPerGroup: 1 }],
+    watches: [
+      {
+        id: 'review',
+        while: { stages: ['implement'], statuses: ['waiting'] },
+        on: { events: ['review.requested'] },
+        workflow: 'review',
+        maxPerGroup: 1,
+      },
+    ],
   });
   const started = await world.startWorkflow({ workItemId: work.workItemId, workflowName: 'main' });
-  await world.acceptOutcome(started.workflowInstanceId, started.pendingActivation!.activationId, { kind: 'done' });
+  await world.acceptOutcome(started.workflowInstanceId, started.pendingActivation!.activationId, {
+    kind: 'done',
+  });
   const laterVerdict = await world.appendFact('review.verdict', {}, 'later-watch-verdict');
   await world.acceptSignal(started.workflowInstanceId, {
     kind: WatchGateVerdictSignal,
@@ -75,5 +111,7 @@ it('uses the earliest matching primary-PR fact before a later watch verdict', as
     authority: { kind: 'watch', watch: watchId('review') },
     outcome: 'done',
   });
-  expect((await world.orchestration.get(started.workflowInstanceId))?.currentStage).toBe('after-merge');
+  expect((await world.orchestration.get(started.workflowInstanceId))?.currentStage).toBe(
+    'after-merge',
+  );
 });

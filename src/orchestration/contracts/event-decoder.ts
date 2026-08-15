@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 import {
   activationId,
-  activityName,
   ActivityEventType,
+  activityName,
   ActivityOutcomeKind,
   PullRequestCheckState,
   PullRequestState,

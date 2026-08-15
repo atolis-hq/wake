@@ -16,7 +16,10 @@ export class AcceptSignal {
     private readonly work: WorkService,
     private readonly resolveEventTransitions?: (
       context: CommandContext,
-      candidate: { readonly workflowInstanceId: WorkflowInstanceId; readonly providerEventId: string },
+      candidate: {
+        readonly workflowInstanceId: WorkflowInstanceId;
+        readonly providerEventId: string;
+      },
     ) => Promise<boolean>,
   ) {}
 

@@ -16,7 +16,8 @@ export function defaultApprovalAwait(
   if (route.await !== undefined) return route.await;
   if (
     outcomeKind !== ActivityOutcomeKind.Done ||
-    route.watchGates !== undefined || route.eventTransitions !== undefined ||
+    route.watchGates !== undefined ||
+    route.eventTransitions !== undefined ||
     stage.requiresApproval === false
   )
     return undefined;
