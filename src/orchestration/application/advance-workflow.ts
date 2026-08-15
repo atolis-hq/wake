@@ -14,7 +14,6 @@ import { WorkflowStatus } from '../contracts/vocabulary.js';
 import {
   requestChangesResume as decideChangesResume,
   requestOperatorRetry as decideOperatorRetry,
-  acceptSignal as decideSignal,
   requestSupplementalActivity as decideSupplementalActivity,
 } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
@@ -23,7 +22,6 @@ import {
   acceptResourceTransition,
   matchResourceTransitions,
 } from './resource-transition-matching.js';
-import type { ResourceTransitionResolver } from './resource-transition-resolver.js';
 import type { StartWorkflow } from './start-workflow.js';
 import { matchWatches } from './watch-matching.js';
 
@@ -40,7 +38,6 @@ export class AdvanceWorkflow {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
-    private readonly eventTransitions?: ResourceTransitionResolver,
   ) {}
 
   async requestSupplementalActivity(
@@ -235,44 +232,6 @@ export class AdvanceWorkflow {
 
   async listAll() {
     return (await this.listAllLoaded()).map(({ view }) => view);
-  }
-
-  async resolveResourceTransitions(
-    context: CommandContext,
-    candidate?: {
-      readonly workflowInstanceId: WorkflowInstanceId;
-      readonly providerEventId: string;
-    },
-  ): Promise<boolean> {
-    if (this.eventTransitions === undefined) return false;
-    let resolvedCandidate = false;
-    for (const { view, sequence } of await this.listAllLoaded()) {
-      if (candidate !== undefined && view.workflowInstanceId !== candidate.workflowInstanceId)
-        continue;
-      const resolution = await this.eventTransitions.resolve(view, candidate?.providerEventId);
-      if (resolution === null) continue;
-      const definition = await this.workflows.definitionForOperation(view, sequence, context);
-      if (definition === null) continue;
-      const decision = decideSignal(
-        definition,
-        { ...view, waitingFor: { ...view.waitingFor!, resume: resolution.target } },
-        {
-          signal: {
-            kind: view.waitingFor!.signalKind,
-            actorId: 'resource-transition',
-            actorDecision: { authorized: true, evidenceId: resolution.evidenceId },
-            providerEventId: resolution.evidenceId,
-          },
-          occurredAt: context.occurredAt,
-          causationId: `${context.commandId}:${resolution.evidenceId}`,
-          consent: true,
-        },
-      );
-      if (decision.kind === 'append')
-        await this.repository.append(view.workflowInstanceId, sequence, decision.events);
-      resolvedCandidate ||= candidate?.workflowInstanceId === view.workflowInstanceId;
-    }
-    return resolvedCandidate;
   }
 
   // Matching and application are generic (see resource-transition-matching.ts):

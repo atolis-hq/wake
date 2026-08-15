@@ -14,13 +14,6 @@ export class AcceptSignal {
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
     private readonly work: WorkService,
-    private readonly resolveResourceTransitions?: (
-      context: CommandContext,
-      candidate: {
-        readonly workflowInstanceId: WorkflowInstanceId;
-        readonly providerEventId: string;
-      },
-    ) => Promise<boolean>,
   ) {}
 
   async wait(
@@ -43,13 +36,6 @@ export class AcceptSignal {
     signal: OrchestrationSignal,
     context: CommandContext,
   ) {
-    if (
-      (await this.resolveResourceTransitions?.(context, {
-        workflowInstanceId,
-        providerEventId: signal.providerEventId,
-      })) === true
-    )
-      return (await this.repository.loadRequired(workflowInstanceId)).view;
     const loaded = await this.repository.loadRequired(workflowInstanceId);
     const item = await this.work.get(loaded.view.workItemId);
     const definition = await this.workflows.definitionForOperation(

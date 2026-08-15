@@ -17,7 +17,6 @@ import { CoordinationClaims } from './coordination-claims.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
 import { RequestChild } from './request-child.js';
-import type { ResourceTransitionResolver } from './resource-transition-resolver.js';
 import { StartWorkflow } from './start-workflow.js';
 import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
@@ -33,7 +32,6 @@ export class OrchestrationService {
     work: WorkService,
     definitions: Readonly<Record<string, CompiledWorkflow>>,
     projections?: ProjectionStore,
-    eventTransitions?: ResourceTransitionResolver,
   ) {
     const repository = new OrchestrationRepository(journal);
     const claims = new CoordinationClaims(journal);
@@ -43,13 +41,8 @@ export class OrchestrationService {
       work,
       new WorkflowDefinitionRegistry(journal, projections, definitions),
     );
-    this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow, eventTransitions);
-    this.acceptWorkflowSignal = new AcceptSignal(
-      repository,
-      this.startWorkflow,
-      work,
-      (context, candidate) => this.advanceWorkflow.resolveResourceTransitions(context, candidate),
-    );
+    this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow);
+    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.childWorkflows = new RequestChild(
       repository,
       claims,
@@ -162,10 +155,6 @@ export class OrchestrationService {
     return this.advanceWorkflow.listAll();
   }
 
-  resolveResourceTransitions(context: CommandContext) {
-    return this.advanceWorkflow.resolveResourceTransitions(context);
-  }
-
   reconcileChildCompletions(context: CommandContext) {
     return this.childWorkflows.reconcileChildCompletions(context);
   }
@@ -217,5 +206,4 @@ export const createOrchestrationService = (
   work: WorkService,
   definitions: Readonly<Record<string, CompiledWorkflow>>,
   projections?: ProjectionStore,
-  eventTransitions?: ResourceTransitionResolver,
-) => new OrchestrationService(journal, work, definitions, projections, eventTransitions);
+) => new OrchestrationService(journal, work, definitions, projections);

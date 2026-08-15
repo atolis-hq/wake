@@ -12,8 +12,6 @@ export * from './application/resource-transition-evidence.js';
 
 export * from './application/resource-transition-matching.js';
 
-export * from './application/resource-transition-resolver.js';
-
 export * from './application/resource-transition-reactor.js';
 
 export * from './application/signal-reactor.js';

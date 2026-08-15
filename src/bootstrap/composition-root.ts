@@ -64,7 +64,8 @@ import {
   compileWorkflow,
   compileWorkflowSelectors,
   createOrchestrationService,
-  createPrimaryPullRequestResourceTransitionResolver,
+  createPullRequestTransitionEvidence,
+  createResourceTransitionReactor,
   createWatchReactor,
   selectWorkflow,
   workflowName,
@@ -75,11 +76,13 @@ import {
   FileProjectionStore,
 } from '../persistence/index.js';
 import {
+  BuiltInResourceCapability,
   createResourceLookup,
   createResourceService,
   resourceId,
   type ResourceLinkResolver,
 } from '../resources/index.js';
+import { createCapabilityResourceTransitionEvidence } from './resource-transition-evidence.js';
 // The shared Integration barrel must not re-export a provider namespace
 // (see provider-locality); composition-root is the exempt production
 // composition point that is allowed to name it directly.
@@ -194,13 +197,7 @@ export async function createCompositionRoot(
       compileWorkflow(name, definition, activities, Object.keys(config.orchestration.workflows)),
     ]),
   );
-  const orchestration = createOrchestrationService(
-    journal,
-    work,
-    definitions,
-    projections,
-    createPrimaryPullRequestResourceTransitionResolver(journal, pullRequests),
-  );
+  const orchestration = createOrchestrationService(journal, work, definitions, projections);
   const workspaces = new GitWorkspaceProvider(paths.workspacesRoot, {
     async cloneLocator(id) {
       const resource = await resources.get(resourceId(id));
@@ -513,6 +510,24 @@ async function composeIntegrationRuntime(
     orchestration: input.orchestration,
   });
   const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints, runs);
+  const resourceTransitions = createResourceTransitionReactor(
+    input.orchestration,
+    createCapabilityResourceTransitionEvidence({
+      resources: input.resources,
+      policies: [
+        {
+          capabilities: [
+            BuiltInResourceCapability.Mergeable,
+            BuiltInResourceCapability.Reviewable,
+            BuiltInResourceCapability.Approvable,
+          ],
+          policy: createPullRequestTransitionEvidence(input.pullRequests),
+        },
+      ],
+    }),
+    input.journal,
+    input.checkpoints,
+  );
   const outcomes = new DeliveryOutcomeReactor(
     input.journal,
     input.checkpoints,
@@ -552,12 +567,7 @@ async function composeIntegrationRuntime(
     },
     react: async () => {
       await watch.runOnce();
-      await input.orchestration.resolveResourceTransitions({
-        commandId: input.ids.next('command'),
-        correlationId: 'event-transitions' as never,
-        occurredAt: input.clock.now().toISOString(),
-        actor: { kind: EventActorKind.System, id: 'event-transition-reactor' },
-      });
+      await resourceTransitions.runOnce();
       await artifacts.runOnce();
       await outcomes.runOnce();
       for (const provider of providers) await provider.maintenance?.runOnce();

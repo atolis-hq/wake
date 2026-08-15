@@ -103,6 +103,7 @@ it('uses the earliest matching primary-PR fact before a later watch verdict', as
     kind: 'done',
   });
   const laterVerdict = await world.appendFact('review.verdict', {}, 'later-watch-verdict');
+  await world.advance();
   await world.acceptSignal(started.workflowInstanceId, {
     kind: WatchGateVerdictSignal,
     actorId: 'reviewer',

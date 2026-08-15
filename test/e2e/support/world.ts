@@ -4,6 +4,7 @@ import {
   activationId as parseActivationId,
   type ActivityDefinition,
 } from '../../../src/activities/index.js';
+import { createCapabilityResourceTransitionEvidence } from '../../../src/bootstrap/index.js';
 import {
   createAdvanceOnce,
   createWorkCancellationPolicy,
@@ -28,7 +29,8 @@ import {
 import {
   compileWorkflow,
   createOrchestrationService,
-  createPrimaryPullRequestResourceTransitionResolver,
+  createPullRequestTransitionEvidence,
+  createResourceTransitionReactor,
   createWatchReactor,
   orchestrationGroupId,
   workflowInstanceId as parseWorkflowInstanceId,
@@ -45,6 +47,7 @@ import {
   ProjectionRunner,
 } from '../../../src/persistence/index.js';
 import {
+  BuiltInResourceCapability,
   createResourceLookup,
   createResourceService,
   type ResourceView,
@@ -103,7 +106,6 @@ export class TestWorld {
     this.work,
     this.definitions,
     this.projections,
-    createPrimaryPullRequestResourceTransitionResolver(this.journal, this.pullRequests),
   );
 
   // resolve() falls back to this projection for historical (non-current) workflow
@@ -143,6 +145,25 @@ export class TestWorld {
     this.journal,
     this.checkpoints,
     new RunRepository(this.journal),
+  );
+
+  private readonly resourceTransitionReactor = createResourceTransitionReactor(
+    this.orchestration,
+    createCapabilityResourceTransitionEvidence({
+      resources: this.resources,
+      policies: [
+        {
+          capabilities: [
+            BuiltInResourceCapability.Mergeable,
+            BuiltInResourceCapability.Reviewable,
+            BuiltInResourceCapability.Approvable,
+          ],
+          policy: createPullRequestTransitionEvidence(this.pullRequests),
+        },
+      ],
+    }),
+    this.journal,
+    this.checkpoints,
   );
 
   private readonly stream: EntityRef<'test', 'scenario'> = {
@@ -279,10 +300,6 @@ export class TestWorld {
     return this.pullRequests.observe(input, this.command());
   }
 
-  resolveResourceTransitions() {
-    return this.orchestration.resolveResourceTransitions(this.command());
-  }
-
   private async syncWorkflowDefinitions(): Promise<void> {
     await this.definitionProjections.runOnce(workflowDefinitionsProjection);
   }
@@ -376,7 +393,7 @@ export class TestWorld {
       maxProgress: 1,
     });
     await this.watchReactor.runOnce();
-    await this.resolveResourceTransitions();
+    await this.resourceTransitionReactor.runOnce();
     return result;
   }
 
