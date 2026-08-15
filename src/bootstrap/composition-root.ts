@@ -419,6 +419,7 @@ async function composeIntegrationRuntime(
   const { instances, failures: providerFailures } = registry.compose(
     await hydrateFakeProviderEvidence(input.wakeRoot, input.config.integrations),
     {
+      publicUiUrl: input.config.surfaces.web.publicUrl,
       work: input.work,
       resources: input.resources,
       resourceLookup: input.lookup,

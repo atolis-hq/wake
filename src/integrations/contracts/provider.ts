@@ -35,6 +35,8 @@ export interface WorkConclusion {
 }
 
 export interface ProviderServices {
+  /** Stable operator-configured UI address included in provider notifications when present. */
+  readonly publicUiUrl?: string | undefined;
   readonly work: WorkService;
   readonly resources: ResourceService;
   readonly resourceLookup: ResourceLookup;

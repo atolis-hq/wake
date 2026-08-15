@@ -148,6 +148,36 @@ describe('GitHub outbound delivery', () => {
       body: expect.stringContaining('terminal report'),
     });
   });
+
+  it('links an agent-run publication to the configured public UI URL', () => {
+    const outbound = translateGitHubOutbound(
+      {
+        resourceId: resId('2'),
+        kind: BuiltInResourceKind.Issue,
+        externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r#3' },
+        capabilities: [],
+      },
+      {
+        ...mergeIntent,
+        resourceId: resId('2'),
+        kind: DeliveryIntentKind.AgentRunPublish,
+        payload: {
+          kind: DeliveryIntentKind.AgentRunPublish,
+          report: {
+            runId: 'run-2',
+            startedAt: '2026-08-03T12:00:00.000Z',
+            finishedAt: '2026-08-03T12:00:01.000Z',
+            displayBody: 'terminal report',
+            outcome: 'DONE',
+            metadata: {},
+          },
+        },
+      },
+      { publicUiUrl: 'https://wake.example.com' },
+    );
+
+    expect(outbound.body).toContain('**[Wake](https://wake.example.com)**');
+  });
   it('reports a stable message for a non-Error provider rejection', async () => {
     const adapter = createGitHubDelivery(async () => {
       throw { provider: 'github' };
