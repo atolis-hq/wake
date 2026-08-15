@@ -2,7 +2,11 @@
   "ignoreExportsUsedInFile": true,
   "workspaces": {
     ".": {
-      "entry": ["src/*/index.ts", "test/**/*.test.ts"],
+      "entry": [
+        "src/*/index.ts",
+        "test/**/*.test.ts",
+        "test/integration/persistence/file-lock-contender.ts"
+      ],
       "project": ["src/**/*.ts", "!src/surfaces/web/**", "test/**/*.ts"]
     },
     "src/surfaces/web": {
