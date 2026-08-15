@@ -35,46 +35,58 @@ export function createResourceTransitionReactor(
   journal?: EventJournal,
   checkpoints?: CheckpointStore,
 ) {
+  let queue: Promise<unknown> = Promise.resolve();
+  const react = async (event: PersistedEvent, context: CommandContext): Promise<void> => {
+    const orchestrationEvent = selectOrchestrationEvent(event);
+    const fact =
+      orchestrationEvent?.eventType === OrchestrationEventType.SignalWaitStarted
+        ? undefined
+        : event;
+    for (const match of await orchestration.listResourceTransitionMatches(event)) {
+      const resolved = await evidence.resolve({
+        workItemId: match.workItemId,
+        transitions: match.transitions,
+        ...(fact === undefined ? {} : { fact }),
+      });
+      if (resolved === null) continue;
+      await orchestration.applyResourceTransition(
+        match.workflowInstanceId,
+        resolved.transition.target,
+        resolved.evidenceId,
+        context,
+      );
+    }
+  };
+  const runBatch = async (limit = batchSize): Promise<number> => {
+    if (journal === undefined || checkpoints === undefined)
+      throw new Error('ResourceTransitionReactor journal and checkpoints are required to run');
+    const events = await journal.readAll(await checkpoints.load(checkpoint), limit);
+    for (const event of events) {
+      await react(event, commandContext(event));
+      await checkpoints.save(checkpoint, event.globalPosition);
+    }
+    return events.length;
+  };
+  const serialize = <Result>(operation: () => Promise<Result>): Promise<Result> => {
+    const result = queue.then(operation);
+    queue = result.catch(() => {});
+    return result;
+  };
   return {
-    async react(event: PersistedEvent, context: CommandContext): Promise<void> {
-      const orchestrationEvent = selectOrchestrationEvent(event);
-      const fact =
-        orchestrationEvent?.eventType === OrchestrationEventType.SignalWaitStarted
-          ? undefined
-          : event;
-      for (const match of await orchestration.listResourceTransitionMatches(event)) {
-        const resolved = await evidence.resolve({
-          workItemId: match.workItemId,
-          transitions: match.transitions,
-          ...(fact === undefined ? {} : { fact }),
-        });
-        if (resolved === null) continue;
-        await orchestration.applyResourceTransition(
-          match.workflowInstanceId,
-          resolved.transition.target,
-          resolved.evidenceId,
-          context,
-        );
-      }
+    react,
+    runOnce(limit = batchSize): Promise<number> {
+      return serialize(() => runBatch(limit));
     },
-    async runOnce(limit = batchSize): Promise<number> {
-      if (journal === undefined || checkpoints === undefined)
-        throw new Error('ResourceTransitionReactor journal and checkpoints are required to run');
-      const events = await journal.readAll(await checkpoints.load(checkpoint), limit);
-      for (const event of events) {
-        await this.react(event, commandContext(event));
-        await checkpoints.save(checkpoint, event.globalPosition);
-      }
-      return events.length;
-    },
-    async drain(): Promise<number> {
-      let total = 0;
-      let processed: number;
-      do {
-        processed = await this.runOnce();
-        total += processed;
-      } while (processed === batchSize);
-      return total;
+    drain(): Promise<number> {
+      return serialize(async () => {
+        let total = 0;
+        let processed: number;
+        do {
+          processed = await runBatch();
+          total += processed;
+        } while (processed === batchSize);
+        return total;
+      });
     },
   };
 }

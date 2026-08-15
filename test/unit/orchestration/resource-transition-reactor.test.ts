@@ -236,6 +236,82 @@ it('drains more than one batch and advances its checkpoint through the final eve
   await expect(reactor.runOnce()).resolves.toBe(0);
 });
 
+it('serializes an overlapping runner batch and barrier drain through checkpoint advancement', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const durable = new InMemoryCheckpointStore();
+  await journal.append(stream, 0, [
+    createEventDraft({
+      eventId: 'event-1',
+      eventType: ActivityEventType.PrStateChanged,
+      occurredAt: '2026-08-15T12:00:00.000Z',
+      correlationId: 'correlation-1',
+      causationId: 'cause-1',
+      actor: { kind: 'integration', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { state: 'merged' },
+    }),
+    createEventDraft({
+      eventId: 'event-2',
+      eventType: ActivityEventType.PrStateChanged,
+      occurredAt: '2026-08-15T12:01:00.000Z',
+      correlationId: 'correlation-2',
+      causationId: 'cause-2',
+      actor: { kind: 'integration', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { state: 'merged' },
+    }),
+  ]);
+  let firstSaveStarted!: () => void;
+  const firstSave = new Promise<void>((resolve) => {
+    firstSaveStarted = resolve;
+  });
+  let releaseFirstSave!: () => void;
+  const release = new Promise<void>((resolve) => {
+    releaseFirstSave = resolve;
+  });
+  let holdFirstSave = true;
+  const checkpoints: CheckpointStore = {
+    load: (consumer) => durable.load(consumer),
+    async save(consumer, position) {
+      if (holdFirstSave) {
+        holdFirstSave = false;
+        firstSaveStarted();
+        await release;
+      }
+      await durable.save(consumer, position);
+    },
+    reset: (consumer) => durable.reset(consumer),
+  };
+  const applied: string[] = [];
+  const reactor = createResourceTransitionReactor(
+    {
+      async listResourceTransitionMatches() {
+        return [match];
+      },
+      async applyResourceTransition(_id, _target, evidenceId) {
+        applied.push(evidenceId);
+      },
+    },
+    evidence(async ({ fact }) =>
+      fact === undefined ? null : { transition, evidenceId: fact.eventId },
+    ),
+    journal,
+    checkpoints,
+  );
+
+  const runnerBatch = reactor.runOnce(1);
+  await firstSave;
+  const barrierDrain = reactor.drain();
+  releaseFirstSave();
+
+  await expect(runnerBatch).resolves.toBe(1);
+  await expect(barrierDrain).resolves.toBe(1);
+  expect(applied).toEqual(['event-1', 'event-2']);
+  expect(await durable.load('reactor:orchestration.resource-transition')).toBe(2);
+});
+
 it('does not advance after a failed reaction and reuses its command context on replay', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
