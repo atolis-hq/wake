@@ -44,7 +44,6 @@ import {
   createWatchReactor,
   selectWorkflow,
   workflowName,
-  type OperationCoordinator,
   type createOrchestrationService,
 } from '../orchestration/index.js';
 import {
@@ -58,7 +57,6 @@ import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
 import { createCapabilityResourceTransitionEvidence } from './resource-transition-evidence.js';
-import type { TriggerRegistry } from './resource-transition-ordering.js';
 
 export interface IntegrationRuntime {
   readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
@@ -87,8 +85,6 @@ export interface IntegrationRuntimeInput {
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
   readonly scheduleCheckpoints: ScheduleCheckpointStore;
-  readonly resourceTransitionOrdering: OperationCoordinator;
-  readonly resourceTransitionTriggers: TriggerRegistry;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
     provider: ProviderInstance,
@@ -220,21 +216,16 @@ export async function composeIntegrationRuntime(
       },
     ],
   });
-  input.resourceTransitionTriggers.register(resourceTransitionEvidence.triggers);
-  input.resourceTransitionTriggers.freeze();
   const resourceTransitions = createResourceTransitionReactor(
     input.orchestration,
     resourceTransitionEvidence,
     input.journal,
     input.checkpoints,
-    input.resourceTransitionOrdering,
   );
-  input.orchestration.setAcceptSignalOperationCoordinator((operation) =>
-    input.resourceTransitionOrdering(async () => {
-      await resourceTransitions.drain();
-      return operation();
-    }),
-  );
+  input.orchestration.setAcceptSignalOperationCoordinator(async (operation) => {
+    await resourceTransitions.drain();
+    return operation();
+  });
   const outcomes = new DeliveryOutcomeReactor(
     input.journal,
     input.checkpoints,
