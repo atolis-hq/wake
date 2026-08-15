@@ -308,6 +308,7 @@ export interface ChildWorkflowRequest {
 export const WatchGateVerdictSignal = signalName('orchestration.watch-gate-verdict');
 
 export const ApprovedSignal = signalName('approved');
+
 export const EventTransitionSignal = signalName('orchestration.event-transition');
 
 /**

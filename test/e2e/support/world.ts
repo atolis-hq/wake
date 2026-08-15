@@ -28,6 +28,7 @@ import {
 import {
   compileWorkflow,
   createOrchestrationService,
+  createPrimaryPullRequestEventTransitionResolver,
   createWatchReactor,
   orchestrationGroupId,
   workflowInstanceId as parseWorkflowInstanceId,
@@ -102,7 +103,7 @@ export class TestWorld {
     this.work,
     this.definitions,
     this.projections,
-    this.pullRequests,
+    createPrimaryPullRequestEventTransitionResolver(this.journal, this.pullRequests),
   );
 
   // resolve() falls back to this projection for historical (non-current) workflow

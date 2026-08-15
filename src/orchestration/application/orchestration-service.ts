@@ -1,4 +1,4 @@
-import type { ActivationId, ActivityOutcome, PullRequestService } from '../../activities/index.js';
+import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import type { CommandContext, EventJournal, ProjectionStore } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
@@ -14,6 +14,7 @@ import { AcceptActivityOutcome } from './accept-activity-outcome.js';
 import { AcceptSignal } from './accept-signal.js';
 import { AdvanceWorkflow } from './advance-workflow.js';
 import { CoordinationClaims } from './coordination-claims.js';
+import type { EventTransitionResolver } from './event-transition-resolver.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
 import { RequestChild } from './request-child.js';
@@ -32,7 +33,7 @@ export class OrchestrationService {
     work: WorkService,
     definitions: Readonly<Record<string, CompiledWorkflow>>,
     projections?: ProjectionStore,
-    pullRequests?: PullRequestService,
+    eventTransitions?: EventTransitionResolver,
   ) {
     const repository = new OrchestrationRepository(journal);
     const claims = new CoordinationClaims(journal);
@@ -42,9 +43,12 @@ export class OrchestrationService {
       work,
       new WorkflowDefinitionRegistry(journal, projections, definitions),
     );
-    this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow, pullRequests);
-    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work, (context, candidate) =>
-      this.advanceWorkflow.resolveEventTransitions(context, candidate),
+    this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow, eventTransitions);
+    this.acceptWorkflowSignal = new AcceptSignal(
+      repository,
+      this.startWorkflow,
+      work,
+      (context, candidate) => this.advanceWorkflow.resolveEventTransitions(context, candidate),
     );
     this.childWorkflows = new RequestChild(
       repository,
@@ -193,5 +197,5 @@ export const createOrchestrationService = (
   work: WorkService,
   definitions: Readonly<Record<string, CompiledWorkflow>>,
   projections?: ProjectionStore,
-  pullRequests?: PullRequestService,
-) => new OrchestrationService(journal, work, definitions, projections, pullRequests);
+  eventTransitions?: EventTransitionResolver,
+) => new OrchestrationService(journal, work, definitions, projections, eventTransitions);

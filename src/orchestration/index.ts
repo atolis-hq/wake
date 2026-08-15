@@ -6,6 +6,8 @@ export * from './application/orchestration-service.js';
 
 export * from './application/advance-workflow.js';
 
+export * from './application/event-transition-resolver.js';
+
 export * from './application/signal-reactor.js';
 
 export * from './application/watch-reactor.js';

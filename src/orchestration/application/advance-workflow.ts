@@ -1,16 +1,11 @@
 import {
   ActivityEventType,
-  ActivityResourceRole,
   PullRequestCheckState,
-  PullRequestState,
   selectActivityEvent,
-  type PullRequestService,
-  type ActivityEvent,
   type ActivationId,
 } from '../../activities/index.js';
 import { EventSourceKind, createEventDraft, type CommandContext } from '../../kernel/index.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
-import type { CompiledEventTransition } from '../contracts/config.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import {
   commandName,
@@ -23,10 +18,11 @@ import { WorkflowStatus } from '../contracts/vocabulary.js';
 import {
   requestChangesResume as decideChangesResume,
   requestOperatorRetry as decideOperatorRetry,
+  acceptSignal as decideSignal,
   requestSupplementalActivity as decideSupplementalActivity,
 } from '../domain/interpreter.js';
-import { acceptSignal as decideSignal } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
+import type { EventTransitionResolver } from './event-transition-resolver.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { StartWorkflow } from './start-workflow.js';
 
@@ -43,7 +39,7 @@ export class AdvanceWorkflow {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
-    private readonly pullRequests?: PullRequestService,
+    private readonly eventTransitions?: EventTransitionResolver,
   ) {}
 
   async requestSupplementalActivity(
@@ -242,53 +238,37 @@ export class AdvanceWorkflow {
 
   async resolveEventTransitions(
     context: CommandContext,
-    candidate?: { readonly workflowInstanceId: WorkflowInstanceId; readonly providerEventId: string },
+    candidate?: {
+      readonly workflowInstanceId: WorkflowInstanceId;
+      readonly providerEventId: string;
+    },
   ): Promise<boolean> {
-    if (this.pullRequests === undefined) return false;
-    const events = await this.repository.readAll();
-    const candidatePosition =
-      candidate === undefined
-        ? undefined
-        : events.find((event) => event.eventId === candidate.providerEventId)?.globalPosition;
+    if (this.eventTransitions === undefined) return false;
     let resolvedCandidate = false;
     for (const { view, sequence } of await this.listAllLoaded()) {
-      if (candidate !== undefined && view.workflowInstanceId !== candidate.workflowInstanceId) continue;
-      const transitions = view.waitingFor?.eventTransitions;
-      if (transitions === undefined) continue;
-      const input = await this.pullRequests.authorityInput(view.workItemId);
-      const primary = input.resources.filter(
-        (entry) =>
-          entry.resource.primaryCorrelationConflict === undefined &&
-          entry.correlations.filter(
-            (value) =>
-              value.role === ActivityResourceRole.Primary && value.workItemId === view.workItemId,
-          ).length === 1,
-      );
-      if (primary.length !== 1) continue;
-      const resourceId = primary[0]!.resource.resourceId;
-      const pr = input.pullRequests.find((candidate) => candidate.resourceId === resourceId);
-      if (pr === undefined) continue;
-      const fact = events.find((event) => {
-        if (candidatePosition !== undefined && event.globalPosition >= candidatePosition) return false;
-        const activity = selectActivityEvent(event);
-        if (activity === null || activity.stream.id !== resourceId) return false;
-        const transition = transitions.find((candidate) =>
-          matchesEventTransition(candidate, activity, pr, input.acceptedSignals),
-        );
-        return transition !== undefined;
-      });
-      if (fact === undefined) continue;
-      const activity = selectActivityEvent(fact)!;
-      const transition = transitions.find((candidate) =>
-        matchesEventTransition(candidate, activity, pr, input.acceptedSignals),
-      )!;
+      if (candidate !== undefined && view.workflowInstanceId !== candidate.workflowInstanceId)
+        continue;
+      const resolution = await this.eventTransitions.resolve(view, candidate?.providerEventId);
+      if (resolution === null) continue;
       const definition = await this.workflows.definitionForOperation(view, sequence, context);
       if (definition === null) continue;
-      const decision = decideSignal(definition, { ...view, waitingFor: { ...view.waitingFor!, resume: transition.target } }, {
-        signal: { kind: view.waitingFor!.signalKind, actorId: 'event-transition', actorDecision: { authorized: true, evidenceId: fact.eventId }, providerEventId: fact.eventId },
-        occurredAt: context.occurredAt, causationId: `${context.commandId}:${fact.eventId}`, consent: true,
-      });
-      if (decision.kind === 'append') await this.repository.append(view.workflowInstanceId, sequence, decision.events);
+      const decision = decideSignal(
+        definition,
+        { ...view, waitingFor: { ...view.waitingFor!, resume: resolution.target } },
+        {
+          signal: {
+            kind: view.waitingFor!.signalKind,
+            actorId: 'event-transition',
+            actorDecision: { authorized: true, evidenceId: resolution.evidenceId },
+            providerEventId: resolution.evidenceId,
+          },
+          occurredAt: context.occurredAt,
+          causationId: `${context.commandId}:${resolution.evidenceId}`,
+          consent: true,
+        },
+      );
+      if (decision.kind === 'append')
+        await this.repository.append(view.workflowInstanceId, sequence, decision.events);
       resolvedCandidate ||= candidate?.workflowInstanceId === view.workflowInstanceId;
     }
     return resolvedCandidate;
@@ -325,41 +305,6 @@ export class AdvanceWorkflow {
     );
     return matches.flat();
   }
-}
-
-function matchesEventTransition(
-  transition: CompiledEventTransition,
-  event: ActivityEvent,
-  pr: { readonly resourceId: string; readonly state: string; readonly checks: string; readonly headRevision: string; readonly acceptedReview?: { readonly revision: string } },
-  signals: readonly { readonly resourceId: string; readonly revision: string; readonly trusted: boolean }[],
-): boolean {
-  if (transition.event !== event.eventType) return false;
-  if (event.eventType === ActivityEventType.PrReviewAccepted)
-    return (
-      event.payload.revision === pr.headRevision &&
-      pr.acceptedReview?.revision === pr.headRevision &&
-      signals.some(
-        (signal) =>
-          signal.resourceId === pr.resourceId &&
-          signal.revision === pr.headRevision &&
-          signal.trusted,
-      )
-    );
-  if (event.eventType === ActivityEventType.PrStateChanged)
-    return (
-      transition.where !== undefined &&
-      'state' in transition.where &&
-      transition.where.state === event.payload.state &&
-      event.payload.state === PullRequestState.Merged &&
-      pr.state === PullRequestState.Merged
-    );
-  return (
-    transition.where !== undefined &&
-    'checks' in transition.where &&
-    transition.where.checks === event.payload.checks &&
-    event.payload.checks === PullRequestCheckState.Failing &&
-    pr.checks === PullRequestCheckState.Failing
-  );
 }
 
 function matchesWatchPredicate(

@@ -9,13 +9,13 @@ import {
   type ApprovalAuthority,
   type AwaitConfig,
   type CompiledAwait,
+  type CompiledEventTransition,
   type CompiledOutcomeRoute,
   type CompiledStage,
   type CompiledSupplementalCommand,
   type CompiledWatchGate,
-  type CompiledEventTransition,
-  type EventTransitionConfig,
   type CompiledWorkflow,
+  type EventTransitionConfig,
   type StageConfig,
   type WatchGateConfig,
   type WorkflowDefinitionConfig,
@@ -133,60 +133,73 @@ function compileStage(
   const { workflowName: compiledWorkflowName, activities, declaredWatchIds } = context;
   const definition = activities.describe(activityName(stage.activity));
   const on = Object.fromEntries(
-    Object.entries(stage.on).map(([outcomeKind, route]) => {
-      if (!definition.outcomeKinds.includes(outcomeKind))
-        throw new Error(
-          `Workflow outcome route ${outcomeKind} is not declared by Activity ${definition.name}`,
-        );
-      if (!isReservedTerminal(route.then) && !(route.then in allStages))
-        throw new Error(`Unknown transition target: ${route.then}`);
-      if (route.await !== undefined && route.watchGates !== undefined)
-        throw new Error(
-          `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} cannot configure both await and watchGates`,
-        );
-      if (route.eventTransitions !== undefined && outcomeKind !== ActivityOutcomeKind.Done)
-        throw new Error(`Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} eventTransitions are only valid on done`);
-      const followOns = route.activities?.map((activity) => ({
-        use: activityName(activity.use),
-        with: activities.validateInput(activityName(activity.use), activity.with),
-      }));
-      const target = compileTarget(route.then, outcomeKind);
-      const effectiveAwait = defaultApprovalAwait(stage, outcomeKind, route);
-      const compiled: CompiledOutcomeRoute = Object.freeze({
-        target,
-        ...(route.repeat === undefined ? {} : { repeat: route.repeat }),
-        ...(route.retry === undefined ? {} : { retry: route.retry }),
-        ...(followOns === undefined ? {} : { activities: Object.freeze(followOns) }),
-        ...(effectiveAwait === undefined
-          ? {}
-          : {
-              await: compileAwait(
-                compiledWorkflowName,
-                rawStageName,
-                target,
-                effectiveAwait,
-                declaredWatchIds,
-              ),
-            }),
-        ...(route.watchGates === undefined
-          ? {}
-          : {
-              watchGates: compileWatchGates(
-                compiledWorkflowName,
-                rawStageName,
-                outcomeKind,
-                route.watchGates,
-                declaredWatchIds,
-                allStages,
-              ),
-            }),
-        ...(route.eventTransitions === undefined
-          ? {}
-          : { eventTransitions: compileEventTransitions(route.eventTransitions, route.then, outcomeKind, allStages) }),
-        id: `${compiledWorkflowName}:${rawStageName}:${outcomeKind}`,
-      });
-      return [outcomeKind, compiled];
-    }),
+    Object.entries(stage.on).map(
+      // The route schema is deliberately closed and validated in one compiler pass.
+      // eslint-disable-next-line complexity
+      ([outcomeKind, route]) => {
+        if (!definition.outcomeKinds.includes(outcomeKind))
+          throw new Error(
+            `Workflow outcome route ${outcomeKind} is not declared by Activity ${definition.name}`,
+          );
+        if (!isReservedTerminal(route.then) && !(route.then in allStages))
+          throw new Error(`Unknown transition target: ${route.then}`);
+        if (route.await !== undefined && route.watchGates !== undefined)
+          throw new Error(
+            `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} cannot configure both await and watchGates`,
+          );
+        if (route.eventTransitions !== undefined && outcomeKind !== ActivityOutcomeKind.Done)
+          throw new Error(
+            `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} eventTransitions are only valid on done`,
+          );
+        const followOns = route.activities?.map((activity) => ({
+          use: activityName(activity.use),
+          with: activities.validateInput(activityName(activity.use), activity.with),
+        }));
+        const target = compileTarget(route.then, outcomeKind);
+        const effectiveAwait = defaultApprovalAwait(stage, outcomeKind, route);
+        const compiled: CompiledOutcomeRoute = Object.freeze({
+          target,
+          ...(route.repeat === undefined ? {} : { repeat: route.repeat }),
+          ...(route.retry === undefined ? {} : { retry: route.retry }),
+          ...(followOns === undefined ? {} : { activities: Object.freeze(followOns) }),
+          ...(effectiveAwait === undefined
+            ? {}
+            : {
+                await: compileAwait(
+                  compiledWorkflowName,
+                  rawStageName,
+                  target,
+                  effectiveAwait,
+                  declaredWatchIds,
+                ),
+              }),
+          ...(route.watchGates === undefined
+            ? {}
+            : {
+                watchGates: compileWatchGates(
+                  compiledWorkflowName,
+                  rawStageName,
+                  outcomeKind,
+                  route.watchGates,
+                  declaredWatchIds,
+                  allStages,
+                ),
+              }),
+          ...(route.eventTransitions === undefined
+            ? {}
+            : {
+                eventTransitions: compileEventTransitions(
+                  route.eventTransitions,
+                  route.then,
+                  outcomeKind,
+                  allStages,
+                ),
+              }),
+          id: `${compiledWorkflowName}:${rawStageName}:${outcomeKind}`,
+        });
+        return [outcomeKind, compiled];
+      },
+    ),
   );
   return Object.freeze({
     activity: definition.name,
@@ -202,16 +215,18 @@ function compileEventTransitions(
   outcomeKind: string,
   allStages: WorkflowDefinitionConfig['stages'],
 ): readonly CompiledEventTransition[] {
-  return Object.freeze(entries.map((entry) => {
-    const then = entry.then ?? inheritedThen;
-    if (!isReservedTerminal(then) && !(then in allStages))
-      throw new Error(`Unknown eventTransitions target: ${then}`);
-    return Object.freeze({
-      event: entry.events[0],
-      ...(!('where' in entry) || entry.where === undefined ? {} : { where: entry.where }),
-      target: compileTarget(then, outcomeKind),
-    });
-  }));
+  return Object.freeze(
+    entries.map((entry) => {
+      const then = entry.then ?? inheritedThen;
+      if (!isReservedTerminal(then) && !(then in allStages))
+        throw new Error(`Unknown eventTransitions target: ${then}`);
+      return Object.freeze({
+        event: entry.events[0],
+        ...(!('where' in entry) || entry.where === undefined ? {} : { where: entry.where }),
+        target: compileTarget(then, outcomeKind),
+      });
+    }),
+  );
 }
 
 function compileWatchGates(

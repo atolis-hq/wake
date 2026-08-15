@@ -64,6 +64,7 @@ import {
   compileWorkflow,
   compileWorkflowSelectors,
   createOrchestrationService,
+  createPrimaryPullRequestEventTransitionResolver,
   createWatchReactor,
   selectWorkflow,
   workflowName,
@@ -193,7 +194,13 @@ export async function createCompositionRoot(
       compileWorkflow(name, definition, activities, Object.keys(config.orchestration.workflows)),
     ]),
   );
-  const orchestration = createOrchestrationService(journal, work, definitions, projections, pullRequests);
+  const orchestration = createOrchestrationService(
+    journal,
+    work,
+    definitions,
+    projections,
+    createPrimaryPullRequestEventTransitionResolver(journal, pullRequests),
+  );
   const workspaces = new GitWorkspaceProvider(paths.workspacesRoot, {
     async cloneLocator(id) {
       const resource = await resources.get(resourceId(id));

@@ -5,7 +5,11 @@ import type {
   TransitionTarget,
 } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
-import { EventTransitionSignal, OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
+import {
+  EventTransitionSignal,
+  OrchestrationEventType,
+  WatchGateVerdictSignal,
+} from '../contracts/events.js';
 import type { StageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
@@ -22,6 +26,8 @@ interface DecisionContext {
   readonly causationId: string;
 }
 
+// Route completion combines the mutually exclusive wait, await, and target policies.
+// eslint-disable-next-line complexity
 export function finishRoute(
   events: WorkflowOrchestrationEventDraft[],
   definition: CompiledWorkflow,
@@ -38,13 +44,19 @@ export function finishRoute(
         OrchestrationEventType.SignalWaitStarted,
         {
           signalKind: gate === undefined ? EventTransitionSignal : WatchGateVerdictSignal,
-          ...(gate === undefined ? {} : { from: Object.freeze([
-            { kind: ApprovalAuthorityKind.Watch, watch: gate.watch },
-            { kind: ApprovalAuthorityKind.Human },
-          ]) }),
+          ...(gate === undefined
+            ? {}
+            : {
+                from: Object.freeze([
+                  { kind: ApprovalAuthorityKind.Watch, watch: gate.watch },
+                  { kind: ApprovalAuthorityKind.Human },
+                ]),
+              }),
           resume: route.target,
           ...(gate === undefined ? {} : { onRejectResume: gate.onRejectTarget }),
-          ...(route.eventTransitions === undefined ? {} : { eventTransitions: route.eventTransitions }),
+          ...(route.eventTransitions === undefined
+            ? {}
+            : { eventTransitions: route.eventTransitions }),
         },
         events.length + 1,
       ),
