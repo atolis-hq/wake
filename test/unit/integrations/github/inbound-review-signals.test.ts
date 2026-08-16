@@ -25,8 +25,8 @@ import {
 import { resourceCapability, resourceKind } from '../../../../src/resources/index.js';
 import { TestWorld } from '../../../e2e/support/world.js';
 
-it('ignores an issue comment that is not a recognized command', async () => {
-  expect(await issueCommentSignals('just a status update, not a command')).toEqual([]);
+it('ignores an unrecognized slash-prefixed issue command', async () => {
+  expect(await issueCommentSignals('/ask what should happen next?')).toEqual([]);
 });
 
 it('recognizes a normalized /approved issue command', async () => {
@@ -301,6 +301,43 @@ it('restarts a blocked agent refinement on /changes', async () => {
     pendingActivation: { activity: activityName('agent'), ordinal: 2 },
   });
   expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
+});
+
+it('restarts exactly an eligible blocked agent refinement on a plain issue reply', async () => {
+  const fixture = await blockedIssueWorkflow();
+
+  await applyHumanIssueCommand(fixture, 'The closure provenance is in the newest commit.');
+
+  expect(await fixture.world.viewWorkflow(fixture.workflowId)).toMatchObject({
+    status: 'active',
+    currentStage: 'refine',
+    pendingActivation: { activity: activityName('agent'), ordinal: 2 },
+  });
+  expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
+});
+
+it('leaves a waiting issue workflow unchanged for a plain reply', async () => {
+  const fixture = await waitingIssueWorkflow(signalName('approved'));
+
+  await applyHumanIssueCommand(fixture, 'Could you clarify the rollout timing?');
+
+  expect(await fixture.world.viewWorkflow(fixture.workflowId)).toMatchObject({
+    status: 'waiting',
+    waitingFor: { signalKind: signalName('approved') },
+  });
+  expect(await fixture.world.events('orchestration.signal-accepted')).toHaveLength(0);
+});
+
+it('does not resume a blocked stage for an unrecognized slash command', async () => {
+  const fixture = await blockedIssueWorkflow();
+
+  await applyHumanIssueCommand(fixture, '/ask Is the rollout timing final?');
+
+  expect(await fixture.world.viewWorkflow(fixture.workflowId)).toMatchObject({
+    status: 'blocked',
+    pendingActivation: { activity: activityName('agent'), ordinal: 1 },
+  });
+  expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(0);
 });
 
 it('still satisfies the plain approval workflow unchanged', async () => {

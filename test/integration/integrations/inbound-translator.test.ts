@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { activityName } from '../../../src/activities/index.js';
+import { activityName, ActivityOutcomeKind } from '../../../src/activities/index.js';
 import { RunRepository } from '../../../src/execution/index.js';
 
 import {
@@ -14,6 +14,7 @@ import {
 } from '../../../src/integrations/github/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
+import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock, TestWorld } from '../../e2e/support/world.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
@@ -294,6 +295,49 @@ describe('InboundTranslator', () => {
       'completed',
     );
   });
+
+  it('resumes exactly an eligible blocked agent stage from a plain GitHub issue reply', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:1',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:1',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: 'The missing context is in the latest commit.',
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'maintainer', kind: 'human' },
+        raw: { id: 1 },
+      },
+    });
+    await fixture.world.journal.append(event.stream, 0, [event]);
+
+    await translator.runOnce();
+
+    expect(await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId)).toMatchObject({
+      status: 'active',
+      currentStage: 'refine',
+      pendingActivation: { activity: activityName('agent'), ordinal: 2 },
+    });
+    expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
+  });
 });
 
 describe('InboundTranslator conclusion', () => {
@@ -483,6 +527,51 @@ async function waitingWatchGate() {
   );
   if (run === undefined) throw new Error('Expected a real child run');
   return { world, parent, run };
+}
+
+async function blockedIssueWorkflow() {
+  const world = new TestWorld();
+  world.registerActivity({
+    name: activityName('agent'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z
+      .object({ kind: z.enum([ActivityOutcomeKind.Done, ActivityOutcomeKind.Blocked]) })
+      .strict(),
+    outcomeKinds: [ActivityOutcomeKind.Done, ActivityOutcomeKind.Blocked],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: ActivityOutcomeKind.Done } as const;
+      },
+    },
+  });
+  world.configureWorkflow('blocked-issue-reply', {
+    stages: {
+      refine: { activity: 'agent', with: {}, on: { done: { then: 'done' } } },
+    },
+  });
+  const work = await world.createWork({ objective: 'resume blocked agent work' });
+  const resource = await world.discoverResource({
+    resourceId: `resource-${'0'.repeat(25)}3` as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: 'github', key: 'atolis-hq/wake#583' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(resource.resourceId, work.workItemId, 'primary', {
+    commandId: 'correlate-blocked-issue',
+    correlationId: 'blocked-issue-reply' as never,
+    occurredAt: world.clock.now().toISOString(),
+    actor: { kind: 'system', id: 'test' },
+  });
+  const workflow = await world.startWorkflow({
+    workItemId: work.workItemId,
+    workflowName: workflowName('blocked-issue-reply'),
+  });
+  await world.acceptOutcome(workflow.workflowInstanceId, workflow.pendingActivation!.activationId, {
+    kind: ActivityOutcomeKind.Blocked,
+  });
+  return { world, workflow };
 }
 
 function testActivity(name: string) {

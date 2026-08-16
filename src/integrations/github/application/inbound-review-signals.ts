@@ -20,6 +20,12 @@ import { WorkStatus, type WorkService } from '../../../work/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { GitHubAdapterEvent, GitHubEventType } from '../contracts/events.js';
 import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
+import {
+  isHumanNonWakeReply,
+  isPlainReply,
+  recognizedCommand,
+  shouldResumeBlockedStage,
+} from './inbound-comment-syntax.js';
 import { commandContext } from './inbound-context.js';
 import { ignoreIneligibleOperatorRetry } from './operator-retry-command.js';
 import { translateGitHubReviewCommand } from './review-command-translator.js';
@@ -116,8 +122,7 @@ async function applyIssueReviewSignal(input: {
   readonly adapter: AdapterId;
 }): Promise<void> {
   const { event, resources, work, lookup, orchestration, adapter } = input;
-  if (event.payload.actor.kind !== ReviewActorKind.Human || isWakeDelivery(event.payload.body))
-    return;
+  if (!isHumanNonWakeReply(event.payload.actor.kind, event.payload.body)) return;
   if (resources === undefined || lookup === undefined || orchestration === undefined) return;
   const resourceIdValue = await lookup.resourceIdForExternalKey({
     adapter,
@@ -126,6 +131,7 @@ async function applyIssueReviewSignal(input: {
   if (resourceIdValue === null) return;
   const resource = await resources.get(resourceIdValue);
   const command = recognizedCommand(event.payload.body);
+  const plainReply = isPlainReply(event.payload.body);
   if (command === '/retry') {
     await applyIssueRetrySignal({
       event,
@@ -143,10 +149,22 @@ async function applyIssueReviewSignal(input: {
       orchestration,
       resourceId: resourceIdValue,
       outcome: command === '/approved' ? ActivityOutcomeKind.Done : ActivityOutcomeKind.Rejected,
+      resumeBlockedOnChanges: shouldResumeBlockedStage(command, plainReply),
     });
     return;
   }
   if (command !== null) await applyIssueApprovalSignal({ ...input, command });
+  else if (plainReply) {
+    await applyWorkflowSignal({
+      event,
+      resources,
+      orchestration,
+      resourceId: resourceIdValue,
+      outcome: ActivityOutcomeKind.Rejected,
+      acceptWaitingSignal: false,
+      resumeBlockedOnChanges: true,
+    });
+  }
 }
 
 async function applyIssueRetrySignal(input: {
@@ -245,6 +263,7 @@ async function applyWorkflowSignal(input: {
   readonly orchestration: OrchestrationService;
   readonly resourceId: ReturnType<typeof resourceId>;
   readonly outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected;
+  readonly acceptWaitingSignal?: boolean;
   readonly resumeBlockedOnChanges?: boolean;
 }): Promise<void> {
   const {
@@ -253,6 +272,7 @@ async function applyWorkflowSignal(input: {
     orchestration,
     resourceId: resourceIdValue,
     outcome,
+    acceptWaitingSignal = true,
     resumeBlockedOnChanges = false,
   } = input;
   const workItemIds = (await resources.correlations(resourceIdValue))
@@ -260,7 +280,7 @@ async function applyWorkflowSignal(input: {
     .map((correlation) => correlation.workItemId);
   for (const workflow of await orchestration.listAll()) {
     if (!workItemIds.includes(workflow.workItemId)) continue;
-    if (workflow.waitingFor !== undefined) {
+    if (workflow.waitingFor !== undefined && acceptWaitingSignal) {
       await orchestration.acceptSignal(
         workflow.workflowInstanceId,
         {
@@ -285,16 +305,4 @@ async function applyWorkflowSignal(input: {
       );
     }
   }
-}
-
-function isWakeDelivery(body: string): boolean {
-  return body.includes('<!-- wake:');
-}
-
-function recognizedCommand(body: string): '/approved' | '/changes' | '/retry' | null {
-  const normalized = body.trim().toLowerCase();
-  if (normalized === '/approved') return '/approved';
-  if (normalized === '/changes' || normalized.startsWith('/changes ')) return '/changes';
-  if (normalized === '/retry') return '/retry';
-  return null;
 }

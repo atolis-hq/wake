@@ -92,7 +92,11 @@ poll GitHub itself — GitHub Inbound Evidence does.
   an unknown or non-PR-shaped Resource.
 - A `reviewKind: 'issue'` comment body other than exactly `/approved` or
   `/changes` (optionally followed by feedback text) MUST NOT produce an
-  issue approval command. A recognized command with no known Resource for
+  issue approval command. A non-empty reply that does not begin with `/` on
+  a primary-correlated WorkItem MAY resume only an eligible blocked agent
+  stage through Orchestration's changes-resume operation; it MUST NOT resolve
+  a waiting signal. A slash-prefixed unrecognized comment remains a no-op.
+  A recognized command with no known Resource for
   its external key MUST be a no-op — issue approval never mints an
   identity. For each of that Resource's primary-correlated WorkItems whose
   workflow instance is currently waiting on a signal, `/approved` MUST
