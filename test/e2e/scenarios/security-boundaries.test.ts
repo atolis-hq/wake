@@ -39,7 +39,7 @@ defineScenario(
     const composedEvents = await world.events();
     expect(
       composedEvents.filter((event) => event.eventType === ActivityEventType.PrMergeDenied),
-    ).toHaveLength(0);
+    ).toMatchObject([{ payload: { reason: 'stale-approval' } }]);
     expect(
       (await world.events()).filter(
         (event) => event.eventType === ActivityEventType.PrMergeRequested,
