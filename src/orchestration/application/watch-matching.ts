@@ -20,6 +20,7 @@ export async function matchWatches(
 ) {
   const matches = await Promise.all(
     loaded.map(async ({ view: parent, sequence }) => {
+      if (!(await workflows.isWorkItemOpen(parent.workItemId))) return [];
       const definition =
         context === undefined
           ? await workflows.definitionFor(parent)
