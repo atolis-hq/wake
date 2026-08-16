@@ -6,6 +6,12 @@ import type {
   ProjectionStore,
 } from '../../kernel/index.js';
 
+export type ProjectionRunSerialiser = <Value>(operation: () => Promise<Value>) => Promise<Value>;
+
+async function runImmediately<Value>(operation: () => Promise<Value>): Promise<Value> {
+  return operation();
+}
+
 export class ProjectionRunner {
   private caughtUpToGlobalPosition: number | undefined;
 
@@ -14,6 +20,7 @@ export class ProjectionRunner {
     private readonly projections: ProjectionStore,
     private readonly checkpoints: CheckpointStore,
     private readonly registered: readonly ProjectionDefinition[] = [],
+    private readonly serialiseRun: ProjectionRunSerialiser = runImmediately,
   ) {}
 
   // One shared journal read for every registered definition, not one per
@@ -32,6 +39,10 @@ export class ProjectionRunner {
   // batch — otherwise a backlog bigger than `limit` would get marked caught
   // up after its first (partial) batch and never finish draining.
   async runRegisteredOnce(limit = 100): Promise<number> {
+    return this.serialiseRun(() => this.runRegisteredOnceUnlocked(limit));
+  }
+
+  private async runRegisteredOnceUnlocked(limit: number): Promise<number> {
     const allEvents = await this.journal.readAll(0);
     const latestGlobalPosition = allEvents.at(-1)?.globalPosition ?? 0;
     if (
@@ -48,6 +59,13 @@ export class ProjectionRunner {
   }
 
   async runOnce<Value>(definition: ProjectionDefinition<Value>, limit = 100): Promise<number> {
+    return this.serialiseRun(() => this.runOnceUnlocked(definition, limit));
+  }
+
+  private async runOnceUnlocked<Value>(
+    definition: ProjectionDefinition<Value>,
+    limit: number,
+  ): Promise<number> {
     const consumer = `projection:${definition.name}`;
     const events = await this.journal.readAll(await this.checkpoints.load(consumer), limit);
     return this.apply(definition, consumer, events);
@@ -88,11 +106,15 @@ export class ProjectionRunner {
   }
 
   async rebuild<Value>(definition: ProjectionDefinition<Value>): Promise<number> {
+    return this.serialiseRun(() => this.rebuildUnlocked(definition));
+  }
+
+  private async rebuildUnlocked<Value>(definition: ProjectionDefinition<Value>): Promise<number> {
     await this.projections.clear(definition.name);
     await this.checkpoints.reset(`projection:${definition.name}`);
     let total = 0;
     while (true) {
-      const count = await this.runOnce(definition);
+      const count = await this.runOnceUnlocked(definition, 100);
       total += count;
       if (count < 100) return total;
     }
