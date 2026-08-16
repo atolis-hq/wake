@@ -4,6 +4,8 @@ import type { CheckpointStore } from '../../kernel/index.js';
 import { atomicJson, encode } from './file-projection-store.js';
 
 export class FileCheckpointStore implements CheckpointStore {
+  private readonly mutations = new Map<string, Promise<unknown>>();
+
   constructor(private readonly root: string) {}
   async load(consumer: string): Promise<number> {
     try {
@@ -25,13 +27,26 @@ export class FileCheckpointStore implements CheckpointStore {
   }
 
   async save(consumer: string, globalPosition: number): Promise<void> {
-    if (globalPosition < (await this.load(consumer)))
-      throw new Error(`Checkpoint regression for ${consumer}`);
-    await atomicJson(this.path(consumer), { consumer, globalPosition });
+    await this.mutate(consumer, async () => {
+      if (globalPosition < (await this.load(consumer)))
+        throw new Error(`Checkpoint regression for ${consumer}`);
+      await atomicJson(this.path(consumer), { consumer, globalPosition });
+    });
   }
 
   async reset(consumer: string): Promise<void> {
-    await rm(this.path(consumer), { force: true });
+    await this.mutate(consumer, () => rm(this.path(consumer), { force: true }));
+  }
+
+  private async mutate<T>(consumer: string, operation: () => Promise<T>): Promise<T> {
+    const prior = this.mutations.get(consumer) ?? Promise.resolve();
+    const current = prior.catch(() => undefined).then(operation);
+    this.mutations.set(consumer, current);
+    try {
+      return await current;
+    } finally {
+      if (this.mutations.get(consumer) === current) this.mutations.delete(consumer);
+    }
   }
 
   private path(consumer: string) {
