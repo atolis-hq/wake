@@ -1,12 +1,22 @@
-import type { PullRequestView } from '../activities/index.js';
-import type { RunView } from '../execution/index.js';
+import { pullRequestProjection, type PullRequestView } from '../activities/index.js';
+import {
+  executionProjection,
+  runsByWorkflowInstanceProjection,
+  type RunView,
+} from '../execution/index.js';
 import { correlationId, EventActorKind } from '../kernel/index.js';
 import {
   isOperatorRetryEligible,
   OperatorRetryIneligibleError,
+  orchestrationProjection,
+  workflowsByWorkItemProjection,
   type WorkflowInstanceView,
 } from '../orchestration/index.js';
-import { ResourceEventType, selectResourceEvent, type ResourceView } from '../resources/index.js';
+import {
+  workCorrelationsProjection,
+  type ResourceCorrelationView,
+  type ResourceView,
+} from '../resources/index.js';
 import {
   ApiCommandStatus,
   fromWorkItemKey,
@@ -120,18 +130,40 @@ async function workDetail(
   if (id === undefined) return undefined;
   const work = await root.work.get(id);
   if (work === null) return undefined;
-  const correlations = await root.resources.correlationsForWork(id);
+  const correlationProjection = await root.projections.read<readonly ResourceCorrelationView[]>(
+    workCorrelationsProjection.name,
+    id,
+  );
+  const correlations = correlationProjection?.value ?? workCorrelationsProjection.initial(id);
   const resources = (
     await Promise.all(correlations.map((item) => root.resources.get(item.resourceId)))
   ).filter((value): value is ResourceView => value !== null);
-  const workflows = (await root.orchestration.listAll()).filter((value) => value.workItemId === id);
+  const workflowIds =
+    (await root.projections.read<readonly string[]>(workflowsByWorkItemProjection.name, id))
+      ?.value ?? workflowsByWorkItemProjection.initial(id);
+  const workflows = (
+    await Promise.all(
+      workflowIds.map((workflowInstanceId) =>
+        root.projections.read<{ readonly view: WorkflowInstanceView | null }>(
+          orchestrationProjection.name,
+          workflowInstanceId,
+        ),
+      ),
+    )
+  ).flatMap((entry) => (entry === null || entry.value.view === null ? [] : [entry.value.view]));
   const runs = await runsForWorkItem(root, id, workflows);
-  const pullRequests = await root.projections.list<PullRequestView | null>('activities-pr');
-  const pullRequest = pullRequests.find((entry) =>
-    resources.some((resource) => resource.resourceId === entry.key),
-  );
+  const pullRequest = (
+    await Promise.all(
+      resources.map((resource) =>
+        root.projections.read<PullRequestView | null>(
+          pullRequestProjection.name,
+          resource.resourceId,
+        ),
+      ),
+    )
+  ).find((entry) => entry !== null && entry.value !== null);
   const primary = workflows.find((value) => value.parentWorkflowInstanceId === undefined) ?? null;
-  const externalRef = await primaryExternalRef(root, work.workItemId);
+  const externalRef = await primaryExternalRef(root, work.workItemId, correlations, resources);
   const data: WorkDetailResponse = {
     work: { ...presentWorkItem(work), ...(externalRef === undefined ? {} : { externalRef }) },
     resources: resources.map(presentResource(root.resolveResourceLink)),
@@ -149,7 +181,7 @@ async function workDetail(
   };
   const [projections, correlationFacts] = await Promise.all([
     contributingProjections(root, id, resources, workflows, runs),
-    contributingResourceCorrelationFacts(root, id),
+    Promise.resolve(correlationProjection).then((entry) => (entry === null ? [] : [entry])),
   ]);
   return {
     data,
@@ -166,17 +198,42 @@ async function runsForWorkItem(
   id: ReturnType<typeof workItemId>,
   workflows?: readonly { readonly workflowInstanceId: string }[],
 ) {
-  const matching =
-    workflows ??
-    (await root.projections.list<{ readonly view: WorkflowInstanceView | null }>('orchestration'))
-      .flatMap((entry) => (entry.value.view === null ? [] : [entry.value.view]))
-      .filter((workflow) => workflow.workItemId === id);
-  return (await root.projections.list<{ readonly view: RunView | null }>('execution'))
-    .flatMap((entry) => (entry.value.view === null ? [] : [entry.value.view]))
-    .filter((run) =>
-      matching.some((workflow) => workflow.workflowInstanceId === run.workflowInstanceId),
+  const matching = workflows ?? (await workflowsForWorkItem(root, id));
+  const runIds = (
+    await Promise.all(
+      matching.map((workflow) =>
+        root.projections.read<readonly string[]>(
+          runsByWorkflowInstanceProjection.name,
+          workflow.workflowInstanceId,
+        ),
+      ),
     )
+  ).flatMap((entry) => entry?.value ?? []);
+  return (
+    await Promise.all(
+      runIds.map((runId) =>
+        root.projections.read<{ readonly view: RunView | null }>(executionProjection.name, runId),
+      ),
+    )
+  )
+    .flatMap((entry) => (entry === null || entry.value.view === null ? [] : [entry.value.view]))
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+}
+
+async function workflowsForWorkItem(root: CompositionRoot, id: ReturnType<typeof workItemId>) {
+  const workflowIds =
+    (await root.projections.read<readonly string[]>(workflowsByWorkItemProjection.name, id))
+      ?.value ?? workflowsByWorkItemProjection.initial(id);
+  return (
+    await Promise.all(
+      workflowIds.map((workflowInstanceId) =>
+        root.projections.read<{ readonly view: WorkflowInstanceView | null }>(
+          orchestrationProjection.name,
+          workflowInstanceId,
+        ),
+      ),
+    )
+  ).flatMap((entry) => (entry === null || entry.value.view === null ? [] : [entry.value.view]));
 }
 
 function decodeWorkItemId(key: string): ReturnType<typeof workItemId> | undefined {
@@ -211,28 +268,12 @@ async function contributingProjections(
   const records = await Promise.all([
     root.projections.read('work', id),
     ...resources.map((value) => root.projections.read('resources', value.resourceId)),
-    ...workflows.map((value) => root.projections.read('orchestration', value.workflowInstanceId)),
-    ...runs.map((value) => root.projections.read('execution', value.runId)),
+    ...workflows.map((value) =>
+      root.projections.read(orchestrationProjection.name, value.workflowInstanceId),
+    ),
+    ...runs.map((value) => root.projections.read(executionProjection.name, value.runId)),
   ]);
   return records.filter((value) => value !== null);
-}
-
-async function contributingResourceCorrelationFacts(
-  root: CompositionRoot,
-  id: ReturnType<typeof workItemId>,
-) {
-  const events = await root.journal.readAll(0);
-  return events.flatMap((event) => {
-    const owned = selectResourceEvent(event);
-    if (owned === null) return [];
-    if (
-      owned.eventType !== ResourceEventType.WorkCorrelationEstablished &&
-      owned.eventType !== ResourceEventType.WorkCorrelationRetracted &&
-      owned.eventType !== ResourceEventType.WorkCorrelationConflicted
-    )
-      return [];
-    return owned.payload.workItemId === id ? [{ lastGlobalPosition: owned.globalPosition }] : [];
-  });
 }
 
 function commandContext(idempotencyKey: string, now: () => string) {

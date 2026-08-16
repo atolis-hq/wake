@@ -1,4 +1,8 @@
-import { ResourceCorrelationRole } from '../resources/index.js';
+import {
+  ResourceCorrelationRole,
+  type ResourceCorrelationView,
+  type ResourceView,
+} from '../resources/index.js';
 import { workItemId } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 
@@ -7,10 +11,15 @@ import type { CompositionRoot } from './composition-root.js';
 export async function primaryExternalRef(
   root: CompositionRoot,
   rawWorkItemId: string,
+  suppliedCorrelations?: readonly ResourceCorrelationView[],
+  suppliedResources?: readonly ResourceView[],
 ): Promise<string | undefined> {
-  const correlations = await root.resources.correlationsForWork(workItemId(rawWorkItemId));
+  const correlations =
+    suppliedCorrelations ?? (await root.resources.correlationsForWork(workItemId(rawWorkItemId)));
   const primary = correlations.find((value) => value.role === ResourceCorrelationRole.Primary);
   if (primary === undefined) return undefined;
-  const resource = await root.resources.get(primary.resourceId);
+  const resource =
+    suppliedResources?.find((value) => value.resourceId === primary.resourceId) ??
+    (await root.resources.get(primary.resourceId));
   return resource?.externalKey.key;
 }
