@@ -36,6 +36,20 @@ If no workitems are blocking fixes - then select based on the following.
 - Items which dont need human judgement
 - Highest value items
 
+## Remediation over observation
+
+Observation is a means to select and verify work, not the end state. When
+evidence identifies a concrete, bounded defect and the current task grants
+implementation authority, remediate it in the same supervision loop. Do not
+stop at reporting a failing CI check, a reproducible runtime error, or an
+unmerged fix that can be repaired locally.
+
+For example, if a linked PR has actionable CI failures, inspect the exact
+failure, make the smallest scoped correction on its branch, run the relevant
+checks, commit and push it, then confirm the PR and Wake observe the update.
+Prefer this work over polling items that are blocked on an external or product
+decision. Defer only when the remediation itself requires a genuinely missing
+authority or product choice.
 # Actions To Take
 
 You may take necessary actions to progress the workitem. You should first act as a human collaborator and interact through Wake's surfaces - github issues, pull requests, or the Wake API. When those strategies do not succeed, you may fall back to more manual measures if necessary.

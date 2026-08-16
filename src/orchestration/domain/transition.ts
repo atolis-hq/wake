@@ -27,7 +27,7 @@ interface DecisionContext {
 }
 
 // Route completion combines the mutually exclusive wait, await, and target policies.
-// eslint-disable-next-line complexity
+// eslint-disable-next-line complexity, max-lines-per-function
 export function finishRoute(
   events: WorkflowOrchestrationEventDraft[],
   definition: CompiledWorkflow,

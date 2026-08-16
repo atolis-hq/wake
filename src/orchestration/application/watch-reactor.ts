@@ -8,7 +8,6 @@ import {
 } from '../../kernel/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import {
-  OrchestrationEventType,
   type ChildWorkflowRequest,
   type OrchestrationEvent,
 } from '../contracts/events.js';
