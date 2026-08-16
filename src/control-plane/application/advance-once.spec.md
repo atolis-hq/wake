@@ -71,10 +71,17 @@ own aggregate remains the source of that state.
   MUST be excluded from both. When no `work` lookup is supplied, no candidate
   is excluded on this basis.
 - Reconciliation MUST take priority over new selection: Advancement scans
-  pending activations in the order Orchestration returned them and accepts
+  active pending activations in the order Orchestration returned them and accepts
   the first one whose Execution Run already succeeded with a defined outcome
   not yet present in that workflow's accepted outcomes, returning
   `progressed` for it without attempting new dispatch.
+- A terminal failed, cancelled, or ambiguous Run is resolved to a durable
+  blocked workflow when first discovered. Blocked workflows are not revisited
+  by reconciliation on later calls, so their already-surfaced terminal Run
+  cannot prevent independently ready work from advancing; explicit operator
+  retry remains the recovery path. The exception is a blocked workflow whose
+  Run later succeeds with an unaccepted outcome after external operator
+  resolution: that succeeded outcome is reconciled and accepted.
 - When no reconciliation candidate exists, Advancement selects the first
   pending activation in Orchestration's returned order — an unordered,
   first-encountered choice. Advancement does not consult Dispatch Policy's

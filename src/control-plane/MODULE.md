@@ -19,4 +19,4 @@ Selection, caps, pauses, and retries remain explicit and bounded.
 ## Extension rules
 Coordinate public applications; do not absorb their policies.
 ## Scenarios
-E2E-CONTROL-001, E2E-CONTROL-002, E2E-CONTROL-003.
+E2E-CONTROL-001, E2E-CONTROL-002, E2E-CONTROL-003, E2E-CONTROL-004.

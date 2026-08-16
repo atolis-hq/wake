@@ -525,41 +525,99 @@ describe('advanceOnce', () => {
     },
   );
 
-  it('does not rescan a failure already resolved by orchestration', async () => {
-    const resolved = {
+  it.each(['failed', 'cancelled', 'ambiguous'] as const)(
+    'does not rescan an already blocked %s Run before dispatching unrelated ready work',
+    async (status) => {
+      const resolved = {
+        workflowInstanceId: 'workflow-resolved',
+        workItemId: 'work-resolved',
+        orchestrationGroupId: 'group-resolved',
+        status: 'blocked',
+        acceptedOutcomes: [],
+        pendingActivation: { activationId: 'activation-resolved' },
+      } as unknown as WorkflowInstanceView;
+      const pending = {
+        workflowInstanceId: 'workflow-pending',
+        workItemId: 'work-pending',
+        orchestrationGroupId: 'group-pending',
+        acceptedOutcomes: [],
+      } as unknown as WorkflowInstanceView;
+      const activation = {
+        activationId: 'activation-pending',
+      } as unknown as ActivityActivationView;
+      let attempts = 0;
+      const advance = createAdvanceOnce(
+        {
+          reconcileChildCompletions: async () => undefined,
+          listPendingActivations: async () => [{ workflow: pending, activation }],
+          listWaiting: async () => [],
+          listAll: async () => [resolved, pending],
+          acceptOutcome: async () => pending,
+          markActivationStarted: async () => pending,
+        },
+        {
+          attempt: async () => {
+            attempts += 1;
+            return { status: 'started', runId: 'run-pending' } as never;
+          },
+          list: async (activationId) =>
+            (activationId === 'activation-resolved'
+              ? [
+                  {
+                    status,
+                    runId: 'run-resolved',
+                    ...(status === 'cancelled' ? {} : { failure: { message: 'old failure' } }),
+                  },
+                ]
+              : []) as never,
+        },
+        { correlationsForWork: async () => [] } as never,
+        { now: () => new Date('2026-08-11T00:00:00.000Z') },
+        { ids: { next: () => 'command-00000000000000000000000001' } as never },
+      );
+
+      await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
+        kind: 'progressed',
+        runId: 'run-pending',
+      });
+      expect(attempts).toBe(1);
+    },
+  );
+
+  it('reconciles a succeeded outcome resolved after its workflow was blocked', async () => {
+    const workflow = {
       workflowInstanceId: 'workflow-resolved',
       workItemId: 'work-resolved',
       orchestrationGroupId: 'group-resolved',
       status: 'blocked',
-      acceptedOutcomes: ['activation-resolved'],
+      acceptedOutcomes: [],
       pendingActivation: { activationId: 'activation-resolved' },
     } as unknown as WorkflowInstanceView;
-    const pending = {
-      workflowInstanceId: 'workflow-pending',
-      workItemId: 'work-pending',
-      orchestrationGroupId: 'group-pending',
-      acceptedOutcomes: [],
-    } as unknown as WorkflowInstanceView;
-    const activation = { activationId: 'activation-pending' } as unknown as ActivityActivationView;
-    let attempts = 0;
+    let accepted = 0;
     const advance = createAdvanceOnce(
       {
         reconcileChildCompletions: async () => undefined,
-        listPendingActivations: async () => [{ workflow: pending, activation }],
+        listPendingActivations: async () => [],
         listWaiting: async () => [],
-        listAll: async () => [resolved, pending],
-        acceptOutcome: async () => pending,
-        markActivationStarted: async () => pending,
+        listAll: async () => [workflow],
+        acceptOutcome: async () => {
+          accepted += 1;
+          return workflow;
+        },
+        markActivationStarted: async () => workflow,
       },
       {
         attempt: async () => {
-          attempts += 1;
-          return { status: 'started', runId: 'run-pending' } as never;
+          throw new Error('A resolved outcome should be accepted before dispatch');
         },
-        list: async (activationId) =>
-          (activationId === 'activation-resolved'
-            ? [{ status: 'failed', runId: 'run-resolved', failure: { message: 'old failure' } }]
-            : []) as never,
+        list: async () =>
+          [
+            {
+              status: 'succeeded',
+              runId: 'run-resolved',
+              outcome: { kind: 'done' },
+            },
+          ] as never,
       },
       { correlationsForWork: async () => [] } as never,
       { now: () => new Date('2026-08-11T00:00:00.000Z') },
@@ -568,9 +626,9 @@ describe('advanceOnce', () => {
 
     await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
       kind: 'progressed',
-      runId: 'run-pending',
+      runId: 'run-resolved',
     });
-    expect(attempts).toBe(1);
+    expect(accepted).toBe(1);
   });
 
   it('does not start an activation rejected by the dispatch-boundary watch check', async () => {
