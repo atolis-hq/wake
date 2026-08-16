@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { activityProjectionDefinitions } from '../activities/index.js';
 import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
 import { executionProjection, runsByWorkflowInstanceProjection } from '../execution/index.js';
@@ -8,7 +9,11 @@ import {
   workflowDefinitionsProjection,
   workflowsByWorkItemProjection,
 } from '../orchestration/index.js';
-import { ProjectionRunner } from '../persistence/index.js';
+import {
+  acquireFileLock,
+  ProjectionRunner,
+  type ProjectionRunSerialiser,
+} from '../persistence/index.js';
 import {
   resourceCorrelationProjection,
   resourceProjection,
@@ -41,8 +46,35 @@ export function createRuntimeProjectionRunner(
   journal: EventJournal,
   projections: ProjectionStore,
   checkpoints: CheckpointStore,
+  serialiseRun?: ProjectionRunSerialiser,
 ): ProjectionRunner {
-  return new ProjectionRunner(journal, projections, checkpoints, runtimeProjectionDefinitions);
+  return new ProjectionRunner(
+    journal,
+    projections,
+    checkpoints,
+    runtimeProjectionDefinitions,
+    serialiseRun,
+  );
+}
+
+export function createFileProjectionRunSerialiser(dataRoot: string): ProjectionRunSerialiser {
+  const path = join(dataRoot, 'locks', 'projection-runner.lock');
+  return async <Value>(operation: () => Promise<Value>): Promise<Value> => {
+    while (true) {
+      const lock = await acquireFileLock(path, {
+        staleAfterMs: 60_000,
+        staleRequiresDeadProcess: true,
+      });
+      if (lock.acquired) {
+        try {
+          return await operation();
+        } finally {
+          await lock.release();
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
 }
 
 export type { DeliveryIntentView };

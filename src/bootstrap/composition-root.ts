@@ -55,7 +55,10 @@ import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime } from './integration-runtime.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { composePersistence } from './persistence-composition.js';
-import type { createRuntimeProjectionRunner } from './projection-runtime.js';
+import {
+  createFileProjectionRunSerialiser,
+  type createRuntimeProjectionRunner,
+} from './projection-runtime.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import { FileScheduleCheckpointStore } from './schedule-checkpoint-store.js';
@@ -263,6 +266,7 @@ export async function createCompositionRoot(
     work,
     ids,
     wakeRoot,
+    projectionRunSerialiser: createFileProjectionRunSerialiser(paths.dataRoot),
     scheduleCheckpoints:
       options.scheduleCheckpoints ?? new FileScheduleCheckpointStore(paths.dataRoot),
     ...(options.decorateDeliveryAdapter === undefined

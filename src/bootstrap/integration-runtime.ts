@@ -46,6 +46,7 @@ import {
   workflowName,
   type createOrchestrationService,
 } from '../orchestration/index.js';
+import type { ProjectionRunSerialiser } from '../persistence/index.js';
 import {
   BuiltInResourceCapability,
   resourceId,
@@ -84,6 +85,7 @@ export interface IntegrationRuntimeInput {
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
+  readonly projectionRunSerialiser?: ProjectionRunSerialiser;
   readonly scheduleCheckpoints: ScheduleCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
@@ -158,7 +160,12 @@ export async function composeIntegrationRuntime(
   // resident's standalone projection pump) shares this one instance, so
   // serializing it here in-process covers all of them without a file lock.
   const projectionRunner = serializeRunRegisteredOnce(
-    createRuntimeProjectionRunner(input.journal, input.projections, input.checkpoints),
+    createRuntimeProjectionRunner(
+      input.journal,
+      input.projections,
+      input.checkpoints,
+      input.projectionRunSerialiser,
+    ),
   );
   const delivery = new DeliveryService({
     journal: input.journal,
