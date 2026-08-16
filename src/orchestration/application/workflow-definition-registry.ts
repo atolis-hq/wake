@@ -101,7 +101,9 @@ export class WorkflowDefinitionRegistry {
           return owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
             owned.payload.workflowName === name && owned.payload.fingerprint === fingerprint;
         }),
-      append: (sequence) => this.journal.append(stream, sequence, [draft]),
+      append: async (sequence) => {
+        await this.journal.append(stream, sequence, [draft]);
+      },
     });
     this.knownRegistered.add(workflowDefinitionKey(name, fingerprint));
   }

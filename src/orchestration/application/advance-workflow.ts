@@ -171,7 +171,9 @@ export class AdvanceWorkflow {
     });
     if (decision.kind === 'ignored') throw new OperatorRetryIneligibleError(decision.reason);
     const recovered = await appendWithIntentRecovery({
-      append: () => this.repository.append(id, loaded.sequence, decision.events),
+      append: async () => {
+        await this.repository.append(id, loaded.sequence, decision.events);
+      },
       load: () => this.repository.loadRequired(id),
       alreadyApplied: (reloaded) => reloaded.view.operatorRetryCommandIds.includes(context.commandId),
     });
@@ -196,7 +198,9 @@ export class AdvanceWorkflow {
     });
     if (decision.kind === 'ignored') return loaded.view;
     const recovered = await appendWithIntentRecovery({
-      append: () => this.repository.append(id, loaded.sequence, decision.events),
+      append: async () => {
+        await this.repository.append(id, loaded.sequence, decision.events);
+      },
       load: () => this.repository.loadRequired(id),
       alreadyApplied: (reloaded) => reloaded.view.operatorRetryCommandIds.includes(context.commandId),
     });

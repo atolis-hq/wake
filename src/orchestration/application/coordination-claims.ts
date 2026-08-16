@@ -33,8 +33,8 @@ export class CoordinationClaims {
         if (owner === workflowInstanceId) return true;
         throw new Error(`WorkItem already has an active primary workflow owned by ${owner}`);
       },
-      append: (sequence) =>
-        this.journal.append(stream, sequence, [
+      append: async (sequence) => {
+        await this.journal.append(stream, sequence, [
           createEventDraft({
             eventId: `${context.commandId}:${OrchestrationEventType.PrimaryClaimed}:${workItemId}`,
             eventType: OrchestrationEventType.PrimaryClaimed,
@@ -46,7 +46,8 @@ export class CoordinationClaims {
             stream,
             payload: { workItemId, workflowInstanceId },
           }),
-        ]),
+        ]);
+      },
     });
   }
 
@@ -66,8 +67,8 @@ export class CoordinationClaims {
       decode: groupEvents,
       alreadyClaimed: (events) => claimedRequestIds(events).has(request.requestId),
       canAppend: (events) => events.length < request.maxPerGroup,
-      append: (sequence) =>
-        this.journal.append(stream, sequence, [
+      append: async (sequence) => {
+        await this.journal.append(stream, sequence, [
           createEventDraft({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupClaimed}:${request.requestId}`,
             eventType: OrchestrationEventType.GroupClaimed,
@@ -79,7 +80,8 @@ export class CoordinationClaims {
             stream,
             payload: { key: stream.id, requestId: request.requestId },
           }),
-        ]),
+        ]);
+      },
     });
     return claimed;
   }

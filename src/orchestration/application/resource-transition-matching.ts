@@ -93,7 +93,9 @@ export async function acceptResourceTransition(
   );
   if (decision.kind === 'append') {
     const recovered = await appendWithIntentRecovery({
-      append: () => repository.append(id, loaded.sequence, decision.events),
+      append: async () => {
+        await repository.append(id, loaded.sequence, decision.events);
+      },
       load: () => repository.load(id),
       alreadyApplied: (reloaded) =>
         reloaded.view !== null &&
