@@ -23,6 +23,8 @@ export function listIssues(
         owner,
         repo,
         state: GitHubListState.All,
+        sort: 'updated',
+        direction: 'desc',
         per_page: Math.min(maxResults, 100),
         ...(headers === undefined ? {} : { headers }),
       }),

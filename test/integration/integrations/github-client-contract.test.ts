@@ -66,11 +66,20 @@ describe('GitHub client transport contract', () => {
     await expect(client.listIssues('owner', 'repo', 1)).resolves.toEqual([issue(1)]);
 
     expect(requests).toEqual([
-      { owner: 'owner', repo: 'repo', state: 'all', per_page: 1 },
       {
         owner: 'owner',
         repo: 'repo',
         state: 'all',
+        sort: 'updated',
+        direction: 'desc',
+        per_page: 1,
+      },
+      {
+        owner: 'owner',
+        repo: 'repo',
+        state: 'all',
+        sort: 'updated',
+        direction: 'desc',
         per_page: 1,
         headers: { 'if-none-match': '"issues-v1"' },
       },
