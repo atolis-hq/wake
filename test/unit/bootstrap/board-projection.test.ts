@@ -973,6 +973,83 @@ describe('operator board projection', () => {
     expect(view.cards[item]).toMatchObject({ condition: 'finished' });
   });
 
+  it('keeps a closed approval-waiting item finished through later run and workflow events', () => {
+    const item = workId('closed-approval-wait');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-closed-after-approval-wait');
+    const started = [
+      eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.SignalWaitStarted,
+        { signalKind: 'approved', from: [{ kind: 'human' }] },
+        workflowInstanceStream(workflowId),
+        3,
+      ),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    const closed = boardProjection.project(
+      started,
+      eventEnvelope(WorkEventType.ItemClosed, { reason: 'done' }, workItemStream(item), 4),
+    );
+    expect(closed.cards[item]).toMatchObject({ condition: 'finished' });
+    expect(closed.cards[item]!.awaitingApproval).toBeUndefined();
+
+    const runStarted = boardProjection.project(
+      closed,
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-closed-after-approval-wait'),
+          activity: activityName('refine'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-16T13:00:00.000Z',
+        },
+        runStream(run),
+        5,
+      ),
+    );
+    expect(runStarted.cards[item]).toMatchObject({ condition: 'finished' });
+    expect(runStarted.cards[item]!.awaitingApproval).toBeUndefined();
+
+    const runFinished = boardProjection.project(
+      runStarted,
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        { outcome: { kind: 'failed' }, finishedAt: '2026-08-16T13:01:00.000Z' },
+        runStream(run),
+        6,
+      ),
+    );
+    const view = boardProjection.project(
+      runFinished,
+      eventEnvelope(
+        OrchestrationEventType.SignalWaitStarted,
+        { signalKind: 'approved', from: [{ kind: 'human' }] },
+        workflowInstanceStream(workflowId),
+        7,
+      ),
+    );
+
+    expect(view.cards[item]).toMatchObject({ condition: 'finished' });
+    expect(view.cards[item]!.awaitingApproval).toBeUndefined();
+  });
+
   it('removes a card entirely once its work item is deleted', () => {
     const item = workId('board-deleted');
     const view = [
