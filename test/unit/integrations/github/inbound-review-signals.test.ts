@@ -3,10 +3,15 @@ import { z } from 'zod';
 import {
   activityName,
   ActivityOutcomeKind,
+  ProviderPermission,
   ReviewActorKind,
+  ReviewerAuthorizationSource,
 } from '../../../../src/activities/index.js';
 import { applyReviewSignal } from '../../../../src/integrations/github/application/inbound-review-signals.js';
-import { GitHubEventType } from '../../../../src/integrations/github/contracts/events.js';
+import {
+  GitHubEventType,
+  type GitHubAdapterEvent,
+} from '../../../../src/integrations/github/contracts/events.js';
 import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
 import { correlationId } from '../../../../src/kernel/index.js';
 import {
@@ -29,6 +34,98 @@ it('recognizes a normalized /approved issue command', async () => {
 
 it('recognizes /changes with feedback as an issue command', async () => {
   expect(await issueCommentSignals('/changes please retry the error handling')).toHaveLength(1);
+});
+
+it('retries an open primary workflow only for a provider-authorized /retry comment', async () => {
+  const retried: unknown[] = [];
+  const event = issueCommentEvent('/retry');
+  await applyReviewSignal({
+    event: {
+      ...event,
+      payload: {
+        ...event.payload,
+        authorization: {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+      },
+    } as never,
+    journal: {} as never,
+    resources: {
+      async correlations() {
+        return [{ role: 'primary', workItemId: 'work-7' }];
+      },
+      async get() {
+        return { kind: resourceKind('issue') };
+      },
+    } as never,
+    work: {
+      async get() {
+        return { state: 'open', frozen: false, deleted: false };
+      },
+    } as never,
+    lookup: {
+      async resourceIdForExternalKey() {
+        return 'resource-7';
+      },
+    } as never,
+    pullRequests: undefined,
+    ids: {} as never,
+    adapter: GitHubAdapter,
+    orchestration: {
+      async listAll() {
+        return [{ workflowInstanceId: 'workflow-7', workItemId: 'work-7' }];
+      },
+      async retryBlockedFailedStage(...input: unknown[]) {
+        retried.push(input);
+      },
+    } as never,
+  });
+
+  expect(retried).toHaveLength(1);
+  expect(retried[0]).toMatchObject([
+    'workflow-7',
+    { commandId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z:inbound' },
+  ]);
+});
+
+it('fails closed for a /retry comment without collaborator permission evidence', async () => {
+  const retried: unknown[] = [];
+  await applyReviewSignal({
+    event: issueCommentEvent('/retry'),
+    journal: {} as never,
+    resources: {
+      async correlations() {
+        return [{ role: 'primary', workItemId: 'work-7' }];
+      },
+      async get() {
+        return { kind: resourceKind('issue') };
+      },
+    } as never,
+    work: {
+      async get() {
+        return { state: 'open', frozen: false, deleted: false };
+      },
+    } as never,
+    lookup: {
+      async resourceIdForExternalKey() {
+        return 'resource-7';
+      },
+    } as never,
+    pullRequests: undefined,
+    ids: {} as never,
+    adapter: GitHubAdapter,
+    orchestration: {
+      async listAll() {
+        return [{ workflowInstanceId: 'workflow-7', workItemId: 'work-7' }];
+      },
+      async retryBlockedFailedStage(...input: unknown[]) {
+        retried.push(input);
+      },
+    } as never,
+  });
+
+  expect(retried).toEqual([]);
 });
 
 it('resumes an eligible blocked issue workflow on /changes', async () => {
@@ -279,7 +376,9 @@ async function issueCommentSignals(body: string): Promise<unknown[]> {
   return acceptedSignals;
 }
 
-function issueCommentEvent(body: string) {
+function issueCommentEvent(
+  body: string,
+): Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.CommentObserved }> {
   return {
     eventId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z',
     eventType: GitHubEventType.CommentObserved,

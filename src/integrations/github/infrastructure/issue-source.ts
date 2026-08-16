@@ -1,4 +1,8 @@
-import { PullRequestState, ReviewActorKind } from '../../../activities/index.js';
+import {
+  PullRequestState,
+  ReviewActorKind,
+  type ReviewerAuthorizationEvidence,
+} from '../../../activities/index.js';
 import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
@@ -84,6 +88,7 @@ export function issueCommentObservation(input: {
   readonly repository: string;
   readonly issue: Pick<GitHubIssuePayload, 'number'>;
   readonly comment: GitHubIssueCommentPayload;
+  readonly authorization?: ReviewerAuthorizationEvidence;
   readonly adapter?: AdapterId;
 }): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.CommentObserved }> | null {
   const body = input.comment.body?.trim();
@@ -112,6 +117,7 @@ export function issueCommentObservation(input: {
         id: input.comment.user?.login ?? UnknownGitHubIdentity,
         kind: input.comment.user?.type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human,
       },
+      ...(input.authorization === undefined ? {} : { authorization: input.authorization }),
       raw: { id: input.comment.id },
     },
   });

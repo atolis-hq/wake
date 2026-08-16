@@ -5,6 +5,7 @@ import {
   PullRequestState,
   ReviewActorKind,
   ReviewerAuthorizationSource,
+  type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
 import {
   eventEnvelopeSchema,
@@ -97,6 +98,8 @@ interface GitHubIssueCommentObservedPayload {
     readonly id: string;
     readonly kind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
   };
+  /** Provider-derived authority for an operator command, when available. */
+  readonly authorization?: ReviewerAuthorizationEvidence | undefined;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -212,6 +215,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
             .strict()
             .optional(),
           actor: actorSchema,
+          authorization: authorizationSchema.optional(),
           raw: rawSchema,
         })
         .strict(),

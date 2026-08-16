@@ -1,5 +1,5 @@
 import { Octokit } from '@octokit/rest';
-import { MergeMethod, PullRequestState } from '../../../activities/index.js';
+import { MergeMethod, ProviderPermission, PullRequestState } from '../../../activities/index.js';
 import { GitHubOutboundAction } from '../contracts/vocabulary.js';
 import {
   branch,
@@ -56,6 +56,14 @@ export function createGitHubClient(token: string) {
       listIssueComments(octokit, cache, owner, repo, issueNumber, pageSize),
     listReviewComments: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
       listReviewComments(octokit, cache, owner, repo, pullNumber, pageSize),
+    collaboratorPermission: async (owner: string, repo: string, login: string) => {
+      const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+        owner,
+        repo,
+        username: login,
+      });
+      return providerPermission(data.permission);
+    },
     getIssueLabels: (owner: string, repo: string, issueNumber: number) =>
       getIssueLabels(octokit, cache, owner, repo, issueNumber),
     getIssue: async (owner: string, repo: string, issueNumber: number) =>
@@ -90,6 +98,19 @@ export function createGitHubClient(token: string) {
       branch(octokit, cache, owner, repo, name),
     deliver: (command: GitHubDeliveryCommand) => deliver(octokit, command),
   };
+}
+
+function providerPermission(permission: string): ProviderPermission {
+  switch (permission) {
+    case ProviderPermission.Read:
+    case ProviderPermission.Triage:
+    case ProviderPermission.Write:
+    case ProviderPermission.Maintain:
+    case ProviderPermission.Admin:
+      return permission;
+    default:
+      return ProviderPermission.None;
+  }
 }
 
 interface GitHubDeliveryCommand {
