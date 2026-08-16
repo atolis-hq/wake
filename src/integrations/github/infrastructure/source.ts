@@ -110,8 +110,8 @@ async function pollRepository(input: {
         maxResults: config.polling.maxPerRepo,
         ...(adapter === undefined ? {} : { adapter }),
       }).poll(signal),
-      reviewEventsFor(context, pullRequestPayloads),
-      reviewCommentEventsFor(context, pullRequestPayloads),
+      reviewEventsFor(context, pullRequestPayloads).catch(() => []),
+      reviewCommentEventsFor(context, pullRequestPayloads).catch(() => []),
     ]);
     const issueComments = await issueCommentEventsFor(context, issues);
     return [
