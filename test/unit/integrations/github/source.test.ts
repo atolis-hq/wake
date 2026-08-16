@@ -1,4 +1,8 @@
 import { expect, it } from 'vitest';
+import {
+  ProviderPermission,
+  ReviewerAuthorizationSource,
+} from '../../../../src/activities/index.js';
 import { gitHubConfigSchema } from '../../../../src/integrations/github/contracts/config.js';
 import { GitHubEventType } from '../../../../src/integrations/github/contracts/events.js';
 import type {
@@ -111,12 +115,44 @@ it('keeps an approved review body separate from its acceptance command', async (
   expect(bodies).toEqual(['general approval feedback', '/accepted']);
 });
 
+it('attaches collaborator permission evidence to a /retry comment', async () => {
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    fakeClient({
+      issues: [issue(5, 'A plain issue')],
+      issueComments: { 5: [comment(1, '/retry')] },
+      collaboratorPermission: ProviderPermission.Write,
+    }),
+  );
+
+  const drafts = await source.poll(new AbortController().signal);
+
+  expect(drafts).toContainEqual(
+    expect.objectContaining({
+      eventType: GitHubEventType.CommentObserved,
+      payload: expect.objectContaining({
+        body: '/retry',
+        authorization: {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+      }),
+    }),
+  );
+});
+
 function fakeClient(input: {
   readonly issues: readonly ReturnType<typeof issue>[];
   readonly issueComments: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
   readonly reviewComments?: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
   readonly reviews?: Readonly<Record<number, readonly GitHubReviewPayload[]>>;
+  readonly collaboratorPermission?: typeof ProviderPermission.Write;
 }) {
+  const collaboratorPermission = input.collaboratorPermission;
   return {
     async listIssues() {
       return input.issues;
@@ -133,6 +169,13 @@ function fakeClient(input: {
     async listReviewComments(_owner: string, _repo: string, pullNumber: number) {
       return input.reviewComments?.[pullNumber] ?? [];
     },
+    ...(collaboratorPermission === undefined
+      ? {}
+      : {
+          async collaboratorPermission() {
+            return collaboratorPermission;
+          },
+        }),
     async listCheckRunsForRef() {
       return [];
     },

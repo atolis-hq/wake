@@ -1,3 +1,8 @@
+import type { ProviderPermission } from '../../../activities/index.js';
+import {
+  ReviewerAuthorizationSource,
+  type ReviewerAuthorizationEvidence,
+} from '../../../activities/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ExternalEventSource } from '../../contracts/intake.js';
 import type { GitHubConfig } from '../contracts/config.js';
@@ -31,6 +36,7 @@ interface GitHubSourceClient extends GitHubPullRequestSourceClient {
     pullNumber: number,
     pageSize: number,
   ): Promise<readonly GitHubIssueCommentPayload[]>;
+  collaboratorPermission?(owner: string, repo: string, login: string): Promise<ProviderPermission>;
 }
 
 export function createGitHubSource(
@@ -135,22 +141,19 @@ async function reviewCommentEventsFor(
   if (context.client.listReviewComments === undefined) return [];
   const items = await Promise.all(
     pullRequests.map(async (pullRequest) =>
-      (
-        await context.client.listReviewComments!(
+      (async () => {
+        const comments = await context.client.listReviewComments!(
           context.owner,
           context.repo,
           pullRequest.number,
           context.config.polling.commentPageSize,
-        )
-      ).flatMap((comment) => {
-        const event = issueCommentObservation({
-          repository: context.repository,
-          issue: pullRequest,
-          comment,
-          ...(context.adapter === undefined ? {} : { adapter: context.adapter }),
-        });
-        return event === null ? [] : [event];
-      }),
+        );
+        return (
+          await Promise.all(
+            comments.map((comment) => issueCommentEventsForComment(context, pullRequest, comment)),
+          )
+        ).flat();
+      })(),
     ),
   );
   return items.flat();
@@ -187,23 +190,54 @@ async function issueCommentEventsFor(
 ) {
   const items = await Promise.all(
     issues.map(async (issue) =>
-      (
-        await context.client.listIssueComments(
+      (async () => {
+        const comments = await context.client.listIssueComments(
           context.owner,
           context.repo,
           issue.number,
           context.config.polling.commentPageSize,
-        )
-      ).flatMap((comment) => {
-        const event = issueCommentObservation({
-          repository: context.repository,
-          issue,
-          comment,
-          ...(context.adapter === undefined ? {} : { adapter: context.adapter }),
-        });
-        return event === null ? [] : [event];
-      }),
+        );
+        return (
+          await Promise.all(
+            comments.map((comment) => issueCommentEventsForComment(context, issue, comment)),
+          )
+        ).flat();
+      })(),
     ),
   );
   return items.flat();
+}
+
+async function issueCommentEventsForComment(
+  context: RepositoryPollContext,
+  issue: Pick<Parameters<typeof issueCommentObservation>[0]['issue'], 'number'>,
+  comment: GitHubIssueCommentPayload,
+) {
+  const authorization = await retryAuthorization(context, comment);
+  const event = issueCommentObservation({
+    repository: context.repository,
+    issue,
+    comment,
+    ...(authorization === undefined ? {} : { authorization }),
+    ...(context.adapter === undefined ? {} : { adapter: context.adapter }),
+  });
+  return event === null ? [] : [event];
+}
+
+async function retryAuthorization(
+  context: RepositoryPollContext,
+  comment: GitHubIssueCommentPayload,
+): Promise<ReviewerAuthorizationEvidence | undefined> {
+  if (comment.body?.trim().toLowerCase() !== '/retry') return undefined;
+  const login = comment.user?.login;
+  if (login === undefined || context.client.collaboratorPermission === undefined)
+    return { source: ReviewerAuthorizationSource.None };
+  try {
+    return {
+      source: ReviewerAuthorizationSource.ProviderPermission,
+      permission: await context.client.collaboratorPermission(context.owner, context.repo, login),
+    };
+  } catch {
+    return { source: ReviewerAuthorizationSource.None };
+  }
 }
