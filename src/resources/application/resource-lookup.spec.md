@@ -26,6 +26,12 @@ responsibility; this component only reflects facts the aggregate already
 accepted. It does not resolve which of several Resources under the same
 external key is canonical beyond first-discovered-wins (see below).
 
+Its `primaryCorrelation(resourceId)` query is history-aware without exposing
+Resource stream folding to consumers: it returns an active primary correlation
+when one exists; otherwise it returns the most recently retracted primary
+correlation. Callers that need lifecycle-sensitive handling must query Work
+for that correlation's current state.
+
 ## Core policies, invariants, and behaviours
 
 - Each projection MUST be derivable purely by replaying `resources.*` facts

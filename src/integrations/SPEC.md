@@ -141,6 +141,7 @@ Integrations does not own:
 | Event | Occurs when | Business meaning |
 | --- | --- | --- |
 | `integration.<adapter>.*` | A provider adapter polls and reports new or changed external state | Provider evidence now exists on that adapter's own stream, independent of whether it becomes a Wake command. |
+| `integration.github.deleted-work-observation-skipped` | GitHub observes a Resource whose historical primary WorkItem was deleted | The observation was durably consumed without reviving the WorkItem or revising its tombstoned Resource. |
 | `status.publish-requested` | A workflow step requests a status update be delivered to a Resource's provider | A durable delivery intent now exists for a status comment. |
 | `reply.publish-requested` | A workflow step requests a reply be delivered to a Resource's provider | A durable delivery intent now exists for a reply comment. |
 | `agent-run.publish-requested` | Agent Run Publication projects a terminal Agent-activity run | A durable delivery intent now exists for that run's own outbound report. |

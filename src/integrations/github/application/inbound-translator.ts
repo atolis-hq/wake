@@ -7,7 +7,11 @@ import {
 } from '../../../activities/index.js';
 import type { RunRepository } from '../../../execution/index.js';
 import {
+  createEventDraft,
+  EventActorKind,
+  EventSourceKind,
   UlidIdGenerator,
+  WrongExpectedSequenceError,
   type CheckpointStore,
   type EventJournal,
   type IdGenerator,
@@ -30,7 +34,7 @@ import { concludeObservedWork } from '../../application/work-conclusion.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rules.js';
 import type { WorkConclusion, WorkflowRouter } from '../../contracts/provider.js';
-import { deliveryStream } from '../../contracts/streams.js';
+import { deliveryStream, integrationStream } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
@@ -60,6 +64,13 @@ type InboundCommandCandidate =
       readonly workItemId: WorkItemId;
     }
   | { readonly kind: 'pr.observe'; readonly input: ObservePullRequest };
+
+type ResolvedIdentity = {
+  readonly resourceId: ResourceId;
+  readonly workItemId: WorkItemId;
+  readonly created: boolean;
+  readonly deleted: boolean;
+};
 
 interface InboundTranslatorDependencies {
   readonly pullRequests?: PullRequestService;
@@ -186,6 +197,10 @@ export class InboundTranslator {
       intake.admitted,
     );
     if (identity === null) return;
+    if (identity.deleted) {
+      await this.recordDeletedWorkObservation(event, identity.workItemId);
+      return;
+    }
     if (!identity.created) {
       await this.applyReobservation({
         payload,
@@ -364,26 +379,98 @@ export class InboundTranslator {
   private async resolveIdentity(
     externalKey: { readonly adapter: string; readonly key: string },
     admitted: boolean,
-  ) {
+  ): Promise<ResolvedIdentity | null> {
     const key = `${externalKey.adapter}:${externalKey.key}`;
     const inBatch = this.minted.get(key);
-    if (inBatch !== undefined) return { ...inBatch, created: false };
+    if (inBatch !== undefined) return this.inBatchIdentity(inBatch);
     if (this.lookup === undefined) throw new Error('InboundTranslator lookup is required');
     const resourceIdValue = await this.lookup.resourceIdForExternalKey(externalKey);
-    if (resourceIdValue !== null) {
-      if (this.resources === undefined) throw new Error('InboundTranslator resources are required');
-      const correlation = (await this.resources.correlations(resourceIdValue)).find(
-        (value) => value.role === ResourceCorrelationRole.Primary,
-      );
-      // A deleted WorkItem retracts its primary correlation while retaining the external
-      // resource as a durable tombstone. Do not remint it or let it block later intake.
-      if (correlation === undefined) return null;
-      const identity = { resourceId: resourceIdValue, workItemId: correlation.workItemId };
-      this.minted.set(key, identity);
-      return { ...identity, created: false };
-    }
+    if (resourceIdValue !== null) return this.correlatedIdentity(key, resourceIdValue);
     // An ineligible object Wake has never seen produces no WorkItem, Run, or effect.
     if (!admitted) return null;
-    return { ...this.mintIdentity(externalKey), created: true };
+    return { ...this.mintIdentity(externalKey), created: true, deleted: false };
+  }
+
+  private async inBatchIdentity(identity: {
+    readonly resourceId: ResourceId;
+    readonly workItemId: WorkItemId;
+  }): Promise<ResolvedIdentity> {
+    const existing = await this.work?.get(identity.workItemId);
+    return { ...identity, created: false, deleted: existing?.deleted === true };
+  }
+
+  private async correlatedIdentity(
+    key: string,
+    resourceIdValue: ResourceId,
+  ): Promise<ResolvedIdentity> {
+    if (this.resources === undefined) throw new Error('InboundTranslator resources are required');
+    const correlation = (await this.resources.correlations(resourceIdValue)).find(
+      (value) => value.role === ResourceCorrelationRole.Primary,
+    );
+    if (correlation === undefined) return this.historicalIdentity(resourceIdValue);
+    const identity = { resourceId: resourceIdValue, workItemId: correlation.workItemId };
+    this.minted.set(key, identity);
+    return { ...identity, created: false, deleted: false };
+  }
+
+  private async historicalIdentity(resourceIdValue: ResourceId): Promise<ResolvedIdentity> {
+    const historical = await this.resources!.primaryCorrelation(resourceIdValue);
+    if (historical === null)
+      throw new Error(`Resource ${resourceIdValue} has no primary correlation`);
+    const historicalWork = await this.work?.get(historical.workItemId);
+    if (historicalWork?.deleted)
+      return {
+        resourceId: resourceIdValue,
+        workItemId: historical.workItemId,
+        created: false,
+        deleted: true,
+      };
+    throw new Error(`Resource ${resourceIdValue} has no active primary correlation`);
+  }
+
+  private async recordDeletedWorkObservation(
+    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.WorkObserved }>,
+    workItemId: WorkItemId,
+  ): Promise<void> {
+    const stream = integrationStream(this.adapter);
+    const eventId = `github:deleted-work-skip:${event.eventId}:${workItemId}`;
+    const payload = {
+      externalKey: event.payload.externalKey,
+      workItemId,
+      sourceEventId: event.eventId,
+      revision: event.payload.revision,
+      reason: 'work-item-deleted' as const,
+    };
+    for (;;) {
+      const existing = await this.journal!.readStream(stream);
+      const recorded = existing.find((candidate) => candidate.eventId === eventId);
+      if (recorded !== undefined) {
+        const diagnostic = selectGitHubAdapterEvent(recorded);
+        if (
+          diagnostic?.eventType !== GitHubEventType.DeletedWorkObservationSkipped ||
+          JSON.stringify(diagnostic.payload) !== JSON.stringify(payload)
+        )
+          throw new Error(`Event id ${eventId} has already been used with different content`);
+        return;
+      }
+      try {
+        await this.journal!.append(stream, existing.length, [
+          createEventDraft({
+            eventId,
+            eventType: GitHubEventType.DeletedWorkObservationSkipped,
+            occurredAt: event.occurredAt,
+            correlationId: event.correlationId,
+            causationId: event.eventId,
+            actor: { kind: EventActorKind.Integration, id: this.adapter },
+            source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
+            stream,
+            payload,
+          }),
+        ]);
+        return;
+      } catch (error) {
+        if (!(error instanceof WrongExpectedSequenceError)) throw error;
+      }
+    }
   }
 }

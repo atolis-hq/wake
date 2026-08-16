@@ -1,7 +1,10 @@
 import type { EventJournal, ProjectionDefinition, ProjectionStore } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
+import { ResourceEventType, selectResourceEvent } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';
+import { resourceStream } from '../contracts/streams.js';
 import type { ExternalResourceKey, ResourceCorrelationView } from '../contracts/views.js';
+import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
 import {
   externalKeyProjectionKey,
   resourcesByExternalKeyProjection,
@@ -11,6 +14,11 @@ import {
 export interface ResourceLookup {
   resourceIdForExternalKey(externalKey: ExternalResourceKey): Promise<ResourceId | null>;
   correlationsForWork(workItemId: WorkItemId): Promise<readonly ResourceCorrelationView[]>;
+  /**
+   * Returns the active primary correlation, or the most recently retracted
+   * primary correlation when the Resource has no active primary.
+   */
+  primaryCorrelation(resourceId: ResourceId): Promise<ResourceCorrelationView | null>;
 }
 
 export function createResourceLookup(dependencies: {
@@ -33,5 +41,33 @@ export function createResourceLookup(dependencies: {
     resourceIdForExternalKey: (externalKey) =>
       seeded(resourcesByExternalKeyProjection, externalKeyProjectionKey(externalKey)),
     correlationsForWork: (workItemId) => seeded(workCorrelationsProjection, workItemId),
+    async primaryCorrelation(resourceId) {
+      const active = new Map<WorkItemId, ResourceCorrelationView>();
+      const retracted: ResourceCorrelationView[] = [];
+      for (const event of await dependencies.journal.readStream(resourceStream(resourceId))) {
+        const owned = selectResourceEvent(event);
+        if (owned?.eventType === ResourceEventType.WorkCorrelationEstablished) {
+          active.set(owned.payload.workItemId, {
+            resourceId,
+            workItemId: owned.payload.workItemId,
+            role: owned.payload.role,
+            provenance: owned.payload.provenance,
+            establishedByEventId: owned.eventId,
+          });
+        }
+        if (owned?.eventType === ResourceEventType.WorkCorrelationRetracted) {
+          const correlation = active.get(owned.payload.workItemId);
+          if (correlation !== undefined) {
+            active.delete(owned.payload.workItemId);
+            if (correlation.role === ResourceCorrelationRole.Primary) retracted.push(correlation);
+          }
+        }
+      }
+      return (
+        [...active.values()].find((value) => value.role === ResourceCorrelationRole.Primary) ??
+        retracted.at(-1) ??
+        null
+      );
+    },
   };
 }

@@ -402,7 +402,9 @@ it('bounds persisted diagnostic check evidence before recording the observation'
   });
 
   const [event] = await source.poll(new AbortController().signal);
-  const raw = event?.payload.raw as {
+  if (event?.eventType !== 'integration.github.work-observed')
+    throw new Error('Expected a GitHub work observation');
+  const raw = event.payload.raw as {
     readonly checkRuns: readonly Record<string, unknown>[];
     readonly statuses: readonly Record<string, unknown>[];
   };

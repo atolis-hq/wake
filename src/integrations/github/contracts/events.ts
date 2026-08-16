@@ -8,11 +8,13 @@ import {
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
 import {
+  brandedStringSchema,
   eventEnvelopeSchema,
   type EventDraftUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../../kernel/index.js';
+import { workItemId, type WorkItemId } from '../../../work/index.js';
 import { adapterId } from '../../contracts/identifiers.js';
 import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
 import { IntegrationStreamKind, type IntegrationStreamRef } from '../../contracts/streams.js';
@@ -21,6 +23,7 @@ export const GitHubEventType = {
   WorkObserved: 'integration.github.work-observed',
   CommentObserved: 'integration.github.comment-observed',
   DeliveryObserved: 'integration.github.delivery-observed',
+  DeletedWorkObservationSkipped: 'integration.github.deleted-work-observation-skipped',
 } as const;
 
 export interface ExternalWorkObservedPayload {
@@ -111,10 +114,19 @@ interface GitHubDeliveryObservedPayload {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
+interface GitHubDeletedWorkObservationSkippedPayload {
+  readonly externalKey: string;
+  readonly workItemId: WorkItemId;
+  readonly sourceEventId: string;
+  readonly revision: string;
+  readonly reason: 'work-item-deleted';
+}
+
 export interface GitHubEventPayloads {
   readonly [GitHubEventType.WorkObserved]: ExternalWorkObservedPayload;
   readonly [GitHubEventType.CommentObserved]: GitHubCommentObservedPayload;
   readonly [GitHubEventType.DeliveryObserved]: GitHubDeliveryObservedPayload;
+  readonly [GitHubEventType.DeletedWorkObservationSkipped]: GitHubDeletedWorkObservationSkippedPayload;
 }
 
 export type GitHubAdapterEvent = EventUnion<GitHubEventPayloads, IntegrationStreamRef>;
@@ -225,6 +237,19 @@ const eventSchema = z.discriminatedUnion('eventType', [
     eventType: z.literal(GitHubEventType.DeliveryObserved),
     stream: streamSchema,
     payload: z.object({ deliveryId: z.string(), raw: rawSchema }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(GitHubEventType.DeletedWorkObservationSkipped),
+    stream: streamSchema,
+    payload: z
+      .object({
+        externalKey: z.string(),
+        workItemId: brandedStringSchema(workItemId),
+        sourceEventId: z.string(),
+        revision: z.string(),
+        reason: z.literal('work-item-deleted'),
+      })
+      .strict(),
   }),
 ]);
 
