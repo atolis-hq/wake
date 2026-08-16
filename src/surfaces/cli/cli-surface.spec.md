@@ -77,12 +77,13 @@ Does not own:
 - `audit` MUST require exactly one positional argument (the work item id);
   `correlate` MUST require exactly two (resource, then work item id).
   Neither accepts `--wake-root` or any other flag.
-- `validate-state` MUST accept only an optional literal `--rebuild-
-  projections` flag and no other argument; when present, projections MUST
-  be rebuilt before health is read, never after.
-- Only resident commands (`tick`/`start`/`stop`) and host commands
-  (`api`/`ui`) accept `--wake-root`; only host commands additionally accept
-  `--host` and `--port`. A flag not recognized for the command being
+- `validate-state` MUST accept an optional literal `--rebuild-projections`
+  flag and the `--wake-root <path>` option used by sandbox routing; when the
+  rebuild flag is present, projections MUST be rebuilt before health is read,
+  never after.
+- Resident commands (`tick`/`start`/`stop`), host commands (`api`/`ui`), and
+  `validate-state` accept `--wake-root`; only host commands additionally
+  accept `--host` and `--port`. A flag not recognized for the command being
   parsed, or a flag missing its value, MUST throw before dispatch.
 - `--port` MUST parse to a positive integer no greater than 65535; any other
   value MUST throw.
@@ -166,7 +167,7 @@ Does not own:
 | Field | Type | Description |
 | --- | --- | --- |
 | `kind` | closed vocabulary: `tick` / `start` / `stop` / `api` / `ui` / `audit` / `correlate` / `validate-state` | Which application this invocation dispatches to. |
-| `wakeRoot` | path, optional | Visible Wake home root; resident and host commands only. |
+| `wakeRoot` | path, optional | Visible Wake home root; resident, host, and `validate-state` commands. |
 | `host` | string, optional | Bind address; host commands only. |
 | `port` | integer, 1-65535, optional | Bind port; host commands only. |
 | `workItemId` | Wake work item identity | `audit` only. |

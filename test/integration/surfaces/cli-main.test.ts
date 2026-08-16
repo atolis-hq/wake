@@ -80,6 +80,37 @@ describe('wake surface CLI', () => {
     expect(calls).toEqual(['C:\\wake-home', 'tick --wake-root /wake --no-sandbox']);
   });
 
+  it('runs a sandboxed validate-state rebuild with the container Wake root', async () => {
+    const calls: string[] = [];
+    await main(['validate-state', '--rebuild-projections'], {
+      compose: async () => {
+        throw new Error('host integrations must not compose');
+      },
+      sandboxRuntime: {
+        hasDockerfile: async () => true,
+        exec: async (_wakeRoot, arguments_) => {
+          await main(arguments_, {
+            compose: async (wakeRoot) => ({
+              ...fixtureApplications(),
+              validateState: {
+                health: async () => ({ journal: 'ok', projections: 'ok', checkpoints: 'ok' }),
+                rebuildProjections: async () => {
+                  calls.push(wakeRoot);
+                },
+              },
+            }),
+            output: { write: () => undefined },
+            signal: new AbortController().signal,
+          });
+        },
+      },
+      output: { write: () => undefined },
+      signal: new AbortController().signal,
+    });
+
+    expect(calls).toEqual(['/wake']);
+  });
+
   it('keeps runtime commands on the host when --no-sandbox is supplied', async () => {
     const calls: string[] = [];
     await main(['tick', '--no-sandbox'], {
