@@ -63,6 +63,63 @@ defineScenario(
   },
 );
 
+defineScenario(
+  {
+    id: 'E2E-ORCH-WATCH-CLOSED-WORK-001',
+    title: 'skips a watch trigger after its WorkItem has closed',
+    given: ['a parent waiting under a watch authority for a WorkItem that later closes'],
+    when: ['a matching watch fact arrives'],
+    then: ['the trigger is checkpointed without claiming a group or creating a child'],
+  },
+  async () => {
+    const world = new TestWorld();
+    world.registerActivity(activity('parent-work', 'blocked'));
+    world.registerActivity(activity('review-work', 'done'));
+    world.configureWorkflow('review', {
+      stages: {
+        review: {
+          activity: 'review-work',
+          with: {},
+          on: { done: { then: 'done' } },
+          requiresApproval: false,
+        },
+      },
+    });
+    world.configureWorkflow('parent', {
+      stages: {
+        work: { activity: 'parent-work', with: {}, on: { blocked: { then: 'await-human' } } },
+      },
+      watches: [
+        {
+          id: 'review',
+          while: { stages: ['work'], statuses: ['waiting'] },
+          on: { events: ['review.requested'] },
+          workflow: 'review',
+          maxPerGroup: 1,
+        },
+      ],
+    });
+    const work = await world.createWork({ objective: 'do not watch closed work' });
+    const parent = await world.startWorkflow({
+      workItemId: work.workItemId,
+      workflowName: 'parent',
+    });
+    await world.advanceUntilSettled(work.workItemId);
+    await world.closeWork(work.workItemId, 'external issue closed');
+    await world.waitForSignal(parent.workflowInstanceId, {
+      signalKind: signalName('orchestration.child-completed'),
+      from: [{ kind: 'watch', watch: watchId('review') }],
+    });
+
+    await expect(
+      world.triggerWatch('review.requested', 'closed-work-trigger'),
+    ).resolves.toBeUndefined();
+
+    expect(await world.events('orchestration.group-claimed')).toHaveLength(0);
+    expect(await world.events('orchestration.child-requested')).toHaveLength(0);
+  },
+);
+
 function activity(name: string, outcome: 'blocked' | 'done') {
   return {
     name: activityName(name),

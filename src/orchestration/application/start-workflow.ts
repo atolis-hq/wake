@@ -27,8 +27,7 @@ export class StartWorkflow {
   ) {}
 
   async execute(command: StartWorkflowInstance, context: CommandContext) {
-    const item = await this.work.get(command.workItemId);
-    if (item === null || item.state !== WorkStatus.Open)
+    if (!(await this.isWorkItemOpen(command.workItemId)))
       throw new Error('WorkItem must exist and be open');
     const { definition, fingerprint } = this.definitions.currentDefinition(command.workflowName);
     const existing = await this.repository.load(command.workflowInstanceId);
@@ -56,6 +55,12 @@ export class StartWorkflow {
     if (decision.kind === 'append')
       await this.repository.append(command.workflowInstanceId, 0, decision.events);
     return (await this.repository.loadRequired(command.workflowInstanceId)).view;
+  }
+
+  async isWorkItemOpen(workItemId: StartWorkflowInstance['workItemId']): Promise<boolean> {
+    const item = await this.work.get(workItemId);
+    if (item === null || item.state !== WorkStatus.Open) return false;
+    return true;
   }
 
   definitionFor(view: Parameters<WorkflowDefinitionRegistry['resolve']>[0]) {
