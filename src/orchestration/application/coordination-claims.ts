@@ -62,6 +62,8 @@ export class CoordinationClaims {
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
   ): Promise<boolean> {
+    const existing = groupEvents(await this.journal.readStream(stream));
+    if (claimedRequestIds(existing).has(request.requestId)) return true;
     const claimed = await claimWithCasRetry({
       read: () => this.journal.readStream(stream),
       decode: groupEvents,

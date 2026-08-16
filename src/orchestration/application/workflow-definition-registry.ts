@@ -3,6 +3,7 @@ import {
   createEventDraft,
   EventActorKind,
   EventSourceKind,
+  WrongExpectedSequenceError,
   type EventJournal,
   type ProjectionDefinition,
   type ProjectionStore,
@@ -13,7 +14,6 @@ import { OrchestrationEventType } from '../contracts/events.js';
 import { type WorkflowName } from '../contracts/identifiers.js';
 import { OrchestrationStreamKind, workflowDefinitionsStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { claimWithCasRetry } from './durable-append.js';
 
 export const workflowDefinitionFingerprint = (definition: CompiledWorkflow): string =>
   createHash('sha256').update(JSON.stringify(definition)).digest('hex');
@@ -92,23 +92,17 @@ export class WorkflowDefinitionRegistry {
     });
     // The deterministic event id makes retries idempotent; CAS protects the
     // one shared registration stream when different definitions race to start.
-    await claimWithCasRetry({
-      read: () => this.journal.readStream(stream),
-      decode: (events) => events,
-      alreadyClaimed: (events) =>
-        events.some((event) => {
-          const owned = selectOrchestrationEvent(event);
-          return (
-            owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
-            owned.payload.workflowName === name &&
-            owned.payload.fingerprint === fingerprint
-          );
-        }),
-      append: async (sequence) => {
+    for (;;) {
+      const sequence = (await this.journal.readStream(stream)).length;
+      try {
         await this.journal.append(stream, sequence, [draft]);
-      },
-    });
-    this.knownRegistered.add(workflowDefinitionKey(name, fingerprint));
+        this.knownRegistered.add(workflowDefinitionKey(name, fingerprint));
+        return;
+      } catch (error) {
+        if (await this.isRegistered(name, fingerprint)) return;
+        if (!(error instanceof WrongExpectedSequenceError)) throw error;
+      }
+    }
   }
 
   private async isRegistered(name: WorkflowName, fingerprint: string): Promise<boolean> {

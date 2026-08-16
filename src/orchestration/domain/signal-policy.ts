@@ -15,7 +15,6 @@ import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   ActivityActivationStatus,
   ApprovalAuthorityKind,
-  TransitionTargetKind,
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import type {
@@ -23,7 +22,7 @@ import type {
   DecisionContext,
   OrchestrationDecision,
 } from './activation-policy.js';
-import { stateDraft } from './decision-events.js';
+import { activation, nextOrdinal, stateDraft } from './decision-events.js';
 import { resumeToTarget } from './transition.js';
 
 export interface AcceptSignal extends DecisionContext {
@@ -62,15 +61,31 @@ export function acceptSignal(
     stateDraft(state, input, OrchestrationEventType.SignalAccepted, { ...signal, authority }, 1),
   ];
   const target =
-    signal.outcome === ActivityOutcomeKind.Rejected
-      ? (expected.onRejectResume ?? legacyReentryTarget(state))
-      : (expected.resume ?? legacyReentryTarget(state));
-  resumeToTarget(events, definition, state, input, target);
+    signal.outcome === ActivityOutcomeKind.Rejected ? expected.onRejectResume : expected.resume;
+  if (target !== undefined) resumeToTarget(events, definition, state, input, target);
+  else requestLegacyReentry(events, definition, state, input);
   return { kind: 'append', events };
 }
 
-function legacyReentryTarget(state: WorkflowInstanceView) {
-  return { kind: TransitionTargetKind.Stage, stage: stageName(state.currentStage) } as const;
+function requestLegacyReentry(
+  events: WorkflowOrchestrationEventDraft[],
+  definition: CompiledWorkflow,
+  state: WorkflowInstanceView,
+  input: DecisionContext,
+): void {
+  const stage = definition.stages[stageName(state.currentStage)]!;
+  events.push(
+    stateDraft(
+      state,
+      input,
+      OrchestrationEventType.ActivityRequested,
+      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
+        execution: stage.execution,
+        stage: stageName(state.currentStage),
+      }),
+      events.length + 1,
+    ),
+  );
 }
 
 function signalRejectionReason(state: WorkflowInstanceView, input: AcceptSignal): string | null {
