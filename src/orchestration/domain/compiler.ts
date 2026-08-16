@@ -160,6 +160,7 @@ function compileStage(
         const effectiveAwait = defaultApprovalAwait(stage, outcomeKind, route);
         const compiled: CompiledOutcomeRoute = Object.freeze({
           target,
+          reentryTarget: { kind: TransitionTargetKind.Stage, stage: stageName(rawStageName) },
           ...(route.repeat === undefined ? {} : { repeat: route.repeat }),
           ...(route.retry === undefined ? {} : { retry: route.retry }),
           ...(followOns === undefined ? {} : { activities: Object.freeze(followOns) }),

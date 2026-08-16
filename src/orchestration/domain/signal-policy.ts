@@ -60,21 +60,14 @@ export function acceptSignal(
   const events: WorkflowOrchestrationEventDraft[] = [
     stateDraft(state, input, OrchestrationEventType.SignalAccepted, { ...signal, authority }, 1),
   ];
-  if (signal.outcome === ActivityOutcomeKind.Rejected) {
-    if (expected.onRejectResume !== undefined) {
-      resumeToTarget(events, definition, state, input, expected.onRejectResume);
-    } else {
-      requestCurrentStage(events, definition, state, input);
-    }
-  } else if (expected.resume !== undefined) {
-    resumeToTarget(events, definition, state, input, expected.resume);
-  } else {
-    requestCurrentStage(events, definition, state, input);
-  }
+  const target =
+    signal.outcome === ActivityOutcomeKind.Rejected ? expected.onRejectResume : expected.resume;
+  if (target !== undefined) resumeToTarget(events, definition, state, input, target);
+  else requestLegacyReentry(events, definition, state, input);
   return { kind: 'append', events };
 }
 
-function requestCurrentStage(
+function requestLegacyReentry(
   events: WorkflowOrchestrationEventDraft[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,

@@ -232,6 +232,7 @@ export interface CompiledOutcomeRoute extends Omit<
 > {
   readonly id: string;
   readonly target: TransitionTarget;
+  readonly reentryTarget: TransitionTarget;
   readonly activities?: readonly CompiledFollowOnActivity[];
   readonly await?: CompiledAwait;
   readonly watchGates?: readonly CompiledWatchGate[];

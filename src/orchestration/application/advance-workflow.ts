@@ -17,6 +17,7 @@ import {
   requestSupplementalActivity as decideSupplementalActivity,
 } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
+import { appendWithIntentRecovery } from './durable-append.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import {
   acceptResourceTransition,
@@ -169,13 +170,15 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
     });
     if (decision.kind === 'ignored') throw new OperatorRetryIneligibleError(decision.reason);
-    try {
-      await this.repository.append(id, loaded.sequence, decision.events);
-    } catch (error) {
-      const reloaded = await this.repository.loadRequired(id);
-      if (reloaded.view.operatorRetryCommandIds.includes(context.commandId)) return reloaded.view;
-      throw error;
-    }
+    const recovered = await appendWithIntentRecovery({
+      append: async () => {
+        await this.repository.append(id, loaded.sequence, decision.events);
+      },
+      load: () => this.repository.loadRequired(id),
+      alreadyApplied: (reloaded) =>
+        reloaded.view.operatorRetryCommandIds.includes(context.commandId),
+    });
+    if (recovered !== undefined) return recovered.view;
     return (await this.repository.loadRequired(id)).view;
   }
 
@@ -195,13 +198,15 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
     });
     if (decision.kind === 'ignored') return loaded.view;
-    try {
-      await this.repository.append(id, loaded.sequence, decision.events);
-    } catch (error) {
-      const reloaded = await this.repository.loadRequired(id);
-      if (reloaded.view.operatorRetryCommandIds.includes(context.commandId)) return reloaded.view;
-      throw error;
-    }
+    const recovered = await appendWithIntentRecovery({
+      append: async () => {
+        await this.repository.append(id, loaded.sequence, decision.events);
+      },
+      load: () => this.repository.loadRequired(id),
+      alreadyApplied: (reloaded) =>
+        reloaded.view.operatorRetryCommandIds.includes(context.commandId),
+    });
+    if (recovered !== undefined) return recovered.view;
     return (await this.repository.loadRequired(id)).view;
   }
 

@@ -101,6 +101,7 @@ workflow.
 | --- | --- | --- |
 | `id` | string | `<workflow>:<stage>:<outcomeKind>`, used as the repeat-count key. |
 | `target` | TransitionTarget | The resolved Stage, `complete`, or implicit-wait target. |
+| `reentryTarget` | TransitionTarget | The owning Stage materialised at compile time; approval rejection resumes through this explicit target. |
 | `repeat` | optional `{ max }` | Present when this route closes a cycle; required whenever it does. |
 | `retry` | optional `{ max }` | Present when a non-`done` outcome at this route may retry the Stage. |
 | `activities` | optional list of CompiledFollowOnActivity | Follow-on Activities to run, in order, before transitioning. |

@@ -36,6 +36,20 @@ If no workitems are blocking fixes - then select based on the following.
 - Items which dont need human judgement
 - Highest value items
 
+## Remediation over observation
+
+Observation is a means to select and verify work, not the end state. When
+evidence identifies a concrete, bounded defect and the current task grants
+implementation authority, remediate it in the same supervision loop. Do not
+stop at reporting a failing CI check, a reproducible runtime error, or an
+unmerged fix that can be repaired locally.
+
+For example, if a linked PR has actionable CI failures, inspect the exact
+failure, make the smallest scoped correction on its branch, run the relevant
+checks, commit and push it, then confirm the PR and Wake observe the update.
+Prefer this work over polling items that are blocked on an external or product
+decision. Defer only when the remediation itself requires a genuinely missing
+authority or product choice.
 # Actions To Take
 
 You may take necessary actions to progress the workitem. You should first act as a human collaborator and interact through Wake's surfaces - github issues, pull requests, or the Wake API. When those strategies do not succeed, you may fall back to more manual measures if necessary.
@@ -74,7 +88,7 @@ Do not use self update, it is not currently working.
 1. Get latest from `origin/main` in the intended source code branch, after confirming the worktree is clean, unrelated user changes are preserved, and the target revision is correct.
 2. Check if any runs are active. You may pause ticks through the documented API to stop new dispatch.
 3. Wait until no active runs. Do not deploy over active work without authority and a recovery plan.
-4. Run `wake-dev sandbox build` to build a new image, then run `wake-dev sandbox update` to update the container. Update also refreshes config. Use the documented source-checkout equivalent only if `wake-dev` is unavailable.
+4. From the Wake-home directory (the directory containing `config.yaml`), run `wake-dev sandbox build` to build a new image, then run `wake-dev sandbox update` to update the container. Update also refreshes config. Do not run these commands from the Wake source checkout unless it is itself the configured Wake home. Use the documented source-checkout equivalent only if `wake-dev` is unavailable.
 5. Verify the deployed revision, sandbox health, provider connectivity, and a fresh tick. If a provider fails after the update, verify its authentication and connectivity as the sandbox runtime user without printing tokens. Unpause ticks through the same API if they were paused so that dispatch can resume.
 
 You do not need to update every time a PR is merged. Use your best judgement. Do not use undocumented sandbox stop commands as a recovery shortcut.
