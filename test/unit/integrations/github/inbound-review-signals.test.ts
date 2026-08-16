@@ -190,7 +190,11 @@ it('resumes an eligible blocked issue workflow on /changes', async () => {
         return { kind: resourceKind('issue') };
       },
     } as never,
-    work: {} as never,
+    work: {
+      async get() {
+        return { state: 'open', frozen: false, deleted: false };
+      },
+    } as never,
     lookup: {
       async resourceIdForExternalKey() {
         return 'resource-7';
@@ -316,6 +320,19 @@ it('restarts exactly an eligible blocked agent refinement on a plain issue reply
   expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
 });
 
+it('does not resume a blocked issue workflow from a plain reply after its work closes', async () => {
+  const fixture = await blockedIssueWorkflow();
+
+  await fixture.world.closeWork(fixture.workItemId, 'issue closed externally');
+  await applyHumanIssueCommand(fixture, 'The closure provenance is in the newest commit.');
+
+  expect(await fixture.world.viewWorkflow(fixture.workflowId)).toMatchObject({
+    status: 'blocked',
+    pendingActivation: { activity: activityName('agent'), ordinal: 1 },
+  });
+  expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(0);
+});
+
 it('leaves a waiting issue workflow unchanged for a plain reply', async () => {
   const fixture = await waitingIssueWorkflow(signalName('approved'));
 
@@ -427,7 +444,11 @@ async function issueCommentSignals(body: string): Promise<unknown[]> {
         return { kind: resourceKind('issue') };
       },
     } as never,
-    work: {} as never,
+    work: {
+      async get() {
+        return { state: 'open', frozen: false, deleted: false };
+      },
+    } as never,
     lookup: {
       async resourceIdForExternalKey() {
         return 'resource-7';

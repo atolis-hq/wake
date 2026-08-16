@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import {
   ActivityOutcomeKind,
   ReviewActorKind,
@@ -103,6 +104,7 @@ async function applyFormalReviewSignal(input: {
   await applyPullRequestWorkflowSignal({
     event,
     resources,
+    work,
     lookup,
     orchestration,
     adapter,
@@ -116,7 +118,7 @@ async function applyFormalReviewSignal(input: {
 async function applyIssueReviewSignal(input: {
   readonly event: CommentObservedEvent;
   readonly resources: ResourceService | undefined;
-  readonly work: WorkService | undefined;
+  readonly work: WorkService;
   readonly lookup: ResourceLookup | undefined;
   readonly orchestration: OrchestrationService | undefined;
   readonly adapter: AdapterId;
@@ -145,6 +147,7 @@ async function applyIssueReviewSignal(input: {
     await applyWorkflowSignal({
       event,
       resources,
+      work,
       orchestration,
       resourceId: resourceIdValue,
       outcome: command === '/approved' ? ActivityOutcomeKind.Done : ActivityOutcomeKind.Rejected,
@@ -158,6 +161,7 @@ async function applyIssueReviewSignal(input: {
     await applyWorkflowSignal({
       event,
       resources,
+      work,
       orchestration,
       resourceId: resourceIdValue,
       outcome: ActivityOutcomeKind.Rejected,
@@ -170,12 +174,12 @@ async function applyIssueReviewSignal(input: {
 async function applyIssueRetrySignal(input: {
   readonly event: CommentObservedEvent;
   readonly resources: ResourceService;
-  readonly work: WorkService | undefined;
+  readonly work: WorkService;
   readonly orchestration: OrchestrationService | undefined;
   readonly resourceId: ReturnType<typeof resourceId>;
 }): Promise<void> {
   const { event, resources, work, orchestration, resourceId: resourceIdValue } = input;
-  if (work === undefined || orchestration === undefined) return;
+  if (orchestration === undefined) return;
   if (
     !isReviewAuthorized({
       actorId: event.payload.actor.id,
@@ -194,8 +198,7 @@ async function applyIssueRetrySignal(input: {
       workflow.parentWorkflowInstanceId !== undefined
     )
       continue;
-    const item = await work.get(workflow.workItemId);
-    if (item === null || item.deleted || item.frozen || item.state !== WorkStatus.Open) continue;
+    if (!(await isEligibleWorkItem(work, workflow.workItemId))) continue;
     await ignoreIneligibleOperatorRetry(() =>
       orchestration.retryBlockedFailedStage(workflow.workflowInstanceId, commandContext(event)),
     );
@@ -206,11 +209,12 @@ async function applyIssueApprovalSignal(input: {
   readonly event: CommentObservedEvent;
   readonly command: '/approved' | '/changes';
   readonly resources: ResourceService | undefined;
+  readonly work: WorkService;
   readonly lookup: ResourceLookup | undefined;
   readonly orchestration: OrchestrationService | undefined;
   readonly adapter: AdapterId;
 }): Promise<void> {
-  const { event, command, resources, lookup, orchestration, adapter } = input;
+  const { event, command, resources, work, lookup, orchestration, adapter } = input;
   if (resources === undefined || lookup === undefined || orchestration === undefined) return;
   const resourceIdValue = await lookup.resourceIdForExternalKey({
     adapter,
@@ -220,6 +224,7 @@ async function applyIssueApprovalSignal(input: {
   await applyWorkflowSignal({
     event,
     resources,
+    work,
     orchestration,
     resourceId: resourceIdValue,
     outcome: command === '/approved' ? ActivityOutcomeKind.Done : ActivityOutcomeKind.Rejected,
@@ -230,12 +235,13 @@ async function applyIssueApprovalSignal(input: {
 async function applyPullRequestWorkflowSignal(input: {
   readonly event: CommentObservedEvent;
   readonly resources: ResourceService | undefined;
+  readonly work: WorkService;
   readonly lookup: ResourceLookup | undefined;
   readonly orchestration: OrchestrationService | undefined;
   readonly adapter: AdapterId;
   readonly outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected;
 }): Promise<void> {
-  const { event, lookup, resources, orchestration, adapter, outcome } = input;
+  const { event, lookup, resources, work, orchestration, adapter, outcome } = input;
   if (
     event.payload.actor.kind !== ReviewActorKind.Human ||
     lookup === undefined ||
@@ -251,6 +257,7 @@ async function applyPullRequestWorkflowSignal(input: {
   await applyWorkflowSignal({
     event,
     resources,
+    work,
     orchestration,
     resourceId: resourceIdValue,
     outcome,
@@ -260,6 +267,7 @@ async function applyPullRequestWorkflowSignal(input: {
 async function applyWorkflowSignal(input: {
   readonly event: CommentObservedEvent;
   readonly resources: ResourceService;
+  readonly work: WorkService;
   readonly orchestration: OrchestrationService;
   readonly resourceId: ReturnType<typeof resourceId>;
   readonly outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected;
@@ -269,6 +277,7 @@ async function applyWorkflowSignal(input: {
   const {
     event,
     resources,
+    work,
     orchestration,
     resourceId: resourceIdValue,
     outcome,
@@ -280,6 +289,7 @@ async function applyWorkflowSignal(input: {
     .map((correlation) => correlation.workItemId);
   for (const workflow of await orchestration.listAll()) {
     if (!workItemIds.includes(workflow.workItemId)) continue;
+    if (!(await isEligibleWorkItem(work, workflow.workItemId))) continue;
     if (workflow.waitingFor !== undefined && acceptWaitingSignal) {
       await orchestration.acceptSignal(
         workflow.workflowInstanceId,
@@ -305,4 +315,12 @@ async function applyWorkflowSignal(input: {
       );
     }
   }
+}
+
+async function isEligibleWorkItem(
+  work: WorkService,
+  workItemId: Parameters<WorkService['get']>[0],
+): Promise<boolean> {
+  const item = await work.get(workItemId);
+  return item?.state === WorkStatus.Open && !item.deleted && !item.frozen;
 }
