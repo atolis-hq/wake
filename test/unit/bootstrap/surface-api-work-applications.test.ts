@@ -6,7 +6,7 @@ import {
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import { toWorkItemKey } from '../../../src/surfaces/api/contracts/work.js';
-import { workId } from '../../support/identities.js';
+import { resId, workId } from '../../support/identities.js';
 
 const id = workId('surface-retry-error');
 
@@ -35,6 +35,41 @@ it('rethrows an unexpected operator retry error', async () => {
   if (retry === undefined) throw new Error('Expected retry work application');
 
   await expect(retry(toWorkItemKey(id), { idempotencyKey: 'operator-1' })).rejects.toBe(unexpected);
+});
+
+it('uses stable resource-specific command ids when deleting multiple correlations', async () => {
+  const workItemId = workId('delete-multiple-correlations');
+  const first = resId('delete-correlation-first');
+  const second = resId('delete-correlation-second');
+  const retractionCommandIds: string[] = [];
+  const applications = createSurfaceWorkApplications(
+    {
+      work: { delete: async () => ({}) },
+      resources: {
+        correlationsForWork: async () => [{ resourceId: first }, { resourceId: second }],
+        retract: async (
+          _resourceId: unknown,
+          _workItemId: unknown,
+          context: { readonly commandId: string },
+        ) => {
+          retractionCommandIds.push(context.commandId);
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-16T13:00:00.000Z',
+  );
+  const remove = applications.delete;
+  if (remove === undefined) throw new Error('Expected delete work application');
+
+  await remove(toWorkItemKey(workItemId), { idempotencyKey: 'operator-1' });
+  await remove(toWorkItemKey(workItemId), { idempotencyKey: 'operator-1' });
+
+  expect(retractionCommandIds).toEqual([
+    `work:operator-1:resource:${first}`,
+    `work:operator-1:resource:${second}`,
+    `work:operator-1:resource:${first}`,
+    `work:operator-1:resource:${second}`,
+  ]);
 });
 
 function rootThatRejectsRetry(error: Error): CompositionRoot {
