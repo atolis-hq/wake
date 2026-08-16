@@ -158,6 +158,7 @@ integrations:
           requiredAuthors: []
           labels: [automation]
         matchMode: all
+        ignoredLabels: [security]
         tags: [automation]
     publication:
       postStatusComments: true
@@ -410,7 +411,10 @@ Use `provider: github` for the built-in GitHub integration.
 | `publication.postStatusComments` | boolean; default `true` | Allows GitHub status-comment publication. |
 
 Each `intake[]` rule has `where`, optional `matchMode` (`any` by default or
-`all`), and `tags` (default `[]`). `where.kind` is `issue` or
+`all`), optional `ignoredLabels` (default `[]`), and `tags` (default `[]`). An
+observation carrying any `ignoredLabels` value is discarded before Wake creates
+or correlates work, regardless of whether it otherwise matches an intake rule.
+`where.kind` is `issue` or
 `pull-request`; `where.requiredAssignees`, `where.requiredAuthors`, and
 `where.labels` are string lists, each defaulting to `[]`. Intake tags must not
 use a Wake-owned marker family, so Wake cannot ingest and reroute its own

@@ -8,10 +8,22 @@ const GitHubDeliveryFailureCode = 'github-error';
 export function createGitHubDelivery(
   deliver: (intent: DeliveryIntentView, idempotencyKey: string) => Promise<string>,
   reconcileIssue?: (intent: DeliveryIntentView) => Promise<string | null>,
+  precondition?: (
+    intent: DeliveryIntentView,
+  ) => Promise<{ readonly allowed: boolean; readonly reason?: string }>,
 ): ExternalDeliveryAdapter {
   return {
     async deliver(intent) {
       try {
+        if (
+          intent.kind === BuiltInActivityName.PullRequestMerge &&
+          'autoMerge' in intent.payload &&
+          intent.payload.autoMerge
+        ) {
+          const result = await precondition?.(intent);
+          if (result !== undefined && !result.allowed)
+            throw new Error(result.reason ?? 'auto-merge precondition failed');
+        }
         return {
           kind: DeliveryResultKind.Confirmed,
           externalId: await deliver(intent, intent.intentEventId),

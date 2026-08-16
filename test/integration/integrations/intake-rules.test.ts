@@ -45,6 +45,22 @@ describe('evaluateIntakeRules', () => {
     });
   });
 
+  it('suppresses an observation carrying a rule ignored label', () => {
+    const decision = evaluateIntakeRules(
+      [
+        {
+          where: { [IntakeFacet.Kind]: ['issue'] },
+          ignoredValues: { [IntakeFacet.Label]: ['security'] },
+          matchMode: MatchMode.Any,
+          tags: [],
+        },
+      ],
+      { [IntakeFacet.Kind]: ['issue'], [IntakeFacet.Label]: ['security'] },
+    );
+
+    expect(decision).toEqual({ admitted: false, tags: [], ignored: true });
+  });
+
   it('requires every facet value under all mode and AND-s separate facets', () => {
     const rules = [
       {
@@ -101,5 +117,15 @@ describe('GitHub intake configuration', () => {
     });
 
     expect(config.intake[0]?.tags).toEqual(['bug']);
+  });
+
+  it('accepts per-rule ignored labels without introducing a global default', () => {
+    const config = gitHubConfigSchema.parse({
+      enabled: true,
+      repositories: [{ owner: 'owner', repo: 'repo' }],
+      intake: [{ where: { kind: 'issue' }, ignoredLabels: ['security'] }],
+    });
+
+    expect(config.intake[0]?.ignoredLabels).toEqual(['security']);
   });
 });

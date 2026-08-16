@@ -15,6 +15,7 @@ export function gitHubIntakeRules(
       [GitHubIntakeFacet.Assignee]: rule.where.requiredAssignees,
       [GitHubIntakeFacet.Author]: rule.where.requiredAuthors,
     },
+    ignoredValues: { [GitHubIntakeFacet.Label]: rule.ignoredLabels },
     matchMode: rule.matchMode,
     tags: rule.tags,
   }));

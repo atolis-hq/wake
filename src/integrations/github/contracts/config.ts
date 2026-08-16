@@ -24,6 +24,7 @@ const intakeRuleSchema = z
       })
       .strict(),
     matchMode: z.enum([MatchMode.Any, MatchMode.All]).default(MatchMode.Any),
+    ignoredLabels: z.array(z.string().trim().min(1)).default([]),
     tags: z.array(intakeTag).default([]),
   })
   .strict();
