@@ -246,7 +246,7 @@ defineScenario(
       quiesce: {
         ...realQuiesce,
         requestMaintenanceCancellation: async () => {
-          await new Promise((resolve) => setTimeout(resolve, 15));
+          await advancing;
           throw new Error('event journal lock lost to completing Run');
         },
       },
