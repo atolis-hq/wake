@@ -11,7 +11,11 @@ export type WakeCommand =
   | ({ readonly kind: 'api' | 'ui' } & HostOptions)
   | { readonly kind: 'audit'; readonly workItemId: string }
   | { readonly kind: 'correlate'; readonly resource: string; readonly workItemId: string }
-  | { readonly kind: 'validate-state'; readonly rebuildProjections: boolean }
+  | {
+      readonly kind: 'validate-state';
+      readonly rebuildProjections: boolean;
+      readonly wakeRoot?: string;
+    }
   | {
       readonly kind:
         'init' | 'doctor' | 'sandbox-setup' | 'sandbox-entrypoint' | 'self-update' | 'smoke';
@@ -79,7 +83,7 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
         workItemId: requiredArgument(second, 'correlate work item'),
       };
     case 'validate-state':
-      return parseValidateState(first, second);
+      return parseValidateState(arguments_.slice(1));
     case 'api':
     case 'ui':
       return { kind: command, ...parseHostOptions(arguments_.slice(1)) };
@@ -100,11 +104,27 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
   }
 }
 
-function parseValidateState(first?: string, second?: string): WakeCommand {
-  const allowed = first === undefined || first === '--rebuild-projections';
-  if (!allowed || second !== undefined)
-    throw new Error('validate-state accepts only --rebuild-projections');
-  return { kind: 'validate-state', rebuildProjections: first === '--rebuild-projections' };
+function parseValidateState(arguments_: readonly string[]): WakeCommand {
+  let rebuildProjections = false;
+  let wakeRoot: string | undefined;
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === '--rebuild-projections' && !rebuildProjections) {
+      rebuildProjections = true;
+      continue;
+    }
+    if (argument === '--wake-root') {
+      wakeRoot = requiredArgument(arguments_[index + 1], 'value for --wake-root');
+      index += 1;
+      continue;
+    }
+    throw new Error('validate-state accepts only --rebuild-projections and --wake-root <path>');
+  }
+  return {
+    kind: 'validate-state',
+    rebuildProjections,
+    ...(wakeRoot === undefined ? {} : { wakeRoot }),
+  };
 }
 
 function parseResidentCommand(
