@@ -51,6 +51,11 @@ it('records one execution failure and blocks its pending activation', async () =
     blockReason: 'runner exited 1',
     pendingActivation: { status: 'completed' },
     acceptedOutcomes: [workflow.pendingActivation!.activationId],
+    executionFailure: {
+      activationId: workflow.pendingActivation!.activationId,
+      runId: 'run-failed',
+      reason: 'runner exited 1',
+    },
   });
   expect(await world.events('orchestration.activity-execution-failed')).toHaveLength(1);
   expect(await world.events('orchestration.instance-blocked')).toHaveLength(1);

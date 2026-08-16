@@ -14,15 +14,18 @@ export interface OperatorRetryRequest extends DecisionContext {
 
 export function isOperatorRetryEligible(view: WorkflowInstanceView): boolean {
   const pending = view.pendingActivation;
-  return (
+  const eligibleActivation =
     view.status === WorkflowStatus.Blocked &&
-    view.blockReason === 'unconfigured outcome failed' &&
     pending !== undefined &&
     pending.status === ActivityActivationStatus.Completed &&
     pending.supplemental !== true &&
     pending.followOnIndex === undefined &&
-    view.lastOutcome?.kind === ActivityOutcomeKind.Failed &&
-    view.acceptedOutcomes.includes(pending.activationId)
+    view.acceptedOutcomes.includes(pending.activationId);
+  if (!eligibleActivation || pending === undefined) return false;
+  return (
+    (view.blockReason === 'unconfigured outcome failed' &&
+      view.lastOutcome?.kind === ActivityOutcomeKind.Failed) ||
+    view.executionFailure?.activationId === pending.activationId
   );
 }
 
@@ -51,7 +54,7 @@ export function requestOperatorRetry(
   if (!isOperatorRetryEligible(state))
     return {
       kind: 'ignored',
-      reason: 'workflow is not blocked for an unconfigured failed outcome',
+      reason: 'workflow is not blocked for a retryable failed stage',
     };
 
   const stage = definition.stages[stageName(state.currentStage)]!;
