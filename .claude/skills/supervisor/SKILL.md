@@ -88,7 +88,7 @@ Do not use self update, it is not currently working.
 1. Get latest from `origin/main` in the intended source code branch, after confirming the worktree is clean, unrelated user changes are preserved, and the target revision is correct.
 2. Check if any runs are active. You may pause ticks through the documented API to stop new dispatch.
 3. Wait until no active runs. Do not deploy over active work without authority and a recovery plan.
-4. Run `wake-dev sandbox build` to build a new image, then run `wake-dev sandbox update` to update the container. Update also refreshes config. Use the documented source-checkout equivalent only if `wake-dev` is unavailable.
+4. From the Wake-home directory (the directory containing `config.yaml`), run `wake-dev sandbox build` to build a new image, then run `wake-dev sandbox update` to update the container. Update also refreshes config. Do not run these commands from the Wake source checkout unless it is itself the configured Wake home. Use the documented source-checkout equivalent only if `wake-dev` is unavailable.
 5. Verify the deployed revision, sandbox health, provider connectivity, and a fresh tick. If a provider fails after the update, verify its authentication and connectivity as the sandbox runtime user without printing tokens. Unpause ticks through the same API if they were paused so that dispatch can resume.
 
 You do not need to update every time a PR is merged. Use your best judgement. Do not use undocumented sandbox stop commands as a recovery shortcut.
