@@ -2,6 +2,8 @@ export * from './application/execution-projection.js';
 
 export * from './application/execution-service.js';
 
+export * from './application/activation-claim.js';
+
 export * from './application/recovery-service.js';
 
 export * from './application/run-repository.js';

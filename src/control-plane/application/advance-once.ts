@@ -1,6 +1,6 @@
 /* eslint-disable complexity, max-lines-per-function */
 import type { RunView, WorkspaceRecovery } from '../../execution/index.js';
-import { RunStatus, WorkspaceMode } from '../../execution/index.js';
+import { ActivationClaimConflictError, RunStatus, WorkspaceMode } from '../../execution/index.js';
 import {
   correlationId,
   EventActorKind,
@@ -257,16 +257,22 @@ export function createAdvanceOnce(
       await Promise.all(correlated.map((entry) => resources.get(entry.resourceId)))
     ).filter((resource) => resource !== null);
     const ineligible = await runnerIneligibility();
-    const run = await execution.attempt(selected.activation, {
-      workItemId: selected.workflow.workItemId,
-      workflowInstanceId: selected.workflow.workflowInstanceId,
-      orchestrationGroupId: selected.workflow.orchestrationGroupId,
-      resources: resourceViews,
-      sessionPolicy:
-        selected.workflow.parentWorkflowInstanceId === undefined ? 'resume-stage' : 'fresh',
-      awaitImmediateCompletion: true,
-      ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
-    });
+    let run: RunView;
+    try {
+      run = await execution.attempt(selected.activation, {
+        workItemId: selected.workflow.workItemId,
+        workflowInstanceId: selected.workflow.workflowInstanceId,
+        orchestrationGroupId: selected.workflow.orchestrationGroupId,
+        resources: resourceViews,
+        sessionPolicy:
+          selected.workflow.parentWorkflowInstanceId === undefined ? 'resume-stage' : 'fresh',
+        awaitImmediateCompletion: true,
+        ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
+      });
+    } catch (error) {
+      if (error instanceof ActivationClaimConflictError) return { kind: 'no-work' };
+      throw error;
+    }
     if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
       if (await isDispatchPaused()) return { kind: 'paused' };
       await orchestration.acceptOutcome(
