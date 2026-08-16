@@ -15,6 +15,13 @@ import {
 import type { RunId } from '../contracts/identifiers.js';
 import { activationStream } from '../contracts/streams.js';
 
+export class ActivationClaimConflictError extends Error {
+  constructor(activationId: ActivationId) {
+    super(`Activation ${activationId} already has an active Run claim`);
+    this.name = 'ActivationClaimConflictError';
+  }
+}
+
 export async function claimActivation(input: {
   readonly journal: EventJournal;
   readonly clock: Clock;
@@ -29,7 +36,7 @@ export async function claimActivation(input: {
   const events = (await journal.readStream(stream)).map(decodeActivationExecutionEvent);
   const last = events.at(-1);
   if (last?.eventType === ExecutionEventType.ActivationClaimed && claimIsUnexpired(last, clock))
-    throw new Error(`Activation ${activationId} already has an active Run claim`);
+    throw new ActivationClaimConflictError(activationId);
   await journal.append(stream, events.length, [
     createActivationExecutionEventDraft({
       eventId: `${activationId}:claim:${runId}`,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
 import { createAdvanceOnce } from '../../../src/control-plane/index.js';
-import { type RunView } from '../../../src/execution/index.js';
+import { ActivationClaimConflictError, type RunView } from '../../../src/execution/index.js';
 import { workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import {
   type ActivityActivationView,
@@ -260,6 +260,41 @@ describe('advanceOnce', () => {
     await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
     expect(marked).toBe(0);
     expect(swept).toBe(0);
+  });
+
+  it('does not fail a tick when another process holds the Activation claim', async () => {
+    const workflow = {
+      workflowInstanceId: 'workflow-00000000000000000000000001',
+      workItemId: 'work-00000000000000000000000001',
+      orchestrationGroupId: 'group-00000000000000000000000001',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const activation = {
+      activationId: 'activation-00000000000000000000000001',
+    } as unknown as ActivityActivationView;
+    let attempts = 0;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => workflow,
+      },
+      {
+        attempt: async () => {
+          attempts += 1;
+          throw new ActivationClaimConflictError(activation.activationId);
+        },
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      { ids: { next: () => 'command-00000000000000000000000001' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
+    expect(attempts).toBe(1);
   });
 
   it('does not dispatch a second branch workspace activity while its workflow has an active branch Run', async () => {
