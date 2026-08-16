@@ -15,6 +15,7 @@ import {
 import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
 import { correlationId } from '../../../../src/kernel/index.js';
 import {
+  OperatorRetryIneligibleError,
   signalName,
   stageName,
   TransitionTargetKind,
@@ -87,6 +88,53 @@ it('retries an open primary workflow only for a provider-authorized /retry comme
     'workflow-7',
     { commandId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z:inbound' },
   ]);
+});
+
+it('ignores an ineligible authorized /retry command', async () => {
+  await expect(
+    applyReviewSignal({
+      event: {
+        ...issueCommentEvent('/retry'),
+        payload: {
+          ...issueCommentEvent('/retry').payload,
+          authorization: {
+            source: ReviewerAuthorizationSource.ProviderPermission,
+            permission: ProviderPermission.Write,
+          },
+        },
+      } as never,
+      journal: {} as never,
+      resources: {
+        async correlations() {
+          return [{ role: 'primary', workItemId: 'work-7' }];
+        },
+        async get() {
+          return { kind: resourceKind('issue') };
+        },
+      } as never,
+      work: {
+        async get() {
+          return { state: 'open', frozen: false, deleted: false };
+        },
+      } as never,
+      lookup: {
+        async resourceIdForExternalKey() {
+          return 'resource-7';
+        },
+      } as never,
+      pullRequests: undefined,
+      ids: {} as never,
+      adapter: GitHubAdapter,
+      orchestration: {
+        async listAll() {
+          return [{ workflowInstanceId: 'workflow-7', workItemId: 'work-7' }];
+        },
+        async retryBlockedFailedStage() {
+          throw new OperatorRetryIneligibleError('workflow is not retryable');
+        },
+      } as never,
+    }),
+  ).resolves.toBeUndefined();
 });
 
 it('fails closed for a /retry comment without collaborator permission evidence', async () => {

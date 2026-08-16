@@ -21,6 +21,7 @@ import type { AdapterId } from '../../contracts/identifiers.js';
 import type { GitHubAdapterEvent, GitHubEventType } from '../contracts/events.js';
 import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { commandContext } from './inbound-context.js';
+import { ignoreIneligibleOperatorRetry } from './operator-retry-command.js';
 import { translateGitHubReviewCommand } from './review-command-translator.js';
 
 type CommentObservedEvent = Extract<
@@ -177,7 +178,9 @@ async function applyIssueRetrySignal(input: {
       continue;
     const item = await work.get(workflow.workItemId);
     if (item === null || item.deleted || item.frozen || item.state !== WorkStatus.Open) continue;
-    await orchestration.retryBlockedFailedStage(workflow.workflowInstanceId, commandContext(event));
+    await ignoreIneligibleOperatorRetry(() =>
+      orchestration.retryBlockedFailedStage(workflow.workflowInstanceId, commandContext(event)),
+    );
   }
 }
 
