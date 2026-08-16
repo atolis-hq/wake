@@ -1,17 +1,17 @@
 import { expect } from 'vitest';
 import { z } from 'zod';
 import { activityName, createAgentActivity } from '../../../src/activities/index.js';
-import { formatAgentRunComment } from '../../../src/integrations/github/application/agent-run-comment.js';
 import { createCommentHistoryReader } from '../../../src/integrations/github/application/comment-history-reader.js';
 import {
   BuiltInAdapterId,
-  GitHubEventType,
-  integrationStream,
+  DeliveryEventType,
+  DeliveryIntentEventType,
+  deliveryStream,
 } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventDraft } from '../../../src/kernel/index.js';
+import { correlationId, createEventDraft, eventId } from '../../../src/kernel/index.js';
 import { watchId, workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import { WatchGateVerdictSignal } from '../../../src/orchestration/index.js';
-import { resourceKind } from '../../../src/resources/index.js';
+import { resourceKind, resourceStream, type ResourceId } from '../../../src/resources/index.js';
 import type { WorkItemId } from '../../../src/work/index.js';
 import { resId } from '../../support/identities.js';
 import { defineScenario } from '../support/scenario.js';
@@ -28,7 +28,9 @@ defineScenario(
   async () => {
     const world = new TestWorld();
     const implementPrompts: string[] = [];
-    const commentHistory = createCommentHistoryReader(world.journal, world.resources);
+    const commentHistory = createCommentHistoryReader(world.journal, world.resources, {
+      publicUiUrl: 'https://wake.example.test',
+    });
     const implementAgent = createAgentActivity(
       {
         async render() {
@@ -194,18 +196,11 @@ defineScenario(
       3,
     );
     const rejectionDisplayBody = 'Please handle the failed error path before retrying.';
-    await appendGitHubComment(
-      world,
-      formatAgentRunComment({
-        idempotencyKey: 'pr-review-rejection',
-        outcome: 'REJECTED',
-        displayBody: rejectionDisplayBody,
-        metadata: {},
-      }),
-    );
+    await appendConfirmedAgentRunComment(world, resource.resourceId, rejectionDisplayBody);
     await world.advance(work.workItemId);
     expect(implementPrompts).toHaveLength(2);
     expect(implementPrompts[1]).toContain(rejectionDisplayBody);
+    expect(implementPrompts[1]).toContain('**[Wake](https://wake.example.test)**');
     await world.triggerWatch('pr-review.requested', 'pr-2');
     await world.advance(work.workItemId);
     await world.acceptSignal(parent.workflowInstanceId, {
@@ -228,27 +223,59 @@ defineScenario(
   },
 );
 
-async function appendGitHubComment(world: TestWorld, body: string): Promise<void> {
-  const stream = integrationStream(BuiltInAdapterId.GitHub);
-  const events = await world.journal.readStream(stream);
-  await world.journal.append(stream, events.length, [
-    createEventDraft({
-      eventId: 'github:issue-comment:dark-factory-rejection',
-      eventType: GitHubEventType.CommentObserved,
-      occurredAt: world.clock.now().toISOString(),
-      correlationId: 'github:owner/repo#7',
-      causationId: 'github:issue-comment:dark-factory-rejection',
-      actor: { kind: 'integration', id: 'github' },
-      source: { kind: 'adapter', id: 'github' },
-      stream,
-      payload: {
-        reviewKind: 'issue',
-        externalKey: 'owner/repo#7',
-        body,
-        revision: world.clock.now().toISOString(),
-        actor: { id: 'wake-bot', kind: 'bot' },
-        raw: { id: 1 },
+async function appendConfirmedAgentRunComment(
+  world: TestWorld,
+  resourceId: ResourceId,
+  displayBody: string,
+): Promise<void> {
+  const intentId = 'agent-run-publish-rejection';
+  const intent = createEventDraft({
+    eventId: intentId,
+    eventType: DeliveryIntentEventType.AgentRunPublishRequested,
+    occurredAt: world.clock.now().toISOString(),
+    correlationId: 'github:owner/repo#7',
+    causationId: intentId,
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    stream: resourceStream(resourceId),
+    payload: {
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      resourceId,
+      report: {
+        runId: 'run-rejection',
+        startedAt: world.clock.now().toISOString(),
+        finishedAt: world.clock.now().toISOString(),
+        displayBody,
+        outcome: 'REJECTED',
+        metadata: {},
       },
-    }),
-  ]);
+    },
+  });
+  const stream = resourceStream(resourceId);
+  const [published] = await world.journal.append(
+    stream,
+    (await world.journal.readStream(stream)).length,
+    [intent],
+  );
+  if (published === undefined) throw new Error('Expected agent-run publication intent');
+  const confirmation = createEventDraft({
+    eventId: `${intentId}-confirmed`,
+    eventType: DeliveryEventType.Confirmed,
+    occurredAt: world.clock.now().toISOString(),
+    correlationId: 'github:owner/repo#7',
+    causationId: intentId,
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    stream: deliveryStream(eventId(intentId)),
+    payload: {
+      intentEventId: eventId(intentId),
+      intentGlobalPosition: published.globalPosition,
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      occurrenceOrdinal: 1,
+      externalId: 'github-comment-rejection',
+    },
+  });
+  await world.journal.append(confirmation.stream, 0, [confirmation]);
 }
