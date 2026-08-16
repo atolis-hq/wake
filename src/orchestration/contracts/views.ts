@@ -75,4 +75,9 @@ export interface WorkflowInstanceView {
   readonly causalRejectionIds: readonly string[];
   readonly childCompletionRecorded: boolean;
   readonly lastOutcome?: ActivityOutcome;
+  readonly executionFailure?: {
+    readonly activationId: ActivationId;
+    readonly runId: string;
+    readonly reason: string;
+  };
 }

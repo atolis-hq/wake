@@ -185,6 +185,26 @@ describe('operator retry policy', () => {
     expect(isOperatorRetryEligible(state)).toBe(true);
   });
 
+  it('retries a blocked terminal execution failure for the pending activation', () => {
+    const { definition, state } = blockedFailedFixture();
+    const { lastOutcome: _lastOutcome, ...withoutOutcome } = state;
+    const executionFailed = {
+      ...withoutOutcome,
+      blockReason: 'runner exited 1',
+      executionFailure: {
+        activationId: state.pendingActivation!.activationId,
+        runId: 'run-operator-retry',
+        reason: 'runner exited 1',
+      },
+    };
+
+    expect(isOperatorRetryEligible(executionFailed)).toBe(true);
+    const decision = requestOperatorRetry(definition, executionFailed, retryInput);
+    expect(decision.kind).toBe('append');
+    if (decision.kind !== 'append') return;
+    expect(decision.events[0]?.eventType).toBe(OrchestrationEventType.OperatorRetryRequested);
+  });
+
   it.each([
     [
       'active',
@@ -266,7 +286,7 @@ describe('operator retry policy', () => {
     expect(isOperatorRetryEligible(candidate)).toBe(false);
     expect(requestOperatorRetry(definition, candidate, retryInput)).toEqual({
       kind: 'ignored',
-      reason: 'workflow is not blocked for an unconfigured failed outcome',
+      reason: 'workflow is not blocked for a retryable failed stage',
     });
   });
 });

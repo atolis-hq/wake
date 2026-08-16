@@ -62,6 +62,7 @@ export type MutableWorkflowInstance = {
   causalRejectionIds: string[];
   childCompletionRecorded: boolean;
   lastOutcome?: WorkflowInstanceView['lastOutcome'];
+  executionFailure?: WorkflowInstanceView['executionFailure'];
 };
 
 type ActivityFact = FactsOf<
@@ -133,6 +134,7 @@ function applyActivityFact(state: MutableWorkflowInstance, event: ActivityFact):
       return;
     case OrchestrationEventType.ActivityExecutionFailed:
       state.acceptedOutcomes.push(event.payload.activationId);
+      state.executionFailure = event.payload;
       updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Completed);
       return;
     case OrchestrationEventType.ActivityWaiting:
@@ -334,6 +336,7 @@ export function immutableWorkflowInstanceView(
       ? {}
       : { pendingActivation: state.pendingActivation }),
     ...(state.lastOutcome === undefined ? {} : { lastOutcome: state.lastOutcome }),
+    ...(state.executionFailure === undefined ? {} : { executionFailure: state.executionFailure }),
     ...(state.waitingFor === undefined ? {} : { waitingFor: state.waitingFor }),
   };
 }
