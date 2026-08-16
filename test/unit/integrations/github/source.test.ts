@@ -1,3 +1,6 @@
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import {
   ProviderPermission,
@@ -10,7 +13,9 @@ import type {
   GitHubIssuePayload,
   GitHubReviewPayload,
 } from '../../../../src/integrations/github/contracts/payloads.js';
+import { watermarkCheckpoint } from '../../../../src/integrations/github/infrastructure/poll-watermark.js';
 import { createGitHubSource } from '../../../../src/integrations/github/infrastructure/source.js';
+import { FileCheckpointStore } from '../../../../src/persistence/index.js';
 
 it('defaults the provider-wide request concurrency limit to four', () => {
   const config = gitHubConfigSchema.parse({
@@ -284,8 +289,30 @@ it('uses an overlapping durable watermark only after a complete poll has persist
   await source.markPollPersisted?.();
 
   expect(saved).toEqual([
-    ['source:github:github:atolis-hq/wake-test', Date.parse('2026-08-16T19:23:00.000Z')],
+    ['source:github:github:atolis-hq%2Fwake-test', Date.parse('2026-08-16T19:23:00.000Z')],
   ]);
+});
+
+it('persists repository watermarks through the filesystem checkpoint store', async () => {
+  const checkpoints = new FileCheckpointStore(await mkdtemp(join(tmpdir(), 'wake-checkpoints-')));
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    fakeClient({ issues: [issue(5, 'A plain issue')], issueComments: {} }),
+    undefined,
+    undefined,
+    { checkpoints, now: () => Date.parse('2026-08-16T19:23:00.000Z') },
+  );
+
+  await source.poll(new AbortController().signal);
+  await source.markPollPersisted?.();
+
+  const checkpoint = watermarkCheckpoint(undefined, 'atolis-hq/wake-test');
+  expect(checkpoint).not.toContain('/');
+  expect(await checkpoints.load(checkpoint)).toBe(Date.parse('2026-08-16T19:23:00.000Z'));
 });
 
 function fakeClient(input: {

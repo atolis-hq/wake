@@ -15,7 +15,7 @@ export function mergeBatches(batches: readonly PollBatch[]): PollBatch {
 }
 
 export function watermarkCheckpoint(adapter: AdapterId | undefined, repository: string): string {
-  return `source:github:${adapter ?? 'github'}:${repository}`;
+  return `source:github:${adapter ?? 'github'}:${encodeURIComponent(repository)}`;
 }
 
 export async function loadWatermark(
