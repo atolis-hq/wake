@@ -1,68 +1,60 @@
-# Delivery Outcome Reactor — Component Specification
+# Delivery Outcome Reactor - Component Specification
 
 ## Type, purpose, and scope
 
-Policy/process. The Delivery Outcome Reactor replays `delivery.*` facts
-once each, checkpointed, and correlates a resolved delivery back to an
-Orchestration outcome for the workflow instance and activation the
-originating intent named.
+Policy/process. The Delivery Outcome Reactor processes new `delivery.*` facts
+from its checkpoint, then revisits durable resolved delivery facts without
+moving that checkpoint. Both paths correlate a resolved delivery back to an
+Orchestration outcome for the workflow instance and activation the originating
+intent named.
 
 ## Responsibilities and boundaries
 
-This component owns deciding, from a `delivery.*` fact alone, whether an
-Orchestration outcome should be reported, and reporting it exactly once per
-fact. It does not decide what the outcome does inside Orchestration, does
-not attempt delivery, and does not read the Delivery Intent Projection —
-it reads `delivery.*` facts directly from the journal.
+This component decides, from a `delivery.*` fact alone, whether an
+Orchestration outcome should be reported, and reports it exactly once per fact
+per reactor pass. It does not decide what the outcome does inside
+Orchestration, attempt delivery, or read the Delivery Intent Projection.
 
 ## Core policies, invariants, and behaviours
 
-- Events since the reactor's own checkpoint MUST be processed in the order
-  the journal returns them, and the checkpoint MUST advance to each event's
-  own journal position after it is handled, whether or not that event
-  carried a `delivery.*` fact — so a processed batch is never replayed.
-- A resolved fact MUST only report an outcome when the named workflow
-  instance's own pending activation is currently waiting, with signal kind
-  `delivery-result`, on that same intent's own event id; any other
-  case — the activation already resolved, waiting on an unrelated signal,
-  or not pending at all — MUST report no outcome, so a delivery resolving
-  after its activation moved on for an unrelated reason (e.g. a technical
-  failure with no configured route) never misattributes its result.
-- A `delivery.confirmed` fact, or a `delivery.reconciled` fact whose result
-  is `confirmed`, MUST report a `done` outcome, carrying the delivery
-  fact's own event id, to the workflow instance and activation the
-  originating intent named — subject to the awaiting check above.
-- A `delivery.failed` fact MUST report a `failed` outcome, carrying the
-  failure's own code as the reason, to the same workflow instance and
-  activation — subject to the same awaiting check.
-- `delivery.attempt-started`, `delivery.ambiguous`, and a
-  `delivery.reconciled` fact whose result is not `confirmed` MUST NOT
-  report any outcome; the workflow remains waiting.
-- The reported outcome's command id MUST be the delivery fact's own event
-  id, so replaying the reactor over the same fact reports the same outcome
-  idempotently from Orchestration's point of view.
+- Events since the reactor checkpoint are processed in journal order and the
+  checkpoint advances after every event, whether or not it is a `delivery.*`
+  fact.
+- After that tail pass, resolved delivery facts are revisited from journal
+  history without moving the checkpoint. This catches up a wait persisted
+  after its matching delivery fact was already checkpointed.
+- A fact present in both passes is considered once per reactor pass. Later
+  passes are safe because the delivery fact id remains the idempotent outcome
+  command id in Orchestration.
+- A resolved fact reports an outcome only when its named workflow instance's
+  current pending activation is waiting for `delivery-result` on that exact
+  intent event id. Other workflow instances, activations, waits, and intents
+  are no-ops.
+- `delivery.confirmed` and confirmed `delivery.reconciled` facts report
+  `done`, carrying the delivery fact id. `delivery.failed` reports `failed`,
+  carrying its code as the reason.
+- Attempt-started, ambiguous, escalated, and non-confirmed reconciliation
+  facts do not report outcomes; the workflow remains waiting.
+- If a delivery fact and its activity wait are appended while a pass is in
+  progress, the next pass observes their durable ordering and applies the
+  same exact-match reconciliation.
 
 ## Event catalogue
 
-| Event | Occurs when | Business meaning |
-| --- | --- | --- |
-| `delivery.confirmed` | Read since the last checkpoint | Reports a `done` outcome for the intent's activation. |
-| `delivery.reconciled` (result `confirmed`) | Read since the last checkpoint | Reports a `done` outcome for the intent's activation. |
-| `delivery.failed` | Read since the last checkpoint | Reports a `failed` outcome for the intent's activation. |
+| Event | Business meaning |
+| --- | --- |
+| `delivery.confirmed` | Reports `done` for the intent's waiting activation. |
+| `delivery.reconciled` (confirmed) | Reports `done` for the intent's waiting activation. |
+| `delivery.failed` | Reports `failed` for the intent's waiting activation. |
 
 ## Dependencies and system role
 
-- Kernel — checkpoint store and event journal; this component's only
-  dependency for reading delivery facts.
-- Delivery aggregate (this component depends on it) — the sole producer of
-  the `delivery.*` facts this component reacts to.
-- Orchestration (this component depends on it) — `acceptOutcome` reports
-  the resolved `done`/`failed` outcome; `get` reads the workflow instance's
-  own pending activation and waiting state to check it is still awaiting
-  this exact delivery before reporting.
+- Kernel supplies the checkpoint store and event journal.
+- Delivery produces the `delivery.*` facts.
+- Orchestration supplies the waiting-state read and idempotent
+  `acceptOutcome` command.
 
 ## Decisions, exclusions, and deferred capability
 
-- The reactor's checkpoint name is fixed (`reactor:delivery-outcomes`); only
-  one reactor instance is expected to run per Wake home today, not a
-  configurable identity per adapter or per workflow.
+- The checkpoint name is fixed (`reactor:delivery-outcomes`); one reactor
+  instance is expected per Wake home today.

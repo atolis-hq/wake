@@ -21,55 +21,46 @@ export class DeliveryOutcomeReactor {
   async runOnce(): Promise<number> {
     const consumer = 'reactor:delivery-outcomes';
     const events = await this.journal.readAll(await this.checkpoints.load(consumer));
+    const resolvedDeliveryEventIds = new Set<string>();
     for (const event of events) {
-      const delivery = selectDeliveryEvent(event);
-      if (delivery !== null) {
-        const command = {
-          workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),
-          activationId: activationId(delivery.payload.activationId),
-        };
-        if (await this.isAwaitingThisDelivery(command, delivery.payload.intentEventId)) {
-          if (
-            delivery.eventType === DeliveryEventType.Confirmed ||
-            (delivery.eventType === DeliveryEventType.Reconciled &&
-              delivery.payload.result === DeliveryResultKind.Confirmed)
-          )
-            await this.orchestration.acceptOutcome(
-              {
-                ...command,
-                outcome: {
-                  kind: ActivityOutcomeKind.Done,
-                  data: { deliveryEventId: delivery.eventId },
-                },
-              },
-              {
-                commandId: delivery.eventId,
-                correlationId: event.correlationId,
-                actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
-                occurredAt: event.recordedAt,
-              },
-            );
-          if (delivery.eventType === DeliveryEventType.Failed)
-            await this.orchestration.acceptOutcome(
-              {
-                ...command,
-                outcome: {
-                  kind: ActivityOutcomeKind.Failed,
-                  data: { reason: delivery.payload.code },
-                },
-              },
-              {
-                commandId: delivery.eventId,
-                correlationId: event.correlationId,
-                actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
-                occurredAt: event.recordedAt,
-              },
-            );
-        }
-      }
+      await this.reconcile(event, resolvedDeliveryEventIds);
       await this.checkpoints.save(consumer, event.globalPosition);
     }
+    for (const event of await this.journal.readAll(0))
+      await this.reconcile(event, resolvedDeliveryEventIds);
     return events.length;
+  }
+
+  private async reconcile(
+    event: Awaited<ReturnType<EventJournal['readAll']>>[number],
+    seen: Set<string>,
+  ) {
+    const delivery = selectDeliveryEvent(event);
+    if (delivery === null || seen.has(delivery.eventId)) return;
+    const outcome =
+      delivery.eventType === DeliveryEventType.Confirmed ||
+      (delivery.eventType === DeliveryEventType.Reconciled &&
+        delivery.payload.result === DeliveryResultKind.Confirmed)
+        ? { kind: ActivityOutcomeKind.Done, data: { deliveryEventId: delivery.eventId } }
+        : delivery.eventType === DeliveryEventType.Failed
+          ? { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.payload.code } }
+          : null;
+    if (outcome === null) return;
+    const command = {
+      workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),
+      activationId: activationId(delivery.payload.activationId),
+    };
+    if (!(await this.isAwaitingThisDelivery(command, delivery.payload.intentEventId))) return;
+    seen.add(delivery.eventId);
+    await this.orchestration.acceptOutcome(
+      { ...command, outcome },
+      {
+        commandId: delivery.eventId,
+        correlationId: event.correlationId,
+        actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
+        occurredAt: event.recordedAt,
+      },
+    );
   }
 
   /**
