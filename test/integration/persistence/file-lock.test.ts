@@ -2,12 +2,14 @@ import { spawn } from 'node:child_process';
 import { access, mkdir, mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { acquireFileLock } from '../../../src/persistence/index.js';
 
 const roots: string[] = [];
 
 afterEach(async () => {
+  vi.doUnmock('node:fs/promises');
+  vi.resetModules();
   await Promise.all(
     roots
       .splice(0)
@@ -177,6 +179,41 @@ it('does not expose last-owner directory cleanup as an acquisition failure', asy
     expect(contender.acquired).toBeTypeOf('boolean');
     await contender.release();
   }
+});
+
+it('retries strict acquisition when last-owner cleanup removes its owner directory', async () => {
+  const path = await lockPath('strict-cleanup-acquisition-race.lock');
+  const filesystem = await import('node:fs/promises');
+  let removedOwnerDirectory = false;
+  vi.resetModules();
+  vi.doMock('node:fs/promises', async (importOriginal) => {
+    const original = await importOriginal<typeof filesystem>();
+    return {
+      ...original,
+      mkdir: async (
+        directory: Parameters<typeof original.mkdir>[0],
+        options?: Parameters<typeof original.mkdir>[1],
+      ) => {
+        if (!removedOwnerDirectory && String(directory) === `${path}.owners`) {
+          removedOwnerDirectory = true;
+          const error = Object.assign(new Error('owner directory disappeared during cleanup'), {
+            code: 'ENOENT',
+          });
+          throw error;
+        }
+        return original.mkdir(directory, options);
+      },
+    };
+  });
+  const { acquireFileLock: acquireAfterCleanup } =
+    await import('../../../src/persistence/index.js');
+
+  const lock = await acquireAfterCleanup(path, { staleRequiresDeadProcess: true });
+
+  expect(removedOwnerDirectory).toBe(true);
+  expect(lock.acquired).toBe(true);
+  await lock.release();
+  await expect(filesystem.access(`${path}.owners`)).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 it(

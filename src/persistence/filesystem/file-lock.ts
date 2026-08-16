@@ -46,6 +46,19 @@ async function acquireStrictFileLock(
   metadata: FileLockMetadata,
   options: FileLockOptions,
 ) {
+  try {
+    return await acquireStrictFileLockOnce(path, metadata, options);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    return acquireStrictFileLockOnce(path, metadata, options);
+  }
+}
+
+async function acquireStrictFileLockOnce(
+  path: string,
+  metadata: FileLockMetadata,
+  options: FileLockOptions,
+) {
   const ownersPath = `${path}.owners`;
   await mkdir(ownersPath, { recursive: true });
   const legacy = await inspectLegacyOwner(path, ownersPath, options);
