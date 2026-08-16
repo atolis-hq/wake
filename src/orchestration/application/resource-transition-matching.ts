@@ -6,9 +6,9 @@ import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
 import { acceptSignal as decideSignal } from '../domain/interpreter.js';
+import { appendWithIntentRecovery } from './durable-append.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { StartWorkflow } from './start-workflow.js';
-import { appendWithIntentRecovery } from './durable-append.js';
 import { resolveTriggerWorkflowInstanceId } from './trigger-workflow-instance.js';
 
 type PersistedEvent = Parameters<typeof selectActivityEvent>[0];
@@ -98,7 +98,8 @@ export async function acceptResourceTransition(
       load: () => repository.load(id),
       alreadyApplied: (reloaded) =>
         reloaded.view !== null &&
-        (reloaded.view.acceptedSignalIds.includes(evidenceId) || reloaded.view.waitingFor === undefined),
+        (reloaded.view.acceptedSignalIds.includes(evidenceId) ||
+          reloaded.view.waitingFor === undefined),
     });
     if (recovered !== undefined) return recovered.view;
   }

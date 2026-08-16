@@ -17,6 +17,7 @@ import {
   requestSupplementalActivity as decideSupplementalActivity,
 } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
+import { appendWithIntentRecovery } from './durable-append.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import {
   acceptResourceTransition,
@@ -24,7 +25,6 @@ import {
 } from './resource-transition-matching.js';
 import type { StartWorkflow } from './start-workflow.js';
 import { matchWatches } from './watch-matching.js';
-import { appendWithIntentRecovery } from './durable-append.js';
 
 export class OperatorRetryIneligibleError extends Error {
   constructor(detail: string) {
@@ -175,7 +175,8 @@ export class AdvanceWorkflow {
         await this.repository.append(id, loaded.sequence, decision.events);
       },
       load: () => this.repository.loadRequired(id),
-      alreadyApplied: (reloaded) => reloaded.view.operatorRetryCommandIds.includes(context.commandId),
+      alreadyApplied: (reloaded) =>
+        reloaded.view.operatorRetryCommandIds.includes(context.commandId),
     });
     if (recovered !== undefined) return recovered.view;
     return (await this.repository.loadRequired(id)).view;
@@ -202,7 +203,8 @@ export class AdvanceWorkflow {
         await this.repository.append(id, loaded.sequence, decision.events);
       },
       load: () => this.repository.loadRequired(id),
-      alreadyApplied: (reloaded) => reloaded.view.operatorRetryCommandIds.includes(context.commandId),
+      alreadyApplied: (reloaded) =>
+        reloaded.view.operatorRetryCommandIds.includes(context.commandId),
     });
     if (recovered !== undefined) return recovered.view;
     return (await this.repository.loadRequired(id)).view;

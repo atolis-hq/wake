@@ -11,11 +11,11 @@ import type {
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
-import { TransitionTargetKind } from '../contracts/vocabulary.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   ActivityActivationStatus,
   ApprovalAuthorityKind,
+  TransitionTargetKind,
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import type {

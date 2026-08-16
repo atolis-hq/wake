@@ -1,8 +1,8 @@
 import { selectRunExecutionEvent, type RunRepository } from '../../execution/index.js';
+import type { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import { isWorkflowInstanceStream } from '../contracts/streams.js';
-import type { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 
 type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
 

@@ -98,8 +98,11 @@ export class WorkflowDefinitionRegistry {
       alreadyClaimed: (events) =>
         events.some((event) => {
           const owned = selectOrchestrationEvent(event);
-          return owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
-            owned.payload.workflowName === name && owned.payload.fingerprint === fingerprint;
+          return (
+            owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
+            owned.payload.workflowName === name &&
+            owned.payload.fingerprint === fingerprint
+          );
         }),
       append: async (sequence) => {
         await this.journal.append(stream, sequence, [draft]);

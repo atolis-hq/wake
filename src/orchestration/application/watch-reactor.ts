@@ -7,10 +7,7 @@ import {
   type EventJournal,
 } from '../../kernel/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
-import {
-  type ChildWorkflowRequest,
-  type OrchestrationEvent,
-} from '../contracts/events.js';
+import { type ChildWorkflowRequest, type OrchestrationEvent } from '../contracts/events.js';
 import {
   workflowInstanceId,
   workflowName,
