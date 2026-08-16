@@ -573,6 +573,45 @@ describe('advanceOnce', () => {
     expect(attempts).toBe(1);
   });
 
+  it('does not start an activation rejected by the dispatch-boundary watch check', async () => {
+    const workflow = {
+      workflowInstanceId: 'stale-watch-child',
+      workItemId: 'work-stale-watch-child',
+      orchestrationGroupId: 'group-stale-watch-child',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const activation = { activationId: 'activation-stale-watch-child' } as ActivityActivationView;
+    let started = false;
+    let attempted = false;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        validateActivationDispatch: async () => false,
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => {
+          started = true;
+          return workflow;
+        },
+      },
+      {
+        attempt: async () => {
+          attempted = true;
+          return { status: 'started', runId: 'run-stale-watch-child' } as never;
+        },
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      { ids: { next: () => 'command-00000000000000000000000001' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
+    expect(started).toBe(false);
+    expect(attempted).toBe(false);
+  });
+
   it('performs one execution attempt and recovers its completed activation once', async () => {
     const test = await world();
     const work = await test.createWork({ objective: 'ship' });

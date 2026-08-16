@@ -1,7 +1,11 @@
 import { expect } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
-import { signalName, workflowName } from '../../../src/orchestration/contracts/identifiers.js';
+import {
+  signalName,
+  watchId,
+  workflowName,
+} from '../../../src/orchestration/contracts/identifiers.js';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 
@@ -76,6 +80,7 @@ defineScenario(
     await world.advanceUntilSettled(work.workItemId);
     await world.waitForSignal(parent.workflowInstanceId, {
       signalKind: signalName('orchestration.child-completed'),
+      from: [{ kind: 'watch', watch: watchId('pr-review') }],
     });
     const before = await world.viewWorkflow(parent.workflowInstanceId);
     await world.triggerWatch('review.requested', 'review-1');

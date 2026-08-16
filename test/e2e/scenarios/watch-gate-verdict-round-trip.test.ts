@@ -16,7 +16,13 @@ import {
   integrationStream,
 } from '../../../src/integrations/github/index.js';
 import { correlationId, createEventDraft } from '../../../src/kernel/index.js';
-import { workflowName } from '../../../src/orchestration/index.js';
+import {
+  OrchestrationEventType,
+  WatchGateVerdictSignal,
+  signalName,
+  workflowInstanceStream,
+  workflowName,
+} from '../../../src/orchestration/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
 import { TestWorld } from '../support/world.js';
@@ -94,6 +100,110 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
 
   expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
     'completed',
+  );
+});
+
+it('supersedes a queued watch child when human approval leaves its gate', async () => {
+  const fixture = await waitingWatchGate();
+
+  await fixture.world.acceptSignal(fixture.parent.workflowInstanceId, {
+    kind: WatchGateVerdictSignal,
+    actorId: 'owner',
+    actorDecision: { authorized: true, evidenceId: 'github-comment-1' },
+    providerEventId: 'github-comment-1',
+    authority: { kind: 'human' },
+  });
+
+  expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
+    'completed',
+  );
+  expect((await fixture.world.viewWorkflow(fixture.child.workflowInstanceId))?.status).toBe(
+    'superseded',
+  );
+});
+
+it('cancels an active watch-child run when human approval leaves its gate', async () => {
+  const fixture = await waitingWatchGate();
+  const activeRun = runId('run-active-watch-child');
+  await appendStartedRun(
+    fixture.world,
+    activeRun,
+    fixture.child.workflowInstanceId,
+    fixture.child.pendingActivation!.activationId,
+  );
+
+  await fixture.world.acceptSignal(fixture.parent.workflowInstanceId, {
+    kind: WatchGateVerdictSignal,
+    actorId: 'owner',
+    actorDecision: { authorized: true, evidenceId: 'github-comment-2' },
+    providerEventId: 'github-comment-2',
+    authority: { kind: 'human' },
+  });
+
+  expect((await fixture.world.viewWorkflow(fixture.child.workflowInstanceId))?.status).toBe(
+    'superseded',
+  );
+  expect((await fixture.world.viewRuns()).find((run) => run.runId === activeRun)?.status).toBe(
+    'cancelled',
+  );
+});
+
+it('supersedes a watch child when another valid transition replaces its gate', async () => {
+  const fixture = await waitingWatchGate();
+
+  await fixture.world.waitForSignal(fixture.parent.workflowInstanceId, {
+    signalKind: signalName('operator-recheck'),
+  });
+
+  expect((await fixture.world.viewWorkflow(fixture.child.workflowInstanceId))?.status).toBe(
+    'superseded',
+  );
+});
+
+it('supersedes a recovered child whose parent has already left its gate before dispatch', async () => {
+  const fixture = await waitingWatchGate();
+  const stream = workflowInstanceStream(fixture.parent.workflowInstanceId);
+  const events = await fixture.world.journal.readStream(stream);
+  await fixture.world.journal.append(stream, events.length, [
+    createEventDraft({
+      eventId: 'recovered-parent-signal',
+      eventType: OrchestrationEventType.SignalAccepted,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'watch-gate-verdict',
+      causationId: 'recovered-parent-signal',
+      actor: { kind: 'operator', id: 'owner' },
+      source: { kind: 'internal', id: 'recovery' },
+      stream,
+      payload: {
+        kind: WatchGateVerdictSignal,
+        actorId: 'owner',
+        actorDecision: { authorized: true, evidenceId: 'github-comment-3' },
+        providerEventId: 'github-comment-3',
+        authority: { kind: 'human' },
+      },
+    }),
+  ]);
+
+  expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
+    'active',
+  );
+  expect((await fixture.world.viewWorkflow(fixture.child.workflowInstanceId))?.watchId).toBe(
+    'pr-review',
+  );
+  expect(typeof fixture.world.orchestration.validateActivationDispatch).toBe('function');
+  expect(
+    await fixture.world.orchestration.validateActivationDispatch(fixture.child.workflowInstanceId, {
+      commandId: 'validate-recovered-child',
+      correlationId: correlationId('watch-gate-verdict'),
+      occurredAt: fixture.world.clock.now().toISOString(),
+      actor: { kind: 'system', id: 'test' },
+    }),
+  ).toBe(false);
+  expect((await fixture.world.viewWorkflow(fixture.child.workflowInstanceId))?.status).toBe(
+    'superseded',
+  );
+  expect((await fixture.world.viewWorkflow(fixture.child.workflowInstanceId))?.status).toBe(
+    'superseded',
   );
 });
 
@@ -187,6 +297,36 @@ async function appendTerminalAgentRun(
       source: { kind: 'internal', id: 'test' },
       stream,
       payload: { outcome: { kind: 'done' }, finishedAt: now },
+    }),
+  ] as never);
+}
+
+async function appendStartedRun(
+  world: TestWorld,
+  id: ReturnType<typeof runId>,
+  workflow: string,
+  activationId: string,
+) {
+  const stream = runStream(id);
+  const now = world.clock.now().toISOString();
+  await world.journal.append(stream, 0, [
+    createEventDraft({
+      eventId: `execution:${id}:started`,
+      eventType: ExecutionEventType.RunStarted,
+      occurredAt: now,
+      correlationId: 'watch-gate-verdict',
+      causationId: 'watch-gate-verdict',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: {
+        activationId,
+        activity: 'agent',
+        workflowInstanceId: workflow,
+        orchestrationGroupId: workflow,
+        attempt: 1,
+        startedAt: now,
+      },
     }),
   ] as never);
 }

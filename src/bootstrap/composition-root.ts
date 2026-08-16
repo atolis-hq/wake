@@ -12,6 +12,7 @@ import {
   type ScheduleCheckpointStore,
 } from '../control-plane/index.js';
 import {
+  ExecutionCancellationReason,
   ExternalExecutionState,
   GitWorkspaceProvider,
   RecoveryService,
@@ -189,6 +190,10 @@ export async function createCompositionRoot(
         }
       : {}),
     workspaces,
+  });
+  orchestration.setWatchChildCancellation({
+    cancelSupersededWatchChildren: (workflowInstanceIds) =>
+      execution.cancelActive(workflowInstanceIds, ExecutionCancellationReason.WorkflowSuperseded),
   });
   const recovery = new RecoveryService(
     journal,

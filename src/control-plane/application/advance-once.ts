@@ -15,6 +15,7 @@ import { WorkStatus } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import { DispatchPolicy } from '../domain/dispatch-policy.js';
+import { findUnresolvedTerminal, isExecutionFailureTerminal } from './execution-reconciliation.js';
 
 interface OrchestrationPort {
   reconcileChildCompletions(context: CommandContext): Promise<void>;
@@ -26,6 +27,10 @@ interface OrchestrationPort {
   >;
   listWaiting(): Promise<readonly (WorkflowInstanceView | null)[]>;
   listAll?(): Promise<readonly WorkflowInstanceView[]>;
+  validateActivationDispatch?(
+    workflowInstanceId: string,
+    context: CommandContext,
+  ): Promise<boolean>;
   acceptOutcome(
     command: {
       workflowInstanceId: string;
@@ -229,6 +234,13 @@ export function createAdvanceOnce(
     }
     // Recheck at the dispatch boundary so maintenance cannot race a selected activation.
     if (await isDispatchPaused()) return { kind: 'paused' };
+    if (
+      (await orchestration.validateActivationDispatch?.(
+        selected.workflow.workflowInstanceId,
+        context(selected.activation.activationId),
+      )) === false
+    )
+      return { kind: 'no-work' };
     await orchestration.markActivationStarted(
       selected.workflow.workflowInstanceId,
       selected.activation.activationId,
@@ -278,26 +290,4 @@ export function createAdvanceOnce(
           reason: run.failure?.message ?? 'execution failed',
         };
   };
-}
-
-async function findUnresolvedTerminal(
-  pending: readonly { workflow: WorkflowInstanceView; activation: ActivityActivationView }[],
-  execution: ExecutionPort,
-): Promise<{ item: (typeof pending)[number]; run: RunView } | undefined> {
-  for (const item of pending) {
-    const run = (await execution.list(item.activation.activationId)).find(
-      (candidate) =>
-        (candidate.status === RunStatus.Succeeded && candidate.outcome !== undefined) ||
-        isExecutionFailureTerminal(candidate.status),
-    );
-    if (run !== undefined && !item.workflow.acceptedOutcomes.includes(item.activation.activationId))
-      return { item, run };
-  }
-  return undefined;
-}
-
-function isExecutionFailureTerminal(status: RunStatus): boolean {
-  return (
-    status === RunStatus.Failed || status === RunStatus.Cancelled || status === RunStatus.Ambiguous
-  );
 }
