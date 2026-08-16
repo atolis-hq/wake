@@ -6,6 +6,8 @@ export interface FileLockMetadata {
   readonly pid: number;
   readonly acquiredAt: string;
   readonly lockId: string;
+  /** Linux process start-ticks when available, preventing PID/TID reuse from blocking recovery. */
+  readonly processIdentity?: string;
 }
 
 export interface FileLockOptions {
@@ -14,6 +16,8 @@ export interface FileLockOptions {
   /** A stale owner may be ignored only when this probe proves its process dead. */
   readonly staleRequiresDeadProcess?: boolean;
   readonly isProcessAlive?: (pid: number) => boolean;
+  readonly processIdentity?: (pid: number) => Promise<string | null>;
+  readonly processStartedAt?: (pid: number) => Promise<Date | null>;
 }
 
 interface UnavailableFileLock {
@@ -31,10 +35,12 @@ const compatibilityAcquiredAt = '9999-12-31T23:59:59.999Z';
 
 export async function acquireFileLock(path: string, options?: FileLockOptions) {
   await mkdir(dirname(path), { recursive: true });
+  const identity = await processIdentity(process.pid, options);
   const metadata: FileLockMetadata = {
     pid: process.pid,
     acquiredAt: (options?.now ?? new Date()).toISOString(),
     lockId: randomUUID(),
+    ...(identity === null ? {} : { processIdentity: identity }),
   };
   return options?.staleRequiresDeadProcess
     ? acquireStrictFileLock(path, metadata, options)
@@ -266,12 +272,20 @@ async function ownerBlocksAcquisition(
   return ownerMetadataBlocks(owner, options);
 }
 
-function ownerMetadataBlocks(
+async function ownerMetadataBlocks(
   owner: FileLockMetadata,
   options: FileLockOptions | undefined,
-): boolean {
+): Promise<boolean> {
   if (options?.staleAfterMs === undefined || !isStale(owner, options)) return true;
-  return Boolean(options.staleRequiresDeadProcess && ownerMayBeAlive(options, owner.pid));
+  if (!options.staleRequiresDeadProcess || !ownerMayBeAlive(options, owner.pid)) return false;
+  const identity = await processIdentity(owner.pid, options);
+  if (owner.processIdentity !== undefined)
+    return identity === null || identity === owner.processIdentity;
+  const startedAt = await processStartedAt(owner.pid, options);
+  return (
+    startedAt === null ||
+    startedAt.getTime() <= Date.parse(owner.acquiredAt) + processStartToleranceMilliseconds
+  );
 }
 
 function ownerRecordName(metadata: FileLockMetadata): string {
@@ -303,6 +317,55 @@ function ownerMayBeAlive(options: FileLockOptions, pid: number): boolean {
   } catch {
     return true;
   }
+}
+
+const processStartToleranceMilliseconds = 1_000;
+
+async function processIdentity(
+  pid: number,
+  options: FileLockOptions | undefined,
+): Promise<string | null> {
+  if (options?.processIdentity !== undefined) return options.processIdentity(pid);
+  if (process.platform !== 'linux') return null;
+  try {
+    return `linux-start-ticks:${await linuxProcessStartTicks(pid)}`;
+  } catch {
+    return null;
+  }
+}
+
+async function processStartedAt(pid: number, options: FileLockOptions): Promise<Date | null> {
+  if (options.processStartedAt !== undefined) return options.processStartedAt(pid);
+  if (process.platform !== 'linux') return null;
+  try {
+    const [targetTicks, selfTicks, procStat] = await Promise.all([
+      linuxProcessStartTicks(pid),
+      linuxProcessStartTicks(process.pid),
+      readFile('/proc/stat', 'utf8'),
+    ]);
+    const bootSeconds = /^btime (\d+)$/m.exec(procStat)?.[1];
+    if (bootSeconds === undefined) return null;
+    const currentProcessStartedAt = Date.now() - process.uptime() * 1_000;
+    const elapsedSinceBootMilliseconds = currentProcessStartedAt - Number(bootSeconds) * 1_000;
+    if (elapsedSinceBootMilliseconds <= 0) return null;
+    const ticksPerMillisecond = selfTicks / elapsedSinceBootMilliseconds;
+    if (!Number.isFinite(ticksPerMillisecond) || ticksPerMillisecond <= 0) return null;
+    return new Date(Number(bootSeconds) * 1_000 + targetTicks / ticksPerMillisecond);
+  } catch {
+    return null;
+  }
+}
+
+async function linuxProcessStartTicks(pid: number): Promise<number> {
+  const raw = await readFile(`/proc/${pid}/stat`, 'utf8');
+  const fields = raw
+    .slice(raw.lastIndexOf(')') + 2)
+    .trim()
+    .split(/\s+/);
+  const startTicks = Number(fields[19]);
+  if (!Number.isSafeInteger(startTicks) || startTicks < 0)
+    throw new Error('Invalid process start ticks');
+  return startTicks;
 }
 
 export async function withFileLock<Value>(

@@ -80,6 +80,87 @@ it('reclaims a stale attempt lock only when its injected owner probe reports dea
   }
 });
 
+it('reclaims a stale legacy lock when the reused pid started after the lock', async () => {
+  const path = await lockPath('pid-reuse-legacy.lock');
+  const first = await acquireFileLock(
+    path,
+    processIdentityOptions({
+      now: new Date(0),
+      staleRequiresDeadProcess: true,
+      processIdentity: async () => null,
+    }),
+  );
+  const second = await acquireFileLock(
+    path,
+    processIdentityOptions({
+      now: new Date(61_000),
+      staleAfterMs: 60_000,
+      staleRequiresDeadProcess: true,
+      isProcessAlive: () => true,
+      processIdentity: async () => null,
+      processStartedAt: async () => new Date(61_000),
+    }),
+  );
+
+  expect(second.acquired).toBe(true);
+  await first.release();
+  await second.release();
+});
+
+it('reclaims a stale lock when a live pid has a different process identity', async () => {
+  const path = await lockPath('pid-reuse-identity.lock');
+  const first = await acquireFileLock(
+    path,
+    processIdentityOptions({
+      now: new Date(0),
+      staleRequiresDeadProcess: true,
+      processIdentity: async () => 'process-start:one',
+    }),
+  );
+  const second = await acquireFileLock(
+    path,
+    processIdentityOptions({
+      now: new Date(61_000),
+      staleAfterMs: 60_000,
+      staleRequiresDeadProcess: true,
+      isProcessAlive: () => true,
+      processIdentity: async () => 'process-start:two',
+    }),
+  );
+
+  if (!first.acquired) throw new Error('first lock was not acquired');
+  expect(first.metadata).toMatchObject({ processIdentity: 'process-start:one' });
+  expect(second.acquired).toBe(true);
+  await first.release();
+  await second.release();
+});
+
+it('fails closed when a live stale owner has no usable process identity', async () => {
+  const path = await lockPath('pid-reuse-indeterminate.lock');
+  const first = await acquireFileLock(
+    path,
+    processIdentityOptions({
+      now: new Date(0),
+      staleRequiresDeadProcess: true,
+      processIdentity: async () => null,
+    }),
+  );
+  const second = await acquireFileLock(
+    path,
+    processIdentityOptions({
+      now: new Date(61_000),
+      staleAfterMs: 60_000,
+      staleRequiresDeadProcess: true,
+      isProcessAlive: () => true,
+      processIdentity: async () => null,
+      processStartedAt: async () => null,
+    }),
+  );
+
+  expect(second.acquired).toBe(false);
+  await first.release();
+});
+
 it('removes the compatibility sentinel after recovering a crashed strict owner', async () => {
   const path = await lockPath('crashed-strict-owner.lock');
   const crashed = await acquireFileLock(path, {
@@ -385,6 +466,15 @@ async function lockPath(name: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'wake-lock-'));
   roots.push(root);
   return join(root, 'locks', name);
+}
+
+function processIdentityOptions(
+  options: Parameters<typeof acquireFileLock>[1] & {
+    readonly processIdentity?: (pid: number) => Promise<string | null>;
+    readonly processStartedAt?: (pid: number) => Promise<Date | null>;
+  },
+) {
+  return options;
 }
 
 function waitForChildExit(child: ReturnType<typeof spawn>): Promise<void> {
