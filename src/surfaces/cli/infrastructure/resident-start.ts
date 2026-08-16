@@ -1,8 +1,19 @@
-import { DockerProcessError, type DockerCli } from './docker-cli.js';
+import {
+  DockerProcessError,
+  type DockerInvocationResult,
+  type DockerInvokeOptions,
+} from './docker-invocation.js';
+
+interface ResidentStartDocker {
+  invoke(
+    arguments_: readonly string[],
+    options: Pick<DockerInvokeOptions, 'suppressOutput'>,
+  ): Promise<DockerInvocationResult>;
+}
 
 /** Verifies the replacement sandbox has started its resident Wake process. */
 export async function verifyResidentStart(
-  docker: DockerCli,
+  docker: ResidentStartDocker,
   containerName: string,
   expectedCmdlineFragment: string,
   options?: { readonly attempts?: number; readonly intervalMs?: number },

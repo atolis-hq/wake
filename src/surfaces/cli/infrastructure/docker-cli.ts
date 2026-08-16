@@ -1,19 +1,18 @@
 import { dirname, normalize } from 'node:path/posix';
+import {
+  DockerProcessError,
+  type DockerInvocationResult,
+  type DockerInvokeOptions,
+} from './docker-invocation.js';
 import { scrubProcessLog, type ProcessLogSink } from './process-log.js';
 
+export {
+  DockerProcessError,
+  type DockerInvocationResult,
+  type DockerInvokeOptions,
+} from './docker-invocation.js';
+
 export { verifyResidentStart } from './resident-start.js';
-
-/** Surface-local Docker process boundary; composition supplies the real invoker. */
-export interface DockerInvokeOptions {
-  readonly interactive?: boolean;
-  /** Captures output for the caller without forwarding chunks to the normal process log. */
-  readonly suppressOutput?: boolean;
-}
-
-export interface DockerInvocationResult {
-  readonly stdout: string;
-  readonly stderr: string;
-}
 
 export interface DockerCli {
   invoke(
@@ -83,18 +82,6 @@ export interface DockerProcess {
     onChunk: (chunk: DockerProcessChunk) => void | Promise<void>,
     options?: DockerInvokeOptions,
   ): Promise<DockerInvocationResult | void>;
-}
-
-/** A failed Docker invocation whose streamed output remains available for a concise caller diagnostic. */
-export class DockerProcessError extends Error {
-  constructor(
-    message: string,
-    readonly result: DockerInvocationResult,
-    cause?: unknown,
-  ) {
-    super(message, cause === undefined ? undefined : { cause });
-    this.name = 'DockerProcessError';
-  }
 }
 
 /** Streams Docker output through the target-owned scrubbed log boundary as it arrives. */
