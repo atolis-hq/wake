@@ -123,4 +123,41 @@ describe('DeliveryService', () => {
       DeliveryEventType.Confirmed,
     ]);
   });
+
+  it('durably fails an intent whose resource provider is unavailable without recording an attempt', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const intent: DeliveryIntentView = {
+      intentEventId: eventId('intent-unavailable-provider'),
+      globalPosition: 1,
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      kind: DeliveryIntentKind.StatusPublish,
+      resourceId: resId('resource-1'),
+      payload: { kind: DeliveryIntentKind.StatusPublish, body: 'status' },
+      state: DeliveryState.Pending,
+      attempts: 0,
+      occurrenceOrdinal: 0,
+    };
+    const service = new DeliveryService({
+      journal,
+      intents: async () => [intent],
+      resource: async () => ({ resourceId: intent.resourceId, adapter: 'github' }),
+      adapter: () => null,
+      now: () => '2026-08-16T20:00:00.000Z',
+    });
+
+    await service.deliverNext(new AbortController().signal);
+
+    const events = await journal.readAll(0);
+    expect(events).toHaveLength(1);
+    expect(decodeDeliveryEvent(events[0]!)).toMatchObject({
+      eventType: DeliveryEventType.Failed,
+      payload: {
+        intentEventId: 'intent-unavailable-provider',
+        occurrenceOrdinal: 1,
+        code: 'provider-unavailable',
+        message: 'Delivery provider github is unavailable',
+      },
+    });
+  });
 });
