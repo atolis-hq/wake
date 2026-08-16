@@ -64,7 +64,11 @@
     "smoke:codex": "tsx src/main.ts smoke codex",
     "smoke:cursor": "tsx src/main.ts smoke cursor",
     "verify": "npm run check:catalogue && npm run check:scenarios && npm run check:specs:report && npm run lint:architecture && npm run lint && npm run format:check && npm run build && npm run test:unit",
-    "verify:ci": "npm run verify && npm run test:architecture && npm run test:integration && npm run test:e2e && npm run knip && npm run test:web"
+    "verify:ci": "npm run verify && npm run test:architecture && npm run test:integration && npm run test:e2e && npm run knip && npm run test:web",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs,json,yaml,yml,css,html}": "prettier --write"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.0",
@@ -84,7 +88,9 @@
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.7.0",
+    "husky": "^9.1.7",
     "knip": "^5.88.1",
+    "lint-staged": "^17.3.0",
     "prettier": "^3.9.6",
     "prettier-plugin-organize-imports": "^4.3.0",
     "tsx": "^4.23.1",
