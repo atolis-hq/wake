@@ -344,6 +344,74 @@ it('lets an explicitly human-authorized signal resolve a retained blocked wait',
   ]);
 });
 
+it('blocks distinct workflow instances under one command without reusing an event id', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const work = createWorkService(journal);
+  const baseContext = {
+    correlationId: correlationId('shared-command'),
+    occurredAt: '2026-07-30T12:00:00.000Z',
+    actor: { kind: 'system' as const, id: 'control-plane' },
+  };
+  const activities = new ActivityRegistry();
+  activities.register({
+    name: activityName('blockable'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: 'done' };
+      },
+    },
+  });
+  const definition = compileWorkflow(
+    'default',
+    { stages: { run: { activity: 'blockable', with: {}, on: { done: { then: 'done' } } } } },
+    activities,
+  );
+  const service = createOrchestrationService(journal, work, { default: definition });
+  const workflows = await Promise.all(
+    ['1', '2'].map(async (value) => {
+      const id = workId(`block-${value}`);
+      await work.create(
+        { workItemId: id, objective: `work ${value}` },
+        {
+          ...baseContext,
+          commandId: `create-${value}`,
+        },
+      );
+      return service.start(
+        {
+          workflowInstanceId: workflowInstanceId(`block-${value}`),
+          workItemId: id,
+          workflowName: workflowName('default'),
+          orchestrationGroupId: orchestrationGroupId(`block-${value}`),
+        },
+        { ...baseContext, commandId: `start-${value}` },
+      );
+    }),
+  );
+
+  await service.block(workflows[0]!.workflowInstanceId, 'work closed', {
+    ...baseContext,
+    commandId: 'conclude-work',
+  });
+  await service.block(workflows[1]!.workflowInstanceId, 'work closed', {
+    ...baseContext,
+    commandId: 'conclude-work',
+  });
+
+  const blocked = (await journal.readAll(0)).filter(
+    (event) => event.eventType === OrchestrationEventType.InstanceBlocked,
+  );
+  expect(blocked.map((event) => event.eventId)).toEqual([
+    'conclude-work:block-1:orchestration.instance-blocked',
+    'conclude-work:block-2:orchestration.instance-blocked',
+  ]);
+});
+
 it('does not let a watch signal resolve a blocked mixed-authority wait', async () => {
   const { service, baseContext } = await waitingService({ watchGate: true, humanAuthority: true });
   await service.block(workflowInstanceId('workflow-1'), 'group-budget-exhausted', {

@@ -98,7 +98,7 @@ export class AdvanceWorkflow {
     const loaded = await this.repository.load(id);
     if (loaded.view === null || loaded.view.status === WorkflowStatus.Blocked) return loaded.view;
     const event = createEventDraft({
-      eventId: `${context.commandId}:${OrchestrationEventType.InstanceBlocked}`,
+      eventId: `${context.commandId}:${id}:${OrchestrationEventType.InstanceBlocked}`,
       eventType: OrchestrationEventType.InstanceBlocked,
       occurredAt: context.occurredAt,
       correlationId: context.correlationId,
