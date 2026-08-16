@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MergeMethod } from '../../../src/activities/index.js';
 import { translateGitHubOutbound } from '../../../src/integrations/github/application/outbound-translator.js';
 import {
@@ -188,6 +188,39 @@ describe('GitHub outbound delivery', () => {
       code: 'github-error',
       message: 'GitHub delivery failed with a non-Error rejection',
     });
+  });
+
+  it.each(['security-pr', 'security-issue', 'correlation-incomplete', 'lookup-unavailable'])(
+    'fails closed before auto-merge when %s',
+    async (reason) => {
+      const deliver = vi.fn(async () => 'merged');
+      const adapter = createGitHubDelivery(deliver, undefined, async () => ({
+        allowed: false,
+        reason,
+      }));
+      await expect(
+        adapter.deliver(
+          { ...mergeIntent, payload: { ...mergeIntent.payload, autoMerge: true } },
+          new AbortController().signal,
+        ),
+      ).resolves.toMatchObject({ kind: DeliveryResultKind.Failed, message: reason });
+      expect(deliver).not.toHaveBeenCalled();
+    },
+  );
+
+  it('delivers auto-merge after fresh PR and primary-issue labels are both absent', async () => {
+    const deliver = vi.fn(async () => 'merged');
+    const precondition = vi.fn(async () => ({ allowed: true }));
+    const adapter = createGitHubDelivery(deliver, undefined, precondition);
+
+    await expect(
+      adapter.deliver(
+        { ...mergeIntent, payload: { ...mergeIntent.payload, autoMerge: true } },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ kind: DeliveryResultKind.Confirmed, externalId: 'merged' });
+    expect(precondition).toHaveBeenCalledOnce();
+    expect(deliver).toHaveBeenCalledOnce();
   });
 });
 

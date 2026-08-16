@@ -9,6 +9,7 @@ const octokit = vi.hoisted(() => ({
   merge: vi.fn(),
   getPullRequest: vi.fn(),
   graphql: vi.fn(),
+  getIssue: vi.fn(),
 }));
 
 vi.mock('@octokit/rest', () => ({
@@ -21,6 +22,7 @@ vi.mock('@octokit/rest', () => ({
         issues: {
           listForRepo: octokit.listIssues,
           createComment: octokit.createComment,
+          get: octokit.getIssue,
         },
         pulls: { get: octokit.getPullRequest, merge: octokit.merge },
       },
@@ -35,6 +37,18 @@ import { createGitHubClient } from '../../../src/integrations/github/infrastruct
 describe('GitHub client transport contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('reads auto-merge labels directly without the ETag cache', async () => {
+    octokit.getIssue.mockResolvedValue({ data: { labels: [{ name: 'security' }] } });
+    const client = createGitHubClient('token');
+    await expect(client.getIssueLabelsFresh('owner', 'repo', 7)).resolves.toEqual(['security']);
+    expect(octokit.getIssue).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      issue_number: 7,
+    });
+    expect(octokit.paginateIterator).not.toHaveBeenCalled();
   });
 
   it('configures the supplied token and propagates authentication failure', async () => {

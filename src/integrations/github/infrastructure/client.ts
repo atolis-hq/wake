@@ -66,6 +66,12 @@ export function createGitHubClient(token: string) {
     },
     getIssueLabels: (owner: string, repo: string, issueNumber: number) =>
       getIssueLabels(octokit, cache, owner, repo, issueNumber),
+    getIssueLabelsFresh: async (owner: string, repo: string, issueNumber: number) => {
+      const response = await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber });
+      return response.data.labels.flatMap((label) =>
+        typeof label === 'string' ? [label] : label.name === undefined ? [] : [label.name],
+      );
+    },
     getIssue: async (owner: string, repo: string, issueNumber: number) =>
       octokit.rest.issues.get({ owner, repo, issue_number: issueNumber }).then(({ data }) => ({
         id: String(data.id),

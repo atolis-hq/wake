@@ -1,5 +1,11 @@
 import { BuiltInActivityName, PullRequestState } from '../../activities/index.js';
-import { BuiltInResourceCapability, resourceId, resourceKind } from '../../resources/index.js';
+import {
+  BuiltInResourceCapability,
+  BuiltInResourceKind,
+  ResourceCorrelationRole,
+  resourceId,
+  resourceKind,
+} from '../../resources/index.js';
 import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
 import type { ProviderDefinition } from '../contracts/provider.js';
 import { InboundTranslator } from './application/inbound-translator.js';
@@ -57,6 +63,45 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
           if (parsed === null) return null;
           const issue = await client.getIssue(parsed.owner, parsed.repo, parsed.number);
           return issue.state === PullRequestState.Closed ? issue.id : null;
+        },
+        async (intent) => {
+          try {
+            const pullRequest = await services.resources.get(resourceId(intent.resourceId));
+            if (pullRequest === null) return { allowed: false, reason: 'correlation-incomplete' };
+            const primary = await services.resources.primaryCorrelation(pullRequest.resourceId);
+            if (primary === null) return { allowed: false, reason: 'correlation-incomplete' };
+            const correlated = await services.resources.correlationsForWork(primary.workItemId);
+            const issues = (
+              await Promise.all(
+                correlated
+                  .filter(
+                    (value) =>
+                      value.resourceId !== pullRequest.resourceId &&
+                      value.role === ResourceCorrelationRole.Primary,
+                  )
+                  .map((value) => services.resources.get(value.resourceId)),
+              )
+            ).filter(
+              (value): value is NonNullable<typeof value> =>
+                value?.kind === BuiltInResourceKind.Issue,
+            );
+            if (issues.length !== 1) return { allowed: false, reason: 'correlation-incomplete' };
+            const issueResource = issues[0]!;
+            const pr = parsePullRequestKey(pullRequest.externalKey.key);
+            const issue = parsePullRequestKey(issueResource.externalKey.key);
+            if (pr === null || issue === null)
+              return { allowed: false, reason: 'correlation-incomplete' };
+            const [prLabels, issueLabels] = await Promise.all([
+              client.getIssueLabelsFresh(pr.owner, pr.repo, pr.number),
+              client.getIssueLabelsFresh(issue.owner, issue.repo, issue.number),
+            ]);
+            if (prLabels.includes('security')) return { allowed: false, reason: 'security-pr' };
+            if (issueLabels.includes('security'))
+              return { allowed: false, reason: 'security-issue' };
+            return { allowed: true };
+          } catch {
+            return { allowed: false, reason: 'lookup-unavailable' };
+          }
         },
       ),
       verifyArtifact: async (kind, externalKey, context) => {

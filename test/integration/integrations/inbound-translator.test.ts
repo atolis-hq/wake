@@ -81,6 +81,46 @@ describe('InboundTranslator', () => {
     ).toHaveLength(1);
   });
 
+  it('does not mint work for an ignored-labelled issue', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const event = createEventDraft({
+      eventId: 'github:issue:owner/repo#7:security',
+      eventType: 'integration.github.work-observed',
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'github:owner/repo#7',
+      causationId: 'github:issue:owner/repo#7:security',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: { ...observation(), labels: ['security'] },
+    });
+    await journal.append(event.stream, 0, [event]);
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+      intake: [
+        {
+          where: { kind: 'issue', requiredAssignees: [], requiredAuthors: [], labels: [] },
+          matchMode: 'any',
+          ignoredLabels: ['security'],
+          tags: [],
+        },
+      ],
+    });
+
+    await translator.runOnce();
+
+    expect(
+      await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#7' }),
+    ).toBeNull();
+  });
+
   it('records one skip diagnostic for a deleted correlation and continues later inbound work', async () => {
     const clock = new FakeClock();
     const journal = new InMemoryEventJournal(clock);

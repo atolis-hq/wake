@@ -192,6 +192,7 @@ export class InboundTranslator {
     const pullRequests =
       this.pullRequests ?? createPullRequestService(this.journal!, this.work, this.resources);
     const intake = evaluateIntakeRules(this.intake, gitHubIntakeFacts(payload));
+    if (intake.ignored) return;
     const identity = await this.resolveIdentity(
       { adapter: this.adapter, key: payload.externalKey },
       intake.admitted,
