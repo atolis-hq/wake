@@ -52,6 +52,9 @@ interface StoredCard {
   readonly stage?: string;
   readonly dwellSince: string;
   readonly runCount: number;
+  readonly activeRuns: Readonly<Record<string, StoredActiveRun>>;
+  // Kept only to recover checkpoints written before active runs were keyed
+  // by run ID. Newly projected cards never write this field.
   readonly activeRun?: StoredActiveRun;
   readonly lastRunAt?: string;
   readonly lastRunOutcome?: string;
@@ -81,7 +84,7 @@ export interface BoardProjectionView {
   // starts: a Run dispatched under a watch child (e.g. the reviewer agent)
   // must not flip the shared card to Active or clear awaitingApproval —
   // the primary is still genuinely waiting on that child's verdict, so the
-  // card stays Needs Input while activeRun/runCount/totals still reflect
+  // card stays Needs Input while activeRuns/runCount/totals still reflect
   // the child's Run for display.
   readonly childRuns: Readonly<Record<string, true>>;
 }
@@ -126,6 +129,7 @@ function projectWork(
       condition: BoardCondition.Ready,
       dwellSince: occurredAt,
       runCount: 0,
+      activeRuns: {},
       totalTokens: 0,
       inputTokens: 0,
       outputTokens: 0,
@@ -351,10 +355,12 @@ function projectRunTerminal(
   card: StoredCard,
 ): BoardProjectionView {
   const finishedAt = terminalFinishedAt(event);
+  const activeRuns = activeRunsFor(view, card, workId);
+  const activeRun = activeRuns[event.stream.id];
   const runDurationMs =
-    card.activeRun === undefined || finishedAt === undefined
+    activeRun === undefined || finishedAt === undefined
       ? 0
-      : Date.parse(finishedAt) - Date.parse(card.activeRun.startedAt);
+      : Date.parse(finishedAt) - Date.parse(activeRun.startedAt);
   const terminal = terminalRunFields(event);
   // Same legacy-checkpoint tolerance as the `children` guard above: a
   // checkpoint persisted before `childRuns` was added round-trips without
@@ -365,7 +371,8 @@ function projectRunTerminal(
     cards: {
       ...view.cards,
       [workId]: {
-        ...withoutActiveRun(card),
+        ...withoutLegacyActiveRun(card),
+        activeRuns: withoutActiveRun(activeRuns, event.stream.id),
         ...(terminal === undefined ? {} : { lastRunOutcome: terminal.lastRunOutcome }),
         ...(terminal === undefined || isChildRun || terminal.condition === undefined
           ? {}
@@ -391,6 +398,7 @@ function projectRunStarted(
   // that guard, so a checkpoint predating `children` must not crash here either.
   const childAction = view.children?.[event.payload.workflowInstanceId];
   const isChildRun = childAction !== undefined;
+  const activeRuns = activeRunsFor(view, card, workId);
   return {
     ...view,
     runs: { ...view.runs, [event.stream.id]: workId },
@@ -398,16 +406,21 @@ function projectRunStarted(
     cards: {
       ...view.cards,
       [workId]: {
-        ...(isChildRun ? card : withoutLastRunOutcome(withoutAwaitingApproval(card))),
+        ...(isChildRun
+          ? withoutLegacyActiveRun(card)
+          : withoutLegacyActiveRun(withoutLastRunOutcome(withoutAwaitingApproval(card)))),
         runCount: card.runCount + 1,
         ...(isChildRun ? {} : { condition: BoardCondition.Active }),
         lastRunAt: event.payload.startedAt,
-        activeRun: {
-          action: childAction ?? card.stage ?? event.payload.activity,
-          startedAt: event.payload.startedAt,
-          ...(event.payload.runner?.name === undefined
-            ? {}
-            : { runnerName: event.payload.runner.name }),
+        activeRuns: {
+          ...activeRuns,
+          [event.stream.id]: {
+            action: childAction ?? card.stage ?? event.payload.activity,
+            startedAt: event.payload.startedAt,
+            ...(event.payload.runner?.name === undefined
+              ? {}
+              : { runnerName: event.payload.runner.name }),
+          },
         },
       },
     },
@@ -451,7 +464,28 @@ function withoutAwaitingApproval(card: StoredCard): StoredCard {
   return withoutApproval;
 }
 
-function withoutActiveRun(card: StoredCard): StoredCard {
+function activeRunsFor(
+  view: BoardProjectionView,
+  card: StoredCard,
+  workId: string,
+): Readonly<Record<string, StoredActiveRun>> {
+  if (card.activeRuns !== undefined) return card.activeRuns;
+  if (card.activeRun === undefined) return {};
+  const legacyRunId = Object.entries(view.runs)
+    .reverse()
+    .find(([, runWorkId]) => runWorkId === workId)?.[0];
+  return legacyRunId === undefined ? {} : { [legacyRunId]: card.activeRun };
+}
+
+function withoutActiveRun(
+  activeRuns: Readonly<Record<string, StoredActiveRun>>,
+  runId: string,
+): Readonly<Record<string, StoredActiveRun>> {
+  const { [runId]: _completed, ...remaining } = activeRuns;
+  return remaining;
+}
+
+function withoutLegacyActiveRun(card: StoredCard): StoredCard {
   const { activeRun: _activeRun, ...withoutRun } = card;
   return withoutRun;
 }

@@ -80,7 +80,7 @@ for a single WorkItem (see the Work detail component).
   cursor convention used elsewhere in this component.
   Each card MUST be enriched at read time with: its primary correlated
   resource's resolved external reference, when one exists; an elapsed-time
-  duration for its active run and for how long ago its last run started,
+  duration for each active run and for how long ago its last run started,
   computed against the call's own current time rather than stored on the
   projection. `conditionCounts` MUST be computed from the same underlying
   board projection as the returned page, not from the page's own contents.

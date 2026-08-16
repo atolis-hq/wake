@@ -1,5 +1,6 @@
 import type {
   AuditEventResponse,
+  BoardCardActiveRun,
   BoardCardResponse,
   CollectionResponse,
   ControlPlaneStatusResponse,
@@ -157,17 +158,25 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     ...optionalNumberProperty(record, 'cacheWriteTokens', path),
     totalCostUsd: number(record.totalCostUsd, child(path, 'totalCostUsd')),
     totalDurationMs: number(record.totalDurationMs, child(path, 'totalDurationMs')),
-    ...(record.activeRun === undefined
-      ? {}
-      : { activeRun: decodeBoardCardActiveRun(record.activeRun, child(path, 'activeRun')) }),
+    activeRuns: decodeBoardCardActiveRuns(record.activeRuns, child(path, 'activeRuns')),
     ...optionalStringProperty(record, 'externalRef', path),
   };
 };
 
-function decodeBoardCardActiveRun(
+function decodeBoardCardActiveRuns(
   value: unknown,
   path: string,
-): NonNullable<BoardCardResponse['activeRun']> {
+): NonNullable<BoardCardResponse['activeRuns']> {
+  if (value === undefined) return {};
+  return Object.fromEntries(
+    Object.entries(object(value, path)).map(([runId, activeRun]) => [
+      runId,
+      decodeBoardCardActiveRun(activeRun, child(path, runId)),
+    ]),
+  );
+}
+
+function decodeBoardCardActiveRun(value: unknown, path: string): BoardCardActiveRun {
   const record = object(value, path);
   return {
     action: string(record.action, child(path, 'action')),

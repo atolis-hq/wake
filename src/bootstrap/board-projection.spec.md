@@ -17,7 +17,7 @@ Orchestration's, or Execution's own projections.
   projection derives it from both.
 - **Card** — the per-WorkItem read model this projection owns: identity,
   objective, condition, current workflow/stage, awaiting-approval flag,
-  active/last run summary, and cumulative run totals (count, tokens, cost,
+  active-run summaries, and cumulative run totals (count, tokens, cost,
   duration).
 - **Child instance** — a workflow instance carrying a
   `parentWorkflowInstanceId` (spawned by a watch). A child shares its
@@ -57,14 +57,14 @@ API surface application's board and status applications do that).
   board. `SignalWaitStarted` MUST additionally set `awaitingApproval` when
   the wait's signal kind is an approval-awaiting kind; `SignalAccepted`
   MUST clear it.
-- `RunStarted` MUST increment `runCount`, record `activeRun` (action,
-  optional runner name, start time), and `lastRunAt`; for a primary-instance
+- `RunStarted` MUST increment `runCount`, record its `activeRuns` entry keyed
+  by Run ID (action, optional runner name, start time), and `lastRunAt`; for a primary-instance
   run only, it MUST also set condition `active` and clear
   `awaitingApproval`. A run started under a child instance MUST leave the
   card's condition and `awaitingApproval` untouched — the primary is still
   genuinely waiting on that child.
 - A terminal run event (`RunSucceeded`, `RunFailed`, `RunCancelled`,
-  `RunAmbiguous`) MUST clear `activeRun`, accumulate its duration into
+  `RunAmbiguous`) MUST remove only its own `activeRuns` entry, accumulate its duration into
   `totalDurationMs`, and record `lastRunOutcome`. For `RunSucceeded`
   specifically, the resulting condition MUST follow the run's reported
   outcome kind (`failed` → `error`, `blocked` → `needs-input`, otherwise →
@@ -101,7 +101,7 @@ own.
 | `workflowName` / `stage` | string, optional | The primary instance's workflow and current stage. |
 | `dwellSince` | timestamp | When the card entered its current stage (or was created, before any stage). |
 | `runCount` | number | Total runs started under this WorkItem's workflow instances, including child instances. |
-| `activeRun` | object, optional | The in-flight run's action label, optional runner name, and start time; absent when nothing is running. |
+| `activeRuns` | object, keyed by Run ID | Every in-flight run's action label, optional runner name, and start time; empty when nothing is running. |
 | `lastRunAt` / `lastRunOutcome` | timestamp / string, optional | The most recently started run's start time, and the most recently finished run's outcome. |
 | `totalTokens` / `totalCostUsd` / `totalDurationMs` | number | Cumulative totals across every run recorded for this WorkItem. |
 

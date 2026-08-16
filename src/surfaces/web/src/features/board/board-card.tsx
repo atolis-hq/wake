@@ -189,19 +189,19 @@ export function BoardCard({
           } \u00b7 ${fmtDuration(item.totalDurationMs)} total \u00b7 ${fmtCost(item.totalCostUsd)} \u00b7 `}
           <TokenUsage usage={item} /> usage tokens
         </span>
-        {item.activeRun !== undefined && (
-          <div className={styles.childRun}>
+        {Object.entries(item.activeRuns ?? {}).map(([runId, activeRun]) => (
+          <div key={runId} className={styles.childRun}>
             <span className={styles.childRunDot} aria-hidden="true" />
             <div>
-              <div className={styles.childRunTitle}>{`${item.activeRun.action} running`}</div>
+              <div className={styles.childRunTitle}>{`${activeRun.action} running`}</div>
               <div className={styles.childRunMeta}>
-                {[item.activeRun.runnerName, fmtDuration(item.activeRun.elapsedMs)]
+                {[activeRun.runnerName, fmtDuration(activeRun.elapsedMs)]
                   .filter((part): part is string => part !== undefined)
                   .join(' \u00b7 ')}
               </div>
             </div>
           </div>
-        )}
+        ))}
       </Link>
     </li>
   );
