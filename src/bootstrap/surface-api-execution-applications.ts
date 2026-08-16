@@ -3,7 +3,8 @@ import {
   ineligibleRunners,
   type ControlPlaneView,
 } from '../control-plane/index.js';
-import type { RunView } from '../execution/index.js';
+import { ExecutionFailureCode, RunStatus, type RunView } from '../execution/index.js';
+import { correlationId, EventActorKind } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';
@@ -17,6 +18,23 @@ export function createExecutionApplications(
   now: () => string,
 ): ApiApplications['execution'] {
   return {
+    async resolveAmbiguousRun(runId, command) {
+      const context = resolutionContext(runId, command.idempotencyKey, now);
+      const run = await root.recovery.resolve(
+        runId,
+        {
+          kind: RunStatus.Failed,
+          failure: { kind: ExecutionFailureCode.Unexpected, message: command.message },
+        },
+        context,
+      );
+      await root.orchestration.resolveExecutionFailure(
+        run.workflowInstanceId,
+        { activationId: run.activationId, runId: run.runId, reason: command.message },
+        context,
+      );
+      return commandAccepted(command, now());
+    },
     async pauseRunner(runnerId, command) {
       await root.runnerControls.pause(runnerId, command.idempotencyKey);
       return commandAccepted(command, now());
@@ -127,6 +145,16 @@ export function createExecutionApplications(
         ...(offset + items.length < all.length ? { nextPosition: offset + items.length } : {}),
       };
     },
+  };
+}
+
+function resolutionContext(runId: string, idempotencyKey: string, now: () => string) {
+  const commandId = `run:${runId}:resolve-failed:${idempotencyKey}`;
+  return {
+    commandId,
+    correlationId: correlationId(commandId),
+    occurredAt: now(),
+    actor: { kind: EventActorKind.Operator, id: 'web' },
   };
 }
 

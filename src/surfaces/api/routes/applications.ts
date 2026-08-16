@@ -43,6 +43,11 @@ export interface ApiCommandRequest {
   readonly idempotencyKey: string;
 }
 
+/** An explicit operator declaration that an escalated Run did not complete. */
+export interface ApiAmbiguousRunFailureResolution extends ApiCommandRequest {
+  readonly message: string;
+}
+
 export interface ApiSystemApplications {
   health(): Promise<ApiResourceResult<HealthResponse>>;
   configuration(): Promise<ApiResourceResult<ConfigurationResponse>>;
@@ -89,6 +94,10 @@ export interface ApiApplications {
     runners?(query: CollectionQuery): Promise<ApiCollectionPage<RunnerResponse>>;
     pauseRunner?(runnerId: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     unpauseRunner?(runnerId: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
+    resolveAmbiguousRun?(
+      runId: string,
+      command: ApiAmbiguousRunFailureResolution,
+    ): Promise<ApiCommandResult>;
   };
   readonly events: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<AuditEventResponse>>;

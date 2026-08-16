@@ -70,7 +70,9 @@ Does not own:
 - A command request body MUST be a JSON object containing exactly one
   field, `idempotencyKey`, a non-empty string of at most 200 characters; any
   other shape MUST be rejected as an invalid-request failure before the
-  command reaches the domain application.
+  command reaches the domain application. The explicit ambiguous-Run failure
+  resolution command additionally requires a non-empty `message` of at most
+  2000 characters and accepts no other field.
 - A conflict result returned by a domain application MUST be presented as a
   409 problem response carrying the domain's own conflict code, retryable
   flag, and current state (when supplied). An accepted result MUST be

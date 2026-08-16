@@ -108,6 +108,8 @@ export interface CompositionRoot {
   readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
+  /** Operator-only resolution of a durably escalated ambiguous Run. */
+  readonly recovery: RecoveryService;
   readonly transcriptStore?: TranscriptStore;
   readonly runnerControls: ReturnType<typeof createRunnerControlService>;
   readonly controlPlane: ReturnType<typeof createControlPlaneService>;
@@ -291,6 +293,7 @@ export async function createCompositionRoot(
     lookup,
     orchestration,
     execution,
+    recovery,
     ...(transcriptStore === undefined ? {} : { transcriptStore }),
     runnerControls,
     controlPlane,

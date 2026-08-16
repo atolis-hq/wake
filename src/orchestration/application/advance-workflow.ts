@@ -120,7 +120,8 @@ export class AdvanceWorkflow {
     const loaded = await this.repository.load(id);
     if (
       loaded.view === null ||
-      loaded.view.status === WorkflowStatus.Blocked ||
+      (loaded.view.status === WorkflowStatus.Blocked &&
+        !isAmbiguityResolutionBlock(loaded.view.blockReason)) ||
       loaded.view.pendingActivation?.activationId !== input.activationId ||
       loaded.view.acceptedOutcomes.includes(input.activationId)
     )
@@ -268,4 +269,8 @@ export class AdvanceWorkflow {
   async listWatchMatches(event: PersistedEvent, context?: CommandContext) {
     return matchWatches(await this.listAllLoaded(), event, this.workflows, context);
   }
+}
+
+function isAmbiguityResolutionBlock(reason: string | undefined): boolean {
+  return reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason);
 }

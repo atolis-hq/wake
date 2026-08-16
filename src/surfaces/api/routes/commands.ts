@@ -1,6 +1,10 @@
 import type { RunnerResponse } from '../contracts/index.js';
 import type { ApiHttpResponse } from '../http-server.js';
-import type { ApiApplications, ApiCommandRequest } from './applications.js';
+import type {
+  ApiAmbiguousRunFailureResolution,
+  ApiApplications,
+  ApiCommandRequest,
+} from './applications.js';
 import { normalizePage } from './pagination.js';
 import {
   accepted,
@@ -24,6 +28,12 @@ export async function dispatchCommand(
   body: unknown,
 ): Promise<ApiHttpResponse> {
   if (url.search !== '') return invalidQuery('Command routes do not accept query parameters');
+  const ambiguityResolution = await dispatchAmbiguousRunResolution(
+    applications,
+    url.pathname,
+    body,
+  );
+  if (ambiguityResolution !== undefined) return ambiguityResolution;
   const request = commandRequest(body);
   if ('status' in request) return request;
   const work = await dispatchWorkCommand(applications, url.pathname, request);
@@ -32,6 +42,23 @@ export async function dispatchCommand(
   if (control !== undefined) return control;
   const runner = await dispatchRunnerCommand(applications, url.pathname, request);
   return runner ?? problem(404, 'Not Found', `No command route for ${url.pathname}`);
+}
+
+async function dispatchAmbiguousRunResolution(
+  applications: ApiApplications,
+  pathname: string,
+  body: unknown,
+): Promise<ApiHttpResponse | undefined> {
+  const match = /^\/api\/v1\/runs\/([^/]+)\/commands\/resolve-failed$/.exec(pathname);
+  if (match === null) return undefined;
+  const runId = decodePathSegment(match[1]!);
+  if (runId instanceof ApiPathError) return invalidPath(runId.message);
+  const request = ambiguityFailureResolutionRequest(body);
+  if ('status' in request) return request;
+  const operation = applications.execution.resolveAmbiguousRun;
+  if (operation === undefined)
+    return unavailable('resolve-ambiguous-run', await applications.execution.get?.(runId));
+  return accepted(await operation(runId, request), applications.now());
 }
 
 async function dispatchWorkCommand(
@@ -114,4 +141,23 @@ function commandRequest(body: unknown): ApiCommandRequest | ApiHttpResponse {
   return value.length <= 200
     ? { idempotencyKey: value }
     : invalidRequest('idempotencyKey', 'Must be at most 200 characters');
+}
+
+function ambiguityFailureResolutionRequest(
+  body: unknown,
+): ApiAmbiguousRunFailureResolution | ApiHttpResponse {
+  if (!isObject(body))
+    return invalidRequest('idempotencyKey', 'A JSON object with an idempotency key is required');
+  if (Object.keys(body).some((key) => key !== 'idempotencyKey' && key !== 'message'))
+    return invalidRequest('', 'The command body contains unknown fields');
+  const idempotencyKey = body.idempotencyKey;
+  if (typeof idempotencyKey !== 'string' || idempotencyKey.trim() === '')
+    return invalidRequest('idempotencyKey', 'Must be a non-empty string');
+  if (idempotencyKey.length > 200)
+    return invalidRequest('idempotencyKey', 'Must be at most 200 characters');
+  const message = body.message;
+  if (typeof message !== 'string' || message.trim() === '')
+    return invalidRequest('message', 'Must be a non-empty string');
+  if (message.length > 2_000) return invalidRequest('message', 'Must be at most 2000 characters');
+  return { idempotencyKey, message };
 }
