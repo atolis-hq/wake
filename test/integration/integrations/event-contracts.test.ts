@@ -48,6 +48,16 @@ const samples = [
     },
   ],
   [GitHubEventType.DeliveryObserved, { deliveryId: 'delivery-1', raw: { status: 'ok' } }],
+  [
+    GitHubEventType.DeletedWorkObservationSkipped,
+    {
+      externalKey: 'atolis/wake#1',
+      workItemId: 'work-01m03zgw1tgd1f0wggdt8081q2',
+      sourceEventId: 'github:issue:atolis/wake#1:v2',
+      revision: 'abc',
+      reason: 'work-item-deleted',
+    },
+  ],
 ] as const;
 
 describe('GitHub adapter event contract', () => {
