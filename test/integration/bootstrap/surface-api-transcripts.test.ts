@@ -232,25 +232,26 @@ describe('surface transcript applications', () => {
         work: { get: async () => Promise.reject(new Error('journal replay')) },
         orchestration: { listAll: async () => Promise.reject(new Error('journal replay')) },
         projections: {
-          read: async (stream: string, key: string) =>
-            stream === 'work' && key === workItemId ? { value: { deleted: true } } : null,
-          list: async (stream: string) =>
-            stream === 'orchestration'
-              ? [
-                  {
-                    value: { view: { workflowInstanceId: 'workflow-1', workItemId } },
+          read: async (stream: string, key: string) => {
+            if (stream === 'work' && key === workItemId) return { value: { deleted: true } };
+            if (stream === 'workflows-by-work-item' && key === workItemId)
+              return { value: ['workflow-1'] };
+            if (stream === 'orchestration' && key === 'workflow-1')
+              return { value: { view: { workflowInstanceId: 'workflow-1', workItemId } } };
+            if (stream === 'runs-by-workflow-instance' && key === 'workflow-1')
+              return { value: ['run-1'] };
+            if (stream === 'execution' && key === 'run-1')
+              return {
+                value: {
+                  view: {
+                    ...run('run-1', '2026-08-13T10:00:00.000Z', '2026-08-13T10:00:05.000Z'),
+                    workflowInstanceId: 'workflow-1',
                   },
-                ]
-              : [
-                  {
-                    value: {
-                      view: {
-                        ...run('run-1', '2026-08-13T10:00:00.000Z', '2026-08-13T10:00:05.000Z'),
-                        workflowInstanceId: 'workflow-1',
-                      },
-                    },
-                  },
-                ],
+                },
+              };
+            return null;
+          },
+          list: async () => Promise.reject(new Error('global projection replay')),
         },
       } as unknown as CompositionRoot,
       () => '2026-08-13T10:00:05.000Z',

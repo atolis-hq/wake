@@ -151,6 +151,39 @@ describe(`${scenario.id} API domain shape`, () => {
     ]);
   });
 
+  it('reads detail state through work-scoped projections', async () => {
+    const { root, context } = await createWorld();
+    const work = await root.work.create(
+      { workItemId: workId('scoped-detail'), objective: 'Read only this work item' },
+      context,
+    );
+    await root.orchestration.start(
+      {
+        workflowInstanceId: workflowInstanceId('workflow-scoped-detail'),
+        workItemId: work.workItemId,
+        workflowName: workflowName('default'),
+        orchestrationGroupId: orchestrationGroupId('group-scoped-detail'),
+      },
+      context,
+    );
+    await root.advanceOnce({ maxProgress: 1 });
+    await root.projectionRunner.runRegisteredOnce();
+
+    const page = await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    }).api.work.list({ limit: 1 });
+    const list = vi.spyOn(root.projections, 'list').mockRejectedValue(new Error('global list'));
+    const journalReads = vi.spyOn(root.journal, 'readAll');
+
+    const detail = await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    }).api.work.detail(page.items[0]!.workItemKey);
+
+    expect(detail?.data.execution.runs).toHaveLength(1);
+    expect(list).not.toHaveBeenCalled();
+    expect(journalReads).not.toHaveBeenCalledWith(0);
+  });
+
   it('queries composed production services over real HTTP without provider or workspace leakage', async () => {
     // Given composed production applications create canonical Work, Resource, workflow, and Run facts.
     const { root, clock, context } = await createWorld();

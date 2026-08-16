@@ -1,6 +1,6 @@
 import type { ProjectionDefinition } from '../../kernel/index.js';
 import { selectWorkflowOrchestrationEvent } from '../contracts/event-decoder.js';
-import { type WorkflowOrchestrationEvent } from '../contracts/events.js';
+import { OrchestrationEventType, type WorkflowOrchestrationEvent } from '../contracts/events.js';
 import { isWorkflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { foldWorkflowInstance } from '../domain/workflow-instance.js';
@@ -24,5 +24,29 @@ export const orchestrationProjection: ProjectionDefinition<ProjectionValue> = {
     if (owned === null || !isWorkflowInstanceStream(owned.stream)) return previous;
     const events = [...previous.events, owned];
     return { events, view: foldWorkflowInstance(events) };
+  },
+};
+
+/** Workflow-instance membership keyed by its owning work item for scoped readers. */
+export const workflowsByWorkItemProjection: ProjectionDefinition<
+  readonly WorkflowInstanceView['workflowInstanceId'][]
+> = {
+  name: 'workflows-by-work-item',
+  select(event) {
+    const owned = selectWorkflowOrchestrationEvent(event);
+    return owned?.eventType === OrchestrationEventType.InstanceStarted &&
+      isWorkflowInstanceStream(owned.stream)
+      ? { key: owned.payload.workItemId }
+      : null;
+  },
+  initial: () => [],
+  project(previous, event) {
+    const owned = selectWorkflowOrchestrationEvent(event);
+    if (
+      owned?.eventType !== OrchestrationEventType.InstanceStarted ||
+      !isWorkflowInstanceStream(owned.stream)
+    )
+      return previous;
+    return previous.includes(owned.stream.id) ? previous : [...previous, owned.stream.id];
   },
 };

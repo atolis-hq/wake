@@ -31,6 +31,8 @@ export const workCorrelationsProjection: ProjectionDefinition<readonly ResourceC
         return { key: owned.payload.workItemId };
       if (owned?.eventType === ResourceEventType.WorkCorrelationRetracted)
         return { key: owned.payload.workItemId };
+      if (owned?.eventType === ResourceEventType.WorkCorrelationConflicted)
+        return { key: owned.payload.workItemId };
       return null;
     },
     initial: () => [],
