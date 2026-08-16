@@ -46,7 +46,7 @@ Before taking any actions, determine that workitems are genuinely blocked, and n
 2. Approve or merge a PR, only when the current task or project policy gives you that authority and required checks/review are complete.
 3. Make API calls to the Wake control plane. Re-observe the workitem/run after each call.
 4. Check out a branch/worktree locally, make code changes, test the focused behaviour, and push the fixes when implementation work is in scope. Follow the source repository's `AGENTS.md` and relevant module guidance.
-5. On exception, manually insert or edit data in the `~/wake-home` directory. Only do this with explicit current-task authority, after normal surfaces have failed and the exact inconsistency is understood. Keep a log of these actions in `docs/wake-supervisor-interventions.md` in the source repository, including the pre-state backup, reason, precise change, validation, and outcome. Never expose credentials or fabricate workflow history.
+5. On exception, manually insert or edit data in the `~/wake-home` directory. Only do this with explicit current-task authority, after normal surfaces have failed and the exact inconsistency is understood. Keep a log of these actions in `data-interventions.md` in `C:\git\atolis-hq\wake-supervisor`, including the pre-state backup, reason, precise change, validation, and outcome. Never expose credentials or fabricate workflow history.
 
 Perform these actions in order of least intrusive first, where there is a chance that they will succeed. If the same root cause fails three times without new evidence, record the blocker and stop retrying it.
 
@@ -63,7 +63,7 @@ If no time limit was specified. stop after 5 hours and ask if you should continu
 
 # Observing issues
 
-Whilst supervising workitems, you may encounter new issues. These should be captured in `docs/triage-discovered-bugs.md` in the source repository for later review. It is not your job to triage and execute these fixes.
+Whilst supervising workitems, you may encounter new issues. These should be captured in `triage-discovered-bugs.md` in `C:\git\atolis-hq\wake-supervisor` for later review. It is not your job to triage and execute these fixes.
 
 For each issue, record the symptom, evidence, likely impact, and related workitem/run/issue if known. Do not create new tickets.
 
