@@ -174,8 +174,7 @@ export async function composeIntegrationRuntime(
     },
     adapter: (name) => {
       const provider = providers.find((candidate) => candidate.adapter === name);
-      if (provider === undefined) throw new Error(`Delivery provider ${name} is not configured`);
-      return provider.delivery;
+      return provider?.delivery ?? null;
     },
     now: () => input.clock.now().toISOString(),
   });

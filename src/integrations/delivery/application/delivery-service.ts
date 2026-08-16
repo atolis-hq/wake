@@ -19,7 +19,8 @@ export interface DeliveryServiceDependencies {
   readonly journal: EventJournal;
   readonly intents: () => Promise<readonly DeliveryIntentView[]>;
   readonly resource: DeliveryResourceLookup;
-  readonly adapter: (name: string) => ExternalDeliveryAdapter;
+  /** Returns null when the Resource's provider is unavailable in this runtime. */
+  readonly adapter: (name: string) => ExternalDeliveryAdapter | null;
   readonly now: () => string;
   readonly maxAmbiguityReconciliationAttempts?: number;
 }
@@ -96,8 +97,19 @@ export class DeliveryService {
     if (intent === undefined) return null;
     const resource = await this.dependencies.resource(intent.resourceId);
     if (resource === null) throw new Error(`Delivery resource not found: ${intent.resourceId}`);
-    const adapter = this.dependencies.adapter(resource.adapter);
     const occurrence: DeliveryOccurrence = { ordinal: intent.occurrenceOrdinal + 1 };
+    const adapter = this.dependencies.adapter(resource.adapter);
+    if (adapter === null) {
+      await this.append(
+        this.failed(
+          intent,
+          occurrence,
+          'provider-unavailable',
+          `Delivery provider ${resource.adapter} is unavailable`,
+        ),
+      );
+      return intent;
+    }
     if (intent.state === DeliveryState.Ambiguous || intent.attempts > 0) {
       const reconciled = await adapter.reconcile(
         intent,

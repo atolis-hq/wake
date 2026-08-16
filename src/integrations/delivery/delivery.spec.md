@@ -46,6 +46,11 @@ is addressed to one Resource and therefore one provider adapter.
 - An intent whose Resource cannot be resolved MUST fail the call outright
   (not record a per-intent outcome fact); this is a hard error for the
   cycle, not a delivery outcome.
+- An intent whose resolved Resource's provider is unavailable in this runtime
+  MUST record a terminal `delivery.failed` fact with code
+  `provider-unavailable`, without recording `delivery.attempt-started`:
+  Wake made no external attempt, and a missing or failed-to-compose provider
+  must not crash every subsequent control-plane pass.
 - Before a fresh delivery attempt, when the intent is already `ambiguous` or
   has at least one prior attempt, Delivery MUST call the resolved adapter's
   `reconcile` first and record its result as `delivery.reconciled`. When
@@ -73,7 +78,7 @@ is addressed to one Resource and therefore one provider adapter.
 | --- | --- | --- |
 | `delivery.attempt-started` | Delivery begins a fresh attempt against an intent | This occurrence has begun; a later cycle without a terminal fact after this one must reconcile rather than re-attempt. |
 | `delivery.confirmed` | The adapter's `deliver` call reports success | The intent's external effect is durably done. |
-| `delivery.failed` | The adapter's `deliver` call reports failure | The intent's external effect is durably failed; no further automatic attempt is made. |
+| `delivery.failed` | The adapter's `deliver` call reports failure, or the Resource's provider is unavailable | The intent is durably failed; no further automatic attempt is made. |
 | `delivery.ambiguous` | The adapter's `deliver` call cannot determine the result | The intent stays eligible for a further cycle, which reconciles first. |
 | `delivery.reconciled` | A reconcile call against the provider resolves, or fails to resolve, an ambiguous or interrupted occurrence | Either the intent is now known confirmed, or its uncertainty persists. |
 
