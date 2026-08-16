@@ -14,13 +14,17 @@ import { adapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
-import { createCommentHistoryReader } from './comment-history-reader.js';
+import {
+  createCommentHistoryReader,
+  type CommentHistoryReaderOptions,
+} from './comment-history-reader.js';
 
 export function createGitHubAgentContextReader(
   journal: EventJournal,
   resources: Pick<ResourceService, 'correlationsForWork' | 'get'>,
+  options: CommentHistoryReaderOptions = {},
 ): AgentContextReader {
-  const commentHistory = createCommentHistoryReader(journal, resources);
+  const commentHistory = createCommentHistoryReader(journal, resources, options);
   return {
     async forWorkItem(workItemId, options) {
       const comments = await commentHistory.forWorkItem(workItemId as WorkItemId, options);

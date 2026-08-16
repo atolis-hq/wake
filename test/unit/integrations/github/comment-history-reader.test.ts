@@ -3,11 +3,24 @@ import { adapterId } from '../../../../src/integrations/contracts/identifiers.js
 import { createCommentHistoryReader } from '../../../../src/integrations/github/application/comment-history-reader.js';
 import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
 import { issueCommentObservation } from '../../../../src/integrations/github/infrastructure/issue-source.js';
-import { correlationId } from '../../../../src/kernel/index.js';
+import {
+  DeliveryEventType,
+  DeliveryIntentEventType,
+  DeliveryResultKind,
+  deliveryStream,
+} from '../../../../src/integrations/index.js';
+import {
+  correlationId,
+  createEventDraft,
+  eventId,
+  type EventDraft,
+} from '../../../../src/kernel/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,
   resourceKind,
+  resourceStream,
+  type ResourceId,
 } from '../../../../src/resources/index.js';
 import { TestWorld } from '../../../e2e/support/world.js';
 
@@ -204,6 +217,12 @@ it('does not use GitHub comments for a primary resource from another adapter', a
     author: 'a',
     updatedAt: '2026-08-08T00:00:00.000Z',
   });
+  await appendConfirmedDelivery(world, resource.resourceId, {
+    intentEventId: 'non-github-status',
+    eventType: DeliveryIntentEventType.StatusPublishRequested,
+    occurredAt: '2026-08-08T00:01:00.000Z',
+    body: 'This delivery belongs to another provider.',
+  });
 
   const reader = createCommentHistoryReader(world.journal, world.resources);
 
@@ -239,13 +258,259 @@ it('reads comments from a GitHub provider alias stream', async () => {
     updatedAt: '2026-08-08T00:00:00.000Z',
     adapter: alias,
   });
+  await appendConfirmedDelivery(world, resource.resourceId, {
+    intentEventId: 'aliased-github-status',
+    eventType: DeliveryIntentEventType.StatusPublishRequested,
+    occurredAt: '2026-08-08T00:01:00.000Z',
+    body: 'Wake is working on the aliased resource.',
+  });
 
-  const reader = createCommentHistoryReader(world.journal, world.resources);
+  const reader = createCommentHistoryReader(world.journal, world.resources, {
+    githubAdapters: [alias],
+  });
 
   await expect(reader.forWorkItem(work.workItemId)).resolves.toEqual([
     { author: 'a', occurredAt: '2026-08-08T00:00:00.000Z', body: 'aliased feedback' },
+    {
+      author: 'unknown-github-identity',
+      occurredAt: '2026-08-08T00:02:00.000Z',
+      body: 'Wake is working on the aliased resource.\n<!-- wake:delivery:aliased-github-status -->',
+    },
   ]);
 });
+
+it('includes a confirmed status delivery before GitHub polling observes it', async () => {
+  const { world, work, resource } = await correlatedGitHubWork();
+  await appendConfirmedDelivery(world, resource.resourceId, {
+    intentEventId: 'status-comment',
+    eventType: DeliveryIntentEventType.StatusPublishRequested,
+    occurredAt: '2026-08-08T00:01:00.000Z',
+    body: '  Wake has started work.  ',
+  });
+
+  await expect(
+    createCommentHistoryReader(world.journal, world.resources).forWorkItem(work.workItemId),
+  ).resolves.toEqual([
+    {
+      author: 'unknown-github-identity',
+      occurredAt: '2026-08-08T00:02:00.000Z',
+      body: 'Wake has started work.  \n<!-- wake:delivery:status-comment -->',
+    },
+  ]);
+});
+
+it('replaces a confirmed synthetic comment with its polled comment before applying observedSince', async () => {
+  const { world, work, resource } = await correlatedGitHubWork();
+  await appendConfirmedDelivery(world, resource.resourceId, {
+    intentEventId: 'reply-comment',
+    eventType: DeliveryIntentEventType.ReplyPublishRequested,
+    occurredAt: '2026-08-08T00:01:00.000Z',
+    body: 'Acknowledged.',
+  });
+  await appendIssueComment(world, {
+    issueNumber: 7,
+    id: 1,
+    body: 'Acknowledged.\n<!-- wake:delivery:reply-comment -->',
+    author: 'wake-bot',
+    updatedAt: '2026-08-08T00:03:00.000Z',
+  });
+
+  const reader = createCommentHistoryReader(world.journal, world.resources);
+  await expect(reader.forWorkItem(work.workItemId)).resolves.toEqual([
+    {
+      author: 'wake-bot',
+      occurredAt: '2026-08-08T00:03:00.000Z',
+      body: 'Acknowledged.\n<!-- wake:delivery:reply-comment -->',
+    },
+  ]);
+  await expect(
+    reader.forWorkItem(work.workItemId, { observedSince: '2026-08-08T00:02:30.000Z' }),
+  ).resolves.toEqual([]);
+});
+
+it('does not reconcile a delivery with a marker observed on another correlated resource', async () => {
+  const { world, work, resource } = await correlatedGitHubWork();
+  const other = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000001' as never,
+    kind: resourceKind('pull-request'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#8' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    other.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-other-primary-resource',
+      correlationId: correlationId('other-confirmed-comment-history'),
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendConfirmedDelivery(world, resource.resourceId, {
+    intentEventId: 'status-for-issue-seven',
+    eventType: DeliveryIntentEventType.StatusPublishRequested,
+    occurredAt: '2026-08-08T00:01:00.000Z',
+    body: 'Status for issue seven',
+  });
+  await appendIssueComment(world, {
+    issueNumber: 8,
+    id: 1,
+    body: 'A copied marker\n<!-- wake:delivery:status-for-issue-seven -->',
+    author: 'reviewer',
+    updatedAt: '2026-08-08T00:03:00.000Z',
+  });
+
+  await expect(
+    createCommentHistoryReader(world.journal, world.resources).forWorkItem(work.workItemId),
+  ).resolves.toEqual([
+    {
+      author: 'unknown-github-identity',
+      occurredAt: '2026-08-08T00:02:00.000Z',
+      body: 'Status for issue seven\n<!-- wake:delivery:status-for-issue-seven -->',
+    },
+    {
+      author: 'reviewer',
+      occurredAt: '2026-08-08T00:03:00.000Z',
+      body: 'A copied marker\n<!-- wake:delivery:status-for-issue-seven -->',
+    },
+  ]);
+});
+
+it('includes a reply whose ambiguous delivery was reconciled as confirmed', async () => {
+  const { world, work, resource } = await correlatedGitHubWork();
+  await appendConfirmedDelivery(world, resource.resourceId, {
+    intentEventId: 'reconciled-reply',
+    eventType: DeliveryIntentEventType.ReplyPublishRequested,
+    occurredAt: '2026-08-08T00:01:00.000Z',
+    body: 'Recovered delivery.',
+    reconciled: true,
+  });
+
+  await expect(
+    createCommentHistoryReader(world.journal, world.resources).forWorkItem(work.workItemId),
+  ).resolves.toEqual([
+    {
+      author: 'unknown-github-identity',
+      occurredAt: '2026-08-08T00:02:00.000Z',
+      body: 'Recovered delivery.\n<!-- wake:delivery:reconciled-reply -->',
+    },
+  ]);
+});
+
+it('excludes an unconfirmed comment-shaped delivery intent', async () => {
+  const { world, work, resource } = await correlatedGitHubWork();
+  await appendConfirmedDelivery(world, resource.resourceId, {
+    intentEventId: 'pending-status',
+    eventType: DeliveryIntentEventType.StatusPublishRequested,
+    occurredAt: '2026-08-08T00:01:00.000Z',
+    body: 'This must not appear yet.',
+    confirmed: false,
+  });
+
+  await expect(
+    createCommentHistoryReader(world.journal, world.resources).forWorkItem(work.workItemId),
+  ).resolves.toEqual([]);
+});
+
+async function correlatedGitHubWork() {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'show Wake delivery immediately' });
+  const resource = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000000' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#7' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    resource.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-primary-resource',
+      correlationId: correlationId('confirmed-comment-history'),
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  return { world, work, resource };
+}
+
+async function appendConfirmedDelivery(
+  world: TestWorld,
+  resourceId: ResourceId,
+  input: {
+    readonly intentEventId: string;
+    readonly eventType:
+      | typeof DeliveryIntentEventType.StatusPublishRequested
+      | typeof DeliveryIntentEventType.ReplyPublishRequested;
+    readonly occurredAt: string;
+    readonly body: string;
+    readonly reconciled?: boolean;
+    readonly confirmed?: boolean;
+  },
+) {
+  const intent = await appendEvent(
+    world,
+    createEventDraft({
+      eventId: input.intentEventId,
+      eventType: input.eventType,
+      occurredAt: input.occurredAt,
+      correlationId: `correlation:${input.intentEventId}`,
+      causationId: `causation:${input.intentEventId}`,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream: resourceStream(resourceId),
+      payload: {
+        workflowInstanceId: 'workflow-1',
+        activationId: 'activation-1',
+        resourceId,
+        body: input.body,
+      },
+    }),
+  );
+  if (input.confirmed === false) return intent;
+  const delivery = (payload: {
+    readonly externalId: string;
+    readonly result?: typeof DeliveryResultKind.Confirmed;
+  }) => ({
+    eventId: `${input.intentEventId}-confirmed`,
+    occurredAt: '2026-08-08T00:02:00.000Z',
+    correlationId: `correlation:${input.intentEventId}`,
+    causationId: `causation:${input.intentEventId}`,
+    actor: { kind: 'system' as const, id: 'test' },
+    source: { kind: 'internal' as const, id: 'test' },
+    stream: deliveryStream(eventId(input.intentEventId)),
+    payload: {
+      intentEventId: eventId(input.intentEventId),
+      intentGlobalPosition: intent.globalPosition,
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      occurrenceOrdinal: 1,
+      ...payload,
+    },
+  });
+  return appendEvent(
+    world,
+    input.reconciled === true
+      ? createEventDraft({
+          ...delivery({ externalId: 'github-comment-1', result: DeliveryResultKind.Confirmed }),
+          eventType: DeliveryEventType.Reconciled,
+        })
+      : createEventDraft({
+          ...delivery({ externalId: 'github-comment-1' }),
+          eventId: `${input.intentEventId}-confirmed`,
+          eventType: DeliveryEventType.Confirmed,
+        }),
+  );
+}
+
+async function appendEvent(world: TestWorld, event: EventDraft) {
+  const events = await world.journal.readStream(event.stream);
+  const [appended] = await world.journal.append(event.stream, events.length, [event]);
+  if (appended === undefined) throw new Error('Expected the journal to append an event');
+  return appended;
+}
 
 async function appendIssueComment(
   world: TestWorld,

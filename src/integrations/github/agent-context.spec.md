@@ -5,17 +5,18 @@
 Adapter. This component implements Activities' `AgentContextReader` contract
 for GitHub: given a WorkItem, it returns the correlated GitHub object's
 current title/body and its full comment history, purely by refolding
-already-recorded `integration.github.*` evidence — it makes no live GitHub
-call of its own.
+already-recorded GitHub evidence and durable delivery facts — it makes no
+live GitHub call of its own.
 
 ## Responsibilities and boundaries
 
 This component owns resolving a WorkItem's primary GitHub resource, folding
 that resource's `integration.github.work-observed` evidence to its latest
-title/body, and folding its `integration.github.comment-observed` evidence
-to an ordered comment history. It does not poll GitHub — GitHub Inbound
-Evidence does, and this component only reads what that evidence already
-recorded. It does not decide what an agent does with this context — this
+title/body, and folding its `integration.github.comment-observed` evidence plus
+confirmed comment-shaped delivery intents to an ordered comment history. It
+does not poll GitHub — GitHub Inbound Evidence does, and this component only
+reads durable facts already recorded. It does not decide what an agent does
+with this context — this
 component supplies read-only facts to whatever caller composed it as an
 `AgentContextReader`.
 
@@ -31,9 +32,23 @@ component supplies read-only facts to whatever caller composed it as an
   event whose external key matches the resource, in journal order, each
   entry carrying the comment/review's own author, occurrence time, and body
   — regardless of `reviewKind` (`formal` or `issue`).
-- Every fold this component performs MUST be re-derivable purely from the
-  adapter's own `integration` stream; this component holds no state of its
-  own between calls.
+- The history MUST also include each primary-resource `status.publish`,
+  `reply.publish`, or `agent-run.publish` intent once its delivery is confirmed
+  (including a reconciled confirmation). Its synthetic body MUST be exactly the
+  GitHub-delivered body, including delivery markers and the configured web
+  public URL in an agent-run report; its author is
+  `unknown-github-identity` and its timestamp/order key is the earliest
+  confirmation's occurrence time/global position.
+- Synthetic delivery history applies to the built-in GitHub adapter and every
+  enabled integration adapter configured with provider `github`; it never
+  treats an unrelated provider's delivery as a GitHub comment.
+- A provider-observed comment whose delivery marker identifies such an intent
+  MUST replace its synthetic entry before `observedSince` filtering, while
+  retaining the synthetic confirmation's timestamp and ordering key. Matching
+  is scoped to the same resource. Failed, pending, ambiguous, and non-comment
+  deliveries do not appear in history.
+- Every fold this component performs MUST be re-derivable from the journal;
+  this component holds no state of its own between calls.
 
 ## Conceptual schema
 
@@ -47,9 +62,11 @@ component supplies read-only facts to whatever caller composed it as an
 
 ## Dependencies and system role
 
-- GitHub Inbound Evidence (this component depends on it) — the sole source
-  of the `integration.github.*` evidence this component folds; this
-  component never calls the GitHub API itself.
+- GitHub Inbound Evidence (this component depends on it) — provides provider
+  observations this component folds; this component never calls the GitHub API
+  itself.
+- Durable Delivery (this component depends on it) — provides confirmed
+  outbound comment facts before their later inbound observation.
 - Resources (this component depends on it) — `correlationsForWork` and
   `get` resolve a WorkItem's primary GitHub resource and its external key.
 - Activities' Agent execution (depends on this component) — composed

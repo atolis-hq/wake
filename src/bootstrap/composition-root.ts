@@ -150,7 +150,10 @@ export async function createCompositionRoot(
       pullRequests,
       resources,
       wakeRoot,
-      createGitHubAgentContextReader(journal, resources),
+      createGitHubAgentContextReader(journal, resources, {
+        publicUiUrl: config.surfaces.web.publicUrl,
+        githubAdapters: githubAdapters(config),
+      }),
     );
   const definitions = Object.fromEntries(
     Object.entries(config.orchestration.workflows).map(([name, definition]) => [
@@ -287,4 +290,10 @@ export async function createCompositionRoot(
     resolveResourceLink,
     ...runtime,
   };
+}
+
+function githubAdapters(config: ResolvedWakeModulesConfig): readonly string[] {
+  return Object.entries(config.integrations).flatMap(([adapter, integration]) =>
+    integration.enabled && (integration.provider ?? adapter) === 'github' ? [adapter] : [],
+  );
 }
