@@ -187,7 +187,7 @@ async function workDetail(
     data,
     meta: await projectionMeta(
       root.journal,
-      [...projections, ...correlationFacts, ...(pullRequest === undefined ? [] : [pullRequest])],
+      [...projections, ...correlationFacts, ...(pullRequest == null ? [] : [pullRequest])],
       now(),
     ),
   };
