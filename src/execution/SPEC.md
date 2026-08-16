@@ -275,9 +275,11 @@ Execution does not own:
 
 ## Decisions, exclusions, and deferred capability
 
-- There is no command to resolve or retry an `ambiguous` Run from within
-  Execution. Recovery only records the ambiguity; a further `attempt` call
-  keeps returning the same ambiguous Run unchanged.
+- A further `attempt` call keeps returning the same ambiguous Run unchanged.
+  The loopback operator API may explicitly resolve an escalated ambiguity as
+  failed with an operator-provided reason; it records a normal terminal
+  failure and hands the owning workflow to its existing retry policy. It does
+  not replay a Run automatically or accept provider-comment text as authority.
 - Runner pool failover only moves within the same pool: when the resolved
   runner is quota-ineligible, Execution tries the next candidate in that
   pool and never crosses to a different pool.

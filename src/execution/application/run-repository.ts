@@ -11,9 +11,14 @@ import { foldRun } from '../domain/run.js';
 
 export class RunRepository {
   constructor(private readonly journal: EventJournal) {}
-  async load(runId: RunId) {
+  async load(runId: RunId): Promise<{
+    readonly sequence: number;
+    readonly events?: readonly RunExecutionEvent[];
+    readonly view: ReturnType<typeof foldRun>;
+  }> {
     const events = await this.journal.readStream(runStream(runId));
-    return { sequence: events.length, view: foldRun(events.map(decodeRunExecutionEvent)) };
+    const decoded = events.map(decodeRunExecutionEvent);
+    return { sequence: events.length, events: decoded, view: foldRun(decoded) };
   }
 
   async append(

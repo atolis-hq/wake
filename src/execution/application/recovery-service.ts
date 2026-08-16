@@ -88,8 +88,18 @@ export class RecoveryService {
     const currentRunId = runId(id);
     const loaded = await this.repository.load(currentRunId);
     if (loaded.view === null) throw new Error(`Run ${id} does not exist`);
-    if (!loaded.view.escalated || loaded.view.status !== RunStatus.Ambiguous)
+    if (!loaded.view.escalated || loaded.view.status !== RunStatus.Ambiguous) {
+      if (
+        loaded.events?.some(
+          (event) =>
+            event.causationId === context.commandId &&
+            (event.eventType === ExecutionEventType.RunSucceeded ||
+              event.eventType === ExecutionEventType.RunFailed),
+        )
+      )
+        return loaded.view;
       throw new Error(`Run ${id} is not escalated`);
+    }
     const draft =
       resolution.kind === RunStatus.Succeeded
         ? createRunExecutionEventDraft({

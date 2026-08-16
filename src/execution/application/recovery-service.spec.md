@@ -110,6 +110,8 @@ the Execution service's concern once the Run is out of `started`.
   report `completed` for an execution whose result is genuinely successful
   and schema-valid, or Recovery's handling of that Run will fail outright
   rather than record a terminal fact for it.
-- There is no command to resolve or retry an `ambiguous` Run from within
-  Recovery or the wider Execution surface; see the module specification's
-  own deferred-capability note.
+- Recovery exposes an operator-only resolution operation for an escalated
+  ambiguous Run. The loopback API currently exposes the failed-resolution
+  form; it records a normal terminal failure and lets Orchestration's existing
+  retry policy decide whether to request another attempt. It never retries an
+  ambiguous Run automatically or treats a provider comment as the resolution.
