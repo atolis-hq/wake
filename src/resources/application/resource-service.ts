@@ -31,6 +31,7 @@ export interface ResourceService {
   get(resourceId: ResourceId): Promise<ResourceView | null>;
   findByExternalKey(externalKey: ExternalResourceKey): Promise<ResourceView | null>;
   correlations(resourceId: ResourceId): Promise<readonly ResourceCorrelationView[]>;
+  primaryCorrelation(resourceId: ResourceId): Promise<ResourceCorrelationView | null>;
   correlationsForWork(workItemId: WorkItemId): Promise<readonly ResourceCorrelationView[]>;
   correlate(
     resourceId: ResourceId,
@@ -69,6 +70,7 @@ export function createResourceService(
     async correlations(resourceId) {
       return (await repository.load(resourceId)).resource?.correlations ?? [];
     },
+    primaryCorrelation: (resourceId) => lookup.primaryCorrelation(resourceId),
     correlationsForWork: (workItemId) => lookup.correlationsForWork(workItemId),
     correlate: (resourceId, workItemId, role, context, provenance) =>
       correlateResource(repository, resourceId, workItemId, role, context, provenance),

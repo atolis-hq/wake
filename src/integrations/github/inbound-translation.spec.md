@@ -49,9 +49,16 @@ poll GitHub itself — GitHub Inbound Evidence does.
   fresh Resource/WorkItem identity pair, and only if the observation's
   intake decision admits it. An ineligible object Wake has never seen MUST
   produce no WorkItem, Resource, or effect.
-- An already-correlated Resource whose lookup succeeds but has no `primary`
-  correlation to a WorkItem MUST be treated as an error, not silently
-  skipped.
+- An already-correlated Resource whose lookup succeeds but has no active
+  `primary` correlation MUST use Resources' history-aware primary lookup. If
+  its most recent retracted primary targets a deleted WorkItem, translation
+  MUST append exactly one `integration.github.deleted-work-observation-skipped`
+  fact to the GitHub integration stream and return successfully without
+  revising the Resource or mutating/recreating the WorkItem. Its event id is
+  `github:deleted-work-skip:<sourceEventId>:<workItemId>` and its payload is
+  `{ externalKey, workItemId, sourceEventId, revision, reason: 'work-item-deleted' }`.
+  The same source event MUST therefore be idempotent. Any other missing active
+  primary correlation remains an error.
 - For an already-known object, a revision change MUST call `discover` with
   the new revision before any pull-request observation is applied for that
   same event.

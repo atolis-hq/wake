@@ -7,6 +7,7 @@ import { RunRepository } from '../../../src/execution/index.js';
 import {
   BuiltInAdapterId,
   createEventDraft,
+  GitHubEventType,
   InboundTranslator,
   integrationStream,
   type ExternalWorkObservedPayload,
@@ -79,7 +80,7 @@ describe('InboundTranslator', () => {
     ).toHaveLength(1);
   });
 
-  it('ignores a re-observed resource whose deleted WorkItem retracted its primary correlation', async () => {
+  it('records one skip diagnostic for a deleted correlation and continues later inbound work', async () => {
     const clock = new FakeClock();
     const journal = new InMemoryEventJournal(clock);
     const { resources, lookup } = createTestResourceServices(journal);
@@ -156,6 +157,33 @@ describe('InboundTranslator', () => {
     expect(
       await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#8' }),
     ).not.toBeNull();
+    expect(await work.get(staleWork)).toMatchObject({ deleted: true });
+    expect(await resources.get(staleResource!)).toMatchObject({ revision: 'abc123' });
+    const diagnostics = (
+      await journal.readStream(integrationStream(BuiltInAdapterId.GitHub))
+    ).filter((event) => event.eventType === GitHubEventType.DeletedWorkObservationSkipped);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      eventId: `github:deleted-work-skip:github:issue:owner/repo#7:v2:${staleWork}`,
+      payload: {
+        externalKey: 'owner/repo#7',
+        workItemId: staleWork,
+        sourceEventId: 'github:issue:owner/repo#7:v2',
+        revision: 'def456',
+        reason: 'work-item-deleted',
+      },
+    });
+
+    // Replaying the same provider evidence after the deletion must find the
+    // deterministic diagnostic instead of appending another one.
+    await checkpoints.reset('reactor:integration.github.inbound');
+    await checkpoints.save('reactor:integration.github.inbound', ignored!.globalPosition - 1);
+    await resumed.runOnce();
+    expect(
+      (await journal.readStream(integrationStream(BuiltInAdapterId.GitHub))).filter(
+        (event) => event.eventType === GitHubEventType.DeletedWorkObservationSkipped,
+      ),
+    ).toHaveLength(1);
   });
 
   it('grants changed-files capability to a newly admitted pull request', async () => {
