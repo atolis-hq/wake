@@ -1,13 +1,25 @@
 import { dirname, normalize } from 'node:path/posix';
 import { scrubProcessLog, type ProcessLogSink } from './process-log.js';
 
+export { verifyResidentStart } from './resident-start.js';
+
 /** Surface-local Docker process boundary; composition supplies the real invoker. */
 export interface DockerInvokeOptions {
   readonly interactive?: boolean;
+  /** Captures output for the caller without forwarding chunks to the normal process log. */
+  readonly suppressOutput?: boolean;
+}
+
+export interface DockerInvocationResult {
+  readonly stdout: string;
+  readonly stderr: string;
 }
 
 export interface DockerCli {
-  invoke(arguments_: readonly string[], options?: DockerInvokeOptions): Promise<void>;
+  invoke(
+    arguments_: readonly string[],
+    options?: DockerInvokeOptions,
+  ): Promise<DockerInvocationResult>;
 }
 
 export type SandboxContainerState = 'live' | 'halted' | null;
@@ -39,8 +51,19 @@ export interface SandboxDockerOptions {
   readonly resolveBuildVersion?: () => Promise<string>;
 }
 
-export function createDockerCli(invoke: DockerCli['invoke']): DockerCli {
-  return { invoke };
+type DockerInvocation = (
+  arguments_: readonly string[],
+  options?: DockerInvokeOptions,
+) => Promise<DockerInvocationResult | void>;
+
+const emptyDockerInvocationResult: DockerInvocationResult = { stdout: '', stderr: '' };
+
+export function createDockerCli(invoke: DockerInvocation): DockerCli {
+  return {
+    async invoke(arguments_, options) {
+      return (await invoke(arguments_, options)) ?? emptyDockerInvocationResult;
+    },
+  };
 }
 
 export interface DockerProcessChunk {
@@ -59,22 +82,62 @@ export interface DockerProcess {
     arguments_: readonly string[],
     onChunk: (chunk: DockerProcessChunk) => void | Promise<void>,
     options?: DockerInvokeOptions,
-  ): Promise<void>;
+  ): Promise<DockerInvocationResult | void>;
+}
+
+/** A failed Docker invocation whose streamed output remains available for a concise caller diagnostic. */
+export class DockerProcessError extends Error {
+  constructor(
+    message: string,
+    readonly result: DockerInvocationResult,
+    cause?: unknown,
+  ) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = 'DockerProcessError';
+  }
 }
 
 /** Streams Docker output through the target-owned scrubbed log boundary as it arrives. */
 export function createLoggedDockerCli(process: DockerProcess, log: ProcessLogSink): DockerCli {
   return {
-    async invoke(arguments_: readonly string[], options?: DockerInvokeOptions): Promise<void> {
-      await process.execute(
-        arguments_,
-        (chunk) => {
-          if (chunk.text.length === 0) return;
-          return log.write(scrubProcessLog(chunk.text));
-        },
-        options,
-      );
+    async invoke(
+      arguments_: readonly string[],
+      options?: DockerInvokeOptions,
+    ): Promise<DockerInvocationResult> {
+      let stdout = '';
+      let stderr = '';
+      const onChunk = (chunk: DockerProcessChunk) => {
+        if (chunk.stream === 'stdout') stdout += chunk.text;
+        else stderr += chunk.text;
+        if (options?.suppressOutput || chunk.text.length === 0) return;
+        return log.write(scrubProcessLog(chunk.text));
+      };
+      try {
+        const result = await process.execute(arguments_, onChunk, options);
+        return mergeDockerOutput(result, { stdout, stderr });
+      } catch (error) {
+        const result = mergeDockerOutput(
+          error instanceof DockerProcessError ? error.result : undefined,
+          { stdout, stderr },
+        );
+        throw new DockerProcessError(
+          error instanceof Error ? error.message : String(error),
+          result,
+          error,
+        );
+      }
     },
+  };
+}
+
+function mergeDockerOutput(
+  result: DockerInvocationResult | void,
+  captured: DockerInvocationResult,
+): DockerInvocationResult {
+  if (result === undefined) return captured;
+  return {
+    stdout: result.stdout.length === 0 ? captured.stdout : result.stdout,
+    stderr: result.stderr.length === 0 ? captured.stderr : result.stderr,
   };
 }
 
@@ -181,38 +244,6 @@ export interface SandboxResumeTarget {
   readonly sessionId: string;
   readonly cwd: string;
   readonly cli: string;
-}
-
-/**
- * Polls until the resident `wake start` process is alive inside the
- * container (pid file + live pid + expected cmdline), retrying on any
- * failure — `docker.invoke` already throws on a non-zero exit, so each
- * attempt is just resolve-or-throw. Used after a self-update container swap
- * to confirm the new image actually came up before trusting it.
- */
-export async function verifyResidentStart(
-  docker: DockerCli,
-  containerName: string,
-  expectedCmdlineFragment: string,
-  options?: { readonly attempts?: number; readonly intervalMs?: number },
-): Promise<void> {
-  const attempts = options?.attempts ?? 15;
-  const intervalMs = options?.intervalMs ?? 1000;
-  const check = [
-    'pid="$(cat /wake/.wake/logs/start.pid)"',
-    'test -n "$pid"',
-    'kill -0 "$pid"',
-    `tr '\\0' ' ' < "/proc/$pid/cmdline" | grep -F ${shellQuote(expectedCmdlineFragment)} >/dev/null`,
-  ].join(' && ');
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      await docker.invoke(['exec', '-i', containerName, 'sh', '-lc', check]);
-      return;
-    } catch (error) {
-      if (attempt === attempts) throw error;
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    }
-  }
 }
 
 function shellQuote(value: string): string {

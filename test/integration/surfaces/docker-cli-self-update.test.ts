@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createDockerCli,
+  createLoggedDockerCli,
   createSandboxDockerPort,
   verifyResidentStart,
 } from '../../../src/surfaces/cli/infrastructure/docker-cli.js';
@@ -125,5 +126,70 @@ describe('verifyResidentStart', () => {
       }),
     ).rejects.toThrow('exited with code 1');
     expect(attempts).toBe(3);
+  });
+
+  it('suppresses transient stale-PID probe output before the resident process becomes ready', async () => {
+    const entries: string[] = [];
+    let attempts = 0;
+    const docker = createLoggedDockerCli(
+      {
+        execute: async (_arguments, onChunk) => {
+          attempts += 1;
+          if (attempts < 3) {
+            await onChunk({ stream: 'stderr', text: 'sh: 1: kill: No such process\n' });
+            throw new Error('docker exec exited with code 1');
+          }
+        },
+      },
+      {
+        write: async (value) => {
+          entries.push(value);
+        },
+        close: async () => {},
+      },
+    );
+
+    await verifyResidentStart(docker, 'wake-sandbox', 'wake start --wake-root /wake', {
+      attempts: 3,
+      intervalMs: 0,
+    });
+
+    expect(attempts).toBe(3);
+    expect(entries).toEqual([]);
+  });
+
+  it('reports the final captured probe output after all resident-start attempts fail', async () => {
+    const entries: string[] = [];
+    let attempts = 0;
+    const docker = createLoggedDockerCli(
+      {
+        execute: async (_arguments, onChunk) => {
+          attempts += 1;
+          if (attempts === 1) {
+            await onChunk({ stream: 'stderr', text: 'sh: 1: kill: No such process\n' });
+          } else {
+            await onChunk({ stream: 'stdout', text: 'pid=219\n' });
+            await onChunk({ stream: 'stderr', text: 'sh: 1: kill: No such process\n' });
+          }
+          throw new Error('docker exec exited with code 1');
+        },
+      },
+      {
+        write: async (value) => {
+          entries.push(value);
+        },
+        close: async () => {},
+      },
+    );
+
+    await expect(
+      verifyResidentStart(docker, 'wake-sandbox', 'wake start --wake-root /wake', {
+        attempts: 2,
+        intervalMs: 0,
+      }),
+    ).rejects.toThrow(/resident start.*pid=219.*kill: No such process/is);
+
+    expect(attempts).toBe(2);
+    expect(entries).toEqual(['pid=219\n', 'sh: 1: kill: No such process\n']);
   });
 });
