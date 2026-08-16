@@ -133,14 +133,13 @@ async function applyIssueReviewSignal(input: {
   const command = recognizedCommand(event.payload.body);
   const plainReply = isPlainReply(event.payload.body);
   if (command === '/retry') {
-    await applyIssueRetrySignal({
+    return applyIssueRetrySignal({
       event,
       resources,
       work,
       orchestration,
       resourceId: resourceIdValue,
     });
-    return;
   }
   if (resource?.kind === BuiltInResourceKind.PullRequest) {
     await applyWorkflowSignal({
@@ -149,6 +148,7 @@ async function applyIssueReviewSignal(input: {
       orchestration,
       resourceId: resourceIdValue,
       outcome: command === '/approved' ? ActivityOutcomeKind.Done : ActivityOutcomeKind.Rejected,
+      acceptWaitingSignal: command !== null,
       resumeBlockedOnChanges: shouldResumeBlockedStage(command, plainReply),
     });
     return;

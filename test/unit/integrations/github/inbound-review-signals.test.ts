@@ -348,7 +348,7 @@ it('still satisfies the plain approval workflow unchanged', async () => {
   expect((await fixture.world.viewWorkflow(fixture.workflowId))?.status).not.toBe('waiting');
 });
 
-it('re-runs a default implementation after substantive human feedback on a correlated PR', async () => {
+it('leaves a waiting correlated PR workflow unchanged for a plain reply', async () => {
   const fixture = await waitingIssueWorkflow(signalName('approved'));
   const pr = await fixture.world.discoverResource({
     resourceId: `resource-${'0'.repeat(25)}1` as never,
@@ -365,17 +365,11 @@ it('re-runs a default implementation after substantive human feedback on a corre
 
   await applyHumanPrComment(fixture, 'Please handle the null response before retrying.');
 
-  const revised = await fixture.world.viewWorkflow(fixture.workflowId);
-  expect(await fixture.world.events('orchestration.signal-accepted')).toHaveLength(1);
-  expect(revised).toMatchObject({
-    status: 'active',
-    currentStage: 'implement',
-    pendingActivation: { activity: 'implement' },
+  expect(await fixture.world.viewWorkflow(fixture.workflowId)).toMatchObject({
+    status: 'waiting',
+    waitingFor: { signalKind: signalName('approved') },
   });
-  await fixture.world.acceptOutcome(fixture.workflowId, revised!.pendingActivation!.activationId, {
-    kind: ActivityOutcomeKind.Done,
-  });
-  expect((await fixture.world.viewWorkflow(fixture.workflowId))?.status).toBe('waiting');
+  expect(await fixture.world.events('orchestration.signal-accepted')).toHaveLength(0);
 });
 
 it('ignores Wake delivery comments on a correlated PR', async () => {
