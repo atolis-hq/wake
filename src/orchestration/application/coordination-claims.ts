@@ -85,7 +85,10 @@ export class CoordinationClaims {
         ]);
       },
     });
-    return claimed;
+    if (claimed) return true;
+    return claimedRequestIds(groupEvents(await this.journal.readStream(stream))).has(
+      request.requestId,
+    );
   }
 }
 
