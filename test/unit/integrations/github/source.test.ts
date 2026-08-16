@@ -145,11 +145,36 @@ it('attaches collaborator permission evidence to a /retry comment', async () => 
   );
 });
 
+it('keeps issue observations when pull-request review enrichment fails', async () => {
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    fakeClient({
+      issues: [issue(5, 'A plain issue'), { ...issue(6, 'A PR'), pull_request: {} }],
+      issueComments: {},
+      reviewError: new Error('review endpoint unavailable'),
+    }),
+  );
+
+  const drafts = await source.poll(new AbortController().signal);
+
+  expect(drafts).toContainEqual(
+    expect.objectContaining({
+      eventType: GitHubEventType.WorkObserved,
+      payload: expect.objectContaining({ externalKey: 'atolis-hq/wake-test#5' }),
+    }),
+  );
+});
+
 function fakeClient(input: {
   readonly issues: readonly ReturnType<typeof issue>[];
   readonly issueComments: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
   readonly reviewComments?: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
   readonly reviews?: Readonly<Record<number, readonly GitHubReviewPayload[]>>;
+  readonly reviewError?: Error;
   readonly collaboratorPermission?: typeof ProviderPermission.Write;
 }) {
   const collaboratorPermission = input.collaboratorPermission;
@@ -164,6 +189,7 @@ function fakeClient(input: {
       return input.issueComments[issueNumber] ?? [];
     },
     async listReviews(_owner: string, _repo: string, pullNumber: number) {
+      if (input.reviewError !== undefined) throw input.reviewError;
       return input.reviews?.[pullNumber] ?? [];
     },
     async listReviewComments(_owner: string, _repo: string, pullNumber: number) {
