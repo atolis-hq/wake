@@ -15,7 +15,11 @@ import { WorkStatus } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import { DispatchPolicy } from '../domain/dispatch-policy.js';
-import { findUnresolvedTerminal, isExecutionFailureTerminal } from './execution-reconciliation.js';
+import {
+  findUnresolvedSucceededTerminal,
+  findUnresolvedTerminal,
+  isExecutionFailureTerminal,
+} from './execution-reconciliation.js';
 
 interface OrchestrationPort {
   reconcileChildCompletions(context: CommandContext): Promise<void>;
@@ -168,7 +172,9 @@ export function createAdvanceOnce(
         ? [{ workflow, activation: workflow.pendingActivation }]
         : [],
     );
-    const recovery = await findUnresolvedTerminal([...pending, ...blocked], execution);
+    const recovery =
+      (await findUnresolvedTerminal(pending, execution)) ??
+      (await findUnresolvedSucceededTerminal(blocked, execution));
     if (recovery !== undefined) {
       if (await isDispatchPaused()) return { kind: 'paused' };
       if (recovery.run.status === RunStatus.Succeeded) {
