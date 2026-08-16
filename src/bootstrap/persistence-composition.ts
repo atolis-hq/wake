@@ -25,14 +25,38 @@ function identity<T>(value: T): T {
   return value;
 }
 
+function serializeJournalAppends(journal: EventJournal): EventJournal {
+  let appendTail: Promise<void> = Promise.resolve();
+  return {
+    append(stream, expectedSequence, events) {
+      const appended = appendTail.then(() => journal.append(stream, expectedSequence, events));
+      appendTail = appended.then(
+        () => undefined,
+        () => undefined,
+      );
+      return appended;
+    },
+    readStream: (stream) => journal.readStream(stream),
+    readAll: (afterGlobalPosition, limit) => journal.readAll(afterGlobalPosition, limit),
+    ...(journal.readLatest === undefined
+      ? {}
+      : {
+          readLatest: (beforeGlobalPosition, limit) =>
+            journal.readLatest!(beforeGlobalPosition, limit),
+        }),
+  };
+}
+
 export function composePersistence(
   paths: WakePaths,
   clock: Clock,
   options: PersistenceCompositionOptions,
 ): PersistenceComposition {
   return {
-    journal: (options.decorateJournal ?? identity)(
-      options.journal ?? new FileEventJournal(paths.dataRoot, clock),
+    journal: serializeJournalAppends(
+      (options.decorateJournal ?? identity)(
+        options.journal ?? new FileEventJournal(paths.dataRoot, clock),
+      ),
     ),
     projections: (options.decorateProjections ?? identity)(
       options.projections ?? new FileProjectionStore(paths.dataRoot),
