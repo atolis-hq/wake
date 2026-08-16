@@ -26,7 +26,20 @@ function boardClient(fetchSpy?: (url: string) => void) {
       totalTokens: 0,
       totalCostUsd: 0,
       totalDurationMs: 300_000,
-      activeRun: { action: 'pr-review', runnerName: 'fake', startedAt: asOf, elapsedMs: 12_000 },
+      activeRuns: {
+        'run-pr-review': {
+          action: 'pr-review',
+          runnerName: 'fake',
+          startedAt: asOf,
+          elapsedMs: 12_000,
+        },
+        'run-implementation': {
+          action: 'implement',
+          runnerName: 'codex',
+          startedAt: asOf,
+          elapsedMs: 8_000,
+        },
+      },
     },
     {
       workItemKey: 'wk_b',
@@ -138,7 +151,7 @@ describe('board', () => {
       }),
     ).toBeTruthy();
   });
-  it('shows the child-run indicator only for a work item with an active child run', async () => {
+  it('shows every active run and no indicator for a work item without one', async () => {
     render(
       <MemoryRouter initialEntries={['/board']}>
         <App client={boardClient()} />
@@ -147,6 +160,7 @@ describe('board', () => {
     const active = await screen.findByRole('listitem', { name: 'Alpha' });
     const inactive = screen.getByRole('listitem', { name: 'Beta' });
     expect(within(active).getByText('pr-review running')).toBeTruthy();
+    expect(within(active).getByText('implement running')).toBeTruthy();
     expect(within(inactive).queryByText(/running/i)).toBeNull();
   });
   it('shows the last run outcome returned by the board API', async () => {

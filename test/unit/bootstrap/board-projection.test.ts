@@ -291,7 +291,7 @@ describe('operator board projection', () => {
     expect(withChildStarted.cards[workItemId]).toMatchObject({
       condition: 'needs-input',
       awaitingApproval: true,
-      activeRun: { action: 'review' },
+      activeRuns: { [run]: { action: 'review' } },
     });
 
     const finished = boardProjection.project(
@@ -309,7 +309,7 @@ describe('operator board projection', () => {
       awaitingApproval: true,
       lastRunOutcome: 'done',
     });
-    expect(finished.cards[workItemId]!.activeRun).toBeUndefined();
+    expect(finished.cards[workItemId]!.activeRuns).toEqual({});
   });
 
   it("labels an active run with the watch child's own action, not the parent's current stage", () => {
@@ -374,7 +374,7 @@ describe('operator board projection', () => {
 
     expect(view.cards[workItemId]).toMatchObject({
       stage: 'implement',
-      activeRun: { action: 'review' },
+      activeRuns: { [run]: { action: 'review' } },
     });
   });
 
@@ -476,7 +476,68 @@ describe('operator board projection', () => {
     );
 
     expect(next.cards[item]).toMatchObject({ condition: 'active', lastRunOutcome: 'done' });
-    expect(next.cards[item]!.activeRun).toBeUndefined();
+    expect(next.cards[item]!.activeRuns).toEqual({});
+  });
+
+  it('recovers a legacy single active-run checkpoint into the matching run ID', () => {
+    const item = workId('board-legacy-active-run');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-legacy-active-run');
+    const seeded = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Legacy checkpoint' },
+        workItemStream(item),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-legacy-active-run'),
+          activity: activityName('refine'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-09T13:40:37.355Z',
+        },
+        runStream(run),
+        3,
+      ),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+    const card = seeded.cards[item]!;
+    const { activeRuns, ...withoutActiveRuns } = card;
+    const { [run]: activeRun } = activeRuns;
+    const legacyView = {
+      ...seeded,
+      cards: { ...seeded.cards, [item]: { ...withoutActiveRuns, activeRun } },
+    } as typeof seeded;
+
+    const finished = boardProjection.project(
+      legacyView,
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        { outcome: { kind: 'done' }, finishedAt: '2026-08-09T13:40:59.015Z' },
+        runStream(run),
+        4,
+      ),
+    );
+
+    expect(finished.cards[item]!.activeRuns).toEqual({});
+    expect(finished.cards[item]!.totalDurationMs).toBe(21_660);
   });
 
   it('shows an active run, accumulates token/cost totals, and clears the run on completion', () => {
@@ -518,10 +579,12 @@ describe('operator board projection', () => {
     expect(started.cards[item]).toMatchObject({
       condition: 'active',
       runCount: 1,
-      activeRun: {
-        action: 'implement',
-        runnerName: 'claude',
-        startedAt: '2026-08-03T12:00:00.000Z',
+      activeRuns: {
+        [run]: {
+          action: 'implement',
+          runnerName: 'claude',
+          startedAt: '2026-08-03T12:00:00.000Z',
+        },
       },
     });
 
@@ -549,7 +612,7 @@ describe('operator board projection', () => {
       cacheWriteTokens: 0,
       totalCostUsd: 0.03,
     });
-    expect(withResult.cards[item]!.activeRun).toBeDefined();
+    expect(withResult.cards[item]!.activeRuns[run]).toBeDefined();
 
     const finished = boardProjection.project(
       withResult,
@@ -560,12 +623,96 @@ describe('operator board projection', () => {
         5,
       ),
     );
-    expect(finished.cards[item]!.activeRun).toBeUndefined();
+    expect(finished.cards[item]!.activeRuns).toEqual({});
     expect(finished.cards[item]).toMatchObject({
       totalTokens: 35,
       totalCostUsd: 0.03,
       totalDurationMs: 300_000,
     });
+  });
+
+  it('keeps every active run keyed by run ID when one concurrent run finishes', () => {
+    const item = workId('board-concurrent-runs');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const firstRun = runId('run-concurrent-first');
+    const secondRun = runId('run-concurrent-second');
+    const started = [
+      eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'delivery',
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          entry: 'implement',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-concurrent-first'),
+          activity: activityName('implement'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-03T12:00:00.000Z',
+          runner: { name: 'claude' },
+        },
+        runStream(firstRun),
+        3,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-concurrent-second'),
+          activity: activityName('review'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-03T12:01:00.000Z',
+          runner: { name: 'codex' },
+        },
+        runStream(secondRun),
+        4,
+      ),
+    ].reduce(
+      (view, event) => boardProjection.project(view, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(started.cards[item]?.activeRuns).toEqual({
+      [firstRun]: {
+        action: 'implement',
+        runnerName: 'claude',
+        startedAt: '2026-08-03T12:00:00.000Z',
+      },
+      [secondRun]: {
+        action: 'implement',
+        runnerName: 'codex',
+        startedAt: '2026-08-03T12:01:00.000Z',
+      },
+    });
+
+    const finished = boardProjection.project(
+      started,
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        { outcome: { kind: 'done' }, finishedAt: '2026-08-03T12:05:00.000Z' },
+        runStream(firstRun),
+        5,
+      ),
+    );
+
+    expect(finished.cards[item]?.activeRuns).toEqual({
+      [secondRun]: {
+        action: 'implement',
+        runnerName: 'codex',
+        startedAt: '2026-08-03T12:01:00.000Z',
+      },
+    });
+    expect(finished.cards[item]?.totalDurationMs).toBe(300_000);
   });
 
   it('keeps the lifecycle condition while clearing a successfully completed primary run', () => {
@@ -614,7 +761,7 @@ describe('operator board projection', () => {
     );
 
     expect(finished.cards[item]).toMatchObject({ condition: 'active', lastRunOutcome: 'done' });
-    expect(finished.cards[item]!.activeRun).toBeUndefined();
+    expect(finished.cards[item]!.activeRuns).toEqual({});
   });
 
   it('moves a card to error and clears the active run when the agent reports a failed outcome', () => {
@@ -667,7 +814,7 @@ describe('operator board projection', () => {
       lastRunOutcome: 'failed',
       totalDurationMs: 300_000,
     });
-    expect(failed.cards[item]!.activeRun).toBeUndefined();
+    expect(failed.cards[item]!.activeRuns).toEqual({});
   });
 
   it('clears a terminal outcome when a primary retry starts', () => {
@@ -726,7 +873,12 @@ describe('operator board projection', () => {
 
     expect(retried.cards[item]).toMatchObject({
       condition: 'active',
-      activeRun: { action: 'refine', startedAt: '2026-08-03T12:06:00.000Z' },
+      activeRuns: {
+        [runId('run-retry-active')]: {
+          action: 'refine',
+          startedAt: '2026-08-03T12:06:00.000Z',
+        },
+      },
     });
     expect(retried.cards[item]!.lastRunOutcome).toBeUndefined();
   });

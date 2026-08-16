@@ -22,7 +22,7 @@ export interface BoardCardResponse {
   readonly stage?: string;
   readonly dwellSince: string;
   readonly runCount: number;
-  readonly activeRun?: BoardCardActiveRun;
+  readonly activeRuns?: Readonly<Record<string, BoardCardActiveRun>>;
   readonly lastRunAt?: string;
   readonly lastRunAgeMs?: number;
   readonly lastRunOutcome?: string;

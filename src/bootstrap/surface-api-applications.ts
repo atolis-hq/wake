@@ -57,7 +57,8 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
         boardProjection.name,
         'global',
       );
-      const cards = Object.values(stored?.value.cards ?? {}).sort((left, right) =>
+      const board = stored?.value ?? boardProjection.initial('global');
+      const cards = Object.values(board.cards).sort((left, right) =>
         cardRecency(right).localeCompare(cardRecency(left)),
       );
       const offset = query.cursor?.position ?? 0;
@@ -65,22 +66,25 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
       const items = await Promise.all(
         page.map(async (card) => {
           const externalRef = await primaryExternalRef(root, card.workItemId);
-          const { activeRun, ...withoutActiveRun } = card;
+          const {
+            activeRun: _legacyActiveRun,
+            activeRuns: _activeRuns,
+            ...withoutActiveRuns
+          } = card;
+          const activeRuns = activeBoardRuns(board, card);
           return presentBoardCard({
-            ...withoutActiveRun,
+            ...withoutActiveRuns,
             totalDurationMs: card.totalDurationMs ?? 0,
+            activeRuns: Object.fromEntries(
+              Object.entries(activeRuns).map(([runId, activeRun]) => [
+                runId,
+                { ...activeRun, elapsedMs: elapsedSince(activeRun.startedAt, nowMs) },
+              ]),
+            ),
             ...(externalRef === undefined ? {} : { externalRef }),
             ...(card.lastRunAt === undefined
               ? {}
               : { lastRunAgeMs: elapsedSince(card.lastRunAt, nowMs) }),
-            ...(activeRun === undefined
-              ? {}
-              : {
-                  activeRun: {
-                    ...activeRun,
-                    elapsedMs: elapsedSince(activeRun.startedAt, nowMs),
-                  },
-                }),
           });
         }),
       );
@@ -88,11 +92,28 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
         items,
         total: cards.length,
         ...(offset + query.limit < cards.length ? { nextPosition: offset + query.limit } : {}),
-        conditionCounts: boardConditionCounts(stored?.value ?? boardProjection.initial('global')),
+        conditionCounts: boardConditionCounts(board),
         meta: await projectionMeta(root.journal, stored === null ? [] : [stored], now()),
       };
     },
   };
+}
+
+function activeBoardRuns(
+  board: BoardProjectionView,
+  card: BoardProjectionView['cards'][string],
+): Readonly<
+  Record<
+    string,
+    { readonly action: string; readonly runnerName?: string; readonly startedAt: string }
+  >
+> {
+  if (card.activeRuns !== undefined) return card.activeRuns;
+  if (card.activeRun === undefined) return {};
+  const legacyRunId = Object.entries(board.runs)
+    .reverse()
+    .find(([, workItemId]) => workItemId === card.workItemId)?.[0];
+  return legacyRunId === undefined ? {} : { [legacyRunId]: card.activeRun };
 }
 
 function createStatusApplications(root: CompositionRoot, now: () => string) {
