@@ -48,12 +48,21 @@ export function createGitHubClient(token: string) {
   const cache = createEtagCache();
   return {
     authenticatedLogin: async () => (await octokit.rest.users.getAuthenticated()).data.login,
-    listIssues: (owner: string, repo: string, maxResults: number) =>
-      listIssues(octokit, cache, owner, repo, maxResults),
+    listIssues: (owner: string, repo: string, maxResults: number, since?: string) =>
+      listIssues(octokit, cache, owner, repo, maxResults, since),
     listPullRequests: (owner: string, repo: string, maxResults: number) =>
       listPullRequests(octokit, cache, owner, repo, maxResults),
-    listIssueComments: (owner: string, repo: string, issueNumber: number, pageSize: number) =>
-      listIssueComments(octokit, cache, owner, repo, issueNumber, pageSize),
+    listIssueComments: (
+      owner: string,
+      repo: string,
+      issueNumber: number,
+      pageSize: number,
+      since?: string,
+    ) =>
+      listIssueComments(octokit, cache, owner, repo, issueNumber, {
+        pageSize,
+        ...(since === undefined ? {} : { since }),
+      }),
     listReviewComments: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
       listReviewComments(octokit, cache, owner, repo, pullNumber, pageSize),
     collaboratorPermission: async (owner: string, repo: string, login: string) => {

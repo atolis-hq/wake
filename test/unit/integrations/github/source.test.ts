@@ -205,20 +205,107 @@ it('keeps issue observations when pull-request review enrichment fails', async (
   );
 });
 
+it('keeps issue comment intake available when the pull-request query fails and preserves its watermark', async () => {
+  const saved: Array<readonly [string, number]> = [];
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+      polling: { lookbackMs: 30_000 },
+    }),
+    fakeClient({
+      issues: [issue(630, 'operator resolution')],
+      issueComments: { 630: [comment(5309237436, 'CLI + API only')] },
+      pullRequestError: new Error('GitHub 500'),
+    }),
+    undefined,
+    undefined,
+    {
+      checkpoints: {
+        async load() {
+          return Date.parse('2026-08-16T19:22:00.000Z');
+        },
+        async save(consumer, position) {
+          saved.push([consumer, position]);
+        },
+        async reset() {},
+      },
+      now: () => Date.parse('2026-08-16T19:23:00.000Z'),
+    },
+  );
+
+  const drafts = await source.poll(new AbortController().signal);
+  await source.markPollPersisted?.();
+
+  expect(drafts).toContainEqual(
+    expect.objectContaining({
+      eventType: GitHubEventType.CommentObserved,
+      payload: expect.objectContaining({ body: 'CLI + API only' }),
+    }),
+  );
+  expect(saved).toEqual([]);
+});
+
+it('uses an overlapping durable watermark only after a complete poll has persisted', async () => {
+  const saved: Array<readonly [string, number]> = [];
+  const queriedSince: Array<string | undefined> = [];
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+      polling: { lookbackMs: 30_000 },
+    }),
+    fakeClient({
+      issues: [issue(5, 'A plain issue')],
+      issueComments: {},
+      onListIssues: (since) => queriedSince.push(since),
+    }),
+    undefined,
+    undefined,
+    {
+      checkpoints: {
+        async load() {
+          return 0;
+        },
+        async save(consumer, position) {
+          saved.push([consumer, position]);
+        },
+        async reset() {},
+      },
+      now: () => Date.parse('2026-08-16T19:23:00.000Z'),
+    },
+  );
+
+  await source.poll(new AbortController().signal);
+  expect(queriedSince).toEqual([undefined]);
+  expect(saved).toEqual([]);
+  await source.markPollPersisted?.();
+
+  expect(saved).toEqual([
+    ['source:github:github:atolis-hq/wake-test', Date.parse('2026-08-16T19:23:00.000Z')],
+  ]);
+});
+
 function fakeClient(input: {
   readonly issues: readonly ReturnType<typeof issue>[];
   readonly issueComments: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
   readonly reviewComments?: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
   readonly reviews?: Readonly<Record<number, readonly GitHubReviewPayload[]>>;
   readonly reviewError?: Error;
+  readonly pullRequestError?: Error;
+  readonly onListIssues?: (since: string | undefined) => void;
   readonly collaboratorPermission?: typeof ProviderPermission.Write;
 }) {
   const collaboratorPermission = input.collaboratorPermission;
   return {
-    async listIssues() {
+    async listIssues(_owner: string, _repo: string, _maxResults: number, since?: string) {
+      input.onListIssues?.(since);
       return input.issues;
     },
     async listPullRequests() {
+      if (input.pullRequestError !== undefined) throw input.pullRequestError;
       return input.issues as never;
     },
     async listIssueComments(_owner: string, _repo: string, issueNumber: number) {

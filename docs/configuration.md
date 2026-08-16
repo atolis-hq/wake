@@ -406,7 +406,7 @@ Use `provider: github` for the built-in GitHub integration.
 | `polling.maxPerRepo` | positive integer; default `25` | Maximum issues and pull requests read per repository per poll. |
 | `polling.maxConcurrent` | positive integer; default `4` | Provider-wide concurrent GitHub request limit shared by polling enrichment and Wake-label reconciliation. |
 | `polling.commentPageSize` | integer `1..100`; default `25` | Page size for issue and pull-request comments. |
-| `polling.lookbackMs` | non-negative integer; default `60000` | Minimum interval before the source polls again. |
+| `polling.lookbackMs` | non-negative integer; default `60000` | Overlap retained when querying since the repository's durable last-successful-poll watermark. The first poll, or one with no persisted watermark, uses the provider's bounded bootstrap query. |
 | `intake` | list; default `[]` | Admission/tagging rules. With no rules, every observation is admitted with no added tags. |
 | `publication.postStatusComments` | boolean; default `true` | Allows GitHub status-comment publication. |
 

@@ -202,6 +202,8 @@ it.each([
       owner: 'owner',
       repo: 'repo',
       state: 'all',
+      sort: 'updated',
+      direction: 'desc',
       per_page: 10,
     });
     expect(octokit.paginateIterator).toHaveBeenCalledWith(octokit.listCheckRunsForRef, {

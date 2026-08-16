@@ -1,47 +1,26 @@
-import type { ProviderPermission } from '../../../activities/index.js';
-import {
-  ReviewerAuthorizationSource,
-  type ReviewerAuthorizationEvidence,
-} from '../../../activities/index.js';
+import type { CheckpointStore } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ExternalEventSource } from '../../contracts/intake.js';
 import type { GitHubConfig } from '../contracts/config.js';
 import { GitHubEventType } from '../contracts/events.js';
-import type { GitHubIssueCommentPayload, GitHubReviewPayload } from '../contracts/payloads.js';
-import { issueCommentObservation, issueObservation } from './issue-source.js';
-import { createGitHubPullRequestSource, type GitHubPullRequestSourceClient } from './pr-source.js';
+import {
+  issueCommentEventsFor,
+  reviewCommentEventsFor,
+  reviewEventsFor,
+} from './comment-source.js';
+import { issueObservation } from './issue-source.js';
+import {
+  loadWatermark,
+  overlapSince,
+  reportPartialPollFailure,
+  watermarkCheckpoint,
+} from './poll-watermark.js';
+import { createGitHubPullRequestSource } from './pr-source.js';
 import {
   createGitHubRequestCoordinator,
   type GitHubRequestCoordinator,
 } from './request-coordinator.js';
-import { githubReviewObservation } from './review-source.js';
-
-interface GitHubSourceClient extends GitHubPullRequestSourceClient {
-  listIssues(
-    owner: string,
-    repo: string,
-    maxResults: number,
-  ): Promise<readonly Parameters<typeof issueObservation>[0]['issue'][]>;
-  listIssueComments(
-    owner: string,
-    repo: string,
-    issueNumber: number,
-    pageSize: number,
-  ): Promise<readonly GitHubIssueCommentPayload[]>;
-  listReviews(
-    owner: string,
-    repo: string,
-    pullNumber: number,
-    pageSize: number,
-  ): Promise<readonly GitHubReviewPayload[]>;
-  listReviewComments?(
-    owner: string,
-    repo: string,
-    pullNumber: number,
-    pageSize: number,
-  ): Promise<readonly GitHubIssueCommentPayload[]>;
-  collaboratorPermission?(owner: string, repo: string, login: string): Promise<ProviderPermission>;
-}
+import type { GitHubSourceClient, RepositoryPollContext } from './source-contracts.js';
 
 export function createGitHubSource(
   config: GitHubConfig,
@@ -50,20 +29,22 @@ export function createGitHubSource(
   requests: GitHubRequestCoordinator = createGitHubRequestCoordinator({
     maxConcurrent: config.polling.maxConcurrent,
   }),
+  state?: {
+    readonly checkpoints: CheckpointStore;
+    readonly now?: () => number;
+  },
 ): ExternalEventSource {
-  let nextPollAt = 0;
   // Draft eventIds are already content fingerprints (see issue-source.ts/pr-source.ts),
   // so the journal itself is idempotent per item. This cache only avoids re-appending
   // (and re-triggering downstream translation) an unchanged item on every poll within
   // a single process lifetime — it's a perf optimization, not a correctness dependency,
   // so it's safe for it to reset on restart.
   const lastEventIds = new Map<string, string>();
+  const pendingWatermarks = new Map<string, number>();
   return {
     async poll(signal) {
-      if (Date.now() < nextPollAt) return [];
-      nextPollAt = Date.now() + config.polling.lookbackMs;
       const perRepository = await Promise.all(
-        config.repositories.map(({ owner, repo }) =>
+        config.repositories.map(async ({ owner, repo }) =>
           pollRepository({
             client: limitGitHubSourceClient(client, requests),
             config,
@@ -71,15 +52,28 @@ export function createGitHubSource(
             signal,
             owner,
             repo,
+            watermark: await loadWatermark(state?.checkpoints, adapter, owner, repo),
+            now: state?.now ?? Date.now,
           }),
         ),
       );
-      return perRepository.flat().filter((draft) => {
-        if (draft.eventType !== GitHubEventType.WorkObserved) return true;
-        const prior = lastEventIds.get(draft.payload.externalKey);
-        lastEventIds.set(draft.payload.externalKey, draft.eventId);
-        return prior !== draft.eventId;
-      });
+      for (const result of perRepository)
+        if (result.succeeded) pendingWatermarks.set(result.repository, result.completedAt);
+      return perRepository
+        .flatMap((result) => result.drafts)
+        .filter((draft) => {
+          if (draft.eventType !== GitHubEventType.WorkObserved) return true;
+          const prior = lastEventIds.get(draft.payload.externalKey);
+          lastEventIds.set(draft.payload.externalKey, draft.eventId);
+          return prior !== draft.eventId;
+        });
+    },
+    async markPollPersisted() {
+      if (state === undefined) return;
+      for (const [repository, watermark] of pendingWatermarks) {
+        await state.checkpoints.save(watermarkCheckpoint(adapter, repository), watermark);
+        pendingWatermarks.delete(repository);
+      }
     },
   };
 }
@@ -90,8 +84,8 @@ function limitGitHubSourceClient(
 ): GitHubSourceClient {
   return {
     ...client,
-    listIssues: (owner, repo, maxResults) =>
-      requests.run(() => client.listIssues(owner, repo, maxResults)),
+    listIssues: (owner, repo, maxResults, since) =>
+      requests.run(() => client.listIssues(owner, repo, maxResults, since)),
     listPullRequests: (owner, repo, maxResults) =>
       requests.run(() => client.listPullRequests(owner, repo, maxResults)),
     listCheckRunsForRef: (owner, repo, ref) =>
@@ -100,8 +94,8 @@ function limitGitHubSourceClient(
       requests.run(() => client.getCombinedStatusForRef(owner, repo, ref)),
     listPullRequestFiles: (owner, repo, pullNumber) =>
       requests.run(() => client.listPullRequestFiles(owner, repo, pullNumber)),
-    listIssueComments: (owner, repo, issueNumber, pageSize) =>
-      requests.run(() => client.listIssueComments(owner, repo, issueNumber, pageSize)),
+    listIssueComments: (owner, repo, issueNumber, pageSize, since) =>
+      requests.run(() => client.listIssueComments(owner, repo, issueNumber, pageSize, since)),
     listReviews: (owner, repo, pullNumber, pageSize) =>
       requests.run(() => client.listReviews(owner, repo, pullNumber, pageSize)),
     ...(client.listReviewComments === undefined
@@ -119,15 +113,6 @@ function limitGitHubSourceClient(
   };
 }
 
-interface RepositoryPollContext {
-  readonly client: GitHubSourceClient;
-  readonly config: GitHubConfig;
-  readonly adapter: AdapterId | undefined;
-  readonly owner: string;
-  readonly repo: string;
-  readonly repository: string;
-}
-
 async function pollRepository(input: {
   readonly client: GitHubSourceClient;
   readonly config: GitHubConfig;
@@ -135,6 +120,8 @@ async function pollRepository(input: {
   readonly signal: Parameters<ExternalEventSource['poll']>[0];
   readonly owner: string;
   readonly repo: string;
+  readonly watermark: number;
+  readonly now: () => number;
 }) {
   const { client, config, adapter, signal, owner, repo } = input;
   const context: RepositoryPollContext = {
@@ -145,25 +132,41 @@ async function pollRepository(input: {
     repo,
     repository: `${owner}/${repo}`,
   };
-  try {
-    const pullRequestPayloads = await client.listPullRequests(
-      owner,
-      repo,
-      config.polling.maxPerRepo,
-    );
-    const [issues, pullRequests, reviews, reviewComments] = await Promise.all([
-      client.listIssues(owner, repo, config.polling.maxPerRepo),
-      createGitHubPullRequestSource({
-        client: { ...client, listPullRequests: async () => pullRequestPayloads },
-        repository: context.repository,
-        maxResults: config.polling.maxPerRepo,
-        ...(adapter === undefined ? {} : { adapter }),
-      }).poll(signal),
-      reviewEventsFor(context, pullRequestPayloads).catch(() => []),
-      reviewCommentEventsFor(context, pullRequestPayloads).catch(() => []),
-    ]);
-    const issueComments = await issueCommentEventsFor(context, issues);
-    return [
+  const since = overlapSince(input.watermark, config.polling.lookbackMs);
+  const [issuesResult, pullRequestsResult] = await Promise.allSettled([
+    client.listIssues(owner, repo, config.polling.maxPerRepo, since),
+    client.listPullRequests(owner, repo, config.polling.maxPerRepo),
+  ]);
+  if (!isFulfilled(issuesResult)) reportPartialPollFailure(context.repository, 'issues');
+  if (!isFulfilled(pullRequestsResult))
+    reportPartialPollFailure(context.repository, 'pull requests');
+  const issues = isFulfilled(issuesResult) ? issuesResult.value : [];
+  const pullRequestPayloads = isFulfilled(pullRequestsResult)
+    ? pullRequestsResult.value.filter(
+        (pullRequest) => since === undefined || pullRequest.updated_at >= since,
+      )
+    : [];
+  const [pullRequests, reviews, reviewComments, issueComments] = await Promise.all([
+    createGitHubPullRequestSource({
+      client: { ...client, listPullRequests: async () => pullRequestPayloads },
+      repository: context.repository,
+      maxResults: config.polling.maxPerRepo,
+      ...(adapter === undefined ? {} : { adapter }),
+    }).poll(signal),
+    reviewEventsFor(context, pullRequestPayloads),
+    reviewCommentEventsFor(context, pullRequestPayloads),
+    issueCommentEventsFor(context, issues, since),
+  ]);
+  return {
+    repository: context.repository,
+    completedAt: input.now(),
+    succeeded:
+      isFulfilled(issuesResult) &&
+      isFulfilled(pullRequestsResult) &&
+      reviews.succeeded &&
+      reviewComments.succeeded &&
+      issueComments.succeeded,
+    drafts: [
       ...issues
         .filter((issue) => issue.pull_request === undefined)
         .map((issue) =>
@@ -174,119 +177,15 @@ async function pollRepository(input: {
           }),
         ),
       ...pullRequests,
-      ...reviews,
-      ...reviewComments,
-      ...issueComments,
-    ];
-  } catch {
-    return [];
-  }
+      ...reviews.drafts,
+      ...reviewComments.drafts,
+      ...issueComments.drafts,
+    ],
+  };
 }
 
-async function reviewCommentEventsFor(
-  context: RepositoryPollContext,
-  pullRequests: readonly Parameters<typeof githubReviewObservation>[0]['pullRequest'][],
-) {
-  if (context.client.listReviewComments === undefined) return [];
-  const items = await Promise.all(
-    pullRequests.map(async (pullRequest) =>
-      (async () => {
-        const comments = await context.client.listReviewComments!(
-          context.owner,
-          context.repo,
-          pullRequest.number,
-          context.config.polling.commentPageSize,
-        );
-        return (
-          await Promise.all(
-            comments.map((comment) => issueCommentEventsForComment(context, pullRequest, comment)),
-          )
-        ).flat();
-      })(),
-    ),
-  );
-  return items.flat();
-}
-
-async function reviewEventsFor(
-  context: RepositoryPollContext,
-  pullRequestPayloads: readonly Parameters<typeof githubReviewObservation>[0]['pullRequest'][],
-) {
-  const items = await Promise.all(
-    pullRequestPayloads.map(async (pullRequest) => {
-      const reviewEvents = await context.client.listReviews(
-        context.owner,
-        context.repo,
-        pullRequest.number,
-        context.config.polling.commentPageSize,
-      );
-      return reviewEvents.flatMap((review) =>
-        githubReviewObservation({
-          repository: context.repository,
-          pullRequest,
-          review,
-          authorizedReviewers: [],
-        }),
-      );
-    }),
-  );
-  return items.flat();
-}
-
-async function issueCommentEventsFor(
-  context: RepositoryPollContext,
-  issues: readonly Parameters<typeof issueObservation>[0]['issue'][],
-) {
-  const items = await Promise.all(
-    issues.map(async (issue) =>
-      (async () => {
-        const comments = await context.client.listIssueComments(
-          context.owner,
-          context.repo,
-          issue.number,
-          context.config.polling.commentPageSize,
-        );
-        return (
-          await Promise.all(
-            comments.map((comment) => issueCommentEventsForComment(context, issue, comment)),
-          )
-        ).flat();
-      })(),
-    ),
-  );
-  return items.flat();
-}
-
-async function issueCommentEventsForComment(
-  context: RepositoryPollContext,
-  issue: Pick<Parameters<typeof issueCommentObservation>[0]['issue'], 'number'>,
-  comment: GitHubIssueCommentPayload,
-) {
-  const authorization = await retryAuthorization(context, comment);
-  const event = issueCommentObservation({
-    repository: context.repository,
-    issue,
-    comment,
-    ...(authorization === undefined ? {} : { authorization }),
-    ...(context.adapter === undefined ? {} : { adapter: context.adapter }),
-  });
-  return event === null ? [] : [event];
-}
-
-async function retryAuthorization(
-  context: RepositoryPollContext,
-  comment: GitHubIssueCommentPayload,
-): Promise<ReviewerAuthorizationEvidence | undefined> {
-  if (comment.body?.trim().toLowerCase() !== '/retry') return undefined;
-  const login = comment.user?.login;
-  if (login === undefined || context.client.collaboratorPermission === undefined)
-    return { source: ReviewerAuthorizationSource.None };
-  try {
-    return {
-      source: ReviewerAuthorizationSource.ProviderPermission,
-      permission: await context.client.collaboratorPermission(context.owner, context.repo, login),
-    };
-  } catch {
-    return { source: ReviewerAuthorizationSource.None };
-  }
+function isFulfilled<Value>(
+  result: PromiseSettledResult<Value>,
+): result is PromiseFulfilledResult<Value> {
+  return 'value' in result;
 }

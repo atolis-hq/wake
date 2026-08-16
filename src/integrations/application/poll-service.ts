@@ -21,6 +21,7 @@ export class PollService {
       await this.journal.append(stream, existing.length, [{ ...draft, stream }]);
       appended += 1;
     }
+    await this.instance.source.markPollPersisted?.();
     return appended;
   }
 }

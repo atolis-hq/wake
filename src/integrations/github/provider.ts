@@ -34,7 +34,10 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
     return {
       adapter,
       eventTypes: Object.values(GitHubEventType),
-      source: createGitHubSource(config, client, adapter, requests),
+      source: createGitHubSource(config, client, adapter, requests, {
+        checkpoints: services.checkpoints,
+        now: () => services.clock.now().getTime(),
+      }),
       maintenance: createGitHubWakeLabelReconciler({
         orchestration: services.orchestration,
         resources: services.resources,

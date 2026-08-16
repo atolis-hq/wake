@@ -58,8 +58,15 @@ identity.
   its own observed fields (labels likewise excluding Wake's own) plus its
   fetched check-run/commit-status evidence, so a check-state-only change —
   with every other field unchanged — still produces new, distinct evidence.
-- A poll call MUST return no drafts when called again before its
-  configured `lookbackMs` interval has elapsed since the previous poll; an
+- Every repository has a durable last-successful-poll watermark. Subsequent
+  issue and comment queries use that watermark minus configured `lookbackMs`;
+  a repository with no watermark uses the provider's bounded bootstrap query.
+  The watermark advances only after every draft from a complete repository
+  query has been durably appended. Any failed query leaves it unchanged, so
+  the next poll replays the overlap and stable provider event ids deduplicate it.
+  A pull-request query failure must not prevent available issue/comment evidence
+  from being returned, but it still leaves that repository's watermark unchanged
+  and emits an operator-visible partial-poll failure. An
   issue or pull-request draft whose event id is unchanged since this
   process's last poll of that same external key MUST also be omitted, as a
   same-process perf optimization on top of the journal's own idempotency —
