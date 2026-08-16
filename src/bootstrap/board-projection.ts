@@ -159,7 +159,10 @@ function projectWork(
   ) {
     return {
       ...view,
-      cards: { ...view.cards, [id]: { ...current, condition: BoardCondition.Finished } },
+      cards: {
+        ...view.cards,
+        [id]: { ...withoutAwaitingApproval(current), condition: BoardCondition.Finished },
+      },
     };
   }
   // Deletion is a purge, not a lifecycle outcome — the card must disappear
@@ -374,7 +377,10 @@ function projectRunTerminal(
         ...withoutLegacyActiveRun(card),
         activeRuns: withoutActiveRun(activeRuns, event.stream.id),
         ...(terminal === undefined ? {} : { lastRunOutcome: terminal.lastRunOutcome }),
-        ...(terminal === undefined || isChildRun || terminal.condition === undefined
+        ...(terminal === undefined ||
+        isChildRun ||
+        card.condition === BoardCondition.Finished ||
+        terminal.condition === undefined
           ? {}
           : { condition: terminal.condition }),
         totalDurationMs: card.totalDurationMs + runDurationMs,
@@ -410,7 +416,7 @@ function projectRunStarted(
           ? withoutLegacyActiveRun(card)
           : withoutLegacyActiveRun(withoutLastRunOutcome(withoutAwaitingApproval(card)))),
         runCount: card.runCount + 1,
-        ...(isChildRun ? {} : { condition: BoardCondition.Active }),
+        ...(shouldSetCardActive(card, isChildRun) ? { condition: BoardCondition.Active } : {}),
         lastRunAt: event.payload.startedAt,
         activeRuns: {
           ...activeRuns,
@@ -425,6 +431,10 @@ function projectRunStarted(
       },
     },
   };
+}
+
+function shouldSetCardActive(card: StoredCard, isChildRun: boolean): boolean {
+  return !isChildRun && card.condition !== BoardCondition.Finished;
 }
 
 function projectRunnerResult(
