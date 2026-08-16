@@ -77,6 +77,32 @@ describe('CLI infrastructure', () => {
     expect(writeOrder).toEqual(['chunk-1\n', 'chunk-2\n']);
   });
 
+  it('retains suppressed Docker output for the caller without forwarding it to the log sink', async () => {
+    const entries: string[] = [];
+    const docker = createLoggedDockerCli(
+      {
+        execute: async (_arguments, onChunk) => {
+          await onChunk({ stream: 'stdout', text: 'pid=219\n' });
+          await onChunk({ stream: 'stderr', text: 'sh: 1: kill: No such process\n' });
+        },
+      },
+      {
+        write: async (value) => {
+          entries.push(value);
+        },
+        close: async () => {},
+      },
+    );
+
+    const result = await docker.invoke(['exec', 'wake-sandbox'], { suppressOutput: true });
+
+    expect(entries).toEqual([]);
+    expect(result).toEqual({
+      stdout: 'pid=219\n',
+      stderr: 'sh: 1: kill: No such process\n',
+    });
+  });
+
   it('rejects when the Docker process exits non-zero, after streaming its output', async () => {
     const entries: string[] = [];
     const docker = createLoggedDockerCli(

@@ -11,6 +11,7 @@ import { ExecutionCancellationReason, RunStatus, loadPromptTemplate } from '../e
 import { EventActorKind, correlationId } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
+  DockerProcessError,
   createApiDispatcher,
   createApiHttpServer,
   createLoggedDockerCli,
@@ -28,6 +29,8 @@ import {
   waitForActiveRuns,
   type ApiApplications,
   type DockerCli,
+  type DockerInvocationResult,
+  type DockerInvokeOptions,
   type DockerProcessChunk,
   type HostOptions,
   type SandboxDockerInspection,
@@ -340,7 +343,9 @@ function createSandboxRuntimeApplications(root: CompositionRoot) {
         return false;
       }
     },
-    exec: (arguments_: readonly string[]) => docker.exec([...wakeInvocation, ...arguments_]),
+    async exec(arguments_: readonly string[]): Promise<void> {
+      await docker.exec([...wakeInvocation, ...arguments_]);
+    },
   };
 }
 
@@ -498,8 +503,8 @@ function spawnDocker(
   arguments_: readonly string[],
   onChunk: (chunk: DockerProcessChunk) => void | Promise<void>,
   cwd: string,
-  options?: { readonly interactive?: boolean },
-): Promise<void> {
+  options?: DockerInvokeOptions,
+): Promise<DockerInvocationResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       'docker',
@@ -509,32 +514,42 @@ function spawnDocker(
     if (options?.interactive) {
       child.on('error', reject);
       child.on('close', (code) => {
-        if (code === 0) resolve();
+        if (code === 0) resolve({ stdout: '', stderr: '' });
         else
-          reject(new Error('docker ' + arguments_.join(' ') + ' exited with code ' + String(code)));
+          reject(
+            new DockerProcessError(
+              'docker ' + arguments_.join(' ') + ' exited with code ' + String(code),
+              { stdout: '', stderr: '' },
+            ),
+          );
       });
       return;
     }
     let chain = Promise.resolve();
-    let stderrTail = '';
+    let stdout = '';
+    let stderr = '';
     const enqueue = (stream: DockerProcessChunk['stream'], text: string) => {
-      if (stream === 'stderr') stderrTail = `${stderrTail}${text}`.slice(-4000);
+      if (stream === 'stdout') stdout += text;
+      else stderr += text;
       chain = chain.then(() => onChunk({ stream, text }));
     };
     child.stdout!.on('data', (buffer: Buffer) => enqueue('stdout', buffer.toString('utf8')));
     child.stderr!.on('data', (buffer: Buffer) => enqueue('stderr', buffer.toString('utf8')));
     child.on('error', (error) => {
-      void chain.then(() => reject(error));
+      void chain.then(() =>
+        reject(new DockerProcessError(error.message, { stdout, stderr }, error)),
+      );
     });
     child.on('close', (code) => {
       void chain.then(() => {
-        if (code === 0) resolve();
+        if (code === 0) resolve({ stdout, stderr });
         else {
-          const detail = stderrTail.trim();
+          const detail = stderr.trim();
           reject(
-            new Error(
+            new DockerProcessError(
               `docker ${arguments_.join(' ')} exited with code ${String(code)}` +
                 (detail.length > 0 ? `: ${detail}` : ''),
+              { stdout, stderr },
             ),
           );
         }
