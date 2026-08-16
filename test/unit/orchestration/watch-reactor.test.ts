@@ -383,6 +383,57 @@ it('replays the identical child request after checkpoint persistence fails', asy
   expect(rejections).toBe(0);
 });
 
+it('reconciles a durable watch trigger orphaned after its checkpoint advanced', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await journal.append(watchStream, 0, [
+    createEventDraft({
+      eventId: 'orphaned-trigger',
+      eventType: 'review.requested',
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      correlationId: 'corr-1',
+      causationId: 'orphaned-trigger',
+      actor: { kind: 'integration', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream: watchStream,
+      payload: {},
+    }),
+  ]);
+  const requested: string[] = [];
+  const checkpoints = new InMemoryCheckpointStore();
+  const reactor = createWatchReactor(
+    {
+      async listWatchMatches() {
+        return [
+          {
+            parent: { workflowInstanceId: workflowInstanceId('parent-1') },
+            watch: { id: 'review', workflow: workflowName('review'), maxPerGroup: 1 },
+          },
+        ];
+      },
+      async listWaiting() {
+        return [
+          {
+            workflowInstanceId: workflowInstanceId('parent-1'),
+            waitingFor: { from: [{ kind: 'watch', watch: 'review' }] },
+          },
+        ] as never;
+      },
+      async requestChild(request) {
+        requested.push(request.requestId);
+        return {};
+      },
+      async rejectCausalActivation() {},
+    },
+    journal,
+    checkpoints,
+  );
+
+  await expect(reactor.reconcileOnce()).resolves.toBe(1);
+  expect(requested).toEqual(['parent-1:watch:review:trigger:orphaned-trigger']);
+  expect(await checkpoints.load('reconciler:orchestration.watch')).toBe(1);
+  expect(await checkpoints.load('reactor:orchestration.watch')).toBe(0);
+});
+
 it('scopes an orchestration state-transition event to its own stream, not an unrelated match', async () => {
   const requested: string[] = [];
   const reactor = createWatchReactor({
