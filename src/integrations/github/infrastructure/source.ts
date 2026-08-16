@@ -10,6 +10,10 @@ import { GitHubEventType } from '../contracts/events.js';
 import type { GitHubIssueCommentPayload, GitHubReviewPayload } from '../contracts/payloads.js';
 import { issueCommentObservation, issueObservation } from './issue-source.js';
 import { createGitHubPullRequestSource, type GitHubPullRequestSourceClient } from './pr-source.js';
+import {
+  createGitHubRequestCoordinator,
+  type GitHubRequestCoordinator,
+} from './request-coordinator.js';
 import { githubReviewObservation } from './review-source.js';
 
 interface GitHubSourceClient extends GitHubPullRequestSourceClient {
@@ -43,6 +47,9 @@ export function createGitHubSource(
   config: GitHubConfig,
   client: GitHubSourceClient,
   adapter?: AdapterId,
+  requests: GitHubRequestCoordinator = createGitHubRequestCoordinator({
+    maxConcurrent: config.polling.maxConcurrent,
+  }),
 ): ExternalEventSource {
   let nextPollAt = 0;
   // Draft eventIds are already content fingerprints (see issue-source.ts/pr-source.ts),
@@ -57,7 +64,14 @@ export function createGitHubSource(
       nextPollAt = Date.now() + config.polling.lookbackMs;
       const perRepository = await Promise.all(
         config.repositories.map(({ owner, repo }) =>
-          pollRepository({ client, config, adapter, signal, owner, repo }),
+          pollRepository({
+            client: limitGitHubSourceClient(client, requests),
+            config,
+            adapter,
+            signal,
+            owner,
+            repo,
+          }),
         ),
       );
       return perRepository.flat().filter((draft) => {
@@ -67,6 +81,41 @@ export function createGitHubSource(
         return prior !== draft.eventId;
       });
     },
+  };
+}
+
+function limitGitHubSourceClient(
+  client: GitHubSourceClient,
+  requests: GitHubRequestCoordinator,
+): GitHubSourceClient {
+  return {
+    ...client,
+    listIssues: (owner, repo, maxResults) =>
+      requests.run(() => client.listIssues(owner, repo, maxResults)),
+    listPullRequests: (owner, repo, maxResults) =>
+      requests.run(() => client.listPullRequests(owner, repo, maxResults)),
+    listCheckRunsForRef: (owner, repo, ref) =>
+      requests.run(() => client.listCheckRunsForRef(owner, repo, ref)),
+    getCombinedStatusForRef: (owner, repo, ref) =>
+      requests.run(() => client.getCombinedStatusForRef(owner, repo, ref)),
+    listPullRequestFiles: (owner, repo, pullNumber) =>
+      requests.run(() => client.listPullRequestFiles(owner, repo, pullNumber)),
+    listIssueComments: (owner, repo, issueNumber, pageSize) =>
+      requests.run(() => client.listIssueComments(owner, repo, issueNumber, pageSize)),
+    listReviews: (owner, repo, pullNumber, pageSize) =>
+      requests.run(() => client.listReviews(owner, repo, pullNumber, pageSize)),
+    ...(client.listReviewComments === undefined
+      ? {}
+      : {
+          listReviewComments: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
+            requests.run(() => client.listReviewComments!(owner, repo, pullNumber, pageSize)),
+        }),
+    ...(client.collaboratorPermission === undefined
+      ? {}
+      : {
+          collaboratorPermission: (owner: string, repo: string, login: string) =>
+            requests.run(() => client.collaboratorPermission!(owner, repo, login)),
+        }),
   };
 }
 

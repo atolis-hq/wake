@@ -10,6 +10,7 @@ import { GitHubEventType } from './contracts/events.js';
 import { createGitHubClient } from './infrastructure/client.js';
 import { createGitHubDelivery } from './infrastructure/delivery.js';
 import { resolveGitHubCliToken } from './infrastructure/gh-auth.js';
+import { createGitHubRequestCoordinator } from './infrastructure/request-coordinator.js';
 import { createGitHubSource } from './infrastructure/source.js';
 
 export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
@@ -21,16 +22,20 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
   create({ adapter, config, services }) {
     if (services === undefined) throw new Error('GitHub provider requires composed services');
     const client = createGitHubClient(config.token ?? resolveGitHubCliToken());
+    const requests = createGitHubRequestCoordinator({
+      maxConcurrent: config.polling.maxConcurrent,
+    });
     return {
       adapter,
       eventTypes: Object.values(GitHubEventType),
-      source: createGitHubSource(config, client, adapter),
+      source: createGitHubSource(config, client, adapter, requests),
       maintenance: createGitHubWakeLabelReconciler({
         orchestration: services.orchestration,
         resources: services.resources,
         work: services.work,
         getLabels: client.getIssueLabels,
         setLabels: client.setIssueLabels,
+        requests,
       }),
       delivery: createGitHubDelivery(
         async (intent, idempotencyKey) => {

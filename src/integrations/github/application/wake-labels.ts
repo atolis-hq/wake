@@ -6,6 +6,7 @@ import {
   isGitHubWakeMarker,
   type GitHubWakeStatusLabel as GitHubWakeStatusLabelValue,
 } from '../contracts/vocabulary.js';
+import type { GitHubRequestCoordinator } from '../infrastructure/request-coordinator.js';
 
 export function reconcileGitHubWakeLabels(
   current: readonly string[],
@@ -51,7 +52,9 @@ export function createGitHubWakeLabelReconciler(input: {
     labels: readonly string[],
   ) => Promise<void>;
   readonly onError?: (failure: GitHubWakeLabelReconcileFailure, error: unknown) => void;
+  readonly requests?: GitHubRequestCoordinator;
 }): GitHubWakeLabelReconciler {
+  const syncedDesiredLabels = new Map<string, string>();
   const openWorkItemIds = async (
     workItemIds: ReadonlySet<WorkItemId>,
   ): Promise<ReadonlySet<WorkItemId>> => {
@@ -92,22 +95,37 @@ export function createGitHubWakeLabelReconciler(input: {
           if (resource?.externalKey.adapter !== 'github') continue;
           const locator = parseGitHubIssueKey(resource.externalKey.key);
           if (locator === null) continue;
+          const fingerprint = desired.join('\u0000');
+          if (syncedDesiredLabels.get(resource.resourceId) === fingerprint) continue;
           // One issue's persistent failure (rate limit, permissions, a stale
           // resource) must not stop every other open work item from being
           // reconciled this pass — each correlation is an independent GitHub
           // call with no ordering dependency on the others.
           try {
-            const current = await input.getLabels(locator.owner, locator.repo, locator.number);
+            const current = await request(input, () =>
+              input.getLabels(locator.owner, locator.repo, locator.number),
+            );
             const next = reconcileGitHubWakeLabels(current, desired);
             if (!sameLabels(current, next))
-              await input.setLabels(locator.owner, locator.repo, locator.number, next);
+              await request(input, () =>
+                input.setLabels(locator.owner, locator.repo, locator.number, next),
+              );
+            syncedDesiredLabels.set(resource.resourceId, fingerprint);
           } catch (error) {
+            syncedDesiredLabels.delete(resource.resourceId);
             onError({ workItemId: workflow.workItemId, ...locator }, error);
           }
         }
       }
     },
   };
+}
+
+function request<Value>(
+  input: { readonly requests?: GitHubRequestCoordinator },
+  operation: () => Promise<Value>,
+): Promise<Value> {
+  return input.requests === undefined ? operation() : input.requests.run(operation);
 }
 
 function defaultOnError(failure: GitHubWakeLabelReconcileFailure, error: unknown): void {
