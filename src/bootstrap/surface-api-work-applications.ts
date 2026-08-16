@@ -90,7 +90,13 @@ export function createSurfaceWorkApplications(
       const correlations = await root.resources.correlationsForWork(id);
       await root.work.delete(id, context);
       await Promise.all(
-        correlations.map((entry) => root.resources.retract(entry.resourceId, id, context)),
+        correlations.map((entry) =>
+          root.resources.retract(
+            entry.resourceId,
+            id,
+            resourceRetractionContext(context, entry.resourceId),
+          ),
+        ),
       );
       return accepted(command.idempotencyKey, now());
     },
@@ -284,6 +290,10 @@ function commandContext(idempotencyKey: string, now: () => string) {
     occurredAt,
     actor: { kind: EventActorKind.Operator, id: 'web' },
   };
+}
+
+function resourceRetractionContext(context: ReturnType<typeof commandContext>, resourceId: string) {
+  return { ...context, commandId: `${context.commandId}:resource:${resourceId}` };
 }
 
 function accepted(idempotencyKey: string, acceptedAt: string) {
