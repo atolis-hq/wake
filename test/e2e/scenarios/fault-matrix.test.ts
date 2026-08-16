@@ -19,6 +19,7 @@ import { DeliveryIntentEventType } from '../../../src/integrations/index.js';
 import { correlationId, type Clock } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
+  watchId,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
@@ -220,7 +221,10 @@ async function childCompletionBoundaries(): Promise<void> {
     await tick(fixture.root, 2);
     await fixture.root.orchestration.waitForSignal(
       parent.workflowInstanceId,
-      { signalKind: 'orchestration.child-completed' as never },
+      {
+        signalKind: 'orchestration.child-completed' as never,
+        from: [{ kind: 'watch', watch: watchId('child') }],
+      },
       context(point),
     );
     await fixture.root.journal.append({ kind: 'test', id: point }, 0, [

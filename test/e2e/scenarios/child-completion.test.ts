@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
 import {
   signalName,
+  watchId,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/contracts/identifiers.js';
@@ -84,6 +85,7 @@ defineScenario(
     await world.advanceUntilSettled(work.workItemId);
     await world.waitForSignal(parent.workflowInstanceId, {
       signalKind: signalName('orchestration.child-completed'),
+      from: [{ kind: 'watch', watch: watchId('review') }],
     });
     await world.triggerWatch('review.requested', 'review-request-1');
     const childId = `${parent.workflowInstanceId}:watch:review:trigger:review-request-1`;

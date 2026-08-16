@@ -18,6 +18,7 @@ import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
 import { RequestChild } from './request-child.js';
 import { StartWorkflow } from './start-workflow.js';
+import { continuesWaitingForSameWatchGate } from './watch-child-transitions.js';
 import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
 export class OrchestrationService {
@@ -27,6 +28,7 @@ export class OrchestrationService {
   private readonly advanceWorkflow: AdvanceWorkflow;
   private readonly childWorkflows: RequestChild;
   private coordinateAcceptSignal: OperationCoordinator = (operation) => operation();
+  private watchChildCancellation: WatchChildCancellation | undefined;
 
   constructor(
     journal: EventJournal,
@@ -81,7 +83,9 @@ export class OrchestrationService {
     },
     context: CommandContext,
   ) {
-    return this.acceptActivityOutcome.execute(command, context);
+    return this.transitionWatchChildren(context, () =>
+      this.acceptActivityOutcome.execute(command, context),
+    );
   }
 
   waitForSignal(
@@ -89,7 +93,9 @@ export class OrchestrationService {
     expectation: SignalExpectation,
     context: CommandContext,
   ) {
-    return this.acceptWorkflowSignal.wait(workflowInstanceId, expectation, context);
+    return this.transitionWatchChildren(context, () =>
+      this.acceptWorkflowSignal.wait(workflowInstanceId, expectation, context),
+    );
   }
 
   acceptSignal(
@@ -98,12 +104,18 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.coordinateAcceptSignal(() =>
-      this.acceptWorkflowSignal.execute(workflowInstanceId, signal, context),
+      this.transitionWatchChildren(context, () =>
+        this.acceptWorkflowSignal.execute(workflowInstanceId, signal, context),
+      ),
     );
   }
 
   setAcceptSignalOperationCoordinator(coordinator: OperationCoordinator): void {
     this.coordinateAcceptSignal = coordinator;
+  }
+
+  setWatchChildCancellation(cancellation: WatchChildCancellation): void {
+    this.watchChildCancellation = cancellation;
   }
 
   requestSupplementalActivity(
@@ -122,8 +134,14 @@ export class OrchestrationService {
     return this.advanceWorkflow.markActivationStarted(workflowInstanceId, activationId, context);
   }
 
+  validateActivationDispatch(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
+    return this.childWorkflows.validateChildDispatch(workflowInstanceId, context);
+  }
+
   block(workflowInstanceId: WorkflowInstanceId, reason: string, context: CommandContext) {
-    return this.advanceWorkflow.block(workflowInstanceId, reason, context);
+    return this.transitionWatchChildren(context, () =>
+      this.advanceWorkflow.block(workflowInstanceId, reason, context),
+    );
   }
 
   resolveExecutionFailure(
@@ -131,15 +149,21 @@ export class OrchestrationService {
     input: { readonly activationId: ActivationId; readonly runId: string; readonly reason: string },
     context: CommandContext,
   ) {
-    return this.advanceWorkflow.resolveExecutionFailure(workflowInstanceId, input, context);
+    return this.transitionWatchChildren(context, () =>
+      this.advanceWorkflow.resolveExecutionFailure(workflowInstanceId, input, context),
+    );
   }
 
   retryBlockedFailedStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
-    return this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context);
+    return this.transitionWatchChildren(context, () =>
+      this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context),
+    );
   }
 
   resumeBlockedStageForChanges(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
-    return this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context);
+    return this.transitionWatchChildren(context, () =>
+      this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context),
+    );
   }
 
   get(id: WorkflowInstanceId) {
@@ -163,7 +187,35 @@ export class OrchestrationService {
   }
 
   reconcileChildCompletions(context: CommandContext) {
-    return this.childWorkflows.reconcileChildCompletions(context);
+    return this.transitionWatchChildren(context, () =>
+      this.childWorkflows.reconcileChildCompletions(context),
+    );
+  }
+
+  private async transitionWatchChildren<Result>(
+    context: CommandContext,
+    operation: () => Promise<Result>,
+  ): Promise<Result> {
+    const before = await this.advanceWorkflow.listAll();
+    const result = await operation();
+    const after = new Map(
+      (await this.advanceWorkflow.listAll()).map((workflow) => [
+        workflow.workflowInstanceId,
+        workflow,
+      ]),
+    );
+    for (const prior of before) {
+      if (continuesWaitingForSameWatchGate(prior, after.get(prior.workflowInstanceId) ?? null))
+        continue;
+      const superseded = await this.childWorkflows.supersedeChildrenForWait(
+        prior.workflowInstanceId,
+        prior.waitingFor,
+        context,
+      );
+      if (superseded.length > 0)
+        await this.watchChildCancellation?.cancelSupersededWatchChildren(superseded);
+    }
+    return result;
   }
 
   isCausalRepeat(
@@ -199,16 +251,17 @@ export class OrchestrationService {
     evidenceId: string,
     context: CommandContext,
   ) {
-    return this.advanceWorkflow.applyResourceTransition(
-      workflowInstanceId,
-      target,
-      evidenceId,
-      context,
+    return this.transitionWatchChildren(context, () =>
+      this.advanceWorkflow.applyResourceTransition(workflowInstanceId, target, evidenceId, context),
     );
   }
 }
 
 export type OperationCoordinator = <Result>(operation: () => Promise<Result>) => Promise<Result>;
+
+export interface WatchChildCancellation {
+  cancelSupersededWatchChildren(workflowInstanceIds: readonly string[]): Promise<unknown>;
+}
 
 export const createOrchestrationService = (
   journal: EventJournal,

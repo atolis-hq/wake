@@ -6,10 +6,14 @@ import type {
   ChildWorkflowRequest,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import { signalName, type WorkflowInstanceId } from '../contracts/identifiers.js';
+import { signalName, watchId, type WorkflowInstanceId } from '../contracts/identifiers.js';
 import { childOrchestrationGroupStream } from '../contracts/streams.js';
-import type { GroupBudgetExhaustedView, WorkflowInstanceView } from '../contracts/views.js';
-import { WorkflowStatus } from '../contracts/vocabulary.js';
+import type {
+  GroupBudgetExhaustedView,
+  SignalExpectationView,
+  WorkflowInstanceView,
+} from '../contracts/views.js';
+import { ApprovalAuthorityKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import { childMetadata, childRequestId, coordinationMetadata } from '../domain/child-policy.js';
 import { coordinationDraft } from '../domain/coordination-events.js';
 import { stateDraft } from '../domain/decision-events.js';
@@ -97,6 +101,63 @@ export class RequestChild {
     }
   }
 
+  async supersedeChildrenForWait(
+    parentWorkflowInstanceId: WorkflowInstanceId,
+    wait: SignalExpectationView | undefined,
+    context: CommandContext,
+  ): Promise<readonly WorkflowInstanceId[]> {
+    const watchIds = watchIdsFor(wait);
+    if (watchIds.length === 0) return [];
+    const children = (await this.advance.listAll()).filter(
+      (child) =>
+        child.parentWorkflowInstanceId === parentWorkflowInstanceId &&
+        child.watchId !== undefined &&
+        watchIds.includes(child.watchId) &&
+        child.status !== WorkflowStatus.Completed &&
+        child.status !== WorkflowStatus.Superseded,
+    );
+    for (const child of children) {
+      const loaded = await this.repository.loadRequired(child.workflowInstanceId);
+      if (
+        loaded.view.status === WorkflowStatus.Completed ||
+        loaded.view.status === WorkflowStatus.Superseded
+      )
+        continue;
+      await this.repository.append(child.workflowInstanceId, loaded.sequence, [
+        stateDraft(
+          loaded.view,
+          { occurredAt: context.occurredAt, causationId: context.commandId },
+          OrchestrationEventType.InstanceSuperseded,
+          {},
+          1,
+        ),
+      ]);
+    }
+    return children.map((child) => child.workflowInstanceId);
+  }
+
+  async validateChildDispatch(
+    childWorkflowInstanceId: WorkflowInstanceId,
+    context: CommandContext,
+  ): Promise<boolean> {
+    const child = await this.repository.loadRequired(childWorkflowInstanceId);
+    if (child.view.parentWorkflowInstanceId === undefined) return true;
+    const parent = await this.repository.loadRequired(child.view.parentWorkflowInstanceId);
+    if (child.view.watchId !== undefined && parentWaitsForWatch(parent.view, child.view.watchId))
+      return true;
+    if (child.view.status !== WorkflowStatus.Superseded)
+      await this.repository.append(childWorkflowInstanceId, child.sequence, [
+        stateDraft(
+          child.view,
+          { occurredAt: context.occurredAt, causationId: context.commandId },
+          OrchestrationEventType.InstanceSuperseded,
+          {},
+          1,
+        ),
+      ]);
+    return false;
+  }
+
   async isCausalRepeat(
     workflowInstanceId: WorkflowInstanceId,
     triggerId: string,
@@ -120,6 +181,7 @@ export class RequestChild {
 
   private async complete(child: WorkflowInstanceView, context: CommandContext): Promise<void> {
     const metadata = childMetadata(child);
+    if (child.watchId === undefined) throw new Error('Child workflow is missing watch provenance');
     const childLoaded = await this.repository.loadRequired(child.workflowInstanceId);
     if (!childLoaded.view.childCompletionRecorded)
       await this.repository.append(child.workflowInstanceId, childLoaded.sequence, [
@@ -132,6 +194,7 @@ export class RequestChild {
       actorId: 'orchestration',
       actorDecision: { authorized: true, evidenceId: child.workflowInstanceId },
       providerEventId: child.workflowInstanceId,
+      authority: { kind: ApprovalAuthorityKind.Watch, watch: watchId(child.watchId) },
       childWorkflowInstanceId: child.workflowInstanceId,
       requestId: metadata.requestId,
     };
@@ -179,4 +242,17 @@ export class RequestChild {
       ordinal,
     );
   }
+}
+
+function parentWaitsForWatch(parent: WorkflowInstanceView, watchId: string): boolean {
+  if (parent.status !== WorkflowStatus.Waiting) return false;
+  const watchIds = watchIdsFor(parent.waitingFor);
+  return watchIds.includes(watchId);
+}
+
+function watchIdsFor(wait: SignalExpectationView | undefined): readonly string[] {
+  if (wait?.from === undefined) return [];
+  return (wait.from ?? []).flatMap((authority) =>
+    authority.kind === ApprovalAuthorityKind.Watch ? [authority.watch] : [],
+  );
 }

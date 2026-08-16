@@ -13,6 +13,7 @@ import {
 import {
   createExecutionService,
   createRecoveryCoordinator,
+  ExecutionCancellationReason,
   RecoveryService,
   RunRepository,
   type ExternalExecutionInspector,
@@ -167,6 +168,13 @@ export class TestWorld {
   );
 
   constructor() {
+    this.orchestration.setWatchChildCancellation({
+      cancelSupersededWatchChildren: (workflowInstanceIds) =>
+        this.execution.cancelActive(
+          workflowInstanceIds,
+          ExecutionCancellationReason.WorkflowSuperseded,
+        ),
+    });
     this.orchestration.setAcceptSignalOperationCoordinator(async (operation) => {
       await this.resourceTransitionReactor.drain();
       return operation();
@@ -246,6 +254,13 @@ export class TestWorld {
       { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
       { clock: this.clock, ids: this.ids },
     );
+    this.orchestration.setWatchChildCancellation({
+      cancelSupersededWatchChildren: (workflowInstanceIds) =>
+        this.execution.cancelActive(
+          workflowInstanceIds,
+          ExecutionCancellationReason.WorkflowSuperseded,
+        ),
+    });
     this.cancellation = createWorkCancellationPolicy(
       this.work,
       this.orchestration,

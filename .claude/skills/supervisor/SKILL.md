@@ -81,6 +81,11 @@ Whilst supervising workitems, you may encounter new issues. These should be capt
 
 For each issue, record the symptom, evidence, likely impact, and related workitem/run/issue if known. Do not create new tickets.
 
+Record every intervention as well as every observed issue in the external
+supervisor repository: `C:\git\atolis-hq\wake-supervisor\data-interventions.md`
+and `C:\git\atolis-hq\wake-supervisor\triage-discovered-bugs.md`. Never put
+these operational records in the Wake source checkout's `docs/` tree.
+
 ## Upgrading Wake
 
 Do not use self update, it is not currently working.
@@ -89,6 +94,9 @@ Do not use self update, it is not currently working.
 2. Check if any runs are active. You may pause ticks through the documented API to stop new dispatch.
 3. Wait until no active runs. Do not deploy over active work without authority and a recovery plan.
 4. From the Wake-home directory (the directory containing `config.yaml`), run `wake-dev sandbox build` to build a new image, then run `wake-dev sandbox update` to update the container. Update also refreshes config. Do not run these commands from the Wake source checkout unless it is itself the configured Wake home. Use the documented source-checkout equivalent only if `wake-dev` is unavailable.
+   `wake-dev sandbox build` and `wake-dev sandbox update` must therefore be
+   invoked with the Wake-home directory as the current directory, not merely
+   pointed at it while the source checkout remains the current directory.
 5. Verify the deployed revision, sandbox health, provider connectivity, and a fresh tick. If a provider fails after the update, verify its authentication and connectivity as the sandbox runtime user without printing tokens. Unpause ticks through the same API if they were paused so that dispatch can resume.
 
 You do not need to update every time a PR is merged. Use your best judgement. Do not use undocumented sandbox stop commands as a recovery shortcut.
