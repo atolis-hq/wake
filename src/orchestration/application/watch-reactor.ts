@@ -1,4 +1,4 @@
-import { selectRunExecutionEvent, type RunRepository } from '../../execution/index.js';
+import { type RunRepository } from '../../execution/index.js';
 import {
   correlationId,
   EventActorKind,
@@ -18,7 +18,7 @@ import {
   type WorkflowInstanceId,
   type WorkflowName,
 } from '../contracts/identifiers.js';
-import { isWorkflowInstanceStream } from '../contracts/streams.js';
+import { resolveTriggerWorkflowInstanceId } from './trigger-workflow-instance.js';
 
 type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
 
@@ -116,44 +116,6 @@ function commandContext(event: PersistedEvent): CommandContext {
     occurredAt: event.occurredAt,
     actor: { kind: EventActorKind.System, id: 'watch-reactor' },
   };
-}
-
-/**
- * A run-lifecycle event (e.g. `execution.run-succeeded`) fires for every run
- * in the system, including a watch's own spawned child re-running its own
- * activity on retry. Without scoping, `listWatchMatches` would treat any
- * currently-eligible parent's declared event type as a match regardless of
- * which run actually produced it, causing a child's own retry (or an
- * unrelated workflow's run) to spuriously re-trigger the same watch.
- *
- * For orchestration events, only `SignalWaitStarted` is scoped to its
- * stream's instance; this is currently the only orchestration event type
- * known to benefit from stream-based filtering. Other orchestration events
- * like `ChildCompleted` are cross-instance coordination facts by design and
- * must fall through unchanged to the async resolver to preserve their
- * existing multi-instance coordination paths.
- */
-async function resolveTriggerWorkflowInstanceId(
-  event: PersistedEvent,
-  runs: Pick<RunRepository, 'load'> | undefined,
-): Promise<string | undefined> {
-  if (
-    event.eventType === OrchestrationEventType.SignalWaitStarted &&
-    isWorkflowInstanceStream(event.stream)
-  )
-    return event.stream.id;
-  return resolveRunWorkflowInstanceId(event, runs);
-}
-
-async function resolveRunWorkflowInstanceId(
-  event: PersistedEvent,
-  runs: Pick<RunRepository, 'load'> | undefined,
-): Promise<string | undefined> {
-  if (runs === undefined) return undefined;
-  const runEvent = selectRunExecutionEvent(event);
-  if (runEvent === null) return undefined;
-  const run = (await runs.load(runEvent.stream.id)).view;
-  return run?.workflowInstanceId;
 }
 
 function orchestrationCausalCycleId(event: OrchestrationEvent | null): string | undefined {

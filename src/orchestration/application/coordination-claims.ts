@@ -1,7 +1,6 @@
 import {
   createEventDraft,
   EventSourceKind,
-  WrongExpectedSequenceError,
   type CommandContext,
   type EventJournal,
 } from '../../kernel/index.js';
@@ -14,6 +13,7 @@ import {
   primaryOrchestrationGroupStream,
   type ChildOrchestrationGroupStreamRef,
 } from '../contracts/streams.js';
+import { claimWithCasRetry } from './durable-append.js';
 
 export class CoordinationClaims {
   constructor(private readonly journal: EventJournal) {}
@@ -24,15 +24,17 @@ export class CoordinationClaims {
     context: CommandContext,
   ): Promise<void> {
     const stream = primaryOrchestrationGroupStream(workItemId);
-    for (;;) {
-      const events = await this.journal.readStream(stream);
-      const owner = primaryOwner(groupEvents(events));
-      if (owner !== undefined) {
-        if (owner === workflowInstanceId) return;
+    await claimWithCasRetry({
+      read: () => this.journal.readStream(stream),
+      decode: groupEvents,
+      alreadyClaimed: (events) => {
+        const owner = primaryOwner(events);
+        if (owner === undefined) return false;
+        if (owner === workflowInstanceId) return true;
         throw new Error(`WorkItem already has an active primary workflow owned by ${owner}`);
-      }
-      try {
-        await this.journal.append(stream, events.length, [
+      },
+      append: (sequence) =>
+        this.journal.append(stream, sequence, [
           createEventDraft({
             eventId: `${context.commandId}:${OrchestrationEventType.PrimaryClaimed}:${workItemId}`,
             eventType: OrchestrationEventType.PrimaryClaimed,
@@ -44,12 +46,8 @@ export class CoordinationClaims {
             stream,
             payload: { workItemId, workflowInstanceId },
           }),
-        ]);
-        return;
-      } catch (error) {
-        if (!(error instanceof WrongExpectedSequenceError)) throw error;
-      }
-    }
+        ]),
+    });
   }
 
   async primaryWorkflowInstanceId(workItemId: WorkItemId): Promise<string | undefined> {
@@ -63,12 +61,13 @@ export class CoordinationClaims {
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
   ): Promise<boolean> {
-    for (;;) {
-      const events = await this.journal.readStream(stream);
-      if (claimedRequestIds(groupEvents(events)).has(request.requestId)) return true;
-      if (events.length >= request.maxPerGroup) return false;
-      try {
-        await this.journal.append(stream, events.length, [
+    const claimed = await claimWithCasRetry({
+      read: () => this.journal.readStream(stream),
+      decode: groupEvents,
+      alreadyClaimed: (events) => claimedRequestIds(events).has(request.requestId),
+      canAppend: (events) => events.length < request.maxPerGroup,
+      append: (sequence) =>
+        this.journal.append(stream, sequence, [
           createEventDraft({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupClaimed}:${request.requestId}`,
             eventType: OrchestrationEventType.GroupClaimed,
@@ -80,12 +79,9 @@ export class CoordinationClaims {
             stream,
             payload: { key: stream.id, requestId: request.requestId },
           }),
-        ]);
-        return true;
-      } catch (error) {
-        if (!(error instanceof WrongExpectedSequenceError)) throw error;
-      }
-    }
+        ]),
+    });
+    return claimed;
   }
 }
 

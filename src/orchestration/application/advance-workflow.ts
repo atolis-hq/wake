@@ -24,6 +24,7 @@ import {
 } from './resource-transition-matching.js';
 import type { StartWorkflow } from './start-workflow.js';
 import { matchWatches } from './watch-matching.js';
+import { appendWithIntentRecovery } from './durable-append.js';
 
 export class OperatorRetryIneligibleError extends Error {
   constructor(detail: string) {
@@ -169,13 +170,12 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
     });
     if (decision.kind === 'ignored') throw new OperatorRetryIneligibleError(decision.reason);
-    try {
-      await this.repository.append(id, loaded.sequence, decision.events);
-    } catch (error) {
-      const reloaded = await this.repository.loadRequired(id);
-      if (reloaded.view.operatorRetryCommandIds.includes(context.commandId)) return reloaded.view;
-      throw error;
-    }
+    const recovered = await appendWithIntentRecovery({
+      append: () => this.repository.append(id, loaded.sequence, decision.events),
+      load: () => this.repository.loadRequired(id),
+      alreadyApplied: (reloaded) => reloaded.view.operatorRetryCommandIds.includes(context.commandId),
+    });
+    if (recovered !== undefined) return recovered.view;
     return (await this.repository.loadRequired(id)).view;
   }
 
@@ -195,13 +195,12 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
     });
     if (decision.kind === 'ignored') return loaded.view;
-    try {
-      await this.repository.append(id, loaded.sequence, decision.events);
-    } catch (error) {
-      const reloaded = await this.repository.loadRequired(id);
-      if (reloaded.view.operatorRetryCommandIds.includes(context.commandId)) return reloaded.view;
-      throw error;
-    }
+    const recovered = await appendWithIntentRecovery({
+      append: () => this.repository.append(id, loaded.sequence, decision.events),
+      load: () => this.repository.loadRequired(id),
+      alreadyApplied: (reloaded) => reloaded.view.operatorRetryCommandIds.includes(context.commandId),
+    });
+    if (recovered !== undefined) return recovered.view;
     return (await this.repository.loadRequired(id)).view;
   }
 

@@ -4,12 +4,13 @@ import type { WorkItemId } from '../../work/index.js';
 import type { CompiledResourceTransition, TransitionTarget } from '../contracts/config.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
-import { isWorkflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
 import { acceptSignal as decideSignal } from '../domain/interpreter.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { StartWorkflow } from './start-workflow.js';
+import { appendWithIntentRecovery } from './durable-append.js';
+import { resolveTriggerWorkflowInstanceId } from './trigger-workflow-instance.js';
 
 type PersistedEvent = Parameters<typeof selectActivityEvent>[0];
 
@@ -24,15 +25,11 @@ export interface ResourceTransitionMatch {
 // unfiltered, so the reactor's evidence policy can check prior journal
 // history for a fact that arrived before the wait began. Any other event
 // is matched against each instance's declared predicates directly.
-export function matchResourceTransitions(
+export async function matchResourceTransitions(
   loaded: readonly { readonly view: WorkflowInstanceView }[],
   event: PersistedEvent,
-): readonly ResourceTransitionMatch[] {
-  const waitStart =
-    event.eventType === OrchestrationEventType.SignalWaitStarted &&
-    isWorkflowInstanceStream(event.stream)
-      ? event.stream.id
-      : undefined;
+): Promise<readonly ResourceTransitionMatch[]> {
+  const waitStart = await resolveTriggerWorkflowInstanceId(event, undefined);
   return loaded.flatMap(({ view }) => {
     if (view.status !== WorkflowStatus.Waiting) return [];
     const declared = view.waitingFor?.resourceTransitions;
@@ -95,18 +92,14 @@ export async function acceptResourceTransition(
     },
   );
   if (decision.kind === 'append') {
-    try {
-      await repository.append(id, loaded.sequence, decision.events);
-    } catch (error) {
-      const reloaded = await repository.load(id);
-      if (
+    const recovered = await appendWithIntentRecovery({
+      append: () => repository.append(id, loaded.sequence, decision.events),
+      load: () => repository.load(id),
+      alreadyApplied: (reloaded) =>
         reloaded.view !== null &&
-        (reloaded.view.acceptedSignalIds.includes(evidenceId) ||
-          reloaded.view.waitingFor === undefined)
-      )
-        return reloaded.view;
-      throw error;
-    }
+        (reloaded.view.acceptedSignalIds.includes(evidenceId) || reloaded.view.waitingFor === undefined),
+    });
+    if (recovered !== undefined) return recovered.view;
   }
   return (await repository.load(id)).view;
 }

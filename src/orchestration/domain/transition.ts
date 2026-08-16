@@ -69,7 +69,12 @@ export function finishRoute(
         state,
         input,
         OrchestrationEventType.SignalWaitStarted,
-        { signalKind: route.await.signal, from: route.await.from, resume: route.await.resume },
+        {
+          signalKind: route.await.signal,
+          from: route.await.from,
+          resume: route.await.resume,
+          onRejectResume: route.reentryTarget,
+        },
         events.length + 1,
       ),
     );
