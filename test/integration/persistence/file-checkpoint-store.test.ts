@@ -13,3 +13,16 @@ it('loads, advances, resets, and rejects checkpoint regression', async () => {
   await store.reset('projection:work');
   expect(await store.load('projection:work')).toBe(0);
 });
+
+it('serializes concurrent saves for one consumer so checkpoints cannot regress', async () => {
+  const store = new FileCheckpointStore(await mkdtemp(join(tmpdir(), 'wake-checkpoints-')));
+
+  const results = await Promise.allSettled([
+    store.save('projection:work', 8),
+    store.save('projection:work', 7),
+  ]);
+
+  expect(results[0]).toMatchObject({ status: 'fulfilled' });
+  expect(results[1]).toMatchObject({ status: 'rejected' });
+  expect(await store.load('projection:work')).toBe(8);
+});

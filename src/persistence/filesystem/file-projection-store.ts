@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { ProjectionStore, StoredProjection } from '../../kernel/index.js';
@@ -57,7 +58,7 @@ export function encode(value: string): string {
 
 export async function atomicJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+  const temporary = `${path}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   try {
     const handle = await open(temporary, 'wx');
     try {

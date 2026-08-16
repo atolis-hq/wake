@@ -18,3 +18,17 @@ it('stores and atomically replaces one projection without touching another names
   expect(await store.read('work', 'work:1')).toBeNull();
   expect(await store.read('other', 'work:1')).not.toBeNull();
 });
+
+it('uses distinct temporary files for concurrent writes to one projection', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-'));
+  const store = new FileProjectionStore(root);
+
+  await expect(
+    Promise.all([
+      store.write({ namespace: 'work', key: 'work:1', lastGlobalPosition: 1, value: { n: 1 } }),
+      store.write({ namespace: 'work', key: 'work:1', lastGlobalPosition: 2, value: { n: 2 } }),
+    ]),
+  ).resolves.toEqual([undefined, undefined]);
+
+  expect(await store.read('work', 'work:1')).not.toBeNull();
+});
