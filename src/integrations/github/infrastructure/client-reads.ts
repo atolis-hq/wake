@@ -13,10 +13,11 @@ export function listIssues(
   owner: string,
   repo: string,
   maxResults: number,
+  since?: string,
 ): Promise<readonly GitHubIssuePayload[]> {
   return fetchPaginatedWithEtag({
     cache,
-    key: `issues:${owner}/${repo}`,
+    key: `issues:${owner}/${repo}:since:${since ?? 'bootstrap'}`,
     maxResults,
     pages: (headers) =>
       octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
@@ -26,6 +27,7 @@ export function listIssues(
         sort: 'updated',
         direction: 'desc',
         per_page: Math.min(maxResults, 100),
+        ...(since === undefined ? {} : { since }),
         ...(headers === undefined ? {} : { headers }),
       }),
   }).then((items) => items.map(normalizeIssue));
@@ -74,6 +76,8 @@ export async function listPullRequests(
         owner,
         repo,
         state: GitHubListState.All,
+        sort: 'updated',
+        direction: 'desc',
         per_page: Math.min(maxResults, 100),
         ...(headers === undefined ? {} : { headers }),
       }),
@@ -317,17 +321,18 @@ export async function listIssueComments(
   owner: string,
   repo: string,
   issueNumber: number,
-  pageSize: number,
+  options: { readonly pageSize: number; readonly since?: string },
 ): Promise<readonly GitHubIssueCommentPayload[]> {
   const comments = await fetchPaginatedWithEtag({
     cache,
-    key: `issue-comments:${owner}/${repo}#${issueNumber}`,
+    key: `issue-comments:${owner}/${repo}#${issueNumber}:since:${options.since ?? 'bootstrap'}`,
     pages: (headers) =>
       octokit.paginate.iterator(octokit.rest.issues.listComments, {
         owner,
         repo,
         issue_number: issueNumber,
-        per_page: Math.min(pageSize, 100),
+        per_page: Math.min(options.pageSize, 100),
+        ...(options.since === undefined ? {} : { since: options.since }),
         ...(headers === undefined ? {} : { headers }),
       }),
   });

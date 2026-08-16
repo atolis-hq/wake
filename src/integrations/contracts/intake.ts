@@ -5,6 +5,8 @@ export type ProviderEventDraft = EventDraft<string, unknown, IntegrationStreamRe
 
 export interface ExternalEventSource {
   poll(signal: AbortSignal): Promise<readonly ProviderEventDraft[]>;
+  /** Commits provider cursor state after every draft from the poll is durable. */
+  markPollPersisted?(): Promise<void>;
 }
 
 export interface InboundTranslation {
