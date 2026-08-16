@@ -12,6 +12,42 @@ import type {
 } from '../../../../src/integrations/github/contracts/payloads.js';
 import { createGitHubSource } from '../../../../src/integrations/github/infrastructure/source.js';
 
+it('defaults the provider-wide request concurrency limit to four', () => {
+  const config = gitHubConfigSchema.parse({
+    enabled: true,
+    token: 'token',
+    repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+  });
+
+  expect(config.polling.maxConcurrent).toBe(4);
+});
+
+it('sends source polling and enrichment calls through the provider request coordinator', async () => {
+  let requests = 0;
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    fakeClient({
+      issues: [{ ...issue(6, 'A PR'), pull_request: {} }],
+      issueComments: {},
+    }),
+    undefined,
+    {
+      run: async (operation) => {
+        requests += 1;
+        return operation();
+      },
+    },
+  );
+
+  await source.poll(new AbortController().signal);
+
+  expect(requests).toBeGreaterThanOrEqual(7);
+});
+
 it('polls comments for pull requests, not only pure issues', async () => {
   const source = createGitHubSource(
     gitHubConfigSchema.parse({

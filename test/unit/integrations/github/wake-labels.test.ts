@@ -62,6 +62,112 @@ function openWorkItem(): WorkItemView {
 }
 
 describe('createGitHubWakeLabelReconciler', () => {
+  it('uses an in-memory desired-label cache for an unchanged resource', async () => {
+    const item = workItemId(`work-${ulid('9')}`);
+    const resource = resourceId(`resource-${ulid('9')}`);
+    let reads = 0;
+    const reconciler = createGitHubWakeLabelReconciler({
+      orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
+      resources: {
+        correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
+        get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
+      },
+      work: { get: async () => openWorkItem() },
+      getLabels: async () => {
+        reads += 1;
+        return ['keep-me', 'wake:stage.implement', 'wake:workflow.default', 'wake:status.working'];
+      },
+      setLabels: async () => undefined,
+    });
+
+    await reconciler.runOnce();
+    await reconciler.runOnce();
+
+    expect(reads).toBe(1);
+  });
+
+  it('does not retain label-cache entries across reconciler restart', async () => {
+    const item = workItemId(`work-${ulid('6')}`);
+    const resource = resourceId(`resource-${ulid('6')}`);
+    let reads = 0;
+    const input = {
+      orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
+      resources: {
+        correlationsForWork: async (id: WorkItemId) => [
+          correlation({ resourceId: resource, workItemId: id }),
+        ],
+        get: async (id: ReturnType<typeof resourceId>) =>
+          githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
+      },
+      work: { get: async () => openWorkItem() },
+      getLabels: async () => {
+        reads += 1;
+        return ['keep-me', 'wake:stage.implement', 'wake:workflow.default', 'wake:status.working'];
+      },
+      setLabels: async () => undefined,
+    };
+
+    await createGitHubWakeLabelReconciler(input).runOnce();
+    await createGitHubWakeLabelReconciler(input).runOnce();
+
+    expect(reads).toBe(2);
+  });
+
+  it('sends label reads and mutations through the provider request coordinator', async () => {
+    const item = workItemId(`work-${ulid('7')}`);
+    const resource = resourceId(`resource-${ulid('7')}`);
+    let requests = 0;
+    const reconciler = createGitHubWakeLabelReconciler({
+      orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
+      resources: {
+        correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
+        get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
+      },
+      work: { get: async () => openWorkItem() },
+      getLabels: async () => ['keep-me'],
+      setLabels: async () => undefined,
+      requests: {
+        run: async (operation) => {
+          requests += 1;
+          return operation();
+        },
+      },
+    });
+
+    await reconciler.runOnce();
+
+    expect(requests).toBe(2);
+  });
+
+  it('invalidates the desired-label cache after a failed mutation', async () => {
+    const item = workItemId(`work-${ulid('8')}`);
+    const resource = resourceId(`resource-${ulid('8')}`);
+    let reads = 0;
+    let writes = 0;
+    const reconciler = createGitHubWakeLabelReconciler({
+      orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
+      resources: {
+        correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
+        get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
+      },
+      work: { get: async () => openWorkItem() },
+      getLabels: async () => {
+        reads += 1;
+        return ['keep-me'];
+      },
+      setLabels: async () => {
+        writes += 1;
+        throw new Error('write failed');
+      },
+      onError: () => undefined,
+    });
+
+    await reconciler.runOnce();
+    await reconciler.runOnce();
+
+    expect(reads).toBe(2);
+    expect(writes).toBe(2);
+  });
   it('does not write when GitHub returns an equivalent label set in another order', async () => {
     const item = workItemId(`work-${ulid('0')}`);
     const resource = resourceId(`resource-${ulid('0')}`);

@@ -148,6 +148,7 @@ integrations:
         repo: your-repository
     polling:
       maxPerRepo: 25
+      maxConcurrent: 4
       commentPageSize: 25
       lookbackMs: 60000
     intake:
@@ -402,6 +403,7 @@ Use `provider: github` for the built-in GitHub integration.
 | `token` | non-empty string; optional | Explicit GitHub token. If absent, the client uses its normal credential resolution. |
 | `repositories` | non-empty list; required | Repositories to poll. Each entry is `{ owner, repo }`, both non-empty strings. |
 | `polling.maxPerRepo` | positive integer; default `25` | Maximum issues and pull requests read per repository per poll. |
+| `polling.maxConcurrent` | positive integer; default `4` | Provider-wide concurrent GitHub request limit shared by polling enrichment and Wake-label reconciliation. |
 | `polling.commentPageSize` | integer `1..100`; default `25` | Page size for issue and pull-request comments. |
 | `polling.lookbackMs` | non-negative integer; default `60000` | Minimum interval before the source polls again. |
 | `intake` | list; default `[]` | Admission/tagging rules. With no rules, every observation is admitted with no added tags. |
