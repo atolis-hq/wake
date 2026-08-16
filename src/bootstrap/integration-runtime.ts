@@ -265,6 +265,7 @@ export async function composeIntegrationRuntime(
     },
     react: async () => {
       await watch.runOnce();
+      await watch.reconcileOnce();
       await resourceTransitions.runOnce();
       await artifacts.runOnce();
       await outcomes.runOnce();

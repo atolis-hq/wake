@@ -423,6 +423,7 @@ export class TestWorld {
       maxProgress: 1,
     });
     await this.watchReactor.runOnce();
+    await this.watchReactor.reconcileOnce();
     await this.resourceTransitionReactor.runOnce();
     return result;
   }
