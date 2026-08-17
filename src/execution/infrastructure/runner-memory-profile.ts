@@ -6,6 +6,33 @@ export interface RunnerMemoryProfileOptions {
   readonly memoryUsage: () => NodeJS.MemoryUsage;
 }
 
+export interface RuntimeMemoryProfile {
+  sample(phase: string): void;
+}
+
+export function createRuntimeMemoryProfile(
+  options: RunnerMemoryProfileOptions,
+): RuntimeMemoryProfile {
+  return {
+    sample: (phase) => {
+      const memory = options.memoryUsage();
+      options.write(
+        `${JSON.stringify({
+          type: 'wake.runtime-memory',
+          phase,
+          at: options.now(),
+          pid: process.pid,
+          rss: memory.rss,
+          heapTotal: memory.heapTotal,
+          heapUsed: memory.heapUsed,
+          external: memory.external,
+          arrayBuffers: memory.arrayBuffers,
+        })}\n`,
+      );
+    },
+  };
+}
+
 export function createRunnerMemoryProfileDecorator(options: RunnerMemoryProfileOptions) {
   return (runner: Runner, name: string): Runner => ({
     ...(runner.supportsSessionResume === undefined
