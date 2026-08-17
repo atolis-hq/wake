@@ -35,6 +35,8 @@ export interface DeliveryIntentView {
         readonly report: AgentRunPublicationReport;
       };
   readonly state: DeliveryStateValue;
+  /** When the delivery last transitioned into a resolved (non-pending) state. */
+  readonly resolvedAt?: string;
   readonly attempts: number;
   readonly occurrenceOrdinal: number;
   readonly reconciliationKey?: string;

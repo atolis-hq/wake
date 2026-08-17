@@ -225,9 +225,27 @@ export const decodeWorkflow: Decoder<WorkflowInstanceResponse> = (value, path = 
   };
 };
 
+const runResolutionSentinels = ['DONE', 'FAILED', 'AMBIGUOUS'] as const;
+
+function decodeRunResolution(
+  value: unknown,
+  parentPath: string,
+): NonNullable<RunResponse['resolution']> {
+  const path = child(parentPath, 'resolution');
+  const record = object(value, path);
+  const sentinel = string(record.sentinel, child(path, 'sentinel'));
+  if (!runResolutionSentinels.includes(sentinel as (typeof runResolutionSentinels)[number]))
+    invalid(child(path, 'sentinel'));
+  return {
+    sentinel: sentinel as (typeof runResolutionSentinels)[number],
+    resolvedAt: string(record.resolvedAt, child(path, 'resolvedAt')),
+  };
+}
+
 export const decodeRun: Decoder<RunResponse> = (value, path = '') => {
   const record = object(value, path);
   const failure = record.failure;
+  const resolution = record.resolution;
   return {
     runId: string(record.runId, child(path, 'runId')),
     activationId: string(record.activationId, child(path, 'activationId')),
@@ -260,6 +278,7 @@ export const decodeRun: Decoder<RunResponse> = (value, path = '') => {
             kind: string(object(failure, child(path, 'failure')).kind, child(path, 'failure.kind')),
           },
         }),
+    ...(resolution === undefined ? {} : { resolution: decodeRunResolution(resolution, path) }),
   };
 };
 

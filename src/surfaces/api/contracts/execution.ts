@@ -12,6 +12,11 @@ export interface RunResponse {
   readonly outcome?: unknown;
   readonly failure?: { readonly kind: string };
   readonly sentinel: string;
+  /** Present only when the run's own outcome was `waiting` and the delivery it named has since resolved. */
+  readonly resolution?: {
+    readonly sentinel: 'DONE' | 'FAILED' | 'AMBIGUOUS';
+    readonly resolvedAt: string;
+  };
   readonly runnerName?: string;
   readonly runnerModel?: string;
   readonly workflowName?: string;
