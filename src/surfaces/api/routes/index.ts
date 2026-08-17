@@ -8,6 +8,7 @@ export type {
   ApiApplications,
   ApiCollectionPage,
   ApiCommandRequest,
+  ApiRunResolutionRequest,
   ApiResourceResult,
   ApiSystemApplications,
   CollectionQuery,

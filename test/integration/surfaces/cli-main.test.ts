@@ -12,6 +12,19 @@ describe('wake surface CLI', () => {
       kind: 'validate-state',
       rebuildProjections: true,
     });
+    expect(
+      parseWakeCommand(['run', 'resolve', 'run-1', '--succeeded', '--outcome', '{"kind":"done"}']),
+    ).toEqual({
+      kind: 'run-resolve',
+      runId: 'run-1',
+      resolution: { status: 'succeeded', outcome: { kind: 'done' } },
+    });
+    expect(() => parseWakeCommand(['run', 'resolve', 'run-1', '--succeeded'])).toThrow(
+      /exactly one of --outcome/i,
+    );
+    expect(() => parseWakeCommand(['run', 'resolve', 'run-1', '--failed', '--outcome', '{}'])).toThrow(
+      /only valid with --succeeded/i,
+    );
   });
 
   it('dispatches target Surface CLI applications from the target entry point', async () => {

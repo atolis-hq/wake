@@ -21,6 +21,8 @@ walkthrough and [Configuration](configuration.md) for Wake-home settings.
 | `wake validate-state` | Validates control-plane state health under `.wake/`. |
 | `wake audit` | Shows durable autonomous-decision audit history. |
 | `wake correlate` | Manually correlates a resource with a WorkItem through the public control-plane surface. |
+| `wake run resolve <run-id> --succeeded (--outcome <json> \| --outcome-file <path>)` | Records an operator-confirmed, Activity-schema-validated success for an escalated ambiguous Run. |
+| `wake run resolve <run-id> --failed --reason <message>` | Records an operator-confirmed failure for an escalated ambiguous Run. |
 | `wake self-update` | Safely updates a source installation. |
 | `wake --help` / `wake --version` | Shows the authoritative command summary / installed version. |
 
@@ -55,6 +57,9 @@ scheduler. Use `wake doctor` after initialization and sandbox build, and use
 - `wake correlate <resource> <workItemId>` records a manual resource
   correlation in that order. Use it only when normal integration correlation
   cannot establish the intended link.
+- `wake run resolve` requires exactly one resolution mode. Success accepts
+  exactly one JSON outcome source; failure requires a non-empty reason. The
+  Run's Activity validates a successful outcome before Wake records it.
 - `wake validate-state [--rebuild-projections]` checks durable state health.
   The optional flag rebuilds projections from the authoritative journal; it
   does not replace or discard journal facts.

@@ -384,3 +384,29 @@ it('rejects resolution before escalation and converges concurrent operator resol
     (await fixture.events()).filter((event) => event.actor.kind === EventActorKind.Operator),
   ).toHaveLength(1);
 });
+
+it('validates an operator success outcome against the Run Activity', async () => {
+  const fixture = executionFixture();
+  const run = await fixture.activeRunWithExternalExecution();
+  fixture.expireLease();
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    { async inspect() { return { kind: 'unknown' as const, reason: 'runner unavailable' }; } },
+    fixture.activities,
+    { maxAmbiguityReconciliationAttempts: 1 },
+  );
+  await recovery.recover(run.runId, 'resident-b');
+  await expect(
+    recovery.resolve(
+      run.runId,
+      { kind: 'succeeded', outcome: { kind: 'not-done' } },
+      {
+        commandId: 'operator-resolution',
+        correlationId: 'operator-resolution' as never,
+        occurredAt: fixture.clock.now().toISOString(),
+        actor: { kind: EventActorKind.Operator, id: 'operator-1' },
+      },
+    ),
+  ).rejects.toThrow(/outcome invalid/i);
+});

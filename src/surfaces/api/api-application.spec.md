@@ -82,6 +82,12 @@ Does not own:
 - `freeze`/`unfreeze` commands complete synchronously at this boundary and
   MUST return HTTP 200; `delete`/`retry`, control-plane, and runner commands
   are accepted for asynchronous processing and MUST return HTTP 202.
+- `POST /api/v1/runs/:runId/commands/resolve` is a synchronous operator
+  command. Its strict body includes `idempotencyKey` and exactly one of
+  `{ status: "succeeded", outcome: ... }` or `{ status: "failed", reason: "..." }`.
+  It returns HTTP 200 with the resolved Run resource. Invalid outcomes return
+  a 422 problem, and a Run that is missing or not an escalated ambiguity
+  returns the normal 404 or 409 problem.
 - The control-plane `tick` command MUST be rejected as a 409 conflict (code
   `paused`, carrying the current control-plane status) before it reaches the
   domain application, whenever that status reports the control plane as
