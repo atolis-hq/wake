@@ -31,12 +31,15 @@ export class RunRepository {
   }
 
   async list(activationId?: ActivationId) {
-    const ids = new Set(
-      (await this.journal.readAll(0))
-        .filter((event) => isRunStream(event.stream))
-        .map((event) => runId(event.stream.id)),
-    );
-    const runs = (await Promise.all([...ids].map(async (id) => (await this.load(id)).view))).filter(
+    const grouped = new Map<RunId, RunExecutionEvent[]>();
+    for (const event of await this.journal.readAll(0)) {
+      if (!isRunStream(event.stream)) continue;
+      const id = runId(event.stream.id);
+      const events = grouped.get(id) ?? [];
+      events.push(decodeRunExecutionEvent(event));
+      grouped.set(id, events);
+    }
+    const runs = (await Promise.all([...grouped.values()].map(foldRun))).filter(
       (run) => run !== null,
     );
     return activationId === undefined
