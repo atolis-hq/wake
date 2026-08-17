@@ -31,6 +31,7 @@ temp/
 .wake/
 .autoloop/
 **/.worktrees/
+**/worktrees/
 
 #superpowers local state
 .superpowers/
