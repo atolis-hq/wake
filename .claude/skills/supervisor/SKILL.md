@@ -86,6 +86,31 @@ supervisor repository: `C:\git\atolis-hq\wake-supervisor\data-interventions.md`
 and `C:\git\atolis-hq\wake-supervisor\triage-discovered-bugs.md`. Never put
 these operational records in the Wake source checkout's `docs/` tree.
 
+## Decision and outcome summary
+
+Maintain `C:\git\atolis-hq\wake-supervisor\supervision-decisions.md` while
+supervising. This is the concise operator-facing counterpart to the detailed
+intervention and bug logs; it must not be deferred to final handoff.
+
+- **When making a material decision**, record it immediately: the workitem or
+  run, decision, evidence and authority, alternatives rejected, and the
+  expected next durable transition. Examples include choosing a normal Wake
+  interaction over a local fix, approving a green PR, deferring a product
+  choice, or deciding that an external close must not close local Work.
+- **When a decision should be revisited**, add it immediately under a
+  `Decisions to revisit` entry. State why it remains provisional, what new
+  evidence or owner decision would resolve it, and its affected workitems.
+  Do not present a temporary operational workaround as a permanent policy.
+- **When an outcome is achieved**, record it immediately under `Completed
+  outcomes`: workitem/run, resulting PR or delivery where applicable, the
+  verified terminal Wake event, and deployment state where it matters.
+
+Use dated sections and keep entries factual and short. At handoff, include a
+summary of the current decisions, unresolved revisit items, and completed
+outcomes. Do not put this record in the Wake source checkout or fabricate it
+from intent; update it only from the decision or durable outcome actually
+observed.
+
 ## Upgrading Wake
 
 Do not use self update, it is not currently working.
