@@ -46,6 +46,7 @@ export interface SandboxDockerOptions {
     readonly readOnly?: boolean | undefined;
   }[];
   readonly startEnabled?: boolean;
+  readonly memoryProfile?: 'runner';
   readonly inspect?: SandboxDockerInspection;
   readonly resolveBuildVersion?: () => Promise<string>;
 }
@@ -297,6 +298,9 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
           `WAKE_HOME_INIT_DIRS=${homeInitDirectories.join('\n')}`,
         ]),
     ...(options.startEnabled === true ? ['-e', 'WAKE_START_ENABLED=true'] : []),
+    ...(options.memoryProfile === undefined
+      ? []
+      : ['-e', `WAKE_MEMORY_PROFILE=${options.memoryProfile}`]),
     options.image,
   ]);
 }

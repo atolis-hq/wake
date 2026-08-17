@@ -18,6 +18,7 @@ import {
   RecoveryService,
   TranscriptStore,
   createExecutionService,
+  createRunnerMemoryProfileDecorator,
   type FakeScenarioResolver,
   type Runner,
 } from '../execution/index.js';
@@ -181,10 +182,25 @@ export async function createCompositionRoot(
   const transcriptStore = config.transcripts.enabled
     ? (options.transcriptStore ?? new TranscriptStore(paths.transcriptsRoot))
     : undefined;
+  const profileDecorator =
+    process.env.WAKE_MEMORY_PROFILE === 'runner'
+      ? createRunnerMemoryProfileDecorator({
+          write: (line) => process.stderr.write(line),
+          now: () => clock.now().toISOString(),
+          memoryUsage: () => process.memoryUsage(),
+        })
+      : undefined;
+  const decorateRunner =
+    profileDecorator === undefined
+      ? options.decorateRunner
+      : options.decorateRunner === undefined
+        ? profileDecorator
+        : (runner: Runner, name: string) =>
+            profileDecorator(options.decorateRunner!(runner, name), name);
   const execution = createExecutionService(journal, activities, config.execution, {
     clock,
     ids,
-    runners: createRunnerRegistry(config.execution, fakeScenarios, options.decorateRunner),
+    runners: createRunnerRegistry(config.execution, fakeScenarios, decorateRunner),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
     ...(transcriptStore !== undefined
       ? {

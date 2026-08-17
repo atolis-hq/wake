@@ -268,6 +268,7 @@ function sandboxDockerOptions(
     containerHomeMountPath: root.config.host.sandbox.containerHomeMountPath,
     extraMounts: root.config.host.sandbox.extraMounts,
     startEnabled: root.config.host.sandbox.start.enabled,
+    ...(process.env.WAKE_MEMORY_PROFILE === 'runner' ? { memoryProfile: 'runner' as const } : {}),
     inspect: createDockerInspection(root.paths.wakeRoot),
     resolveBuildVersion: () => resolveSandboxBuildVersion(root),
   };

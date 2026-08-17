@@ -219,6 +219,26 @@ describe('CLI infrastructure', () => {
     ]);
   });
 
+  it('forwards the explicit runner memory profile into a newly created sandbox', async () => {
+    const calls: string[][] = [];
+    const docker = createSandboxDockerPort(
+      createDockerCli(async (arguments_) => {
+        calls.push([...arguments_]);
+      }),
+      {
+        wakeRoot: '/wake-root',
+        image: 'wake-sandbox',
+        containerName: 'wake-sandbox',
+        memoryProfile: 'runner' as never,
+        inspect: { imageExists: async () => true, containerState: async () => null },
+      },
+    );
+
+    await docker.up();
+
+    expect(calls[0]).toEqual(expect.arrayContaining(['-e', 'WAKE_MEMORY_PROFILE=runner']));
+  });
+
   it('derives writable sandbox-home mount parents from configured extra mounts', async () => {
     const calls: string[][] = [];
     const docker = createSandboxDockerPort(
