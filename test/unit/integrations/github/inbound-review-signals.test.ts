@@ -74,7 +74,8 @@ it('retries an open primary workflow only for a provider-authorized /retry comme
     ids: {} as never,
     adapter: GitHubAdapter,
     orchestration: {
-      async listAll() {
+      async listForWorkItem(workItemId: string) {
+        expect(workItemId).toBe('work-7');
         return [
           {
             workflowInstanceId: 'workflow-7',
@@ -140,7 +141,8 @@ it('retries the eligible child for the exact waiting watch on an authorized /ret
     ids: {} as never,
     adapter: GitHubAdapter,
     orchestration: {
-      async listAll() {
+      async listForWorkItem(workItemId: string) {
+        expect(workItemId).toBe('work-7');
         return [
           {
             workflowInstanceId: 'primary-7',
@@ -216,7 +218,8 @@ it('ignores an ineligible authorized /retry command', async () => {
       ids: {} as never,
       adapter: GitHubAdapter,
       orchestration: {
-        async listAll() {
+        async listForWorkItem(workItemId: string) {
+          expect(workItemId).toBe('work-7');
           return [{ workflowInstanceId: 'workflow-7', workItemId: 'work-7' }];
         },
         async retryBlockedFailedStage() {

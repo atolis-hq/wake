@@ -15,6 +15,7 @@ import { AcceptSignal } from './accept-signal.js';
 import { AdvanceWorkflow } from './advance-workflow.js';
 import { CoordinationClaims } from './coordination-claims.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
+import { workflowsByWorkItemProjection } from './orchestration-projection.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
 import { RequestChild } from './request-child.js';
 import { StartWorkflow } from './start-workflow.js';
@@ -27,6 +28,7 @@ export class OrchestrationService {
   private readonly acceptWorkflowSignal: AcceptSignal;
   private readonly advanceWorkflow: AdvanceWorkflow;
   private readonly childWorkflows: RequestChild;
+  private readonly projections: ProjectionStore | undefined;
   private coordinateAcceptSignal: OperationCoordinator = (operation) => operation();
   private watchChildCancellation: WatchChildCancellation | undefined;
 
@@ -36,6 +38,7 @@ export class OrchestrationService {
     definitions: Readonly<Record<string, CompiledWorkflow>>,
     projections?: ProjectionStore,
   ) {
+    this.projections = projections;
     const repository = new OrchestrationRepository(journal);
     const claims = new CoordinationClaims(journal);
     this.startWorkflow = new StartWorkflow(
@@ -184,6 +187,25 @@ export class OrchestrationService {
 
   listAll() {
     return this.advanceWorkflow.listAll();
+  }
+
+  async listForWorkItem(workItemId: WorkItemId) {
+    if (this.projections === undefined)
+      return (await this.advanceWorkflow.listAll()).filter(
+        (workflow) => workflow.workItemId === workItemId,
+      );
+    const stored = await this.projections.read<readonly WorkflowInstanceId[]>(
+      workflowsByWorkItemProjection.name,
+      workItemId,
+    );
+    const workflows = await Promise.all(
+      (stored?.value ?? []).map((workflowInstanceId) =>
+        this.advanceWorkflow.get(workflowInstanceId),
+      ),
+    );
+    return workflows.filter(
+      (workflow): workflow is NonNullable<typeof workflow> => workflow !== null,
+    );
   }
 
   reconcileChildCompletions(context: CommandContext) {

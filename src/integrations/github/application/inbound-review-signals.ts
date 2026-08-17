@@ -196,12 +196,9 @@ async function applyIssueRetrySignal(input: {
   const workItemIds = (await resources.correlations(resourceIdValue))
     .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
     .map((correlation) => correlation.workItemId);
-  const workflows = await orchestration.listAll();
   for (const workItemId of workItemIds) {
     if (!(await isEligibleWorkItem(work, workItemId))) continue;
-    const target = selectOperatorRetryTarget(
-      workflows.filter((workflow) => workflow.workItemId === workItemId),
-    );
+    const target = selectOperatorRetryTarget(await orchestration.listForWorkItem(workItemId));
     if (target === undefined) continue;
     await ignoreIneligibleOperatorRetry(() =>
       orchestration.retryBlockedFailedStage(target.workflowInstanceId, commandContext(event)),
