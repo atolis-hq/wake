@@ -33,6 +33,7 @@ describe('target configuration ownership', () => {
 
     expect(config.execution.defaultRunnerPool).toBe('standard');
     expect(config.controlPlane.maxDispatches).toBe(1);
+    expect(config.controlPlane.maxConcurrentRuns).toBe(1);
     expect(config.controlPlane.schedules).toEqual([]);
     expect(config.integrations).toEqual({});
     expect(config.surfaces.api.enabled).toBe(false);

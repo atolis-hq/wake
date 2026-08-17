@@ -339,6 +339,108 @@ describe('advanceOnce', () => {
     expect(attempts).toBe(0);
   });
 
+  it('returns no-work at the global concurrent Run capacity and dispatches after capacity frees', async () => {
+    const workflow = {
+      workflowInstanceId: 'workflow-00000000000000000000000001',
+      workItemId: 'work-00000000000000000000000001',
+      orchestrationGroupId: 'group-00000000000000000000000001',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const activation = { activationId: 'activation-00000000000000000000000001' } as never;
+    let active = true;
+    let attempts = 0;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => workflow,
+      },
+      {
+        attempt: async () => {
+          attempts += 1;
+          return { status: 'started', runId: 'run-new' } as never;
+        },
+        list: async (activationId) =>
+          (activationId === undefined && active
+            ? [{ status: 'started', runId: 'run-existing', activationId: 'other-activation' }]
+            : []) as never,
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      {
+        ids: { next: () => 'command-00000000000000000000000001' } as never,
+        maxConcurrentRuns: 1,
+      },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
+    expect(attempts).toBe(0);
+
+    active = false;
+    await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
+      kind: 'progressed',
+      runId: 'run-new',
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it('serializes concurrent callers through the global capacity check and dispatch boundary', async () => {
+    const workflow = {
+      workflowInstanceId: 'workflow-00000000000000000000000001',
+      workItemId: 'work-00000000000000000000000001',
+      orchestrationGroupId: 'group-00000000000000000000000001',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const activation = { activationId: 'activation-00000000000000000000000001' } as never;
+    const runs: RunView[] = [];
+    let attempts = 0;
+    let releaseAttempt!: () => void;
+    let startedAttempt!: () => void;
+    const attemptStarted = new Promise<void>((resolve) => {
+      startedAttempt = resolve;
+    });
+    const attemptReleased = new Promise<void>((resolve) => {
+      releaseAttempt = resolve;
+    });
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => workflow,
+      },
+      {
+        attempt: async () => {
+          attempts += 1;
+          startedAttempt();
+          await attemptReleased;
+          const run = { status: 'started', runId: 'run-00000000000000000000000001' } as RunView;
+          runs.push(run);
+          return run;
+        },
+        list: async () => runs,
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      {
+        ids: { next: () => 'command-00000000000000000000000001' } as never,
+        maxConcurrentRuns: 1,
+      },
+    );
+
+    const first = advance({ maxProgress: 1 });
+    await attemptStarted;
+    const second = advance({ maxProgress: 1 });
+    releaseAttempt();
+
+    await expect(first).resolves.toMatchObject({ kind: 'progressed' });
+    await expect(second).resolves.toEqual({ kind: 'no-work' });
+    expect(attempts).toBe(1);
+  });
+
   it('uses stage resume only for a primary workflow activation', async () => {
     const activation = {
       activationId: 'activation-00000000000000000000000001',

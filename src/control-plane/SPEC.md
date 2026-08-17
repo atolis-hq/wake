@@ -177,15 +177,14 @@ Control Plane does not own:
 
 ## Decisions, exclusions, and deferred capability
 
-- Dispatch fairness ordering, a global dispatch cap, and count-based dispatch
-  quota pausing are implemented as pure decision logic (Dispatch Policy) but
-  are not yet composed into Advancement: the composed system's selection is
-  unordered first-pending-candidate, bounded only by one accepted outcome per
-  call. `controlPlane.maxDispatches` is validated configuration with no
-  consumer today. A manual, operator-triggered global dispatch pause/resume
-  is composed and live (Global Dispatch Pause and Resume), but the
-  count-based, quota-driven pause/resume Dispatch Policy computes is not —
-  it is the only capability in that sentence still deferred.
+- Dispatch fairness ordering and the per-call `controlPlane.maxDispatches`
+  selection cap are composed into Advancement. `controlPlane.maxConcurrentRuns`
+  is a separate, serialized global capacity gate: once that many Runs are
+  `started`, Advancement returns `no-work` until a terminal Run frees capacity.
+  Count-based quota pausing remains uncomposed. A manual, operator-triggered
+  global dispatch pause/resume is composed and live (Global Dispatch Pause and
+  Resume), but the count-based, quota-driven pause/resume Dispatch Policy
+  computes is not.
 - Schedule Service is implemented but not invoked by any composed host;
   `controlPlane.schedules` is validated configuration with no consumer today.
 - Work Conclusion Policy is composed and reachable via the GitHub provider's

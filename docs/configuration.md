@@ -119,6 +119,7 @@ execution:
 
 controlPlane:
   maxDispatches: 1
+  maxConcurrentRuns: 1
   resident:
     idleBackoffMs: 1000
     maxIdleBackoffMs: 30000
@@ -302,6 +303,7 @@ execution:
 | Field | Type / default | Explanation |
 | --- | --- | --- |
 | `controlPlane.maxDispatches` | positive integer; default `1` | Maximum activity dispatches in one `advanceOnce` pass. |
+| `controlPlane.maxConcurrentRuns` | positive integer; default `1` | Maximum Runs that may be `started` system-wide. Additional advancement calls return `no-work` until capacity is available. |
 | `controlPlane.schedules` | list; default `[]` | Scheduled workflow starts. Each entry is described below. |
 | `controlPlane.resident.idleBackoffMs` | positive integer; default `1000` | Delay after an idle resident-loop pass. |
 | `controlPlane.resident.maxIdleBackoffMs` | positive integer; optional | Ceiling for resident idle backoff. |

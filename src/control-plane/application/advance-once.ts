@@ -92,6 +92,8 @@ interface AdvanceOnceDependencies {
   /** Durable closed WorkItem projection keys eligible for transcript retention. */
   readonly closedWorkItemIds?: () => Promise<readonly string[]>;
   readonly dispatchPolicy?: DispatchPolicy;
+  /** Global ceiling for Runs whose execution has started but not reached a terminal state. */
+  readonly maxConcurrentRuns?: number;
 }
 
 export function createAdvanceOnce(
@@ -106,13 +108,14 @@ export function createAdvanceOnce(
   const workspaceRecovery = dependencies.workspaceRecovery;
   const transcriptRetention = dependencies.transcriptRetention;
   const dispatchPolicy = dependencies.dispatchPolicy ?? new DispatchPolicy({ maxDispatches: 1 });
+  const maxConcurrentRuns = dependencies.maxConcurrentRuns ?? 1;
   const context = (cause: string) => ({
     commandId: dependencies.ids.next('command'),
     correlationId: correlationId(cause),
     occurredAt: clock.now().toISOString(),
     actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
   });
-  return async (options: AdvanceOptions): Promise<AdvanceResult> => {
+  const advance = async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
     if (await isDispatchPaused()) return { kind: 'paused' };
     if (workspaceRecovery !== undefined) {
@@ -212,6 +215,8 @@ export function createAdvanceOnce(
       };
     }
     const allRuns = await execution.list();
+    if (allRuns.filter((run) => run.status === RunStatus.Started).length >= maxConcurrentRuns)
+      return { kind: 'no-work' };
     const selectedCandidate = dispatchPolicy.select(
       await Promise.all(
         pending.map(async (item, requestedPosition) => ({
@@ -305,5 +310,13 @@ export function createAdvanceOnce(
           workflowInstanceId: selected.workflow.workflowInstanceId,
           reason: run.failure?.message ?? 'execution failed',
         };
+  };
+  // Tick, resident, and API callers share this advancement instance. Serialize the
+  // capacity check through Run creation so concurrent callers cannot over-dispatch.
+  let prior = Promise.resolve();
+  return async (options: AdvanceOptions): Promise<AdvanceResult> => {
+    const current = prior.then(() => advance(options));
+    prior = current.catch(() => undefined);
+    return current;
   };
 }
