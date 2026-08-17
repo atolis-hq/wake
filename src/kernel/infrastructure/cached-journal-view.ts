@@ -1,4 +1,5 @@
-import type { EventEnvelope, EventJournal } from '../../kernel/index.js';
+import type { EventJournal } from '../contracts/event-journal.js';
+import type { EventEnvelope } from '../contracts/events.js';
 
 export interface CachedJournalView<Value> {
   get(): Promise<Value>;
@@ -9,7 +10,9 @@ export interface CachedJournalView<Value> {
 // pays that cost when the journal has actually moved since the last call.
 // Same gate ProjectionRunner keeps for itself (a last-seen global position),
 // generalized for callers that want a materialized view rather than an
-// incremental batch.
+// incremental batch. Depends only on the EventJournal port, not on any
+// concrete persistence implementation, so it lives in kernel rather than
+// persistence — domain and adapter modules may call it directly.
 export function cachedJournalView<Value>(
   journal: Pick<EventJournal, 'readAll' | 'latestGlobalPosition'>,
   derive: (events: readonly EventEnvelope[]) => Value | Promise<Value>,

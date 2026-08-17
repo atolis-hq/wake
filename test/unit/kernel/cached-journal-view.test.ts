@@ -1,6 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
-import { cachedJournalView } from '../../../src/persistence/application/cached-journal-view.js';
+import { cachedJournalView, createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 

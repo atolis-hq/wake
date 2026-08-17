@@ -152,9 +152,11 @@ export default tseslint.config(
     files: ['src/**/*.ts'],
     ignores: [
       'src/{work,resources,activities,orchestration,execution}/{domain,application}/**/*.ts',
-      // Owns the journal and already gates full rescans behind a
-      // last-seen-position check (ProjectionRunner, cachedJournalView).
+      // Own the journal and already gate full rescans behind a
+      // last-seen-position check (ProjectionRunner; cachedJournalView, the
+      // shared primitive every other fix in this file routes through).
       'src/persistence/**',
+      'src/kernel/infrastructure/cached-journal-view.ts',
       // Composition/wiring and CLI command handlers: startup and one-off
       // command volume, not a resident tick.
       'src/bootstrap/**',

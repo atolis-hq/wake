@@ -1,5 +1,8 @@
-import type { EventJournal } from '../../kernel/index.js';
-import { cachedJournalView, type CachedJournalView } from '../../persistence/index.js';
+import {
+  cachedJournalView,
+  type CachedJournalView,
+  type EventJournal,
+} from '../../kernel/index.js';
 import {
   decodeOrchestrationEvent,
   selectWorkflowOrchestrationEvent,

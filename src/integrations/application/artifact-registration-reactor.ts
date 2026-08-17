@@ -1,8 +1,10 @@
 import { reportedArtifactSchema } from '../../activities/index.js';
 import {
+  cachedJournalView,
   createEventDraft,
   EventActorKind,
   EventSourceKind,
+  type CachedJournalView,
   type CheckpointStore,
   type EventEnvelope,
   type EventJournal,
@@ -14,7 +16,6 @@ import {
   workflowInstanceStream,
   type WorkflowInstanceId,
 } from '../../orchestration/index.js';
-import { cachedJournalView, type CachedJournalView } from '../../persistence/index.js';
 import {
   ResourceCorrelationProvenance,
   ResourceCorrelationRole,

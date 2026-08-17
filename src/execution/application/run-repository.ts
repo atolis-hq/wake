@@ -1,6 +1,9 @@
 import type { ActivationId } from '../../activities/index.js';
-import type { EventJournal } from '../../kernel/index.js';
-import { cachedJournalView, type CachedJournalView } from '../../persistence/index.js';
+import {
+  cachedJournalView,
+  type CachedJournalView,
+  type EventJournal,
+} from '../../kernel/index.js';
 import {
   decodeRunExecutionEvent,
   type RunExecutionEvent,
