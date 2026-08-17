@@ -68,6 +68,7 @@ it('queries by event id before trusting a genuinely uncertain requested append',
       reconciliationReads += 1;
       return world.journal.readStream(stream);
     },
+    latestGlobalPosition: () => world.journal.latestGlobalPosition(),
   };
   const activity = createPullRequestMergeActivity(queryingJournal, world.pullRequests, {
     async append(stream, intent) {
@@ -101,6 +102,9 @@ it('treats exhausted sequence conflicts without the event as a failed append', a
     },
     async readAll() {
       return [];
+    },
+    async latestGlobalPosition() {
+      return 0;
     },
   };
   const intent = mergeDenied(stream, PullRequestDenialCode.MissingResource, {

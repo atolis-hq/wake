@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
 import { correlationId, type EventJournal } from '../../../src/kernel/index.js';
@@ -26,6 +26,21 @@ it('lists every instance with the same sequence and view load reports', async ()
     expect(entry.sequence).toBe(loaded.sequence);
     expect(entry.view).toStrictEqual(loaded.view);
   }
+});
+
+it('reuses the derived list across repeat calls when no new events landed', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const repository = new OrchestrationRepository(journal);
+  await seedTwoInstances(journal);
+  const readAllSpy = vi.spyOn(journal, 'readAll');
+
+  await repository.list();
+  readAllSpy.mockClear();
+  const second = await repository.list();
+  const third = await repository.list();
+
+  expect(readAllSpy).not.toHaveBeenCalled();
+  expect(second).toStrictEqual(third);
 });
 
 async function seedTwoInstances(journal: EventJournal): Promise<void> {

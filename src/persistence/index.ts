@@ -1,3 +1,5 @@
+export * from './application/cached-journal-view.js';
+
 export * from './application/projection-runner.js';
 
 export * from './filesystem/file-checkpoint-store.js';

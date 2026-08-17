@@ -39,6 +39,7 @@ export function faultInjectingJournal(journal: EventJournal, faults: FaultInject
     },
     readStream: journal.readStream.bind(journal),
     readAll: journal.readAll.bind(journal),
+    latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
     ...(journal.readLatest === undefined ? {} : { readLatest: journal.readLatest.bind(journal) }),
   };
 }

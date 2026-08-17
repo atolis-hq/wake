@@ -169,6 +169,7 @@ describe('ExecutionService', () => {
         },
         readStream: base.readStream.bind(base),
         readAll: base.readAll.bind(base),
+        latestGlobalPosition: base.latestGlobalPosition.bind(base),
         readLatest: base.readLatest?.bind(base),
       };
       const registry = new ActivityRegistry();
@@ -338,6 +339,7 @@ describe('ExecutionService', () => {
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
       readLatest: base.readLatest?.bind(base),
     };
     let released = 0;
@@ -391,6 +393,7 @@ describe('ExecutionService', () => {
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
       readLatest: base.readLatest?.bind(base),
     };
     let acquired = 0;

@@ -86,6 +86,10 @@ export class InMemoryEventJournal implements EventJournal {
       .reverse();
   }
 
+  async latestGlobalPosition(): Promise<number> {
+    return this.events.length;
+  }
+
   private rejectChangedEventIds(
     drafts: readonly EventDraft[],
     existingEvents: readonly (IndexedEvent | undefined)[],

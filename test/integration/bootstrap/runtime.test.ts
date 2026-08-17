@@ -113,6 +113,7 @@ describe('target composition root', () => {
       readStream: journal.readStream.bind(journal),
       readAll: journal.readAll.bind(journal),
       readLatest: journal.readLatest?.bind(journal),
+      latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
     };
     const decorator = vi.fn((base: EventJournal) => {
       expect(base).toBe(journal);

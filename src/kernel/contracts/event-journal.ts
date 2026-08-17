@@ -12,4 +12,8 @@ export interface EventJournal {
   readStream(stream: EntityRef): Promise<readonly EventEnvelope[]>;
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;
   readLatest?(beforeGlobalPosition?: number, limit?: number): Promise<readonly EventEnvelope[]>;
+  // Cheap enough to call on every tick: implementations must answer this
+  // without re-reading or re-copying the full event history, so callers can
+  // gate an expensive full-collection re-derivation on "did this move" first.
+  latestGlobalPosition(): Promise<number>;
 }

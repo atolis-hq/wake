@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   activationId,
   activityOrchestrationGroupId,
@@ -250,6 +250,79 @@ DONE`;
       ),
     ).toBe(true);
     expect(await checkpoints.load('reactor:artifact-registration')).toBeGreaterThan(0);
+  });
+
+  it('stops re-scanning the full journal for ambiguous reconciliation once nothing is pending', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const checkpoints = new InMemoryCheckpointStore();
+    const { resources } = createTestResourceServices(journal);
+    const workflow = workflowInstanceId('workflow-artifact-ambiguous');
+    await journal.append(workflowInstanceStream(workflow), 0, [
+      draft(
+        'orchestration.instance-started',
+        {
+          workItemId: workId('artifact-ambiguous'),
+          workflowName: 'default',
+          orchestrationGroupId: 'group-1',
+          entry: 'implement',
+        },
+        workflow,
+      ),
+      draft(
+        'orchestration.activity-outcome-accepted',
+        {
+          activationId: activationId('activation-artifact-ambiguous'),
+          outcome: {
+            kind: ActivityOutcomeKind.Done,
+            data: {
+              status: 'DONE',
+              reportedArtifacts: [
+                { kind: 'pull-request', externalKey: { adapter: 'fake', key: 'ambiguous#42' } },
+              ],
+            },
+          },
+        },
+        workflow,
+      ),
+    ]);
+    const reactor = new ArtifactRegistrationReactor({
+      journal,
+      checkpoints,
+      resources,
+      ids: { next: () => 'resource-00000000000000000000000000' },
+      maxAmbiguityReconciliationAttempts: 1,
+      runs: {
+        async list() {
+          return [
+            { workspace: { mode: 'branch' as const, path: '/tmp', branch: 'wake/fake-work' } },
+          ] as never;
+        },
+      },
+      providers: [
+        {
+          adapter: 'fake' as never,
+          provider: 'fake',
+          eventTypes: [],
+          source: {} as never,
+          delivery: {} as never,
+          inbound: {} as never,
+          async verifyArtifact() {
+            return 'ambiguous' as const;
+          },
+        },
+      ],
+    });
+
+    // First attempt is escalated immediately (max attempts = 1), so this
+    // settles into a stable, unresolved-but-no-longer-retried state.
+    await reactor.runOnce();
+
+    const readAllSpy = vi.spyOn(journal, 'readAll');
+    await reactor.runOnce();
+    await reactor.runOnce();
+
+    const fullRescans = readAllSpy.mock.calls.filter(([position]) => position === 0);
+    expect(fullRescans).toHaveLength(0);
   });
 });
 
