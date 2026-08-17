@@ -28,16 +28,13 @@ component supplies read-only facts to whatever caller composed it as an
   recent `integration.github.work-observed` event matching its external
   key, folded in journal order; an object never observed reports empty
   title/body.
-- The agent-facing context retains at most 12 newest eligible comments, excluding
-  historical Wake deliveries while retaining the latest Wake reviewer rejection,
-  the latest Wake agent handoff overall, and the latest Wake agent handoff for
-  each distinct workflow stage that produced one (identified by the confirmed
-  `agent-run.publish` intent's own `report.stage`, not by parsing rendered
-  comment text) — so an earlier stage's handoff (e.g. a plan) survives a later
-  stage's own comment (e.g. that plan's review) superseding it as the single
-  most recent Wake comment.
-  Each retained comment is capped at 8,000 characters and all retained bodies at
-  48,000 characters, with truncation marked explicitly.
+- The agent-facing context retains every eligible comment, human and Wake alike,
+  newest-first, until the combined retained body length would exceed 200,000
+  characters; comments are not otherwise filtered by author or delivery kind.
+  Each retained comment is capped at 8,000 characters, with truncation marked
+  explicitly. When the overall budget forces omission of older comments, the
+  reader reports how many were left out; it never drops comments silently
+  without a way for the caller to know the thread may be incomplete.
   The reconciled source history includes every `integration.github.comment-observed`
   event whose external key matches the resource, in journal order, each
   entry carrying the comment/review's own author, occurrence time, and body
@@ -69,7 +66,6 @@ component supplies read-only facts to whatever caller composed it as an
 | `author` | string | The comment or review's own actor id, as GitHub reported it. |
 | `occurredAt` | timestamp | When the comment or review was recorded as evidence. |
 | `body` | string | The comment or review's own body text. |
-| `wakeArtifact` | object, optional | For a confirmed `agent-run.publish` delivery: its source run id, stage (if known), and outcome. Absent for provider-observed comments and non-agent-run deliveries. Internal to bounding; never exposed to the agent-facing `AgentContextComment`. |
 
 ## Dependencies and system role
 

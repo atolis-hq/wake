@@ -370,6 +370,56 @@ describe('agent activity template context', () => {
     expect(prompt.split('</wake-untrusted-data>')).toHaveLength(2);
   });
 
+  it('warns in the untrusted-data wrapper when older comments were left out for length bounds', async () => {
+    const requests: Array<{ readonly prompt: string }> = [];
+    const activity = createAgentActivity(
+      {
+        async render() {
+          return { prompt: 'Trusted template instructions.' };
+        },
+      },
+      {
+        async forWorkItem() {
+          return {
+            title: 'Ship the thing',
+            body: 'Do the work',
+            comments: [],
+            omittedComments: 3,
+          };
+        },
+      },
+    );
+
+    await execute(activity, (request) => requests.push(request));
+
+    const prompt = requests[0]!.prompt;
+    const blockStart = prompt.indexOf('<wake-untrusted-data>');
+    const blockEnd = prompt.indexOf('</wake-untrusted-data>');
+    expect(prompt.slice(blockStart, blockEnd)).toContain(
+      '3 older comment(s) were left out of this context',
+    );
+  });
+
+  it('omits the length-bounds warning when no comments were left out', async () => {
+    const requests: Array<{ readonly prompt: string }> = [];
+    const activity = createAgentActivity(
+      {
+        async render() {
+          return { prompt: 'Trusted template instructions.' };
+        },
+      },
+      {
+        async forWorkItem() {
+          return { title: 'Ship the thing', body: 'Do the work', comments: [] };
+        },
+      },
+    );
+
+    await execute(activity, (request) => requests.push(request));
+
+    expect(requests[0]!.prompt).not.toContain('were left out of this context');
+  });
+
   it('renders resume context with only comments observed since the prior session started', async () => {
     const requests: Array<{ readonly prompt: string; readonly resumeSessionId?: string }> = [];
     const rendered: unknown[] = [];

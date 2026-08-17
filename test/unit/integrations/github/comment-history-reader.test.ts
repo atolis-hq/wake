@@ -413,57 +413,6 @@ it('excludes an unconfirmed comment-shaped delivery intent', async () => {
   ).resolves.toEqual([]);
 });
 
-it('carries the source agent-run report stage, run id, and outcome on a confirmed agent-run delivery', async () => {
-  const { world, work, resource } = await correlatedGitHubWork();
-  await appendConfirmedAgentRunDelivery(world, resource.resourceId, {
-    intentEventId: 'refine-plan',
-    occurredAt: '2026-08-08T00:01:00.000Z',
-    runId: 'run-refine-1',
-    stage: 'refine',
-    outcome: 'DONE',
-    displayBody: 'Here is the plan.',
-  });
-
-  const [entry] = await createCommentHistoryReader(world.journal, world.resources).forWorkItem(
-    work.workItemId,
-  );
-
-  expect(entry?.wakeArtifact).toEqual({ runId: 'run-refine-1', stage: 'refine', outcome: 'DONE' });
-});
-
-it('omits stage from a confirmed agent-run delivery when the source report has none', async () => {
-  const { world, work, resource } = await correlatedGitHubWork();
-  await appendConfirmedAgentRunDelivery(world, resource.resourceId, {
-    intentEventId: 'unstaged-run',
-    occurredAt: '2026-08-08T00:01:00.000Z',
-    runId: 'run-unstaged-1',
-    outcome: 'FAILED',
-    displayBody: 'Something went wrong.',
-  });
-
-  const [entry] = await createCommentHistoryReader(world.journal, world.resources).forWorkItem(
-    work.workItemId,
-  );
-
-  expect(entry?.wakeArtifact).toEqual({ runId: 'run-unstaged-1', outcome: 'FAILED' });
-});
-
-it('does not attach wakeArtifact metadata to a plain status delivery', async () => {
-  const { world, work, resource } = await correlatedGitHubWork();
-  await appendConfirmedDelivery(world, resource.resourceId, {
-    intentEventId: 'status-only',
-    eventType: DeliveryIntentEventType.StatusPublishRequested,
-    occurredAt: '2026-08-08T00:01:00.000Z',
-    body: 'Wake is working on it.',
-  });
-
-  const [entry] = await createCommentHistoryReader(world.journal, world.resources).forWorkItem(
-    work.workItemId,
-  );
-
-  expect(entry?.wakeArtifact).toBeUndefined();
-});
-
 async function correlatedGitHubWork() {
   const world = new TestWorld();
   const work = await world.createWork({ objective: 'show Wake delivery immediately' });
@@ -553,68 +502,6 @@ async function appendConfirmedDelivery(
           eventId: `${input.intentEventId}-confirmed`,
           eventType: DeliveryEventType.Confirmed,
         }),
-  );
-}
-
-async function appendConfirmedAgentRunDelivery(
-  world: TestWorld,
-  resourceId: ResourceId,
-  input: {
-    readonly intentEventId: string;
-    readonly occurredAt: string;
-    readonly runId: string;
-    readonly stage?: string;
-    readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
-    readonly displayBody: string;
-  },
-) {
-  const intent = await appendEvent(
-    world,
-    createEventDraft({
-      eventId: input.intentEventId,
-      eventType: DeliveryIntentEventType.AgentRunPublishRequested,
-      occurredAt: input.occurredAt,
-      correlationId: `correlation:${input.intentEventId}`,
-      causationId: `causation:${input.intentEventId}`,
-      actor: { kind: 'system', id: 'test' },
-      source: { kind: 'internal', id: 'test' },
-      stream: resourceStream(resourceId),
-      payload: {
-        workflowInstanceId: 'workflow-1',
-        activationId: 'activation-1',
-        resourceId,
-        report: {
-          runId: input.runId,
-          ...(input.stage === undefined ? {} : { stage: input.stage }),
-          startedAt: input.occurredAt,
-          finishedAt: input.occurredAt,
-          displayBody: input.displayBody,
-          outcome: input.outcome,
-          metadata: {},
-        },
-      },
-    }),
-  );
-  return appendEvent(
-    world,
-    createEventDraft({
-      eventId: `${input.intentEventId}-confirmed`,
-      eventType: DeliveryEventType.Confirmed,
-      occurredAt: '2026-08-08T00:02:00.000Z',
-      correlationId: `correlation:${input.intentEventId}`,
-      causationId: `causation:${input.intentEventId}`,
-      actor: { kind: 'system', id: 'test' },
-      source: { kind: 'internal', id: 'test' },
-      stream: deliveryStream(eventId(input.intentEventId)),
-      payload: {
-        intentEventId: eventId(input.intentEventId),
-        intentGlobalPosition: intent.globalPosition,
-        workflowInstanceId: 'workflow-1',
-        activationId: 'activation-1',
-        occurrenceOrdinal: 1,
-        externalId: 'github-comment-1',
-      },
-    }),
   );
 }
 
