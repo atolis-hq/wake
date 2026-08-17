@@ -1,4 +1,5 @@
 const defaultMaximumGitHubResponseBytes = 8 * 1024 * 1024;
+const defaultGitHubRequestTimeoutMs = 30_000;
 
 export class GitHubResponseTooLargeError extends Error {
   constructor(
@@ -10,12 +11,39 @@ export class GitHubResponseTooLargeError extends Error {
   }
 }
 
+// Neither Octokit nor the underlying fetch implementation bounds how long a
+// single request may hang: a connection that never responds (rather than
+// returning a clean error status) blocks forever. Every caller of the GitHub
+// client boundary — reads and mutations alike — currently awaits that call
+// inline within the runner's single serialized tick, so one hung request
+// stalls Advancement for every other, unrelated work item too.
+export class GitHubRequestTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`GitHub request did not complete within ${timeoutMs}ms`);
+    this.name = 'GitHubRequestTimeoutError';
+  }
+}
+
 export function createBoundedGitHubFetch(
   baseFetch: typeof globalThis.fetch = globalThis.fetch,
   maximumResponseBytes = defaultMaximumGitHubResponseBytes,
+  timeoutMs = defaultGitHubRequestTimeoutMs,
 ): typeof globalThis.fetch {
   return async (input, init) => {
-    const response = await baseFetch(input, init);
+    const timeoutController = new AbortController();
+    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, timeoutController.signal])
+      : timeoutController.signal;
+    let response: Response;
+    try {
+      response = await baseFetch(input, { ...init, signal });
+    } catch (error) {
+      if (timeoutController.signal.aborted) throw new GitHubRequestTimeoutError(timeoutMs);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
     const declaredBytes = contentLength(response);
     if (declaredBytes !== undefined && declaredBytes > maximumResponseBytes) {
       await response.body?.cancel();
