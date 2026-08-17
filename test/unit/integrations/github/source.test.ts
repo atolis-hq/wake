@@ -394,7 +394,9 @@ it('replays a comment that arrives after its query when acquisition outlasts the
         },
         async reset() {},
       },
-      now: () => (sourceQueryCompleted ? completedAt : queryStartedAt),
+      // Offset by `poll` so the second poll's entry read lands past intervalMs
+      // (the first poll's watermark stays queryStartedAt, matching the assertion below).
+      now: () => (sourceQueryCompleted ? completedAt : queryStartedAt + poll * 60_000),
     },
   );
 
@@ -470,6 +472,77 @@ it('records per-repository read health from poll outcomes', async () => {
   expect(badRead.failureCount).toBe(1);
   expect(goodRead.successCount).toBeGreaterThan(0);
   expect(goodRead.failureCount).toBe(0);
+});
+
+it('defaults the GitHub poll interval to thirty seconds', () => {
+  const config = gitHubConfigSchema.parse({
+    enabled: true,
+    token: 'token',
+    repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+  });
+
+  expect(config.polling.intervalMs).toBe(30_000);
+});
+
+it('skips the GitHub API call and returns no drafts when polled again before the interval elapses', async () => {
+  let listIssueCalls = 0;
+  let currentTime = Date.parse('2026-08-16T19:23:00.000Z');
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+      polling: { intervalMs: 30_000 },
+    }),
+    fakeClient({
+      issues: [issue(5, 'A plain issue')],
+      issueComments: {},
+      onListIssues: () => {
+        listIssueCalls += 1;
+      },
+    }),
+    undefined,
+    undefined,
+    { now: () => currentTime },
+  );
+
+  const firstDrafts = await source.poll(new AbortController().signal);
+  currentTime += 10_000;
+  const secondDrafts = await source.poll(new AbortController().signal);
+
+  expect(listIssueCalls).toBe(1);
+  expect(firstDrafts.length).toBeGreaterThan(0);
+  expect(secondDrafts).toEqual([]);
+});
+
+it('polls GitHub again once the configured interval has elapsed', async () => {
+  let listIssueCalls = 0;
+  let currentTime = Date.parse('2026-08-16T19:23:00.000Z');
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+      polling: { intervalMs: 30_000 },
+    }),
+    fakeClient({
+      issues: [issue(5, 'A plain issue')],
+      issueComments: {},
+      onListIssues: () => {
+        listIssueCalls += 1;
+      },
+    }),
+    undefined,
+    undefined,
+    { now: () => currentTime },
+  );
+
+  await source.poll(new AbortController().signal);
+  currentTime += 30_000;
+  const secondDrafts = await source.poll(new AbortController().signal);
+
+  expect(listIssueCalls).toBe(2);
+  expect(secondDrafts.length).toBeGreaterThan(0);
 });
 
 function fakeClient(input: {

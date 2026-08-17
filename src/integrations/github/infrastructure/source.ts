@@ -47,8 +47,17 @@ export function createGitHubSource(
   // so it's safe for it to reset on restart.
   const lastEventIds = new Map<string, string>();
   const pendingWatermarks = new Map<string, number>();
+  const now = state?.now ?? Date.now;
+  // In-memory only: an extra real poll after a process restart is harmless,
+  // the same tradeoff already made for lastEventIds above.
+  let lastPolledAt: number | undefined;
   return {
     async poll(signal) {
+      const currentTime = now();
+      if (lastPolledAt !== undefined && currentTime - lastPolledAt < config.polling.intervalMs) {
+        return [];
+      }
+      lastPolledAt = currentTime;
       const perRepository = await Promise.all(
         config.repositories.map(async ({ owner, repo }) =>
           pollRepository({
@@ -59,7 +68,7 @@ export function createGitHubSource(
             owner,
             repo,
             watermark: await loadWatermark(state?.checkpoints, adapter, owner, repo),
-            now: state?.now ?? Date.now,
+            now,
             health,
           }),
         ),

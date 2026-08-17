@@ -40,9 +40,16 @@ export const gitHubConfigSchema = z
         maxConcurrent: z.number().int().positive().default(4),
         commentPageSize: z.number().int().positive().max(100).default(25),
         lookbackMs: z.number().int().nonnegative().default(60_000),
+        intervalMs: z.number().int().positive().default(30_000),
       })
       .strict()
-      .default({ maxPerRepo: 25, maxConcurrent: 4, commentPageSize: 25, lookbackMs: 60_000 }),
+      .default({
+        maxPerRepo: 25,
+        maxConcurrent: 4,
+        commentPageSize: 25,
+        lookbackMs: 60_000,
+        intervalMs: 30_000,
+      }),
     intake: z.array(intakeRuleSchema).default([]),
     publication: z
       .object({ postStatusComments: z.boolean().default(true) })
