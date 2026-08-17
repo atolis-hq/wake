@@ -70,9 +70,10 @@ Does not own:
 - A command request body MUST be a JSON object containing exactly one
   field, `idempotencyKey`, a non-empty string of at most 200 characters; any
   other shape MUST be rejected as an invalid-request failure before the
-  command reaches the domain application. The explicit ambiguous-Run failure
-  resolution command additionally requires a non-empty `message` of at most
-  2000 characters and accepts no other field.
+  command reaches the domain application. The explicit ambiguous-Run
+  resolution command additionally requires a `status` of `succeeded` with an
+  `outcome`, or `failed` with a non-empty `reason` of at most 2000 characters,
+  and accepts no other fields.
 - A conflict result returned by a domain application MUST be presented as a
   409 problem response carrying the domain's own conflict code, retryable
   flag, and current state (when supplied). An accepted result MUST be
@@ -82,11 +83,11 @@ Does not own:
 - `freeze`/`unfreeze` commands complete synchronously at this boundary and
   MUST return HTTP 200; `delete`/`retry`, control-plane, and runner commands
   are accepted for asynchronous processing and MUST return HTTP 202.
-- `POST /api/v1/runs/:runId/commands/resolve` is a synchronous operator
+- `POST /api/v1/runs/:runId/commands/resolve` is an operator
   command. Its strict body includes `idempotencyKey` and exactly one of
   `{ status: "succeeded", outcome: ... }` or `{ status: "failed", reason: "..." }`.
-  It returns HTTP 200 with the resolved Run resource. Invalid outcomes return
-  a 422 problem, and a Run that is missing or not an escalated ambiguity
+  It returns HTTP 202 with the command acceptance resource. Invalid outcomes
+  return a 422 problem, and a Run that is missing or not an escalated ambiguity
   returns the normal 404 or 409 problem.
 - The control-plane `tick` command MUST be rejected as a 409 conflict (code
   `paused`, carrying the current control-plane status) before it reaches the

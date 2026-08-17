@@ -392,7 +392,11 @@ it('validates an operator success outcome against the Run Activity', async () =>
   const recovery = new RecoveryService(
     fixture.journal,
     fixture.clock,
-    { async inspect() { return { kind: 'unknown' as const, reason: 'runner unavailable' }; } },
+    {
+      async inspect() {
+        return { kind: 'unknown' as const, reason: 'runner unavailable' };
+      },
+    },
     fixture.activities,
     { maxAmbiguityReconciliationAttempts: 1 },
   );
@@ -408,5 +412,5 @@ it('validates an operator success outcome against the Run Activity', async () =>
         actor: { kind: EventActorKind.Operator, id: 'operator-1' },
       },
     ),
-  ).rejects.toThrow(/outcome invalid/i);
+  ).rejects.toThrow(/undeclared activity outcome/i);
 });

@@ -177,7 +177,7 @@ export function createSurfaceCliApplications(
     runs: {
       async resolve(runId, resolution) {
         const context = commandContext(`run:${runId}:resolve`, now());
-        return root.recovery.resolve(
+        const run = await root.recovery.resolve(
           runId,
           resolution.status === RunStatus.Succeeded
             ? { kind: RunStatus.Succeeded, outcome: resolution.outcome }
@@ -187,6 +187,22 @@ export function createSurfaceCliApplications(
               },
           context,
         );
+        if (resolution.status === RunStatus.Succeeded)
+          await root.orchestration.acceptOutcome(
+            {
+              workflowInstanceId: run.workflowInstanceId,
+              activationId: run.activationId,
+              outcome: run.outcome!,
+            },
+            context,
+          );
+        else
+          await root.orchestration.resolveExecutionFailure(
+            run.workflowInstanceId,
+            { activationId: run.activationId, runId: run.runId, reason: resolution.reason },
+            context,
+          );
+        return run;
       },
     },
     validateState: createValidationApplications(root),

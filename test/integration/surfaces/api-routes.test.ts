@@ -268,15 +268,21 @@ describe('API event pagination', () => {
 });
 
 describe('API command conflicts', () => {
-  it('delegates an explicit ambiguous-run failure resolution with its operator idempotency key', async () => {
-    const calls: Array<{ runId: string; idempotencyKey: string; message: string }> = [];
+  it('delegates an explicit ambiguous-run resolution with its operator idempotency key', async () => {
+    const calls: Array<{ runId: string; idempotencyKey: string; status: string; reason: string }> =
+      [];
     const base = applications();
     const dispatcher = createApiDispatcher({
       ...base,
       execution: {
         ...base.execution,
         resolveAmbiguousRun: async (runId, command) => {
-          calls.push({ runId, idempotencyKey: command.idempotencyKey, message: command.message });
+          calls.push({
+            runId,
+            idempotencyKey: command.idempotencyKey,
+            status: command.status,
+            reason: command.status === 'failed' ? command.reason : '',
+          });
           return commandResult(command.idempotencyKey);
         },
       },
@@ -284,8 +290,12 @@ describe('API command conflicts', () => {
 
     const response = await dispatcher.dispatch(
       'POST',
-      '/api/v1/runs/run%2Fambiguous/commands/resolve-failed',
-      { idempotencyKey: 'operator-42', message: 'The external process cannot be verified.' },
+      '/api/v1/runs/run%2Fambiguous/commands/resolve',
+      {
+        idempotencyKey: 'operator-42',
+        status: 'failed',
+        reason: 'The external process cannot be verified.',
+      },
     );
 
     expect(response?.status).toBe(202);
@@ -293,20 +303,48 @@ describe('API command conflicts', () => {
       {
         runId: 'run/ambiguous',
         idempotencyKey: 'operator-42',
-        message: 'The external process cannot be verified.',
+        status: 'failed',
+        reason: 'The external process cannot be verified.',
       },
+    ]);
+  });
+
+  it('delegates a successful ambiguous-run resolution with its outcome', async () => {
+    const calls: unknown[] = [];
+    const base = applications();
+    const dispatcher = createApiDispatcher({
+      ...base,
+      execution: {
+        ...base.execution,
+        resolveAmbiguousRun: async (_runId, command) => {
+          calls.push(command);
+          return commandResult(command.idempotencyKey);
+        },
+      },
+    });
+
+    const response = await dispatcher.dispatch(
+      'POST',
+      '/api/v1/runs/run-ambiguous/commands/resolve',
+      { idempotencyKey: 'operator-43', status: 'succeeded', outcome: { kind: 'done' } },
+    );
+
+    expect(response?.status).toBe(202);
+    expect(calls).toEqual([
+      { idempotencyKey: 'operator-43', status: 'succeeded', outcome: { kind: 'done' } },
     ]);
   });
 
   it.each([
     {},
     { idempotencyKey: 'operator-42' },
-    { idempotencyKey: 'operator-42', message: '' },
-    { idempotencyKey: 'operator-42', message: 'reason', extra: true },
+    { idempotencyKey: 'operator-42', status: 'succeeded' },
+    { idempotencyKey: 'operator-42', status: 'failed', reason: '' },
+    { idempotencyKey: 'operator-42', status: 'failed', reason: 'reason', extra: true },
   ])('rejects an invalid ambiguous-run resolution request %#', async (body) => {
     const response = await createApiDispatcher(applications()).dispatch(
       'POST',
-      '/api/v1/runs/run-ambiguous/commands/resolve-failed',
+      '/api/v1/runs/run-ambiguous/commands/resolve',
       body,
     );
 

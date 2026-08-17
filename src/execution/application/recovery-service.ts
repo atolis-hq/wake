@@ -29,7 +29,7 @@ export interface ExternalExecutionInspector {
 }
 
 export type AmbiguityResolution =
-  | { readonly kind: typeof RunStatus.Succeeded; readonly outcome: ActivityOutcome }
+  | { readonly kind: typeof RunStatus.Succeeded; readonly outcome: unknown }
   | {
       readonly kind: typeof RunStatus.Failed;
       readonly failure: {
