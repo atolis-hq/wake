@@ -1,3 +1,4 @@
+import { RunStatus } from '../../../execution/index.js';
 import type {
   ApiCommandResult,
   ApiTickCommandResult,
@@ -44,8 +45,8 @@ export interface ApiCommandRequest {
 }
 
 export type ApiRunResolutionRequest =
-  | (ApiCommandRequest & { readonly status: 'succeeded'; readonly outcome: unknown })
-  | (ApiCommandRequest & { readonly status: 'failed'; readonly reason: string });
+  | (ApiCommandRequest & { readonly status: typeof RunStatus.Succeeded; readonly outcome: unknown })
+  | (ApiCommandRequest & { readonly status: typeof RunStatus.Failed; readonly reason: string });
 
 export interface ApiSystemApplications {
   health(): Promise<ApiResourceResult<HealthResponse>>;

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { HostBudget, HostResult } from '../../control-plane/index.js';
+import { ExecutionStreamKind, RunStatus } from '../../execution/index.js';
 
 export interface HostOptions {
   readonly host?: string;
@@ -17,11 +18,11 @@ export type WakeCommand =
       readonly runId: string;
       readonly resolution:
         | {
-            readonly status: 'succeeded';
+            readonly status: typeof RunStatus.Succeeded;
             readonly outcome?: unknown;
             readonly outcomeFile?: string;
           }
-        | { readonly status: 'failed'; readonly reason: string };
+        | { readonly status: typeof RunStatus.Failed; readonly reason: string };
     }
   | {
       readonly kind: 'validate-state';
@@ -69,8 +70,8 @@ export interface WakeCliApplications {
     resolve(
       runId: string,
       resolution:
-        | { readonly status: 'succeeded'; readonly outcome: unknown }
-        | { readonly status: 'failed'; readonly reason: string },
+        | { readonly status: typeof RunStatus.Succeeded; readonly outcome: unknown }
+        | { readonly status: typeof RunStatus.Failed; readonly reason: string },
     ): Promise<unknown>;
   };
   readonly validateState: {
@@ -102,7 +103,7 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
         resource: requiredArgument(first, 'correlate resource'),
         workItemId: requiredArgument(second, 'correlate work item'),
       };
-    case 'run':
+    case ExecutionStreamKind.Run:
       return parseRunCommand(arguments_.slice(1));
     case 'validate-state':
       return parseValidateState(arguments_.slice(1));
@@ -160,16 +161,16 @@ function parseRunCommand(arguments_: readonly string[]): WakeCommand {
       runId,
       resolution:
         outcome === undefined
-          ? { status: 'succeeded', outcomeFile: outcomeFile! }
-          : { status: 'succeeded', outcome: parseJson(outcome) },
+          ? { status: RunStatus.Succeeded, outcomeFile: outcomeFile! }
+          : { status: RunStatus.Succeeded, outcome: parseJson(outcome) },
     };
   }
+  if (values.has('--outcome') || values.has('--outcome-file'))
+    throw new Error('--outcome and --outcome-file are only valid with --succeeded');
   const reason = values.get('--reason');
   if (reason === undefined || reason.trim() === '')
     throw new Error('Failed resolution requires --reason <message>');
-  if (values.has('--outcome') || values.has('--outcome-file'))
-    throw new Error('--outcome and --outcome-file are only valid with --succeeded');
-  return { kind: 'run-resolve', runId, resolution: { status: 'failed', reason } };
+  return { kind: 'run-resolve', runId, resolution: { status: RunStatus.Failed, reason } };
 }
 
 function parseJson(value: string): unknown {
@@ -285,12 +286,12 @@ export async function runWakeCommand(
 async function resolveCliOutcome(
   resolution: Extract<WakeCommand, { readonly kind: 'run-resolve' }>['resolution'],
 ): Promise<
-  | { readonly status: 'succeeded'; readonly outcome: unknown }
-  | { readonly status: 'failed'; readonly reason: string }
+  | { readonly status: typeof RunStatus.Succeeded; readonly outcome: unknown }
+  | { readonly status: typeof RunStatus.Failed; readonly reason: string }
 > {
-  if (resolution.status === 'failed') return resolution;
+  if (resolution.status === RunStatus.Failed) return resolution;
   return {
-    status: 'succeeded',
+    status: RunStatus.Succeeded,
     outcome:
       resolution.outcomeFile === undefined
         ? resolution.outcome

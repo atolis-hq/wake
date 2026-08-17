@@ -1,3 +1,4 @@
+import { RunStatus } from '../../../execution/index.js';
 import type { RunnerResponse } from '../contracts/index.js';
 import type { ApiHttpResponse } from '../http-server.js';
 import type {
@@ -151,7 +152,7 @@ function runResolutionRequest(body: unknown): ApiRunResolutionRequest | ApiHttpR
     return invalidRequest('idempotencyKey', 'Must be a non-empty string');
   if (idempotencyKey.length > 200)
     return invalidRequest('idempotencyKey', 'Must be at most 200 characters');
-  if (body.status === 'succeeded') {
+  if (body.status === RunStatus.Succeeded) {
     if (
       Object.keys(body).some(
         (key) => key !== 'idempotencyKey' && key !== 'status' && key !== 'outcome',
@@ -160,9 +161,9 @@ function runResolutionRequest(body: unknown): ApiRunResolutionRequest | ApiHttpR
       return invalidRequest('', 'The command body contains unknown fields');
     if (!Object.hasOwn(body, 'outcome'))
       return invalidRequest('outcome', 'Is required for success');
-    return { idempotencyKey, status: 'succeeded', outcome: body.outcome };
+    return { idempotencyKey, status: RunStatus.Succeeded, outcome: body.outcome };
   }
-  if (body.status === 'failed') {
+  if (body.status === RunStatus.Failed) {
     if (
       Object.keys(body).some(
         (key) => key !== 'idempotencyKey' && key !== 'status' && key !== 'reason',
@@ -173,7 +174,7 @@ function runResolutionRequest(body: unknown): ApiRunResolutionRequest | ApiHttpR
     if (typeof reason !== 'string' || reason.trim() === '')
       return invalidRequest('reason', 'Must be a non-empty string');
     if (reason.length > 2_000) return invalidRequest('reason', 'Must be at most 2000 characters');
-    return { idempotencyKey, status: 'failed', reason };
+    return { idempotencyKey, status: RunStatus.Failed, reason };
   }
   return invalidRequest('status', 'Must be either succeeded or failed');
 }
