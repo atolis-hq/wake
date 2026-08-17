@@ -54,6 +54,8 @@ export * from './infrastructure/runners/fake-scenarios.js';
 
 export * from './infrastructure/runners/registry.js';
 
+export * from './infrastructure/runner-memory-profile.js';
+
 export * from './infrastructure/transcripts.js';
 
 export * from './infrastructure/transcript-store.js';

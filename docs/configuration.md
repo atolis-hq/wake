@@ -507,6 +507,19 @@ fields are for deterministic testing, not normal operation.
 | `host.selfUpdate.drainTimeoutMs` | positive integer; default `30000` | Maximum wait for a controlled update drain. |
 | `host.selfUpdate.cancellationTimeoutMs` | positive integer; default `30000` | Maximum wait for cancellation during controlled self-update. |
 
+### Temporary runner memory profile
+
+For a resident-memory investigation, set `WAKE_MEMORY_PROFILE=runner` in the
+host shell and run `wake-dev sandbox update`. The sandbox receives the flag
+only for that container generation and writes three small JSONL records per
+runner execution to `.wake/logs/start.log`: before start, after the external
+process is returned, and after its result settles. Each record contains only
+the run ID, runner name, timestamp, PID, and Node memory counters; it never
+includes a prompt, provider payload, command arguments, or runner output.
+
+Unset the variable and run `wake-dev sandbox update` again to remove the
+diagnostic mode.
+
 ### Credential bind mounts
 
 Use `host.sandbox.extraMounts` to mount individual credential/configuration
