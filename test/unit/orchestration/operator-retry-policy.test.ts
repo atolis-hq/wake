@@ -24,6 +24,7 @@ import {
   OrchestrationEventType,
   requestChangesResume,
   requestOperatorRetry,
+  selectOperatorRetryTarget,
   startInstance,
 } from '../../../src/orchestration/index.js';
 import { workId } from '../../support/identities.js';
@@ -126,6 +127,71 @@ const retryInput = {
 };
 
 describe('operator retry policy', () => {
+  it('selects the retry-eligible watch child only while its exact parent waits on that watch', () => {
+    const { state: child } = blockedFailedFixture();
+    const parent = {
+      ...child,
+      workflowInstanceId: workflowInstanceId('parent'),
+      status: WorkflowStatus.Waiting,
+      waitingFor: {
+        signalKind: 'orchestration.watch-gate-verdict' as never,
+        from: [{ kind: 'watch' as const, watch: 'plan-review' as never }],
+      },
+    };
+    const watchedChild = {
+      ...child,
+      workflowInstanceId: workflowInstanceId('watch-child'),
+      parentWorkflowInstanceId: parent.workflowInstanceId,
+      watchId: 'plan-review',
+    };
+
+    expect(selectOperatorRetryTarget([parent, watchedChild])).toBe(watchedChild);
+  });
+
+  it.each([
+    [
+      'parent is not waiting',
+      (parent: ReturnType<typeof blockedFailedFixture>['state']) => ({
+        ...parent,
+        status: WorkflowStatus.Active,
+      }),
+    ],
+    [
+      'parent waits for another signal',
+      (parent: ReturnType<typeof blockedFailedFixture>['state']) => ({
+        ...parent,
+        status: WorkflowStatus.Waiting,
+        waitingFor: {
+          signalKind: 'approved' as never,
+          from: [{ kind: 'watch' as const, watch: 'plan-review' as never }],
+        },
+      }),
+    ],
+    [
+      'child belongs to another watch',
+      (parent: ReturnType<typeof blockedFailedFixture>['state']) => parent,
+    ],
+  ])('does not select a child when %s', (_name, change) => {
+    const { state: child } = blockedFailedFixture();
+    const parent = change({
+      ...child,
+      workflowInstanceId: workflowInstanceId('parent'),
+      status: WorkflowStatus.Waiting,
+      waitingFor: {
+        signalKind: 'orchestration.watch-gate-verdict' as never,
+        from: [{ kind: 'watch' as const, watch: 'plan-review' as never }],
+      },
+    });
+    const watchedChild = {
+      ...child,
+      workflowInstanceId: workflowInstanceId('watch-child'),
+      parentWorkflowInstanceId: parent.workflowInstanceId,
+      watchId: _name === 'child belongs to another watch' ? 'pr-review' : 'plan-review',
+    };
+
+    expect(selectOperatorRetryTarget([parent, watchedChild])).toBeUndefined();
+  });
+
   it('resumes an agent-blocked stage for a /changes command', () => {
     const { definition, state } = blockedAgentFixture();
 

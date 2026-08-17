@@ -9,7 +9,11 @@ import {
   type PullRequestService,
 } from '../../../activities/index.js';
 import type { EventJournal, IdGenerator } from '../../../kernel/index.js';
-import { ApprovalAuthorityKind, type OrchestrationService } from '../../../orchestration/index.js';
+import {
+  ApprovalAuthorityKind,
+  selectOperatorRetryTarget,
+  type OrchestrationService,
+} from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
   BuiltInResourceKind,
@@ -192,15 +196,15 @@ async function applyIssueRetrySignal(input: {
   const workItemIds = (await resources.correlations(resourceIdValue))
     .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
     .map((correlation) => correlation.workItemId);
-  for (const workflow of await orchestration.listAll()) {
-    if (
-      !workItemIds.includes(workflow.workItemId) ||
-      workflow.parentWorkflowInstanceId !== undefined
-    )
-      continue;
-    if (!(await isEligibleWorkItem(work, workflow.workItemId))) continue;
+  const workflows = await orchestration.listAll();
+  for (const workItemId of workItemIds) {
+    if (!(await isEligibleWorkItem(work, workItemId))) continue;
+    const target = selectOperatorRetryTarget(
+      workflows.filter((workflow) => workflow.workItemId === workItemId),
+    );
+    if (target === undefined) continue;
     await ignoreIneligibleOperatorRetry(() =>
-      orchestration.retryBlockedFailedStage(workflow.workflowInstanceId, commandContext(event)),
+      orchestration.retryBlockedFailedStage(target.workflowInstanceId, commandContext(event)),
     );
   }
 }

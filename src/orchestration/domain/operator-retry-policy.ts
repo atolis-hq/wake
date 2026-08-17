@@ -1,10 +1,14 @@
 import { ActivityOutcomeKind, BuiltInActivityName } from '../../activities/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
-import { OrchestrationEventType } from '../contracts/events.js';
-import { stageName } from '../contracts/identifiers.js';
+import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
+import { stageName, watchId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabulary.js';
+import {
+  ActivityActivationStatus,
+  ApprovalAuthorityKind,
+  WorkflowStatus,
+} from '../contracts/vocabulary.js';
 import type { DecisionContext, OrchestrationDecision } from './activation-policy.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
 
@@ -26,6 +30,33 @@ export function isOperatorRetryEligible(view: WorkflowInstanceView): boolean {
     (view.blockReason === 'unconfigured outcome failed' &&
       view.lastOutcome?.kind === ActivityOutcomeKind.Failed) ||
     view.executionFailure?.activationId === pending.activationId
+  );
+}
+
+export function selectOperatorRetryTarget(
+  workflows: readonly WorkflowInstanceView[],
+): WorkflowInstanceView | undefined {
+  const primary = workflows.find((workflow) => workflow.parentWorkflowInstanceId === undefined);
+  if (primary === undefined) return undefined;
+  if (isOperatorRetryEligible(primary)) return primary;
+  if (
+    primary.status !== WorkflowStatus.Waiting ||
+    primary.waitingFor?.signalKind !== WatchGateVerdictSignal
+  )
+    return undefined;
+  const watched = new Set(
+    (primary.waitingFor.from ?? []).flatMap((authority) =>
+      authority.kind === ApprovalAuthorityKind.Watch ? [authority.watch] : [],
+    ),
+  );
+  return workflows.find(
+    (workflow) =>
+      workflow.parentWorkflowInstanceId === primary.workflowInstanceId &&
+      workflow.workItemId === primary.workItemId &&
+      workflow.orchestrationGroupId === primary.orchestrationGroupId &&
+      workflow.watchId !== undefined &&
+      watched.has(watchId(workflow.watchId)) &&
+      isOperatorRetryEligible(workflow),
   );
 }
 

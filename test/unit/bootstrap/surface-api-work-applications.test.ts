@@ -37,6 +37,44 @@ it('rethrows an unexpected operator retry error', async () => {
   await expect(retry(toWorkItemKey(id), { idempotencyKey: 'operator-1' })).rejects.toBe(unexpected);
 });
 
+it('retries an eligible child only while its parent waits on that child watch', async () => {
+  const retried: unknown[] = [];
+  const parent = {
+    ...eligibleWorkflow(),
+    workflowInstanceId: 'primary-retry' as never,
+    status: 'waiting' as const,
+    waitingFor: {
+      signalKind: 'orchestration.watch-gate-verdict' as never,
+      from: [{ kind: 'watch' as const, watch: 'plan-review' as never }],
+    },
+  };
+  const child = {
+    ...eligibleWorkflow(),
+    workflowInstanceId: 'child-retry' as never,
+    parentWorkflowInstanceId: parent.workflowInstanceId,
+    watchId: 'plan-review',
+  };
+  const applications = createSurfaceWorkApplications(
+    {
+      work: { get: async () => ({ state: 'open', deleted: false }) },
+      orchestration: {
+        listAll: async () => [parent, child],
+        retryBlockedFailedStage: async (...input: unknown[]) => {
+          retried.push(input);
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+  const retry = applications.retry;
+  if (retry === undefined) throw new Error('Expected retry work application');
+
+  await expect(retry(toWorkItemKey(id), { idempotencyKey: 'operator-1' })).resolves.toMatchObject({
+    status: 'accepted',
+  });
+  expect(retried).toEqual([[child.workflowInstanceId, expect.any(Object)]]);
+});
+
 it('uses stable resource-specific command ids when deleting multiple correlations', async () => {
   const workItemId = workId('delete-multiple-correlations');
   const first = resId('delete-correlation-first');

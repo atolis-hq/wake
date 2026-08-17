@@ -75,7 +75,21 @@ it('retries an open primary workflow only for a provider-authorized /retry comme
     adapter: GitHubAdapter,
     orchestration: {
       async listAll() {
-        return [{ workflowInstanceId: 'workflow-7', workItemId: 'work-7' }];
+        return [
+          {
+            workflowInstanceId: 'workflow-7',
+            workItemId: 'work-7',
+            status: 'blocked',
+            blockReason: 'unconfigured outcome failed',
+            pendingActivation: {
+              activationId: 'workflow-7:activity:1',
+              status: 'completed',
+              supplemental: false,
+            },
+            lastOutcome: { kind: 'failed' },
+            acceptedOutcomes: ['workflow-7:activity:1'],
+          },
+        ];
       },
       async retryBlockedFailedStage(...input: unknown[]) {
         retried.push(input);
@@ -88,6 +102,82 @@ it('retries an open primary workflow only for a provider-authorized /retry comme
     'workflow-7',
     { commandId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z:inbound' },
   ]);
+});
+
+it('retries the eligible child for the exact waiting watch on an authorized /retry comment', async () => {
+  const retried: unknown[] = [];
+  await applyReviewSignal({
+    event: {
+      ...issueCommentEvent('/retry'),
+      payload: {
+        ...issueCommentEvent('/retry').payload,
+        authorization: {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+      },
+    } as never,
+    journal: {} as never,
+    resources: {
+      async correlations() {
+        return [{ role: 'primary', workItemId: 'work-7' }];
+      },
+      async get() {
+        return { kind: resourceKind('issue') };
+      },
+    } as never,
+    work: {
+      async get() {
+        return { state: 'open', frozen: false, deleted: false };
+      },
+    } as never,
+    lookup: {
+      async resourceIdForExternalKey() {
+        return 'resource-7';
+      },
+    } as never,
+    pullRequests: undefined,
+    ids: {} as never,
+    adapter: GitHubAdapter,
+    orchestration: {
+      async listAll() {
+        return [
+          {
+            workflowInstanceId: 'primary-7',
+            workItemId: 'work-7',
+            orchestrationGroupId: 'group-7',
+            status: 'waiting',
+            waitingFor: {
+              signalKind: WatchGateVerdictSignal,
+              from: [{ kind: 'watch', watch: 'plan-review' }],
+            },
+          },
+          {
+            workflowInstanceId: 'child-7',
+            workItemId: 'work-7',
+            orchestrationGroupId: 'group-7',
+            parentWorkflowInstanceId: 'primary-7',
+            watchId: 'plan-review',
+            status: 'blocked',
+            blockReason: 'unconfigured outcome failed',
+            pendingActivation: {
+              activationId: 'child-7:activity:1',
+              status: 'completed',
+              supplemental: false,
+            },
+            lastOutcome: { kind: 'failed' },
+            acceptedOutcomes: ['child-7:activity:1'],
+          },
+        ];
+      },
+      async retryBlockedFailedStage(...input: unknown[]) {
+        retried.push(input);
+      },
+    } as never,
+  });
+
+  expect(retried).toHaveLength(1);
+  expect((retried[0] as unknown[] | undefined)?.[0]).toBe('child-7');
 });
 
 it('ignores an ineligible authorized /retry command', async () => {
