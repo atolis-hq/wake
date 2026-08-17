@@ -4,6 +4,10 @@ import type { ExternalEventSource } from '../../contracts/intake.js';
 import type { GitHubConfig } from '../contracts/config.js';
 import { GitHubEventType } from '../contracts/events.js';
 import {
+  createGitHubAdapterHealthRegistry,
+  type GitHubAdapterHealthRegistry,
+} from './adapter-health-registry.js';
+import {
   issueCommentEventsFor,
   reviewCommentEventsFor,
   reviewEventsFor,
@@ -30,10 +34,12 @@ export function createGitHubSource(
     maxConcurrent: config.polling.maxConcurrent,
   }),
   state?: {
-    readonly checkpoints: CheckpointStore;
+    readonly checkpoints?: CheckpointStore;
     readonly now?: () => number;
+    readonly health?: GitHubAdapterHealthRegistry;
   },
 ): ExternalEventSource {
+  const health = state?.health ?? createGitHubAdapterHealthRegistry(config.repositories);
   // Draft eventIds are already content fingerprints (see issue-source.ts/pr-source.ts),
   // so the journal itself is idempotent per item. This cache only avoids re-appending
   // (and re-triggering downstream translation) an unchanged item on every poll within
@@ -54,6 +60,7 @@ export function createGitHubSource(
             repo,
             watermark: await loadWatermark(state?.checkpoints, adapter, owner, repo),
             now: state?.now ?? Date.now,
+            health,
           }),
         ),
       );
@@ -69,9 +76,10 @@ export function createGitHubSource(
         });
     },
     async markPollPersisted() {
-      if (state === undefined) return;
+      if (state?.checkpoints === undefined) return;
+      const checkpoints = state.checkpoints;
       for (const [repository, watermark] of pendingWatermarks) {
-        await state.checkpoints.save(watermarkCheckpoint(adapter, repository), watermark);
+        await checkpoints.save(watermarkCheckpoint(adapter, repository), watermark);
         pendingWatermarks.delete(repository);
       }
     },
@@ -132,8 +140,9 @@ async function pollRepository(input: {
   readonly repo: string;
   readonly watermark: number;
   readonly now: () => number;
+  readonly health: GitHubAdapterHealthRegistry;
 }) {
-  const { client, config, adapter, signal, owner, repo } = input;
+  const { client, config, adapter, signal, owner, repo, health } = input;
   const queriedAt = input.now();
   const context: RepositoryPollContext = {
     client,
@@ -148,9 +157,16 @@ async function pollRepository(input: {
     client.listIssues(owner, repo, config.polling.maxPerRepo, since),
     client.listPullRequests(owner, repo, config.polling.maxPerRepo),
   ]);
-  if (!isFulfilled(issuesResult)) reportPartialPollFailure(context.repository, 'issues');
-  if (!isFulfilled(pullRequestsResult))
+  if (isFulfilled(issuesResult)) health.recordSuccess(context.repository, 'poll');
+  else {
+    reportPartialPollFailure(context.repository, 'issues');
+    health.recordFailure(context.repository, 'poll', issuesResult.reason);
+  }
+  if (isFulfilled(pullRequestsResult)) health.recordSuccess(context.repository, 'poll');
+  else {
     reportPartialPollFailure(context.repository, 'pull requests');
+    health.recordFailure(context.repository, 'poll', pullRequestsResult.reason);
+  }
   const issues = isFulfilled(issuesResult) ? issuesResult.value : [];
   const pullRequestPayloads = isFulfilled(pullRequestsResult)
     ? pullRequestsResult.value.filter(

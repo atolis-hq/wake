@@ -13,6 +13,7 @@ import type {
   GitHubIssuePayload,
   GitHubReviewPayload,
 } from '../../../../src/integrations/github/contracts/payloads.js';
+import { createGitHubAdapterHealthRegistry } from '../../../../src/integrations/github/infrastructure/adapter-health-registry.js';
 import { watermarkCheckpoint } from '../../../../src/integrations/github/infrastructure/poll-watermark.js';
 import { createGitHubSource } from '../../../../src/integrations/github/infrastructure/source.js';
 import { FileCheckpointStore } from '../../../../src/persistence/index.js';
@@ -433,6 +434,42 @@ it('persists repository watermarks through the filesystem checkpoint store', asy
   const checkpoint = watermarkCheckpoint(undefined, 'atolis-hq/wake-test');
   expect(checkpoint).not.toContain('/');
   expect(await checkpoints.load(checkpoint)).toBe(Date.parse('2026-08-16T19:23:00.000Z'));
+});
+
+it('records per-repository read health from poll outcomes', async () => {
+  const registry = createGitHubAdapterHealthRegistry([
+    { owner: 'bad', repo: 'repo' },
+    { owner: 'good', repo: 'repo' },
+  ]);
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [
+        { owner: 'bad', repo: 'repo' },
+        { owner: 'good', repo: 'repo' },
+      ],
+    }),
+    {
+      ...fakeClient({ issues: [], issueComments: {} }),
+      async listIssues(owner: string) {
+        if (owner === 'bad') throw Object.assign(new Error('unavailable'), { status: 503 });
+        return [];
+      },
+    },
+    undefined,
+    undefined,
+    { health: registry },
+  );
+
+  await source.poll(new AbortController().signal);
+
+  const checks = registry.snapshotAll();
+  const badRead = checks.find((c) => c.scope === 'bad/repo' && c.channel === 'poll')!;
+  const goodRead = checks.find((c) => c.scope === 'good/repo' && c.channel === 'poll')!;
+  expect(badRead.failureCount).toBe(1);
+  expect(goodRead.successCount).toBeGreaterThan(0);
+  expect(goodRead.failureCount).toBe(0);
 });
 
 function fakeClient(input: {

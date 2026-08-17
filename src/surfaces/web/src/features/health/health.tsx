@@ -66,6 +66,34 @@ export function HealthPage() {
           </Panel>
         )
       )}
+      <h2>Adapter health</h2>
+      {health.data && (health.data.data.adapters?.length ?? 0) === 0 ? (
+        <EmptyState>No adapter health reported</EmptyState>
+      ) : (
+        health.data && (
+          <DataTable
+            caption="Adapter health"
+            rows={health.data.data.adapters!}
+            rowKey={(check) => `${check.adapter}:${check.scope}:${check.channel}`}
+            columns={[
+              { label: 'Adapter', render: (check) => check.adapter },
+              { label: 'Scope', render: (check) => check.scope },
+              { label: 'Channel', render: (check) => check.channel },
+              {
+                label: 'Status',
+                render: (check) => (
+                  <StatusBadge tone={check.status === 'ok' ? 'good' : 'warning'}>
+                    {check.status}
+                  </StatusBadge>
+                ),
+              },
+              { label: 'Successes', render: (check) => check.successCount },
+              { label: 'Failures', render: (check) => check.failureCount },
+              { label: 'Detail', render: (check) => check.detail ?? '—' },
+            ]}
+          />
+        )
+      )}
       <h2>Runner availability</h2>
       {runners.isPending ? (
         <LoadingState label="Loading runners" />
