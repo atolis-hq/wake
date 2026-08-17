@@ -89,8 +89,11 @@ workspace mechanics itself — it only resolves and invokes them.
   prior session. If no policy is supplied, the legacy same-Activation lookup
   applies. It chooses the newest terminal result with a non-empty generic
   session id, ordered by finish time, attempt, then Run id. It forwards that
-  id unchanged to the Activity with the current prompt/context; different
-  adapter kinds, started or ambiguous Runs, and missing ids start fresh.
+  id only when every matching terminal Run records valid input and output
+  usage and their cumulative total is at or below
+  `execution.maxResumableSessionTokens` (default `200000`). Otherwise it starts
+  fresh with the current bounded durable context; different adapter kinds,
+  started or ambiguous Runs, and missing ids also start fresh.
 
 **Claim, workspace, and Run creation**
 
