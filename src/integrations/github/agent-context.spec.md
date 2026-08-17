@@ -4,7 +4,7 @@
 
 Adapter. This component implements Activities' `AgentContextReader` contract
 for GitHub: given a WorkItem, it returns the correlated GitHub object's
-current title/body and its full comment history, purely by refolding
+current title/body and a bounded, causally relevant comment delta, purely by refolding
 already-recorded GitHub evidence and durable delivery facts — it makes no
 live GitHub call of its own.
 
@@ -28,11 +28,16 @@ component supplies read-only facts to whatever caller composed it as an
   recent `integration.github.work-observed` event matching its external
   key, folded in journal order; an object never observed reports empty
   title/body.
-- The reported comment history MUST include every `integration.github.comment-observed`
+- The agent-facing context retains at most 12 newest eligible comments, excluding
+  historical Wake deliveries while retaining the latest Wake reviewer rejection
+  and the latest Wake agent handoff.
+  Each retained comment is capped at 8,000 characters and all retained bodies at
+  48,000 characters, with truncation marked explicitly.
+  The reconciled source history includes every `integration.github.comment-observed`
   event whose external key matches the resource, in journal order, each
   entry carrying the comment/review's own author, occurrence time, and body
   — regardless of `reviewKind` (`formal` or `issue`).
-- The history MUST also include each primary-resource `status.publish`,
+- The reconciled source history also includes each primary-resource `status.publish`,
   `reply.publish`, or `agent-run.publish` intent once its delivery is confirmed
   (including a reconciled confirmation). Its synthetic body MUST be exactly the
   GitHub-delivered body, including delivery markers and the configured web
