@@ -90,12 +90,7 @@ async function attemptExecution(
     stage: activation.stage,
     ...(context.sessionPolicy === undefined ? {} : { policy: context.sessionPolicy }),
   };
-  const resume = resumeContextFor(
-    resumeCandidates,
-    runner,
-    resumeScope,
-    runtime.config.maxResumableSessionTokens ?? 200_000,
-  );
+  const resume = resumeContextFor(resumeCandidates, runner, resumeScope);
   const existing = existingRun(prior, runtime.dependencies.clock, owner);
   if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
@@ -349,34 +344,18 @@ function resumeContextFor(
   candidates: readonly RunView[],
   runner: ReturnType<typeof resolveRunner>,
   scope: Parameters<typeof resumeRunFor>[3],
-  maximumTokens = 200_000,
-): {
-  readonly sessionId?: string;
-  readonly startedAt?: string;
-  readonly usageBaseline?: {
-    readonly input: number;
-    readonly output: number;
-    readonly cacheRead?: number;
-    readonly cacheWrite?: number;
-  };
-} {
+) {
   if (runner.supportsSessionResume !== true) return {};
   const resumedRun = resumeRunFor(candidates, runner.cli, runner.name, scope);
   const sessionId = resumedRun?.agent?.metadata.sessionId as string | undefined;
-  const usageBaseline =
-    sessionId === undefined
-      ? undefined
-      : usageBaselineFor(candidates, runner.cli, sessionId, scope, runner.name);
-  if (
-    sessionId === undefined ||
-    usageBaseline === undefined ||
-    usageBaseline.input + usageBaseline.output > maximumTokens
-  )
-    return {};
   return {
-    sessionId,
+    ...(sessionId === undefined ? {} : { sessionId }),
     ...(resumedRun?.startedAt === undefined ? {} : { startedAt: resumedRun.startedAt }),
-    usageBaseline,
+    ...(sessionId === undefined
+      ? {}
+      : {
+          usageBaseline: usageBaselineFor(candidates, runner.cli, sessionId, scope, runner.name),
+        }),
   };
 }
 

@@ -35,8 +35,6 @@ execution:
     standard: [fake]
     deep: [fake]
   defaultRunnerPool: standard
-  # A resumed agent session must have complete durable usage under this limit.
-  maxResumableSessionTokens: 200000
 
 # Tick dispatch cap and resident-loop idle backoff; the built-in defaults
 # are fine for a first run.
