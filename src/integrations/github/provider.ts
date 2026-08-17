@@ -13,6 +13,7 @@ import { translateGitHubOutbound } from './application/outbound-translator.js';
 import { createGitHubWakeLabelReconciler } from './application/wake-labels.js';
 import { gitHubConfigSchema, type GitHubConfig } from './contracts/config.js';
 import { GitHubEventType } from './contracts/events.js';
+import { createGitHubAdapterHealthRegistry } from './infrastructure/adapter-health-registry.js';
 import { createGitHubClient } from './infrastructure/client.js';
 import { createGitHubDelivery } from './infrastructure/delivery.js';
 import { resolveGitHubCliToken } from './infrastructure/gh-auth.js';
@@ -31,12 +32,14 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
     const requests = createGitHubRequestCoordinator({
       maxConcurrent: config.polling.maxConcurrent,
     });
+    const health = createGitHubAdapterHealthRegistry(config.repositories);
     return {
       adapter,
       eventTypes: Object.values(GitHubEventType),
       source: createGitHubSource(config, client, adapter, requests, {
         checkpoints: services.checkpoints,
         now: () => services.clock.now().getTime(),
+        health,
       }),
       maintenance: createGitHubWakeLabelReconciler({
         orchestration: services.orchestration,
@@ -46,17 +49,27 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         setLabels: client.setIssueLabels,
         requests,
       }),
+      health: () => health.snapshotAll(),
       delivery: createGitHubDelivery(
         async (intent, idempotencyKey) => {
           const resource = await services.resources.get(resourceId(intent.resourceId));
           if (resource === null)
             throw new Error(`GitHub resource ${intent.resourceId} is unavailable`);
-          return client.deliver({
-            ...translateGitHubOutbound(resource, intent, {
-              publicUiUrl: services.publicUiUrl,
-            }),
-            idempotencyKey,
-          });
+          const parsedKey = parsePullRequestKey(resource.externalKey.key);
+          const repository = parsedKey === null ? null : `${parsedKey.owner}/${parsedKey.repo}`;
+          try {
+            const externalId = await client.deliver({
+              ...translateGitHubOutbound(resource, intent, {
+                publicUiUrl: services.publicUiUrl,
+              }),
+              idempotencyKey,
+            });
+            if (repository !== null) health.recordSuccess(repository, 'deliver');
+            return externalId;
+          } catch (error) {
+            if (repository !== null) health.recordFailure(repository, 'deliver', error);
+            throw error;
+          }
         },
         async (intent) => {
           if (intent.kind !== BuiltInActivityName.IssueComplete) return null;

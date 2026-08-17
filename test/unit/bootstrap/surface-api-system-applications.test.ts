@@ -1,0 +1,99 @@
+import { tmpdir } from 'node:os';
+import { expect, it } from 'vitest';
+import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
+import { createSurfaceApiApplications } from '../../../src/bootstrap/surface-api-applications.js';
+
+it('surfaces adapter health checks from provider instances alongside system checks', async () => {
+  const applications = createSurfaceApiApplications(
+    {
+      paths: { wakeRoot: tmpdir() },
+      config: {},
+      providers: [
+        {
+          adapter: 'github-issues',
+          provider: 'github',
+          health: () => [
+            {
+              scope: 'atolis-hq/wake',
+              channel: 'read',
+              status: 'ok',
+              successCount: 12,
+              failureCount: 0,
+            },
+          ],
+        },
+        {
+          adapter: 'github-pull-requests',
+          provider: 'github',
+          health: () => [
+            {
+              scope: 'atolis-hq/wake',
+              channel: 'write',
+              status: 'degraded',
+              detail: '3 consecutive failures',
+              successCount: 4,
+              failureCount: 3,
+            },
+          ],
+        },
+        // A provider without a health() accessor must be skipped, not throw.
+        { adapter: 'no-health-provider', provider: 'fake' },
+      ],
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+
+  const response = await applications.system.health();
+
+  expect(response.data.adapters).toEqual([
+    {
+      adapter: 'github-issues',
+      provider: 'github',
+      scope: 'atolis-hq/wake',
+      channel: 'read',
+      status: 'ok',
+      successCount: 12,
+      failureCount: 0,
+    },
+    {
+      adapter: 'github-pull-requests',
+      provider: 'github',
+      scope: 'atolis-hq/wake',
+      channel: 'write',
+      status: 'degraded',
+      detail: '3 consecutive failures',
+      successCount: 4,
+      failureCount: 3,
+    },
+  ]);
+  expect(response.data.status).toBe('degraded');
+});
+
+it('stays ok when every adapter health check is ok', async () => {
+  const applications = createSurfaceApiApplications(
+    {
+      paths: { wakeRoot: tmpdir() },
+      config: {},
+      providers: [
+        {
+          adapter: 'github-issues',
+          provider: 'github',
+          health: () => [
+            {
+              scope: 'atolis-hq/wake',
+              channel: 'read',
+              status: 'ok',
+              successCount: 1,
+              failureCount: 0,
+            },
+          ],
+        },
+      ],
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+
+  const response = await applications.system.health();
+
+  expect(response.data.status).toBe('ok');
+});

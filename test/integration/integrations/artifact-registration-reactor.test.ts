@@ -67,6 +67,7 @@ describe('ArtifactRegistrationReactor', () => {
       providers: [
         {
           adapter: 'fake' as never,
+          provider: 'fake',
           eventTypes: [],
           source: {} as never,
           delivery: {} as never,
@@ -157,6 +158,7 @@ DONE`;
       providers: [
         {
           adapter: 'github' as never,
+          provider: 'github',
           eventTypes: [],
           source: {} as never,
           delivery: {} as never,
@@ -228,6 +230,7 @@ DONE`;
       providers: [
         {
           adapter: 'fake' as never,
+          provider: 'fake',
           eventTypes: [],
           source: {} as never,
           delivery: {} as never,

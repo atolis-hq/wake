@@ -58,8 +58,23 @@ export interface VerifiedArtifact {
   readonly revision?: string | undefined;
 }
 
+// Health of one adapter-defined slice of its own traffic. scope and channel are
+// entirely adapter-owned (e.g. GitHub scopes by repository, with 'poll'/'deliver'
+// channels); callers attach adapter/provider identity from the owning ProviderInstance.
+export interface AdapterHealthCheck {
+  readonly scope: string;
+  readonly channel: string;
+  readonly status: 'ok' | 'degraded';
+  readonly detail?: string;
+  readonly successCount: number;
+  readonly failureCount: number;
+}
+
 export interface ProviderInstance {
   readonly adapter: AdapterId;
+  // Provider type this instance was composed from (e.g. 'github'), stamped by
+  // ProviderRegistry.compose() — distinct from `adapter`, the operator-chosen config key.
+  readonly provider: string;
   readonly source: ExternalEventSource;
   readonly delivery: ExternalDeliveryAdapter;
   readonly inbound: InboundTranslation;
@@ -74,7 +89,15 @@ export interface ProviderInstance {
   // Optional live reachability probe a caller (e.g. doctor diagnostics) can invoke
   // generically; resolves when the external system is reachable, rejects otherwise.
   readonly checkConnectivity?: () => Promise<void>;
+  // Optional in-memory health signal tracked from real traffic, synchronous and
+  // cheap to call on every health check — no I/O, no stored per-call history.
+  readonly health?: () => readonly AdapterHealthCheck[];
 }
+
+// What a definition's create() builds, before ProviderRegistry.compose() stamps
+// on `provider` — the definition already declares its own provider type statically,
+// so create() implementations don't repeat it.
+export type ComposedProviderInstance = Omit<ProviderInstance, 'provider'>;
 
 export interface ProviderDefinition<Config = unknown> {
   readonly provider: string;
@@ -86,7 +109,7 @@ export interface ProviderDefinition<Config = unknown> {
     readonly adapter: AdapterId;
     readonly config: Config;
     readonly services?: ProviderServices;
-  }): ProviderInstance;
+  }): ComposedProviderInstance;
 }
 
 // A provider that fails to construct (bad config, unreachable credentials —
@@ -124,13 +147,14 @@ export class ProviderRegistry {
       if (definition === undefined) throw new Error(`Provider ${provider} is not registered`);
       const adapter = adapterId(name);
       try {
-        instances.push(
-          definition.create({
+        instances.push({
+          ...definition.create({
             adapter,
             config: definition.parseConfig(entry),
             ...(services === undefined ? {} : { services }),
           }),
-        );
+          provider,
+        });
       } catch (error) {
         failures.push({
           adapter,

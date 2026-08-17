@@ -287,12 +287,24 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
               detail: `rolled back from ${selfUpdateFailure.tag} at ${selfUpdateFailure.occurredAt}: ${selfUpdateFailure.message}`,
             },
       ];
+      const adapters = root.providers.flatMap((instance) =>
+        (instance.health?.() ?? []).map((check) => ({
+          adapter: instance.adapter,
+          provider: instance.provider,
+          ...check,
+        })),
+      );
       return {
         data: {
-          status: checks.some((check) => check.status === 'degraded') ? 'degraded' : 'ok',
+          status:
+            checks.some((check) => check.status === 'degraded') ||
+            adapters.some((check) => check.status === 'degraded')
+              ? 'degraded'
+              : 'ok',
           version: wakeVersion,
           checkedAt,
           checks,
+          adapters,
         },
         meta: sampledMeta(checkedAt),
       };

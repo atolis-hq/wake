@@ -264,6 +264,7 @@ it('flows a tracked PR review from GitHub source polling through Activities acce
   );
   await new PollService(journal, {
     adapter: 'github' as never,
+    provider: 'github',
     eventTypes: Object.values(GitHubEventType),
     source,
     delivery: {} as never,
@@ -670,6 +671,7 @@ it('does not append a new work observation when only the GitHub revision and Wak
   );
   const service = new PollService(journal, {
     adapter: 'github' as never,
+    provider: 'github',
     eventTypes: Object.values(GitHubEventType),
     source,
     delivery: {} as never,

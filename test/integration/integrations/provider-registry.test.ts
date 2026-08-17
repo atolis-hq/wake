@@ -53,6 +53,7 @@ describe('ProviderRegistry', () => {
       adapterId('fake'),
       adapterId('second'),
     ]);
+    expect(instances.map((instance) => instance.provider)).toEqual(['fake', 'fake']);
     expect(failures).toEqual([]);
   });
 

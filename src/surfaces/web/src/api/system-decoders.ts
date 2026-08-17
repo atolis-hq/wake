@@ -59,6 +59,23 @@ export const decodeHealth: Decoder<HealthResponse> = (value, path = '') => {
             };
           }),
         }),
+    ...(record.adapters === undefined
+      ? {}
+      : {
+          adapters: array(record.adapters, child(path, 'adapters'), (item, itemPath = '') => {
+            const check = object(item, itemPath);
+            return {
+              adapter: string(check.adapter, child(itemPath, 'adapterId')),
+              provider: string(check.provider, child(itemPath, 'provider')),
+              scope: string(check.scope, child(itemPath, 'scope')),
+              channel: string(check.channel, child(itemPath, 'channel')),
+              status: healthStatus(check.status, child(itemPath, 'status')),
+              successCount: number(check.successCount, child(itemPath, 'successCount')),
+              failureCount: number(check.failureCount, child(itemPath, 'failureCount')),
+              ...optionalStringProperty(check, 'detail', itemPath),
+            };
+          }),
+        }),
   };
 };
 
