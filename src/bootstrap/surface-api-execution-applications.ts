@@ -22,17 +22,29 @@ export function createExecutionApplications(
       const context = resolutionContext(runId, command.idempotencyKey, now);
       const run = await root.recovery.resolve(
         runId,
-        {
-          kind: RunStatus.Failed,
-          failure: { kind: ExecutionFailureCode.Unexpected, message: command.message },
-        },
+        command.status === RunStatus.Succeeded
+          ? { kind: RunStatus.Succeeded, outcome: command.outcome }
+          : {
+              kind: RunStatus.Failed,
+              failure: { kind: ExecutionFailureCode.Unexpected, message: command.reason },
+            },
         context,
       );
-      await root.orchestration.resolveExecutionFailure(
-        run.workflowInstanceId,
-        { activationId: run.activationId, runId: run.runId, reason: command.message },
-        context,
-      );
+      if (command.status === RunStatus.Succeeded)
+        await root.orchestration.acceptOutcome(
+          {
+            workflowInstanceId: run.workflowInstanceId,
+            activationId: run.activationId,
+            outcome: run.outcome!,
+          },
+          context,
+        );
+      else
+        await root.orchestration.resolveExecutionFailure(
+          run.workflowInstanceId,
+          { activationId: run.activationId, runId: run.runId, reason: command.reason },
+          context,
+        );
       return commandAccepted(command, now());
     },
     async pauseRunner(runnerId, command) {
@@ -149,7 +161,7 @@ export function createExecutionApplications(
 }
 
 function resolutionContext(runId: string, idempotencyKey: string, now: () => string) {
-  const commandId = `run:${runId}:resolve-failed:${idempotencyKey}`;
+  const commandId = `run:${runId}:resolve:${idempotencyKey}`;
   return {
     commandId,
     correlationId: correlationId(commandId),

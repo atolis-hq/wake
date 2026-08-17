@@ -15,17 +15,21 @@ agent process. The current guarantees are implemented by `execution`,
 - Cancellation and recovery append facts to the Run stream; they do not mutate
   a prior result or rely on process-local history.
 - An escalated `ambiguous` Run is never retried automatically. An operator may
-  explicitly resolve it as failed through the loopback API, then use the
-  ordinary WorkItem retry control to create the next attempt. This preserves
-  the ambiguous Run as evidence and prevents duplicate side effects:
+  explicitly resolve it through the CLI or loopback API once the external
+  outcome has been confirmed. Success supplies an Activity-schema-validated
+  outcome; failure supplies a reason and makes the owning stage retryable.
+  This preserves the ambiguous Run as evidence and prevents duplicate side
+  effects:
 
   ```text
-  POST /api/v1/runs/:runId/commands/resolve-failed
-  { "idempotencyKey": "operator-unique-key", "message": "why execution is known to have failed" }
+  POST /api/v1/runs/:runId/commands/resolve
+  { "idempotencyKey": "operator-unique-key", "status": "failed", "reason": "why execution is known to have failed" }
   ```
 
-  The command is accepted only for an escalated ambiguous Run, records an
-  operator-attributed failure, and makes its owning failed stage retryable.
+  The command is accepted only for an escalated ambiguous Run and records an
+  operator-attributed result. Use `wake run resolve <run-id> --succeeded
+  --outcome '<json>'` (or `--outcome-file`) for success, or `--failed --reason
+  <message>` for failure.
 - Workspaces are optional execution infrastructure. Workspace preparation and
   cleanup do not define workflow state.
 - Raw transcript capture is opt-in, filesystem-only, and subject to configured

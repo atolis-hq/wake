@@ -1,9 +1,10 @@
+import { RunStatus } from '../../../execution/index.js';
 import type { RunnerResponse } from '../contracts/index.js';
 import type { ApiHttpResponse } from '../http-server.js';
 import type {
-  ApiAmbiguousRunFailureResolution,
   ApiApplications,
   ApiCommandRequest,
+  ApiRunResolutionRequest,
 } from './applications.js';
 import { normalizePage } from './pagination.js';
 import {
@@ -35,7 +36,7 @@ export async function dispatchCommand(
   );
   if (ambiguityResolution !== undefined) return ambiguityResolution;
   const request = commandRequest(body);
-  if ('status' in request) return request;
+  if (isHttpResponse(request)) return request;
   const work = await dispatchWorkCommand(applications, url.pathname, request);
   if (work !== undefined) return work;
   const control = await dispatchControlCommand(applications, url.pathname, request);
@@ -49,12 +50,12 @@ async function dispatchAmbiguousRunResolution(
   pathname: string,
   body: unknown,
 ): Promise<ApiHttpResponse | undefined> {
-  const match = /^\/api\/v1\/runs\/([^/]+)\/commands\/resolve-failed$/.exec(pathname);
+  const match = /^\/api\/v1\/runs\/([^/]+)\/commands\/resolve$/.exec(pathname);
   if (match === null) return undefined;
   const runId = decodePathSegment(match[1]!);
   if (runId instanceof ApiPathError) return invalidPath(runId.message);
-  const request = ambiguityFailureResolutionRequest(body);
-  if ('status' in request) return request;
+  const request = runResolutionRequest(body);
+  if (isHttpResponse(request)) return request;
   const operation = applications.execution.resolveAmbiguousRun;
   if (operation === undefined)
     return unavailable('resolve-ambiguous-run', await applications.execution.get?.(runId));
@@ -143,21 +144,42 @@ function commandRequest(body: unknown): ApiCommandRequest | ApiHttpResponse {
     : invalidRequest('idempotencyKey', 'Must be at most 200 characters');
 }
 
-function ambiguityFailureResolutionRequest(
-  body: unknown,
-): ApiAmbiguousRunFailureResolution | ApiHttpResponse {
+// eslint-disable-next-line complexity -- each resolution mode validates its exclusive request shape.
+function runResolutionRequest(body: unknown): ApiRunResolutionRequest | ApiHttpResponse {
   if (!isObject(body))
     return invalidRequest('idempotencyKey', 'A JSON object with an idempotency key is required');
-  if (Object.keys(body).some((key) => key !== 'idempotencyKey' && key !== 'message'))
-    return invalidRequest('', 'The command body contains unknown fields');
   const idempotencyKey = body.idempotencyKey;
   if (typeof idempotencyKey !== 'string' || idempotencyKey.trim() === '')
     return invalidRequest('idempotencyKey', 'Must be a non-empty string');
   if (idempotencyKey.length > 200)
     return invalidRequest('idempotencyKey', 'Must be at most 200 characters');
-  const message = body.message;
-  if (typeof message !== 'string' || message.trim() === '')
-    return invalidRequest('message', 'Must be a non-empty string');
-  if (message.length > 2_000) return invalidRequest('message', 'Must be at most 2000 characters');
-  return { idempotencyKey, message };
+  if (body.status === RunStatus.Succeeded) {
+    if (
+      Object.keys(body).some(
+        (key) => key !== 'idempotencyKey' && key !== 'status' && key !== 'outcome',
+      )
+    )
+      return invalidRequest('', 'The command body contains unknown fields');
+    if (!Object.hasOwn(body, 'outcome'))
+      return invalidRequest('outcome', 'Is required for success');
+    return { idempotencyKey, status: RunStatus.Succeeded, outcome: body.outcome };
+  }
+  if (body.status === RunStatus.Failed) {
+    if (
+      Object.keys(body).some(
+        (key) => key !== 'idempotencyKey' && key !== 'status' && key !== 'reason',
+      )
+    )
+      return invalidRequest('', 'The command body contains unknown fields');
+    const reason = body.reason;
+    if (typeof reason !== 'string' || reason.trim() === '')
+      return invalidRequest('reason', 'Must be a non-empty string');
+    if (reason.length > 2_000) return invalidRequest('reason', 'Must be at most 2000 characters');
+    return { idempotencyKey, status: RunStatus.Failed, reason };
+  }
+  return invalidRequest('status', 'Must be either succeeded or failed');
+}
+
+function isHttpResponse(value: unknown): value is ApiHttpResponse {
+  return typeof value === 'object' && value !== null && 'body' in value;
 }

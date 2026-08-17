@@ -1,3 +1,4 @@
+import type { RunStatus } from '../../../execution/index.js';
 import type {
   ApiCommandResult,
   ApiTickCommandResult,
@@ -43,10 +44,9 @@ export interface ApiCommandRequest {
   readonly idempotencyKey: string;
 }
 
-/** An explicit operator declaration that an escalated Run did not complete. */
-export interface ApiAmbiguousRunFailureResolution extends ApiCommandRequest {
-  readonly message: string;
-}
+export type ApiRunResolutionRequest =
+  | (ApiCommandRequest & { readonly status: typeof RunStatus.Succeeded; readonly outcome: unknown })
+  | (ApiCommandRequest & { readonly status: typeof RunStatus.Failed; readonly reason: string });
 
 export interface ApiSystemApplications {
   health(): Promise<ApiResourceResult<HealthResponse>>;
@@ -96,7 +96,7 @@ export interface ApiApplications {
     unpauseRunner?(runnerId: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     resolveAmbiguousRun?(
       runId: string,
-      command: ApiAmbiguousRunFailureResolution,
+      command: ApiRunResolutionRequest,
     ): Promise<ApiCommandResult>;
   };
   readonly events: {

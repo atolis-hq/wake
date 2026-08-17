@@ -7,7 +7,12 @@ import { createInterface } from 'node:readline/promises';
 import { promisify } from 'node:util';
 import { BuiltInActivityName, agentActivityDefinition } from '../activities/index.js';
 import { IntakeHost, ResidentHost, TickHost } from '../control-plane/index.js';
-import { ExecutionCancellationReason, RunStatus, loadPromptTemplate } from '../execution/index.js';
+import {
+  ExecutionCancellationReason,
+  ExecutionFailureCode,
+  RunStatus,
+  loadPromptTemplate,
+} from '../execution/index.js';
 import { EventActorKind, correlationId } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
@@ -167,6 +172,37 @@ export function createSurfaceCliApplications(
           ResourceCorrelationRole.Primary,
           commandContext(`correlate:${resource}:${work}`, now()),
         );
+      },
+    },
+    runs: {
+      async resolve(runId, resolution) {
+        const context = commandContext(`run:${runId}:resolve`, now());
+        const run = await root.recovery.resolve(
+          runId,
+          resolution.status === RunStatus.Succeeded
+            ? { kind: RunStatus.Succeeded, outcome: resolution.outcome }
+            : {
+                kind: RunStatus.Failed,
+                failure: { kind: ExecutionFailureCode.Unexpected, message: resolution.reason },
+              },
+          context,
+        );
+        if (resolution.status === RunStatus.Succeeded)
+          await root.orchestration.acceptOutcome(
+            {
+              workflowInstanceId: run.workflowInstanceId,
+              activationId: run.activationId,
+              outcome: run.outcome!,
+            },
+            context,
+          );
+        else
+          await root.orchestration.resolveExecutionFailure(
+            run.workflowInstanceId,
+            { activationId: run.activationId, runId: run.runId, reason: resolution.reason },
+            context,
+          );
+        return run;
       },
     },
     validateState: createValidationApplications(root),

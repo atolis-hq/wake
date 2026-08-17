@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises';
 import type { HostBudget, HostResult } from '../../control-plane/index.js';
+import { ExecutionStreamKind, RunStatus } from '../../execution/index.js';
 
 export interface HostOptions {
   readonly host?: string;
@@ -11,6 +13,17 @@ export type WakeCommand =
   | ({ readonly kind: 'api' | 'ui' } & HostOptions)
   | { readonly kind: 'audit'; readonly workItemId: string }
   | { readonly kind: 'correlate'; readonly resource: string; readonly workItemId: string }
+  | {
+      readonly kind: 'run-resolve';
+      readonly runId: string;
+      readonly resolution:
+        | {
+            readonly status: typeof RunStatus.Succeeded;
+            readonly outcome?: unknown;
+            readonly outcomeFile?: string;
+          }
+        | { readonly status: typeof RunStatus.Failed; readonly reason: string };
+    }
   | {
       readonly kind: 'validate-state';
       readonly rebuildProjections: boolean;
@@ -53,6 +66,14 @@ export interface WakeCliApplications {
   readonly ui: { start(options?: HostOptions): Promise<void> };
   readonly audit: { read(workItemId: string): Promise<readonly AuditRecord[]> };
   readonly correlate: { correlate(resource: string, workItemId: string): Promise<unknown> };
+  readonly runs?: {
+    resolve(
+      runId: string,
+      resolution:
+        | { readonly status: typeof RunStatus.Succeeded; readonly outcome: unknown }
+        | { readonly status: typeof RunStatus.Failed; readonly reason: string },
+    ): Promise<unknown>;
+  };
   readonly validateState: {
     health(): Promise<{
       readonly journal: string;
@@ -82,6 +103,8 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
         resource: requiredArgument(first, 'correlate resource'),
         workItemId: requiredArgument(second, 'correlate work item'),
       };
+    case ExecutionStreamKind.Run:
+      return parseRunCommand(arguments_.slice(1));
     case 'validate-state':
       return parseValidateState(arguments_.slice(1));
     case 'api':
@@ -101,6 +124,61 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
       return { kind: command, arguments: arguments_.slice(1) };
     default:
       throw new Error(`Unknown wake command: ${command ?? ''}`);
+  }
+}
+
+// eslint-disable-next-line complexity -- the resolution flags are mutually exclusive by design.
+function parseRunCommand(arguments_: readonly string[]): WakeCommand {
+  if (arguments_[0] !== 'resolve') throw new Error(`Unknown run command: ${arguments_[0] ?? ''}`);
+  const runId = requiredArgument(arguments_[1], 'run id');
+  const values = new Map<string, string>();
+  for (let index = 2; index < arguments_.length; index += 1) {
+    const flag = arguments_[index]!;
+    if (flag === '--succeeded' || flag === '--failed') {
+      if (values.has(flag)) throw new Error(`Duplicate option: ${flag}`);
+      values.set(flag, '');
+      continue;
+    }
+    if (flag !== '--outcome' && flag !== '--outcome-file' && flag !== '--reason')
+      throw new Error(`Unknown option: ${flag}`);
+    const value = arguments_[index + 1];
+    if (value === undefined || value.startsWith('--')) throw new Error(`Missing value for ${flag}`);
+    if (values.has(flag)) throw new Error(`Duplicate option: ${flag}`);
+    values.set(flag, value);
+    index += 1;
+  }
+  const succeeded = values.has('--succeeded');
+  const failed = values.has('--failed');
+  if (succeeded === failed)
+    throw new Error('run resolve requires exactly one of --succeeded or --failed');
+  if (succeeded) {
+    const outcome = values.get('--outcome');
+    const outcomeFile = values.get('--outcome-file');
+    if ((outcome === undefined) === (outcomeFile === undefined))
+      throw new Error('Successful resolution requires exactly one of --outcome or --outcome-file');
+    if (values.has('--reason')) throw new Error('--reason is only valid with --failed');
+    return {
+      kind: 'run-resolve',
+      runId,
+      resolution:
+        outcome === undefined
+          ? { status: RunStatus.Succeeded, outcomeFile: outcomeFile! }
+          : { status: RunStatus.Succeeded, outcome: parseJson(outcome) },
+    };
+  }
+  if (values.has('--outcome') || values.has('--outcome-file'))
+    throw new Error('--outcome and --outcome-file are only valid with --succeeded');
+  const reason = values.get('--reason');
+  if (reason === undefined || reason.trim() === '')
+    throw new Error('Failed resolution requires --reason <message>');
+  return { kind: 'run-resolve', runId, resolution: { status: RunStatus.Failed, reason } };
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error('Outcome must be valid JSON');
   }
 }
 
@@ -193,12 +271,38 @@ export async function runWakeCommand(
         `${JSON.stringify(await applications.correlate.correlate(command.resource, command.workItemId))}\n`,
       );
       return;
+    case 'run-resolve':
+      output.write(
+        `${JSON.stringify(await runs(applications).resolve(command.runId, await resolveCliOutcome(command.resolution)))}\n`,
+      );
+      return;
     case 'validate-state': {
       if (command.rebuildProjections) await applications.validateState.rebuildProjections();
       output.write(`${JSON.stringify(await applications.validateState.health())}\n`);
       return;
     }
   }
+}
+
+async function resolveCliOutcome(
+  resolution: Extract<WakeCommand, { readonly kind: 'run-resolve' }>['resolution'],
+): Promise<
+  | { readonly status: typeof RunStatus.Succeeded; readonly outcome: unknown }
+  | { readonly status: typeof RunStatus.Failed; readonly reason: string }
+> {
+  if (resolution.status === RunStatus.Failed) return resolution;
+  return {
+    status: RunStatus.Succeeded,
+    outcome:
+      resolution.outcomeFile === undefined
+        ? resolution.outcome
+        : parseJson(await readFile(resolution.outcomeFile, 'utf8')),
+  };
+}
+
+function runs(applications: WakeCliApplications): NonNullable<WakeCliApplications['runs']> {
+  if (applications.runs === undefined) throw new Error('Run CLI applications were not composed');
+  return applications.runs;
 }
 
 function writeResult(output: CliOutput, value: unknown): void {

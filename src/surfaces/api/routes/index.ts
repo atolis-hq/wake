@@ -9,6 +9,7 @@ export type {
   ApiCollectionPage,
   ApiCommandRequest,
   ApiResourceResult,
+  ApiRunResolutionRequest,
   ApiSystemApplications,
   CollectionQuery,
 } from './applications.js';
