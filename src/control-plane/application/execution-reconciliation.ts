@@ -36,7 +36,5 @@ export async function findUnresolvedSucceededTerminal(
 }
 
 export function isExecutionFailureTerminal(status: RunStatus): boolean {
-  return (
-    status === RunStatus.Failed || status === RunStatus.Cancelled || status === RunStatus.Ambiguous
-  );
+  return status === RunStatus.Failed || status === RunStatus.Cancelled;
 }
