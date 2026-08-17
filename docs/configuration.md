@@ -115,6 +115,7 @@ execution:
   leaseDurationMs: 300000
   leaseRenewalIntervalMs: 60000
   maxAmbiguityReconciliationAttempts: 3
+  maxResumableSessionTokens: 200000
 
 controlPlane:
   maxDispatches: 1
@@ -268,6 +269,7 @@ CLI before allowing real agent execution.
 | `execution.leaseDurationMs` | positive integer; optional | Overrides the durable Run lease duration. |
 | `execution.leaseRenewalIntervalMs` | positive integer; optional | Overrides how often a local active Run renews its lease. |
 | `execution.maxAmbiguityReconciliationAttempts` | positive integer; optional | Limits recovery reconciliation attempts for an ambiguous Run. |
+| `execution.maxResumableSessionTokens` | positive integer; default `200000` | Maximum complete cumulative input and output token usage for an opaque runner session to be resumed. Sessions with incomplete usage or usage above this cap start fresh with Wake's durable bounded context. |
 
 Each `execution.agentRunners.<name>` definition has the following shape.
 
