@@ -347,6 +347,72 @@ it('uses an overlapping durable watermark only after a complete poll has persist
   ]);
 });
 
+it('replays a comment that arrives after its query when acquisition outlasts the overlap', async () => {
+  const saved: Array<readonly [string, number]> = [];
+  const queriedSince: Array<string | undefined> = [];
+  const queryStartedAt = Date.parse('2026-08-17T04:25:00.000Z');
+  const completedAt = Date.parse('2026-08-17T04:27:00.000Z');
+  const commentCreatedAt = '2026-08-17T04:26:00.000Z';
+  let poll = 0;
+  let sourceQueryCompleted = false;
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+      polling: { lookbackMs: 30_000 },
+    }),
+    {
+      ...fakeClient({ issues: [issue(630, 'operator resolution')], issueComments: {} }),
+      async listIssues(_owner, _repo, _maxResults, since) {
+        queriedSince.push(since);
+        return [issue(630, 'operator resolution')];
+      },
+      async listIssueComments(_owner, _repo, _issueNumber, _pageSize, since) {
+        sourceQueryCompleted = true;
+        return poll === 0 || (since !== undefined && since > commentCreatedAt)
+          ? []
+          : [
+              {
+                ...comment(5311787433, '/retry'),
+                created_at: commentCreatedAt,
+                updated_at: commentCreatedAt,
+              },
+            ];
+      },
+    },
+    undefined,
+    undefined,
+    {
+      checkpoints: {
+        async load() {
+          return poll === 0 ? Date.parse('2026-08-17T04:24:00.000Z') : saved[0]![1];
+        },
+        async save(consumer, position) {
+          saved.push([consumer, position]);
+        },
+        async reset() {},
+      },
+      now: () => (sourceQueryCompleted ? completedAt : queryStartedAt),
+    },
+  );
+
+  await source.poll(new AbortController().signal);
+  await source.markPollPersisted?.();
+  poll += 1;
+  sourceQueryCompleted = false;
+  const secondPoll = await source.poll(new AbortController().signal);
+
+  expect(saved).toEqual([['source:github:github:atolis-hq%2Fwake-test', queryStartedAt]]);
+  expect(queriedSince).toEqual(['2026-08-17T04:23:30.000Z', '2026-08-17T04:24:30.000Z']);
+  expect(secondPoll).toContainEqual(
+    expect.objectContaining({
+      eventType: GitHubEventType.CommentObserved,
+      payload: expect.objectContaining({ body: '/retry' }),
+    }),
+  );
+});
+
 it('persists repository watermarks through the filesystem checkpoint store', async () => {
   const checkpoints = new FileCheckpointStore(await mkdtemp(join(tmpdir(), 'wake-checkpoints-')));
   const source = createGitHubSource(

@@ -134,6 +134,7 @@ async function pollRepository(input: {
   readonly now: () => number;
 }) {
   const { client, config, adapter, signal, owner, repo } = input;
+  const queriedAt = input.now();
   const context: RepositoryPollContext = {
     client,
     config,
@@ -169,7 +170,7 @@ async function pollRepository(input: {
   ]);
   return {
     repository: context.repository,
-    completedAt: input.now(),
+    completedAt: queriedAt,
     succeeded:
       isFulfilled(issuesResult) &&
       isFulfilled(pullRequestsResult) &&
