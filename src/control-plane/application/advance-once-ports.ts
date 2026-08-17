@@ -1,8 +1,9 @@
-import type { RunView } from '../../execution/index.js';
-import type { CommandContext } from '../../kernel/index.js';
+import type { RunView, WorkspaceRecovery } from '../../execution/index.js';
+import type { CommandContext, IdGenerator } from '../../kernel/index.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
-import { WorkStatus } from '../../work/index.js';
+import type { WorkStatus } from '../../work/index.js';
+import type { DispatchPolicy } from '../domain/dispatch-policy.js';
 
 export interface OrchestrationPort {
   reconcileChildCompletions(context: CommandContext): Promise<void>;
@@ -53,7 +54,7 @@ export interface ExecutionPort {
 }
 
 export interface AdvanceOnceDependencies {
-  readonly ids: import('../../kernel/index.js').IdGenerator;
+  readonly ids: IdGenerator;
   readonly work?: {
     get(workItemId: string): Promise<{
       readonly state: WorkStatus;
@@ -63,12 +64,12 @@ export interface AdvanceOnceDependencies {
   };
   readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
   readonly isDispatchPaused?: () => Promise<boolean>;
-  readonly workspaceRecovery?: import('../../execution/index.js').WorkspaceRecovery;
+  readonly workspaceRecovery?: WorkspaceRecovery;
   readonly transcriptRetention?: {
     markClosedWorkItem(workItemId: string): Promise<boolean>;
     sweep(): Promise<void>;
   };
   readonly closedWorkItemIds?: () => Promise<readonly string[]>;
-  readonly dispatchPolicy?: import('../domain/dispatch-policy.js').DispatchPolicy;
+  readonly dispatchPolicy?: DispatchPolicy;
   readonly maxConcurrentRuns?: number;
 }
