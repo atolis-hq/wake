@@ -42,6 +42,7 @@ export {
   isOperatorRetryEligible,
   requestChangesResume,
   requestOperatorRetry,
+  selectOperatorRetryTarget,
 } from './operator-retry-policy.js';
 
 export type { OperatorRetryRequest } from './operator-retry-policy.js';

@@ -6,9 +6,9 @@ import {
 } from '../execution/index.js';
 import { correlationId, EventActorKind } from '../kernel/index.js';
 import {
-  isOperatorRetryEligible,
   OperatorRetryIneligibleError,
   orchestrationProjection,
+  selectOperatorRetryTarget,
   workflowsByWorkItemProjection,
   type WorkflowInstanceView,
 } from '../orchestration/index.js';
@@ -107,15 +107,16 @@ export function createSurfaceWorkApplications(
       if (work === null) return retryIneligible('Work item was not found');
       if (work.deleted === true) return retryIneligible('Work item is deleted');
       if (work.state !== WorkStatus.Open) return retryIneligible('Work item is not open');
-      const primary = (await root.orchestration.listAll()).find(
-        (value) => value.workItemId === id && value.parentWorkflowInstanceId === undefined,
+      const workflows = (await root.orchestration.listAll()).filter(
+        (workflow) => workflow.workItemId === id,
       );
-      if (primary === undefined) return retryIneligible('Work item has no primary workflow');
-      if (!isOperatorRetryEligible(primary))
-        return retryIneligible('Workflow is not retry eligible');
+      if (!workflows.some((workflow) => workflow.parentWorkflowInstanceId === undefined))
+        return retryIneligible('Work item has no primary workflow');
+      const target = selectOperatorRetryTarget(workflows);
+      if (target === undefined) return retryIneligible('Workflow is not retry eligible');
       try {
         await root.orchestration.retryBlockedFailedStage(
-          primary.workflowInstanceId,
+          target.workflowInstanceId,
           commandContext(command.idempotencyKey, now),
         );
       } catch (error) {
