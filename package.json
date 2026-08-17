@@ -73,7 +73,6 @@
   "dependencies": {
     "@octokit/rest": "^22.0.0",
     "cron-parser": "^5.10.0",
-    "execa": "^10.0.1",
     "handlebars": "^4.7.9",
     "ulid": "^3.0.2",
     "yaml": "^2.9.0",

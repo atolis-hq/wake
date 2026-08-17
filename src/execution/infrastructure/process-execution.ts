@@ -1,8 +1,7 @@
-import { execa } from 'execa';
+import { spawn, type ChildProcess } from 'node:child_process';
 
-// Agent CLIs can emit arbitrarily large machine-readable transcripts. Wake
-// retains their complete result only after the process exits, so cap capture
-// below the resident's heap limit and surface the existing output-limit failure.
+// Agent CLIs can emit arbitrarily large machine-readable transcripts. Capture
+// raw bytes ourselves so overflow never enters a third-party string buffer.
 const maximumCapturedProcessOutputBytes = 1024 * 1024;
 
 interface ProcessExecutionResult {
@@ -21,31 +20,83 @@ export function runProcess(
   signal: AbortSignal,
   timeoutMs?: number,
 ): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
-  const child = execa(command, args, {
+  const child = spawn(command, args, {
     ...(cwd === undefined ? {} : { cwd }),
     shell: false,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-    maxBuffer: maximumCapturedProcessOutputBytes,
-    cancelSignal: signal,
-    ...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
-    reject: false,
-    stripFinalNewline: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+  const result = captureProcessOutput(child, signal, timeoutMs);
   return {
-    result: child.then((result) => ({
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-      timedOut: result.timedOut,
-      ...(result.isMaxBuffer
-        ? {
-            failureKind: 'output-limit' as const,
-            ...(result.shortMessage === undefined ? {} : { failureMessage: result.shortMessage }),
-          }
-        : {}),
-    })),
-    cancel: async () => void child.kill(),
+    result,
+    cancel: async () => {
+      terminate(child);
+    },
   };
+}
+
+function captureProcessOutput(
+  child: ChildProcess,
+  signal: AbortSignal,
+  timeoutMs: number | undefined,
+): Promise<ProcessExecutionResult> {
+  return new Promise((resolve) => {
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let capturedBytes = 0;
+    let timedOut = false;
+    let overflowed = false;
+    let error: Error | undefined;
+    const terminateForOverflow = () => {
+      overflowed = true;
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      terminate(child);
+    };
+    const capture = (destination: Buffer[]) => (chunk: Buffer) => {
+      if (overflowed) return;
+      const remaining = maximumCapturedProcessOutputBytes - capturedBytes;
+      if (remaining <= 0 || chunk.length > remaining) {
+        if (remaining > 0) destination.push(chunk.subarray(0, remaining));
+        capturedBytes = maximumCapturedProcessOutputBytes;
+        terminateForOverflow();
+        return;
+      }
+      destination.push(chunk);
+      capturedBytes += chunk.length;
+    };
+    child.stdout?.on('data', capture(stdout));
+    child.stderr?.on('data', capture(stderr));
+    const timeout =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            terminate(child);
+          }, timeoutMs);
+    const onAbort = () => terminate(child);
+    signal.addEventListener('abort', onAbort, { once: true });
+    child.once('error', (caught) => {
+      error = caught;
+    });
+    child.once('close', (exitCode) => {
+      if (timeout !== undefined) clearTimeout(timeout);
+      signal.removeEventListener('abort', onAbort);
+      resolve({
+        stdout: Buffer.concat(stdout).toString('utf8'),
+        stderr: error?.message ?? Buffer.concat(stderr).toString('utf8'),
+        exitCode: exitCode ?? undefined,
+        timedOut,
+        ...(overflowed
+          ? {
+              failureKind: 'output-limit' as const,
+              failureMessage: `Process output exceeded ${maximumCapturedProcessOutputBytes} bytes`,
+            }
+          : {}),
+      });
+    });
+  });
+}
+
+function terminate(child: ChildProcess): void {
+  if (!child.killed && child.exitCode === null) child.kill();
 }

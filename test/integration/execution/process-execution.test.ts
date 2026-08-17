@@ -47,6 +47,29 @@ describe('runProcess', () => {
 
     await expect(execution.result).resolves.toMatchObject({ failureKind: 'output-limit' });
   });
+
+  it('counts continuously emitted UTF-8 output by bytes before retaining it', async () => {
+    const execution = runProcess(
+      process.execPath,
+      [
+        '-e',
+        [
+          'let remaining = 400_000;',
+          'const write = () => {',
+          '  if (remaining-- === 0) return process.exit(0);',
+          "  if (!process.stdout.write('€'.repeat(4))) process.stdout.once('drain', write);",
+          '  else setImmediate(write);',
+          '};',
+          'write();',
+        ].join(''),
+      ],
+      undefined,
+      new AbortController().signal,
+      5_000,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({ failureKind: 'output-limit' });
+  });
 });
 
 describe('cliRunner', () => {
