@@ -91,17 +91,18 @@ export async function listReviews(
   owner: string,
   repo: string,
   pullNumber: number,
-  pageSize: number,
+  options: { readonly pageSize: number; readonly maxResults?: number },
 ) {
   const reviews = await fetchPaginatedWithEtag({
     cache,
     key: `reviews:${owner}/${repo}#${pullNumber}`,
+    ...(options.maxResults === undefined ? {} : { maxResults: options.maxResults }),
     pages: (headers) =>
       octokit.paginate.iterator(octokit.rest.pulls.listReviews, {
         owner,
         repo,
         pull_number: pullNumber,
-        per_page: pageSize,
+        per_page: boundedCommentPageSize(options),
         ...(headers === undefined ? {} : { headers }),
       }),
   });
@@ -121,17 +122,18 @@ export async function listReviewComments(
   owner: string,
   repo: string,
   pullNumber: number,
-  pageSize: number,
+  options: { readonly pageSize: number; readonly maxResults?: number },
 ): Promise<readonly GitHubIssueCommentPayload[]> {
   const comments = await fetchPaginatedWithEtag({
     cache,
     key: `review-comments:${owner}/${repo}#${pullNumber}`,
+    ...(options.maxResults === undefined ? {} : { maxResults: options.maxResults }),
     pages: (headers) =>
       octokit.paginate.iterator(octokit.rest.pulls.listReviewComments, {
         owner,
         repo,
         pull_number: pullNumber,
-        per_page: Math.min(pageSize, 100),
+        per_page: boundedCommentPageSize(options),
         ...(headers === undefined ? {} : { headers }),
       }),
   });
@@ -153,16 +155,18 @@ export async function listPullRequestFiles(
   owner: string,
   repo: string,
   pullNumber: number,
+  maxResults?: number,
 ): Promise<readonly string[]> {
   const files = await fetchPaginatedWithEtag({
     cache,
     key: `pull-files:${owner}/${repo}#${pullNumber}`,
+    ...(maxResults === undefined ? {} : { maxResults }),
     pages: (headers) =>
       octokit.paginate.iterator(octokit.rest.pulls.listFiles, {
         owner,
         repo,
         pull_number: pullNumber,
-        per_page: 100,
+        per_page: boundedPageSize(maxResults),
         ...(headers === undefined ? {} : { headers }),
       }),
   });
@@ -175,16 +179,18 @@ export function listCheckRunsForRef(
   owner: string,
   repo: string,
   ref: string,
+  maxResults?: number,
 ) {
   return fetchPaginatedWithEtag({
     cache,
     key: `check-runs:${owner}/${repo}@${ref}`,
+    ...(maxResults === undefined ? {} : { maxResults }),
     pages: (headers) =>
       octokit.paginate.iterator(octokit.rest.checks.listForRef, {
         owner,
         repo,
         ref,
-        per_page: 100,
+        per_page: boundedPageSize(maxResults),
         ...(headers === undefined ? {} : { headers }),
       }),
   });
@@ -196,10 +202,12 @@ export function getCombinedStatusForRef(
   owner: string,
   repo: string,
   ref: string,
+  maxResults?: number,
 ) {
   return fetchPaginatedWithEtag({
     cache,
     key: `combined-status:${owner}/${repo}@${ref}`,
+    ...(maxResults === undefined ? {} : { maxResults }),
     pages: (headers) => ({
       async *[Symbol.asyncIterator]() {
         let page = 1;
@@ -209,14 +217,15 @@ export function getCombinedStatusForRef(
             owner,
             repo,
             ref,
-            per_page: 100,
+            per_page: boundedPageSize(maxResults),
             page,
             ...(headers === undefined ? {} : { headers }),
           });
           const statuses = response.data.statuses;
           count += statuses.length;
           yield { data: statuses, headers: response.headers };
-          if (statuses.length < 100 || count >= response.data.total_count) return;
+          if (statuses.length < boundedPageSize(maxResults) || count >= response.data.total_count)
+            return;
           page += 1;
         }
       },
@@ -321,17 +330,18 @@ export async function listIssueComments(
   owner: string,
   repo: string,
   issueNumber: number,
-  options: { readonly pageSize: number; readonly since?: string },
+  options: { readonly pageSize: number; readonly since?: string; readonly maxResults?: number },
 ): Promise<readonly GitHubIssueCommentPayload[]> {
   const comments = await fetchPaginatedWithEtag({
     cache,
     key: `issue-comments:${owner}/${repo}#${issueNumber}:since:${options.since ?? 'bootstrap'}`,
+    ...(options.maxResults === undefined ? {} : { maxResults: options.maxResults }),
     pages: (headers) =>
       octokit.paginate.iterator(octokit.rest.issues.listComments, {
         owner,
         repo,
         issue_number: issueNumber,
-        per_page: Math.min(options.pageSize, 100),
+        per_page: boundedCommentPageSize(options),
         ...(options.since === undefined ? {} : { since: options.since }),
         ...(headers === undefined ? {} : { headers }),
       }),
@@ -343,4 +353,15 @@ export async function listIssueComments(
     updated_at: comment.updated_at,
     ...(comment.user === undefined ? {} : { user: comment.user }),
   }));
+}
+
+function boundedPageSize(maxResults: number | undefined): number {
+  return Math.min(maxResults ?? 100, 100);
+}
+
+function boundedCommentPageSize(options: {
+  readonly pageSize: number;
+  readonly maxResults?: number;
+}): number {
+  return Math.min(options.pageSize, boundedPageSize(options.maxResults));
 }

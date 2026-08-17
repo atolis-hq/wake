@@ -88,21 +88,31 @@ function limitGitHubSourceClient(
       requests.run(() => client.listIssues(owner, repo, maxResults, since)),
     listPullRequests: (owner, repo, maxResults) =>
       requests.run(() => client.listPullRequests(owner, repo, maxResults)),
-    listCheckRunsForRef: (owner, repo, ref) =>
-      requests.run(() => client.listCheckRunsForRef(owner, repo, ref)),
-    getCombinedStatusForRef: (owner, repo, ref) =>
-      requests.run(() => client.getCombinedStatusForRef(owner, repo, ref)),
-    listPullRequestFiles: (owner, repo, pullNumber) =>
-      requests.run(() => client.listPullRequestFiles(owner, repo, pullNumber)),
-    listIssueComments: (owner, repo, issueNumber, pageSize, since) =>
-      requests.run(() => client.listIssueComments(owner, repo, issueNumber, pageSize, since)),
-    listReviews: (owner, repo, pullNumber, pageSize) =>
-      requests.run(() => client.listReviews(owner, repo, pullNumber, pageSize)),
+    listCheckRunsForRef: (owner, repo, ref, maxResults) =>
+      requests.run(() => client.listCheckRunsForRef(owner, repo, ref, maxResults)),
+    getCombinedStatusForRef: (owner, repo, ref, maxResults) =>
+      requests.run(() => client.getCombinedStatusForRef(owner, repo, ref, maxResults)),
+    listPullRequestFiles: (owner, repo, pullNumber, maxResults) =>
+      requests.run(() => client.listPullRequestFiles(owner, repo, pullNumber, maxResults)),
+    listIssueComments: (owner, repo, issueNumber, pageSize, since, maxResults) =>
+      requests.run(() =>
+        client.listIssueComments(owner, repo, issueNumber, pageSize, since, maxResults),
+      ),
+    listReviews: (owner, repo, pullNumber, pageSize, maxResults) =>
+      requests.run(() => client.listReviews(owner, repo, pullNumber, pageSize, maxResults)),
     ...(client.listReviewComments === undefined
       ? {}
       : {
-          listReviewComments: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
-            requests.run(() => client.listReviewComments!(owner, repo, pullNumber, pageSize)),
+          listReviewComments: (
+            owner: string,
+            repo: string,
+            pullNumber: number,
+            pageSize: number,
+            maxResults?: number,
+          ) =>
+            requests.run(() =>
+              client.listReviewComments!(owner, repo, pullNumber, pageSize, maxResults),
+            ),
         }),
     ...(client.collaboratorPermission === undefined
       ? {}

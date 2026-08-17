@@ -43,13 +43,20 @@ export interface GitHubPullRequestSourceClient {
     owner: string,
     repo: string,
     ref: string,
+    maxResults?: number,
   ): Promise<readonly GitHubCheckRunPayload[]>;
   getCombinedStatusForRef(
     owner: string,
     repo: string,
     ref: string,
+    maxResults?: number,
   ): Promise<readonly GitHubCommitStatusPayload[]>;
-  listPullRequestFiles(owner: string, repo: string, pullNumber: number): Promise<readonly string[]>;
+  listPullRequestFiles(
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    maxResults?: number,
+  ): Promise<readonly string[]>;
 }
 
 export function createGitHubPullRequestSource(input: {
@@ -68,8 +75,8 @@ export function createGitHubPullRequestSource(input: {
         signal.throwIfAborted();
         const headRevision = fallback(pullRequest.head?.sha, pullRequest.updated_at);
         const [evidence, changedFiles] = await Promise.all([
-          readCheckEvidence(input.client, owner, repo, headRevision),
-          readChangedFiles(input.client, owner, repo, pullRequest.number),
+          readCheckEvidence(input.client, owner, repo, headRevision, input.maxResults),
+          readChangedFiles(input.client, owner, repo, pullRequest.number, input.maxResults),
         ]);
         return pullRequestObservation({
           repository: input.repository,
@@ -155,11 +162,12 @@ async function readCheckEvidence(
   owner: string,
   repo: string,
   headRevision: string,
+  maxResults: number,
 ): Promise<CheckEvidence> {
   try {
     const [checkRuns, statuses] = await Promise.all([
-      client.listCheckRunsForRef(owner, repo, headRevision),
-      client.getCombinedStatusForRef(owner, repo, headRevision),
+      client.listCheckRunsForRef(owner, repo, headRevision, maxResults),
+      client.getCombinedStatusForRef(owner, repo, headRevision, maxResults),
     ]);
     return { available: true, checkRuns, statuses };
   } catch {
@@ -172,9 +180,10 @@ async function readChangedFiles(
   owner: string,
   repo: string,
   pullNumber: number,
+  maxResults: number,
 ): Promise<readonly string[] | undefined> {
   try {
-    return await client.listPullRequestFiles(owner, repo, pullNumber);
+    return await client.listPullRequestFiles(owner, repo, pullNumber, maxResults);
   } catch {
     return undefined;
   }
