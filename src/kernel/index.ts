@@ -36,6 +36,8 @@ export * from './domain/match-mode.js';
 
 export * from './domain/relation.js';
 
+export * from './infrastructure/cached-journal-view.js';
+
 export * from './infrastructure/system-clock.js';
 
 export * from './infrastructure/ulid-id-generator.js';

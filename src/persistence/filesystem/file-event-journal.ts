@@ -92,6 +92,11 @@ export class FileEventJournal implements EventJournal {
       .reverse();
   }
 
+  async latestGlobalPosition(): Promise<number> {
+    const events = await this.scan();
+    return events.at(-1)?.globalPosition ?? 0;
+  }
+
   private async scan(): Promise<EventEnvelope[]> {
     const directory = join(this.root, 'events');
     let files: string[];

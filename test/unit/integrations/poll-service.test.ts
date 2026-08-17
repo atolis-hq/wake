@@ -32,6 +32,7 @@ it('does not commit a provider cursor when evidence persistence fails', async ()
   const journal = {
     readAll: delegate.readAll.bind(delegate),
     readStream: delegate.readStream.bind(delegate),
+    latestGlobalPosition: delegate.latestGlobalPosition.bind(delegate),
     async append() {
       throw new Error('disk unavailable');
     },

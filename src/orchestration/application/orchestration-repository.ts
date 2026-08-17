@@ -1,4 +1,8 @@
-import type { EventJournal } from '../../kernel/index.js';
+import {
+  cachedJournalView,
+  type CachedJournalView,
+  type EventJournal,
+} from '../../kernel/index.js';
 import {
   decodeOrchestrationEvent,
   selectWorkflowOrchestrationEvent,
@@ -9,10 +13,20 @@ import type {
 } from '../contracts/events.js';
 import { workflowInstanceId } from '../contracts/identifiers.js';
 import { isWorkflowInstanceStream, workflowInstanceStream } from '../contracts/streams.js';
+import type { WorkflowInstanceView } from '../contracts/views.js';
 import { foldWorkflowInstance } from '../domain/workflow-instance.js';
 
+type ListedInstance = { readonly sequence: number; readonly view: WorkflowInstanceView | null };
+
+type JournalEvent = Awaited<ReturnType<EventJournal['readAll']>>[number];
+
 export class OrchestrationRepository {
-  constructor(private readonly journal: EventJournal) {}
+  private readonly listed: CachedJournalView<readonly ListedInstance[]>;
+
+  constructor(private readonly journal: EventJournal) {
+    this.listed = cachedJournalView(journal, (events) => deriveList(events));
+  }
+
   async load(id: string) {
     const events = await this.journal.readStream(workflowInstanceStream(workflowInstanceId(id)));
     const owned = events
@@ -43,28 +57,8 @@ export class OrchestrationRepository {
     return events.map(decodeOrchestrationEvent).filter(isWorkflowEvent);
   }
 
-  async list() {
-    const events = await this.journal.readAll(0);
-    const streams = new Map<string, (typeof events)[number][]>();
-    for (const event of events) {
-      if (!isWorkflowInstanceStream(event.stream)) continue;
-      const existing = streams.get(event.stream.id);
-      if (existing === undefined) streams.set(event.stream.id, [event]);
-      else existing.push(event);
-    }
-    // `sequence` counts every event on the stream, matching readStream, while the
-    // fold sees only owned orchestration events — exactly what load() computes.
-    return [...streams.values()].map((streamEvents) => ({
-      sequence: streamEvents.length,
-      view: foldWorkflowInstance(
-        streamEvents
-          .map(selectWorkflowOrchestrationEvent)
-          .filter(
-            (event): event is WorkflowOrchestrationEvent =>
-              event !== null && isWorkflowInstanceStream(event.stream),
-          ),
-      ),
-    }));
+  async list(): Promise<readonly ListedInstance[]> {
+    return this.listed.get();
   }
 }
 
@@ -72,4 +66,27 @@ function isWorkflowEvent(
   event: ReturnType<typeof decodeOrchestrationEvent>,
 ): event is WorkflowOrchestrationEvent {
   return isWorkflowInstanceStream(event.stream);
+}
+
+// `sequence` counts every event on the stream, matching readStream, while the
+// fold sees only owned orchestration events — exactly what load() computes.
+function deriveList(events: readonly JournalEvent[]): readonly ListedInstance[] {
+  const streams = new Map<string, JournalEvent[]>();
+  for (const event of events) {
+    if (!isWorkflowInstanceStream(event.stream)) continue;
+    const existing = streams.get(event.stream.id);
+    if (existing === undefined) streams.set(event.stream.id, [event]);
+    else existing.push(event);
+  }
+  return [...streams.values()].map((streamEvents) => ({
+    sequence: streamEvents.length,
+    view: foldWorkflowInstance(
+      streamEvents
+        .map(selectWorkflowOrchestrationEvent)
+        .filter(
+          (event): event is WorkflowOrchestrationEvent =>
+            event !== null && isWorkflowInstanceStream(event.stream),
+        ),
+    ),
+  }));
 }

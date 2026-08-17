@@ -107,6 +107,9 @@ it('rejects an inexact decision claim before calling the journal append boundary
     async readAll() {
       return [];
     },
+    async latestGlobalPosition() {
+      return 0;
+    },
   };
   const activation = activationId('activation-1');
   const stream = resourceStream(resId('1'));

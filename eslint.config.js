@@ -5,6 +5,15 @@ import eslintConfigPrettier from 'eslint-config-prettier/flat';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+const fullJournalRescanRule = {
+  selector:
+    'CallExpression[callee.property.name="readAll"][arguments.0.type="Literal"][arguments.0.value=0]',
+  message:
+    'readAll(0) re-derives the full event history on every call. Route it through ' +
+    'cachedJournalView() (src/persistence) so a resident loop only pays that cost ' +
+    'when the journal has actually moved since the last call.',
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -131,7 +140,46 @@ export default tseslint.config(
           selector: 'CallExpression[callee.type="Identifier"][callee.name="Number"]',
           message: 'Decode typed domain values instead of calling Number().',
         },
+        fullJournalRescanRule,
       ],
+    },
+  },
+  {
+    // Everything else journal-adjacent that isn't already covered by the
+    // block above (which owns 'no-restricted-syntax' for its own file
+    // scope — flat config replaces, not merges, a rule's value across
+    // overlapping blocks, so this scope must stay disjoint from that one).
+    files: ['src/**/*.ts'],
+    ignores: [
+      'src/{work,resources,activities,orchestration,execution}/{domain,application}/**/*.ts',
+      // Own the journal and already gate full rescans behind a
+      // last-seen-position check (ProjectionRunner; cachedJournalView, the
+      // shared primitive every other fix in this file routes through).
+      'src/persistence/**',
+      'src/kernel/infrastructure/cached-journal-view.ts',
+      // Composition/wiring and CLI command handlers: startup and one-off
+      // command volume, not a resident tick.
+      'src/bootstrap/**',
+      'src/surfaces/cli/**',
+      // Fake/test adapter, not production polling.
+      'src/integrations/fake/**',
+      // Bounded by actual pr.merge command volume, not a resident tick.
+      // (A plain file, not under {domain,application}/, so block 1 above
+      // doesn't already cover it.)
+      'src/activities/pr/application.ts',
+      // Bounded by actual agent-activation volume, not a resident tick.
+      'src/integrations/github/application/comment-history-reader.ts',
+      // Its second pass deliberately re-evaluates every past delivery event
+      // against current orchestration state on every tick — see "catches up
+      // a matching confirmation that was checkpointed before its delivery
+      // wait" in delivery-outcome-reactor.test.ts. Skipping it when the
+      // journal hasn't moved is provably safe in production (orchestration
+      // state is itself journal-derived) but the fix wasn't made in this
+      // pass; tracked as follow-up rather than risked here.
+      'src/integrations/delivery/application/delivery-outcome-reactor.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': ['error', fullJournalRescanRule],
     },
   },
   eslintConfigPrettier,

@@ -1,9 +1,12 @@
 import { reportedArtifactSchema } from '../../activities/index.js';
 import {
+  cachedJournalView,
   createEventDraft,
   EventActorKind,
   EventSourceKind,
+  type CachedJournalView,
   type CheckpointStore,
+  type EventEnvelope,
   type EventJournal,
   type IdGenerator,
 } from '../../kernel/index.js';
@@ -64,7 +67,11 @@ type ArtifactRecord = {
 };
 
 export class ArtifactRegistrationReactor {
-  constructor(private readonly dependencies: ArtifactRegistrationDependencies) {}
+  private readonly latestUnresolved: CachedJournalView<ReadonlyMap<string, ArtifactEvent>>;
+
+  constructor(private readonly dependencies: ArtifactRegistrationDependencies) {
+    this.latestUnresolved = cachedJournalView(dependencies.journal, deriveLatestUnresolved);
+  }
 
   async runOnce(limit = 100): Promise<number> {
     const consumer = 'reactor:artifact-registration';
@@ -111,13 +118,7 @@ export class ArtifactRegistrationReactor {
   }
 
   private async reconcileAmbiguous(): Promise<void> {
-    const latest = new Map<string, ArtifactEvent>();
-    for (const event of await this.dependencies.journal.readAll(0)) {
-      if (event.eventType !== ArtifactEventType.VerificationUnresolved) continue;
-      const decoded = decodeArtifactEvent(event);
-      const key = `${decoded.causationId}:${decoded.payload.artifact.externalKey.adapter}:${decoded.payload.artifact.externalKey.key}`;
-      latest.set(key, decoded);
-    }
+    const latest = await this.latestUnresolved.get();
     for (const event of latest.values()) {
       if (event.payload.status !== ArtifactVerificationStatus.Ambiguous || event.payload.escalated)
         continue;
@@ -241,6 +242,19 @@ export class ArtifactRegistrationReactor {
       .find((event) => event?.eventType === OrchestrationEventType.InstanceStarted);
     return started?.payload.workItemId ?? null;
   }
+}
+
+function deriveLatestUnresolved(
+  events: readonly EventEnvelope[],
+): ReadonlyMap<string, ArtifactEvent> {
+  const latest = new Map<string, ArtifactEvent>();
+  for (const event of events) {
+    if (event.eventType !== ArtifactEventType.VerificationUnresolved) continue;
+    const decoded = decodeArtifactEvent(event);
+    const key = `${decoded.causationId}:${decoded.payload.artifact.externalKey.adapter}:${decoded.payload.artifact.externalKey.key}`;
+    latest.set(key, decoded);
+  }
+  return latest;
 }
 
 function reportedArtifacts(value: unknown): readonly ArtifactClaim[] {

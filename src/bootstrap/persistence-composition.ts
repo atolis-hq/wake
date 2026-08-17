@@ -38,6 +38,7 @@ function serializeJournalAppends(journal: EventJournal): EventJournal {
     },
     readStream: (stream) => journal.readStream(stream),
     readAll: (afterGlobalPosition, limit) => journal.readAll(afterGlobalPosition, limit),
+    latestGlobalPosition: () => journal.latestGlobalPosition(),
     ...(journal.readLatest === undefined
       ? {}
       : {

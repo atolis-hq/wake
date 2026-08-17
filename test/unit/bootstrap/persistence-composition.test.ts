@@ -34,5 +34,8 @@ function concurrentAppendRejectingJournal(): EventJournal {
     async readAll() {
       return [];
     },
+    async latestGlobalPosition() {
+      return 0;
+    },
   };
 }

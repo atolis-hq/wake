@@ -367,6 +367,7 @@ function failAllParentSignals(journal: EventJournal): EventJournal {
     },
     readStream: (stream) => journal.readStream(stream),
     readAll: (position, limit) => journal.readAll(position, limit),
+    latestGlobalPosition: () => journal.latestGlobalPosition(),
   };
 }
 
@@ -388,5 +389,6 @@ function failAppendOnce(
     },
     readStream: (stream) => journal.readStream(stream),
     readAll: (position, limit) => journal.readAll(position, limit),
+    latestGlobalPosition: () => journal.latestGlobalPosition(),
   };
 }

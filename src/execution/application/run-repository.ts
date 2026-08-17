@@ -1,5 +1,9 @@
 import type { ActivationId } from '../../activities/index.js';
-import type { EventJournal } from '../../kernel/index.js';
+import {
+  cachedJournalView,
+  type CachedJournalView,
+  type EventJournal,
+} from '../../kernel/index.js';
 import {
   decodeRunExecutionEvent,
   type RunExecutionEvent,
@@ -7,10 +11,18 @@ import {
 } from '../contracts/events.js';
 import { runId, type RunId } from '../contracts/identifiers.js';
 import { isRunStream, runStream } from '../contracts/streams.js';
+import type { RunView } from '../contracts/views.js';
 import { foldRun } from '../domain/run.js';
 
+type JournalEvent = Awaited<ReturnType<EventJournal['readAll']>>[number];
+
 export class RunRepository {
-  constructor(private readonly journal: EventJournal) {}
+  private readonly runs: CachedJournalView<readonly RunView[]>;
+
+  constructor(private readonly journal: EventJournal) {
+    this.runs = cachedJournalView(journal, deriveRuns);
+  }
+
   async load(runId: RunId): Promise<{
     readonly sequence: number;
     readonly events?: readonly RunExecutionEvent[];
@@ -30,20 +42,22 @@ export class RunRepository {
     return events.map(decodeRunExecutionEvent);
   }
 
-  async list(activationId?: ActivationId) {
-    const grouped = new Map<RunId, RunExecutionEvent[]>();
-    for (const event of await this.journal.readAll(0)) {
-      if (!isRunStream(event.stream)) continue;
-      const id = runId(event.stream.id);
-      const events = grouped.get(id) ?? [];
-      events.push(decodeRunExecutionEvent(event));
-      grouped.set(id, events);
-    }
-    const runs = (await Promise.all([...grouped.values()].map(foldRun))).filter(
-      (run) => run !== null,
-    );
+  async list(activationId?: ActivationId): Promise<readonly RunView[]> {
+    const runs = await this.runs.get();
     return activationId === undefined
       ? runs
       : runs.filter((run) => run.activationId === activationId);
   }
+}
+
+function deriveRuns(events: readonly JournalEvent[]): readonly RunView[] {
+  const grouped = new Map<RunId, RunExecutionEvent[]>();
+  for (const event of events) {
+    if (!isRunStream(event.stream)) continue;
+    const id = runId(event.stream.id);
+    const decoded = grouped.get(id) ?? [];
+    decoded.push(decodeRunExecutionEvent(event));
+    grouped.set(id, decoded);
+  }
+  return [...grouped.values()].map(foldRun).filter((run) => run !== null);
 }

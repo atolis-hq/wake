@@ -57,6 +57,7 @@ describe('PollService', () => {
         reads += 1;
         return delegate.readStream(stream);
       },
+      latestGlobalPosition: delegate.latestGlobalPosition.bind(delegate),
     };
     const draft = (id: string) =>
       createEventDraft({
