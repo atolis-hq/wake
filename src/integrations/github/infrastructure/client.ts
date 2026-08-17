@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { MergeMethod, ProviderPermission, PullRequestState } from '../../../activities/index.js';
 import { GitHubOutboundAction } from '../contracts/vocabulary.js';
+import { createBoundedGitHubFetch } from './bounded-fetch.js';
 import {
   branch,
   getCombinedStatusForRef,
@@ -43,6 +44,7 @@ function logGitHubRequestFailure(message: unknown): void {
 export function createGitHubClient(token: string) {
   const octokit = new Octokit({
     auth: token,
+    request: { fetch: createBoundedGitHubFetch() },
     log: { debug() {}, info() {}, warn() {}, error: logGitHubRequestFailure },
   });
   const cache = createEtagCache();
