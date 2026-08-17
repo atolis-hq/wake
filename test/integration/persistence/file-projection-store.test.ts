@@ -1,8 +1,16 @@
+import type * as FsPromises from 'node:fs/promises';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { FileProjectionStore } from '../../../src/persistence/index.js';
+
+const { readFileMock } = vi.hoisted(() => ({ readFileMock: vi.fn() }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof FsPromises>();
+  readFileMock.mockImplementation(actual.readFile);
+  return { ...actual, readFile: readFileMock };
+});
 
 it('stores and atomically replaces one projection without touching another namespace', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-projections-'));
@@ -31,4 +39,25 @@ it('uses distinct temporary files for concurrent writes to one projection', asyn
   ).resolves.toEqual([undefined, undefined]);
 
   expect(await store.read('work', 'work:1')).not.toBeNull();
+});
+
+it('does not re-read namespace files on a second list() when nothing changed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-cache-'));
+  const store = new FileProjectionStore(root);
+  await store.write({ namespace: 'work', key: 'work:1', lastGlobalPosition: 1, value: { n: 1 } });
+  await store.write({ namespace: 'work', key: 'work:2', lastGlobalPosition: 1, value: { n: 2 } });
+
+  readFileMock.mockClear();
+  await store.list('work');
+  const firstCallCount = readFileMock.mock.calls.length;
+  expect(firstCallCount).toBeGreaterThan(0);
+
+  const second = await store.list('work');
+  expect(readFileMock.mock.calls.length).toBe(firstCallCount);
+  expect(second).toHaveLength(2);
+
+  await store.write({ namespace: 'work', key: 'work:3', lastGlobalPosition: 1, value: { n: 3 } });
+  const third = await store.list('work');
+  expect(readFileMock.mock.calls.length).toBeGreaterThan(firstCallCount);
+  expect(third).toHaveLength(3);
 });

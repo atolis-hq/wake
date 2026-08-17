@@ -1,10 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { ProjectionStore, StoredProjection } from '../../kernel/index.js';
 
 export class FileProjectionStore implements ProjectionStore {
   constructor(private readonly root: string) {}
+
+  private readonly listCache = new Map<
+    string,
+    { readonly fingerprint: string; readonly entries: readonly StoredProjection<unknown>[] }
+  >();
+
   async read<Value>(namespace: string, key: string): Promise<StoredProjection<Value> | null> {
     try {
       return JSON.parse(
@@ -18,22 +24,46 @@ export class FileProjectionStore implements ProjectionStore {
 
   async write<Value>(projection: StoredProjection<Value>): Promise<void> {
     await atomicJson(this.path(projection.namespace, projection.key), projection);
+    this.listCache.delete(projection.namespace);
   }
 
+  // Callers (advance-once, orchestration-service, DeliveryService, ...) list()
+  // an entire namespace unconditionally on every control-plane tick, even when
+  // fully idle. Without a cache that's a readdir+open+read+JSON.parse of every
+  // projection file in the namespace every tick forever, mirroring the same
+  // cost FileEventJournal.scan() already avoids for the event journal via a
+  // fingerprint cache. Same fix here: only re-read files whose directory
+  // listing (name:size:mtimeMs) actually changed since the last list().
   async list<Value>(namespace: string): Promise<readonly StoredProjection<Value>[]> {
     const directory = join(this.root, 'projections', encode(namespace));
+    let files: string[];
     try {
-      const files = (await readdir(directory)).filter((file) => file.endsWith('.json')).sort();
-      return Promise.all(
-        files.map(
-          async (file) =>
-            JSON.parse(await readFile(join(directory, file), 'utf8')) as StoredProjection<Value>,
-        ),
-      );
+      files = (await readdir(directory)).filter((file) => file.endsWith('.json')).sort();
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.listCache.delete(namespace);
+        return [];
+      }
       throw error;
     }
+    const fingerprint = (
+      await Promise.all(
+        files.map(async (file) => {
+          const info = await stat(join(directory, file));
+          return `${file}:${info.size}:${info.mtimeMs}`;
+        }),
+      )
+    ).join('|');
+    const cached = this.listCache.get(namespace);
+    if (cached?.fingerprint === fingerprint) return cached.entries as StoredProjection<Value>[];
+    const entries = await Promise.all(
+      files.map(
+        async (file) =>
+          JSON.parse(await readFile(join(directory, file), 'utf8')) as StoredProjection<Value>,
+      ),
+    );
+    this.listCache.set(namespace, { fingerprint, entries });
+    return entries;
   }
 
   async clear(namespace?: string): Promise<void> {
@@ -43,6 +73,8 @@ export class FileProjectionStore implements ProjectionStore {
         : join(this.root, 'projections', encode(namespace)),
       { recursive: true, force: true },
     );
+    if (namespace === undefined) this.listCache.clear();
+    else this.listCache.delete(namespace);
   }
 
   private path(namespace: string, key: string): string {
