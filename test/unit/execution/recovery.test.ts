@@ -8,12 +8,68 @@ import {
   RunRepository,
   runStream,
 } from '../../../src/execution/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../../../src/kernel/index.js';
+import {
+  createEventDraft,
+  EventActorKind,
+  EventSourceKind,
+  type EventJournal,
+} from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
+import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { executionFixture } from './support.js';
 
 it('exports RecoveryService for active Run reconciliation', () => {
   expect(RecoveryService).toBeTypeOf('function');
+});
+
+it('lists Run views from one journal snapshot without per-Run stream reads', async () => {
+  const fixture = executionFixture();
+  const backing = new InMemoryEventJournal(fixture.clock);
+  const writer = new RunRepository(backing);
+  const first = runId('snapshot-first');
+  const second = runId('snapshot-second');
+  for (const id of [first, second]) {
+    await writer.append(id, 0, [
+      createEventDraft({
+        eventId: `${id}:started`,
+        eventType: ExecutionEventType.RunStarted,
+        occurredAt: fixture.clock.now().toISOString(),
+        correlationId: 'snapshot',
+        causationId: 'snapshot',
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        stream: runStream(id),
+        payload: {
+          activationId: activationId(`${id}:activation`),
+          activity: activityName('long-running'),
+          workflowInstanceId: workflowInstanceId(`${id}:workflow`),
+          orchestrationGroupId: orchestrationGroupId(`${id}:group`),
+          attempt: 1,
+          startedAt: fixture.clock.now().toISOString(),
+        },
+      }),
+    ]);
+  }
+  let readAllCalls = 0;
+  let readStreamCalls = 0;
+  const recording: EventJournal = {
+    append: backing.append.bind(backing),
+    async readAll(after, limit) {
+      readAllCalls += 1;
+      return backing.readAll(after, limit);
+    },
+    async readStream(stream) {
+      readStreamCalls += 1;
+      return backing.readStream(stream);
+    },
+  };
+
+  await expect(new RunRepository(recording).list()).resolves.toMatchObject([
+    { runId: first, status: 'started' },
+    { runId: second, status: 'started' },
+  ]);
+  expect(readAllCalls).toBe(1);
+  expect(readStreamCalls).toBe(0);
 });
 
 it('does not recover a locally tracked Run after its lease duration elapses', async () => {
