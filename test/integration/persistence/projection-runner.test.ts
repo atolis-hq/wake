@@ -150,6 +150,46 @@ it('does not reset a projection checkpoint while another projection pass is savi
   expect((await projections.read<number>('rebuild-counts', 'rebuild'))?.value).toBe(3);
 });
 
+it('waits for sibling registered projections to settle before releasing a failed pass', async () => {
+  projectionRunTail = Promise.resolve();
+  projectionPassesStarted = 0;
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const stream: EntityRef<'counter', 'settlement'> = { kind: 'counter', id: 'settlement' };
+  await journal.append(stream, 0, [
+    createEventDraft({
+      eventId: 'settlement-event',
+      eventType: 'counted',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'cause',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: {},
+    }),
+  ]);
+  const projections = new FailingSiblingProjectionStore();
+  const runner = new ProjectionRunner(
+    journal,
+    projections,
+    new InMemoryCheckpointStore(),
+    [projectionDefinition('slow-settlement'), projectionDefinition('failing-settlement')],
+    serializeProjectionRuns,
+  );
+
+  const first = runner.runRegisteredOnce().catch((error: unknown) => error);
+  await projections.firstSlowWriteStarted;
+  await projections.failingProjectionObserved;
+  const second = runner.runRegisteredOnce().catch((error: unknown) => error);
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(projectionPassesStarted).toBe(1);
+
+  projections.releaseFirstSlowWrite();
+  await expect(first).resolves.toBeInstanceOf(Error);
+  await expect(second).resolves.toBeInstanceOf(Error);
+});
+
 class BlockingCheckpointStore extends InMemoryCheckpointStore {
   private firstSaveRelease: (() => void) | undefined;
   private secondSaveRelease: (() => void) | undefined;
@@ -189,10 +229,69 @@ class BlockingCheckpointStore extends InMemoryCheckpointStore {
   }
 }
 
+class FailingSiblingProjectionStore extends InMemoryProjectionStore {
+  private firstSlowWriteRelease: (() => void) | undefined;
+  private isFirstSlowWrite = true;
+  private slowWriteStartedResolve: (() => void) | undefined;
+  private failingObservedResolve: (() => void) | undefined;
+
+  private readonly firstSlowWrite = new Promise<void>((resolve) => {
+    this.firstSlowWriteRelease = resolve;
+  });
+
+  readonly firstSlowWriteStarted = new Promise<void>((resolve) => {
+    this.slowWriteStartedResolve = resolve;
+  });
+
+  readonly failingProjectionObserved = new Promise<void>((resolve) => {
+    this.failingObservedResolve = resolve;
+  });
+
+  override async read<Value>(namespace: string, key: string) {
+    if (namespace === 'failing-settlement') {
+      await this.firstSlowWriteStarted;
+      this.failingObservedResolve?.();
+      throw new Error('injected sibling projection failure');
+    }
+    return super.read<Value>(namespace, key);
+  }
+
+  override async write<Value>(projection: {
+    readonly namespace: string;
+    readonly key: string;
+    readonly lastGlobalPosition: number;
+    readonly value: Value;
+  }): Promise<void> {
+    if (projection.namespace === 'slow-settlement' && this.isFirstSlowWrite) {
+      this.isFirstSlowWrite = false;
+      this.slowWriteStartedResolve?.();
+      await this.firstSlowWrite;
+    }
+    await super.write(projection);
+  }
+
+  releaseFirstSlowWrite() {
+    this.firstSlowWriteRelease?.();
+  }
+}
+
+function projectionDefinition(name: string) {
+  return {
+    name,
+    select: () => ({ key: 'one' }),
+    initial: () => 0,
+    project: (previous: number) => previous + 1,
+  };
+}
+
 let projectionRunTail: Promise<void> = Promise.resolve();
+let projectionPassesStarted = 0;
 
 function serializeProjectionRuns<Value>(operation: () => Promise<Value>): Promise<Value> {
-  const result = projectionRunTail.then(operation);
+  const result = projectionRunTail.then(async () => {
+    projectionPassesStarted += 1;
+    return operation();
+  });
   projectionRunTail = result.then(
     () => undefined,
     () => undefined,
