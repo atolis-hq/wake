@@ -32,6 +32,7 @@ vi.mock('@octokit/rest', () => ({
 }));
 
 import { MergeMethod } from '../../../src/activities/index.js';
+import * as GitHubClient from '../../../src/integrations/github/infrastructure/bounded-fetch.js';
 import { createGitHubClient } from '../../../src/integrations/github/infrastructure/client.js';
 
 describe('GitHub client transport contract', () => {
@@ -64,6 +65,47 @@ describe('GitHub client transport contract', () => {
     expect(octokit.constructor).toHaveBeenCalledWith(
       expect.objectContaining({ auth: 'ghp_configured_token' }),
     );
+  });
+
+  it('installs a bounded fetch before Octokit decodes provider responses', () => {
+    createGitHubClient('token');
+
+    expect(octokit.constructor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request: expect.objectContaining({ fetch: expect.any(Function) }),
+      }),
+    );
+  });
+
+  it('rejects an unknown-length response that exceeds the configured byte cap before decoding', async () => {
+    const factory = (
+      GitHubClient as unknown as {
+        readonly createBoundedGitHubFetch?: unknown;
+      }
+    ).createBoundedGitHubFetch;
+
+    expect(factory).toBeTypeOf('function');
+    if (typeof factory !== 'function') return;
+    const boundedFetch = factory as (
+      fetch: typeof globalThis.fetch,
+      maximumResponseBytes: number,
+    ) => typeof globalThis.fetch;
+    const fetch = boundedFetch(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('abcdefgh'));
+              controller.enqueue(new TextEncoder().encode('i'));
+              controller.close();
+            },
+          }),
+        ),
+      8,
+    );
+
+    const response = await fetch('https://api.github.test/repos/owner/repo/issues');
+    await expect(response.text()).rejects.toMatchObject({ name: 'GitHubResponseTooLargeError' });
   });
 
   it('paginates a bounded issue read and conditionally reuses its ETag cache', async () => {
