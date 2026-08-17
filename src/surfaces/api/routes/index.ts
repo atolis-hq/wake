@@ -8,8 +8,8 @@ export type {
   ApiApplications,
   ApiCollectionPage,
   ApiCommandRequest,
-  ApiRunResolutionRequest,
   ApiResourceResult,
+  ApiRunResolutionRequest,
   ApiSystemApplications,
   CollectionQuery,
 } from './applications.js';
