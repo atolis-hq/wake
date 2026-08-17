@@ -2,6 +2,41 @@ import { expect, it, vi } from 'vitest';
 import * as Execution from '../../../src/execution/index.js';
 import { RunStatus, type Runner } from '../../../src/execution/index.js';
 
+it('records a named runtime phase without caller payload', () => {
+  const factory = (
+    Execution as unknown as {
+      readonly createRuntimeMemoryProfile?: unknown;
+    }
+  ).createRuntimeMemoryProfile;
+
+  expect(factory).toBeTypeOf('function');
+  if (typeof factory !== 'function') return;
+  const write = vi.fn();
+  const profile = (
+    factory as (options: {
+      readonly write: (line: string) => void;
+      readonly now: () => string;
+      readonly memoryUsage: () => NodeJS.MemoryUsage;
+    }) => { sample(phase: string): void }
+  )({
+    write,
+    now: () => '2026-08-17T05:00:00.000Z',
+    memoryUsage: () => ({
+      rss: 101,
+      heapTotal: 102,
+      heapUsed: 103,
+      external: 104,
+      arrayBuffers: 105,
+    }),
+  });
+
+  profile.sample('intake.poll.before');
+
+  expect(write.mock.calls.map(([line]) => JSON.parse(line))).toEqual([
+    expect.objectContaining({ type: 'wake.runtime-memory', phase: 'intake.poll.before' }),
+  ]);
+});
+
 it('records bounded runner lifecycle memory without prompt or result content', async () => {
   const factory = (
     Execution as unknown as {

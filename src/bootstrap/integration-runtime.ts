@@ -11,7 +11,12 @@ import {
   type ScheduleCheckpointStore,
   type createControlPlaneService,
 } from '../control-plane/index.js';
-import { RunRepository, type createExecutionService } from '../execution/index.js';
+import {
+  RunRepository,
+  createRuntimeMemoryProfile,
+  type RuntimeMemoryProfile,
+  type createExecutionService,
+} from '../execution/index.js';
 import {
   AgentRunPublicationReactor,
   ArtifactRegistrationReactor,
@@ -111,6 +116,14 @@ function serializeRunRegisteredOnce(
 export async function composeIntegrationRuntime(
   input: IntegrationRuntimeInput,
 ): Promise<IntegrationRuntime> {
+  const memoryProfile =
+    process.env.WAKE_MEMORY_PROFILE === 'runner'
+      ? createRuntimeMemoryProfile({
+          write: (line) => process.stderr.write(line),
+          now: () => input.clock.now().toISOString(),
+          memoryUsage: () => process.memoryUsage(),
+        })
+      : undefined;
   const registry = new ProviderRegistry();
   registry.register(fakeProviderDefinition);
   for (const definition of input.providerDefinitions) registry.register(definition);
@@ -244,46 +257,57 @@ export async function composeIntegrationRuntime(
   // Tick needs a backing-off host; see bootstrap/surface-cli-applications.ts.
   const intakePipeline = createIntakePipeline({
     isPaused: input.isPaused,
-    catchUpProjections,
+    catchUpProjections: () =>
+      observeMemory(memoryProfile, 'intake.projections', catchUpProjections),
     poll: async (signal) => {
-      let appended = 0;
-      for (const provider of providers)
-        appended += await new PollService(input.journal, provider).pollOnce(signal);
-      return appended;
+      return observeMemory(memoryProfile, 'intake.poll', async () => {
+        let appended = 0;
+        for (const provider of providers)
+          appended += await new PollService(input.journal, provider).pollOnce(signal);
+        return appended;
+      });
     },
     translateInbound: async () => {
-      let translated = 0;
-      for (const provider of providers) translated += await provider.inbound.runOnce();
-      return translated;
+      return observeMemory(memoryProfile, 'intake.translate', async () => {
+        let translated = 0;
+        for (const provider of providers) translated += await provider.inbound.runOnce();
+        return translated;
+      });
     },
   });
   const runnerPipeline = createRunnerPipeline({
     isPaused: input.isPaused,
-    catchUpProjections,
-    runSchedules: async () => {
-      for (const schedule of input.config.controlPlane.schedules)
-        await schedules.run(schedule, {
-          commandId: input.ids.next('command'),
-          correlationId: 'schedule-tick' as never,
-          occurredAt: input.clock.now().toISOString(),
-          actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
-        });
-    },
-    react: async () => {
-      await watch.runOnce();
-      await watch.reconcileOnce();
-      await resourceTransitions.runOnce();
-      await artifacts.runOnce();
-      await outcomes.runOnce();
-      for (const provider of providers) await provider.maintenance?.runOnce();
-    },
-    advance: input.advanceOnce,
-    publishAgentRuns: async () => {
-      await agentRunPublications.runOnce();
-    },
-    deliver: async (signal) => {
-      await delivery.deliverNext(signal);
-    },
+    catchUpProjections: () =>
+      observeMemory(memoryProfile, 'runner.projections', catchUpProjections),
+    runSchedules: () =>
+      observeMemory(memoryProfile, 'runner.schedules', async () => {
+        for (const schedule of input.config.controlPlane.schedules)
+          await schedules.run(schedule, {
+            commandId: input.ids.next('command'),
+            correlationId: 'schedule-tick' as never,
+            occurredAt: input.clock.now().toISOString(),
+            actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
+          });
+      }),
+    react: () =>
+      observeMemory(memoryProfile, 'runner.react', async () => {
+        await watch.runOnce();
+        await watch.reconcileOnce();
+        await resourceTransitions.runOnce();
+        await artifacts.runOnce();
+        await outcomes.runOnce();
+        for (const provider of providers) await provider.maintenance?.runOnce();
+      }),
+    advance: (options) =>
+      observeMemory(memoryProfile, 'runner.advance', () => input.advanceOnce(options)),
+    publishAgentRuns: () =>
+      observeMemory(memoryProfile, 'runner.publish-agent-runs', async () => {
+        await agentRunPublications.runOnce();
+      }),
+    deliver: (signal) =>
+      observeMemory(memoryProfile, 'runner.deliver', async () => {
+        await delivery.deliverNext(signal);
+      }),
   });
   return {
     projectionRunner,
@@ -293,6 +317,19 @@ export async function composeIntegrationRuntime(
     intakePipeline,
     runnerPipeline,
   };
+}
+
+async function observeMemory<T>(
+  profile: RuntimeMemoryProfile | undefined,
+  phase: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  profile?.sample(`${phase}.before`);
+  try {
+    return await operation();
+  } finally {
+    profile?.sample(`${phase}.settled`);
+  }
 }
 
 // Configuration is the only routing authority: adapters ask, they never propose.
