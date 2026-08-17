@@ -1,5 +1,10 @@
 import { execa } from 'execa';
 
+// Agent CLIs can emit arbitrarily large machine-readable transcripts. Wake
+// retains their complete result only after the process exits, so cap capture
+// below the resident's heap limit and surface the existing output-limit failure.
+const maximumCapturedProcessOutputBytes = 1024 * 1024;
+
 interface ProcessExecutionResult {
   readonly stdout: string;
   readonly stderr: string;
@@ -22,6 +27,7 @@ export function runProcess(
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
+    maxBuffer: maximumCapturedProcessOutputBytes,
     cancelSignal: signal,
     ...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
     reject: false,

@@ -35,6 +35,18 @@ describe('runProcess', () => {
 
     await expect(execution.result).resolves.toMatchObject({ timedOut: true });
   });
+
+  it('classifies output beyond the capture budget without retaining it all in the resident', async () => {
+    const execution = runProcess(
+      process.execPath,
+      ['-e', 'process.stdout.write("x".repeat(2 * 1024 * 1024))'],
+      undefined,
+      new AbortController().signal,
+      1_000,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({ failureKind: 'output-limit' });
+  });
 });
 
 describe('cliRunner', () => {
