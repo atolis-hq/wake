@@ -127,6 +127,7 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
   }
 }
 
+// eslint-disable-next-line complexity -- the resolution flags are mutually exclusive by design.
 function parseRunCommand(arguments_: readonly string[]): WakeCommand {
   if (arguments_[0] !== 'resolve') throw new Error(`Unknown run command: ${arguments_[0] ?? ''}`);
   const runId = requiredArgument(arguments_[1], 'run id');

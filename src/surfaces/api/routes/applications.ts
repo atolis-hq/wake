@@ -1,4 +1,4 @@
-import { RunStatus } from '../../../execution/index.js';
+import type { RunStatus } from '../../../execution/index.js';
 import type {
   ApiCommandResult,
   ApiTickCommandResult,

@@ -144,6 +144,7 @@ function commandRequest(body: unknown): ApiCommandRequest | ApiHttpResponse {
     : invalidRequest('idempotencyKey', 'Must be at most 200 characters');
 }
 
+// eslint-disable-next-line complexity -- each resolution mode validates its exclusive request shape.
 function runResolutionRequest(body: unknown): ApiRunResolutionRequest | ApiHttpResponse {
   if (!isObject(body))
     return invalidRequest('idempotencyKey', 'A JSON object with an idempotency key is required');
