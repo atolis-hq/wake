@@ -21,6 +21,11 @@ export interface CommentHistoryEntry {
     readonly line: number;
     readonly side: 'LEFT' | 'RIGHT';
   };
+  readonly wakeArtifact?: {
+    readonly runId: string;
+    readonly stage?: string;
+    readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+  };
 }
 
 export interface CommentHistoryReader {
@@ -168,9 +173,11 @@ function reconcileCommentHistory(
         entry.resourceKey === resourceKey && deliveryMarker(entry.value.body) === intentEventId,
     );
     history.set(intentEventId, {
-      entry:
-        matchingProvider?.value ??
-        syntheticComment(confirmation.intent, confirmation.event.occurredAt, publicUiUrl),
+      entry: {
+        ...(matchingProvider?.value ??
+          syntheticComment(confirmation.intent, confirmation.event.occurredAt, publicUiUrl)),
+        ...agentRunArtifact(confirmation.intent),
+      },
       occurredAt: confirmation.event.occurredAt,
       globalPosition: confirmation.event.globalPosition,
     });
@@ -246,6 +253,14 @@ function providerComment(event: EventEnvelope, keys: ReadonlySet<string>): Provi
         : { location: observed.payload.location }),
     },
   };
+}
+
+function agentRunArtifact(intent: ConfirmableCommentIntent): {
+  readonly wakeArtifact?: Exclude<CommentHistoryEntry['wakeArtifact'], undefined>;
+} {
+  if (intent.eventType !== DeliveryIntentEventType.AgentRunPublishRequested) return {};
+  const { runId, stage, outcome } = intent.payload.report;
+  return { wakeArtifact: { runId, ...(stage === undefined ? {} : { stage }), outcome } };
 }
 
 function syntheticComment(

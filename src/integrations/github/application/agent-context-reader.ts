@@ -17,6 +17,7 @@ import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import {
   createCommentHistoryReader,
+  type CommentHistoryEntry,
   type CommentHistoryReaderOptions,
 } from './comment-history-reader.js';
 
@@ -30,7 +31,7 @@ export function createGitHubAgentContextReader(
     async forWorkItem(workItemId, options) {
       const comments = boundedAgentContextComments(
         await commentHistory.forWorkItem(workItemId as WorkItemId, options),
-      );
+      ).map(publicComment);
       return {
         ...(await currentWorkItemContent(journal, resources, workItemId as WorkItemId)),
         comments,
@@ -42,14 +43,19 @@ export function createGitHubAgentContextReader(
   };
 }
 
+function publicComment(comment: CommentHistoryEntry): AgentContextComment {
+  const { wakeArtifact: _wakeArtifact, ...rest } = comment;
+  return rest;
+}
+
 const maximumAgentContextComments = 12;
 const maximumAgentContextCommentCharacters = 8_000;
 const maximumAgentContextCharacters = 48_000;
 const truncationNotice = '\n[Wake truncated this historical comment for context bounds.]';
 
 function boundedAgentContextComments(
-  comments: readonly AgentContextComment[],
-): readonly AgentContextComment[] {
+  comments: readonly CommentHistoryEntry[],
+): readonly CommentHistoryEntry[] {
   const indexed = comments.map((comment, index) => ({ comment, index }));
   const latestWakeReviewerFeedback = [...indexed]
     .reverse()
@@ -57,13 +63,16 @@ function boundedAgentContextComments(
   const latestWakeAgentArtifact = [...indexed]
     .reverse()
     .find(({ comment }) => isWakeAgentArtifact(comment));
-  const protectedWakeArtifacts = [latestWakeReviewerFeedback, latestWakeAgentArtifact].flatMap(
-    (candidate, index, values) =>
-      candidate === undefined || values.slice(0, index).some((value) => value === candidate)
-        ? []
-        : [candidate],
+  const protectedWakeArtifacts = [
+    latestWakeReviewerFeedback,
+    latestWakeAgentArtifact,
+    ...latestArtifactPerStage(indexed),
+  ].flatMap((candidate, index, values) =>
+    candidate === undefined || values.slice(0, index).some((value) => value === candidate)
+      ? []
+      : [candidate],
   );
-  const retained: { readonly comment: AgentContextComment; readonly index: number }[] = [];
+  const retained: { readonly comment: CommentHistoryEntry; readonly index: number }[] = [];
   let characters = 0;
   for (const artifact of protectedWakeArtifacts) {
     const remaining = maximumAgentContextCharacters - characters;
@@ -95,19 +104,34 @@ function boundedAgentContextComments(
   return retained.sort((left, right) => left.index - right.index).map(({ comment }) => comment);
 }
 
+function latestArtifactPerStage(
+  indexed: readonly { readonly comment: CommentHistoryEntry; readonly index: number }[],
+): readonly { readonly comment: CommentHistoryEntry; readonly index: number }[] {
+  const latestByStage = new Map<
+    string,
+    { readonly comment: CommentHistoryEntry; readonly index: number }
+  >();
+  for (const candidate of indexed) {
+    const stage = candidate.comment.wakeArtifact?.stage;
+    if (stage !== undefined) latestByStage.set(stage, candidate);
+  }
+  return [...latestByStage.values()];
+}
+
 function isWakeDelivery(body: string): boolean {
   return /<!--\s*wake:delivery:[^\s>]+\s*-->/.test(body);
 }
 
-function isWakeReviewerFeedback(comment: AgentContextComment): boolean {
+function isWakeReviewerFeedback(comment: CommentHistoryEntry): boolean {
   return (
-    comment.body.includes('<!-- wake:agent -->') &&
-    (comment.body.includes('**Outcome:** 🔴 Changes Requested') ||
-      /"watchGateVerdict"[\s\S]*"outcome"\s*:\s*"REJECTED"/.test(comment.body))
+    comment.wakeArtifact?.outcome === 'REJECTED' ||
+    (comment.body.includes('<!-- wake:agent -->') &&
+      (comment.body.includes('**Outcome:** 🔴 Changes Requested') ||
+        /"watchGateVerdict"[\s\S]*"outcome"\s*:\s*"REJECTED"/.test(comment.body)))
   );
 }
 
-function isWakeAgentArtifact(comment: AgentContextComment): boolean {
+function isWakeAgentArtifact(comment: CommentHistoryEntry): boolean {
   return comment.body.includes('<!-- wake:agent -->') && isWakeDelivery(comment.body);
 }
 

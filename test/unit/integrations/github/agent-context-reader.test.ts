@@ -6,15 +6,23 @@ import { GitHubEventType } from '../../../../src/integrations/github/contracts/e
 import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
 import { issueCommentObservation } from '../../../../src/integrations/github/infrastructure/issue-source.js';
 import {
+  DeliveryEventType,
+  DeliveryIntentEventType,
+  deliveryStream,
+} from '../../../../src/integrations/index.js';
+import {
   correlationId,
   createEventDraft,
   EventActorKind,
+  eventId,
   EventSourceKind,
 } from '../../../../src/kernel/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,
   resourceKind,
+  resourceStream,
+  type ResourceId,
 } from '../../../../src/resources/index.js';
 import { TestWorld } from '../../../e2e/support/world.js';
 
@@ -197,6 +205,119 @@ it('keeps only a bounded recent human comment delta and excludes Wake deliveries
   expect(context.comments[0]?.body).toHaveLength(8_000);
   expect(context.comments.at(-1)?.body).toBe(blockedHandoff);
 });
+
+it("retains an earlier stage's Wake handoff after a later stage posts its own comment", async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'enable swimlanes per workflow' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000030' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#30' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-stage-handoff',
+      correlationId: correlationId('stage-handoff-context'),
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendConfirmedAgentRunComment(world, issue.resourceId, {
+    intentEventId: 'refine-plan',
+    occurredAt: '2026-08-17T07:19:00.000Z',
+    runId: 'run-refine-1',
+    stage: 'refine',
+    outcome: 'DONE',
+    displayBody: 'Implementation plan: add a grouping control to the board.',
+  });
+  await appendConfirmedAgentRunComment(world, issue.resourceId, {
+    intentEventId: 'review-failed',
+    occurredAt: '2026-08-17T07:41:00.000Z',
+    runId: 'run-review-1',
+    stage: 'review',
+    outcome: 'FAILED',
+    displayBody: 'Unable to review: no plan was provided.',
+  });
+
+  const context = await createGitHubAgentContextReader(world.journal, world.resources).forWorkItem(
+    work.workItemId,
+  );
+
+  expect(context.comments.map((comment) => comment.body).join('\n')).toContain(
+    'Implementation plan: add a grouping control to the board.',
+  );
+  expect(context.comments.map((comment) => comment.body).join('\n')).toContain(
+    'Unable to review: no plan was provided.',
+  );
+});
+
+async function appendConfirmedAgentRunComment(
+  world: TestWorld,
+  resourceId: ResourceId,
+  input: {
+    readonly intentEventId: string;
+    readonly occurredAt: string;
+    readonly runId: string;
+    readonly stage: string;
+    readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+    readonly displayBody: string;
+  },
+): Promise<void> {
+  const intent = createEventDraft({
+    eventId: input.intentEventId,
+    eventType: DeliveryIntentEventType.AgentRunPublishRequested,
+    occurredAt: input.occurredAt,
+    correlationId: `correlation:${input.intentEventId}`,
+    causationId: `causation:${input.intentEventId}`,
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    stream: resourceStream(resourceId),
+    payload: {
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      resourceId,
+      report: {
+        runId: input.runId,
+        stage: input.stage,
+        startedAt: input.occurredAt,
+        finishedAt: input.occurredAt,
+        displayBody: input.displayBody,
+        outcome: input.outcome,
+        metadata: {},
+      },
+    },
+  });
+  const stream = resourceStream(resourceId);
+  const [published] = await world.journal.append(
+    stream,
+    (await world.journal.readStream(stream)).length,
+    [intent],
+  );
+  if (published === undefined) throw new Error('Expected agent-run publication intent');
+  const confirmation = createEventDraft({
+    eventId: `${input.intentEventId}-confirmed`,
+    eventType: DeliveryEventType.Confirmed,
+    occurredAt: input.occurredAt,
+    correlationId: `correlation:${input.intentEventId}`,
+    causationId: `causation:${input.intentEventId}`,
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    stream: deliveryStream(eventId(input.intentEventId)),
+    payload: {
+      intentEventId: eventId(input.intentEventId),
+      intentGlobalPosition: published.globalPosition,
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      occurrenceOrdinal: 1,
+      externalId: `github-comment-${input.intentEventId}`,
+    },
+  });
+  await world.journal.append(confirmation.stream, 0, [confirmation]);
+}
 
 async function appendIssueComment(world: TestWorld, id: number, body: string) {
   const event = issueCommentObservation({
