@@ -50,9 +50,22 @@ export class ProjectionRunner {
       latestGlobalPosition <= this.caughtUpToGlobalPosition
     )
       return 0;
+    let failed = false;
+    let firstFailure: unknown;
     const counts = await Promise.all(
-      this.registered.map((definition) => this.applyFrom(definition, allEvents, limit)),
+      this.registered.map(async (definition) => {
+        try {
+          return await this.applyFrom(definition, allEvents, limit);
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            firstFailure = error;
+          }
+          return 0;
+        }
+      }),
     );
+    if (failed) throw firstFailure;
     if (counts.every((count) => count < limit))
       this.caughtUpToGlobalPosition = latestGlobalPosition;
     return counts.reduce((total, count) => total + count, 0);
