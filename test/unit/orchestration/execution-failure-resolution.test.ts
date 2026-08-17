@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
-import { workflowName } from '../../../src/orchestration/index.js';
+import { isOperatorRetryEligible, workflowName } from '../../../src/orchestration/index.js';
 import { TestWorld } from '../../e2e/support/world.js';
 
 it('records one execution failure and blocks its pending activation', async () => {
@@ -105,4 +105,7 @@ it('converts an ambiguity block into a retryable execution failure after an oper
     pendingActivation: { status: 'completed' },
     executionFailure: { runId: 'run-ambiguous' },
   });
+  expect(isOperatorRetryEligible((await world.viewWorkflow(workflow.workflowInstanceId))!)).toBe(
+    true,
+  );
 });

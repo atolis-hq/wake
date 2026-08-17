@@ -9,7 +9,7 @@ import {
   type IdGenerator,
 } from '../../kernel/index.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
-import { WorkflowStatus } from '../../orchestration/index.js';
+import { isAmbiguityResolutionBlock, WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import { WorkStatus } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
@@ -172,8 +172,12 @@ export function createAdvanceOnce(
         ? [{ workflow, activation: workflow.pendingActivation }]
         : [],
     );
+    const ambiguityBlocked = blocked.filter((item) =>
+      isAmbiguityResolutionBlock(item.workflow.blockReason),
+    );
     const recovery =
       (await findUnresolvedTerminal(pending, execution)) ??
+      (await findUnresolvedTerminal(ambiguityBlocked, execution)) ??
       (await findUnresolvedSucceededTerminal(blocked, execution));
     if (recovery !== undefined) {
       if (await isDispatchPaused()) return { kind: 'paused' };

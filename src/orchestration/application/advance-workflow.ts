@@ -271,6 +271,6 @@ export class AdvanceWorkflow {
   }
 }
 
-function isAmbiguityResolutionBlock(reason: string | undefined): boolean {
+export function isAmbiguityResolutionBlock(reason: string | undefined): boolean {
   return reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason);
 }

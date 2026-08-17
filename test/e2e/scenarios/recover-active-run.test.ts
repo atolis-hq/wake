@@ -122,7 +122,10 @@ it('E2E-EXEC-RECOVER-002 escalates unknown recovery and accepts an operator reso
   await world.advance(work.workItemId);
   await world.advance(work.workItemId);
   expect((await world.viewRuns())[0]).toMatchObject({ status: 'ambiguous', escalated: true });
-  expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('blocked');
+  expect(await world.viewWorkflow(workflow.workflowInstanceId)).toMatchObject({
+    status: 'blocked',
+    blockReason: 'run-ambiguous-after-3-attempts',
+  });
 
   await world.resolveRun(run.runId, { kind: 'succeeded', outcome: { kind: 'done' } });
   await expect(world.advance(work.workItemId)).resolves.toMatchObject({ kind: 'progressed' });

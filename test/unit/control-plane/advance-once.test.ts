@@ -505,7 +505,7 @@ describe('advanceOnce', () => {
     ]);
   });
 
-  it.each(['failed', 'cancelled', 'ambiguous'] as const)(
+  it.each(['failed', 'cancelled'] as const)(
     'resolves a detached %s Run before dispatching another attempt',
     async (status) => {
       const activation = {
@@ -664,6 +664,68 @@ describe('advanceOnce', () => {
       runId: 'run-resolved',
     });
     expect(accepted).toBe(1);
+  });
+
+  it('reconciles an operator-resolved failed ambiguous Run without replaying it', async () => {
+    const workflow = {
+      workflowInstanceId: 'workflow-ambiguous',
+      workItemId: 'work-ambiguous',
+      orchestrationGroupId: 'group-ambiguous',
+      status: 'blocked',
+      blockReason: 'run-ambiguous-after-3-attempts',
+      acceptedOutcomes: [],
+      pendingActivation: { activationId: 'activation-ambiguous' },
+    } as unknown as WorkflowInstanceView;
+    const resolved: unknown[] = [];
+    let attempted = false;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [],
+        listWaiting: async () => [],
+        listAll: async () => [workflow],
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => workflow,
+        resolveExecutionFailure: async (...input: unknown[]) => {
+          resolved.push(input);
+          return workflow;
+        },
+      } as never,
+      {
+        attempt: async () => {
+          attempted = true;
+          return { status: 'started', runId: 'unexpected-replay' } as never;
+        },
+        list: async () =>
+          [
+            {
+              status: 'failed',
+              runId: 'run-ambiguous',
+              failure: { message: 'operator confirmed failure' },
+            },
+          ] as never,
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-17T01:00:00.000Z') },
+      { ids: { next: () => 'command-00000000000000000000000001' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
+      kind: 'blocked',
+      reason: 'operator confirmed failure',
+    });
+    expect(resolved).toEqual([
+      [
+        workflow.workflowInstanceId,
+        {
+          activationId: workflow.pendingActivation!.activationId,
+          runId: 'run-ambiguous',
+          reason: 'operator confirmed failure',
+        },
+        expect.anything(),
+      ],
+    ]);
+    expect(attempted).toBe(false);
   });
 
   it('does not start an activation rejected by the dispatch-boundary watch check', async () => {
