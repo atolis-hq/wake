@@ -18,18 +18,21 @@ export interface GitHubSourceClient extends GitHubPullRequestSourceClient {
     issueNumber: number,
     pageSize: number,
     since?: string,
+    maxResults?: number,
   ): Promise<readonly GitHubIssueCommentPayload[]>;
   listReviews(
     owner: string,
     repo: string,
     pullNumber: number,
     pageSize: number,
+    maxResults?: number,
   ): Promise<readonly GitHubReviewPayload[]>;
   listReviewComments?(
     owner: string,
     repo: string,
     pullNumber: number,
     pageSize: number,
+    maxResults?: number,
   ): Promise<readonly GitHubIssueCommentPayload[]>;
   collaboratorPermission?(owner: string, repo: string, login: string): Promise<ProviderPermission>;
 }

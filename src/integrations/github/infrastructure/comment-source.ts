@@ -21,6 +21,7 @@ export async function reviewCommentEventsFor(
           context.repo,
           pullRequest.number,
           context.config.polling.commentPageSize,
+          context.config.polling.maxPerRepo,
         );
         return {
           succeeded: true,
@@ -56,6 +57,7 @@ export async function reviewEventsFor(
           context.repo,
           pullRequest.number,
           context.config.polling.commentPageSize,
+          context.config.polling.maxPerRepo,
         );
         return {
           succeeded: true,
@@ -91,6 +93,7 @@ export async function issueCommentEventsFor(
           issue.number,
           context.config.polling.commentPageSize,
           since,
+          context.config.polling.maxPerRepo,
         );
         return {
           succeeded: true,

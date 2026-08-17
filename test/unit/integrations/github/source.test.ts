@@ -27,6 +27,60 @@ it('defaults the provider-wide request concurrency limit to four', () => {
   expect(config.polling.maxConcurrent).toBe(4);
 });
 
+it('bounds every nested GitHub read to the repository poll limit while retaining latest evidence', async () => {
+  const nestedLimits: Array<number | undefined> = [];
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+      polling: { maxPerRepo: 2, commentPageSize: 2 },
+    }),
+    {
+      ...fakeClient({
+        issues: [{ ...issue(6, 'A PR'), pull_request: {} }],
+        issueComments: { 6: [comment(10, 'latest issue feedback')] },
+        reviews: { 6: [review(11, 'APPROVED', 'latest review feedback')] },
+        reviewComments: { 6: [comment(12, 'latest inline feedback')] },
+      }),
+      async listIssueComments(_owner, _repo, issueNumber, _pageSize, _since, maxResults) {
+        nestedLimits.push(maxResults);
+        return [comment(issueNumber * 100, 'latest issue feedback')];
+      },
+      async listReviews(_owner, _repo, pullNumber, _pageSize, maxResults) {
+        nestedLimits.push(maxResults);
+        return [review(pullNumber * 100, 'APPROVED', 'latest review feedback')];
+      },
+      async listReviewComments(_owner, _repo, pullNumber, _pageSize, maxResults) {
+        nestedLimits.push(maxResults);
+        return [comment(pullNumber * 100, 'latest inline feedback')];
+      },
+      async listCheckRunsForRef(_owner, _repo, _ref, maxResults) {
+        nestedLimits.push(maxResults);
+        return [];
+      },
+      async getCombinedStatusForRef(_owner, _repo, _ref, maxResults) {
+        nestedLimits.push(maxResults);
+        return [];
+      },
+      async listPullRequestFiles(_owner, _repo, _pullNumber, maxResults) {
+        nestedLimits.push(maxResults);
+        return [];
+      },
+    },
+  );
+
+  const drafts = await source.poll(new AbortController().signal);
+
+  expect(nestedLimits).toEqual([2, 2, 2, 2, 2, 2]);
+  expect(drafts).toContainEqual(
+    expect.objectContaining({
+      eventType: GitHubEventType.CommentObserved,
+      payload: expect.objectContaining({ body: 'latest review feedback' }),
+    }),
+  );
+});
+
 it('sends source polling and enrichment calls through the provider request coordinator', async () => {
   let requests = 0;
   const source = createGitHubSource(

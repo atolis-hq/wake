@@ -123,6 +123,35 @@ it('lists every page of changed file paths for a pull request', async () => {
   });
 });
 
+it('requests no more than the nested result limit in one GitHub evidence page', async () => {
+  octokit.getCombinedStatusForRef.mockResolvedValue({ data: { total_count: 0, statuses: [] } });
+  const client = createGitHubClient('token');
+
+  await client.listPullRequestFiles('owner', 'repo', 7, 2);
+  await client.listCheckRunsForRef('owner', 'repo', 'head-a', 2);
+  await client.getCombinedStatusForRef('owner', 'repo', 'head-a', 2);
+
+  expect(octokit.paginateIterator).toHaveBeenCalledWith(octokit.listPullRequestFiles, {
+    owner: 'owner',
+    repo: 'repo',
+    pull_number: 7,
+    per_page: 2,
+  });
+  expect(octokit.paginateIterator).toHaveBeenCalledWith(octokit.listCheckRunsForRef, {
+    owner: 'owner',
+    repo: 'repo',
+    ref: 'head-a',
+    per_page: 2,
+  });
+  expect(octokit.getCombinedStatusForRef).toHaveBeenCalledWith({
+    owner: 'owner',
+    repo: 'repo',
+    ref: 'head-a',
+    per_page: 2,
+    page: 1,
+  });
+});
+
 it('conditionally polls check runs for an unchanged head revision', async () => {
   let attempts = 0;
   const requests: unknown[] = [];
@@ -210,13 +239,13 @@ it.each([
       owner: 'owner',
       repo: 'repo',
       ref: 'head-a',
-      per_page: 100,
+      per_page: 10,
     });
     expect(octokit.getCombinedStatusForRef).toHaveBeenCalledWith({
       owner: 'owner',
       repo: 'repo',
       ref: 'head-a',
-      per_page: 100,
+      per_page: 10,
       page: 1,
     });
     expect(event?.payload).toMatchObject({

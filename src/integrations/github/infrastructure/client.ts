@@ -47,24 +47,8 @@ export function createGitHubClient(token: string) {
   });
   const cache = createEtagCache();
   return {
+    ...createGitHubReadClient(octokit, cache),
     authenticatedLogin: async () => (await octokit.rest.users.getAuthenticated()).data.login,
-    listIssues: (owner: string, repo: string, maxResults: number, since?: string) =>
-      listIssues(octokit, cache, owner, repo, maxResults, since),
-    listPullRequests: (owner: string, repo: string, maxResults: number) =>
-      listPullRequests(octokit, cache, owner, repo, maxResults),
-    listIssueComments: (
-      owner: string,
-      repo: string,
-      issueNumber: number,
-      pageSize: number,
-      since?: string,
-    ) =>
-      listIssueComments(octokit, cache, owner, repo, issueNumber, {
-        pageSize,
-        ...(since === undefined ? {} : { since }),
-      }),
-    listReviewComments: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
-      listReviewComments(octokit, cache, owner, repo, pullNumber, pageSize),
     collaboratorPermission: async (owner: string, repo: string, login: string) => {
       const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
         owner,
@@ -73,8 +57,6 @@ export function createGitHubClient(token: string) {
       });
       return providerPermission(data.permission);
     },
-    getIssueLabels: (owner: string, repo: string, issueNumber: number) =>
-      getIssueLabels(octokit, cache, owner, repo, issueNumber),
     getIssueLabelsFresh: async (owner: string, repo: string, issueNumber: number) => {
       const response = await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber });
       return response.data.labels.flatMap((label) =>
@@ -99,19 +81,63 @@ export function createGitHubClient(token: string) {
         labels: [...labels],
       });
     },
+    deliver: (command: GitHubDeliveryCommand) => deliver(octokit, command),
+  };
+}
+
+function createGitHubReadClient(octokit: Octokit, cache: ReturnType<typeof createEtagCache>) {
+  return {
+    listIssues: (owner: string, repo: string, maxResults: number, since?: string) =>
+      listIssues(octokit, cache, owner, repo, maxResults, since),
+    listPullRequests: (owner: string, repo: string, maxResults: number) =>
+      listPullRequests(octokit, cache, owner, repo, maxResults),
+    listIssueComments: (
+      owner: string,
+      repo: string,
+      issueNumber: number,
+      pageSize: number,
+      since?: string,
+      maxResults?: number,
+    ) =>
+      listIssueComments(octokit, cache, owner, repo, issueNumber, {
+        pageSize,
+        ...(since === undefined ? {} : { since }),
+        ...(maxResults === undefined ? {} : { maxResults }),
+      }),
+    listReviewComments: (
+      owner: string,
+      repo: string,
+      pullNumber: number,
+      pageSize: number,
+      maxResults?: number,
+    ) =>
+      listReviewComments(octokit, cache, owner, repo, pullNumber, {
+        pageSize,
+        ...(maxResults === undefined ? {} : { maxResults }),
+      }),
+    getIssueLabels: (owner: string, repo: string, issueNumber: number) =>
+      getIssueLabels(octokit, cache, owner, repo, issueNumber),
     getPullRequest: (owner: string, repo: string, pullNumber: number) =>
       getPullRequest(octokit, cache, owner, repo, pullNumber),
-    listReviews: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
-      listReviews(octokit, cache, owner, repo, pullNumber, pageSize),
-    listCheckRunsForRef: (owner: string, repo: string, ref: string) =>
-      listCheckRunsForRef(octokit, cache, owner, repo, ref),
-    listPullRequestFiles: (owner: string, repo: string, pullNumber: number) =>
-      listPullRequestFiles(octokit, cache, owner, repo, pullNumber),
-    getCombinedStatusForRef: (owner: string, repo: string, ref: string) =>
-      getCombinedStatusForRef(octokit, cache, owner, repo, ref),
+    listReviews: (
+      owner: string,
+      repo: string,
+      pullNumber: number,
+      pageSize: number,
+      maxResults?: number,
+    ) =>
+      listReviews(octokit, cache, owner, repo, pullNumber, {
+        pageSize,
+        ...(maxResults === undefined ? {} : { maxResults }),
+      }),
+    listCheckRunsForRef: (owner: string, repo: string, ref: string, maxResults?: number) =>
+      listCheckRunsForRef(octokit, cache, owner, repo, ref, maxResults),
+    listPullRequestFiles: (owner: string, repo: string, pullNumber: number, maxResults?: number) =>
+      listPullRequestFiles(octokit, cache, owner, repo, pullNumber, maxResults),
+    getCombinedStatusForRef: (owner: string, repo: string, ref: string, maxResults?: number) =>
+      getCombinedStatusForRef(octokit, cache, owner, repo, ref, maxResults),
     branch: (owner: string, repo: string, name: string) =>
       branch(octokit, cache, owner, repo, name),
-    deliver: (command: GitHubDeliveryCommand) => deliver(octokit, command),
   };
 }
 
