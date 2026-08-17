@@ -67,19 +67,14 @@ caller.
 
 ## Dependencies and system role
 
-- Advancement (would-be dependent) — designed to be the caller of
-  `DispatchPolicy.select` in place of Advancement's current unordered
-  first-pending-candidate selection.
+- Advancement (dependent) — calls `DispatchPolicy.select` to choose a
+  fairness-ordered candidate, subject to its per-call `maxDispatches` cap.
 - Control Plane view / Runner Pause and Resume (would-be dependents) —
   designed so a `QuotaPolicy.decide` result of `pause`/`resume` would drive
   appending `control-plane.dispatch-paused` / `control-plane.dispatch-resumed`.
 
 ## Decisions, exclusions, and deferred capability
 
-- Neither `DispatchPolicy` nor `QuotaPolicy` is invoked by any composed
-  caller today: Advancement's selection does not call `DispatchPolicy`, and
-  no composed process calls `QuotaPolicy` or appends
-  `control-plane.dispatch-paused`/`control-plane.dispatch-resumed`.
-  `controlPlane.maxDispatches` is validated configuration with no consumer
-  today. Wiring either into Advancement is a deferred capability, not a
-  rejected one.
+- `DispatchPolicy` is composed into Advancement. `QuotaPolicy` remains
+  uncomposed: no process calls it or appends quota-driven
+  `control-plane.dispatch-paused`/`control-plane.dispatch-resumed` facts.

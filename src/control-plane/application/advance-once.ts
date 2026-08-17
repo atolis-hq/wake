@@ -1,98 +1,23 @@
 /* eslint-disable complexity, max-lines-per-function */
-import type { RunView, WorkspaceRecovery } from '../../execution/index.js';
+import type { RunView } from '../../execution/index.js';
 import { ActivationClaimConflictError, RunStatus, WorkspaceMode } from '../../execution/index.js';
-import {
-  correlationId,
-  EventActorKind,
-  type Clock,
-  type CommandContext,
-  type IdGenerator,
-} from '../../kernel/index.js';
-import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
+import { correlationId, EventActorKind, type Clock } from '../../kernel/index.js';
 import { isAmbiguityResolutionBlock, WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import { WorkStatus } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import { DispatchPolicy } from '../domain/dispatch-policy.js';
+import type {
+  AdvanceOnceDependencies,
+  ExecutionPort,
+  OrchestrationPort,
+} from './advance-once-ports.js';
 import {
   findUnresolvedSucceededTerminal,
   findUnresolvedTerminal,
   isExecutionFailureTerminal,
 } from './execution-reconciliation.js';
-
-interface OrchestrationPort {
-  reconcileChildCompletions(context: CommandContext): Promise<void>;
-  listPendingActivations(workItemId?: string): Promise<
-    readonly {
-      workflow: WorkflowInstanceView;
-      activation: ActivityActivationView;
-    }[]
-  >;
-  listWaiting(): Promise<readonly (WorkflowInstanceView | null)[]>;
-  listAll?(): Promise<readonly WorkflowInstanceView[]>;
-  validateActivationDispatch?(
-    workflowInstanceId: string,
-    context: CommandContext,
-  ): Promise<boolean>;
-  acceptOutcome(
-    command: {
-      workflowInstanceId: string;
-      activationId: string;
-      outcome: NonNullable<RunView['outcome']>;
-    },
-    context: CommandContext,
-  ): Promise<WorkflowInstanceView>;
-  resolveExecutionFailure?(
-    workflowInstanceId: string,
-    input: { readonly activationId: string; readonly runId: string; readonly reason: string },
-    context: CommandContext,
-  ): Promise<WorkflowInstanceView | null>;
-  markActivationStarted(
-    workflowInstanceId: string,
-    activationId: string,
-    context: CommandContext,
-  ): Promise<WorkflowInstanceView | null>;
-}
-
-interface ExecutionPort {
-  recoverActive?(owner: string): Promise<readonly RunView[]>;
-  attempt(
-    activation: ActivityActivationView,
-    context: {
-      workItemId: WorkflowInstanceView['workItemId'];
-      workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
-      orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
-      resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];
-      ineligibleRunners?: ReadonlySet<string>;
-      sessionPolicy?: 'fresh' | 'resume-stage';
-      awaitImmediateCompletion?: boolean;
-    },
-  ): Promise<RunView>;
-  list(activationId?: ActivityActivationView['activationId']): Promise<readonly RunView[]>;
-}
-
-interface AdvanceOnceDependencies {
-  readonly ids: IdGenerator;
-  readonly work?: {
-    get(workItemId: string): Promise<{
-      readonly state: WorkStatus;
-      readonly frozen?: boolean;
-      readonly deleted?: boolean;
-    } | null>;
-  };
-  readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
-  readonly isDispatchPaused?: () => Promise<boolean>;
-  /** Crash-only workspace cleanup, deliberately run by the existing recovery pass. */
-  readonly workspaceRecovery?: WorkspaceRecovery;
-  readonly transcriptRetention?: {
-    markClosedWorkItem(workItemId: string): Promise<boolean>;
-    sweep(): Promise<void>;
-  };
-  /** Durable closed WorkItem projection keys eligible for transcript retention. */
-  readonly closedWorkItemIds?: () => Promise<readonly string[]>;
-  readonly dispatchPolicy?: DispatchPolicy;
-}
 
 export function createAdvanceOnce(
   orchestration: OrchestrationPort,
@@ -106,13 +31,14 @@ export function createAdvanceOnce(
   const workspaceRecovery = dependencies.workspaceRecovery;
   const transcriptRetention = dependencies.transcriptRetention;
   const dispatchPolicy = dependencies.dispatchPolicy ?? new DispatchPolicy({ maxDispatches: 1 });
+  const maxConcurrentRuns = dependencies.maxConcurrentRuns ?? 1;
   const context = (cause: string) => ({
     commandId: dependencies.ids.next('command'),
     correlationId: correlationId(cause),
     occurredAt: clock.now().toISOString(),
     actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
   });
-  return async (options: AdvanceOptions): Promise<AdvanceResult> => {
+  const advance = async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
     if (await isDispatchPaused()) return { kind: 'paused' };
     if (workspaceRecovery !== undefined) {
@@ -212,6 +138,8 @@ export function createAdvanceOnce(
       };
     }
     const allRuns = await execution.list();
+    if (allRuns.filter((run) => run.status === RunStatus.Started).length >= maxConcurrentRuns)
+      return { kind: 'no-work' };
     const selectedCandidate = dispatchPolicy.select(
       await Promise.all(
         pending.map(async (item, requestedPosition) => ({
@@ -305,5 +233,16 @@ export function createAdvanceOnce(
           workflowInstanceId: selected.workflow.workflowInstanceId,
           reason: run.failure?.message ?? 'execution failed',
         };
+  };
+  // Tick, resident, and API callers share this advancement instance. Serialize the
+  // capacity check through Run creation so concurrent callers cannot over-dispatch.
+  let prior: Promise<void> = Promise.resolve();
+  return async (options: AdvanceOptions): Promise<AdvanceResult> => {
+    const current = prior.then(() => advance(options));
+    prior = current.then(
+      () => undefined,
+      () => undefined,
+    );
+    return current;
   };
 }

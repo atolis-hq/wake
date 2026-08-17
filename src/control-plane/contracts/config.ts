@@ -7,6 +7,7 @@ export interface ScheduleConfig {
 
 export interface ControlPlaneConfig {
   readonly maxDispatches: number;
+  readonly maxConcurrentRuns: number;
   readonly schedules: readonly ScheduleConfig[];
   readonly resident?: { readonly idleBackoffMs: number; readonly maxIdleBackoffMs?: number };
 }
@@ -25,6 +26,7 @@ const scheduleSchema = z
 export const controlPlaneConfigSchema = z
   .object({
     maxDispatches: z.number().int().positive().default(1),
+    maxConcurrentRuns: z.number().int().positive().default(1),
     schedules: z.array(scheduleSchema).default([]),
     resident: z
       .object({

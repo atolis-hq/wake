@@ -82,10 +82,11 @@ own aggregate remains the source of that state.
   retry remains the recovery path. The exception is a blocked workflow whose
   Run later succeeds with an unaccepted outcome after external operator
   resolution: that succeeded outcome is reconciled and accepted.
-- When no reconciliation candidate exists, Advancement selects the first
-  pending activation in Orchestration's returned order — an unordered,
-  first-encountered choice. Advancement does not consult Dispatch Policy's
-  fairness ordering.
+- When no reconciliation candidate exists, Advancement applies Dispatch
+  Policy's fairness-ordered selection. Before selection it counts all
+  `started` Runs; when that count reaches `maxConcurrentRuns`, it returns
+  `no-work` without dispatching. Calls to one created Advancement function
+  are serialized through this check and Run creation.
 - When there is no pending activation at all, Advancement checks
   Orchestration's waiting workflows: it reports the first waiting instance
   found (`kind: Waiting`) or `no-work` if none are waiting.
@@ -179,9 +180,9 @@ own aggregate remains the source of that state.
 
 ## Decisions, exclusions, and deferred capability
 
-- Selection is unordered first-pending-candidate; Dispatch Policy's
-  fairness-ordered `select` exists as pure logic but is not called from
-  here.
+- Dispatch Policy's fairness-ordered `select` is composed here. The global
+  `maxConcurrentRuns` gate is intentionally limited to a single system-wide
+  ceiling; runner, repository, and WorkItem dimensions remain deferred.
 - Advancement does consult the injected `isDispatchPaused` supplier (default:
   always `false`) and returns `{ kind: 'paused' }` immediately when it
   resolves `true`, before recovery or reconciliation; in production this

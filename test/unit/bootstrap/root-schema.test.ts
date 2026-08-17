@@ -31,6 +31,19 @@ describe('transcript capture configuration', () => {
   });
 });
 
+describe('control-plane concurrency configuration', () => {
+  it('defaults to one concurrent Run and requires a positive integer', () => {
+    expect(parseRootConfig(baseConfig).controlPlane.maxConcurrentRuns).toBe(1);
+    expect(
+      parseRootConfig({ ...baseConfig, controlPlane: { maxConcurrentRuns: 2 } }).controlPlane
+        .maxConcurrentRuns,
+    ).toBe(2);
+    expect(() =>
+      parseRootConfig({ ...baseConfig, controlPlane: { maxConcurrentRuns: 0 } }),
+    ).toThrow(/maxConcurrentRuns/);
+  });
+});
+
 describe('execution session-resume configuration', () => {
   it('defaults and validates the resumable-session token budget', () => {
     expect(parseRootConfig(baseConfig).execution.maxResumableSessionTokens).toBe(200_000);
