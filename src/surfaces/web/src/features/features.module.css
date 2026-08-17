@@ -1,3 +1,42 @@
+.boardControls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+}
+.boardControls label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.boardControls select {
+  min-height: 2.1rem;
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  padding-inline: 0.5rem;
+  font: inherit;
+}
+.boardControls select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(45 212 191 / 0.15);
+}
+.swimlanes {
+  display: grid;
+  gap: 1rem;
+}
+.swimlaneHeader {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  margin: 0 0 0.4rem;
+}
 .board {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

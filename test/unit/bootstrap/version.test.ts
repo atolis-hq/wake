@@ -19,6 +19,8 @@ describe('target Wake version resolution', () => {
           if (arguments_.includes('rev-parse')) return 'abc1234';
           return '';
         },
+        readTextFile: () => undefined,
+        listTextFiles: () => [],
       }),
     ).toBe('v1.2.0+gabc1234');
   });
@@ -27,6 +29,8 @@ describe('target Wake version resolution', () => {
     expect(
       resolveWakeVersion({
         gitOutput: (arguments_) => (arguments_.includes('rev-parse') ? 'abc1234' : ''),
+        readTextFile: () => undefined,
+        listTextFiles: () => [],
       }),
     ).toBe('gabc1234');
   });

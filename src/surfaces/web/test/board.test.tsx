@@ -340,4 +340,134 @@ describe('board', () => {
     expect(screen.queryByRole('link', { name: 'Gamma' })).toBeNull();
     window.localStorage.clear();
   });
+
+  it('shows no swimlane headers by default', async () => {
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Ready (2)' });
+    expect(screen.queryByText(/delivery \(\d/)).toBeNull();
+  });
+
+  it('groups cards into alphabetically ordered swimlanes by workflow', async () => {
+    const user = userEvent.setup();
+    const client = new WakeApiClient(async (input) => {
+      const url = String(input);
+      const body = url.includes('/board')
+        ? {
+            items: [
+              {
+                workItemKey: 'wk_zebra',
+                workItemId: 'work-zebra',
+                objective: 'Zebra work',
+                condition: 'ready',
+                workflowName: 'zebra-flow',
+                dwellSince: asOf,
+                runCount: 1,
+                totalTokens: 0,
+                totalCostUsd: 0,
+                totalDurationMs: 0,
+              },
+              {
+                workItemKey: 'wk_apple',
+                workItemId: 'work-apple',
+                objective: 'Apple work',
+                condition: 'ready',
+                workflowName: 'apple-flow',
+                dwellSince: asOf,
+                runCount: 1,
+                totalTokens: 0,
+                totalCostUsd: 0,
+                totalDurationMs: 0,
+              },
+            ],
+            conditionCounts: { ready: 2 },
+            page: { nextCursor: null, hasMore: false },
+            meta: { asOf },
+          }
+        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('listitem', { name: 'Zebra work' });
+    await user.selectOptions(screen.getByLabelText('Group by'), 'workflowName');
+
+    const laneHeadings = screen
+      .getAllByRole('heading', { level: 2 })
+      .map((node) => node.textContent)
+      .filter((text) => text === 'apple-flow (1)' || text === 'zebra-flow (1)');
+    expect(laneHeadings).toEqual(['apple-flow (1)', 'zebra-flow (1)']);
+  });
+
+  it('buckets items missing a workflow or stage under a fallback swimlane', async () => {
+    const user = userEvent.setup();
+    const client = new WakeApiClient(async (input) => {
+      const url = String(input);
+      const body = url.includes('/board')
+        ? {
+            items: [
+              {
+                workItemKey: 'wk_unset',
+                workItemId: 'work-unset',
+                objective: 'Unassigned work',
+                condition: 'ready',
+                dwellSince: asOf,
+                runCount: 1,
+                totalTokens: 0,
+                totalCostUsd: 0,
+                totalDurationMs: 0,
+              },
+            ],
+            conditionCounts: { ready: 1 },
+            page: { nextCursor: null, hasMore: false },
+            meta: { asOf },
+          }
+        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('listitem', { name: 'Unassigned work' });
+    await user.selectOptions(screen.getByLabelText('Group by'), 'stage');
+
+    expect(await screen.findByRole('heading', { name: 'No stage (1)' })).toBeTruthy();
+  });
+
+  it('persists the selected grouping and restores it on the next render', async () => {
+    const user = userEvent.setup();
+    window.localStorage.clear();
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('listitem', { name: 'Alpha' });
+    await user.selectOptions(screen.getByLabelText('Group by'), 'stage');
+    expect(window.localStorage.getItem('wake:board:group-by')).toBe('stage');
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+    const select = await screen.findByLabelText<HTMLSelectElement>('Group by');
+    expect(select.value).toBe('stage');
+    window.localStorage.clear();
+  });
 });
