@@ -100,12 +100,16 @@ export class RecoveryService {
         return loaded.view;
       throw new Error(`Run ${id} is not escalated`);
     }
+    const outcome =
+      resolution.kind === RunStatus.Succeeded
+        ? this.activities.validateOutcome(loaded.view.activity, resolution.outcome)
+        : undefined;
     const draft =
       resolution.kind === RunStatus.Succeeded
         ? createRunExecutionEventDraft({
             ...resolutionMetadata(currentRunId, loaded.view, context),
             eventType: ExecutionEventType.RunSucceeded,
-            payload: { outcome: resolution.outcome, finishedAt: context.occurredAt },
+            payload: { outcome: outcome!, finishedAt: context.occurredAt },
           })
         : createRunExecutionEventDraft({
             ...resolutionMetadata(currentRunId, loaded.view, context),
