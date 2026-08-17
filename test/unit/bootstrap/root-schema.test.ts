@@ -44,24 +44,6 @@ describe('control-plane concurrency configuration', () => {
   });
 });
 
-describe('execution session-resume configuration', () => {
-  it('defaults and validates the resumable-session token budget', () => {
-    expect(parseRootConfig(baseConfig).execution.maxResumableSessionTokens).toBe(200_000);
-    expect(
-      parseRootConfig({
-        ...baseConfig,
-        execution: { ...baseConfig.execution, maxResumableSessionTokens: 50_000 },
-      }).execution.maxResumableSessionTokens,
-    ).toBe(50_000);
-    expect(() =>
-      parseRootConfig({
-        ...baseConfig,
-        execution: { ...baseConfig.execution, maxResumableSessionTokens: 0 },
-      }),
-    ).toThrow(/maxResumableSessionTokens/);
-  });
-});
-
 describe('web surface configuration', () => {
   it('accepts an optional HTTPS public URL for GitHub message links', () => {
     expect(

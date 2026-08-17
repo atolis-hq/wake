@@ -37,7 +37,6 @@ export const executionConfigSchema = z
     leaseDurationMs: z.number().int().positive().optional(),
     leaseRenewalIntervalMs: z.number().int().positive().optional(),
     maxAmbiguityReconciliationAttempts: z.number().int().positive().optional(),
-    maxResumableSessionTokens: z.number().int().positive().default(200_000),
   })
   .strict();
 
@@ -60,6 +59,4 @@ export interface ExecutionConfig {
   readonly leaseDurationMs?: number;
   readonly leaseRenewalIntervalMs?: number;
   readonly maxAmbiguityReconciliationAttempts?: number;
-  /** Maximum complete cumulative input and output tokens eligible for session resume. */
-  readonly maxResumableSessionTokens?: number;
 }

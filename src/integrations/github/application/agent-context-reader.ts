@@ -28,12 +28,13 @@ export function createGitHubAgentContextReader(
   const commentHistory = createCommentHistoryReader(journal, resources, options);
   return {
     async forWorkItem(workItemId, options) {
-      const comments = boundedAgentContextComments(
+      const { comments, omittedComments } = boundedAgentContextComments(
         await commentHistory.forWorkItem(workItemId as WorkItemId, options),
       );
       return {
         ...(await currentWorkItemContent(journal, resources, workItemId as WorkItemId)),
         comments,
+        ...(omittedComments > 0 ? { omittedComments } : {}),
         ...pullRequestContextField(
           await currentPullRequestContext(journal, resources, workItemId as WorkItemId),
         ),
@@ -42,73 +43,30 @@ export function createGitHubAgentContextReader(
   };
 }
 
-const maximumAgentContextComments = 12;
 const maximumAgentContextCommentCharacters = 8_000;
-const maximumAgentContextCharacters = 48_000;
+const maximumAgentContextCharacters = 200_000;
 const truncationNotice = '\n[Wake truncated this historical comment for context bounds.]';
 
-function boundedAgentContextComments(
-  comments: readonly AgentContextComment[],
-): readonly AgentContextComment[] {
-  const indexed = comments.map((comment, index) => ({ comment, index }));
-  const latestWakeReviewerFeedback = [...indexed]
-    .reverse()
-    .find(({ comment }) => isWakeReviewerFeedback(comment));
-  const latestWakeAgentArtifact = [...indexed]
-    .reverse()
-    .find(({ comment }) => isWakeAgentArtifact(comment));
-  const protectedWakeArtifacts = [latestWakeReviewerFeedback, latestWakeAgentArtifact].flatMap(
-    (candidate, index, values) =>
-      candidate === undefined || values.slice(0, index).some((value) => value === candidate)
-        ? []
-        : [candidate],
-  );
-  const retained: { readonly comment: AgentContextComment; readonly index: number }[] = [];
+function boundedAgentContextComments(comments: readonly AgentContextComment[]): {
+  readonly comments: readonly AgentContextComment[];
+  readonly omittedComments: number;
+} {
+  const retainedNewestFirst: AgentContextComment[] = [];
   let characters = 0;
-  for (const artifact of protectedWakeArtifacts) {
-    const remaining = maximumAgentContextCharacters - characters;
-    if (remaining <= 0) break;
-    const body = truncateComment(
-      artifact.comment.body,
-      Math.min(maximumAgentContextCommentCharacters, remaining),
-    );
-    retained.push({ ...artifact, comment: { ...artifact.comment, body } });
-    characters += body.length;
-  }
-  for (const candidate of [...indexed].reverse()) {
-    const { comment } = candidate;
-    if (
-      (isWakeDelivery(comment.body) && !protectedWakeArtifacts.includes(candidate)) ||
-      protectedWakeArtifacts.includes(candidate) ||
-      retained.length === maximumAgentContextComments
-    )
-      continue;
+  for (const comment of [...comments].reverse()) {
     const remaining = maximumAgentContextCharacters - characters;
     if (remaining <= 0) break;
     const body = truncateComment(
       comment.body,
       Math.min(maximumAgentContextCommentCharacters, remaining),
     );
-    retained.push({ ...candidate, comment: { ...comment, body } });
+    retainedNewestFirst.push({ ...comment, body });
     characters += body.length;
   }
-  return retained.sort((left, right) => left.index - right.index).map(({ comment }) => comment);
-}
-
-function isWakeDelivery(body: string): boolean {
-  return /<!--\s*wake:delivery:[^\s>]+\s*-->/.test(body);
-}
-
-function isWakeReviewerFeedback(comment: AgentContextComment): boolean {
-  return (
-    comment.body.includes('<!-- wake:agent -->') &&
-    (comment.body.includes('**Outcome:** 🔴 Changes Requested') ||
-      /"watchGateVerdict"[\s\S]*"outcome"\s*:\s*"REJECTED"/.test(comment.body))
-  );
-}
-
-function isWakeAgentArtifact(comment: AgentContextComment): boolean {
-  return comment.body.includes('<!-- wake:agent -->') && isWakeDelivery(comment.body);
+  return {
+    comments: retainedNewestFirst.reverse(),
+    omittedComments: comments.length - retainedNewestFirst.length,
+  };
 }
 
 function truncateComment(body: string, maximumCharacters: number): string {

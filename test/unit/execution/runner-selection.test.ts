@@ -126,10 +126,7 @@ describe('Execution runner selection', () => {
   it('forwards the newest same-adapter durable session from this activation', async () => {
     const standard = capturingRunner('standard');
     const journal = new InMemoryEventJournal(new FakeClock());
-    await seedPriorRun(journal, activation(), 'prior-standard', 'fake', 'session-1', {
-      inputTokens: 10,
-      outputTokens: 20,
-    });
+    await seedPriorRun(journal, activation(), 'prior-standard', 'fake', 'session-1');
     const service = fixtureWithJournal(
       journal,
       new RunnerRegistry({ standard: ['standard'] }, { standard }),
@@ -279,10 +276,7 @@ describe('Execution runner selection', () => {
       activationId: activationId('agent:implement:2'),
       ordinal: 2,
     };
-    await seedPriorRun(journal, first, 'first-implement', 'fake', 'session-first', {
-      inputTokens: 10,
-      outputTokens: 20,
-    });
+    await seedPriorRun(journal, first, 'first-implement', 'fake', 'session-first');
     const service = fixtureWithJournal(
       journal,
       new RunnerRegistry({ standard: ['standard'] }, { standard }),
@@ -295,75 +289,6 @@ describe('Execution runner selection', () => {
 
     expect(standard.requests).toEqual([
       expect.objectContaining({ resumeSessionId: 'session-first' }),
-    ]);
-  });
-
-  it('starts fresh when same-session cumulative usage exceeds the resume budget', async () => {
-    const standard = capturingRunner('standard');
-    const journal = new InMemoryEventJournal(new FakeClock());
-    const first = {
-      ...activation(),
-      activationId: activationId('agent:implement:1'),
-      stage: 'implement',
-    };
-    const returnedToStage = {
-      ...first,
-      activationId: activationId('agent:implement:3'),
-      ordinal: 3,
-    };
-    await seedPriorRun(journal, first, 'first-implement', 'fake', 'session-first', {
-      inputTokens: 150_000,
-      outputTokens: 1_000,
-    });
-    await seedPriorRun(
-      journal,
-      { ...first, activationId: activationId('agent:implement:2'), ordinal: 2 },
-      'second-implement',
-      'fake',
-      'session-first',
-      { inputTokens: 150_000, outputTokens: 1_000 },
-    );
-    const service = fixtureWithJournal(
-      journal,
-      new RunnerRegistry({ standard: ['standard'] }, { standard }),
-    );
-
-    await service.attempt(returnedToStage, {
-      ...context(),
-      sessionPolicy: 'resume-stage',
-    });
-
-    expect(standard.requests).toEqual([
-      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
-    ]);
-    expect(standard.requests).toEqual([
-      expect.not.objectContaining({ usageBaseline: expect.anything() }),
-    ]);
-  });
-
-  it('starts fresh when the selected session lacks complete usage metadata', async () => {
-    const standard = capturingRunner('standard');
-    const journal = new InMemoryEventJournal(new FakeClock());
-    const first = {
-      ...activation(),
-      activationId: activationId('agent:implement:1'),
-      stage: 'implement',
-    };
-    await seedPriorRun(journal, first, 'first-implement', 'fake', 'session-first', {
-      outputTokens: 1_000,
-    });
-    const service = fixtureWithJournal(
-      journal,
-      new RunnerRegistry({ standard: ['standard'] }, { standard }),
-    );
-
-    await service.attempt(
-      { ...first, activationId: activationId('agent:implement:2'), ordinal: 2 },
-      { ...context(), sessionPolicy: 'resume-stage' },
-    );
-
-    expect(standard.requests).toEqual([
-      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
     ]);
   });
 
@@ -420,7 +345,7 @@ describe('Execution runner selection', () => {
     ).toBeUndefined();
   });
 
-  it('starts fresh when matched terminal history lacks valid required counters', async () => {
+  it('does not forward a baseline when matched terminal history lacks valid required counters', async () => {
     const standard = capturingRunner('standard');
     const journal = new InMemoryEventJournal(new FakeClock());
     await seedPriorRun(journal, activation(), 'complete-history', 'fake', 'session-1', {
@@ -437,9 +362,10 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(standard.requests).toEqual([
-      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
-    ]);
+    expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
+    expect(standard.requests[0]).not.toEqual(
+      expect.objectContaining({ usageBaseline: expect.anything() }),
+    );
   });
 
   it('omits incomplete cache baselines but rejects malformed cache history', () => {

@@ -6,15 +6,23 @@ import { GitHubEventType } from '../../../../src/integrations/github/contracts/e
 import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
 import { issueCommentObservation } from '../../../../src/integrations/github/infrastructure/issue-source.js';
 import {
+  DeliveryEventType,
+  DeliveryIntentEventType,
+  deliveryStream,
+} from '../../../../src/integrations/index.js';
+import {
   correlationId,
   createEventDraft,
   EventActorKind,
+  eventId,
   EventSourceKind,
 } from '../../../../src/kernel/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,
   resourceKind,
+  resourceStream,
+  type ResourceId,
 } from '../../../../src/resources/index.js';
 import { TestWorld } from '../../../e2e/support/world.js';
 
@@ -142,7 +150,7 @@ it('includes the latest correlated pull request check evidence without reading c
   });
 });
 
-it('keeps only a bounded recent human comment delta and excludes Wake deliveries', async () => {
+it('includes every eligible comment, human and Wake alike, within the character budget', async () => {
   const world = new TestWorld();
   const work = await world.createWork({ objective: 'keep current reviewer feedback' });
   const issue = await world.discoverResource({
@@ -170,33 +178,209 @@ it('keeps only a bounded recent human comment delta and excludes Wake deliveries
     '<!-- wake:delivery:review-verdict -->',
     '**Outcome:** 🔴 Changes Requested',
     'The current plan must retain the latest delivery cursor.',
-    'x'.repeat(9_000),
   ].join('\n\n');
   await appendIssueComment(world, 16, reviewFeedback);
-  for (let index = 17; index <= 28; index += 1)
-    await appendIssueComment(world, index, `newer human feedback ${index}`);
   const blockedHandoff = [
     '<!-- wake:agent -->',
     '<!-- wake:delivery:blocked-handoff -->',
     '**Outcome:** 🟠 Blocked',
     'The operator must provide the missing deployment credential.',
   ].join('\n\n');
-  await appendIssueComment(world, 29, blockedHandoff);
+  await appendIssueComment(world, 17, blockedHandoff);
 
   const context = await createGitHubAgentContextReader(world.journal, world.resources).forWorkItem(
     work.workItemId,
   );
 
-  expect(context.comments).toHaveLength(12);
-  expect(context.comments.slice(1, -1).map((comment) => comment.body)).toEqual(
-    Array.from({ length: 10 }, (_, index) => `newer human feedback ${index + 19}`),
-  );
-  expect(context.comments[0]?.body).toMatch(/^<!-- wake:agent -->/);
-  expect(context.comments[0]?.body).toContain('Changes Requested');
-  expect(context.comments[0]?.body).toContain('truncated this historical comment');
-  expect(context.comments[0]?.body).toHaveLength(8_000);
-  expect(context.comments.at(-1)?.body).toBe(blockedHandoff);
+  expect(context.comments).toHaveLength(17);
+  expect(context.comments.map((comment) => comment.body)).toEqual([
+    ...Array.from({ length: 14 }, (_, index) => `human feedback ${index + 1}`),
+    'Wake status update\n<!-- wake:delivery:status-update -->',
+    reviewFeedback,
+    blockedHandoff,
+  ]);
+  expect(context.omittedComments).toBeUndefined();
 });
+
+it('truncates an individual comment that exceeds the per-comment cap', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'cap one oversized comment' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000005' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#10' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-oversized-comment',
+      correlationId: correlationId('oversized-agent-context'),
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendIssueComment(world, 1, 'x'.repeat(9_000));
+
+  const context = await createGitHubAgentContextReader(world.journal, world.resources).forWorkItem(
+    work.workItemId,
+  );
+
+  expect(context.comments).toHaveLength(1);
+  expect(context.comments[0]?.body).toHaveLength(8_000);
+  expect(context.comments[0]?.body).toContain('truncated this historical comment');
+  expect(context.omittedComments).toBeUndefined();
+});
+
+it('omits the oldest comments and reports how many once the overall budget is exceeded', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'exceed the overall character budget' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000006' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#10' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-exceeded-budget',
+      correlationId: correlationId('exceeded-agent-context'),
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  const commentCount = 26;
+  for (let index = 1; index <= commentCount; index += 1)
+    await appendIssueComment(world, index, `${index}:${'x'.repeat(8_500)}`);
+
+  const context = await createGitHubAgentContextReader(world.journal, world.resources).forWorkItem(
+    work.workItemId,
+  );
+
+  expect(context.comments.length).toBeLessThan(commentCount);
+  expect(context.omittedComments).toBe(commentCount - context.comments.length);
+  expect(context.omittedComments).toBeGreaterThan(0);
+  expect(context.comments[0]?.body.startsWith(`${commentCount}:`)).toBe(false);
+  expect(context.comments.at(-1)?.body.startsWith(`${commentCount}:`)).toBe(true);
+});
+
+it("retains an earlier stage's Wake handoff after a later stage posts its own comment", async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'enable swimlanes per workflow' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000030' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#30' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-stage-handoff',
+      correlationId: correlationId('stage-handoff-context'),
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendConfirmedAgentRunComment(world, issue.resourceId, {
+    intentEventId: 'refine-plan',
+    occurredAt: '2026-08-17T07:19:00.000Z',
+    runId: 'run-refine-1',
+    stage: 'refine',
+    outcome: 'DONE',
+    displayBody: 'Implementation plan: add a grouping control to the board.',
+  });
+  await appendConfirmedAgentRunComment(world, issue.resourceId, {
+    intentEventId: 'review-failed',
+    occurredAt: '2026-08-17T07:41:00.000Z',
+    runId: 'run-review-1',
+    stage: 'review',
+    outcome: 'FAILED',
+    displayBody: 'Unable to review: no plan was provided.',
+  });
+
+  const context = await createGitHubAgentContextReader(world.journal, world.resources).forWorkItem(
+    work.workItemId,
+  );
+
+  expect(context.comments.map((comment) => comment.body).join('\n')).toContain(
+    'Implementation plan: add a grouping control to the board.',
+  );
+  expect(context.comments.map((comment) => comment.body).join('\n')).toContain(
+    'Unable to review: no plan was provided.',
+  );
+});
+
+async function appendConfirmedAgentRunComment(
+  world: TestWorld,
+  resourceId: ResourceId,
+  input: {
+    readonly intentEventId: string;
+    readonly occurredAt: string;
+    readonly runId: string;
+    readonly stage: string;
+    readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+    readonly displayBody: string;
+  },
+): Promise<void> {
+  const intent = createEventDraft({
+    eventId: input.intentEventId,
+    eventType: DeliveryIntentEventType.AgentRunPublishRequested,
+    occurredAt: input.occurredAt,
+    correlationId: `correlation:${input.intentEventId}`,
+    causationId: `causation:${input.intentEventId}`,
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    stream: resourceStream(resourceId),
+    payload: {
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      resourceId,
+      report: {
+        runId: input.runId,
+        stage: input.stage,
+        startedAt: input.occurredAt,
+        finishedAt: input.occurredAt,
+        displayBody: input.displayBody,
+        outcome: input.outcome,
+        metadata: {},
+      },
+    },
+  });
+  const stream = resourceStream(resourceId);
+  const [published] = await world.journal.append(
+    stream,
+    (await world.journal.readStream(stream)).length,
+    [intent],
+  );
+  if (published === undefined) throw new Error('Expected agent-run publication intent');
+  const confirmation = createEventDraft({
+    eventId: `${input.intentEventId}-confirmed`,
+    eventType: DeliveryEventType.Confirmed,
+    occurredAt: input.occurredAt,
+    correlationId: `correlation:${input.intentEventId}`,
+    causationId: `causation:${input.intentEventId}`,
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    stream: deliveryStream(eventId(input.intentEventId)),
+    payload: {
+      intentEventId: eventId(input.intentEventId),
+      intentGlobalPosition: published.globalPosition,
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      occurrenceOrdinal: 1,
+      externalId: `github-comment-${input.intentEventId}`,
+    },
+  });
+  await world.journal.append(confirmation.stream, 0, [confirmation]);
+}
 
 async function appendIssueComment(world: TestWorld, id: number, body: string) {
   const event = issueCommentObservation({

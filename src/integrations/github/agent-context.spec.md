@@ -28,11 +28,13 @@ component supplies read-only facts to whatever caller composed it as an
   recent `integration.github.work-observed` event matching its external
   key, folded in journal order; an object never observed reports empty
   title/body.
-- The agent-facing context retains at most 12 newest eligible comments, excluding
-  historical Wake deliveries while retaining the latest Wake reviewer rejection
-  and the latest Wake agent handoff.
-  Each retained comment is capped at 8,000 characters and all retained bodies at
-  48,000 characters, with truncation marked explicitly.
+- The agent-facing context retains every eligible comment, human and Wake alike,
+  newest-first, until the combined retained body length would exceed 200,000
+  characters; comments are not otherwise filtered by author or delivery kind.
+  Each retained comment is capped at 8,000 characters, with truncation marked
+  explicitly. When the overall budget forces omission of older comments, the
+  reader reports how many were left out; it never drops comments silently
+  without a way for the caller to know the thread may be incomplete.
   The reconciled source history includes every `integration.github.comment-observed`
   event whose external key matches the resource, in journal order, each
   entry carrying the comment/review's own author, occurrence time, and body
