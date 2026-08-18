@@ -178,20 +178,26 @@ function foldDeliveryFact(
     case DeliveryEventType.AttemptStarted:
       return { ...current, attempts: current.attempts + 1 };
     case DeliveryEventType.Confirmed:
-      return { ...current, state: DeliveryState.Confirmed };
+      return { ...current, state: DeliveryState.Confirmed, resolvedAt: delivery.occurredAt };
     case DeliveryEventType.Failed:
-      return { ...current, state: DeliveryState.Failed };
+      return { ...current, state: DeliveryState.Failed, resolvedAt: delivery.occurredAt };
     case DeliveryEventType.Ambiguous:
       return {
         ...current,
         state: DeliveryState.Ambiguous,
+        resolvedAt: delivery.occurredAt,
         reconciliationKey: delivery.payload.reconciliationKey,
       };
     case DeliveryEventType.Escalated:
       return { ...current, escalation: { reason: delivery.payload.reason } };
     case DeliveryEventType.Reconciled:
       if (delivery.payload.result === DeliveryResultKind.Confirmed)
-        return { ...current, state: DeliveryState.Confirmed, escalation: undefined };
+        return {
+          ...current,
+          state: DeliveryState.Confirmed,
+          resolvedAt: delivery.occurredAt,
+          escalation: undefined,
+        };
       return delivery.payload.result === DeliveryResultKind.Unknown
         ? { ...current, reconciliationAttempts: (current.reconciliationAttempts ?? 0) + 1 }
         : current;

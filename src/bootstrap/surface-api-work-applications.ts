@@ -32,7 +32,7 @@ import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
 import { projectionMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
-import { withWorkflowContext } from './surface-api-run-context.js';
+import { enrichRun } from './surface-api-run-context.js';
 import { readWorkTranscript, transcriptGroups } from './surface-api-transcripts.js';
 
 export function createSurfaceWorkApplications(
@@ -181,7 +181,7 @@ async function workDetail(
         .map(presentWorkflowInstance),
     },
     execution: {
-      runs: await Promise.all(runs.map((run) => withWorkflowContext(root, presentRun(run)))),
+      runs: await Promise.all(runs.map((run) => enrichRun(root, presentRun(run)))),
       transcriptGroups: await transcriptGroups(root.transcriptStore, id, runs),
     },
     activities: presentPullRequest(pullRequest?.value),

@@ -64,7 +64,7 @@ export const runColumns = [
   { label: 'Workflow', render: (run: RunResponse) => run.workflowName ?? '?' },
   { label: 'Stage', render: (run: RunResponse) => run.stage ?? '?' },
   { label: 'Runner', render: (run: RunResponse) => runnerLabel(run) },
-  { label: 'Status', render: (run: RunResponse) => run.sentinel },
+  { label: 'Status', render: (run: RunResponse) => run.resolution?.sentinel ?? run.sentinel },
   { label: 'Started', render: (run: RunResponse) => <LocalTime value={run.startedAt} /> },
   { label: 'Duration', render: (run: RunResponse) => runDuration(run) },
   { label: 'Usage', render: (run: RunResponse) => <TokenUsage usage={run} /> },

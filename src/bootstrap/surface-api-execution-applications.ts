@@ -10,7 +10,7 @@ import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/
 import type { CompositionRoot } from './composition-root.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
-import { withWorkflowContext } from './surface-api-run-context.js';
+import { enrichRun } from './surface-api-run-context.js';
 import { readWorkTranscript } from './surface-api-transcripts.js';
 
 export function createExecutionApplications(
@@ -70,7 +70,7 @@ export function createExecutionApplications(
       });
       return {
         ...page,
-        items: await Promise.all(page.items.map((item) => withWorkflowContext(root, item))),
+        items: await Promise.all(page.items.map((item) => enrichRun(root, item))),
       };
     },
     async get(runId) {
@@ -80,7 +80,7 @@ export function createExecutionApplications(
       );
       if (stored?.value.view == null) return undefined;
       return {
-        data: await withWorkflowContext(root, presentRun(stored.value.view)),
+        data: await enrichRun(root, presentRun(stored.value.view)),
         meta: await projectionMeta(root.journal, [stored], now()),
       };
     },

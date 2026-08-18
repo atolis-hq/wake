@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { ActivityEventType, MergeMethod, activationId } from '../../../src/activities/index.js';
-import { projectDeliveries } from '../../../src/integrations/delivery/application/delivery-projector.js';
+import {
+  deliveryProjection,
+  projectDeliveries,
+} from '../../../src/integrations/delivery/application/delivery-projector.js';
 import {
   DeliveryEventType,
   DeliveryIntentEventType,
@@ -133,6 +136,61 @@ describe('delivery projector', () => {
     ).toMatchObject([
       { intentEventId: intent.eventId, globalPosition: 1, state: DeliveryState.Pending },
     ]);
+  });
+
+  it.each([
+    [DeliveryEventType.Confirmed, { externalId: 'github-42' }, DeliveryState.Confirmed],
+    [DeliveryEventType.Failed, { code: 'boom', message: 'transient' }, DeliveryState.Failed],
+    [DeliveryEventType.Ambiguous, { reconciliationKey: 'reconcile-1' }, DeliveryState.Ambiguous],
+  ] as const)('records when a delivery resolves via %s', (eventType, extra, expectedState) => {
+    const intent = eventEnvelope(
+      ActivityEventType.PrMergeRequested,
+      {
+        idempotencyKey: 'merge-intent',
+        activationId: activationId('activation-1'),
+        workflowInstanceId: 'workflow-1',
+        resourceId: resId('1'),
+        revision: 'a',
+        method: MergeMethod.Merge,
+        requireChecks: true,
+        autoMerge: false,
+      },
+      resourceStream(resId('1')),
+      1,
+    );
+    const resolution = eventEnvelope(
+      eventType,
+      {
+        intentEventId: intent.eventId,
+        intentGlobalPosition: intent.globalPosition,
+        workflowInstanceId: 'workflow-1',
+        activationId: 'activation-1',
+        occurrenceOrdinal: 1,
+        ...extra,
+      },
+      deliveryStream(intent.eventId),
+      2,
+    );
+    const afterIntent = deliveryProjection.project(null, intent);
+    const view = deliveryProjection.project(afterIntent, resolution);
+    expect(view).toMatchObject({ state: expectedState, resolvedAt: resolution.occurredAt });
+  });
+
+  it('stays unresolved while a delivery is still pending', () => {
+    const intent = eventEnvelope(
+      ActivityEventType.IssueCompleteRequested,
+      {
+        idempotencyKey: 'complete-intent',
+        activationId: activationId('activation-complete'),
+        workflowInstanceId: 'workflow-complete',
+        resourceId: resId('1'),
+      },
+      resourceStream(resId('1')),
+      1,
+    );
+    const view = deliveryProjection.project(null, intent);
+    expect(view).toMatchObject({ state: DeliveryState.Pending });
+    expect(view?.resolvedAt).toBeUndefined();
   });
 });
 
