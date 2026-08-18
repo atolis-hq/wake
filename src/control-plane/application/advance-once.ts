@@ -1,6 +1,5 @@
 /* eslint-disable complexity, max-lines-per-function */
-import type { RunView } from '../../execution/index.js';
-import { ActivationClaimConflictError, RunStatus, WorkspaceMode } from '../../execution/index.js';
+import { RunStatus } from '../../execution/index.js';
 import { correlationId, EventActorKind, type Clock } from '../../kernel/index.js';
 import { isAmbiguityResolutionBlock, WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
@@ -8,6 +7,7 @@ import { WorkStatus } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import { DispatchPolicy } from '../domain/dispatch-policy.js';
+import { runDispatchLoop } from './advance-once-dispatch.js';
 import type {
   AdvanceOnceDependencies,
   ExecutionPort,
@@ -16,7 +16,6 @@ import type {
 import {
   findUnresolvedSucceededTerminal,
   findUnresolvedTerminal,
-  isExecutionFailureTerminal,
 } from './execution-reconciliation.js';
 
 export function createAdvanceOnce(
@@ -32,6 +31,7 @@ export function createAdvanceOnce(
   const transcriptRetention = dependencies.transcriptRetention;
   const dispatchPolicy = dependencies.dispatchPolicy ?? new DispatchPolicy({ maxDispatches: 1 });
   const maxConcurrentRuns = dependencies.maxConcurrentRuns ?? 1;
+  const maxDispatches = dependencies.maxDispatches ?? 1;
   const context = (cause: string) => ({
     commandId: dependencies.ids.next('command'),
     correlationId: correlationId(cause),
@@ -118,8 +118,9 @@ export function createAdvanceOnce(
         );
         return {
           kind: 'progressed',
-          activationId: recovery.item.activation.activationId,
-          runId: recovery.run.runId,
+          dispatched: [
+            { activationId: recovery.item.activation.activationId, runId: recovery.run.runId },
+          ],
         };
       }
       await orchestration.resolveExecutionFailure?.(
@@ -137,102 +138,17 @@ export function createAdvanceOnce(
         reason: recovery.run.failure?.message ?? 'execution failed',
       };
     }
-    const allRuns = await execution.list();
-    if (allRuns.filter((run) => run.status === RunStatus.Started).length >= maxConcurrentRuns)
-      return { kind: 'no-work' };
-    const selectedCandidate = dispatchPolicy.select(
-      await Promise.all(
-        pending.map(async (item, requestedPosition) => ({
-          workItemId: item.workflow.workItemId,
-          activationId: item.activation.activationId,
-          requestedPosition,
-          hasActiveRun:
-            (await execution.list(item.activation.activationId)).some(
-              (run) => run.status === RunStatus.Started,
-            ) ||
-            allRuns.some(
-              (run) =>
-                run.status === RunStatus.Started &&
-                run.workflowInstanceId === item.workflow.workflowInstanceId &&
-                run.workspace?.mode === WorkspaceMode.Branch,
-            ),
-          cancelled: false,
-        })),
-      ),
-    )[0];
-    const selected =
-      selectedCandidate === undefined
-        ? undefined
-        : pending.find((item) => item.activation.activationId === selectedCandidate.activationId);
-    if (selected === undefined) {
-      const waiting = (await orchestration.listWaiting()).find((view) => view !== null);
-      return waiting === undefined
-        ? { kind: 'no-work' }
-        : { kind: WorkflowStatus.Waiting, workflowInstanceId: waiting.workflowInstanceId };
-    }
-    // Recheck at the dispatch boundary so maintenance cannot race a selected activation.
-    if (await isDispatchPaused()) return { kind: 'paused' };
-    if (
-      (await orchestration.validateActivationDispatch?.(
-        selected.workflow.workflowInstanceId,
-        context(selected.activation.activationId),
-      )) === false
-    )
-      return { kind: 'no-work' };
-    await orchestration.markActivationStarted(
-      selected.workflow.workflowInstanceId,
-      selected.activation.activationId,
-      context(selected.activation.activationId),
-    );
-    const correlated = await resources.correlationsForWork(selected.workflow.workItemId);
-    const resourceViews = (
-      await Promise.all(correlated.map((entry) => resources.get(entry.resourceId)))
-    ).filter((resource) => resource !== null);
-    const ineligible = await runnerIneligibility();
-    let run: RunView;
-    try {
-      run = await execution.attempt(selected.activation, {
-        workItemId: selected.workflow.workItemId,
-        workflowInstanceId: selected.workflow.workflowInstanceId,
-        orchestrationGroupId: selected.workflow.orchestrationGroupId,
-        resources: resourceViews,
-        sessionPolicy:
-          selected.workflow.parentWorkflowInstanceId === undefined ? 'resume-stage' : 'fresh',
-        awaitImmediateCompletion: true,
-        ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
-      });
-    } catch (error) {
-      if (error instanceof ActivationClaimConflictError) return { kind: 'no-work' };
-      throw error;
-    }
-    if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
-      if (await isDispatchPaused()) return { kind: 'paused' };
-      await orchestration.acceptOutcome(
-        {
-          workflowInstanceId: selected.workflow.workflowInstanceId,
-          activationId: selected.activation.activationId,
-          outcome: run.outcome,
-        },
-        context(run.runId),
-      );
-    }
-    if (isExecutionFailureTerminal(run.status))
-      await orchestration.resolveExecutionFailure?.(
-        selected.workflow.workflowInstanceId,
-        {
-          activationId: selected.activation.activationId,
-          runId: run.runId,
-          reason: run.failure?.message ?? 'execution failed',
-        },
-        context(run.runId),
-      );
-    return run.status === RunStatus.Succeeded || run.status === RunStatus.Started
-      ? { kind: 'progressed', activationId: selected.activation.activationId, runId: run.runId }
-      : {
-          kind: WorkflowStatus.Blocked,
-          workflowInstanceId: selected.workflow.workflowInstanceId,
-          reason: run.failure?.message ?? 'execution failed',
-        };
+    return runDispatchLoop(pending, {
+      orchestration,
+      execution,
+      resources,
+      dispatchPolicy,
+      maxConcurrentRuns,
+      maxDispatches,
+      runnerIneligibility,
+      isDispatchPaused,
+      commandContext: context,
+    });
   };
   // Tick, resident, and API callers share this advancement instance. Serialize the
   // capacity check through Run creation so concurrent callers cannot over-dispatch.

@@ -129,7 +129,10 @@ describe('RunnerPipeline', () => {
       },
       advance: async () => {
         stages.push('advance');
-        return { kind: 'progressed', activationId: 'activation-1', runId: 'run-1' };
+        return {
+          kind: 'progressed',
+          dispatched: [{ activationId: 'activation-1', runId: 'run-1' }],
+        };
       },
       deliver: async () => {
         stages.push('deliver');
@@ -151,7 +154,10 @@ describe('RunnerPipeline', () => {
       },
       advance: async () => {
         stages.push('advance');
-        return { kind: 'progressed', activationId: 'activation-1', runId: 'run-1' };
+        return {
+          kind: 'progressed',
+          dispatched: [{ activationId: 'activation-1', runId: 'run-1' }],
+        };
       },
       publishAgentRuns: async () => {
         stages.push('publish-agent-runs');

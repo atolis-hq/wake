@@ -253,6 +253,7 @@ export async function createCompositionRoot(
       ids,
       dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
       maxConcurrentRuns: config.controlPlane.maxConcurrentRuns,
+      maxDispatches: config.controlPlane.maxDispatches,
       isDispatchPaused: isRuntimePaused,
       workspaceRecovery: workspaces,
       work,

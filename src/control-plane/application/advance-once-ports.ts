@@ -72,4 +72,5 @@ export interface AdvanceOnceDependencies {
   readonly closedWorkItemIds?: () => Promise<readonly string[]>;
   readonly dispatchPolicy?: DispatchPolicy;
   readonly maxConcurrentRuns?: number;
+  readonly maxDispatches?: number;
 }

@@ -45,11 +45,14 @@ Decisions below).
   `advances < maxAdvances` and `runs < maxRuns`, checking the wall-clock
   budget (`Date.now() - started >= maxDurationMs`) at the top of every
   iteration, including before the first call.
-- Every `advance` result of kind `progressed` MUST increment both `advances`
-  and `runs` together by one and continue the loop; these two counters are
-  never incremented independently, so `maxAdvances` and `maxRuns` only
-  diverge in effect when a caller sets them to different values, and
-  whichever is smaller governs when both counters are equal at every step.
+- Every `advance` result of kind `progressed` MUST increment `advances` by
+  one and `runs` by the length of its `dispatched` batch (Advancement's own
+  per-call dispatch loop may start more than one Run per `advance` call, up
+  to `controlPlane.maxDispatches`), then continue the loop. `runs` can
+  therefore exceed `advances`, and the loop's cap check runs only at the top
+  of each iteration — a single `advance` call already in flight is never cut
+  short mid-batch, so `runs` can overshoot `maxRuns` by up to one call's
+  batch size before the loop next checks and stops.
 - Any `advance` result that is not `progressed` MUST stop the cycle
   immediately and MUST be mapped to a `HostStopReason`: `no-work` → `Idle`,
   `waiting` → `Waiting`, `blocked` → `Blocked`; any other kind maps to
@@ -61,8 +64,8 @@ Decisions below).
   which has no meaning for a single poll-and-translate pass) and MUST map
   `processed: true` to `{ advances: 1, runs: 0, stoppedBecause: Budget }`
   and `processed: false` to `{ advances: 0, runs: 0, stoppedBecause: Idle }`.
-  It never reports `activationId`/`runId`, since intake has no honest value
-  for either — that is why it does not reuse `AdvanceResult`.
+  It never reports a `dispatched` batch, since intake has no honest value for
+  one — that is why it does not reuse `AdvanceResult`.
 - `ResidentHost.run` MUST repeat `TickHost.run(budget)` (or `IntakeHost`'s
   equivalent) while the signal is not aborted, accumulating `advances` and
   `runs` as a running total across the whole resident lifetime (not per
@@ -97,14 +100,14 @@ Decisions below).
 | Field | Type | Description |
 | --- | --- | --- |
 | `maxAdvances` | integer | Cap on accepted outcomes in one cycle. Unused by `IntakeHost`. |
-| `maxRuns` | integer | Cap on Runs started in one cycle; always equal to `advances` in the current implementation. Unused by `IntakeHost`. |
+| `maxRuns` | integer | Cap on Runs started in one cycle; may be reached mid-iteration when one `advance` call's dispatch batch pushes `runs` past it, since the cap is only checked between calls. Unused by `IntakeHost`. |
 | `maxDurationMs` | integer | Wall-clock cap for one cycle, checked once per loop iteration. Unused by `IntakeHost`. |
 
 **HostResult** (per cycle or resident run; not durable)
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `advances` / `runs` | integer | Counts reached; for a resident run, cumulative across every cycle so far. `IntakeHost` always reports `runs: 0`. |
+| `advances` / `runs` | integer | Counts reached (`runs` sums each `advance` call's dispatched-batch size, so it need not equal `advances`); for a resident run, cumulative across every cycle so far. `IntakeHost` always reports `runs: 0`. |
 | `stoppedBecause` | closed vocabulary: `idle` / `waiting` / `blocked` / `budget` / `paused` / `shutdown` | Why this cycle (or the resident run as a whole) ended; a resident run's own field is always `shutdown`. |
 
 ## Dependencies and system role

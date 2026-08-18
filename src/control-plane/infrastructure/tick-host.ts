@@ -19,7 +19,7 @@ export class TickHost {
       const result = await this.advance({ maxProgress: 1 });
       if (result.kind === 'progressed') {
         advances += 1;
-        runs += 1;
+        runs += result.dispatched.length;
         continue;
       }
       return {

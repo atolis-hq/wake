@@ -7,9 +7,10 @@ asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
 ## Purpose and scope
 
 Control Plane provides the one bounded, repeatable operation — Advancement —
-through which Wake makes cross-module progress: taking one unit of readiness
-from Orchestration, dispatching it to Execution with the resources Resources
-resolves, and recording the outcome back into Orchestration. It also owns the
+through which Wake makes cross-module progress: taking ready units of work
+from Orchestration, dispatching each to Execution with the resources
+Resources resolves, and recording the outcome back into Orchestration, up to
+the open capacity within one call. It also owns the
 signals that make Advancement selective (runner and global dispatch pauses),
 the budgets that bound how many times a host may call it in one cycle, and the
 hosts (`tick`, resident) that repeat it. It coordinates a cross-module Work
@@ -21,8 +22,10 @@ further bounded applications of the same coordination role.
 Control Plane owns:
 
 - Advancement: one bounded call that recovers interrupted state, reconciles
-  completions, selects a pending unit of orchestration work, dispatches it to
-  execution, and records the outcome.
+  completions, then fills open dispatch capacity by selecting, dispatching,
+  and recording the outcome of pending orchestration work one candidate at a
+  time until capacity, the per-call burst cap, or eligible candidates are
+  exhausted.
 - Runner-level and global dispatch pause/resume signals, and the read model
   that derives current runner eligibility from them.
 - Host budgets (`HostBudget`) and the two bounded execution surfaces (`tick`,
@@ -44,9 +47,14 @@ Control Plane does not own:
 
 ## Ubiquitous language
 
-- **Advancement** — one bounded, side-effecting call that makes at most one
-  unit of cross-module progress: an accepted outcome, or a definitive
-  no-work/waiting/blocked result.
+- **Advancement** — one bounded, side-effecting call that fills open dispatch
+  capacity within itself: zero or more accepted outcomes (batched into one
+  `progressed` result), or a definitive no-work/waiting/blocked result when
+  nothing was dispatched.
+- **Dispatch loop** — the per-call iteration inside Advancement that
+  reselects and dispatches candidates one at a time, rechecking capacity
+  after every dispatch, until `maxConcurrentRuns`, the per-call
+  `maxDispatches` burst cap, or eligible candidates are exhausted.
 - **Pending activation** — a unit of orchestration work ready to run next, as
   reported by Orchestration; Control Plane selects among these but does not
   define readiness.
@@ -76,9 +84,13 @@ Control Plane does not own:
 
 - All of this module's durable facts live on one global stream
   (`control-plane:global`); Control Plane does not own per-WorkItem streams.
-- Advancement MUST make at most one accepted outcome per call; a host
-  wanting more progress in one cycle MUST call Advancement again rather than
-  Advancement looping internally.
+- Within one call, Advancement's dispatch loop MUST dispatch at most
+  `controlPlane.maxDispatches` new Runs, and MUST NOT dispatch past the
+  `controlPlane.maxConcurrentRuns` ceiling — rechecked after every dispatch,
+  not computed once and spent — even when more ready work remains. A host
+  wanting more progress than one call's capacity allows MUST call Advancement
+  again. With the shared default of `1` for both fields, the loop dispatches
+  at most one Run per call, unchanged from single-dispatch behaviour.
 - A host's stop reason MUST be one of the closed `idle` / `waiting` /
   `blocked` / `budget` / `paused` / `shutdown` values; nothing outside that
   vocabulary is ever reported.
@@ -177,10 +189,14 @@ Control Plane does not own:
 
 ## Decisions, exclusions, and deferred capability
 
-- Dispatch fairness ordering and the per-call `controlPlane.maxDispatches`
-  selection cap are composed into Advancement. `controlPlane.maxConcurrentRuns`
-  is a separate, serialized global capacity gate: once that many Runs are
-  `started`, Advancement returns `no-work` until a terminal Run frees capacity.
+- Dispatch fairness ordering is composed into Advancement's per-candidate
+  selection. `controlPlane.maxDispatches` is a live per-call burst cap:
+  the maximum number of new Runs one Advancement call's dispatch loop will
+  start, independent of and bounded by `controlPlane.maxConcurrentRuns`.
+  `controlPlane.maxConcurrentRuns` is a separate, serialized global capacity
+  gate: once that many Runs are `started`, the dispatch loop stops and
+  Advancement returns `no-work` (or `progressed` with whatever it already
+  dispatched earlier in the same call) until a terminal Run frees capacity.
   Count-based quota pausing remains uncomposed. A manual, operator-triggered
   global dispatch pause/resume is composed and live (Global Dispatch Pause and
   Resume), but the count-based, quota-driven pause/resume Dispatch Policy
