@@ -55,6 +55,11 @@ export const gitHubConfigSchema = z
       .object({ postStatusComments: z.boolean().default(true) })
       .strict()
       .default({ postStatusComments: true }),
+    // Additional command syntax to advertise on the commands/instructions
+    // surface alongside the adapter's built-in commands. Purely descriptive:
+    // Wake does not recognize these itself, so any behavior they imply must
+    // be handled by whatever reads the comment (e.g. a workflow prompt).
+    commands: z.array(z.string().trim().min(1)).default([]),
   })
   .strict();
 

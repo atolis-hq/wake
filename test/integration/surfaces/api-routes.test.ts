@@ -521,6 +521,7 @@ function applications(
           checkedAt: '2026-07-31T10:00:00.000Z',
         }),
       configuration: async () => resource({ configuration: {} }),
+      commands: async () => resource({ adapters: [] }),
     },
   };
 }

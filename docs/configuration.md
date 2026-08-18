@@ -413,6 +413,7 @@ Use `provider: github` for the built-in GitHub integration.
 | `polling.intervalMs` | positive integer; default `30000` | Minimum time between real GitHub polls. Ticks that land before this interval has elapsed since the last real poll skip the GitHub API call and return no drafts, independent of `controlPlane.resident.idleBackoffMs`, which still governs the resident loop's tick cadence for non-GitHub work. |
 | `intake` | list; default `[]` | Admission/tagging rules. With no rules, every observation is admitted with no added tags. |
 | `publication.postStatusComments` | boolean; default `true` | Allows GitHub status-comment publication. |
+| `commands` | string list; default `[]` | Additional command syntax advertised on the web UI's Configuration → Commands tab alongside the adapter's built-in commands (`/approved`, `/accepted`, `/changes`, `/retry`). Purely descriptive: Wake does not recognize these itself, so any behavior they imply must be handled by whatever reads the comment. |
 
 Each `intake[]` rule has `where`, optional `matchMode` (`any` by default or
 `all`), optional `ignoredLabels` (default `[]`), and `tags` (default `[]`). An

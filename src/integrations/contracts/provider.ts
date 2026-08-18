@@ -70,6 +70,13 @@ export interface AdapterHealthCheck {
   readonly failureCount: number;
 }
 
+// A command/action an adapter recognizes from its channel (e.g. a GitHub
+// comment reply). Syntax only, no description — surfaces present these
+// verbatim rather than hardcoding per-adapter command lists.
+export interface AdapterCommand {
+  readonly syntax: string;
+}
+
 export interface ProviderInstance {
   readonly adapter: AdapterId;
   // Provider type this instance was composed from (e.g. 'github'), stamped by
@@ -92,6 +99,9 @@ export interface ProviderInstance {
   // Optional in-memory health signal tracked from real traffic, synchronous and
   // cheap to call on every health check — no I/O, no stored per-call history.
   readonly health?: () => readonly AdapterHealthCheck[];
+  // Optional list of commands this adapter recognizes, built-in plus any
+  // configuration-defined additions. Synchronous and cheap, like health().
+  readonly commands?: () => readonly AdapterCommand[];
 }
 
 // What a definition's create() builds, before ProviderRegistry.compose() stamps

@@ -13,6 +13,7 @@ export const refreshPolicy = {
   runners: 5_000,
   observability: false,
   configuration: false,
+  commands: false,
 } as const;
 
 export const refreshInterval = {

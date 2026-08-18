@@ -64,7 +64,32 @@ describe('GitHub adapter write health', () => {
   });
 });
 
-async function composeProvider() {
+describe('GitHub adapter commands', () => {
+  it('exposes built-in commands plus any configured extras', async () => {
+    const provider = await composeProvider({ commands: ['/deploy'] });
+
+    expect(provider.commands!()).toEqual([
+      { syntax: '/approved' },
+      { syntax: '/accepted' },
+      { syntax: '/changes' },
+      { syntax: '/retry' },
+      { syntax: '/deploy' },
+    ]);
+  });
+
+  it('exposes only the built-in commands when none are configured', async () => {
+    const provider = await composeProvider();
+
+    expect(provider.commands!()).toEqual([
+      { syntax: '/approved' },
+      { syntax: '/accepted' },
+      { syntax: '/changes' },
+      { syntax: '/retry' },
+    ]);
+  });
+});
+
+async function composeProvider(extraConfig: { readonly commands?: readonly string[] } = {}) {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
   const lookup = createResourceLookup({ journal, projections: new InMemoryProjectionStore() });
@@ -90,6 +115,7 @@ async function composeProvider() {
       enabled: true,
       token: 'token',
       repositories: [{ owner: 'org', repo: 'repo' }],
+      ...extraConfig,
     }),
     services: { resources } as never,
   });

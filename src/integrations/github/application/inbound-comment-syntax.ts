@@ -1,14 +1,24 @@
 import { ReviewActorKind } from '../../../activities/index.js';
+import { GitHubBuiltInCommand } from '../contracts/vocabulary.js';
 
 export function isHumanNonWakeReply(actorKind: ReviewActorKind, body: string): boolean {
   return actorKind === ReviewActorKind.Human && !body.includes('<!-- wake:');
 }
 
-export function recognizedCommand(body: string): '/approved' | '/changes' | '/retry' | null {
+type IssueCommand =
+  | typeof GitHubBuiltInCommand.Approved
+  | typeof GitHubBuiltInCommand.Changes
+  | typeof GitHubBuiltInCommand.Retry;
+
+export function recognizedCommand(body: string): IssueCommand | null {
   const normalized = body.trim().toLowerCase();
-  if (normalized === '/approved') return '/approved';
-  if (normalized === '/changes' || normalized.startsWith('/changes ')) return '/changes';
-  if (normalized === '/retry') return '/retry';
+  if (normalized === GitHubBuiltInCommand.Approved) return GitHubBuiltInCommand.Approved;
+  if (
+    normalized === GitHubBuiltInCommand.Changes ||
+    normalized.startsWith(`${GitHubBuiltInCommand.Changes} `)
+  )
+    return GitHubBuiltInCommand.Changes;
+  if (normalized === GitHubBuiltInCommand.Retry) return GitHubBuiltInCommand.Retry;
   return null;
 }
 
@@ -18,8 +28,8 @@ export function isPlainReply(body: string): boolean {
 }
 
 export function shouldResumeBlockedStage(
-  command: '/approved' | '/changes' | '/retry' | null,
+  command: IssueCommand | null,
   plainReply: boolean,
 ): boolean {
-  return command === '/changes' || plainReply;
+  return command === GitHubBuiltInCommand.Changes || plainReply;
 }

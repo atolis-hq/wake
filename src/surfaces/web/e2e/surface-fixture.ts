@@ -214,6 +214,21 @@ const applications: ApiApplications = {
       },
       meta: { asOf: instant },
     }),
+    commands: async () => ({
+      data: {
+        adapters: [
+          {
+            adapter: 'github',
+            provider: 'github',
+            // Fixture-only placeholder syntax: this surface has no reach into
+            // integrations/github's own command vocabulary (module boundary),
+            // so it stands in for whatever the composed adapter reports.
+            commands: [{ syntax: '/example-command' }],
+          },
+        ],
+      },
+      meta: { asOf: instant },
+    }),
   },
 };
 

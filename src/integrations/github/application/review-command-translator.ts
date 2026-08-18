@@ -5,6 +5,7 @@ import {
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
 import type { ResourceId } from '../../../resources/index.js';
+import { GitHubBuiltInCommand } from '../contracts/vocabulary.js';
 
 interface GitHubReviewCommandInput {
   readonly resourceId: ResourceId;
@@ -21,7 +22,8 @@ export function translateGitHubReviewCommand(
   input: GitHubReviewCommandInput,
 ): ProposedReviewSignal | null {
   const command = input.body.trim();
-  if (command !== '/accepted' && command !== '/changes') return null;
+  if (command !== GitHubBuiltInCommand.Accepted && command !== GitHubBuiltInCommand.Changes)
+    return null;
   return {
     resourceId: input.resourceId,
     revision: input.revision,
@@ -31,6 +33,8 @@ export function translateGitHubReviewCommand(
     authorization: input.authorization,
     providerEventId: input.providerEventId,
     kind:
-      command === '/accepted' ? ReviewDecisionKind.Accepted : ReviewDecisionKind.ChangesRequested,
+      command === GitHubBuiltInCommand.Accepted
+        ? ReviewDecisionKind.Accepted
+        : ReviewDecisionKind.ChangesRequested,
   };
 }

@@ -5,6 +5,7 @@ import type {
   AuditEventResponse,
   BoardCardResponse,
   BoardResponse,
+  CommandsResponse,
   ConfigurationResponse,
   ControlPlaneStatusResponse,
   HealthResponse,
@@ -51,6 +52,7 @@ export type ApiRunResolutionRequest =
 export interface ApiSystemApplications {
   health(): Promise<ApiResourceResult<HealthResponse>>;
   configuration(): Promise<ApiResourceResult<ConfigurationResponse>>;
+  commands(): Promise<ApiResourceResult<CommandsResponse>>;
 }
 
 export interface ApiApplications {

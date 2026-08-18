@@ -66,7 +66,7 @@ Does not own:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| family | closed vocabulary: `status` / `board` / `openWork` / `activeRuns` / `events` / `historicalRuns` / `health` / `runners` / `observability` / `configuration` | The data family the interval applies to. |
+| family | closed vocabulary: `status` / `board` / `openWork` / `activeRuns` / `events` / `historicalRuns` / `health` / `runners` / `observability` / `configuration` / `commands` | The data family the interval applies to. |
 | intervalMs | integer milliseconds, or `false` | Poll interval; `false` means never auto-refresh. |
 
 **API problem**

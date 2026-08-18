@@ -6,6 +6,7 @@ import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { GitHubPullRequestPayload, GitHubReviewPayload } from '../contracts/payloads.js';
 import {
   GitHubAdapter,
+  GitHubBuiltInCommand,
   GitHubReviewState,
   UnknownGitHubIdentity,
 } from '../contracts/vocabulary.js';
@@ -81,9 +82,11 @@ function configuredAuthorization(actorId: string, reviewers: readonly string[]) 
     : ({ source: ReviewerAuthorizationSource.ConfiguredReviewer, reviewerId } as const);
 }
 
-function reviewCommand(state: string): '/accepted' | '/changes' | null {
-  if (state === GitHubReviewState.Approved) return '/accepted';
-  return state === GitHubReviewState.ChangesRequested ? '/changes' : null;
+function reviewCommand(
+  state: string,
+): typeof GitHubBuiltInCommand.Accepted | typeof GitHubBuiltInCommand.Changes | null {
+  if (state === GitHubReviewState.Approved) return GitHubBuiltInCommand.Accepted;
+  return state === GitHubReviewState.ChangesRequested ? GitHubBuiltInCommand.Changes : null;
 }
 
 function sameIdentity(left: string, right: string): boolean {

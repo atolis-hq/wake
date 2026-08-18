@@ -23,5 +23,9 @@ export const queryKeys = {
     list: (cursor = '', workItemKey = '') => ['events', 'list', cursor, workItemKey] as const,
   },
   observability: { metrics: (days: number) => ['observability', 'metrics', days] as const },
-  system: { health: ['systemHealth'] as const, configuration: ['systemConfiguration'] as const },
+  system: {
+    health: ['systemHealth'] as const,
+    configuration: ['systemConfiguration'] as const,
+    commands: ['systemCommands'] as const,
+  },
 };

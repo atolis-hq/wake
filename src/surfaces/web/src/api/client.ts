@@ -18,6 +18,7 @@ import {
   type Decoder,
 } from './decoders.js';
 import {
+  decodeCommands,
   decodeConfiguration,
   decodeHealth,
   decodeMetrics,
@@ -159,6 +160,8 @@ export class WakeApiClient {
       this.get('/system/health', resourceDecoder(decodeHealth), signal),
     configuration: (signal?: AbortSignal) =>
       this.get('/system/configuration', resourceDecoder(decodeConfiguration), signal),
+    commands: (signal?: AbortSignal) =>
+      this.get('/system/commands', resourceDecoder(decodeCommands), signal),
   };
 
   constructor(

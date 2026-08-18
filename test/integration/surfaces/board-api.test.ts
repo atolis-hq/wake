@@ -91,6 +91,10 @@ function applications(): ApiApplications {
         data: { configuration: {} },
         meta: { asOf: '2026-08-01T10:00:00.000Z' },
       }),
+      commands: async () => ({
+        data: { adapters: [] },
+        meta: { asOf: '2026-08-01T10:00:00.000Z' },
+      }),
     },
   };
 }

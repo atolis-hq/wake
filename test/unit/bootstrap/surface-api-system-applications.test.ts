@@ -97,3 +97,42 @@ it('stays ok when every adapter health check is ok', async () => {
 
   expect(response.data.status).toBe('ok');
 });
+
+it('surfaces commands from provider instances that expose them, skipping those that do not', async () => {
+  const applications = createSurfaceApiApplications(
+    {
+      paths: { wakeRoot: tmpdir() },
+      config: {},
+      providers: [
+        {
+          adapter: 'github-issues',
+          provider: 'github',
+          commands: () => [
+            { syntax: '/approved' },
+            { syntax: '/accepted' },
+            { syntax: '/changes' },
+            { syntax: '/retry' },
+          ],
+        },
+        // A provider without a commands() accessor must be skipped, not throw.
+        { adapter: 'no-commands-provider', provider: 'fake' },
+      ],
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+
+  const response = await applications.system.commands();
+
+  expect(response.data.adapters).toEqual([
+    {
+      adapter: 'github-issues',
+      provider: 'github',
+      commands: [
+        { syntax: '/approved' },
+        { syntax: '/accepted' },
+        { syntax: '/changes' },
+        { syntax: '/retry' },
+      ],
+    },
+  ]);
+});

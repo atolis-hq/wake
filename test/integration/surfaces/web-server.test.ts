@@ -190,6 +190,7 @@ function applications() {
         meta,
       }),
       configuration: async () => ({ data: { configuration: {} }, meta }),
+      commands: async () => ({ data: { adapters: [] }, meta }),
     },
   };
 }

@@ -53,6 +53,8 @@ async function readSingleton(
       return noQuery(url, async () => ok(await applications.system.health()));
     case '/api/v1/system/configuration':
       return noQuery(url, async () => ok(await applications.system.configuration()));
+    case '/api/v1/system/commands':
+      return noQuery(url, async () => ok(await applications.system.commands()));
     default:
       return undefined;
   }
