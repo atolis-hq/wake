@@ -79,6 +79,64 @@ function blockedFailedFixture() {
   return { definition, state: foldWorkflowInstance([...started.events, ...failed.events])! };
 }
 
+function waitingFailedFixture() {
+  const activities = new ActivityRegistry();
+  activities.register({
+    name: activityName('implement'),
+    inputSchema: z.object({ attempt: z.literal('operator') }).strict(),
+    outcomeSchema: z.object({ kind: z.enum(['done', 'failed']) }).strict(),
+    outcomeKinds: ['done', 'failed'],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: 'done' };
+      },
+    },
+  });
+  const definition = compileWorkflow(
+    'default',
+    {
+      stages: {
+        implement: {
+          activity: 'implement',
+          with: { attempt: 'operator' },
+          execution: { runnerPool: 'recovery' },
+          on: {
+            done: { then: 'done' },
+            failed: { retry: { max: 2 }, then: 'await-human' },
+          },
+        },
+      },
+    },
+    activities,
+  );
+  const started = startInstance({
+    workflowInstanceId: workflowInstanceId('workflow-3'),
+    workItemId: workId('3'),
+    orchestrationGroupId: orchestrationGroupId('group-3'),
+    definition,
+    occurredAt: '2026-08-12T12:00:00.000Z',
+    correlationId: 'correlation-3',
+    causationId: 'start-command',
+  });
+  if (started.kind !== 'append') throw new Error('expected start decision');
+  let events = [...started.events];
+  let state = foldWorkflowInstance(events)!;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const outcome = acceptActivityOutcome(definition, state, {
+      activationId: state.pendingActivation!.activationId,
+      outcome: orchestrationActivityOutcome({ kind: ActivityOutcomeKind.Failed }),
+      occurredAt: `2026-08-12T12:0${attempt + 1}:00.000Z`,
+      causationId: `failed-run-${attempt}`,
+    });
+    if (outcome.kind !== 'append') throw new Error('expected failed outcome decision');
+    events = [...events, ...outcome.events];
+    state = foldWorkflowInstance(events)!;
+  }
+  return { definition, state };
+}
+
 function blockedAgentFixture() {
   const activities = new ActivityRegistry();
   activities.register({
@@ -271,6 +329,45 @@ describe('operator retry policy', () => {
     expect(decision.events[0]?.eventType).toBe(OrchestrationEventType.OperatorRetryRequested);
   });
 
+  it('retries a stage waiting on the failed signal after automatic retries are exhausted', () => {
+    const { definition, state } = waitingFailedFixture();
+
+    expect(state.status).toBe(WorkflowStatus.Waiting);
+    expect(state.waitingFor?.signalKind).toBe('failed');
+    expect(isOperatorRetryEligible(state)).toBe(true);
+
+    const decision = requestOperatorRetry(definition, state, retryInput);
+
+    expect(decision.kind).toBe('append');
+    if (decision.kind !== 'append') return;
+    expect(decision.events.map((event) => event.eventType)).toEqual([
+      OrchestrationEventType.OperatorRetryRequested,
+      OrchestrationEventType.ActivityRequested,
+    ]);
+    expect(decision.events[0]!.payload).toEqual({
+      activationId: state.pendingActivation!.activationId,
+      commandId: retryInput.commandId,
+    });
+    expect(decision.events[1]!.payload).toMatchObject({
+      activationId: 'workflow-3:activity:4',
+      ordinal: 4,
+      activity: activityName('implement'),
+      input: { attempt: 'operator' },
+      execution: { runnerPool: 'recovery' },
+    });
+  });
+
+  it('does not treat waiting on a different signal as an exhausted-retry failure', () => {
+    const { state } = waitingFailedFixture();
+
+    expect(
+      isOperatorRetryEligible({
+        ...state,
+        waitingFor: { ...state.waitingFor!, signalKind: 'approved' as never },
+      }),
+    ).toBe(false);
+  });
+
   it.each([
     [
       'active',
@@ -352,7 +449,7 @@ describe('operator retry policy', () => {
     expect(isOperatorRetryEligible(candidate)).toBe(false);
     expect(requestOperatorRetry(definition, candidate, retryInput)).toEqual({
       kind: 'ignored',
-      reason: 'workflow is not blocked for a retryable failed stage',
+      reason: 'workflow is not in a retryable failed-stage state',
     });
   });
 });
