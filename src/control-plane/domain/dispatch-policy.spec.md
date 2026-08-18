@@ -67,8 +67,12 @@ caller.
 
 ## Dependencies and system role
 
-- Advancement (dependent) — calls `DispatchPolicy.select` to choose a
-  fairness-ordered candidate, subject to its per-call `maxDispatches` cap.
+- Advancement (dependent) — calls `DispatchPolicy.select` once per iteration
+  of its own dispatch loop, taking only the top-ranked candidate from each
+  call's result and excluding activations it already dispatched earlier in
+  the same Advancement call; the loop itself, not `select`'s own
+  `maxDispatches` cap, is what bounds how many candidates one Advancement
+  call dispatches.
 - Control Plane view / Runner Pause and Resume (would-be dependents) —
   designed so a `QuotaPolicy.decide` result of `pause`/`resume` would drive
   appending `control-plane.dispatch-paused` / `control-plane.dispatch-resumed`.
