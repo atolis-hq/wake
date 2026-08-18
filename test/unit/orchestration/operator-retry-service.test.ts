@@ -106,7 +106,7 @@ it('rejects an operator retry when the workflow is not eligible', async () => {
   ).rejects.toEqual(
     expect.objectContaining({
       name: 'OperatorRetryIneligibleError',
-      message: 'workflow is not blocked for a retryable failed stage',
+      message: 'workflow is not in a retryable failed-stage state',
     }),
   );
   await expect(

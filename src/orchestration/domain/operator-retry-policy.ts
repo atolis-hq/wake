@@ -2,7 +2,7 @@ import { ActivityOutcomeKind, BuiltInActivityName } from '../../activities/index
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
-import { stageName, watchId } from '../contracts/identifiers.js';
+import { signalName, stageName, watchId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   ActivityActivationStatus,
@@ -16,20 +16,41 @@ export interface OperatorRetryRequest extends DecisionContext {
   readonly commandId: string;
 }
 
+// `then: await-human` on a `failed` route compiles its wait to this literal
+// signal name (see compileTarget); a workflow parked there has exhausted
+// whatever automatic retries it had and is durably equivalent to a blocked
+// failed stage for operator-retry purposes.
+const FailedOutcomeSignal = signalName(ActivityOutcomeKind.Failed);
+
 export function isOperatorRetryEligible(view: WorkflowInstanceView): boolean {
   const pending = view.pendingActivation;
   const eligibleActivation =
-    view.status === WorkflowStatus.Blocked &&
     pending !== undefined &&
     pending.status === ActivityActivationStatus.Completed &&
     pending.supplemental !== true &&
     pending.followOnIndex === undefined &&
     view.acceptedOutcomes.includes(pending.activationId);
   if (!eligibleActivation || pending === undefined) return false;
+  if (view.status === WorkflowStatus.Blocked) return isRetryEligibleBlock(view, pending);
+  return isRetryEligibleFailedWait(view);
+}
+
+function isRetryEligibleBlock(
+  view: WorkflowInstanceView,
+  pending: NonNullable<WorkflowInstanceView['pendingActivation']>,
+): boolean {
   return (
     (view.blockReason === 'unconfigured outcome failed' &&
       view.lastOutcome?.kind === ActivityOutcomeKind.Failed) ||
     view.executionFailure?.activationId === pending.activationId
+  );
+}
+
+function isRetryEligibleFailedWait(view: WorkflowInstanceView): boolean {
+  return (
+    view.status === WorkflowStatus.Waiting &&
+    view.waitingFor?.signalKind === FailedOutcomeSignal &&
+    view.lastOutcome?.kind === ActivityOutcomeKind.Failed
   );
 }
 
@@ -85,7 +106,7 @@ export function requestOperatorRetry(
   if (!isOperatorRetryEligible(state))
     return {
       kind: 'ignored',
-      reason: 'workflow is not blocked for a retryable failed stage',
+      reason: 'workflow is not in a retryable failed-stage state',
     };
 
   const stage = definition.stages[stageName(state.currentStage)]!;
