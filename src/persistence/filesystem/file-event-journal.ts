@@ -17,7 +17,8 @@ export class FileEventJournal implements EventJournal {
     private readonly clock: Clock,
   ) {}
 
-  private cached: { readonly fingerprint: string; readonly events: EventEnvelope[] } | undefined;
+  private cached:
+    { readonly entries: readonly FileStat[]; readonly events: EventEnvelope[] } | undefined;
 
   async append(
     stream: EntityRef,
@@ -64,13 +65,14 @@ export class FileEventJournal implements EventJournal {
         const directory = join(this.root, 'events');
         await mkdir(directory, { recursive: true });
         const day = recordedAt.slice(0, 10);
+        const file = `${day}.jsonl`;
         await appendFile(
-          join(directory, `${day}.jsonl`),
+          join(directory, file),
           newEnvelopes.map((event) => JSON.stringify(event)).join('\n') + '\n',
           'utf8',
         );
+        await this.extendCache(file, current, newEnvelopes);
       }
-      this.cached = undefined;
       return finalizedEnvelopes;
     });
   }
@@ -97,6 +99,25 @@ export class FileEventJournal implements EventJournal {
     return events.at(-1)?.globalPosition ?? 0;
   }
 
+  // Extends the cache in place rather than invalidating it, so a self-caused
+  // write doesn't force the next read (by this call or any other reader
+  // sharing this instance) to re-parse the entire on-disk history. Only a
+  // change this instance didn't make itself — another process writing to the
+  // same journal — falls through to scan()'s full re-read.
+  private async extendCache(
+    file: string,
+    priorEvents: readonly EventEnvelope[],
+    newEnvelopes: readonly EventEnvelope[],
+  ): Promise<void> {
+    const info = await stat(join(this.root, 'events', file));
+    const updatedEntry: FileStat = { file, size: info.size, mtimeMs: info.mtimeMs };
+    const priorEntries = this.cached?.entries ?? [];
+    const entries = priorEntries.some((entry) => entry.file === file)
+      ? priorEntries.map((entry) => (entry.file === file ? updatedEntry : entry))
+      : [...priorEntries, updatedEntry];
+    this.cached = { entries, events: [...priorEvents, ...newEnvelopes] };
+  }
+
   private async scan(): Promise<EventEnvelope[]> {
     const directory = join(this.root, 'events');
     let files: string[];
@@ -108,15 +129,14 @@ export class FileEventJournal implements EventJournal {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
     }
-    const fingerprint = (
-      await Promise.all(
-        files.map(async (file) => {
-          const info = await stat(join(directory, file));
-          return `${file}:${info.size}:${info.mtimeMs}`;
-        }),
-      )
-    ).join('|');
-    if (this.cached?.fingerprint === fingerprint) return this.cached.events;
+    const entries = await Promise.all(
+      files.map(async (file): Promise<FileStat> => {
+        const info = await stat(join(directory, file));
+        return { file, size: info.size, mtimeMs: info.mtimeMs };
+      }),
+    );
+    if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
+      return this.cached.events;
     const events: EventEnvelope[] = [];
     for (const file of files) {
       const raw = await readFile(join(directory, file), 'utf8');
@@ -138,10 +158,29 @@ export class FileEventJournal implements EventJournal {
         }
       }
     }
-    this.cached = { fingerprint, events };
+    this.cached = { entries, events };
     return events;
   }
 }
+
+interface FileStat {
+  readonly file: string;
+  readonly size: number;
+  readonly mtimeMs: number;
+}
+
+function sameEntries(a: readonly FileStat[], b: readonly FileStat[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((entry, index) => {
+      const other = b[index]!;
+      return (
+        entry.file === other.file && entry.size === other.size && entry.mtimeMs === other.mtimeMs
+      );
+    })
+  );
+}
+
 const key = (stream: EntityRef) => `${stream.kind}:${stream.id}`;
 const sameDraft = (event: EventEnvelope, draft: EventDraft) =>
   isDeepStrictEqual(

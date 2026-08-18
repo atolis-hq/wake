@@ -1,10 +1,18 @@
+import type * as FsPromises from 'node:fs/promises';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { createEventDraft, type EntityRef, type EventDraft } from '../../../src/kernel/index.js';
 import { FileEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
+
+const { readFileMock } = vi.hoisted(() => ({ readFileMock: vi.fn() }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof FsPromises>();
+  readFileMock.mockImplementation(actual.readFile);
+  return { ...actual, readFile: readFileMock };
+});
 
 it('reopens the journal and continues stream sequence and global position', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-'));
@@ -141,4 +149,40 @@ it('rejects a malformed common envelope with file, line, and event context', asy
   await expect(new FileEventJournal(root, new FakeClock()).readAll(0)).rejects.toThrow(
     /2026-07-31\.jsonl:1.*event-corrupt/i,
   );
+});
+
+it('does not re-parse prior history from disk after appending new events', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-cache-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const draft = (id: string, sequence: number) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: `event ${sequence}` },
+    });
+  const journal = new FileEventJournal(root, new FakeClock());
+  await journal.append(stream, 0, [draft('event-1', 1)]);
+  await journal.append(stream, 1, [draft('event-2', 2)]);
+  expect(await journal.readAll(0)).toHaveLength(2);
+
+  readFileMock.mockClear();
+  // A write patches the cache with the events already held in memory from
+  // this same append(), so the following reads need no readFile calls
+  // against the on-disk .jsonl history — not even for the newly appended
+  // event — rather than re-parsing the whole journal. (append() still reads
+  // its own lock file as part of acquiring the file lock, unrelated to
+  // journal content.)
+  await journal.append(stream, 2, [draft('event-3', 3)]);
+  expect(await journal.readAll(0)).toHaveLength(3);
+  expect(await journal.latestGlobalPosition()).toBe(3);
+  const journalFileReads = readFileMock.mock.calls.filter(([path]) =>
+    String(path).endsWith('.jsonl'),
+  );
+  expect(journalFileReads).toHaveLength(0);
 });
