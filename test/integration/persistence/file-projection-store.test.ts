@@ -56,8 +56,11 @@ it('does not re-read namespace files on a second list() when nothing changed', a
   expect(readFileMock.mock.calls.length).toBe(firstCallCount);
   expect(second).toHaveLength(2);
 
+  // A write patches the cache with the in-memory value being written, so the
+  // following list() needs no readFile calls at all — not even for the new
+  // key — rather than re-reading the whole namespace from disk.
   await store.write({ namespace: 'work', key: 'work:3', lastGlobalPosition: 1, value: { n: 3 } });
   const third = await store.list('work');
-  expect(readFileMock.mock.calls.length).toBeGreaterThan(firstCallCount);
+  expect(readFileMock.mock.calls.length).toBe(firstCallCount);
   expect(third).toHaveLength(3);
 });
