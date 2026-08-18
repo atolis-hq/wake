@@ -31,9 +31,8 @@ const transition: CompiledResourceTransition = {
   target: { kind: TransitionTargetKind.Complete },
 };
 
-it('fails closed without invoking policies when work has multiple primary resources', async () => {
+it('resolves through the matching primary when another primary resource does not match any policy', async () => {
   let pullRequestPolicyCalls = 0;
-  let completablePolicyCalls = 0;
   const fact = eventEnvelope(
     ActivityEventType.PrStateChanged,
     { state: PullRequestState.Merged },
@@ -80,16 +79,90 @@ it('fails closed without invoking policies when work has multiple primary resour
       return [fact];
     },
   } as unknown as PullRequestService);
+  const resources = {
+    async correlationsForWork() {
+      return [
+        {
+          resourceId: pullRequestResource,
+          workItemId: workItem,
+          role: 'primary',
+          provenance: 'provider-observed',
+          establishedByEventId: 'correlation-pr',
+        },
+        {
+          resourceId: completableResource,
+          workItemId: workItem,
+          role: 'primary',
+          provenance: 'provider-observed',
+          establishedByEventId: 'correlation-issue',
+        },
+      ];
+    },
+    async get(resourceId: typeof pullRequestResource) {
+      return resourceId === pullRequestResource
+        ? {
+            resourceId: pullRequestResource,
+            kind: 'pull-request' as never,
+            externalKey: { adapter: 'test', key: '1' },
+            capabilities: [BuiltInResourceCapability.Reviewable],
+          }
+        : {
+            resourceId: completableResource,
+            kind: 'issue' as never,
+            externalKey: { adapter: 'test', key: '2' },
+            capabilities: [BuiltInResourceCapability.Completable],
+          };
+    },
+  } as unknown as ResourceService;
+  const evidence = createCapabilityResourceTransitionEvidence({
+    resources,
+    policies: [
+      {
+        capabilities: [
+          BuiltInResourceCapability.Mergeable,
+          BuiltInResourceCapability.Reviewable,
+          BuiltInResourceCapability.Approvable,
+        ],
+        policy: pullRequestPolicy,
+      },
+    ],
+  });
+
+  const resolved = await evidence.resolve({
+    workItemId: workItem,
+    transitions: [transition],
+    fact,
+  });
+
+  expect(evidence.triggers).toEqual([
+    ActivityEventType.PrReviewAccepted,
+    ActivityEventType.PrStateChanged,
+    ActivityEventType.PrChecksChanged,
+  ]);
+  expect(resolved).toEqual({ transition, evidenceId: fact.eventId });
+  expect(pullRequestPolicyCalls).toBe(1);
+});
+
+it('fails closed without invoking policies when two primary resources each match a policy', async () => {
+  let pullRequestPolicyCalls = 0;
+  let completablePolicyCalls = 0;
+  const fact = eventEnvelope(
+    ActivityEventType.PrStateChanged,
+    { state: PullRequestState.Merged },
+    resourceStream(pullRequestResource),
+  );
+  const pullRequestPolicy: ResourceTransitionEvidence = {
+    triggers: [ActivityEventType.PrStateChanged],
+    async resolve() {
+      pullRequestPolicyCalls += 1;
+      return null;
+    },
+  };
   const completablePolicy: ResourceTransitionEvidence = {
     triggers: ['issue.completed'],
-    async resolve(input) {
+    async resolve() {
       completablePolicyCalls += 1;
-      const transition = input.transitions.find(
-        (candidate) => candidate.event === input.fact?.eventType,
-      );
-      return transition === undefined || input.fact === undefined
-        ? null
-        : { transition, evidenceId: input.fact.eventId };
+      return null;
     },
   };
   const resources = {
@@ -148,12 +221,6 @@ it('fails closed without invoking policies when work has multiple primary resour
     fact,
   });
 
-  expect(evidence.triggers).toEqual([
-    ActivityEventType.PrReviewAccepted,
-    ActivityEventType.PrStateChanged,
-    ActivityEventType.PrChecksChanged,
-    'issue.completed',
-  ]);
   expect(resolved).toBeNull();
   expect(pullRequestPolicyCalls).toBe(0);
   expect(completablePolicyCalls).toBe(0);
