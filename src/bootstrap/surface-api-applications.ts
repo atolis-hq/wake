@@ -316,6 +316,21 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
         meta: sampledMeta(sampledAt),
       };
     },
+    async commands() {
+      const sampledAt = now();
+      return {
+        data: {
+          adapters: root.providers
+            .filter((instance) => instance.commands !== undefined)
+            .map((instance) => ({
+              adapter: instance.adapter,
+              provider: instance.provider,
+              commands: instance.commands!(),
+            })),
+        },
+        meta: sampledMeta(sampledAt),
+      };
+    },
   };
 }
 

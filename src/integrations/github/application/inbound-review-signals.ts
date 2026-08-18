@@ -24,7 +24,7 @@ import {
 import { WorkStatus, type WorkService } from '../../../work/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { GitHubAdapterEvent, GitHubEventType } from '../contracts/events.js';
-import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
+import { GitHubBuiltInCommand, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import {
   isHumanNonWakeReply,
   isPlainReply,
@@ -138,7 +138,7 @@ async function applyIssueReviewSignal(input: {
   const resource = await resources.get(resourceIdValue);
   const command = recognizedCommand(event.payload.body);
   const plainReply = isPlainReply(event.payload.body);
-  if (command === '/retry') {
+  if (command === GitHubBuiltInCommand.Retry) {
     return applyIssueRetrySignal({
       event,
       resources,
@@ -154,7 +154,10 @@ async function applyIssueReviewSignal(input: {
       work,
       orchestration,
       resourceId: resourceIdValue,
-      outcome: command === '/approved' ? ActivityOutcomeKind.Done : ActivityOutcomeKind.Rejected,
+      outcome:
+        command === GitHubBuiltInCommand.Approved
+          ? ActivityOutcomeKind.Done
+          : ActivityOutcomeKind.Rejected,
       acceptWaitingSignal: command !== null,
       resumeBlockedOnChanges: shouldResumeBlockedStage(command, plainReply),
     });
@@ -208,7 +211,7 @@ async function applyIssueRetrySignal(input: {
 
 async function applyIssueApprovalSignal(input: {
   readonly event: CommentObservedEvent;
-  readonly command: '/approved' | '/changes';
+  readonly command: typeof GitHubBuiltInCommand.Approved | typeof GitHubBuiltInCommand.Changes;
   readonly resources: ResourceService | undefined;
   readonly work: WorkService;
   readonly lookup: ResourceLookup | undefined;
@@ -228,8 +231,11 @@ async function applyIssueApprovalSignal(input: {
     work,
     orchestration,
     resourceId: resourceIdValue,
-    outcome: command === '/approved' ? ActivityOutcomeKind.Done : ActivityOutcomeKind.Rejected,
-    resumeBlockedOnChanges: command === '/changes',
+    outcome:
+      command === GitHubBuiltInCommand.Approved
+        ? ActivityOutcomeKind.Done
+        : ActivityOutcomeKind.Rejected,
+    resumeBlockedOnChanges: command === GitHubBuiltInCommand.Changes,
   });
 }
 

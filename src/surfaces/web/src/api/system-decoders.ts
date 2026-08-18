@@ -1,4 +1,5 @@
 import type {
+  CommandsResponse,
   ConfigurationResponse,
   HealthResponse,
   MetricsResponse,
@@ -84,6 +85,27 @@ export const decodeConfiguration: Decoder<ConfigurationResponse> = (value, path 
   const configurationPath = child(path, 'configuration');
   return {
     configuration: object(json(record.configuration, configurationPath), configurationPath),
+  };
+};
+
+export const decodeCommands: Decoder<CommandsResponse> = (value, path = '') => {
+  const record = object(value, path);
+  return {
+    adapters: array(record.adapters, child(path, 'adapters'), (item, itemPath = '') => {
+      const adapter = object(item, itemPath);
+      return {
+        adapter: string(adapter.adapter, child(itemPath, 'adapterId')),
+        provider: string(adapter.provider, child(itemPath, 'provider')),
+        commands: array(
+          adapter.commands,
+          child(itemPath, 'commands'),
+          (command, commandPath = '') => {
+            const decoded = object(command, commandPath);
+            return { syntax: string(decoded.syntax, child(commandPath, 'syntax')) };
+          },
+        ),
+      };
+    }),
   };
 };
 

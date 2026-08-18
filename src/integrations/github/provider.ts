@@ -13,6 +13,7 @@ import { translateGitHubOutbound } from './application/outbound-translator.js';
 import { createGitHubWakeLabelReconciler } from './application/wake-labels.js';
 import { gitHubConfigSchema, type GitHubConfig } from './contracts/config.js';
 import { GitHubEventType } from './contracts/events.js';
+import { GitHubBuiltInCommand } from './contracts/vocabulary.js';
 import { createGitHubAdapterHealthRegistry } from './infrastructure/adapter-health-registry.js';
 import { createGitHubClient } from './infrastructure/client.js';
 import { createGitHubDelivery } from './infrastructure/delivery.js';
@@ -50,6 +51,10 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         requests,
       }),
       health: () => health.snapshotAll(),
+      commands: () => [
+        ...Object.values(GitHubBuiltInCommand).map((syntax) => ({ syntax })),
+        ...config.commands.map((syntax) => ({ syntax })),
+      ],
       delivery: createGitHubDelivery(
         async (intent, idempotencyKey) => {
           const resource = await services.resources.get(resourceId(intent.resourceId));

@@ -3,6 +3,7 @@ import {
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
 import type { GitHubIssueCommentPayload } from '../contracts/payloads.js';
+import { GitHubBuiltInCommand } from '../contracts/vocabulary.js';
 import { issueCommentObservation } from './issue-source.js';
 import { mergeBatches, reportPartialPollFailure, type PollBatch } from './poll-watermark.js';
 import { githubReviewObservation } from './review-source.js';
@@ -132,7 +133,7 @@ async function retryAuthorization(
   context: RepositoryPollContext,
   comment: GitHubIssueCommentPayload,
 ): Promise<ReviewerAuthorizationEvidence | undefined> {
-  if (comment.body?.trim().toLowerCase() !== '/retry') return undefined;
+  if (comment.body?.trim().toLowerCase() !== GitHubBuiltInCommand.Retry) return undefined;
   const login = comment.user?.login;
   if (login === undefined || context.client.collaboratorPermission === undefined)
     return { source: ReviewerAuthorizationSource.None };

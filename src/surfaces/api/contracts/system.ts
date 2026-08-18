@@ -22,3 +22,11 @@ export interface HealthResponse {
 export interface ConfigurationResponse {
   readonly configuration: Readonly<Record<string, unknown>>;
 }
+
+export interface CommandsResponse {
+  readonly adapters: readonly {
+    readonly adapter: string;
+    readonly provider: string;
+    readonly commands: readonly { readonly syntax: string }[];
+  }[];
+}

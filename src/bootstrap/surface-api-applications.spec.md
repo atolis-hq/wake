@@ -71,6 +71,11 @@ for a single WorkItem (see the Work detail component).
   whose name looks secret-shaped redacted before it is returned; this
   component supplies the full configuration value, and Surfaces' own
   presenter decides what is redacted.
+- `commands` MUST return one entry per composed provider instance that
+  exposes a `commands()` accessor, carrying that instance's adapter id,
+  provider id, and its reported command list verbatim; a provider instance
+  with no `commands()` accessor MUST be omitted rather than reported with an
+  empty list.
 
 **Board and status**
 
