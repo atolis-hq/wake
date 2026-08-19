@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { RunnerRegistry, type Runner } from '../../../src/execution/index.js';
+import {
+  NoEligibleRunnerError,
+  RunnerRegistry,
+  type Runner,
+} from '../../../src/execution/index.js';
 
 describe('RunnerRegistry', () => {
   it('resolves the first configured runner in an execution runner pool', () => {
@@ -45,6 +49,19 @@ describe('RunnerRegistry', () => {
 
     expect(() => registry.resolve('standard', new Set(['sonnet', 'codex-mini']))).toThrow(
       /no eligible runner/i,
+    );
+  });
+
+  it('throws NoEligibleRunnerError, not a plain Error, when every candidate is ineligible', () => {
+    const sonnet = fakeRunner();
+    const codexMini = fakeRunner();
+    const registry = new RunnerRegistry(
+      { standard: ['sonnet', 'codex-mini'] },
+      { sonnet, 'codex-mini': codexMini },
+    );
+
+    expect(() => registry.resolve('standard', new Set(['sonnet', 'codex-mini']))).toThrow(
+      NoEligibleRunnerError,
     );
   });
 
