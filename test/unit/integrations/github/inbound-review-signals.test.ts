@@ -37,6 +37,10 @@ it('recognizes /changes with feedback as an issue command', async () => {
   expect(await issueCommentSignals('/changes please retry the error handling')).toHaveLength(1);
 });
 
+it('recognizes /changes followed by a blank line and feedback as an issue command', async () => {
+  expect(await issueCommentSignals('/changes\n\nplease retry the error handling')).toHaveLength(1);
+});
+
 it('retries an open primary workflow only for a provider-authorized /retry comment', async () => {
   const retried: unknown[] = [];
   const event = issueCommentEvent('/retry');
@@ -274,6 +278,50 @@ it('resumes an eligible blocked issue workflow on /changes', async () => {
 
   await applyReviewSignal({
     event: issueCommentEvent('/changes clarify the closure provenance'),
+    journal: {} as never,
+    resources: {
+      async correlations() {
+        return [{ role: 'primary', workItemId: 'work-7' }];
+      },
+      async get() {
+        return { kind: resourceKind('issue') };
+      },
+    } as never,
+    work: {
+      async get() {
+        return { state: 'open', frozen: false, deleted: false };
+      },
+    } as never,
+    lookup: {
+      async resourceIdForExternalKey() {
+        return 'resource-7';
+      },
+    } as never,
+    pullRequests: undefined,
+    ids: {} as never,
+    adapter: GitHubAdapter,
+    orchestration: {
+      async listAll() {
+        return [{ workflowInstanceId: 'workflow-7', workItemId: 'work-7', status: 'blocked' }];
+      },
+      async resumeBlockedStageForChanges(...input: unknown[]) {
+        resumes.push(input);
+      },
+    } as never,
+  });
+
+  expect(resumes).toHaveLength(1);
+  expect(resumes[0]).toMatchObject([
+    'workflow-7',
+    { commandId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z:inbound' },
+  ]);
+});
+
+it('resumes an eligible blocked issue workflow on /changes followed by a blank line', async () => {
+  const resumes: unknown[] = [];
+
+  await applyReviewSignal({
+    event: issueCommentEvent('/changes\n\nclarify the closure provenance'),
     journal: {} as never,
     resources: {
       async correlations() {
