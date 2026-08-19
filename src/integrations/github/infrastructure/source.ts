@@ -1,6 +1,7 @@
 import type { CheckpointStore } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ExternalEventSource } from '../../contracts/intake.js';
+import { gitHubIssueQueryFilters } from '../application/intake-policy.js';
 import type { GitHubConfig } from '../contracts/config.js';
 import { GitHubEventType } from '../contracts/events.js';
 import {
@@ -101,8 +102,8 @@ function limitGitHubSourceClient(
 ): GitHubSourceClient {
   return {
     ...client,
-    listIssues: (owner, repo, maxResults, since) =>
-      requests.run(() => client.listIssues(owner, repo, maxResults, since)),
+    listIssues: (owner, repo, maxResults, since, filters) =>
+      requests.run(() => client.listIssues(owner, repo, maxResults, since, filters)),
     listPullRequests: (owner, repo, maxResults) =>
       requests.run(() => client.listPullRequests(owner, repo, maxResults)),
     listCheckRunsForRef: (owner, repo, ref, maxResults) =>
@@ -163,7 +164,13 @@ async function pollRepository(input: {
   };
   const since = overlapSince(input.watermark, config.polling.lookbackMs);
   const [issuesResult, pullRequestsResult] = await Promise.allSettled([
-    client.listIssues(owner, repo, config.polling.maxPerRepo, since),
+    client.listIssues(
+      owner,
+      repo,
+      config.polling.maxPerRepo,
+      since,
+      gitHubIssueQueryFilters(config.intake),
+    ),
     client.listPullRequests(owner, repo, config.polling.maxPerRepo),
   ]);
   if (isFulfilled(issuesResult)) health.recordSuccess(context.repository, 'poll');

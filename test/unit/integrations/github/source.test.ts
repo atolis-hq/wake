@@ -8,6 +8,7 @@ import {
 } from '../../../../src/activities/index.js';
 import { gitHubConfigSchema } from '../../../../src/integrations/github/contracts/config.js';
 import { GitHubEventType } from '../../../../src/integrations/github/contracts/events.js';
+import type { GitHubIssueQueryFilters } from '../../../../src/integrations/github/contracts/issue-query.js';
 import type {
   GitHubIssueCommentPayload,
   GitHubIssuePayload,
@@ -26,6 +27,32 @@ it('defaults the provider-wide request concurrency limit to four', () => {
   });
 
   expect(config.polling.maxConcurrent).toBe(4);
+});
+
+it('passes only lossless intake facets to the issue query', async () => {
+  let filters: GitHubIssueQueryFilters | undefined;
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+      intake: [
+        { where: { requiredAssignees: ['wake-bot'], labels: ['wake'] } },
+        { where: { requiredAssignees: ['wake-bot'], labels: ['other'] } },
+      ],
+    }),
+    fakeClient({
+      issues: [],
+      issueComments: {},
+      onListIssues: (_since, queryFilters) => {
+        filters = queryFilters;
+      },
+    }),
+  );
+
+  await source.poll(new AbortController().signal);
+
+  expect(filters).toEqual({ assignee: 'wake-bot' });
 });
 
 it('bounds every nested GitHub read to the repository poll limit while retaining latest evidence', async () => {
@@ -552,13 +579,19 @@ function fakeClient(input: {
   readonly reviews?: Readonly<Record<number, readonly GitHubReviewPayload[]>>;
   readonly reviewError?: Error;
   readonly pullRequestError?: Error;
-  readonly onListIssues?: (since: string | undefined) => void;
+  readonly onListIssues?: (since: string | undefined, filters: GitHubIssueQueryFilters) => void;
   readonly collaboratorPermission?: typeof ProviderPermission.Write;
 }) {
   const collaboratorPermission = input.collaboratorPermission;
   return {
-    async listIssues(_owner: string, _repo: string, _maxResults: number, since?: string) {
-      input.onListIssues?.(since);
+    async listIssues(
+      _owner: string,
+      _repo: string,
+      _maxResults: number,
+      since?: string,
+      filters: GitHubIssueQueryFilters = {},
+    ) {
+      input.onListIssues?.(since, filters);
       return input.issues;
     },
     async listPullRequests() {
