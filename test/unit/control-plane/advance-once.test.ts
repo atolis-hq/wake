@@ -701,6 +701,74 @@ describe('advanceOnce', () => {
     ]);
   });
 
+  // A real agent Run is still 'started' when execution.attempt() returns, so its
+  // quota outcome is only ever seen by this reconciliation path on a later tick.
+  it('retries a quota-exceeded outcome found by terminal-Run reconciliation instead of accepting it', async () => {
+    const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
+    const workflow = {
+      workflowInstanceId: 'workflow-1',
+      workItemId: 'work-1',
+      orchestrationGroupId: 'group-1',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const accepted: unknown[] = [];
+    const retried: unknown[] = [];
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async (...input: unknown[]) => {
+          accepted.push(input);
+          return workflow;
+        },
+        markActivationStarted: async () => workflow,
+        retryRunnerQuotaFailure: async (...input: unknown[]) => {
+          retried.push(input);
+          return workflow;
+        },
+      } as never,
+      {
+        attempt: async () => {
+          throw new Error('Reconciliation must resolve the terminal Run before any dispatch');
+        },
+        list: async () =>
+          [
+            {
+              runId: 'run-1',
+              status: 'succeeded',
+              runner: { name: 'codex' },
+              outcome: {
+                kind: 'failed',
+                data: { reason: 'runner-quota-exceeded', message: "You've hit your usage limit." },
+              },
+            },
+          ] as never,
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-19T00:00:00.000Z') },
+      { ids: { next: () => 'command-1' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toEqual({
+      kind: 'progressed',
+      dispatched: [{ activationId: 'activation-1', runId: 'run-1' }],
+    });
+    expect(accepted).toEqual([]);
+    expect(retried).toEqual([
+      [
+        workflow.workflowInstanceId,
+        {
+          activationId: activation.activationId,
+          runId: 'run-1',
+          runnerName: 'codex',
+          message: "You've hit your usage limit.",
+        },
+        expect.anything(),
+      ],
+    ]);
+  });
+
   it('accepts an ordinary non-quota failed outcome through acceptOutcome unchanged', async () => {
     const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
     const workflow = {
