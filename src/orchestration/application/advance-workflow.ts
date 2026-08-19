@@ -167,13 +167,16 @@ export class AdvanceWorkflow {
   ) {
     const loaded = await this.repository.load(id);
     if (loaded.view === null) return null;
+    // The retry re-requests the interrupted Activation, not a stage lookup, but
+    // the definition must still be resolvable for the retried Activation's own
+    // outcome to be routable later; an unavailable definition blocks here.
     const definition = await this.workflows.definitionForOperation(
       loaded.view,
       loaded.sequence,
       context,
     );
     if (definition === null) return (await this.repository.loadRequired(id)).view;
-    const decision = requestRunnerQuotaRetry(definition, loaded.view, {
+    const decision = requestRunnerQuotaRetry(loaded.view, {
       activationId: input.activationId,
       runId: input.runId,
       runnerName: input.runnerName,

@@ -1,10 +1,8 @@
 import { activationId as toActivationId } from '../../activities/index.js';
-import type { CompiledWorkflow } from '../contracts/config.js';
 import {
   OrchestrationEventType,
   type WorkflowOrchestrationEventDraft,
 } from '../contracts/events.js';
-import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import type { DecisionContext, OrchestrationDecision } from './activation-policy.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
@@ -27,7 +25,6 @@ export function isRunnerQuotaRetryEligible(
 }
 
 export function requestRunnerQuotaRetry(
-  definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: RunnerQuotaRetryRequest,
 ): OrchestrationDecision {
@@ -36,7 +33,14 @@ export function requestRunnerQuotaRetry(
       kind: 'ignored',
       reason: 'workflow has no matching pending activation for runner-quota retry',
     };
-  const stage = definition.stages[stageName(state.currentStage)]!;
+  // Re-request the interrupted Activation itself, not the current stage's
+  // configured activity: a supplemental or follow-on Activation runs a
+  // different activity and input, and substituting the stage's main one would
+  // drop that work and re-run something the runner never attempted.
+  const interrupted = state.pendingActivation!;
+  // No RetryCounted here, deliberately: a quota condition is a runner-capacity
+  // fact, not a failed attempt, so it must never consume the route's
+  // configured `retry.max` budget.
   const events: WorkflowOrchestrationEventDraft[] = [
     stateDraft(
       state,
@@ -54,10 +58,22 @@ export function requestRunnerQuotaRetry(
       state,
       input,
       OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-        stage: stageName(state.currentStage),
-      }),
+      activation(
+        state.workflowInstanceId,
+        nextOrdinal(state),
+        interrupted.activity,
+        interrupted.input,
+        {
+          execution: interrupted.execution,
+          ...(interrupted.stage === undefined ? {} : { stage: interrupted.stage }),
+          ...(interrupted.followOnIndex === undefined
+            ? {}
+            : { followOnIndex: interrupted.followOnIndex }),
+          ...(interrupted.supplemental === undefined
+            ? {}
+            : { supplemental: interrupted.supplemental }),
+        },
+      ),
       2,
     ),
   ];
