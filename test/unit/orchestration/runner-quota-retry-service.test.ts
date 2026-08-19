@@ -84,6 +84,7 @@ it('resolves the pending activation and requests a fresh one without publishing 
   );
 
   expect(result?.acceptedOutcomes).toContain(pendingActivationId);
+  expect(result?.pendingActivation).toBeDefined();
   expect(result?.pendingActivation?.activationId).not.toBe(pendingActivationId);
   expect(result?.retryCounts).toEqual({});
   expect(result?.lastOutcome).toBeUndefined();
