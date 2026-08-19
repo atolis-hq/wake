@@ -139,7 +139,7 @@ function parseUiToken(arguments_: readonly string[]): WakeCommand {
   }
   if (arguments_.length === 0) return { kind: 'ui-token' };
   if (arguments_.length === 2 && arguments_[0] === '--wake-root')
-    return { kind: 'ui-token', wakeRoot: arguments_[1] };
+    return { kind: 'ui-token', wakeRoot: requiredArgument(arguments_[1], '--wake-root path') };
   throw new Error('ui token accepts optional --wake-root <path>');
 }
 

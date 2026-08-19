@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const yearSeconds = 365 * 24 * 60 * 60;
+
 export const sessionCookieName = 'wake_session';
 
 export function createSession(secret: string, now = Date.now()): string {
@@ -14,12 +15,19 @@ export function validSession(token: string | undefined, secret: string, now = Da
   if (token === undefined) return false;
   const [payload, signature, extra] = token.split('.');
   if (payload === undefined || signature === undefined || extra !== undefined) return false;
+  if (!signatureMatches(payload, signature, secret)) return false;
+  return notExpired(payload, now);
+}
+
+function signatureMatches(payload: string, signature: string, secret: string): boolean {
   const expected = sign(payload, secret);
-  if (
-    signature.length !== expected.length ||
-    !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
-  )
-    return false;
+  return (
+    signature.length === expected.length &&
+    timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+  );
+}
+
+function notExpired(payload: string, now: number): boolean {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     return (

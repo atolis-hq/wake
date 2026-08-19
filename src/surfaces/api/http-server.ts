@@ -1,15 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { HttpAuth } from '../auth/auth.js';
+import type { ApiHttpResponse } from '../contracts/http.js';
 import type { AssetSource } from '../web-host/asset-source.js';
 import { problemDetails } from './problem-details.js';
 import { BrowserRouteOutcome, routeBrowserRequest } from './router.js';
 
-export interface ApiHttpResponse {
-  readonly status: number;
-  readonly body: unknown;
-  readonly contentType?: string;
-  readonly headers?: Readonly<Record<string, string>>;
-}
+export type { ApiHttpResponse } from '../contracts/http.js';
 
 /** A transport-only dispatcher supplied by Bootstrap composition. */
 export interface ApiDispatcher {

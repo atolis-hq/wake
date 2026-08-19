@@ -55,7 +55,7 @@ function decodeCredentials(value: unknown): AuthCredentials {
     typeof value.createdAt !== 'string'
   )
     throw new Error('Wake auth credentials are malformed');
-  return value;
+  return value as AuthCredentials;
 }
 
 function isMissing(error: unknown): boolean {
