@@ -1,6 +1,8 @@
 import type { ExternalExecutionKind } from '../../activities/index.js';
 import type { FinishedRunStatus, WorkspaceMode } from './vocabulary.js';
 
+export const ProviderQuotaExceededFailureKind = 'provider-quota-exceeded';
+
 export interface RunnerRequest {
   readonly runId: string;
   readonly prompt: string;

@@ -203,6 +203,51 @@ describe('cliRunner', () => {
     });
   });
 
+  it('classifies a process failure using the supplied classifier before falling back to process-exit', async () => {
+    const runner = cliRunner(
+      'test-cli',
+      process.execPath,
+      () => [
+        '-e',
+        'process.stdout.write("stdout text"); process.stderr.write("stderr text"); process.exit(7)',
+      ],
+      {
+        classifyFailure: ({ stdout, stderr }) =>
+          stdout.includes('stdout text') || stderr.includes('stderr text')
+            ? { kind: 'provider-quota-exceeded', message: 'classified quota message' }
+            : undefined,
+      },
+    );
+    const execution = await runner.start(
+      { runId: 'run-1', prompt: 'ignored', allowedTools: [] },
+      new AbortController().signal,
+    );
+    await expect(execution.result).resolves.toMatchObject({
+      transport: 'failed',
+      failure: { kind: 'provider-quota-exceeded', message: 'classified quota message' },
+    });
+  });
+
+  it('falls back to process-exit when the classifier does not recognize the failure', async () => {
+    const runner = cliRunner(
+      'test-cli',
+      process.execPath,
+      () => [
+        '-e',
+        'process.stdout.write("stdout text"); process.stderr.write("stderr text"); process.exit(7)',
+      ],
+      { classifyFailure: () => undefined },
+    );
+    const execution = await runner.start(
+      { runId: 'run-1', prompt: 'ignored', allowedTools: [] },
+      new AbortController().signal,
+    );
+    await expect(execution.result).resolves.toMatchObject({
+      transport: 'failed',
+      failure: { kind: 'process-exit' },
+    });
+  });
+
   it('classifies a wall-clock timeout as a runner timeout failure', async () => {
     const runner = cliRunner(
       'test-cli',
