@@ -188,6 +188,7 @@ Orchestration does not own:
 | `orchestration.activity-started` | The executor confirms it has begun the pending Activation | The pending Activation is now running, not merely requested. |
 | `orchestration.activity-outcome-accepted` | A non-waiting outcome is accepted for the pending Activation | The Activation is complete and its outcome is now part of the instance's history. |
 | `orchestration.activity-execution-failed` | Execution reports that it could not complete the pending Activation | The failed Activation is durably accepted without an Activity outcome, before the instance is blocked. |
+| `orchestration.activity-retried-for-runner-quota` | Execution reports that the pending Activation's runner hit a provider quota limit | The interrupted Activation is durably accepted without an Activity outcome and re-requested unchanged; no retry budget is consumed and no outcome is published. |
 | `orchestration.activity-waiting` | The pending Activation itself reports a waiting outcome | The Activation is paused mid-execution on a named Signal; it has not completed. |
 | `orchestration.signal-wait-started` | The instance begins waiting for a Signal | The instance is now Waiting for the stated Signal expectation, from any declared approval authority. |
 | `orchestration.signal-accepted` | A Signal matching the current wait is accepted | The wait is now satisfied by this specific provider event; the instance resumes. |
