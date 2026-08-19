@@ -157,6 +157,21 @@ export class OrchestrationService {
     );
   }
 
+  retryRunnerQuotaFailure(
+    workflowInstanceId: WorkflowInstanceId,
+    input: {
+      readonly activationId: ActivationId;
+      readonly runId: string;
+      readonly runnerName: string;
+      readonly message: string;
+    },
+    context: CommandContext,
+  ) {
+    return this.transitionWatchChildren(context, () =>
+      this.advanceWorkflow.retryRunnerQuotaFailure(workflowInstanceId, input, context),
+    );
+  }
+
   retryBlockedFailedStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
     return this.transitionWatchChildren(context, () =>
       this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context),
