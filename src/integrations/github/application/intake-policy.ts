@@ -40,11 +40,11 @@ function sharedRequiredValue(
   values: (rule: GitHubIntakeRuleConfig) => readonly string[],
 ): string | undefined {
   if (configured.length === 0) return undefined;
-  const candidate = values(configured[0]!);
+  const candidate = [...new Set(values(configured[0]!))];
   if (candidate.length !== 1) return undefined;
   return configured.every((rule) => {
-    const required = values(rule);
-    return required.length === 1 && required[0] === candidate[0];
+    const required = new Set(values(rule));
+    return required.size === 1 && required.has(candidate[0]!);
   })
     ? candidate[0]
     : undefined;

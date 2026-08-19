@@ -43,6 +43,17 @@ describe('gitHubIssueQueryFilters', () => {
     ).toEqual({ assignee: 'wake-bot' });
   });
 
+  it('treats duplicate required values as one distinct query filter value', () => {
+    expect(
+      gitHubIssueQueryFilters(
+        intake([
+          { requiredAssignees: ['wake-bot', 'wake-bot'], labels: ['wake', 'wake'] },
+          { requiredAssignees: ['wake-bot'], labels: ['wake'] },
+        ]),
+      ),
+    ).toEqual({ assignee: 'wake-bot', labels: 'wake' });
+  });
+
   it.each([
     ['no intake rules', [], {}],
     ['a rule without an assignee', [{ requiredAssignees: ['wake-bot'] }, {}], {}],

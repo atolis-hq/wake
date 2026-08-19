@@ -170,16 +170,7 @@ async function pollRepository(input: {
     repo,
     since,
   });
-  if (isFulfilled(issuesResult)) health.recordSuccess(context.repository, 'poll');
-  else {
-    reportPartialPollFailure(context.repository, 'issues');
-    health.recordFailure(context.repository, 'poll', issuesResult.reason);
-  }
-  if (isFulfilled(pullRequestsResult)) health.recordSuccess(context.repository, 'poll');
-  else {
-    reportPartialPollFailure(context.repository, 'pull requests');
-    health.recordFailure(context.repository, 'poll', pullRequestsResult.reason);
-  }
+  reportRepositoryReadResults(context, health, issuesResult, pullRequestsResult);
   const issues = isFulfilled(issuesResult) ? issuesResult.value : [];
   const pullRequestPayloads = isFulfilled(pullRequestsResult)
     ? pullRequestsResult.value.filter(
@@ -242,6 +233,32 @@ function fetchRepositoryItems(input: {
     ),
     client.listPullRequests(owner, repo, config.polling.maxPerRepo),
   ]);
+}
+
+function reportRepositoryReadResults(
+  context: RepositoryPollContext,
+  health: GitHubAdapterHealthRegistry,
+  issuesResult: PromiseSettledResult<Awaited<ReturnType<GitHubSourceClient['listIssues']>>>,
+  pullRequestsResult: PromiseSettledResult<
+    Awaited<ReturnType<GitHubSourceClient['listPullRequests']>>
+  >,
+): void {
+  reportRepositoryReadResult(context.repository, health, 'issues', issuesResult);
+  reportRepositoryReadResult(context.repository, health, 'pull requests', pullRequestsResult);
+}
+
+function reportRepositoryReadResult(
+  repository: string,
+  health: GitHubAdapterHealthRegistry,
+  read: string,
+  result: PromiseSettledResult<unknown>,
+): void {
+  if (isFulfilled(result)) {
+    health.recordSuccess(repository, 'poll');
+    return;
+  }
+  reportPartialPollFailure(repository, read);
+  health.recordFailure(repository, 'poll', result.reason);
 }
 
 function isFulfilled<Value>(

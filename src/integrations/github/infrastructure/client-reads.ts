@@ -19,7 +19,7 @@ export function listIssues(
   const { since, filters = {} } = options;
   return fetchPaginatedWithEtag({
     cache,
-    key: `issues:${owner}/${repo}:since:${since ?? 'bootstrap'}:assignee:${filters.assignee ?? 'unfiltered'}:labels:${filters.labels ?? 'unfiltered'}`,
+    key: `issues:${JSON.stringify([owner, repo, since ?? null, filters.assignee ?? null, filters.labels ?? null])}`,
     maxResults,
     pages: (headers) =>
       octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
