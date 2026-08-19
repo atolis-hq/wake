@@ -408,7 +408,14 @@ function agentOutcome(
     return {
       kind: ActivityOutcomeKind.Failed,
       data: {
-        reason: ActivityFailureCode.RunnerFailed,
+        // 'provider-quota-exceeded' is a literal, not execution's ProviderQuotaExceededFailureKind
+        // import: activities sits below execution in the module dependency order and must not
+        // import it. AgentRunnerPort's failure.kind is an open string per the existing runner
+        // contract convention; this is the one place that interprets it.
+        reason:
+          result.failure?.kind === 'provider-quota-exceeded'
+            ? ActivityFailureCode.RunnerQuotaExceeded
+            : ActivityFailureCode.RunnerFailed,
         ...(result.failure === undefined ? {} : { message: result.failure.message }),
       },
     };

@@ -83,6 +83,16 @@ const samples = [
     workflow,
   ),
   eventEnvelope(
+    OrchestrationEventType.ActivityRetriedForRunnerQuota,
+    {
+      activationId: activation.activationId,
+      runId: 'run-1',
+      runnerName: 'codex',
+      message: "You've hit your usage limit.",
+    },
+    workflow,
+  ),
+  eventEnvelope(
     OrchestrationEventType.ActivityWaiting,
     {
       activationId: activation.activationId,
@@ -272,7 +282,7 @@ describe('Orchestration event contract', () => {
     );
     if (blocked.eventType !== OrchestrationEventType.InstanceBlocked)
       throw new Error('expected InstanceBlocked');
-    const retryRequested = decodeOrchestrationEvent(samples[24]);
+    const retryRequested = decodeOrchestrationEvent(samples[25]);
     if (retryRequested.eventType !== OrchestrationEventType.OperatorRetryRequested)
       throw new Error('expected OperatorRetryRequested');
 
@@ -290,7 +300,7 @@ describe('Orchestration event contract', () => {
     ).toThrow();
     expect(() =>
       decodeOrchestrationEvent(
-        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[23].payload, workflow),
+        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[24].payload, workflow),
       ),
     ).toThrow();
   });
@@ -298,7 +308,7 @@ describe('Orchestration event contract', () => {
   it('rejects a primary claim on a child/watch group stream', () => {
     expect(() =>
       decodeOrchestrationEvent(
-        eventEnvelope(OrchestrationEventType.PrimaryClaimed, samples[22].payload, childGroup),
+        eventEnvelope(OrchestrationEventType.PrimaryClaimed, samples[23].payload, childGroup),
       ),
     ).toThrow();
   });
@@ -306,7 +316,7 @@ describe('Orchestration event contract', () => {
   it('rejects a child/watch group claim on a primary group stream', () => {
     expect(() =>
       decodeOrchestrationEvent(
-        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[23].payload, primaryGroup),
+        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[24].payload, primaryGroup),
       ),
     ).toThrow();
   });
@@ -333,7 +343,7 @@ describe('Orchestration event contract', () => {
       decodeOrchestrationEvent(
         eventEnvelope(
           OrchestrationEventType.PrimaryClaimed,
-          { ...samples[22].payload, workItemId: workId('2') },
+          { ...samples[23].payload, workItemId: workId('2') },
           primaryGroup,
         ),
       ),
@@ -346,7 +356,7 @@ describe('Orchestration event contract', () => {
       decodeOrchestrationEvent(
         eventEnvelope(
           OrchestrationEventType.GroupClaimed,
-          { ...samples[23].payload, key: otherChildGroup.id },
+          { ...samples[24].payload, key: otherChildGroup.id },
           childGroup,
         ),
       ),

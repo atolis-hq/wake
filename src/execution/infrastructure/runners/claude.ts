@@ -5,6 +5,7 @@ import type {
   RunnerExecution,
   RunnerRequest,
 } from '../../contracts/runner.js';
+import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
 import { runProcess } from '../process-execution.js';
 
@@ -17,6 +18,7 @@ export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseClaudeOutput,
+      classifyFailure: classifyClaudeFailure,
       supportsSessionResume: true,
     },
   );
@@ -33,6 +35,25 @@ export function parseClaudeOutput(
     ...(typeof value.session_id === 'string' ? { sessionId: value.session_id } : {}),
     ...claudeUsage(value),
   };
+}
+
+// Deliberately narrow: only genuine provider usage/rate-limit phrasing.
+// Auth/login failures (unauthorized, authentication, permission denied, api
+// key) are NOT included here — they are a different failure class and must
+// not be paused-and-retried as if they were transient.
+const claudeQuotaPattern =
+  /rate limit|quota|credit balance|spend limit|usage limit|session limit|too many requests|\b429\b/i;
+
+export function classifyClaudeFailure(input: {
+  readonly stdout: string;
+  readonly stderr: string;
+}): { readonly kind: string; readonly message: string } | undefined {
+  // Prefer stderr — a CLI's own diagnostic stream — over stdout, which on a
+  // failed run can carry the agent's own generated text; only fall back to
+  // stdout when stderr is empty.
+  const text = input.stderr.trim().length > 0 ? input.stderr : input.stdout;
+  if (!claudeQuotaPattern.test(text)) return undefined;
+  return { kind: ProviderQuotaExceededFailureKind, message: text.trim() };
 }
 
 function claudeUsage(value: Record<string, unknown>): Partial<AgentRunnerResult> {
@@ -108,6 +129,10 @@ export function cliRunner(
       stdout: string,
       request: RunnerRequest,
     ) => Partial<AgentRunnerResult>;
+    readonly classifyFailure?: (input: {
+      readonly stdout: string;
+      readonly stderr: string;
+    }) => { readonly kind: string; readonly message: string } | undefined;
   } = {},
 ): Runner {
   return {
@@ -141,20 +166,45 @@ export function cliRunner(
                 transport: RunStatus.Failed,
                 output: value.stdout,
                 runner: name,
-                failure: {
-                  kind: value.timedOut
-                    ? ExecutionCancellationReason.Timeout
-                    : (value.failureKind ?? 'process-exit'),
-                  message: value.timedOut
-                    ? `Runner timed out after ${options.timeoutMs}ms`
-                    : (value.failureMessage ?? (value.stderr || `exit ${value.exitCode}`)),
-                },
+                failure: failureFor(value, options),
               },
         ),
         cancel: process.cancel,
       };
     },
   };
+}
+
+function failureFor(
+  value: {
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly exitCode: number | undefined;
+    readonly timedOut: boolean;
+    readonly failureKind?: 'output-limit';
+    readonly failureMessage?: string;
+  },
+  options: {
+    readonly timeoutMs?: number;
+    readonly classifyFailure?: (input: {
+      readonly stdout: string;
+      readonly stderr: string;
+    }) => { readonly kind: string; readonly message: string } | undefined;
+  },
+): { readonly kind: string; readonly message: string } {
+  if (value.timedOut)
+    return {
+      kind: ExecutionCancellationReason.Timeout,
+      message: `Runner timed out after ${options.timeoutMs}ms`,
+    };
+  if (value.failureKind !== undefined)
+    return {
+      kind: value.failureKind,
+      message: value.failureMessage ?? (value.stderr || `exit ${value.exitCode}`),
+    };
+  const classified = options.classifyFailure?.({ stdout: value.stdout, stderr: value.stderr });
+  if (classified !== undefined) return classified;
+  return { kind: 'process-exit', message: value.stderr || `exit ${value.exitCode}` };
 }
 
 export interface RunnerDefaults {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classifyClaudeFailure,
+  classifyCodexFailure,
   claudeCommandArgs,
   cliRunner,
   codexCommandArgs,
@@ -9,7 +11,10 @@ import {
 import { runProcess } from '../../../src/execution/infrastructure/process-execution.js';
 import { parseClaudeOutput } from '../../../src/execution/infrastructure/runners/claude.js';
 import { parseCodexOutput } from '../../../src/execution/infrastructure/runners/codex.js';
-import { parseCursorOutput } from '../../../src/execution/infrastructure/runners/cursor.js';
+import {
+  classifyCursorFailure,
+  parseCursorOutput,
+} from '../../../src/execution/infrastructure/runners/cursor.js';
 
 describe('runProcess', () => {
   it('closes stdin so non-interactive CLIs do not wait for more input', async () => {
@@ -200,6 +205,51 @@ describe('cliRunner', () => {
       output: 'partial output',
       runner: 'test-cli',
       failure: { kind: 'process-exit', message: 'diagnostic' },
+    });
+  });
+
+  it('classifies a process failure using the supplied classifier before falling back to process-exit', async () => {
+    const runner = cliRunner(
+      'test-cli',
+      process.execPath,
+      () => [
+        '-e',
+        'process.stdout.write("stdout text"); process.stderr.write("stderr text"); process.exit(7)',
+      ],
+      {
+        classifyFailure: ({ stdout, stderr }) =>
+          stdout.includes('stdout text') || stderr.includes('stderr text')
+            ? { kind: 'provider-quota-exceeded', message: 'classified quota message' }
+            : undefined,
+      },
+    );
+    const execution = await runner.start(
+      { runId: 'run-1', prompt: 'ignored', allowedTools: [] },
+      new AbortController().signal,
+    );
+    await expect(execution.result).resolves.toMatchObject({
+      transport: 'failed',
+      failure: { kind: 'provider-quota-exceeded', message: 'classified quota message' },
+    });
+  });
+
+  it('falls back to process-exit when the classifier does not recognize the failure', async () => {
+    const runner = cliRunner(
+      'test-cli',
+      process.execPath,
+      () => [
+        '-e',
+        'process.stdout.write("stdout text"); process.stderr.write("stderr text"); process.exit(7)',
+      ],
+      { classifyFailure: () => undefined },
+    );
+    const execution = await runner.start(
+      { runId: 'run-1', prompt: 'ignored', allowedTools: [] },
+      new AbortController().signal,
+    );
+    await expect(execution.result).resolves.toMatchObject({
+      transport: 'failed',
+      failure: { kind: 'process-exit' },
     });
   });
 
@@ -512,4 +562,117 @@ describe('cliRunner', () => {
       expect(parse(partial)).toEqual(expected);
     },
   );
+
+  it('classifies a Codex usage-limit turn.failed event as provider-quota-exceeded', () => {
+    const stdout = [
+      JSON.stringify({ type: 'thread.started', thread_id: 't-1' }),
+      JSON.stringify({ type: 'turn.started' }),
+      JSON.stringify({
+        type: 'error',
+        message:
+          "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 20th, 2026 7:17 AM.",
+      }),
+      JSON.stringify({
+        type: 'turn.failed',
+        error: {
+          message:
+            "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 20th, 2026 7:17 AM.",
+        },
+      }),
+    ].join('\n');
+
+    expect(classifyCodexFailure({ stdout, stderr: '' })).toEqual({
+      kind: 'provider-quota-exceeded',
+      message:
+        "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 20th, 2026 7:17 AM.",
+    });
+  });
+
+  it('does not classify an ordinary Codex crash as quota-exceeded', () => {
+    expect(classifyCodexFailure({ stdout: '', stderr: 'Segmentation fault' })).toBeUndefined();
+  });
+
+  it('does not classify a Codex auth failure as quota-exceeded', () => {
+    const stdout = JSON.stringify({
+      type: 'error',
+      message: 'Unauthorized: authentication failed, please run `codex login`.',
+    });
+    expect(classifyCodexFailure({ stdout, stderr: '' })).toBeUndefined();
+  });
+
+  it('does not scan raw stdout when no structured error/turn.failed event is present', () => {
+    // The word "quota" appears in this agent-generated line, but it is not a
+    // structured Codex error event, so it must never be classified as quota.
+    const stdout = JSON.stringify({
+      type: 'item.completed',
+      item: { type: 'agent_message', text: 'I updated the quota-check middleware and committed.' },
+    });
+    expect(classifyCodexFailure({ stdout, stderr: '' })).toBeUndefined();
+  });
+
+  it('classifies a Claude rate-limit message as provider-quota-exceeded', () => {
+    expect(
+      classifyClaudeFailure({
+        stdout: '',
+        stderr: 'Error: You have exceeded your rate limit. Please try again later.',
+      }),
+    ).toEqual({
+      kind: 'provider-quota-exceeded',
+      message: 'Error: You have exceeded your rate limit. Please try again later.',
+    });
+  });
+
+  it('does not classify an ordinary Claude crash as quota-exceeded', () => {
+    expect(
+      classifyClaudeFailure({ stdout: '', stderr: 'ENOENT: command not found' }),
+    ).toBeUndefined();
+  });
+
+  it('does not classify a Claude auth failure as quota-exceeded', () => {
+    expect(
+      classifyClaudeFailure({
+        stdout: '',
+        stderr: 'Error: Unauthorized. Please run `claude login`.',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('does not scan Claude stdout when stderr already carries diagnostic text', () => {
+    // stdout here is agent-generated content that happens to contain "quota";
+    // since stderr is non-empty it must be the only text classified against.
+    expect(
+      classifyClaudeFailure({
+        stdout: 'I updated the quota-check middleware and committed.',
+        stderr: 'ENOENT: command not found',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('classifies a Cursor quota message as provider-quota-exceeded', () => {
+    expect(
+      classifyCursorFailure({ stdout: 'You have exceeded your monthly quota.', stderr: '' }),
+    ).toEqual({
+      kind: 'provider-quota-exceeded',
+      message: 'You have exceeded your monthly quota.',
+    });
+  });
+
+  it('does not classify an ordinary Cursor crash as quota-exceeded', () => {
+    expect(classifyCursorFailure({ stdout: '', stderr: 'panic: runtime error' })).toBeUndefined();
+  });
+
+  it('does not classify a Cursor auth failure as quota-exceeded', () => {
+    expect(
+      classifyCursorFailure({ stdout: '', stderr: 'Error: unauthorized. Invalid API key.' }),
+    ).toBeUndefined();
+  });
+
+  it('does not scan Cursor stdout when stderr already carries diagnostic text', () => {
+    expect(
+      classifyCursorFailure({
+        stdout: 'You have exceeded your monthly quota.',
+        stderr: 'panic: runtime error',
+      }),
+    ).toBeUndefined();
+  });
 });

@@ -29,6 +29,16 @@ export interface OrchestrationPort {
     input: { readonly activationId: string; readonly runId: string; readonly reason: string },
     context: CommandContext,
   ): Promise<WorkflowInstanceView | null>;
+  retryRunnerQuotaFailure?(
+    workflowInstanceId: string,
+    input: {
+      readonly activationId: string;
+      readonly runId: string;
+      readonly runnerName: string;
+      readonly message: string;
+    },
+    context: CommandContext,
+  ): Promise<WorkflowInstanceView | null>;
   markActivationStarted(
     workflowInstanceId: string,
     activationId: string,

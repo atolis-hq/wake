@@ -47,6 +47,13 @@ export {
 
 export type { OperatorRetryRequest } from './operator-retry-policy.js';
 
+export {
+  isRunnerQuotaRetryEligible,
+  requestRunnerQuotaRetry,
+} from './runner-quota-retry-policy.js';
+
+export type { RunnerQuotaRetryRequest } from './runner-quota-retry-policy.js';
+
 export function acceptActivityOutcome(
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,

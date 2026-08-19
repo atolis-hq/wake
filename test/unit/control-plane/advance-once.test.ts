@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
 import { createAdvanceOnce } from '../../../src/control-plane/index.js';
-import { ActivationClaimConflictError, type RunView } from '../../../src/execution/index.js';
+import {
+  ActivationClaimConflictError,
+  NoEligibleRunnerError,
+  type RunView,
+} from '../../../src/execution/index.js';
 import { workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import {
   type ActivityActivationView,
@@ -295,6 +299,36 @@ describe('advanceOnce', () => {
 
     await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
     expect(attempts).toBe(1);
+  });
+
+  it('stops the dispatch loop for this tick, without crashing, when every pool runner is ineligible', async () => {
+    const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
+    const workflow = {
+      workflowInstanceId: 'workflow-1',
+      workItemId: 'work-1',
+      orchestrationGroupId: 'group-1',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => workflow,
+      } as never,
+      {
+        attempt: async () => {
+          throw new NoEligibleRunnerError('standard');
+        },
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-19T00:00:00.000Z') },
+      { ids: { next: () => 'command-1' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'no-work' });
   });
 
   it('does not dispatch a second branch workspace activity while its workflow has an active branch Run', async () => {
@@ -601,6 +635,195 @@ describe('advanceOnce', () => {
           activationId: activation.activationId,
           runId: 'run-00000000000000000000000001',
           reason: 'runner exited 1',
+        },
+        expect.anything(),
+      ],
+    ]);
+  });
+
+  it('retries a quota-exceeded outcome through orchestration instead of accepting it', async () => {
+    const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
+    const workflow = {
+      workflowInstanceId: 'workflow-1',
+      workItemId: 'work-1',
+      orchestrationGroupId: 'group-1',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const accepted: unknown[] = [];
+    const retried: unknown[] = [];
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async (...input: unknown[]) => {
+          accepted.push(input);
+          return workflow;
+        },
+        markActivationStarted: async () => workflow,
+        retryRunnerQuotaFailure: async (...input: unknown[]) => {
+          retried.push(input);
+          return workflow;
+        },
+      } as never,
+      {
+        attempt: async () =>
+          ({
+            runId: 'run-1',
+            status: 'succeeded',
+            runner: { name: 'codex' },
+            outcome: {
+              kind: 'failed',
+              data: { reason: 'runner-quota-exceeded', message: "You've hit your usage limit." },
+            },
+          }) as never,
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-19T00:00:00.000Z') },
+      { ids: { next: () => 'command-1' } as never },
+    );
+
+    await advance({ maxProgress: 1 });
+
+    expect(accepted).toEqual([]);
+    expect(retried).toEqual([
+      [
+        workflow.workflowInstanceId,
+        {
+          activationId: activation.activationId,
+          runId: 'run-1',
+          runnerName: 'codex',
+          message: "You've hit your usage limit.",
+        },
+        expect.anything(),
+      ],
+    ]);
+  });
+
+  // A real agent Run is still 'started' when execution.attempt() returns, so its
+  // quota outcome is only ever seen by this reconciliation path on a later tick.
+  it('retries a quota-exceeded outcome found by terminal-Run reconciliation instead of accepting it', async () => {
+    const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
+    const workflow = {
+      workflowInstanceId: 'workflow-1',
+      workItemId: 'work-1',
+      orchestrationGroupId: 'group-1',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const accepted: unknown[] = [];
+    const retried: unknown[] = [];
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async (...input: unknown[]) => {
+          accepted.push(input);
+          return workflow;
+        },
+        markActivationStarted: async () => workflow,
+        retryRunnerQuotaFailure: async (...input: unknown[]) => {
+          retried.push(input);
+          return workflow;
+        },
+      } as never,
+      {
+        attempt: async () => {
+          throw new Error('Reconciliation must resolve the terminal Run before any dispatch');
+        },
+        list: async () =>
+          [
+            {
+              runId: 'run-1',
+              status: 'succeeded',
+              runner: { name: 'codex' },
+              outcome: {
+                kind: 'failed',
+                data: { reason: 'runner-quota-exceeded', message: "You've hit your usage limit." },
+              },
+            },
+          ] as never,
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-19T00:00:00.000Z') },
+      { ids: { next: () => 'command-1' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toEqual({
+      kind: 'progressed',
+      dispatched: [{ activationId: 'activation-1', runId: 'run-1' }],
+    });
+    expect(accepted).toEqual([]);
+    expect(retried).toEqual([
+      [
+        workflow.workflowInstanceId,
+        {
+          activationId: activation.activationId,
+          runId: 'run-1',
+          runnerName: 'codex',
+          message: "You've hit your usage limit.",
+        },
+        expect.anything(),
+      ],
+    ]);
+  });
+
+  it('accepts an ordinary non-quota failed outcome through acceptOutcome unchanged', async () => {
+    const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
+    const workflow = {
+      workflowInstanceId: 'workflow-1',
+      workItemId: 'work-1',
+      orchestrationGroupId: 'group-1',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const accepted: unknown[] = [];
+    const retried: unknown[] = [];
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async (...input: unknown[]) => {
+          accepted.push(input);
+          return workflow;
+        },
+        markActivationStarted: async () => workflow,
+        retryRunnerQuotaFailure: async (...input: unknown[]) => {
+          retried.push(input);
+          return workflow;
+        },
+      } as never,
+      {
+        attempt: async () =>
+          ({
+            runId: 'run-1',
+            status: 'succeeded',
+            runner: { name: 'codex' },
+            outcome: {
+              kind: 'failed',
+              data: { reason: 'runner-failed', message: 'runner exited 1' },
+            },
+          }) as never,
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-19T00:00:00.000Z') },
+      { ids: { next: () => 'command-1' } as never },
+    );
+
+    await advance({ maxProgress: 1 });
+
+    expect(retried).toEqual([]);
+    expect(accepted).toEqual([
+      [
+        {
+          workflowInstanceId: workflow.workflowInstanceId,
+          activationId: activation.activationId,
+          outcome: {
+            kind: 'failed',
+            data: { reason: 'runner-failed', message: 'runner exited 1' },
+          },
         },
         expect.anything(),
       ],

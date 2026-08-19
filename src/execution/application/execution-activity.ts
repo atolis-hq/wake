@@ -4,6 +4,7 @@ import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/
 import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type RunExecutionEventDraft } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
+import { ProviderQuotaExceededFailureKind } from '../contracts/runner.js';
 import type { WorkspaceProvider } from '../contracts/workspace.js';
 import { parseAgentRunnerResponse } from '../infrastructure/agent-runner-adapter.js';
 import type { RunnerRegistry } from '../infrastructure/runners/registry.js';
@@ -147,7 +148,10 @@ function runnerResultReporter(
       payload: { transport: result.transport, agent: parseAgentRunnerResponse(result) },
     }) as RunExecutionEventDraft;
     await appendIdempotently(runtime.repository, currentRunId, loaded.sequence, event);
-    if (result.failure?.kind === 'provider-quota-exceeded' && request.runnerName !== undefined)
+    if (
+      result.failure?.kind === ProviderQuotaExceededFailureKind &&
+      request.runnerName !== undefined
+    )
       await runtime.dependencies.reportRunnerQuota?.({
         runnerName: request.runnerName,
         message: result.failure.message,

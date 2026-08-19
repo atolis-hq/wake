@@ -15,6 +15,7 @@ import {
   requestChangesResume as decideChangesResume,
   requestOperatorRetry as decideOperatorRetry,
   requestSupplementalActivity as decideSupplementalActivity,
+  requestRunnerQuotaRetry,
 } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
 import { appendWithIntentRecovery } from './durable-append.js';
@@ -151,6 +152,40 @@ export class AdvanceWorkflow {
         payload: { reason: input.reason },
       }),
     ]);
+    return (await this.repository.load(id)).view;
+  }
+
+  async retryRunnerQuotaFailure(
+    id: WorkflowInstanceId,
+    input: {
+      readonly activationId: ActivationId;
+      readonly runId: string;
+      readonly runnerName: string;
+      readonly message: string;
+    },
+    context: CommandContext,
+  ) {
+    const loaded = await this.repository.load(id);
+    if (loaded.view === null) return null;
+    // The retry re-requests the interrupted Activation, not a stage lookup, but
+    // the definition must still be resolvable for the retried Activation's own
+    // outcome to be routable later; an unavailable definition blocks here.
+    const definition = await this.workflows.definitionForOperation(
+      loaded.view,
+      loaded.sequence,
+      context,
+    );
+    if (definition === null) return (await this.repository.loadRequired(id)).view;
+    const decision = requestRunnerQuotaRetry(loaded.view, {
+      activationId: input.activationId,
+      runId: input.runId,
+      runnerName: input.runnerName,
+      message: input.message,
+      occurredAt: context.occurredAt,
+      causationId: context.commandId,
+    });
+    if (decision.kind === 'ignored') return loaded.view;
+    await this.repository.append(id, loaded.sequence, decision.events);
     return (await this.repository.load(id)).view;
   }
 

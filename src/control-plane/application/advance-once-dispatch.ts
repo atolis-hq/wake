@@ -1,6 +1,16 @@
 /* eslint-disable complexity, max-lines-per-function */
+import {
+  ActivityFailureCode,
+  ActivityOutcomeKind,
+  type ActivityOutcome,
+} from '../../activities/index.js';
 import type { RunView } from '../../execution/index.js';
-import { ActivationClaimConflictError, RunStatus, WorkspaceMode } from '../../execution/index.js';
+import {
+  ActivationClaimConflictError,
+  NoEligibleRunnerError,
+  RunStatus,
+  WorkspaceMode,
+} from '../../execution/index.js';
 import type { CommandContext } from '../../kernel/index.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
 import { WorkflowStatus } from '../../orchestration/index.js';
@@ -25,6 +35,37 @@ export interface DispatchLoopContext {
 interface PendingActivation {
   readonly workflow: WorkflowInstanceView;
   readonly activation: ActivityActivationView;
+}
+
+export function isRunnerQuotaOutcome(outcome: ActivityOutcome): boolean {
+  return (
+    outcome.kind === ActivityOutcomeKind.Failed &&
+    typeof outcome.data === 'object' &&
+    outcome.data !== null &&
+    'reason' in outcome.data &&
+    (outcome.data as { reason?: unknown }).reason === ActivityFailureCode.RunnerQuotaExceeded
+  );
+}
+
+export function runnerQuotaMessage(outcome: ActivityOutcome): string {
+  const data = outcome.data as { message?: unknown };
+  return typeof data.message === 'string' ? data.message : 'runner reported quota exhaustion';
+}
+
+/**
+ * A quota retry deliberately leaves the outcome unaccepted, so a port that
+ * never applied it (absent method, or a workflow instance that vanished)
+ * leaves the Run permanently unresolved. Surface that rather than going
+ * silent; it is an operational defect, not a workflow state.
+ */
+export function reportUnappliedRunnerQuotaRetry(
+  result: unknown,
+  input: { readonly activationId: string; readonly runId: string },
+): void {
+  if (result !== null && result !== undefined) return;
+  console.error(
+    `Runner-quota retry was not applied for activation ${input.activationId} (run ${input.runId}); its outcome remains unaccepted.`,
+  );
 }
 
 /**
@@ -125,21 +166,46 @@ export async function runDispatchLoop(
         stopReason = { kind: 'no-work' };
         break;
       }
+      if (error instanceof NoEligibleRunnerError) {
+        stopReason = { kind: 'no-work' };
+        break;
+      }
       throw error;
     }
     if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
-      if (await ctx.isDispatchPaused()) {
-        stopReason = { kind: 'paused' };
-        break;
-      }
-      await ctx.orchestration.acceptOutcome(
-        {
-          workflowInstanceId: selected.workflow.workflowInstanceId,
+      if (isRunnerQuotaOutcome(run.outcome)) {
+        // No isDispatchPaused check here: a quota retry re-requests the same
+        // stage's activity without publishing an outcome or consuming retry
+        // budget, so it must not be held behind maintenance pause the way an
+        // outward-publishing acceptOutcome call is below.
+        const retried = await ctx.orchestration.retryRunnerQuotaFailure?.(
+          selected.workflow.workflowInstanceId,
+          {
+            activationId: selected.activation.activationId,
+            runId: run.runId,
+            runnerName: run.runner?.name ?? 'unknown-runner',
+            message: runnerQuotaMessage(run.outcome),
+          },
+          ctx.commandContext(run.runId),
+        );
+        reportUnappliedRunnerQuotaRetry(retried, {
           activationId: selected.activation.activationId,
-          outcome: run.outcome,
-        },
-        ctx.commandContext(run.runId),
-      );
+          runId: run.runId,
+        });
+      } else {
+        if (await ctx.isDispatchPaused()) {
+          stopReason = { kind: 'paused' };
+          break;
+        }
+        await ctx.orchestration.acceptOutcome(
+          {
+            workflowInstanceId: selected.workflow.workflowInstanceId,
+            activationId: selected.activation.activationId,
+            outcome: run.outcome,
+          },
+          ctx.commandContext(run.runId),
+        );
+      }
     }
     if (isExecutionFailureTerminal(run.status))
       await ctx.orchestration.resolveExecutionFailure?.(

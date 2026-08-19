@@ -7,7 +7,12 @@ import { WorkStatus } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import { DispatchPolicy } from '../domain/dispatch-policy.js';
-import { runDispatchLoop } from './advance-once-dispatch.js';
+import {
+  isRunnerQuotaOutcome,
+  reportUnappliedRunnerQuotaRetry,
+  runDispatchLoop,
+  runnerQuotaMessage,
+} from './advance-once-dispatch.js';
 import type {
   AdvanceOnceDependencies,
   ExecutionPort,
@@ -108,14 +113,35 @@ export function createAdvanceOnce(
     if (recovery !== undefined) {
       if (await isDispatchPaused()) return { kind: 'paused' };
       if (recovery.run.status === RunStatus.Succeeded) {
-        await orchestration.acceptOutcome(
-          {
-            workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+        // An agent Run completes after execution.attempt() has already returned,
+        // so this reconciliation — not the dispatch loop — is where a real
+        // quota-classified outcome is resolved. It must divert here too, or the
+        // quota failure is published and charged to the retry budget after all.
+        if (isRunnerQuotaOutcome(recovery.run.outcome!)) {
+          const retried = await orchestration.retryRunnerQuotaFailure?.(
+            recovery.item.workflow.workflowInstanceId,
+            {
+              activationId: recovery.item.activation.activationId,
+              runId: recovery.run.runId,
+              runnerName: recovery.run.runner?.name ?? 'unknown-runner',
+              message: runnerQuotaMessage(recovery.run.outcome!),
+            },
+            context(recovery.run.runId),
+          );
+          reportUnappliedRunnerQuotaRetry(retried, {
             activationId: recovery.item.activation.activationId,
-            outcome: recovery.run.outcome!,
-          },
-          context(recovery.run.runId),
-        );
+            runId: recovery.run.runId,
+          });
+        } else {
+          await orchestration.acceptOutcome(
+            {
+              workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+              activationId: recovery.item.activation.activationId,
+              outcome: recovery.run.outcome!,
+            },
+            context(recovery.run.runId),
+          );
+        }
         return {
           kind: 'progressed',
           dispatched: [

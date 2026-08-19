@@ -1,5 +1,14 @@
 import type { Runner } from '../../contracts/runner.js';
 
+export class NoEligibleRunnerError extends Error {
+  constructor(public readonly runnerPool: string) {
+    super(
+      `Execution runner pool ${runnerPool} has no eligible runner: all candidates are ineligible`,
+    );
+    this.name = 'NoEligibleRunnerError';
+  }
+}
+
 export class RunnerRegistry {
   constructor(
     private readonly runnerPools: Readonly<Record<string, readonly string[]>>,
@@ -30,7 +39,5 @@ function selectEligibleCandidate(
     if (runner === undefined) throw new Error(`Runner ${name} is not registered`);
     return { name, runner };
   }
-  throw new Error(
-    `Execution runner pool ${runnerPool} has no eligible runner: all candidates are ineligible`,
-  );
+  throw new NoEligibleRunnerError(runnerPool);
 }

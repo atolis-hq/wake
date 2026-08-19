@@ -50,6 +50,7 @@ export const ActivityFailureCode = defineClosedVocabulary({
   InvalidAgentResult: 'invalid-agent-result',
   AmbiguousRunnerResult: 'ambiguous-runner-result',
   RunnerFailed: 'runner-failed',
+  RunnerQuotaExceeded: 'runner-quota-exceeded',
 } as const);
 
 export type ActivityFailureCode = ValueOf<typeof ActivityFailureCode>;
