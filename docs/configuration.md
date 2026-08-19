@@ -120,8 +120,8 @@ controlPlane:
   maxDispatches: 1
   maxConcurrentRuns: 1
   resident:
-    idleBackoffMs: 1000
-    maxIdleBackoffMs: 30000
+    pollBackoffMs: 1000
+    maxPollBackoffMs: 16000
   schedules:
     - id: daily-maintenance
       workflow: default
@@ -304,8 +304,8 @@ execution:
 | `controlPlane.maxDispatches` | positive integer; default `1` | Per-call burst cap: the maximum number of new Runs a single `advanceOnce` call will start, independent of and bounded by `maxConcurrentRuns`. `advanceOnce` fills open capacity within one call up to this cap rather than dispatching a single Run per call. |
 | `controlPlane.maxConcurrentRuns` | positive integer; default `1` | Maximum Runs that may be `started` system-wide. `advanceOnce` stops dispatching, and additional advancement calls return `no-work`, until capacity is available. |
 | `controlPlane.schedules` | list; default `[]` | Scheduled workflow starts. Each entry is described below. |
-| `controlPlane.resident.idleBackoffMs` | positive integer; default `1000` | Delay after an idle resident-loop pass. |
-| `controlPlane.resident.maxIdleBackoffMs` | positive integer; optional | Ceiling for resident idle backoff. |
+| `controlPlane.resident.pollBackoffMs` | positive integer; default `1000` | Exponential backoff base for intake's idle-or-erroring poll cadence and the runner's error-retry cadence — courtesy toward a rate-limited external API. Unrelated to journal consumption, which waits on a change signal instead of polling. |
+| `controlPlane.resident.maxPollBackoffMs` | positive integer; optional | Ceiling for that exponential backoff (default: `pollBackoffMs * 16`). |
 
 Each `controlPlane.schedules[]` entry requires `id`, `workflow`, `cron`, and
 `objective`, all non-empty strings. `id` identifies the schedule,
@@ -410,7 +410,7 @@ Use `provider: github` for the built-in GitHub integration.
 | `polling.maxConcurrent` | positive integer; default `4` | Provider-wide concurrent GitHub request limit shared by polling enrichment and Wake-label reconciliation. |
 | `polling.commentPageSize` | integer `1..100`; default `25` | Page size for issue and pull-request comments. |
 | `polling.lookbackMs` | non-negative integer; default `60000` | Overlap retained when querying since the repository's durable last-successful-poll watermark. The first poll, or one with no persisted watermark, uses the provider's bounded bootstrap query. |
-| `polling.intervalMs` | positive integer; default `30000` | Minimum time between real GitHub polls. Ticks that land before this interval has elapsed since the last real poll skip the GitHub API call and return no drafts, independent of `controlPlane.resident.idleBackoffMs`, which still governs the resident loop's tick cadence for non-GitHub work. |
+| `polling.intervalMs` | positive integer; default `30000` | Minimum time between real GitHub polls. Ticks that land before this interval has elapsed since the last real poll skip the GitHub API call and return no drafts, independent of `controlPlane.resident.pollBackoffMs`, which governs the intake resident loop's own tick cadence, not any one adapter's call rate. |
 | `intake` | list; default `[]` | Admission/tagging rules. With no rules, every observation is admitted with no added tags. |
 | `publication.postStatusComments` | boolean; default `true` | Allows GitHub status-comment publication. |
 | `commands` | string list; default `[]` | Additional command syntax advertised on the web UI's Configuration → Commands tab alongside the adapter's built-in commands (`/approved`, `/accepted`, `/changes`, `/retry`). Purely descriptive: Wake does not recognize these itself, so any behavior they imply must be handled by whatever reads the comment. |

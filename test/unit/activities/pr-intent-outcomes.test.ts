@@ -13,6 +13,7 @@ import { mergeDenied } from '../../../src/activities/pr/event-drafts.js';
 import { appendIntentOnce } from '../../../src/activities/pr/intent.js';
 import {
   correlationId,
+  InProcessJournalChangeSignal,
   WrongExpectedSequenceError,
   type EventJournal,
 } from '../../../src/kernel/index.js';
@@ -69,6 +70,7 @@ it('queries by event id before trusting a genuinely uncertain requested append',
       return world.journal.readStream(stream);
     },
     latestGlobalPosition: () => world.journal.latestGlobalPosition(),
+    changeSignal: world.journal.changeSignal,
   };
   const activity = createPullRequestMergeActivity(queryingJournal, world.pullRequests, {
     async append(stream, intent) {
@@ -106,6 +108,7 @@ it('treats exhausted sequence conflicts without the event as a failed append', a
     async latestGlobalPosition() {
       return 0;
     },
+    changeSignal: new InProcessJournalChangeSignal(),
   };
   const intent = mergeDenied(stream, PullRequestDenialCode.MissingResource, {
     commandId: 'activation-1',

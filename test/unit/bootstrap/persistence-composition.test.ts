@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { resolveWakePaths } from '../../../src/bootstrap/index.js';
 import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
-import type { EventJournal } from '../../../src/kernel/index.js';
+import { InProcessJournalChangeSignal, type EventJournal } from '../../../src/kernel/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 it('serializes appends shared by resident runtime loops', async () => {
@@ -37,5 +37,6 @@ function concurrentAppendRejectingJournal(): EventJournal {
     async latestGlobalPosition() {
       return 0;
     },
+    changeSignal: new InProcessJournalChangeSignal(),
   };
 }

@@ -169,14 +169,6 @@ export default tseslint.config(
       'src/activities/pr/application.ts',
       // Bounded by actual agent-activation volume, not a resident tick.
       'src/integrations/github/application/comment-history-reader.ts',
-      // Its second pass deliberately re-evaluates every past delivery event
-      // against current orchestration state on every tick — see "catches up
-      // a matching confirmation that was checkpointed before its delivery
-      // wait" in delivery-outcome-reactor.test.ts. Skipping it when the
-      // journal hasn't moved is provably safe in production (orchestration
-      // state is itself journal-derived) but the fix wasn't made in this
-      // pass; tracked as follow-up rather than risked here.
-      'src/integrations/delivery/application/delivery-outcome-reactor.ts',
     ],
     rules: {
       'no-restricted-syntax': ['error', fullJournalRescanRule],

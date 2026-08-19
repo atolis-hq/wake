@@ -171,6 +171,7 @@ describe('ExecutionService', () => {
         readAll: base.readAll.bind(base),
         latestGlobalPosition: base.latestGlobalPosition.bind(base),
         readLatest: base.readLatest?.bind(base),
+        changeSignal: base.changeSignal,
       };
       const registry = new ActivityRegistry();
       let releaseHandler!: () => void;
@@ -341,6 +342,7 @@ describe('ExecutionService', () => {
       readAll: base.readAll.bind(base),
       latestGlobalPosition: base.latestGlobalPosition.bind(base),
       readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
     };
     let released = 0;
     const fixture = setup(
@@ -395,6 +397,7 @@ describe('ExecutionService', () => {
       readAll: base.readAll.bind(base),
       latestGlobalPosition: base.latestGlobalPosition.bind(base),
       readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
     };
     let acquired = 0;
     let released = 0;

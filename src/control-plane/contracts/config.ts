@@ -9,7 +9,7 @@ export interface ControlPlaneConfig {
   readonly maxDispatches: number;
   readonly maxConcurrentRuns: number;
   readonly schedules: readonly ScheduleConfig[];
-  readonly resident?: { readonly idleBackoffMs: number; readonly maxIdleBackoffMs?: number };
+  readonly resident?: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number };
 }
 
 import { z } from 'zod';
@@ -30,10 +30,13 @@ export const controlPlaneConfigSchema = z
     schedules: z.array(scheduleSchema).default([]),
     resident: z
       .object({
-        idleBackoffMs: z.number().int().positive().default(1000),
-        maxIdleBackoffMs: z.number().int().positive().optional(),
+        // Backoff for the resident loop's own retry cadence when idle or
+        // erroring, not a per-adapter rate limit (e.g.
+        // integrations.github.polling.intervalMs gates the actual call).
+        pollBackoffMs: z.number().int().positive().default(1000),
+        maxPollBackoffMs: z.number().int().positive().optional(),
       })
       .strict()
-      .default({ idleBackoffMs: 1000 }),
+      .default({ pollBackoffMs: 1000 }),
   })
   .strict();

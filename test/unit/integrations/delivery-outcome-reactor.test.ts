@@ -3,7 +3,11 @@ import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
 import { createEventDraft, eventId } from '../../../src/kernel/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '../../../src/persistence/index.js';
 
 const clock = { now: () => new Date('2026-08-09T00:00:00.000Z') };
 
@@ -84,18 +88,23 @@ it('resolves an activation that is genuinely waiting on this delivery', async ()
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
-  const reactor = new DeliveryOutcomeReactor(journal, new InMemoryCheckpointStore(), {
-    async get() {
-      return {
-        pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
-        waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
-      } as never;
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    new InMemoryCheckpointStore(),
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
+          waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
+        } as never;
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
     },
-    async acceptOutcome(command) {
-      accepted.push(command);
-      return {} as never;
-    },
-  });
+    new InMemoryProjectionStore(),
+  );
 
   await reactor.runOnce();
 
@@ -113,22 +122,27 @@ it('catches up a matching confirmation that was checkpointed before its delivery
   ]);
   const accepted: unknown[] = [];
   let isWaiting = false;
-  const reactor = new DeliveryOutcomeReactor(journal, new InMemoryCheckpointStore(), {
-    async get() {
-      return isWaiting
-        ? ({
-            pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
-            waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
-          } as never)
-        : ({
-            pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
-          } as never);
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    new InMemoryCheckpointStore(),
+    {
+      async get() {
+        return isWaiting
+          ? ({
+              pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
+              waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
+            } as never)
+          : ({
+              pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+            } as never);
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
     },
-    async acceptOutcome(command) {
-      accepted.push(command);
-      return {} as never;
-    },
-  });
+    new InMemoryProjectionStore(),
+  );
 
   await reactor.runOnce();
   isWaiting = true;
@@ -148,23 +162,28 @@ it('catches up a confirmation when its delivery wait appears during the same rea
   ]);
   const accepted: unknown[] = [];
   let reads = 0;
-  const reactor = new DeliveryOutcomeReactor(journal, new InMemoryCheckpointStore(), {
-    async get() {
-      reads += 1;
-      return reads === 1
-        ? ({
-            pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
-          } as never)
-        : ({
-            pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
-            waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
-          } as never);
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    new InMemoryCheckpointStore(),
+    {
+      async get() {
+        reads += 1;
+        return reads === 1
+          ? ({
+              pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+            } as never)
+          : ({
+              pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
+              waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
+            } as never);
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
     },
-    async acceptOutcome(command) {
-      accepted.push(command);
-      return {} as never;
-    },
-  });
+    new InMemoryProjectionStore(),
+  );
 
   await reactor.runOnce();
 
@@ -176,22 +195,27 @@ it('catches up a matching failure that was checkpointed before its delivery wait
   await journal.append(deliveryStream(eventId('intent-1')), 0, [failedEvent()]);
   const accepted: unknown[] = [];
   let isWaiting = false;
-  const reactor = new DeliveryOutcomeReactor(journal, new InMemoryCheckpointStore(), {
-    async get() {
-      return isWaiting
-        ? ({
-            pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
-            waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
-          } as never)
-        : ({
-            pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
-          } as never);
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    new InMemoryCheckpointStore(),
+    {
+      async get() {
+        return isWaiting
+          ? ({
+              pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
+              waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
+            } as never)
+          : ({
+              pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+            } as never);
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
     },
-    async acceptOutcome(command) {
-      accepted.push(command);
-      return {} as never;
-    },
-  });
+    new InMemoryProjectionStore(),
+  );
 
   await reactor.runOnce();
   isWaiting = true;
@@ -204,18 +228,23 @@ it('resolves a confirmed reconciliation for its matching delivery wait', async (
   const journal = new InMemoryEventJournal(clock);
   await journal.append(deliveryStream(eventId('intent-1')), 0, [reconciledConfirmedEvent()]);
   const accepted: unknown[] = [];
-  const reactor = new DeliveryOutcomeReactor(journal, new InMemoryCheckpointStore(), {
-    async get() {
-      return {
-        pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
-        waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
-      } as never;
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    new InMemoryCheckpointStore(),
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
+          waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
+        } as never;
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
     },
-    async acceptOutcome(command) {
-      accepted.push(command);
-      return {} as never;
-    },
-  });
+    new InMemoryProjectionStore(),
+  );
 
   await reactor.runOnce();
 
@@ -228,21 +257,26 @@ it('does not resolve a merely-still-open activation that never asked to wait on 
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
-  const reactor = new DeliveryOutcomeReactor(journal, new InMemoryCheckpointStore(), {
-    async get() {
-      // A plain agent activation left pending for an unrelated reason (e.g.
-      // its own outcome had no configured route) — never declared it was
-      // waiting on this or any delivery.
-      return {
-        pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
-        waitingFor: undefined,
-      } as never;
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    new InMemoryCheckpointStore(),
+    {
+      async get() {
+        // A plain agent activation left pending for an unrelated reason (e.g.
+        // its own outcome had no configured route) — never declared it was
+        // waiting on this or any delivery.
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+          waitingFor: undefined,
+        } as never;
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
     },
-    async acceptOutcome(command) {
-      accepted.push(command);
-      return {} as never;
-    },
-  });
+    new InMemoryProjectionStore(),
+  );
 
   await reactor.runOnce();
 
@@ -255,19 +289,24 @@ it('does not resolve a different activation even if it is waiting on an unrelate
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
-  const reactor = new DeliveryOutcomeReactor(journal, new InMemoryCheckpointStore(), {
-    async get() {
-      return {
-        pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
-        // Waiting, but on a different intent than the one that just confirmed.
-        waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-other' },
-      } as never;
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    new InMemoryCheckpointStore(),
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
+          // Waiting, but on a different intent than the one that just confirmed.
+          waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-other' },
+        } as never;
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
     },
-    async acceptOutcome(command) {
-      accepted.push(command);
-      return {} as never;
-    },
-  });
+    new InMemoryProjectionStore(),
+  );
 
   await reactor.runOnce();
 

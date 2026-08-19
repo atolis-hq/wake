@@ -249,6 +249,7 @@ export async function composeIntegrationRuntime(
     input.journal,
     input.checkpoints,
     input.orchestration,
+    input.projections,
   );
   const catchUpProjections = async () => {
     await projectionRunner.runRegisteredOnce();

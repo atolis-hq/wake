@@ -11,7 +11,11 @@ import {
   claimDecision,
   type PullRequestDecision,
 } from '../../../src/activities/pr/decision-claim.js';
-import { createEventDraft, type EventJournal } from '../../../src/kernel/index.js';
+import {
+  createEventDraft,
+  InProcessJournalChangeSignal,
+  type EventJournal,
+} from '../../../src/kernel/index.js';
 import { signalName } from '../../../src/orchestration/contracts/identifiers.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
@@ -110,6 +114,7 @@ it('rejects an inexact decision claim before calling the journal append boundary
     async latestGlobalPosition() {
       return 0;
     },
+    changeSignal: new InProcessJournalChangeSignal(),
   };
   const activation = activationId('activation-1');
   const stream = resourceStream(resId('1'));

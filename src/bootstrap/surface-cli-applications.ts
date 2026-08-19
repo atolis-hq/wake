@@ -88,11 +88,12 @@ export function createSurfaceCliApplications(
       if (consecutiveErrorTicks > 0)
         return sleepUntilAbort(
           signal,
-          nextIdleBackoffMs(root.config.controlPlane.resident, consecutiveErrorTicks),
+          nextPollBackoffMs(root.config.controlPlane.resident, consecutiveErrorTicks),
         );
+      // Genuine idle (no errors): wait for the journal to actually change.
       return consecutiveIdleTicks === 0
         ? Promise.resolve()
-        : sleepUntilAbort(signal, root.config.controlPlane.resident?.idleBackoffMs ?? 1000);
+        : root.journal.changeSignal.waitForChange(signal, JOURNAL_WAIT_FALLBACK_MS);
     },
     reportResidentError('runner'),
   );
@@ -101,7 +102,7 @@ export function createSurfaceCliApplications(
     (signal, { consecutiveIdleTicks }) =>
       sleepUntilAbort(
         signal,
-        nextIdleBackoffMs(root.config.controlPlane.resident, consecutiveIdleTicks),
+        nextPollBackoffMs(root.config.controlPlane.resident, consecutiveIdleTicks),
       ),
     reportResidentError('intake'),
   );
@@ -211,11 +212,15 @@ export function createSurfaceCliApplications(
   };
 }
 
+// Safety net for a missed in-process notify() or a cross-process writer the
+// EventEmitter can't see; a real append wakes waiters within milliseconds
+// regardless, so there's no operational reason to make this configurable.
+const JOURNAL_WAIT_FALLBACK_MS = 30_000;
+
 export async function runProjectionPump(
-  root: Pick<CompositionRoot, 'projectionRunner'>,
+  root: Pick<CompositionRoot, 'projectionRunner' | 'journal'>,
   signal: AbortSignal,
 ): Promise<void> {
-  const intervalMs = 1000;
   while (!signal.aborted) {
     try {
       await root.projectionRunner.runRegisteredOnce();
@@ -224,16 +229,16 @@ export async function runProjectionPump(
         `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
-    await sleepUntilAbort(signal, intervalMs);
+    await root.journal.changeSignal.waitForChange(signal, JOURNAL_WAIT_FALLBACK_MS);
   }
 }
 
-function nextIdleBackoffMs(
-  resident: { readonly idleBackoffMs: number; readonly maxIdleBackoffMs?: number } | undefined,
+function nextPollBackoffMs(
+  resident: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number } | undefined,
   consecutiveIdleTicks: number,
 ): number {
-  const baseMs = resident?.idleBackoffMs ?? 1000;
-  const maxMs = resident?.maxIdleBackoffMs ?? baseMs * 16;
+  const baseMs = resident?.pollBackoffMs ?? 1000;
+  const maxMs = resident?.maxPollBackoffMs ?? baseMs * 16;
   return Math.min(baseMs * 2 ** Math.min(consecutiveIdleTicks, 20), maxMs);
 }
 

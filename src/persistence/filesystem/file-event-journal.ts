@@ -7,8 +7,13 @@ import type {
   EventDraft,
   EventEnvelope,
   EventJournal,
+  JournalChangeSignal,
 } from '../../kernel/index.js';
-import { decodeEventEnvelope, WrongExpectedSequenceError } from '../../kernel/index.js';
+import {
+  decodeEventEnvelope,
+  InProcessJournalChangeSignal,
+  WrongExpectedSequenceError,
+} from '../../kernel/index.js';
 import { withFileLock } from './file-lock.js';
 
 export class FileEventJournal implements EventJournal {
@@ -16,6 +21,12 @@ export class FileEventJournal implements EventJournal {
     private readonly root: string,
     private readonly clock: Clock,
   ) {}
+
+  private readonly changeSignalSource = new InProcessJournalChangeSignal();
+
+  get changeSignal(): JournalChangeSignal {
+    return this.changeSignalSource;
+  }
 
   private cached:
     { readonly entries: readonly FileStat[]; readonly events: EventEnvelope[] } | undefined;
@@ -72,6 +83,7 @@ export class FileEventJournal implements EventJournal {
           'utf8',
         );
         await this.extendCache(file, current, newEnvelopes);
+        this.changeSignalSource.notify();
       }
       return finalizedEnvelopes;
     });

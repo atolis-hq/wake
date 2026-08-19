@@ -186,3 +186,51 @@ it('does not re-parse prior history from disk after appending new events', async
   );
   expect(journalFileReads).toHaveLength(0);
 });
+
+it('notifies changeSignal after a real write, and wakes multiple subscribers off one append', async () => {
+  vi.useFakeTimers();
+  try {
+    const root = await mkdtemp(join(tmpdir(), 'wake-journal-change-signal-'));
+    const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+    const draft = (id: string, sequence: number) =>
+      createEventDraft({
+        eventId: id,
+        eventType: 'work.item-created',
+        occurredAt: '2026-07-30T12:00:00Z',
+        correlationId: 'corr',
+        causationId: id,
+        actor: { kind: 'system', id: 'test' },
+        source: { kind: 'internal', id: 'test' },
+        stream,
+        payload: { objective: `event ${sequence}` },
+      });
+    const journal = new FileEventJournal(root, new FakeClock());
+    await journal.append(stream, 0, [draft('event-1', 1)]);
+
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const firstWait = journal.changeSignal.waitForChange(firstController.signal, 1_000);
+    const secondWait = journal.changeSignal.waitForChange(secondController.signal, 1_000);
+
+    await journal.append(stream, 1, [draft('event-2', 2)]);
+    await Promise.all([firstWait, secondWait]);
+
+    // Idempotently resubmitting the same already-recorded draft is a no-op
+    // write and must not fire changeSignal.
+    let wokeOnReplay = false;
+    const replayWait = journal.changeSignal
+      .waitForChange(firstController.signal, 1_000)
+      .then(() => {
+        wokeOnReplay = true;
+      });
+    await journal.append(stream, 1, [draft('event-2', 2)]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(wokeOnReplay).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await replayWait;
+    expect(wokeOnReplay).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
