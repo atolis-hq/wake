@@ -592,7 +592,7 @@ describe('cliRunner', () => {
     expect(classifyCodexFailure({ stdout: '', stderr: 'Segmentation fault' })).toBeUndefined();
   });
 
-  it('does not classify an auth failure as quota-exceeded', () => {
+  it('does not classify a Codex auth failure as quota-exceeded', () => {
     const stdout = JSON.stringify({
       type: 'error',
       message: 'Unauthorized: authentication failed, please run `codex login`.',
@@ -628,7 +628,7 @@ describe('cliRunner', () => {
     ).toBeUndefined();
   });
 
-  it('does not classify an auth failure as quota-exceeded', () => {
+  it('does not classify a Claude auth failure as quota-exceeded', () => {
     expect(
       classifyClaudeFailure({
         stdout: '',
@@ -637,7 +637,7 @@ describe('cliRunner', () => {
     ).toBeUndefined();
   });
 
-  it('does not scan stdout when stderr already carries diagnostic text', () => {
+  it('does not scan Claude stdout when stderr already carries diagnostic text', () => {
     // stdout here is agent-generated content that happens to contain "quota";
     // since stderr is non-empty it must be the only text classified against.
     expect(
@@ -661,13 +661,13 @@ describe('cliRunner', () => {
     expect(classifyCursorFailure({ stdout: '', stderr: 'panic: runtime error' })).toBeUndefined();
   });
 
-  it('does not classify an auth failure as quota-exceeded', () => {
+  it('does not classify a Cursor auth failure as quota-exceeded', () => {
     expect(
       classifyCursorFailure({ stdout: '', stderr: 'Error: unauthorized. Invalid API key.' }),
     ).toBeUndefined();
   });
 
-  it('does not scan stdout when stderr already carries diagnostic text', () => {
+  it('does not scan Cursor stdout when stderr already carries diagnostic text', () => {
     expect(
       classifyCursorFailure({
         stdout: 'You have exceeded your monthly quota.',
