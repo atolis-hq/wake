@@ -11,7 +11,10 @@ import {
 import { runProcess } from '../../../src/execution/infrastructure/process-execution.js';
 import { parseClaudeOutput } from '../../../src/execution/infrastructure/runners/claude.js';
 import { parseCodexOutput } from '../../../src/execution/infrastructure/runners/codex.js';
-import { parseCursorOutput } from '../../../src/execution/infrastructure/runners/cursor.js';
+import {
+  classifyCursorFailure,
+  parseCursorOutput,
+} from '../../../src/execution/infrastructure/runners/cursor.js';
 
 describe('runProcess', () => {
   it('closes stdin so non-interactive CLIs do not wait for more input', async () => {
@@ -641,6 +644,34 @@ describe('cliRunner', () => {
       classifyClaudeFailure({
         stdout: 'I updated the quota-check middleware and committed.',
         stderr: 'ENOENT: command not found',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('classifies a Cursor quota message as provider-quota-exceeded', () => {
+    expect(
+      classifyCursorFailure({ stdout: 'You have exceeded your monthly quota.', stderr: '' }),
+    ).toEqual({
+      kind: 'provider-quota-exceeded',
+      message: 'You have exceeded your monthly quota.',
+    });
+  });
+
+  it('does not classify an ordinary Cursor crash as quota-exceeded', () => {
+    expect(classifyCursorFailure({ stdout: '', stderr: 'panic: runtime error' })).toBeUndefined();
+  });
+
+  it('does not classify an auth failure as quota-exceeded', () => {
+    expect(
+      classifyCursorFailure({ stdout: '', stderr: 'Error: unauthorized. Invalid API key.' }),
+    ).toBeUndefined();
+  });
+
+  it('does not scan stdout when stderr already carries diagnostic text', () => {
+    expect(
+      classifyCursorFailure({
+        stdout: 'You have exceeded your monthly quota.',
+        stderr: 'panic: runtime error',
       }),
     ).toBeUndefined();
   });

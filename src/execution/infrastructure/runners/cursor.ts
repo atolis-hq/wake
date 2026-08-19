@@ -1,9 +1,28 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
+import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 import { WorkspaceMode } from '../../contracts/vocabulary.js';
 import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
 
 // Cursor's CLI subcommand, not the closed domain vocabulary word "agent".
 const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);
+
+// Deliberately narrow: only genuine provider usage/rate-limit phrasing.
+// Auth/login failures (unauthorized, authentication, api key) are NOT
+// included here — they are a different failure class and must not be
+// paused-and-retried as if they were transient.
+const cursorQuotaPattern =
+  /rate limit|usage limit|quota|credit balance|spend limit|session limit|too many requests|\b429\b/i;
+
+export function classifyCursorFailure(input: {
+  readonly stdout: string;
+  readonly stderr: string;
+}): { readonly kind: string; readonly message: string } | undefined {
+  // Prefer stderr over stdout, same reasoning as Claude's classifier: stdout
+  // on a failed run can carry the agent's own generated text.
+  const text = input.stderr.trim().length > 0 ? input.stderr : input.stdout;
+  if (!cursorQuotaPattern.test(text)) return undefined;
+  return { kind: ProviderQuotaExceededFailureKind, message: text.trim() };
+}
 
 export function createCursorRunner(options: CliRunnerOptions = {}): Runner {
   return cliRunner(
@@ -14,6 +33,7 @@ export function createCursorRunner(options: CliRunnerOptions = {}): Runner {
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseCursorOutput,
+      classifyFailure: classifyCursorFailure,
       supportsSessionResume: true,
     },
   );
