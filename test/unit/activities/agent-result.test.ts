@@ -140,7 +140,7 @@ DONE`),
                 result: Promise.resolve({
                   transport: 'failed' as const,
                   output: '',
-                  failure: { kind: 'process-exit-nonzero', message: 'quota exhausted' },
+                  failure: { kind: 'process-exit', message: 'exit 1' },
                 }),
               };
             },
@@ -150,7 +150,7 @@ DONE`),
       ),
     ).resolves.toEqual({
       kind: ActivityOutcomeKind.Failed,
-      data: { reason: ActivityFailureCode.RunnerFailed, message: 'quota exhausted' },
+      data: { reason: ActivityFailureCode.RunnerFailed, message: 'exit 1' },
     });
   });
 });
