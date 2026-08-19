@@ -1,4 +1,9 @@
 /* eslint-disable complexity, max-lines-per-function */
+import {
+  ActivityFailureCode,
+  ActivityOutcomeKind,
+  type ActivityOutcome,
+} from '../../activities/index.js';
 import type { RunView } from '../../execution/index.js';
 import { ActivationClaimConflictError, RunStatus, WorkspaceMode } from '../../execution/index.js';
 import type { CommandContext } from '../../kernel/index.js';
@@ -25,6 +30,21 @@ export interface DispatchLoopContext {
 interface PendingActivation {
   readonly workflow: WorkflowInstanceView;
   readonly activation: ActivityActivationView;
+}
+
+function isRunnerQuotaOutcome(outcome: ActivityOutcome): boolean {
+  return (
+    outcome.kind === ActivityOutcomeKind.Failed &&
+    typeof outcome.data === 'object' &&
+    outcome.data !== null &&
+    'reason' in outcome.data &&
+    (outcome.data as { reason?: unknown }).reason === ActivityFailureCode.RunnerQuotaExceeded
+  );
+}
+
+function runnerQuotaMessage(outcome: ActivityOutcome): string {
+  const data = outcome.data as { message?: unknown };
+  return typeof data.message === 'string' ? data.message : 'runner reported quota exhaustion';
 }
 
 /**
@@ -128,18 +148,31 @@ export async function runDispatchLoop(
       throw error;
     }
     if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
-      if (await ctx.isDispatchPaused()) {
-        stopReason = { kind: 'paused' };
-        break;
+      if (isRunnerQuotaOutcome(run.outcome)) {
+        await ctx.orchestration.retryRunnerQuotaFailure?.(
+          selected.workflow.workflowInstanceId,
+          {
+            activationId: selected.activation.activationId,
+            runId: run.runId,
+            runnerName: run.runner?.name ?? 'unknown-runner',
+            message: runnerQuotaMessage(run.outcome),
+          },
+          ctx.commandContext(run.runId),
+        );
+      } else {
+        if (await ctx.isDispatchPaused()) {
+          stopReason = { kind: 'paused' };
+          break;
+        }
+        await ctx.orchestration.acceptOutcome(
+          {
+            workflowInstanceId: selected.workflow.workflowInstanceId,
+            activationId: selected.activation.activationId,
+            outcome: run.outcome,
+          },
+          ctx.commandContext(run.runId),
+        );
       }
-      await ctx.orchestration.acceptOutcome(
-        {
-          workflowInstanceId: selected.workflow.workflowInstanceId,
-          activationId: selected.activation.activationId,
-          outcome: run.outcome,
-        },
-        ctx.commandContext(run.runId),
-      );
     }
     if (isExecutionFailureTerminal(run.status))
       await ctx.orchestration.resolveExecutionFailure?.(
