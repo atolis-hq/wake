@@ -5,7 +5,12 @@ import {
   type ActivityOutcome,
 } from '../../activities/index.js';
 import type { RunView } from '../../execution/index.js';
-import { ActivationClaimConflictError, RunStatus, WorkspaceMode } from '../../execution/index.js';
+import {
+  ActivationClaimConflictError,
+  NoEligibleRunnerError,
+  RunStatus,
+  WorkspaceMode,
+} from '../../execution/index.js';
 import type { CommandContext } from '../../kernel/index.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
 import { WorkflowStatus } from '../../orchestration/index.js';
@@ -142,6 +147,10 @@ export async function runDispatchLoop(
       });
     } catch (error) {
       if (error instanceof ActivationClaimConflictError) {
+        stopReason = { kind: 'no-work' };
+        break;
+      }
+      if (error instanceof NoEligibleRunnerError) {
         stopReason = { kind: 'no-work' };
         break;
       }

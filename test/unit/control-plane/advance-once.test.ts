@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
 import { createAdvanceOnce } from '../../../src/control-plane/index.js';
-import { ActivationClaimConflictError, type RunView } from '../../../src/execution/index.js';
+import {
+  ActivationClaimConflictError,
+  NoEligibleRunnerError,
+  type RunView,
+} from '../../../src/execution/index.js';
 import { workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import {
   type ActivityActivationView,
@@ -295,6 +299,36 @@ describe('advanceOnce', () => {
 
     await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
     expect(attempts).toBe(1);
+  });
+
+  it('stops the dispatch loop for this tick, without crashing, when every pool runner is ineligible', async () => {
+    const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
+    const workflow = {
+      workflowInstanceId: 'workflow-1',
+      workItemId: 'work-1',
+      orchestrationGroupId: 'group-1',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => workflow,
+      } as never,
+      {
+        attempt: async () => {
+          throw new NoEligibleRunnerError('standard');
+        },
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-19T00:00:00.000Z') },
+      { ids: { next: () => 'command-1' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'no-work' });
   });
 
   it('does not dispatch a second branch workspace activity while its workflow has an active branch Run', async () => {
