@@ -9,7 +9,7 @@ export interface ControlPlaneConfig {
   readonly maxDispatches: number;
   readonly maxConcurrentRuns: number;
   readonly schedules: readonly ScheduleConfig[];
-  readonly resident?: { readonly idleBackoffMs: number; readonly maxIdleBackoffMs?: number };
+  readonly resident?: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number };
 }
 
 import { z } from 'zod';
@@ -30,15 +30,17 @@ export const controlPlaneConfigSchema = z
     schedules: z.array(scheduleSchema).default([]),
     resident: z
       .object({
-        // A resident loop no longer polls on this cadence in steady state —
-        // it waits on JournalChangeSignal and wakes within milliseconds of
-        // a real append. This is now purely the fallback ceiling for a
-        // missed or cross-process notification, so there's no correctness
-        // reason to keep it short.
-        idleBackoffMs: z.number().int().positive().default(30_000),
-        maxIdleBackoffMs: z.number().int().positive().optional(),
+        // Exponential backoff base/ceiling for intake's idle-or-erroring
+        // poll cadence and the runner's error retry cadence — courtesy
+        // toward a rate-limited external API (a per-adapter poll interval,
+        // e.g. integrations.github.polling.intervalMs, gates the actual
+        // call; this governs how often the resident loop itself re-checks).
+        // Unrelated to journal consumption, which waits on
+        // JournalChangeSignal instead of polling at all.
+        pollBackoffMs: z.number().int().positive().default(1000),
+        maxPollBackoffMs: z.number().int().positive().optional(),
       })
       .strict()
-      .default({ idleBackoffMs: 30_000 }),
+      .default({ pollBackoffMs: 1000 }),
   })
   .strict();

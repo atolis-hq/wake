@@ -15,7 +15,6 @@ it('advances the resident projection pump', async () => {
         },
       },
       journal: { changeSignal: new InProcessJournalChangeSignal() },
-      config: { controlPlane: {} },
     } as never,
     controller.signal,
   );

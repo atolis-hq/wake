@@ -88,18 +88,17 @@ export function createSurfaceCliApplications(
       if (consecutiveErrorTicks > 0)
         return sleepUntilAbort(
           signal,
-          nextIdleBackoffMs(root.config.controlPlane.resident, consecutiveErrorTicks),
+          nextPollBackoffMs(root.config.controlPlane.resident, consecutiveErrorTicks),
         );
       // Genuine idle (no errors): wait for the journal to actually change
-      // rather than polling on a fixed cadence. idleBackoffMs is now purely
-      // the fallback ceiling for this wait, not the steady-state interval —
-      // a real append wakes this within milliseconds via changeSignal.
+      // rather than polling on a fixed cadence. JOURNAL_WAIT_FALLBACK_MS is
+      // purely a safety net for a missed in-process notify() or a
+      // cross-process writer the EventEmitter can't see — a real append
+      // wakes this within milliseconds via changeSignal, so there's no
+      // operational reason to make it configurable.
       return consecutiveIdleTicks === 0
         ? Promise.resolve()
-        : root.journal.changeSignal.waitForChange(
-            signal,
-            root.config.controlPlane.resident?.idleBackoffMs ?? 30_000,
-          );
+        : root.journal.changeSignal.waitForChange(signal, JOURNAL_WAIT_FALLBACK_MS);
     },
     reportResidentError('runner'),
   );
@@ -108,7 +107,7 @@ export function createSurfaceCliApplications(
     (signal, { consecutiveIdleTicks }) =>
       sleepUntilAbort(
         signal,
-        nextIdleBackoffMs(root.config.controlPlane.resident, consecutiveIdleTicks),
+        nextPollBackoffMs(root.config.controlPlane.resident, consecutiveIdleTicks),
       ),
     reportResidentError('intake'),
   );
@@ -218,11 +217,16 @@ export function createSurfaceCliApplications(
   };
 }
 
+// Purely a safety net for a missed in-process notify() or a cross-process
+// writer the EventEmitter can't see — a real append wakes the runner
+// resident and projection pump within milliseconds via changeSignal
+// regardless, so there's no operational reason to make this configurable.
+const JOURNAL_WAIT_FALLBACK_MS = 30_000;
+
 export async function runProjectionPump(
-  root: Pick<CompositionRoot, 'projectionRunner' | 'journal' | 'config'>,
+  root: Pick<CompositionRoot, 'projectionRunner' | 'journal'>,
   signal: AbortSignal,
 ): Promise<void> {
-  const fallbackMs = root.config.controlPlane.resident?.idleBackoffMs ?? 30_000;
   while (!signal.aborted) {
     try {
       await root.projectionRunner.runRegisteredOnce();
@@ -232,18 +236,17 @@ export async function runProjectionPump(
       );
     }
     // Waits for a journal change instead of a fixed 1s poll — the pump only
-    // needs to run again once something actually landed; idleBackoffMs is
-    // just the fallback ceiling for a missed/cross-process notification.
-    await root.journal.changeSignal.waitForChange(signal, fallbackMs);
+    // needs to run again once something actually landed.
+    await root.journal.changeSignal.waitForChange(signal, JOURNAL_WAIT_FALLBACK_MS);
   }
 }
 
-function nextIdleBackoffMs(
-  resident: { readonly idleBackoffMs: number; readonly maxIdleBackoffMs?: number } | undefined,
+function nextPollBackoffMs(
+  resident: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number } | undefined,
   consecutiveIdleTicks: number,
 ): number {
-  const baseMs = resident?.idleBackoffMs ?? 30_000;
-  const maxMs = resident?.maxIdleBackoffMs ?? baseMs * 16;
+  const baseMs = resident?.pollBackoffMs ?? 1000;
+  const maxMs = resident?.maxPollBackoffMs ?? baseMs * 16;
   return Math.min(baseMs * 2 ** Math.min(consecutiveIdleTicks, 20), maxMs);
 }
 
