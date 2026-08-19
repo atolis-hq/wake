@@ -163,16 +163,13 @@ async function pollRepository(input: {
     repository: `${owner}/${repo}`,
   };
   const since = overlapSince(input.watermark, config.polling.lookbackMs);
-  const [issuesResult, pullRequestsResult] = await Promise.allSettled([
-    client.listIssues(
-      owner,
-      repo,
-      config.polling.maxPerRepo,
-      since,
-      gitHubIssueQueryFilters(config.intake),
-    ),
-    client.listPullRequests(owner, repo, config.polling.maxPerRepo),
-  ]);
+  const [issuesResult, pullRequestsResult] = await fetchRepositoryItems({
+    client,
+    config,
+    owner,
+    repo,
+    since,
+  });
   if (isFulfilled(issuesResult)) health.recordSuccess(context.repository, 'poll');
   else {
     reportPartialPollFailure(context.repository, 'issues');
@@ -225,6 +222,26 @@ async function pollRepository(input: {
       ...issueComments.drafts,
     ],
   };
+}
+
+function fetchRepositoryItems(input: {
+  readonly client: GitHubSourceClient;
+  readonly config: GitHubConfig;
+  readonly owner: string;
+  readonly repo: string;
+  readonly since: string | undefined;
+}) {
+  const { client, config, owner, repo, since } = input;
+  return Promise.allSettled([
+    client.listIssues(
+      owner,
+      repo,
+      config.polling.maxPerRepo,
+      since,
+      gitHubIssueQueryFilters(config.intake),
+    ),
+    client.listPullRequests(owner, repo, config.polling.maxPerRepo),
+  ]);
 }
 
 function isFulfilled<Value>(

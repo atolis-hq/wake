@@ -96,7 +96,7 @@ function createGitHubReadClient(octokit: Octokit, cache: ReturnType<typeof creat
       maxResults: number,
       since?: string,
       filters?: GitHubIssueQueryFilters,
-    ) => listIssues(octokit, cache, owner, repo, maxResults, since, filters),
+    ) => listIssues(octokit, cache, owner, repo, maxResults, { since, filters }),
     listPullRequests: (owner: string, repo: string, maxResults: number) =>
       listPullRequests(octokit, cache, owner, repo, maxResults),
     listIssueComments: (

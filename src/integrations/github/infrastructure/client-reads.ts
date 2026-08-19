@@ -14,9 +14,9 @@ export function listIssues(
   owner: string,
   repo: string,
   maxResults: number,
-  since?: string,
-  filters: GitHubIssueQueryFilters = {},
+  options: { readonly since?: string; readonly filters?: GitHubIssueQueryFilters } = {},
 ): Promise<readonly GitHubIssuePayload[]> {
+  const { since, filters = {} } = options;
   return fetchPaginatedWithEtag({
     cache,
     key: `issues:${owner}/${repo}:since:${since ?? 'bootstrap'}:assignee:${filters.assignee ?? 'unfiltered'}:labels:${filters.labels ?? 'unfiltered'}`,
