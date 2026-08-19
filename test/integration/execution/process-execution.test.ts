@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classifyClaudeFailure,
   classifyCodexFailure,
   claudeCommandArgs,
   cliRunner,
@@ -604,5 +605,43 @@ describe('cliRunner', () => {
       item: { type: 'agent_message', text: 'I updated the quota-check middleware and committed.' },
     });
     expect(classifyCodexFailure({ stdout, stderr: '' })).toBeUndefined();
+  });
+
+  it('classifies a Claude rate-limit message as provider-quota-exceeded', () => {
+    expect(
+      classifyClaudeFailure({
+        stdout: '',
+        stderr: 'Error: You have exceeded your rate limit. Please try again later.',
+      }),
+    ).toEqual({
+      kind: 'provider-quota-exceeded',
+      message: 'Error: You have exceeded your rate limit. Please try again later.',
+    });
+  });
+
+  it('does not classify an ordinary Claude crash as quota-exceeded', () => {
+    expect(
+      classifyClaudeFailure({ stdout: '', stderr: 'ENOENT: command not found' }),
+    ).toBeUndefined();
+  });
+
+  it('does not classify an auth failure as quota-exceeded', () => {
+    expect(
+      classifyClaudeFailure({
+        stdout: '',
+        stderr: 'Error: Unauthorized. Please run `claude login`.',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('does not scan stdout when stderr already carries diagnostic text', () => {
+    // stdout here is agent-generated content that happens to contain "quota";
+    // since stderr is non-empty it must be the only text classified against.
+    expect(
+      classifyClaudeFailure({
+        stdout: 'I updated the quota-check middleware and committed.',
+        stderr: 'ENOENT: command not found',
+      }),
+    ).toBeUndefined();
   });
 });
