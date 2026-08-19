@@ -23,12 +23,8 @@ export function createControlPlaneService(input: {
   readonly clock: Clock;
   readonly ids: IdGenerator;
 }): ControlPlaneService {
-  // isPaused() is checked many times per pipeline run (runner and intake
-  // both call it repeatedly through their stage sequencing), so a resident
-  // loop hits this every tick even when fully idle. Memoize by journal
-  // position — the control-plane stream itself is already small and cheap
-  // to read, but skipping the read entirely when nothing has moved removes
-  // that call-volume cost outright.
+  // isPaused() is checked many times per pipeline run, so memoize by
+  // journal position to skip the read entirely when nothing has moved.
   let cached: { readonly position: number; readonly paused: boolean } | undefined;
   return {
     pause: (key) => change(input, key, 'pause'),

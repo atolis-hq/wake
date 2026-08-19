@@ -30,13 +30,9 @@ export const controlPlaneConfigSchema = z
     schedules: z.array(scheduleSchema).default([]),
     resident: z
       .object({
-        // Exponential backoff base/ceiling for intake's idle-or-erroring
-        // poll cadence and the runner's error retry cadence — courtesy
-        // toward a rate-limited external API (a per-adapter poll interval,
-        // e.g. integrations.github.polling.intervalMs, gates the actual
-        // call; this governs how often the resident loop itself re-checks).
-        // Unrelated to journal consumption, which waits on
-        // JournalChangeSignal instead of polling at all.
+        // Backoff for the resident loop's own retry cadence when idle or
+        // erroring, not a per-adapter rate limit (e.g.
+        // integrations.github.polling.intervalMs gates the actual call).
         pollBackoffMs: z.number().int().positive().default(1000),
         maxPollBackoffMs: z.number().int().positive().optional(),
       })

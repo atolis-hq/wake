@@ -90,9 +90,6 @@ it('coalesces multiple notify() calls between waitForChange() calls into exactly
 
   expect(wakeUps).toBe(1);
 
-  // A later, independent wait isn't affected by the earlier burst of
-  // notify() calls — it only resolves on a fresh notify() or its own
-  // fallback, proving nothing "queued up" from the coalesced calls above.
   let secondResolved = false;
   const secondWait = changeSignal.waitForChange(controller.signal, 5_000).then(() => {
     secondResolved = true;
@@ -129,13 +126,12 @@ it('does not leak a waiter that resolved via fallback into a later notify()', as
   const changeSignal = new InProcessJournalChangeSignal();
   const controller = new AbortController();
 
-  // Times out via fallback, not notify().
   const timedOut = changeSignal.waitForChange(controller.signal, 100);
   await vi.advanceTimersByTimeAsync(100);
   await timedOut;
 
-  // A notify() with no active waiter must be a no-op, not an error, and
-  // must not resolve some stale reference to the waiter above.
+  // With no active waiter, notify() must be a no-op rather than resolving
+  // a stale reference left behind by the fallback timeout above.
   expect(() => changeSignal.notify()).not.toThrow();
 
   let resolved = false;
@@ -151,9 +147,7 @@ it('does not leak a waiter that resolved via fallback into a later notify()', as
 });
 
 it('guarantee-preservation: a consumer loop still processes every event via fallback alone when notify() is never called', async () => {
-  // Simulates "notify() stubbed to a no-op" — a fresh signal that append
-  // never actually notifies, so the only way the consumer loop advances is
-  // by waking on its fallback timeout and re-checking its own checkpoint.
+  // notify() is never called — the consumer can only advance via fallback.
   const changeSignal = new InProcessJournalChangeSignal();
   const journal: number[] = [];
   let checkpoint = 0;
@@ -171,7 +165,6 @@ it('guarantee-preservation: a consumer loop still processes every event via fall
     }
   })();
 
-  // Three separate "append" batches land while nothing ever calls notify().
   journal.push(1, 2);
   await vi.advanceTimersByTimeAsync(fallbackMs);
   journal.push(3);

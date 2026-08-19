@@ -90,12 +90,7 @@ export function createSurfaceCliApplications(
           signal,
           nextPollBackoffMs(root.config.controlPlane.resident, consecutiveErrorTicks),
         );
-      // Genuine idle (no errors): wait for the journal to actually change
-      // rather than polling on a fixed cadence. JOURNAL_WAIT_FALLBACK_MS is
-      // purely a safety net for a missed in-process notify() or a
-      // cross-process writer the EventEmitter can't see — a real append
-      // wakes this within milliseconds via changeSignal, so there's no
-      // operational reason to make it configurable.
+      // Genuine idle (no errors): wait for the journal to actually change.
       return consecutiveIdleTicks === 0
         ? Promise.resolve()
         : root.journal.changeSignal.waitForChange(signal, JOURNAL_WAIT_FALLBACK_MS);
@@ -217,9 +212,8 @@ export function createSurfaceCliApplications(
   };
 }
 
-// Purely a safety net for a missed in-process notify() or a cross-process
-// writer the EventEmitter can't see — a real append wakes the runner
-// resident and projection pump within milliseconds via changeSignal
+// Safety net for a missed in-process notify() or a cross-process writer the
+// EventEmitter can't see; a real append wakes waiters within milliseconds
 // regardless, so there's no operational reason to make this configurable.
 const JOURNAL_WAIT_FALLBACK_MS = 30_000;
 
@@ -235,8 +229,6 @@ export async function runProjectionPump(
         `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
-    // Waits for a journal change instead of a fixed 1s poll — the pump only
-    // needs to run again once something actually landed.
     await root.journal.changeSignal.waitForChange(signal, JOURNAL_WAIT_FALLBACK_MS);
   }
 }

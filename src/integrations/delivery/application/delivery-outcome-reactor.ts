@@ -48,12 +48,10 @@ export class DeliveryOutcomeReactor {
       }
       await this.checkpoints.save(consumer, event.globalPosition);
     }
-    // Re-check only the bounded set of confirmations whose workflow wasn't
-    // yet waiting on them when they first arrived — not the full journal.
-    // This is the race the old unconditional readAll(0) second pass existed
-    // to catch (a confirmation checkpointed before its workflow reached
-    // "waiting for delivery"); bounding it to this set instead of the whole
-    // journal keeps the fix while dropping the O(total history) cost.
+    // Catches a confirmation checkpointed before its workflow reached
+    // "waiting for delivery" — re-checked here on every call rather than
+    // relying on the incremental pass above, which never revisits a
+    // position once checkpointed.
     for (const [id, pendingEvent] of pending) {
       if (resolved.has(id)) {
         pending.delete(id);

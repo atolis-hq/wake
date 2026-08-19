@@ -26,10 +26,6 @@ describe('journal full-scan boundaries', () => {
   }, 15000);
 
   it('rejects an unscoped readAll(0) full-history rescan reappearing in delivery-outcome-reactor.ts', async () => {
-    // The journal change-notification fix replaced this file's unconditional
-    // readAll(0) second pass with a bounded, persisted pending-confirmations
-    // set, so its exemption from the rule was removed — this guards against
-    // that full-history rescan pattern regressing back in unnoticed.
     await expect(
       restrictedRules('src/integrations/delivery/application/delivery-outcome-reactor.ts'),
     ).resolves.toEqual(['no-restricted-syntax']);
