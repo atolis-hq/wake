@@ -98,7 +98,7 @@ export function createSurfaceCliApplications(
         ? Promise.resolve()
         : root.journal.changeSignal.waitForChange(
             signal,
-            root.config.controlPlane.resident?.idleBackoffMs ?? 1000,
+            root.config.controlPlane.resident?.idleBackoffMs ?? 30_000,
           );
     },
     reportResidentError('runner'),
@@ -222,7 +222,7 @@ export async function runProjectionPump(
   root: Pick<CompositionRoot, 'projectionRunner' | 'journal' | 'config'>,
   signal: AbortSignal,
 ): Promise<void> {
-  const fallbackMs = root.config.controlPlane.resident?.idleBackoffMs ?? 1000;
+  const fallbackMs = root.config.controlPlane.resident?.idleBackoffMs ?? 30_000;
   while (!signal.aborted) {
     try {
       await root.projectionRunner.runRegisteredOnce();
@@ -242,7 +242,7 @@ function nextIdleBackoffMs(
   resident: { readonly idleBackoffMs: number; readonly maxIdleBackoffMs?: number } | undefined,
   consecutiveIdleTicks: number,
 ): number {
-  const baseMs = resident?.idleBackoffMs ?? 1000;
+  const baseMs = resident?.idleBackoffMs ?? 30_000;
   const maxMs = resident?.maxIdleBackoffMs ?? baseMs * 16;
   return Math.min(baseMs * 2 ** Math.min(consecutiveIdleTicks, 20), maxMs);
 }
