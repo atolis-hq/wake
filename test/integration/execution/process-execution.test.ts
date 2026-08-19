@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classifyCodexFailure,
   claudeCommandArgs,
   cliRunner,
   codexCommandArgs,
@@ -557,4 +558,51 @@ describe('cliRunner', () => {
       expect(parse(partial)).toEqual(expected);
     },
   );
+
+  it('classifies a Codex usage-limit turn.failed event as provider-quota-exceeded', () => {
+    const stdout = [
+      JSON.stringify({ type: 'thread.started', thread_id: 't-1' }),
+      JSON.stringify({ type: 'turn.started' }),
+      JSON.stringify({
+        type: 'error',
+        message:
+          "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 20th, 2026 7:17 AM.",
+      }),
+      JSON.stringify({
+        type: 'turn.failed',
+        error: {
+          message:
+            "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 20th, 2026 7:17 AM.",
+        },
+      }),
+    ].join('\n');
+
+    expect(classifyCodexFailure({ stdout, stderr: '' })).toEqual({
+      kind: 'provider-quota-exceeded',
+      message:
+        "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 20th, 2026 7:17 AM.",
+    });
+  });
+
+  it('does not classify an ordinary Codex crash as quota-exceeded', () => {
+    expect(classifyCodexFailure({ stdout: '', stderr: 'Segmentation fault' })).toBeUndefined();
+  });
+
+  it('does not classify an auth failure as quota-exceeded', () => {
+    const stdout = JSON.stringify({
+      type: 'error',
+      message: 'Unauthorized: authentication failed, please run `codex login`.',
+    });
+    expect(classifyCodexFailure({ stdout, stderr: '' })).toBeUndefined();
+  });
+
+  it('does not scan raw stdout when no structured error/turn.failed event is present', () => {
+    // The word "quota" appears in this agent-generated line, but it is not a
+    // structured Codex error event, so it must never be classified as quota.
+    const stdout = JSON.stringify({
+      type: 'item.completed',
+      item: { type: 'agent_message', text: 'I updated the quota-check middleware and committed.' },
+    });
+    expect(classifyCodexFailure({ stdout, stderr: '' })).toBeUndefined();
+  });
 });

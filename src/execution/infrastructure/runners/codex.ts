@@ -1,6 +1,43 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
+import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 import { WorkspaceMode } from '../../contracts/vocabulary.js';
 import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
+
+// Deliberately narrow: only genuine provider usage/rate-limit phrasing.
+// Auth/login failures (unauthorized, authentication, api key, not logged
+// in, login required) are NOT included here — they are a different failure
+// class and must not be paused-and-retried as if they were transient.
+const codexQuotaPattern =
+  /usage limit|rate limit|quota|too many requests|credit balance|spend limit|session limit|\b429\b/i;
+
+export function classifyCodexFailure(input: {
+  readonly stdout: string;
+  readonly stderr: string;
+}): { readonly kind: string; readonly message: string } | undefined {
+  // Only ever classify from Codex's own structured error/turn.failed
+  // message, never from scanning raw stdout — stdout on a failed run can
+  // carry the agent's own generated text, which must never be
+  // pattern-matched into a false quota classification.
+  const structured = extractCodexErrorMessage(input.stdout);
+  if (structured === undefined) return undefined;
+  if (!codexQuotaPattern.test(structured)) return undefined;
+  return { kind: ProviderQuotaExceededFailureKind, message: structured };
+}
+
+function extractCodexErrorMessage(stdout: string): string | undefined {
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    const event = parseLine(trimmed);
+    if (event === undefined) continue;
+    if (event.type === 'error' && typeof event.message === 'string') return event.message;
+    if (event.type === 'turn.failed') {
+      const error = asRecord(event.error);
+      if (typeof error?.message === 'string') return error.message;
+    }
+  }
+  return undefined;
+}
 
 export function createCodexRunner(options: CliRunnerOptions = {}): Runner {
   return cliRunner(
@@ -11,6 +48,7 @@ export function createCodexRunner(options: CliRunnerOptions = {}): Runner {
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseCodexOutput,
+      classifyFailure: classifyCodexFailure,
       supportsSessionResume: true,
     },
   );
