@@ -667,6 +667,67 @@ describe('advanceOnce', () => {
     ]);
   });
 
+  it('accepts an ordinary non-quota failed outcome through acceptOutcome unchanged', async () => {
+    const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
+    const workflow = {
+      workflowInstanceId: 'workflow-1',
+      workItemId: 'work-1',
+      orchestrationGroupId: 'group-1',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const accepted: unknown[] = [];
+    const retried: unknown[] = [];
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async (...input: unknown[]) => {
+          accepted.push(input);
+          return workflow;
+        },
+        markActivationStarted: async () => workflow,
+        retryRunnerQuotaFailure: async (...input: unknown[]) => {
+          retried.push(input);
+          return workflow;
+        },
+      } as never,
+      {
+        attempt: async () =>
+          ({
+            runId: 'run-1',
+            status: 'succeeded',
+            runner: { name: 'codex' },
+            outcome: {
+              kind: 'failed',
+              data: { reason: 'runner-failed', message: 'runner exited 1' },
+            },
+          }) as never,
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-19T00:00:00.000Z') },
+      { ids: { next: () => 'command-1' } as never },
+    );
+
+    await advance({ maxProgress: 1 });
+
+    expect(retried).toEqual([]);
+    expect(accepted).toEqual([
+      [
+        {
+          workflowInstanceId: workflow.workflowInstanceId,
+          activationId: activation.activationId,
+          outcome: {
+            kind: 'failed',
+            data: { reason: 'runner-failed', message: 'runner exited 1' },
+          },
+        },
+        expect.anything(),
+      ],
+    ]);
+  });
+
   it.each(['failed', 'cancelled'] as const)(
     'resolves a detached %s Run before dispatching another attempt',
     async (status) => {

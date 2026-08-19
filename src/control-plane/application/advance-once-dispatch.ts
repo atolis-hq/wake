@@ -149,6 +149,10 @@ export async function runDispatchLoop(
     }
     if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
       if (isRunnerQuotaOutcome(run.outcome)) {
+        // No isDispatchPaused check here: a quota retry re-requests the same
+        // stage's activity without publishing an outcome or consuming retry
+        // budget, so it must not be held behind maintenance pause the way an
+        // outward-publishing acceptOutcome call is below.
         await ctx.orchestration.retryRunnerQuotaFailure?.(
           selected.workflow.workflowInstanceId,
           {
