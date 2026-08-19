@@ -71,6 +71,8 @@ Does not own:
 
 ## Core policies, invariants, and behaviours
 
+- `wake ui token` prints the access key held in `.wake/auth/credentials.json`;
+  `wake ui token set <key>` replaces only that key, preserving signed sessions.
 - Parsing an unrecognized command name for the parsed surface (anything
   other than `tick`, `start`, `stop`, `api`, `ui`, `audit`, `correlate`, or
   `validate-state`) MUST throw before any application is invoked.

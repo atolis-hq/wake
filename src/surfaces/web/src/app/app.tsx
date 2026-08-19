@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { WakeApiClient } from '../api/client.js';
 import { ApiClientContext } from '../api/context.js';
@@ -26,12 +26,53 @@ export function App({ client = new WakeApiClient() }: { readonly client?: WakeAp
         },
       }),
   );
+  const [authenticated, setAuthenticated] = useState<boolean | undefined>();
+  useEffect(() => {
+    void fetch('/api/v1/auth/session')
+      .then((response) => setAuthenticated(response.ok))
+      .catch(() => setAuthenticated(false));
+  }, []);
+  if (authenticated === undefined) return null;
+  if (!authenticated) return <Login onAuthenticated={() => setAuthenticated(true)} />;
   return (
     <QueryClientProvider client={queryClient}>
       <ApiClientContext.Provider value={client}>
         <AppRoutes />
       </ApiClientContext.Provider>
     </QueryClientProvider>
+  );
+}
+
+function Login({ onAuthenticated }: { readonly onAuthenticated: () => void }) {
+  const [accessKey, setAccessKey] = useState('');
+  const [failed, setFailed] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const response = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accessKey }),
+    });
+    if (response.ok) onAuthenticated();
+    else setFailed(true);
+  }
+  return (
+    <main style={{ maxWidth: '24rem', margin: '15vh auto', padding: '1.5rem' }}>
+      <h1>Wake login</h1>
+      <form onSubmit={submit}>
+        <label htmlFor="access-key">Access key</label>
+        <input
+          id="access-key"
+          type="password"
+          value={accessKey}
+          onChange={(event) => setAccessKey(event.target.value)}
+          autoFocus
+          required
+        />
+        <button type="submit">Sign in</button>
+        {failed && <p role="alert">Unable to sign in.</p>}
+      </form>
+    </main>
   );
 }
 

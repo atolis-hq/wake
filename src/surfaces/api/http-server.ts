@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { HttpAuth } from '../auth/auth.js';
 import type { AssetSource } from '../web-host/asset-source.js';
 import { problemDetails } from './problem-details.js';
 import { BrowserRouteOutcome, routeBrowserRequest } from './router.js';
@@ -15,20 +16,25 @@ export interface ApiDispatcher {
   dispatch(method: string, pathname: string, body: unknown): Promise<ApiHttpResponse | undefined>;
 }
 
-export function createApiHttpServer(dispatcher: ApiDispatcher, assets?: AssetSource) {
+export function createApiHttpServer(
+  dispatcher: ApiDispatcher,
+  assets?: AssetSource,
+  auth?: HttpAuth,
+) {
   return createServer((request, response) => {
-    void handleRequest(dispatcher, assets, request, response);
+    void handleRequest(dispatcher, assets, auth, request, response);
   });
 }
 
 async function handleRequest(
   dispatcher: ApiDispatcher,
   assets: AssetSource | undefined,
+  auth: HttpAuth | undefined,
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
   try {
-    await dispatchRequest(dispatcher, assets, request, response);
+    await dispatchRequest(dispatcher, assets, auth, request, response);
   } catch (error) {
     sendJson(response, errorResult(error));
   }
@@ -37,17 +43,17 @@ async function handleRequest(
 async function dispatchRequest(
   dispatcher: ApiDispatcher,
   assets: AssetSource | undefined,
+  auth: HttpAuth | undefined,
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://wake.local');
   const method = request.method ?? 'GET';
   const head = method === 'HEAD';
-  const result = await dispatcher.dispatch(
-    method,
-    `${url.pathname}${url.search}`,
-    await jsonBody(request),
-  );
+  const body = await jsonBody(request);
+  const authorization = auth?.authorize(request, url.pathname, method, body);
+  if (authorization !== undefined) return sendJson(response, authorization, head);
+  const result = await dispatcher.dispatch(method, `${url.pathname}${url.search}`, body);
   if (result !== undefined) return sendJson(response, result, head);
   await serveWebRequest(assets, method, url.pathname, response, head);
 }

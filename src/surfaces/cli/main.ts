@@ -11,6 +11,7 @@ export interface HostOptions {
 export type WakeCommand =
   | ({ readonly kind: 'tick' | 'start' | 'stop' } & { readonly wakeRoot?: string })
   | ({ readonly kind: 'api' | 'ui' } & HostOptions)
+  | { readonly kind: 'ui-token'; readonly wakeRoot?: string; readonly accessKey?: string }
   | { readonly kind: 'audit'; readonly workItemId: string }
   | { readonly kind: 'correlate'; readonly resource: string; readonly workItemId: string }
   | {
@@ -64,6 +65,7 @@ export interface WakeCliApplications {
   readonly stop: { stop(): Promise<void> };
   readonly api: { start(options?: HostOptions): Promise<void> };
   readonly ui: { start(options?: HostOptions): Promise<void> };
+  readonly auth?: { token(accessKey?: string): Promise<string> };
   readonly audit: { read(workItemId: string): Promise<readonly AuditRecord[]> };
   readonly correlate: { correlate(resource: string, workItemId: string): Promise<unknown> };
   readonly runs?: {
@@ -108,7 +110,9 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
     case 'validate-state':
       return parseValidateState(arguments_.slice(1));
     case 'api':
+      return { kind: command, ...parseHostOptions(arguments_.slice(1)) };
     case 'ui':
+      if (first === 'token') return parseUiToken(arguments_.slice(2));
       return { kind: command, ...parseHostOptions(arguments_.slice(1)) };
     case 'tick':
     case 'start':
@@ -125,6 +129,18 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
     default:
       throw new Error(`Unknown wake command: ${command ?? ''}`);
   }
+}
+
+function parseUiToken(arguments_: readonly string[]): WakeCommand {
+  if (arguments_[0] === 'set') {
+    const accessKey = requiredArgument(arguments_[1], 'UI access key');
+    if (arguments_.length !== 2) throw new Error('ui token set accepts exactly one access key');
+    return { kind: 'ui-token', accessKey };
+  }
+  if (arguments_.length === 0) return { kind: 'ui-token' };
+  if (arguments_.length === 2 && arguments_[0] === '--wake-root')
+    return { kind: 'ui-token', wakeRoot: arguments_[1] };
+  throw new Error('ui token accepts optional --wake-root <path>');
 }
 
 // eslint-disable-next-line complexity -- the resolution flags are mutually exclusive by design.
@@ -262,6 +278,9 @@ export async function runWakeCommand(
     case 'ui':
       await applications.ui.start(command);
       return;
+    case 'ui-token':
+      output.write(`${await auth(applications).token(command.accessKey)}\n`);
+      return;
     case 'audit':
       for (const record of await applications.audit.read(command.workItemId))
         output.write(`${JSON.stringify(record)}\n`);
@@ -282,6 +301,11 @@ export async function runWakeCommand(
       return;
     }
   }
+}
+
+function auth(applications: WakeCliApplications): NonNullable<WakeCliApplications['auth']> {
+  if (applications.auth === undefined) throw new Error('Auth CLI application was not composed');
+  return applications.auth;
 }
 
 async function resolveCliOutcome(
