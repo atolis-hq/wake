@@ -20,8 +20,9 @@ export function composeDeliveryOutcomeReactor(
   journal: EventJournal,
   checkpoints: CheckpointStore,
   orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>,
+  projections: ProjectionStore,
 ): DeliveryOutcomeReactor {
-  return new DeliveryOutcomeReactor(journal, checkpoints, orchestration);
+  return new DeliveryOutcomeReactor(journal, checkpoints, orchestration, projections);
 }
 
 export interface DeliveryRuntimeDependencies {
@@ -56,6 +57,7 @@ export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies
     dependencies.journal,
     dependencies.checkpoints,
     dependencies.orchestration,
+    dependencies.projections,
   );
   return {
     async runOnce(signal: AbortSignal) {

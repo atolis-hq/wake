@@ -140,10 +140,12 @@ Decisions below).
   different strategies: the intake `ResidentHost` backs off exponentially on
   `consecutiveIdleTicks` (`controlPlane.resident.idleBackoffMs`/
   `maxIdleBackoffMs`), because it unconditionally polls a rate-limited
-  external API (GitHub) every cycle; the runner `ResidentHost` sleeps only a
-  fixed, un-backed-off interval when idle-without-error and not at all when
-  the prior cycle made progress, since dispatch and projections never poll
-  that API on their own. This mirrors legacy `src/core/control-plane.ts`'s
+  external API (GitHub) every cycle; the runner `ResidentHost` waits on the
+  journal's `JournalChangeSignal` (falling back to `idleBackoffMs` if
+  nothing signals) when idle-without-error and not at all when the prior
+  cycle made progress, since dispatch and projections never poll that API on
+  their own — a real journal append wakes it within milliseconds rather than
+  on a fixed poll interval. This mirrors legacy `src/core/control-plane.ts`'s
   `runIntakeTick`/`runRunnerTick` split (`idleBackoff: true` vs `false`).
   But some runner stages (delivery, GitHub label maintenance) do call that
   same external API on their own schedule, not a poll, so the runner

@@ -22,8 +22,10 @@ Kernel owns:
   valid draft.
 - The storage and time ports every other module programs against:
   `EventJournal` (append/readStream/readAll, plus an optional `readLatest`
-  for backward reads), `ProjectionStore` (read/write/list/clear),
-  `CheckpointStore` (load/save/reset), `Clock`, `IdGenerator`.
+  for backward reads, and a `changeSignal` advisory wake-up for a resident
+  consumer waiting on new events — see `JournalChangeSignal`),
+  `ProjectionStore` (read/write/list/clear), `CheckpointStore`
+  (load/save/reset), `Clock`, `IdGenerator`.
 - Identifier branding conventions (`Brand<T, Name>`, `EventId`,
   `CorrelationId`, `CausationId`) and the `EntityRef` shape used to address
   any stream or related entity by kind and id.

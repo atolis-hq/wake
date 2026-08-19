@@ -63,6 +63,7 @@ it('lists Run views from one journal snapshot without per-Run stream reads', asy
       return backing.readStream(stream);
     },
     latestGlobalPosition: backing.latestGlobalPosition.bind(backing),
+    changeSignal: backing.changeSignal,
   };
 
   await expect(new RunRepository(recording).list()).resolves.toMatchObject([

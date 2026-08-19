@@ -30,10 +30,15 @@ export const controlPlaneConfigSchema = z
     schedules: z.array(scheduleSchema).default([]),
     resident: z
       .object({
-        idleBackoffMs: z.number().int().positive().default(1000),
+        // A resident loop no longer polls on this cadence in steady state —
+        // it waits on JournalChangeSignal and wakes within milliseconds of
+        // a real append. This is now purely the fallback ceiling for a
+        // missed or cross-process notification, so there's no correctness
+        // reason to keep it short.
+        idleBackoffMs: z.number().int().positive().default(30_000),
         maxIdleBackoffMs: z.number().int().positive().optional(),
       })
       .strict()
-      .default({ idleBackoffMs: 1000 }),
+      .default({ idleBackoffMs: 30_000 }),
   })
   .strict();

@@ -214,8 +214,9 @@ Control Plane does not own:
   composition runs two independently-scheduled resident hosts (see
   `infrastructure/tick-host.spec.md`): intake backs off exponentially when
   idle using `controlPlane.resident.idleBackoffMs`/`maxIdleBackoffMs`
-  (only intake polls the rate-limited GitHub API); the runner loop sleeps a
-  fixed interval when idle and not at all when the prior cycle progressed.
+  (only intake polls the rate-limited GitHub API); the runner loop waits on
+  the journal's change signal when idle (falling back to `idleBackoffMs` if
+  nothing signals) and not at all when the prior cycle progressed.
 - Composing Dispatch Policy's fairness ordering and quota-driven pause into
   the live Advancement/host path, and exposing Work conclusion as a direct
   operator command, are deferred capabilities, not rejected ones.

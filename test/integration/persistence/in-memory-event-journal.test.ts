@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createEventDraft,
   WrongExpectedSequenceError,
@@ -143,5 +143,64 @@ describe('in-memory event journal', () => {
       ]),
     ).rejects.toThrow('Event id evt-1 is repeated with different content in one append');
     expect(await journal.readAll(0)).toEqual([]);
+  });
+
+  describe('changeSignal', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('notifies only when append actually records a new event, not on an idempotent replay', async () => {
+      const journal = new InMemoryEventJournal(new FixedClock());
+      const controller = new AbortController();
+
+      let woke = false;
+      const wait = journal.changeSignal.waitForChange(controller.signal, 1_000).then(() => {
+        woke = true;
+      });
+      await journal.append(stream, 0, [event('evt-1')]);
+      await wait;
+
+      expect(woke).toBe(true);
+
+      let wokeAgain = false;
+      const secondWait = journal.changeSignal.waitForChange(controller.signal, 1_000).then(() => {
+        wokeAgain = true;
+      });
+      // Resubmitting the exact same already-recorded draft is a no-op append.
+      await journal.append(stream, 0, [event('evt-1')]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(wokeAgain).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await secondWait;
+      expect(wokeAgain).toBe(true);
+    });
+
+    it('wakes multiple independent subscribers off one append, each catching up to their own checkpoint', async () => {
+      const journal = new InMemoryEventJournal(new FixedClock());
+      await journal.append(stream, 0, [event('evt-1')]);
+      const firstCheckpoint = await journal.latestGlobalPosition();
+      await journal.append(stream, 1, [event('evt-2')]);
+      const secondCheckpoint = await journal.latestGlobalPosition();
+
+      const firstController = new AbortController();
+      const secondController = new AbortController();
+      const firstWait = journal.changeSignal.waitForChange(firstController.signal, 1_000);
+      const secondWait = journal.changeSignal.waitForChange(secondController.signal, 1_000);
+
+      await journal.append(stream, 2, [event('evt-3')]);
+      await Promise.all([firstWait, secondWait]);
+
+      expect((await journal.readAll(firstCheckpoint)).map((e) => e.eventId)).toEqual([
+        'evt-2',
+        'evt-3',
+      ]);
+      expect((await journal.readAll(secondCheckpoint)).map((e) => e.eventId)).toEqual(['evt-3']);
+    });
   });
 });

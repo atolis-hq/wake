@@ -25,6 +25,16 @@ describe('journal full-scan boundaries', () => {
     ).resolves.toEqual(['no-restricted-syntax']);
   }, 15000);
 
+  it('rejects an unscoped readAll(0) full-history rescan reappearing in delivery-outcome-reactor.ts', async () => {
+    // The journal change-notification fix replaced this file's unconditional
+    // readAll(0) second pass with a bounded, persisted pending-confirmations
+    // set, so its exemption from the rule was removed — this guards against
+    // that full-history rescan pattern regressing back in unnoticed.
+    await expect(
+      restrictedRules('src/integrations/delivery/application/delivery-outcome-reactor.ts'),
+    ).resolves.toEqual(['no-restricted-syntax']);
+  }, 15000);
+
   it.each([
     // Owns the journal and already gates full rescans behind a
     // last-seen-position check.
@@ -50,9 +60,6 @@ describe('journal full-scan boundaries', () => {
     'src/activities/pr/application.ts',
     // Bounded by actual agent-activation volume, not a resident tick.
     'src/integrations/github/application/comment-history-reader.ts',
-    // Deliberately re-evaluates every past delivery event against current
-    // orchestration state on every tick; see the file's own comment.
-    'src/integrations/delivery/application/delivery-outcome-reactor.ts',
   ])(
     'permits the exact %s boundary',
     async (filePath) => {

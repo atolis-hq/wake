@@ -120,8 +120,8 @@ controlPlane:
   maxDispatches: 1
   maxConcurrentRuns: 1
   resident:
-    idleBackoffMs: 1000
-    maxIdleBackoffMs: 30000
+    idleBackoffMs: 30000
+    maxIdleBackoffMs: 60000
   schedules:
     - id: daily-maintenance
       workflow: default
@@ -304,8 +304,8 @@ execution:
 | `controlPlane.maxDispatches` | positive integer; default `1` | Per-call burst cap: the maximum number of new Runs a single `advanceOnce` call will start, independent of and bounded by `maxConcurrentRuns`. `advanceOnce` fills open capacity within one call up to this cap rather than dispatching a single Run per call. |
 | `controlPlane.maxConcurrentRuns` | positive integer; default `1` | Maximum Runs that may be `started` system-wide. `advanceOnce` stops dispatching, and additional advancement calls return `no-work`, until capacity is available. |
 | `controlPlane.schedules` | list; default `[]` | Scheduled workflow starts. Each entry is described below. |
-| `controlPlane.resident.idleBackoffMs` | positive integer; default `1000` | Delay after an idle resident-loop pass. |
-| `controlPlane.resident.maxIdleBackoffMs` | positive integer; optional | Ceiling for resident idle backoff. |
+| `controlPlane.resident.idleBackoffMs` | positive integer; default `30000` | Fallback ceiling an idle resident loop waits before re-checking on its own; a real journal append wakes it within milliseconds regardless, so this only matters for a missed or cross-process notification. |
+| `controlPlane.resident.maxIdleBackoffMs` | positive integer; optional | Ceiling for the intake resident's and error-retry exponential backoff. |
 
 Each `controlPlane.schedules[]` entry requires `id`, `workflow`, `cron`, and
 `objective`, all non-empty strings. `id` identifies the schedule,

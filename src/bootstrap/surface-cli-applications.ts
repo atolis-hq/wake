@@ -90,9 +90,16 @@ export function createSurfaceCliApplications(
           signal,
           nextIdleBackoffMs(root.config.controlPlane.resident, consecutiveErrorTicks),
         );
+      // Genuine idle (no errors): wait for the journal to actually change
+      // rather than polling on a fixed cadence. idleBackoffMs is now purely
+      // the fallback ceiling for this wait, not the steady-state interval —
+      // a real append wakes this within milliseconds via changeSignal.
       return consecutiveIdleTicks === 0
         ? Promise.resolve()
-        : sleepUntilAbort(signal, root.config.controlPlane.resident?.idleBackoffMs ?? 1000);
+        : root.journal.changeSignal.waitForChange(
+            signal,
+            root.config.controlPlane.resident?.idleBackoffMs ?? 1000,
+          );
     },
     reportResidentError('runner'),
   );
@@ -212,10 +219,10 @@ export function createSurfaceCliApplications(
 }
 
 export async function runProjectionPump(
-  root: Pick<CompositionRoot, 'projectionRunner'>,
+  root: Pick<CompositionRoot, 'projectionRunner' | 'journal' | 'config'>,
   signal: AbortSignal,
 ): Promise<void> {
-  const intervalMs = 1000;
+  const fallbackMs = root.config.controlPlane.resident?.idleBackoffMs ?? 1000;
   while (!signal.aborted) {
     try {
       await root.projectionRunner.runRegisteredOnce();
@@ -224,7 +231,10 @@ export async function runProjectionPump(
         `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
-    await sleepUntilAbort(signal, intervalMs);
+    // Waits for a journal change instead of a fixed 1s poll — the pump only
+    // needs to run again once something actually landed; idleBackoffMs is
+    // just the fallback ceiling for a missed/cross-process notification.
+    await root.journal.changeSignal.waitForChange(signal, fallbackMs);
   }
 }
 

@@ -24,8 +24,10 @@ The Event Journal owns: assigning `recordedAt`, `sequence`, and
 `globalPosition` to each newly accepted draft; enforcing stream-level
 optimistic concurrency; enforcing event-id idempotency, both within a batch
 and against everything previously recorded; the one true replay order
-across the whole journal; and reading backward from the most recent event
-without a full forward scan.
+across the whole journal; reading backward from the most recent event
+without a full forward scan; and advertising an advisory, in-process
+wake-up when new events land, so a resident consumer can wait instead of
+polling on a fixed schedule.
 
 It does not own: interpreting an event's type or payload; deciding stream
 identity — the caller supplies the `(kind, id)` pair; or retrying on its
@@ -80,6 +82,30 @@ caller's behalf when a write cannot currently be accepted.
   journal forward from the start.
 - `readLatest` MUST NOT advance or otherwise affect any checkpoint; it is a
   read-only capability alongside `readAll`.
+
+**Change notification**
+
+- Every implementation MUST expose a `changeSignal` whose `waitForChange`
+  resolves once a change has been signalled since the call started, once a
+  caller-supplied fallback duration elapses, or once the caller's abort
+  signal fires — whichever happens first — and MUST never reject.
+- `changeSignal` MUST fire only after a call to `append` durably records at
+  least one genuinely new event; an idempotent no-op append (every draft
+  already recorded) MUST NOT fire it.
+- Notification is advisory only and carries no payload identifying what
+  changed: a caller MUST always re-derive what's new from its own durable
+  checkpoint after waking, whether woken by notification or by the fallback
+  duration elapsing. A missed, duplicated, or coalesced notification MUST
+  NOT cause a caller to miss an event — it can only delay how soon the
+  caller re-checks, bounded by the fallback duration it supplied.
+- Multiple `notify` occurrences between two `waitForChange` calls MUST
+  produce exactly one wake-up per waiting caller, not one per occurrence.
+  Multiple independent callers waiting concurrently MUST each be woken by
+  one notification, independently of one another's checkpoint position.
+- This mechanism is in-process only: it MUST NOT observe an append made by
+  a different OS process against the same journal root. A cross-process
+  writer's consumers still catch up correctly, bounded by the fallback
+  duration, exactly as any other missed notification.
 
 **Corruption**
 

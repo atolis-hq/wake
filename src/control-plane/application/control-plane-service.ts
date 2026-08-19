@@ -23,19 +23,38 @@ export function createControlPlaneService(input: {
   readonly clock: Clock;
   readonly ids: IdGenerator;
 }): ControlPlaneService {
+  // isPaused() is checked many times per pipeline run (runner and intake
+  // both call it repeatedly through their stage sequencing), so a resident
+  // loop hits this every tick even when fully idle. Memoize by journal
+  // position — the control-plane stream itself is already small and cheap
+  // to read, but skipping the read entirely when nothing has moved removes
+  // that call-volume cost outright.
+  let cached: { readonly position: number; readonly paused: boolean } | undefined;
   return {
     pause: (key) => change(input, key, 'pause'),
     resume: (key) => change(input, key, 'resume'),
     async isPaused() {
-      let paused = false;
-      for (const envelope of await input.journal.readStream(controlPlaneStream())) {
-        const event = selectControlEvent(envelope);
-        if (event?.eventType === ControlEventType.DispatchPaused) paused = true;
-        if (event?.eventType === ControlEventType.DispatchResumed) paused = false;
-      }
+      const position = await input.journal.latestGlobalPosition();
+      if (cached !== undefined && cached.position === position) return cached.paused;
+      const paused = await currentIsPaused(input.journal);
+      cached = { position, paused };
       return paused;
     },
   };
+}
+
+async function currentIsPaused(journal: EventJournal): Promise<boolean> {
+  return isPausedIn(await journal.readStream(controlPlaneStream()));
+}
+
+function isPausedIn(events: Awaited<ReturnType<EventJournal['readStream']>>): boolean {
+  let paused = false;
+  for (const envelope of events) {
+    const event = selectControlEvent(envelope);
+    if (event?.eventType === ControlEventType.DispatchPaused) paused = true;
+    if (event?.eventType === ControlEventType.DispatchResumed) paused = false;
+  }
+  return paused;
 }
 
 async function change(
@@ -50,7 +69,7 @@ async function change(
   const correlation = correlationId(`control:${operation}:${idempotencyKey}`);
   if (events.some((event) => event.eventType === eventType && event.correlationId === correlation))
     return;
-  const currentlyPaused = await createControlPlaneService(input).isPaused();
+  const currentlyPaused = isPausedIn(events);
   if ((operation === 'pause' && currentlyPaused) || (operation === 'resume' && !currentlyPaused))
     return;
   const occurredAt = input.clock.now().toISOString();

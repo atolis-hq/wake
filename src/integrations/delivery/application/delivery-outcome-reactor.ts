@@ -1,5 +1,11 @@
 import { ActivityOutcomeKind, activationId } from '../../../activities/index.js';
-import { EventActorKind, type CheckpointStore, type EventJournal } from '../../../kernel/index.js';
+import {
+  EventActorKind,
+  type CheckpointStore,
+  type EventEnvelope,
+  type EventJournal,
+  type ProjectionStore,
+} from '../../../kernel/index.js';
 import {
   ActivityActivationStatus,
   workflowInstanceId,
@@ -10,33 +16,64 @@ import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
 import { DeliveryResultKind } from '../contracts/vocabulary.js';
 
 const deliveryResultSignalKind = 'delivery-result';
+const pendingNamespace = 'reactor:delivery-outcomes:pending';
+const pendingKey = 'pending-confirmations';
+
+interface PendingConfirmations {
+  readonly events: readonly EventEnvelope[];
+}
 
 export class DeliveryOutcomeReactor {
   constructor(
     private readonly journal: EventJournal,
     private readonly checkpoints: CheckpointStore,
     private readonly orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>,
+    private readonly projections: ProjectionStore,
   ) {}
 
   async runOnce(): Promise<number> {
     const consumer = 'reactor:delivery-outcomes';
     const events = await this.journal.readAll(await this.checkpoints.load(consumer));
-    const resolvedDeliveryEventIds = new Set<string>();
+    const resolved = new Set<string>();
+    const pending = new Map(
+      (await this.loadPending()).map((event) => [event.eventId, event] as const),
+    );
     for (const event of events) {
-      await this.reconcile(event, resolvedDeliveryEventIds);
+      const matched = await this.reconcile(event, resolved);
+      if (matched === false) {
+        // reconcile() only ever returns false for a delivery-terminal event
+        // (selectDeliveryEvent(event) !== null), so this lookup can't miss.
+        const delivery = selectDeliveryEvent(event)!;
+        pending.set(delivery.eventId, event);
+      }
       await this.checkpoints.save(consumer, event.globalPosition);
     }
-    for (const event of await this.journal.readAll(0))
-      await this.reconcile(event, resolvedDeliveryEventIds);
+    // Re-check only the bounded set of confirmations whose workflow wasn't
+    // yet waiting on them when they first arrived — not the full journal.
+    // This is the race the old unconditional readAll(0) second pass existed
+    // to catch (a confirmation checkpointed before its workflow reached
+    // "waiting for delivery"); bounding it to this set instead of the whole
+    // journal keeps the fix while dropping the O(total history) cost.
+    for (const [id, pendingEvent] of pending) {
+      if (resolved.has(id)) {
+        pending.delete(id);
+        continue;
+      }
+      const matched = await this.reconcile(pendingEvent, resolved);
+      if (matched === true) pending.delete(id);
+    }
+    await this.savePending([...pending.values()]);
     return events.length;
   }
 
-  private async reconcile(
-    event: Awaited<ReturnType<EventJournal['readAll']>>[number],
-    seen: Set<string>,
-  ) {
+  // true: resolved (accepted this call, or already accepted earlier this
+  // same call). false: a delivery-terminal event whose workflow isn't
+  // waiting on it yet — belongs in the pending set for a later retry. null:
+  // not a delivery-terminal event at all.
+  private async reconcile(event: EventEnvelope, seen: Set<string>): Promise<boolean | null> {
     const delivery = selectDeliveryEvent(event);
-    if (delivery === null || seen.has(delivery.eventId)) return;
+    if (delivery === null) return null;
+    if (seen.has(delivery.eventId)) return true;
     const outcome =
       delivery.eventType === DeliveryEventType.Confirmed ||
       (delivery.eventType === DeliveryEventType.Reconciled &&
@@ -45,12 +82,12 @@ export class DeliveryOutcomeReactor {
         : delivery.eventType === DeliveryEventType.Failed
           ? { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.payload.code } }
           : null;
-    if (outcome === null) return;
+    if (outcome === null) return null;
     const command = {
       workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),
       activationId: activationId(delivery.payload.activationId),
     };
-    if (!(await this.isAwaitingThisDelivery(command, delivery.payload.intentEventId))) return;
+    if (!(await this.isAwaitingThisDelivery(command, delivery.payload.intentEventId))) return false;
     seen.add(delivery.eventId);
     await this.orchestration.acceptOutcome(
       { ...command, outcome },
@@ -61,6 +98,7 @@ export class DeliveryOutcomeReactor {
         occurredAt: event.recordedAt,
       },
     );
+    return true;
   }
 
   /**
@@ -81,5 +119,19 @@ export class DeliveryOutcomeReactor {
       view.waitingFor?.signalKind === deliveryResultSignalKind &&
       view.waitingFor.intentEventId === intentEventId
     );
+  }
+
+  private async loadPending(): Promise<readonly EventEnvelope[]> {
+    const stored = await this.projections.read<PendingConfirmations>(pendingNamespace, pendingKey);
+    return stored?.value.events ?? [];
+  }
+
+  private async savePending(events: readonly EventEnvelope[]): Promise<void> {
+    await this.projections.write<PendingConfirmations>({
+      namespace: pendingNamespace,
+      key: pendingKey,
+      lastGlobalPosition: 0,
+      value: { events },
+    });
   }
 }

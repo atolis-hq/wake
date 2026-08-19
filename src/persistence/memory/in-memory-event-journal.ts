@@ -5,8 +5,9 @@ import type {
   EventDraft,
   EventEnvelope,
   EventJournal,
+  JournalChangeSignal,
 } from '../../kernel/index.js';
-import { WrongExpectedSequenceError } from '../../kernel/index.js';
+import { InProcessJournalChangeSignal, WrongExpectedSequenceError } from '../../kernel/index.js';
 
 interface IndexedEvent {
   readonly draft: EventDraft;
@@ -17,8 +18,13 @@ export class InMemoryEventJournal implements EventJournal {
   private readonly streams = new Map<string, EventEnvelope[]>();
   private readonly events: EventEnvelope[] = [];
   private readonly eventIds = new Map<string, IndexedEvent>();
+  private readonly changeSignalSource = new InProcessJournalChangeSignal();
 
   constructor(private readonly clock: Clock) {}
+
+  get changeSignal(): JournalChangeSignal {
+    return this.changeSignalSource;
+  }
 
   async append(
     stream: EntityRef,
@@ -42,6 +48,7 @@ export class InMemoryEventJournal implements EventJournal {
 
     const recordedAt = this.clock.now().toISOString();
     const appended: EventEnvelope[] = [];
+    let newCount = 0;
     for (const [index, draft] of events.entries()) {
       const prior = existingEvents[index];
       if (prior !== undefined) {
@@ -58,8 +65,10 @@ export class InMemoryEventJournal implements EventJournal {
       this.events.push(envelope);
       this.eventIds.set(draft.eventId, { draft, envelope });
       appended.push(envelope);
+      newCount += 1;
     }
     this.streams.set(streamKey(stream), streamEvents);
+    if (newCount > 0) this.changeSignalSource.notify();
     return appended;
   }
 
