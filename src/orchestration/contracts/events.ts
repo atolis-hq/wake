@@ -39,6 +39,7 @@ export const OrchestrationEventType = {
   ActivityStarted: 'orchestration.activity-started',
   ActivityOutcomeAccepted: 'orchestration.activity-outcome-accepted',
   ActivityExecutionFailed: 'orchestration.activity-execution-failed',
+  ActivityRetriedForRunnerQuota: 'orchestration.activity-retried-for-runner-quota',
   ActivityWaiting: 'orchestration.activity-waiting',
   SignalWaitStarted: 'orchestration.signal-wait-started',
   SignalAccepted: 'orchestration.signal-accepted',
@@ -92,6 +93,12 @@ export interface OrchestrationEventPayloads {
     readonly activationId: ActivationId;
     readonly runId: string;
     readonly reason: string;
+  };
+  readonly [OrchestrationEventType.ActivityRetriedForRunnerQuota]: {
+    readonly activationId: ActivationId;
+    readonly runId: string;
+    readonly runnerName: string;
+    readonly message: string;
   };
   readonly [OrchestrationEventType.ActivityWaiting]: {
     readonly activationId: ActivationId;
