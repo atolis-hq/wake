@@ -105,6 +105,17 @@ DONE`),
     expectTypeOf(translateAgentResult({ status: 'DONE' })).toEqualTypeOf<AgentActivityOutcome>();
   });
 
+  it('accepts a runner-quota-exceeded failed reason', () => {
+    const parsed = agentActivityOutcomeSchema.parse({
+      kind: 'failed',
+      data: { reason: 'runner-quota-exceeded', message: "You've hit your usage limit." },
+    });
+    expect(parsed).toEqual({
+      kind: 'failed',
+      data: { reason: 'runner-quota-exceeded', message: "You've hit your usage limit." },
+    });
+  });
+
   it('maps raw provider failures to the canonical Agent failure contract', async () => {
     const handler = createAgentActivity();
 
@@ -129,7 +140,7 @@ DONE`),
                 result: Promise.resolve({
                   transport: 'failed' as const,
                   output: '',
-                  failure: { kind: 'provider-quota-exceeded', message: 'quota exhausted' },
+                  failure: { kind: 'process-exit-nonzero', message: 'quota exhausted' },
                 }),
               };
             },

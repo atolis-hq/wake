@@ -19,7 +19,11 @@ const blockedReason = z
 
 const failedReason = z
   .object({
-    reason: z.enum([ActivityFailureCode.InvalidAgentResult, ActivityFailureCode.RunnerFailed]),
+    reason: z.enum([
+      ActivityFailureCode.InvalidAgentResult,
+      ActivityFailureCode.RunnerFailed,
+      ActivityFailureCode.RunnerQuotaExceeded,
+    ]),
     message: z.string().optional(),
   })
   .strict();

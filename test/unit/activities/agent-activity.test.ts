@@ -111,6 +111,35 @@ describe('agent activity template context', () => {
     expect(logged).toHaveLength(2);
   });
 
+  it('tags a provider-quota-exceeded runner failure with the runner-quota-exceeded reason', async () => {
+    const activity = createAgentActivity();
+
+    const outcome = await activity.execute(invocation({ prompt: 'Prompt' }), {
+      signal: new AbortController().signal,
+      occurredAt: '2026-08-19T10:00:00.000Z',
+      runId: 'run-123',
+      runnerContext: { runnerName: 'configured-codex', runnerCli: 'codex', activationOrdinal: 1 },
+      runner: {
+        async start() {
+          return {
+            result: Promise.resolve({
+              transport: 'failed' as const,
+              output: '',
+              runner: 'codex',
+              failure: { kind: 'provider-quota-exceeded', message: "You've hit your usage limit." },
+            }),
+          };
+        },
+      },
+      async reportExternalExecution() {},
+    });
+
+    expect(outcome).toEqual({
+      kind: 'failed',
+      data: { reason: 'runner-quota-exceeded', message: "You've hit your usage limit." },
+    });
+  });
+
   it('finalises the captured prompt and preserves a start rejection', async () => {
     const activity = createAgentActivity();
     const captured: unknown[] = [];
