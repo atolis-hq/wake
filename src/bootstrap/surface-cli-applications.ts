@@ -32,6 +32,7 @@ import {
   runTargetSmoke,
   verifyResidentStart,
   waitForActiveRuns,
+  waitForever,
   type ApiApplications,
   type DockerCli,
   type DockerInvocationResult,
@@ -856,7 +857,7 @@ function createSandboxEntrypointDependencies(root: CompositionRoot): SandboxEntr
     waitForExit: async (pid) => children.get(pid) ?? 1,
     writeFile: (path, content) => writeFileContent(path, content, 'utf8'),
     sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
-    waitForever: () => new Promise<never>(() => {}),
+    waitForever,
     log: (message) => process.stdout.write(`${message}\n`),
   };
 }

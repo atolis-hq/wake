@@ -23,7 +23,10 @@ import {
 } from './board-projection.js';
 import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
-import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
+import {
+  createSelfUpdateFailureLog,
+  describeSelfUpdateFailure,
+} from './self-update-failure-log.js';
 import { createExecutionApplications } from './surface-api-execution-applications.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
@@ -284,7 +287,7 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
           : {
               name: 'self-update',
               status: 'degraded' as const,
-              detail: `rolled back from ${selfUpdateFailure.tag} at ${selfUpdateFailure.occurredAt}: ${selfUpdateFailure.message}`,
+              detail: describeSelfUpdateFailure(selfUpdateFailure),
             },
       ];
       const adapters = root.providers.flatMap((instance) =>
