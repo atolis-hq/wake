@@ -187,6 +187,46 @@ it('does not re-parse prior history from disk after appending new events', async
   expect(journalFileReads).toHaveLength(0);
 });
 
+it('coalesces concurrent reads on a cold cache into a single on-disk decode', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-concurrent-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const draft = (id: string, sequence: number) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: `event ${sequence}` },
+    });
+  await new FileEventJournal(root, new FakeClock()).append(stream, 0, [
+    draft('event-1', 1),
+    draft('event-2', 2),
+  ]);
+
+  // A fresh instance starts with no in-memory cache, so every read that
+  // reaches scan() must decide independently whether to hit disk.
+  const reopened = new FileEventJournal(root, new FakeClock());
+  readFileMock.mockClear();
+
+  const [first, second, third] = await Promise.all([
+    reopened.readAll(0),
+    reopened.readAll(0),
+    reopened.latestGlobalPosition(),
+  ]);
+
+  expect(first).toHaveLength(2);
+  expect(second).toHaveLength(2);
+  expect(third).toBe(2);
+  const journalFileReads = readFileMock.mock.calls.filter(([path]) =>
+    String(path).endsWith('.jsonl'),
+  );
+  expect(journalFileReads).toHaveLength(1);
+});
+
 it('notifies changeSignal after a real write, and wakes multiple subscribers off one append', async () => {
   vi.useFakeTimers();
   try {

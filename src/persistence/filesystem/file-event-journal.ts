@@ -31,6 +31,16 @@ export class FileEventJournal implements EventJournal {
   private cached:
     { readonly entries: readonly FileStat[]; readonly events: EventEnvelope[] } | undefined;
 
+  // Every read (readStream/readAll/readLatest/latestGlobalPosition) reaches
+  // scan(), and the resident host's tick loop calls those many times a
+  // second while work is progressing. Without coalescing, calls that land
+  // concurrently each independently decide the cache is stale and each
+  // re-read and re-parse the entire on-disk journal — under I/O pressure
+  // (e.g. a concurrently running build/test process competing for disk),
+  // enough of these can overlap at once to exhaust the heap. Sharing one
+  // in-flight decode among concurrent callers makes that impossible.
+  private inFlightScan: Promise<EventEnvelope[]> | undefined;
+
   async append(
     stream: EntityRef,
     expectedSequence: number,
@@ -130,7 +140,16 @@ export class FileEventJournal implements EventJournal {
     this.cached = { entries, events: [...priorEvents, ...newEnvelopes] };
   }
 
-  private async scan(): Promise<EventEnvelope[]> {
+  private scan(): Promise<EventEnvelope[]> {
+    if (this.inFlightScan !== undefined) return this.inFlightScan;
+    const run = this.scanUncoalesced().finally(() => {
+      if (this.inFlightScan === run) this.inFlightScan = undefined;
+    });
+    this.inFlightScan = run;
+    return run;
+  }
+
+  private async scanUncoalesced(): Promise<EventEnvelope[]> {
     const directory = join(this.root, 'events');
     let files: string[];
     try {
