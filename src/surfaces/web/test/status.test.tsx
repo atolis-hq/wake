@@ -77,6 +77,35 @@ describe('control-plane mutation and connection state', () => {
     expect(idempotencyKeys[0]).toMatch(/^web:tick:/);
   });
 
+  it('shows a distinct maintenance badge when a retained lease is pausing every resident loop', async () => {
+    const client = new WakeApiClient(async (input, init) =>
+      String(input).endsWith('/control-plane/status')
+        ? json({
+            data: {
+              paused: false,
+              updatedAt: instant,
+              maintenanceLease: {
+                phase: 'failed',
+                startedAt: instant,
+                failure: 'active Runs remain after maintenance cancellation: run-1',
+              },
+            },
+            meta: { asOf: instant },
+          })
+        : fixtureResponse(String(input), init),
+    );
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Dispatch active')).toBeTruthy();
+    const badge = await screen.findByText('Maintenance: failed');
+    expect(badge.parentElement?.getAttribute('title')).toBe(
+      'active Runs remain after maintenance cancellation: run-1',
+    );
+  });
+
   it('presents Problem conflict state and a reconnecting banner without erasing the shell', async () => {
     const user = userEvent.setup();
     const client = new WakeApiClient(async (input, init) =>

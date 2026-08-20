@@ -411,18 +411,28 @@ async function performTick(
   };
 }
 
-async function readControlPlaneStatus(root: CompositionRoot, now: () => string) {
+export async function readControlPlaneStatus(root: CompositionRoot, now: () => string) {
   const stored = await root.projections.read<{
     readonly pausedUntil: string | null;
     readonly reason?: string;
   }>(ControlStreamKind.Global, 'global');
   const meta = await projectionMeta(root.journal, stored === null ? [] : [stored], now());
+  const lease = await root.maintenance.read();
   return {
     data: {
       paused: stored?.value.pausedUntil !== null && stored?.value.pausedUntil !== undefined,
       ...(stored?.value.pausedUntil == null ? {} : { pausedUntil: stored.value.pausedUntil }),
       ...(stored?.value.reason === undefined ? {} : { reason: stored.value.reason }),
       updatedAt: meta.asOf,
+      ...(lease === null
+        ? {}
+        : {
+            maintenanceLease: {
+              phase: lease.phase,
+              startedAt: lease.startedAt,
+              ...(lease.failure === undefined ? {} : { failure: lease.failure }),
+            },
+          }),
     },
     meta,
   };

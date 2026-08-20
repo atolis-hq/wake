@@ -6,6 +6,17 @@ export interface ControlPlaneStatusResponse {
   readonly pausedUntil?: string;
   readonly reason?: string;
   readonly updatedAt: string;
+  /**
+   * A retained update-maintenance lease pauses every resident loop
+   * (intake and dispatch) independent of `paused`/`pausedUntil`, which only
+   * reflect an explicit pause or a runner-quota backoff. Present whenever a
+   * lease exists, including a failed one -- see update-maintenance-lease.ts.
+   */
+  readonly maintenanceLease?: {
+    readonly phase: string;
+    readonly startedAt: string;
+    readonly failure?: string;
+  };
 }
 
 export interface AcceptedCommandResponse {

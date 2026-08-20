@@ -65,6 +65,17 @@ export function ControlPlaneStatus() {
       ) : (
         <StatusBadge tone="bad">API unavailable</StatusBadge>
       )}
+      {status.data?.data.maintenanceLease ? (
+        <StatusBadge
+          tone={status.data.data.maintenanceLease.phase === 'failed' ? 'bad' : 'warning'}
+          title={
+            status.data.data.maintenanceLease.failure ??
+            `Maintenance lease held since ${status.data.data.maintenanceLease.startedAt}`
+          }
+        >
+          {`Maintenance: ${status.data.data.maintenanceLease.phase}`}
+        </StatusBadge>
+      ) : null}
       {status.data?.data.paused ? (
         <Button
           type="button"
