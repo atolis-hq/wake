@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import qrcode from 'qrcode-terminal';
 import type { HostBudget, HostResult } from '../../control-plane/index.js';
 import { ExecutionStreamKind, RunStatus } from '../../execution/index.js';
 
@@ -279,7 +280,7 @@ export async function runWakeCommand(
       await applications.ui.start(command);
       return;
     case 'ui-token':
-      output.write(`${await auth(applications).token(command.accessKey)}\n`);
+      writeUiToken(output, await auth(applications).token(command.accessKey));
       return;
     case 'audit':
       for (const record of await applications.audit.read(command.workItemId))
@@ -301,6 +302,13 @@ export async function runWakeCommand(
       return;
     }
   }
+}
+
+function writeUiToken(output: CliOutput, accessKey: string): void {
+  output.write(`${accessKey}\n`);
+  const lines: string[] = [];
+  qrcode.generate(accessKey, { small: true }, (line: string) => lines.push(line));
+  output.write(`${lines.join('\n')}\n`);
 }
 
 function auth(applications: WakeCliApplications): NonNullable<WakeCliApplications['auth']> {

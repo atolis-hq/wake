@@ -6,11 +6,17 @@ test.beforeEach(async ({ request }) => {
   expect(response.ok()).toBeTruthy();
 });
 
+async function login(page: import('@playwright/test').Page): Promise<void> {
+  await page.getByLabel('Access key').fill('wake-e2e-access-key');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Board' })).toBeVisible();
+}
+
 test('operates Wake through the real HTTP Surface and packaged application', async ({
   page,
 }, testInfo) => {
   await page.goto('/board');
-  await expect(page.getByRole('heading', { name: 'Board' })).toBeVisible();
+  await login(page);
   await expect(page.getByText('Dispatch active')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Demo Wake' })).toHaveAttribute(
     'href',
@@ -74,6 +80,7 @@ test('keeps the restyled board operable and free of serious accessibility faults
   page,
 }) => {
   await page.goto('/board');
+  await login(page);
   await expect(page.getByRole('heading', { name: /^Ready \(\d+\)$/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: /^Finished \(\d+\)$/ })).toBeVisible();
 

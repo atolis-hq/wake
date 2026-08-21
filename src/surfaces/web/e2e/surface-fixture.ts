@@ -11,6 +11,7 @@ import {
 } from '../../api/contracts/index.js';
 import { createApiHttpServer, type ApiDispatcher } from '../../api/http-server.js';
 import { createApiDispatcher, type ApiApplications } from '../../api/routes/index.js';
+import { createHttpAuth } from '../../auth/auth.js';
 import { PackagedAssets } from '../../web-host/packaged-assets.js';
 
 const instant = '2026-07-31T10:00:00.000Z';
@@ -250,7 +251,12 @@ const assets = new PackagedAssets(async (path) => {
     return (error as NodeJS.ErrnoException).code === 'ENOENT' ? undefined : Promise.reject(error);
   }
 });
-const server = createApiHttpServer(dispatcher, assets);
+const credentials = {
+  accessKey: 'wake-e2e-access-key',
+  sessionSecret: 'wake-e2e-session-secret',
+  createdAt: instant,
+};
+const server = createApiHttpServer(dispatcher, assets, createHttpAuth(credentials));
 server.listen(4319, '127.0.0.1');
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => server.close());
