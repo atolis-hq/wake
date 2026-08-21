@@ -342,7 +342,7 @@ async function activeExecutionRuns(root: CompositionRoot) {
   // a maintenance quiesce wait. Recover it here so an owner that is truly gone
   // (no heartbeat, no lease renewal) reaches a terminal or ambiguous status
   // instead of sitting as "started" and blocking the update forever.
-  await root.recovery.recoverActive('maintenance', root.execution.isLocallyActive);
+  await root.recovery.recoverActive('self-update', root.execution.isLocallyActive);
   // Ambiguous Runs are always terminal (finishedAt is set the moment escalation
   // occurs) and require an operator's `run-resolve`, not a maintenance drain or
   // cancellation. Treating them as active would deadlock every future update.
