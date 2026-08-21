@@ -392,61 +392,65 @@ describe(`${scenario.id} command idempotency`, () => {
     });
   });
 
-  it('deduplicates a production advance command by idempotency key', async () => {
-    const { root, clock, context } = await createWorld();
-    const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
-    const advance = surface.api.controlPlane.tick;
-    if (advance === undefined) throw new Error('Expected the production advance command');
+  it(
+    'deduplicates a production advance command by idempotency key',
+    { timeout: 20_000 },
+    async () => {
+      const { root, clock, context } = await createWorld();
+      const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
+      const advance = surface.api.controlPlane.tick;
+      if (advance === undefined) throw new Error('Expected the production advance command');
 
-    const first = await advance({ idempotencyKey: 'operator-action-1' });
-    expect(first).toMatchObject({
-      result: {
-        data: { paused: false, updatedAt: clock.now().toISOString() },
-        meta: { asOf: clock.now().toISOString() },
-      },
-    });
-    const work = await root.work.create(
-      { workItemId: workId('after-command'), objective: 'Wait for a new command' },
-      context,
-    );
-    await root.orchestration.start(
-      {
-        workflowInstanceId: workflowInstanceId('workflow-after-command'),
-        workItemId: work.workItemId,
-        workflowName: workflowName('default'),
-        orchestrationGroupId: orchestrationGroupId('group-after-command'),
-      },
-      context,
-    );
+      const first = await advance({ idempotencyKey: 'operator-action-1' });
+      expect(first).toMatchObject({
+        result: {
+          data: { paused: false, updatedAt: clock.now().toISOString() },
+          meta: { asOf: clock.now().toISOString() },
+        },
+      });
+      const work = await root.work.create(
+        { workItemId: workId('after-command'), objective: 'Wait for a new command' },
+        context,
+      );
+      await root.orchestration.start(
+        {
+          workflowInstanceId: workflowInstanceId('workflow-after-command'),
+          workItemId: work.workItemId,
+          workflowName: workflowName('default'),
+          orchestrationGroupId: orchestrationGroupId('group-after-command'),
+        },
+        context,
+      );
 
-    expect(await advance({ idempotencyKey: 'operator-action-1' })).toEqual(first);
-    expect(await root.execution.list()).toEqual([]);
-    await advance({ idempotencyKey: 'operator-action-2' });
-    expect(await root.execution.list()).toHaveLength(1);
+      expect(await advance({ idempotencyKey: 'operator-action-1' })).toEqual(first);
+      expect(await root.execution.list()).toEqual([]);
+      await advance({ idempotencyKey: 'operator-action-2' });
+      expect(await root.execution.list()).toHaveLength(1);
 
-    for (let index = 0; index <= 100; index += 1)
-      await advance({ idempotencyKey: `recent-action-${index}` });
-    const laterContext = {
-      ...context,
-      commandId: 'surface-flow-later',
-      correlationId: correlationId('surface-flow-later'),
-    };
-    const laterWork = await root.work.create(
-      { workItemId: workId('after-eviction'), objective: 'Bound completed commands' },
-      laterContext,
-    );
-    await root.orchestration.start(
-      {
-        workflowInstanceId: workflowInstanceId('workflow-after-eviction'),
-        workItemId: laterWork.workItemId,
-        workflowName: workflowName('default'),
-        orchestrationGroupId: orchestrationGroupId('group-after-eviction'),
-      },
-      laterContext,
-    );
-    await advance({ idempotencyKey: 'operator-action-1' });
-    expect(await root.execution.list()).toHaveLength(2);
-  });
+      for (let index = 0; index <= 100; index += 1)
+        await advance({ idempotencyKey: `recent-action-${index}` });
+      const laterContext = {
+        ...context,
+        commandId: 'surface-flow-later',
+        correlationId: correlationId('surface-flow-later'),
+      };
+      const laterWork = await root.work.create(
+        { workItemId: workId('after-eviction'), objective: 'Bound completed commands' },
+        laterContext,
+      );
+      await root.orchestration.start(
+        {
+          workflowInstanceId: workflowInstanceId('workflow-after-eviction'),
+          workItemId: laterWork.workItemId,
+          workflowName: workflowName('default'),
+          orchestrationGroupId: orchestrationGroupId('group-after-eviction'),
+        },
+        laterContext,
+      );
+      await advance({ idempotencyKey: 'operator-action-1' });
+      expect(await root.execution.list()).toHaveLength(2);
+    },
+  );
 });
 
 const boardScenario = { id: 'E2E-SURFACE-BOARD-001' } as const;

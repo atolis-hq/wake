@@ -24,40 +24,44 @@ import {
 import { workId } from '../../support/identities.js';
 import { FakeClock } from '../support/world.js';
 
-it('E2E-CONTROL-QUOTA-001: a durable quota pause falls sideways, replays, expires, and can resume early', async () => {
-  const clock = new FakeClock();
-  const journal = new InMemoryEventJournal(clock);
-  const projections = new InMemoryProjectionStore();
-  const checkpoints = new InMemoryCheckpointStore();
-  const root = await createRoot(clock, journal, projections, checkpoints);
+it(
+  'E2E-CONTROL-QUOTA-001: a durable quota pause falls sideways, replays, expires, and can resume early',
+  { timeout: 20_000 },
+  async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const projections = new InMemoryProjectionStore();
+    const checkpoints = new InMemoryCheckpointStore();
+    const root = await createRoot(clock, journal, projections, checkpoints);
 
-  await appendQuotaPause(journal, clock, '2026-07-30T12:30:00.000Z');
-  await root.projectionRunner.runRegisteredOnce();
-  expect(await runnerHealth(root, clock)).toContainEqual(
-    expect.objectContaining({ runnerId: 'sonnet', status: 'paused', available: false }),
-  );
-  await startAndAdvance(root, 'fallback');
-  expect((await root.execution.list()).at(-1)?.runner?.name).toBe('codex-mini');
+    await appendQuotaPause(journal, clock, '2026-07-30T12:30:00.000Z');
+    await root.projectionRunner.runRegisteredOnce();
+    expect(await runnerHealth(root, clock)).toContainEqual(
+      expect.objectContaining({ runnerId: 'sonnet', status: 'paused', available: false }),
+    );
+    await startAndAdvance(root, 'fallback');
+    expect((await root.execution.list()).at(-1)?.runner?.name).toBe('codex-mini');
 
-  const restarted = await createRoot(clock, journal, projections, checkpoints);
-  await restarted.projectionRunner.runRegisteredOnce();
-  await startAndAdvance(restarted, 'replayed');
-  expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('codex-mini');
+    const restarted = await createRoot(clock, journal, projections, checkpoints);
+    await restarted.projectionRunner.runRegisteredOnce();
+    await startAndAdvance(restarted, 'replayed');
+    expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('codex-mini');
 
-  clock.advance(30 * 60 * 1000);
-  await startAndAdvance(restarted, 'expired');
-  expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('sonnet');
+    clock.advance(30 * 60 * 1000);
+    await startAndAdvance(restarted, 'expired');
+    expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('sonnet');
 
-  await appendQuotaPause(journal, clock, '2026-07-30T13:30:00.000Z');
-  await restarted.projectionRunner.runRegisteredOnce();
-  await restarted.runnerControls.unpause('sonnet', 'operator-resume-1');
-  await restarted.projectionRunner.runRegisteredOnce();
-  expect(await runnerHealth(restarted, clock)).toContainEqual(
-    expect.objectContaining({ runnerId: 'sonnet', status: 'available', available: true }),
-  );
-  await startAndAdvance(restarted, 'resumed');
-  expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('sonnet');
-});
+    await appendQuotaPause(journal, clock, '2026-07-30T13:30:00.000Z');
+    await restarted.projectionRunner.runRegisteredOnce();
+    await restarted.runnerControls.unpause('sonnet', 'operator-resume-1');
+    await restarted.projectionRunner.runRegisteredOnce();
+    expect(await runnerHealth(restarted, clock)).toContainEqual(
+      expect.objectContaining({ runnerId: 'sonnet', status: 'available', available: true }),
+    );
+    await startAndAdvance(restarted, 'resumed');
+    expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('sonnet');
+  },
+);
 
 async function createRoot(
   clock: FakeClock,

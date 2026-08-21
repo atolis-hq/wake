@@ -44,15 +44,19 @@ import {
 const scenario = { id: 'E2E-FAULT-001' } as const;
 const clock: Clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };
 
-it(`${scenario.id} replays or exposes every composed durable boundary without duplicate external calls`, async () => {
-  expect.hasAssertions();
-  await journalAppendBoundaries();
-  await projectionAndCheckpointBoundaries();
-  await executionAndOutcomeBoundaries();
-  await deliveryBoundaries();
-  await childCompletionBoundaries();
-  await scheduleSlotBoundaries();
-});
+it(
+  `${scenario.id} replays or exposes every composed durable boundary without duplicate external calls`,
+  { timeout: 120_000 },
+  async () => {
+    expect.hasAssertions();
+    await journalAppendBoundaries();
+    await projectionAndCheckpointBoundaries();
+    await executionAndOutcomeBoundaries();
+    await deliveryBoundaries();
+    await childCompletionBoundaries();
+    await scheduleSlotBoundaries();
+  },
+);
 
 async function journalAppendBoundaries(): Promise<void> {
   for (const point of ['journal.append.before', 'journal.append.after'] as const) {

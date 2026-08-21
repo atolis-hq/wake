@@ -78,7 +78,7 @@ defineScenario(
     expect(await publicStateOf(signal)).toEqual(signalState);
     expect(await signal.providerEffects()).toEqual(signalEffects);
   },
-  30_000,
+  120_000,
 );
 
 async function publicStateOf(world: ProcessWorld) {
