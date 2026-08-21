@@ -13,6 +13,7 @@ import type {
   WorkspaceRecoveryResult,
   WorkspaceRequest,
 } from '../../contracts/workspace.js';
+import { prepareWorkspace, type WorkspacePrepareHook } from './prepare-workspace.js';
 
 const exec = promisify(execFile);
 
@@ -42,6 +43,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
         rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }),
       canonicalize: realpath,
     },
+    private readonly prepareHook?: WorkspacePrepareHook,
   ) {
     this.markerRoot = join(this.root, '.wake-workspace-ownership');
     this.recoveryFileSystem = recoveryFileSystem;
@@ -73,6 +75,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
     if (branch !== undefined)
       await this.git(['-C', path, 'switch', ...(existingWorkspace ? [] : ['--create']), branch]);
+    if (this.prepareHook !== undefined) await prepareWorkspace(path, this.prepareHook);
     return {
       workspaceId: name,
       path,

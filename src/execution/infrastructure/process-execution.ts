@@ -4,9 +4,11 @@ import { spawn, type ChildProcess } from 'node:child_process';
 // raw bytes ourselves so overflow never enters a third-party string buffer.
 const maximumCapturedProcessOutputBytes = 1024 * 1024;
 
-interface ProcessExecutionResult {
+export interface ProcessExecutionResult {
   readonly stdout: string;
   readonly stderr: string;
+  /** Raw stdout and stderr chunks in the order they were received. */
+  readonly combinedOutput: Buffer;
   readonly exitCode: number | undefined;
   readonly timedOut: boolean;
   readonly failureKind?: 'output-limit';
@@ -19,17 +21,19 @@ export function runProcess(
   cwd: string | undefined,
   signal: AbortSignal,
   timeoutMs?: number,
+  shell = false,
 ): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
   const child = spawn(command, args, {
     ...(cwd === undefined ? {} : { cwd }),
-    shell: false,
+    shell,
+    ...(shell && process.platform !== 'win32' ? { detached: true } : {}),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const result = captureProcessOutput(child, signal, timeoutMs);
+  const result = captureProcessOutput(child, signal, timeoutMs, shell);
   return {
     result,
     cancel: async () => {
-      terminate(child);
+      terminate(child, shell);
     },
   };
 }
@@ -38,10 +42,12 @@ function captureProcessOutput(
   child: ChildProcess,
   signal: AbortSignal,
   timeoutMs: number | undefined,
+  shell: boolean,
 ): Promise<ProcessExecutionResult> {
   return new Promise((resolve) => {
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    const combinedOutput: Buffer[] = [];
     let capturedBytes = 0;
     let timedOut = false;
     let overflowed = false;
@@ -50,18 +56,23 @@ function captureProcessOutput(
       overflowed = true;
       child.stdout?.destroy();
       child.stderr?.destroy();
-      terminate(child);
+      terminate(child, shell);
     };
     const capture = (destination: Buffer[]) => (chunk: Buffer) => {
       if (overflowed) return;
       const remaining = maximumCapturedProcessOutputBytes - capturedBytes;
       if (remaining <= 0 || chunk.length > remaining) {
-        if (remaining > 0) destination.push(chunk.subarray(0, remaining));
+        if (remaining > 0) {
+          const captured = chunk.subarray(0, remaining);
+          destination.push(captured);
+          combinedOutput.push(captured);
+        }
         capturedBytes = maximumCapturedProcessOutputBytes;
         terminateForOverflow();
         return;
       }
       destination.push(chunk);
+      combinedOutput.push(chunk);
       capturedBytes += chunk.length;
     };
     child.stdout?.on('data', capture(stdout));
@@ -71,9 +82,9 @@ function captureProcessOutput(
         ? undefined
         : setTimeout(() => {
             timedOut = true;
-            terminate(child);
+            terminate(child, shell);
           }, timeoutMs);
-    const onAbort = () => terminate(child);
+    const onAbort = () => terminate(child, shell);
     signal.addEventListener('abort', onAbort, { once: true });
     child.once('error', (caught) => {
       error = caught;
@@ -84,6 +95,7 @@ function captureProcessOutput(
       resolve({
         stdout: Buffer.concat(stdout).toString('utf8'),
         stderr: error?.message ?? Buffer.concat(stderr).toString('utf8'),
+        combinedOutput: Buffer.concat(combinedOutput),
         exitCode: exitCode ?? undefined,
         timedOut,
         ...(overflowed
@@ -97,6 +109,14 @@ function captureProcessOutput(
   });
 }
 
-function terminate(child: ChildProcess): void {
+function terminate(child: ChildProcess, shell = false): void {
+  if (shell && process.platform !== 'win32' && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid);
+      return;
+    } catch {
+      // The process may have already exited; fall through to the direct signal.
+    }
+  }
   if (!child.killed && child.exitCode === null) child.kill();
 }
