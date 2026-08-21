@@ -56,24 +56,29 @@ export function ControlPlaneStatus() {
     tickMutation.error instanceof ApiProblem && tickMutation.error.problem.status === 409
       ? `Conflict: ${tickMutation.error.problem.title}`
       : tickMutation.error?.message;
+  const maintenanceLease = status.data?.data.maintenanceLease;
+  // A maintenance lease pauses every resident loop the same way an operator
+  // pause does (see isRuntimePaused), but the status API's `paused` field only
+  // reflects the operator toggle. Fold the lease in here so the dispatch badge
+  // never reads "active" while maintenance is actually blocking dispatch.
+  const dispatchPaused = status.data?.data.paused === true || maintenanceLease !== undefined;
   return (
     <div className={styles.statusActions}>
       {status.data ? (
-        <StatusBadge tone={status.data.data.paused ? 'warning' : 'good'}>
-          {status.data.data.paused ? 'Dispatch paused' : 'Dispatch active'}
+        <StatusBadge tone={dispatchPaused ? 'warning' : 'good'}>
+          {dispatchPaused ? 'Dispatch paused' : 'Dispatch active'}
         </StatusBadge>
       ) : (
         <StatusBadge tone="bad">API unavailable</StatusBadge>
       )}
-      {status.data?.data.maintenanceLease ? (
+      {maintenanceLease ? (
         <StatusBadge
-          tone={status.data.data.maintenanceLease.phase === 'failed' ? 'bad' : 'warning'}
+          tone={maintenanceLease.phase === 'failed' ? 'bad' : 'warning'}
           title={
-            status.data.data.maintenanceLease.failure ??
-            `Maintenance lease held since ${status.data.data.maintenanceLease.startedAt}`
+            maintenanceLease.failure ?? `Maintenance lease held since ${maintenanceLease.startedAt}`
           }
         >
-          {`Maintenance: ${status.data.data.maintenanceLease.phase}`}
+          Maintenance
         </StatusBadge>
       ) : null}
       {status.data?.data.paused ? (

@@ -99,8 +99,9 @@ describe('control-plane mutation and connection state', () => {
         <App client={client} />
       </MemoryRouter>,
     );
-    expect(await screen.findByText('Dispatch active')).toBeTruthy();
-    const badge = await screen.findByText('Maintenance: failed');
+    expect(await screen.findByText('Dispatch paused')).toBeTruthy();
+    expect(screen.queryByText('Dispatch active')).toBeNull();
+    const badge = await screen.findByText('Maintenance');
     expect(badge.parentElement?.getAttribute('title')).toBe(
       'active Runs remain after maintenance cancellation: run-1',
     );
