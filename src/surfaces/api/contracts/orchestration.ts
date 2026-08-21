@@ -6,6 +6,8 @@ export interface WorkflowInstanceResponse {
   readonly parentWorkflowInstanceId?: string;
   readonly status: string;
   readonly currentStage: string;
+  /** Why a blocked workflow requires operator intervention. */
+  readonly blockReason?: string;
   readonly retryEligible?: boolean;
   readonly waitingFor?: { readonly signalKind: string };
 }

@@ -172,6 +172,13 @@ activity, input, and execution configuration and retains the failed activation
 and Run as immutable history. Completed, waiting, active, supplemental,
 follow-on, and otherwise blocked workflows remain ineligible.
 
+When a workflow is blocked with `run-ambiguous-after-*-attempts`, the board marks
+the card as needing ambiguous-run resolution and work detail presents the affected
+run's token usage, cost, and pull-request evidence. An operator must explicitly
+resolve the run as failed (with a reason) or succeeded (with its actual activity
+outcome); the UI then sends the existing resolve command followed by the work-item
+retry command. No outcome is inferred by the UI.
+
 1. **Pause / resume** — _no new mechanics._ Pause-now writes the `PAUSE` file; pause-until writes `ledger.pausedUntil` (note: `pausedUntil` is currently never read by `isPaused()` — report E13 wires it; this spec depends on that fix or ships the same two-line change). Resume deletes both. Value: the safe "stop the world" button during incidents, and the manual fallback for quota exhaustion until E13's automatic backoff lands.
 
 2. **Release stale tick lock** — deletes `locks/tick.lock` only after re-running the same staleness logic as `lib/lock.ts` server-side (age past threshold _or_ holder pid dead) at the moment of the request. Refuses if the lock looks live. Value: today a wedged lock means shelling into the container; this makes the recovery observable and safe.

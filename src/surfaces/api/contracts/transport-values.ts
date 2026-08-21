@@ -1,3 +1,4 @@
+import type { RunStatus } from '../../../execution/index.js';
 import type { ApiCommandStatus } from './control-plane.js';
 
 const commandStatusShape = { accepted: true, completed: true };
@@ -15,6 +16,14 @@ export const RunResponseField = { Active: Object.keys(runResponseShape)[0]! } as
 const resourceItemFieldShape = { adapter: true };
 
 export const ResourceItemField = { Adapter: Object.keys(resourceItemFieldShape)[0]! } as const;
+
+const runResolutionStatusShape = { failed: true, succeeded: true };
+const runResolutionStatuses = Object.keys(runResolutionStatusShape);
+
+export const RunResolutionStatusValue = {
+  Failed: runResolutionStatuses[0]! as RunStatus,
+  Succeeded: runResolutionStatuses[1]! as RunStatus,
+} as const;
 
 const boardConditionShape = {
   ready: true,

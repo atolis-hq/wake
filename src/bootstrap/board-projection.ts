@@ -50,6 +50,7 @@ interface StoredCard {
   readonly awaitingApproval?: boolean;
   readonly workflowName?: string;
   readonly stage?: string;
+  readonly blockReason?: string;
   readonly dwellSince: string;
   readonly runCount: number;
   readonly activeRuns: Readonly<Record<string, StoredActiveRun>>;
@@ -179,32 +180,49 @@ function projectWorkflow(
   event: ReturnType<typeof selectWorkflowOrchestrationEvent> & {},
   occurredAt: string,
 ): BoardProjectionView {
-  if (event.eventType === OrchestrationEventType.InstanceStarted) {
-    const workId = event.payload.workItemId;
-    const card = view.cards[workId];
-    if (card === undefined) return view;
-    const workflows = { ...view.workflows, [event.stream.id]: workId };
-    if ('parentWorkflowInstanceId' in event.payload)
-      return {
-        ...view,
-        workflows,
-        children: { ...view.children, [event.stream.id]: event.payload.entry },
-      };
+  if (event.eventType === OrchestrationEventType.InstanceStarted)
+    return projectWorkflowStarted(view, event, occurredAt);
+  return projectWorkflowUpdate(view, event, occurredAt);
+}
+
+function projectWorkflowStarted(
+  view: BoardProjectionView,
+  event: ReturnType<typeof selectWorkflowOrchestrationEvent> & {
+    readonly eventType: typeof OrchestrationEventType.InstanceStarted;
+  },
+  occurredAt: string,
+): BoardProjectionView {
+  const workId = event.payload.workItemId;
+  const card = view.cards[workId];
+  if (card === undefined) return view;
+  const workflows = { ...view.workflows, [event.stream.id]: workId };
+  if ('parentWorkflowInstanceId' in event.payload)
     return {
       ...view,
-      cards: {
-        ...view.cards,
-        [workId]: {
-          ...card,
-          workflowName: event.payload.workflowName,
-          stage: event.payload.entry,
-          dwellSince: occurredAt,
-          condition: BoardCondition.Ready,
-        },
-      },
       workflows,
+      children: { ...view.children, [event.stream.id]: event.payload.entry },
     };
-  }
+  return {
+    ...view,
+    cards: {
+      ...view.cards,
+      [workId]: {
+        ...card,
+        workflowName: event.payload.workflowName,
+        stage: event.payload.entry,
+        dwellSince: occurredAt,
+        condition: BoardCondition.Ready,
+      },
+    },
+    workflows,
+  };
+}
+
+function projectWorkflowUpdate(
+  view: BoardProjectionView,
+  event: ReturnType<typeof selectWorkflowOrchestrationEvent> & {},
+  occurredAt: string,
+): BoardProjectionView {
   if (view.children?.[event.stream.id] !== undefined) return view;
   const located = lookupWorkflowCard(view, event.stream.id);
   if (located === undefined) return view;
@@ -224,7 +242,7 @@ function projectWorkflow(
       cards: {
         ...view.cards,
         [workId]: {
-          ...card,
+          ...withoutBlockReason(card),
           stage: event.payload.stage,
           dwellSince: occurredAt,
           condition: BoardCondition.Ready,
@@ -239,7 +257,13 @@ function projectWorkflow(
   // Ready while GitHub's own label already said working.
   const status = orchestrationStatusTransitions[event.eventType];
   if (status === undefined) return view;
-  const withCondition = { ...card, condition: boardConditionForStatus(status) };
+  const withCondition = {
+    ...card,
+    condition: boardConditionForStatus(status),
+    ...(event.eventType === OrchestrationEventType.InstanceBlocked
+      ? { blockReason: event.payload.reason }
+      : {}),
+  };
   if (event.eventType === OrchestrationEventType.SignalWaitStarted)
     return {
       ...view,
@@ -281,6 +305,11 @@ function lookupWorkflowCard(
 
 function awaitingApprovalField(signalKind: SignalName) {
   return isApprovalAwaitingSignalKind(signalKind) ? { awaitingApproval: true } : {};
+}
+
+function withoutBlockReason(card: StoredCard): StoredCard {
+  const { blockReason: _blockReason, ...withoutReason } = card;
+  return withoutReason;
 }
 
 const runTerminalEventTypes = new Set<string>([

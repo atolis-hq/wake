@@ -1,4 +1,5 @@
 import type { WakeProblemDetails } from '../../../api/contracts/index.js';
+import type { RunResolutionStatusValue } from '../../../api/contracts/transport-values.js';
 import {
   collectionDecoder,
   decodeAcceptedCommand,
@@ -114,6 +115,27 @@ export class WakeApiClient {
         `/runs/${encodeURIComponent(runId)}/transcript`,
         resourceDecoder(decodeTranscript),
         signal,
+      ),
+    resolveAmbiguousRun: (
+      runId: string,
+      resolution:
+        | { readonly status: typeof RunResolutionStatusValue.Failed; readonly reason: string }
+        | {
+            readonly status: typeof RunResolutionStatusValue.Succeeded;
+            readonly outcome: unknown;
+          },
+      idempotencyKey: string,
+      signal?: AbortSignal,
+    ) =>
+      this.request(
+        `/runs/${encodeURIComponent(runId)}/commands/resolve`,
+        resourceDecoder(decodeAcceptedCommand),
+        {
+          method: 'POST',
+          body: JSON.stringify({ idempotencyKey, ...resolution }),
+          headers: { 'content-type': 'application/json' },
+          ...(signal === undefined ? {} : { signal }),
+        },
       ),
     runners: (signal?: AbortSignal) =>
       this.get('/runners', collectionDecoder(decodeRunner), signal),
