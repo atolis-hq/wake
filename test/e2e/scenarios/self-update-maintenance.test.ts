@@ -7,6 +7,7 @@ import {
   ActivityExecutionKind,
   ActivityOutcomeKind,
   ActivityRegistry,
+  activationId,
   activityName,
 } from '../../../src/activities/index.js';
 import {
@@ -16,7 +17,13 @@ import {
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
 import { createSelfUpdateQuiescePort } from '../../../src/bootstrap/surface-cli-applications.js';
-import { correlationId } from '../../../src/kernel/index.js';
+import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
+import {
+  EventActorKind,
+  EventSourceKind,
+  correlationId,
+  createEventDraft,
+} from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -337,6 +344,174 @@ defineScenario(
   },
   10_000,
 );
+
+defineScenario(
+  {
+    id: 'E2E-OPS-SELF-UPDATE-009',
+    title: 'an escalated ambiguous Run does not block self-update forever',
+    given: ['a composed root with a Run that recovery already escalated to ambiguous'],
+    when: ['self-update quiesces active Runs before checkout'],
+    then: [
+      'the ambiguous Run is excluded from the active-Run view',
+      'checkout proceeds without waiting for an operator to resolve the Run',
+    ],
+  },
+  async () => {
+    const root = await createRoot();
+    await appendAmbiguousRun(root, 'stuck');
+
+    expect(await createSelfUpdateQuiescePort(root).activeRuns()).toEqual([]);
+
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger(calls),
+      source: source(calls, root),
+      quiesce: createSelfUpdateQuiescePort(root),
+      drainTimeoutMs: 0,
+      cancellationTimeoutMs: 0,
+    });
+
+    await expect(application.update('v2')).resolves.toBe(true);
+    expect(calls).toEqual(['begin:v2', 'checkout:v2', 'ledger:v2']);
+    expect((await root.execution.list()).find((run) => run.runId === 'run-stuck')).toMatchObject({
+      status: 'ambiguous',
+      escalated: true,
+    });
+  },
+  10_000,
+);
+
+defineScenario(
+  {
+    id: 'E2E-OPS-SELF-UPDATE-010',
+    title: 'a Run with a long-expired, unrenewed lease is recovered during a maintenance quiesce',
+    given: [
+      'a composed root with a started Run whose lease expired and whose owner never renewed it',
+    ],
+    when: ['self-update quiesces active Runs before checkout'],
+    then: [
+      'recovery runs despite dispatch already being paused for maintenance',
+      'the stale Run reaches a terminal status and checkout proceeds without an operator',
+    ],
+  },
+  async () => {
+    const root = await createRoot();
+    await appendStaleStartedRun(root, 'stale');
+    expect((await root.execution.list()).find((run) => run.runId === 'run-stale')).toMatchObject({
+      status: 'started',
+    });
+
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger(calls),
+      source: source(calls, root),
+      quiesce: createSelfUpdateQuiescePort(root),
+      drainTimeoutMs: 500,
+      cancellationTimeoutMs: 50,
+    });
+
+    await expect(application.update('v2')).resolves.toBe(true);
+    expect(calls).toEqual(['begin:v2', 'checkout:v2', 'ledger:v2']);
+    expect((await root.execution.list()).find((run) => run.runId === 'run-stale')).toMatchObject({
+      status: 'ambiguous',
+      escalated: true,
+    });
+  },
+  10_000,
+);
+
+async function appendStaleStartedRun(
+  root: Awaited<ReturnType<typeof createCompositionRoot>>,
+  id: string,
+): Promise<void> {
+  const currentRunId = runId(`run-${id}`);
+  const startedAt = '2020-01-01T00:00:00.000Z';
+  const metadata = {
+    correlationId: `group-${id}`,
+    causationId: `activation-${id}`,
+    actor: { kind: EventActorKind.System, id: 'test' } as const,
+    source: { kind: EventSourceKind.Internal, id: 'test' } as const,
+    stream: runStream(currentRunId),
+  };
+  await root.journal.append(runStream(currentRunId), 0, [
+    createEventDraft({
+      eventId: `${id}:started`,
+      eventType: ExecutionEventType.RunStarted,
+      occurredAt: startedAt,
+      ...metadata,
+      payload: {
+        activationId: activationId(`activation-${id}`),
+        activity: activityName('slow'),
+        workflowInstanceId: workflowInstanceId(`workflow-${id}`),
+        orchestrationGroupId: orchestrationGroupId(`group-${id}`),
+        attempt: 1,
+        startedAt,
+      },
+    }),
+  ]);
+  await root.journal.append(runStream(currentRunId), 1, [
+    createEventDraft({
+      eventId: `${id}:lease-claimed`,
+      eventType: ExecutionEventType.RunLeaseClaimed,
+      occurredAt: startedAt,
+      ...metadata,
+      payload: { owner: 'gone', acquiredAt: startedAt, expiresAt: startedAt },
+    }),
+  ]);
+  await root.journal.append(runStream(currentRunId), 2, [
+    createEventDraft({
+      eventId: `${id}:external`,
+      eventType: ExecutionEventType.RunExternalExecutionReported,
+      occurredAt: startedAt,
+      ...metadata,
+      payload: { kind: 'process', id: `process-${id}`, startedAt },
+    }),
+  ]);
+}
+
+async function appendAmbiguousRun(
+  root: Awaited<ReturnType<typeof createCompositionRoot>>,
+  id: string,
+): Promise<void> {
+  const currentRunId = runId(`run-${id}`);
+  const startedAt = '2026-08-16T08:49:21.344Z';
+  const metadata = {
+    correlationId: `group-${id}`,
+    causationId: `activation-${id}`,
+    actor: { kind: EventActorKind.System, id: 'test' } as const,
+    source: { kind: EventSourceKind.Internal, id: 'test' } as const,
+    stream: runStream(currentRunId),
+  };
+  await root.journal.append(runStream(currentRunId), 0, [
+    createEventDraft({
+      eventId: `${id}:started`,
+      eventType: ExecutionEventType.RunStarted,
+      occurredAt: startedAt,
+      ...metadata,
+      payload: {
+        activationId: activationId(`activation-${id}`),
+        activity: activityName('slow'),
+        workflowInstanceId: workflowInstanceId(`workflow-${id}`),
+        orchestrationGroupId: orchestrationGroupId(`group-${id}`),
+        attempt: 1,
+        startedAt,
+      },
+    }),
+  ]);
+  const finishedAt = '2026-08-16T08:52:20.525Z';
+  await root.journal.append(runStream(currentRunId), 1, [
+    createEventDraft({
+      eventId: `${id}:ambiguous`,
+      eventType: ExecutionEventType.RunAmbiguous,
+      occurredAt: finishedAt,
+      ...metadata,
+      payload: {
+        reason: 'External execution inspection is not configured for this runtime',
+        finishedAt,
+      },
+    }),
+  ]);
+}
 
 async function createRoot(completionDelayMs?: number, runnerCalls?: { count: number }) {
   const wakeRoot = await mkdtemp(join(tmpdir(), 'wake-self-update-e2e-'));
