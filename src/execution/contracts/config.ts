@@ -37,6 +37,18 @@ export const executionConfigSchema = z
     leaseDurationMs: z.number().int().positive().optional(),
     leaseRenewalIntervalMs: z.number().int().positive().optional(),
     maxAmbiguityReconciliationAttempts: z.number().int().positive().optional(),
+    workspaceHooks: z
+      .object({
+        prepare: z
+          .object({
+            command: z.string().trim().min(1),
+            timeoutMs: z.number().int().positive().default(300_000),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -59,4 +71,10 @@ export interface ExecutionConfig {
   readonly leaseDurationMs?: number;
   readonly leaseRenewalIntervalMs?: number;
   readonly maxAmbiguityReconciliationAttempts?: number;
+  readonly workspaceHooks?: {
+    readonly prepare?: {
+      readonly command: string;
+      readonly timeoutMs: number;
+    };
+  };
 }

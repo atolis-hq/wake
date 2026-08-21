@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 // raw bytes ourselves so overflow never enters a third-party string buffer.
 const maximumCapturedProcessOutputBytes = 1024 * 1024;
 
-interface ProcessExecutionResult {
+export interface ProcessExecutionResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number | undefined;
@@ -19,17 +19,19 @@ export function runProcess(
   cwd: string | undefined,
   signal: AbortSignal,
   timeoutMs?: number,
+  shell = false,
 ): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
   const child = spawn(command, args, {
     ...(cwd === undefined ? {} : { cwd }),
-    shell: false,
+    shell,
+    ...(shell && process.platform !== 'win32' ? { detached: true } : {}),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const result = captureProcessOutput(child, signal, timeoutMs);
+  const result = captureProcessOutput(child, signal, timeoutMs, shell);
   return {
     result,
     cancel: async () => {
-      terminate(child);
+      terminate(child, shell);
     },
   };
 }
@@ -38,6 +40,7 @@ function captureProcessOutput(
   child: ChildProcess,
   signal: AbortSignal,
   timeoutMs: number | undefined,
+  shell: boolean,
 ): Promise<ProcessExecutionResult> {
   return new Promise((resolve) => {
     const stdout: Buffer[] = [];
@@ -50,7 +53,7 @@ function captureProcessOutput(
       overflowed = true;
       child.stdout?.destroy();
       child.stderr?.destroy();
-      terminate(child);
+      terminate(child, shell);
     };
     const capture = (destination: Buffer[]) => (chunk: Buffer) => {
       if (overflowed) return;
@@ -71,9 +74,9 @@ function captureProcessOutput(
         ? undefined
         : setTimeout(() => {
             timedOut = true;
-            terminate(child);
+            terminate(child, shell);
           }, timeoutMs);
-    const onAbort = () => terminate(child);
+    const onAbort = () => terminate(child, shell);
     signal.addEventListener('abort', onAbort, { once: true });
     child.once('error', (caught) => {
       error = caught;
@@ -97,6 +100,14 @@ function captureProcessOutput(
   });
 }
 
-function terminate(child: ChildProcess): void {
+function terminate(child: ChildProcess, shell = false): void {
+  if (shell && process.platform !== 'win32' && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid);
+      return;
+    } catch {
+      // The process may have already exited; fall through to the direct signal.
+    }
+  }
   if (!child.killed && child.exitCode === null) child.kill();
 }

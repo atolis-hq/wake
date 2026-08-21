@@ -169,16 +169,22 @@ export async function createCompositionRoot(
     ]),
   );
   const orchestration = createOrchestrationService(journal, work, definitions, projections);
-  const workspaces = new GitWorkspaceProvider(paths.workspacesRoot, {
-    async cloneLocator(id) {
-      const resource = await resources.get(resourceId(id));
-      const match =
-        resource === null ? null : /^([^/]+\/[^#]+)#\d+$/.exec(resource.externalKey.key);
-      if (match === null)
-        throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
-      return 'https://github.com/' + match[1] + '.git';
+  const workspaces = new GitWorkspaceProvider(
+    paths.workspacesRoot,
+    {
+      async cloneLocator(id) {
+        const resource = await resources.get(resourceId(id));
+        const match =
+          resource === null ? null : /^([^/]+\/[^#]+)#\d+$/.exec(resource.externalKey.key);
+        if (match === null)
+          throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
+        return 'https://github.com/' + match[1] + '.git';
+      },
     },
-  });
+    undefined,
+    undefined,
+    config.execution.workspaceHooks?.prepare,
+  );
   const transcriptStore = config.transcripts.enabled
     ? (options.transcriptStore ?? new TranscriptStore(paths.transcriptsRoot))
     : undefined;
