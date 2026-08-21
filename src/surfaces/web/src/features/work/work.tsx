@@ -118,18 +118,22 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     mutationFn: async ({
       runId,
       outcome,
+      status,
     }: {
       readonly runId: string;
       readonly outcome?: unknown;
+      readonly status:
+        typeof RunResolutionStatusValue.Failed | typeof RunResolutionStatusValue.Succeeded;
     }) => {
       const idempotencyKey = globalThis.crypto.randomUUID();
       await client.execution.resolveAmbiguousRun(
         runId,
-        resolutionStatus === RunResolutionStatusValue.Failed
+        status === RunResolutionStatusValue.Failed
           ? { status: RunResolutionStatusValue.Failed, reason: failureReason }
           : { status: RunResolutionStatusValue.Succeeded, outcome },
         `web:resolve-ambiguous-run:${idempotencyKey}`,
       );
+      if (status === RunResolutionStatusValue.Succeeded) return;
       return client.work.command(
         workItemKey,
         'retry',
@@ -500,13 +504,19 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                             resolutionStatus === RunResolutionStatusValue.Succeeded
                               ? JSON.parse(successOutcome)
                               : undefined;
-                          resolveAndRetry.mutate({ runId: ambiguousRun.runId, outcome });
+                          resolveAndRetry.mutate({
+                            runId: ambiguousRun.runId,
+                            outcome,
+                            status: resolutionStatus,
+                          });
                         } catch {
                           resolveAndRetry.reset();
                         }
                       }}
                     >
-                      Resolve and retry
+                      {resolutionStatus === RunResolutionStatusValue.Failed
+                        ? 'Resolve and retry'
+                        : 'Resolve run'}
                     </Button>
                     {resolutionStatus === RunResolutionStatusValue.Succeeded &&
                       !isJson(successOutcome) && (

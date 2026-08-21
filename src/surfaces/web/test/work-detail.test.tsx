@@ -420,12 +420,12 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     await user.click(await screen.findByRole('radio', { name: 'Succeeded' }));
-    await user.click(screen.getByRole('button', { name: 'Resolve and retry' }));
+    await user.click(screen.getByRole('button', { name: 'Resolve run' }));
 
     await waitFor(() =>
       expect(requests.filter(({ url }) => url.endsWith('/commands/resolve'))).toHaveLength(1),
     );
-    expect(requests.filter(({ url }) => url.endsWith('/commands/retry'))).toHaveLength(1);
+    expect(requests.filter(({ url }) => url.endsWith('/commands/retry'))).toHaveLength(0);
     const resolve = requests.find(({ url }) => url.endsWith('/commands/resolve'));
     expect(JSON.parse(String(resolve?.init?.body))).toMatchObject({
       status: 'succeeded',

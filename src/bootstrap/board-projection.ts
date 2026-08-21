@@ -258,7 +258,9 @@ function projectWorkflowUpdate(
   const status = orchestrationStatusTransitions[event.eventType];
   if (status === undefined) return view;
   const withCondition = {
-    ...card,
+    ...(event.eventType === OrchestrationEventType.InstanceBlocked
+      ? card
+      : withoutBlockReason(card)),
     condition: boardConditionForStatus(status),
     ...(event.eventType === OrchestrationEventType.InstanceBlocked
       ? { blockReason: event.payload.reason }
