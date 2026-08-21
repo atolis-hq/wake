@@ -23,13 +23,13 @@ describe('journal full-scan boundaries', () => {
     await expect(
       restrictedRules('src/orchestration/application/full-scan-fixture.ts'),
     ).resolves.toEqual(['no-restricted-syntax']);
-  }, 30_000);
+  }, 15000);
 
   it('rejects an unscoped readAll(0) full-history rescan reappearing in delivery-outcome-reactor.ts', async () => {
     await expect(
       restrictedRules('src/integrations/delivery/application/delivery-outcome-reactor.ts'),
     ).resolves.toEqual(['no-restricted-syntax']);
-  }, 30_000);
+  }, 15000);
 
   it.each([
     // Owns the journal and already gates full rescans behind a

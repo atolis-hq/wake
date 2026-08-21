@@ -15,7 +15,7 @@ async function ruleIds(source: string, prefix: string): Promise<readonly string[
 }
 
 describe('style baseline', () => {
-  it('requires a blank line between multi-line class members', { timeout: 30_000 }, async () => {
+  it('requires a blank line between multi-line class members', async () => {
     const source = [
       'export class Probe {',
       '  first(): number {',

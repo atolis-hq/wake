@@ -10,7 +10,7 @@ const forbidden = [
 const excluded = /^(?:node_modules|dist|coverage|\.git)\//;
 
 describe('committed source encoding', () => {
-  it('contains no mojibake signatures', { timeout: 30_000 }, () => {
+  it('contains no mojibake signatures', () => {
     const files = execFileSync('git', ['ls-files', '-z'], { encoding: 'buffer' })
       .toString('utf8')
       .split('\0')

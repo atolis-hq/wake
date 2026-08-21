@@ -58,13 +58,9 @@ describe('module manifests', () => {
     expect(moduleDoc).toContain('## Invariants');
   });
 
-  it(
-    'gives every logical stream kind exactly one manifest owner matching its catalogue',
-    { timeout: 30_000 },
-    async () => {
-      await expect(checker.checkModuleManifests()).resolves.toEqual([]);
-    },
-  );
+  it('gives every logical stream kind exactly one manifest owner matching its catalogue', async () => {
+    await expect(checker.checkModuleManifests()).resolves.toEqual([]);
+  });
 
   it('rejects duplicate stream ownership', async () => {
     const root = await manifestFixture({

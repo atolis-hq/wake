@@ -21,19 +21,15 @@ async function restrictedRules(filePath: string): Promise<readonly string[]> {
 }
 
 describe('typed domain and application contract boundaries', () => {
-  it(
-    'rejects aliased generic event and entity imports plus identifier coercion calls',
-    { timeout: 30_000 },
-    async () => {
-      await expect(restrictedRules('src/work/domain/restricted-fixture.ts')).resolves.toEqual([
-        'no-restricted-imports',
-        'no-restricted-imports',
-        'no-restricted-imports',
-        'no-restricted-syntax',
-        'no-restricted-syntax',
-      ]);
-    },
-  );
+  it('rejects aliased generic event and entity imports plus identifier coercion calls', async () => {
+    await expect(restrictedRules('src/work/domain/restricted-fixture.ts')).resolves.toEqual([
+      'no-restricted-imports',
+      'no-restricted-imports',
+      'no-restricted-imports',
+      'no-restricted-syntax',
+      'no-restricted-syntax',
+    ]);
+  });
 
   it.each([
     'src/work/contracts/allowed-fixture.ts',
