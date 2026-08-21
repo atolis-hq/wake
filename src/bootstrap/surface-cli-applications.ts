@@ -422,7 +422,12 @@ async function deploySandboxTag(
     root.config.host.sandbox.containerName,
     [...wakeInvocation, 'start', '--wake-root', '/wake'].join(' '),
   );
-  await port.exec(['tick', '--wake-root', `/tmp/wake-self-update-healthcheck-${tag}`]);
+  await port.exec([
+    ...wakeInvocation,
+    'tick',
+    '--wake-root',
+    `/tmp/wake-self-update-healthcheck-${tag}`,
+  ]);
 }
 
 async function rollbackSandboxTag(root: CompositionRoot, docker: DockerCli, image: string) {
