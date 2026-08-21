@@ -5,7 +5,8 @@
       "entry": [
         "src/*/index.ts",
         "test/**/*.test.ts",
-        "test/integration/persistence/file-lock-contender.ts"
+        "test/integration/persistence/file-lock-contender.ts",
+        "test/integration/surfaces/fixtures/wait-forever-fixture.ts"
       ],
       "project": ["src/**/*.ts", "!src/surfaces/web/**", "test/**/*.ts"]
     },

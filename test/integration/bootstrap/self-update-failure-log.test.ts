@@ -2,7 +2,10 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createSelfUpdateFailureLog } from '../../../src/bootstrap/self-update-failure-log.js';
+import {
+  createSelfUpdateFailureLog,
+  describeSelfUpdateFailure,
+} from '../../../src/bootstrap/self-update-failure-log.js';
 
 describe('self-update failure log', () => {
   it('reports no failure until one is recorded', async () => {
@@ -44,5 +47,21 @@ describe('self-update failure log', () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-self-update-failure-'));
     const log = createSelfUpdateFailureLog(root);
     await expect(log.clear()).resolves.toBeUndefined();
+  });
+
+  it('does not claim a rollback happened for a failure recorded before any deploy was attempted', () => {
+    // quiesceActiveRuns (self-update-application.ts) can reject before
+    // runForwardUpdate ever calls rollout.deploy(), yet recordUpdateFailure
+    // still calls rollout.recordFailure() for every failure regardless of
+    // stage — so the health message must not assert a rollback occurred.
+    const description = describeSelfUpdateFailure({
+      tag: 'v0.3.84',
+      message: 'Error: active Runs remain after maintenance cancellation: run-1',
+      occurredAt: '2026-08-20T22:35:48.366Z',
+    });
+    expect(description).not.toContain('rolled back');
+    expect(description).toContain('v0.3.84');
+    expect(description).toContain('2026-08-20T22:35:48.366Z');
+    expect(description).toContain('active Runs remain after maintenance cancellation');
   });
 });

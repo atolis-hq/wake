@@ -21,6 +21,21 @@ export interface SandboxEntrypointDependencies extends ResidentSupervisorDepende
 }
 
 /**
+ * Never resolves, and never lets the process exit either. The supervised
+ * child is spawned detached and unref'd (see spawnDetached), so an
+ * unresolved Promise alone is not enough here — a Promise executor registers
+ * no libuv handle, and once other pending I/O quiets down Node treats the
+ * still-pending top-level await as unsettled and exits anyway. A ref'd
+ * timer is a real handle, so it keeps the process alive for as long as this
+ * Promise is meant to.
+ */
+export function waitForever(): Promise<never> {
+  return new Promise<never>(() => {
+    setInterval(() => {}, 1 << 30);
+  });
+}
+
+/**
  * Restarts `wake start` on every exit — a first-boot crash (e.g. missing
  * sandbox auth) must not stop the retry loop, since the operator's only path
  * to fixing it (`wake sandbox setup`) also depends on this loop's container

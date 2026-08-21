@@ -17,8 +17,9 @@ not.
   sandbox container onto the new tag, roll it back, best-effort record a
   failure) alongside the mandatory source-checkout half; absent for a
   non-sandboxed self-update.
-- **Bad tag** — a tag a prior update attempt failed and rolled back from;
-  skipped by later attempts unless the caller forces a retry.
+- **Bad tag** — a tag a prior update attempt failed on, at any stage from
+  quiesce through rollback; skipped by later attempts unless the caller
+  forces a retry.
 
 **Maintenance lease** is the durable single-owner record that pauses Wake
 while an update drains, changes source, and verifies or recovers it. An

@@ -13,6 +13,15 @@ export interface SelfUpdateFailureLog {
   read(): Promise<SelfUpdateFailure | null>;
 }
 
+// recordUpdateFailure (self-update-application.ts) records every failed
+// attempt through this same log regardless of stage — including one that
+// never reached rollout.deploy() at all, e.g. a quiesce timeout waiting on
+// active Runs. "rolled back" would misreport those as a completed deploy
+// that had to be undone, when nothing was ever deployed.
+export function describeSelfUpdateFailure(failure: SelfUpdateFailure): string {
+  return `update to ${failure.tag} failed at ${failure.occurredAt}: ${failure.message}`;
+}
+
 /**
  * Persists the most recent self-update rollback so it can surface on the
  * operator health screen instead of relying on a third-party notification —
