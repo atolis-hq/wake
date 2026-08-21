@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -432,6 +432,41 @@ describe('work detail', () => {
       outcome: { kind: 'done', data: { status: 'DONE' } },
     });
   });
+
+  it.each(['null', '[]', '{}', '{"kind":"unsupported"}'])(
+    'does not submit an invalid succeeded outcome: %s',
+    async (outcome) => {
+      const user = userEvent.setup();
+      const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+      render(
+        <MemoryRouter initialEntries={['/work/wk_a']}>
+          <App
+            client={detailClient(
+              {
+                workflowInstanceId: 'workflow-1',
+                workflowName: 'delivery',
+                orchestrationGroupId: 'group-1',
+                status: 'blocked',
+                currentStage: 'implement',
+                blockReason: 'run-ambiguous-after-3-attempts',
+              },
+              undefined,
+              requests,
+            )}
+          />
+        </MemoryRouter>,
+      );
+      await user.click(await screen.findByRole('radio', { name: 'Succeeded' }));
+      const input = screen.getByRole('textbox', { name: 'Actual activity outcome (JSON)' });
+      fireEvent.change(input, { target: { value: outcome } });
+
+      expect(screen.getByRole('button', { name: 'Resolve run' })).toMatchObject({ disabled: true });
+      expect(screen.getByRole('alert').textContent).toContain(
+        'object with a supported outcome kind',
+      );
+      expect(requests.filter(({ url }) => url.endsWith('/commands/resolve'))).toHaveLength(0);
+    },
+  );
 
   it('renders an unknown resource kind generically, proving no kind-specific branch', async () => {
     render(

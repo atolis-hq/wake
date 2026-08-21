@@ -2,7 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type KeyboardEvent, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import type { AuditEventResponse, BoardCardResponse } from '../../../../api/contracts/index.js';
-import { RunResolutionStatusValue } from '../../../../api/contracts/transport-values.js';
+import {
+  ActivityOutcomeKindValue,
+  RunResolutionStatusValue,
+} from '../../../../api/contracts/transport-values.js';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
@@ -496,22 +499,23 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                         (resolutionStatus === RunResolutionStatusValue.Failed &&
                           failureReason.trim() === '') ||
                         (resolutionStatus === RunResolutionStatusValue.Succeeded &&
-                          !isJson(successOutcome))
+                          parseActivityOutcome(successOutcome) === undefined)
                       }
                       onClick={() => {
-                        try {
-                          const outcome =
-                            resolutionStatus === RunResolutionStatusValue.Succeeded
-                              ? JSON.parse(successOutcome)
-                              : undefined;
-                          resolveAndRetry.mutate({
-                            runId: ambiguousRun.runId,
-                            outcome,
-                            status: resolutionStatus,
-                          });
-                        } catch {
-                          resolveAndRetry.reset();
-                        }
+                        const outcome =
+                          resolutionStatus === RunResolutionStatusValue.Succeeded
+                            ? parseActivityOutcome(successOutcome)
+                            : undefined;
+                        if (
+                          resolutionStatus === RunResolutionStatusValue.Succeeded &&
+                          outcome === undefined
+                        )
+                          return;
+                        resolveAndRetry.mutate({
+                          runId: ambiguousRun.runId,
+                          outcome,
+                          status: resolutionStatus,
+                        });
                       }}
                     >
                       {resolutionStatus === RunResolutionStatusValue.Failed
@@ -519,9 +523,10 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                         : 'Resolve run'}
                     </Button>
                     {resolutionStatus === RunResolutionStatusValue.Succeeded &&
-                      !isJson(successOutcome) && (
+                      parseActivityOutcome(successOutcome) === undefined && (
                         <p role="alert">
-                          The actual activity outcome must be valid JSON before resolving the run.
+                          The actual activity outcome must be an object with a supported outcome
+                          kind.
                         </p>
                       )}
                     <MutationFeedback
@@ -682,11 +687,16 @@ function isAmbiguousRunBlock(reason: string | undefined): boolean {
   return reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason);
 }
 
-function isJson(value: string): boolean {
+function parseActivityOutcome(value: string): { readonly kind: string } | undefined {
   try {
-    JSON.parse(value);
-    return true;
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+    const kind = (parsed as { readonly kind?: unknown }).kind;
+    return typeof kind === 'string' &&
+      Object.values(ActivityOutcomeKindValue).includes(kind as never)
+      ? (parsed as { readonly kind: string })
+      : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }

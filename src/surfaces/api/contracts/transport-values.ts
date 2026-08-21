@@ -1,3 +1,4 @@
+import { ActivityOutcomeKind } from '../../../activities/index.js';
 import type { RunStatus } from '../../../execution/index.js';
 import type { ApiCommandStatus } from './control-plane.js';
 
@@ -24,6 +25,8 @@ export const RunResolutionStatusValue = {
   Failed: runResolutionStatuses[0]! as RunStatus,
   Succeeded: runResolutionStatuses[1]! as RunStatus,
 } as const;
+
+export const ActivityOutcomeKindValue = ActivityOutcomeKind;
 
 const boardConditionShape = {
   ready: true,
