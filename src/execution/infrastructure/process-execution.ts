@@ -116,6 +116,7 @@ function captureProcessOutput(
       return terminate();
     };
     signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
     child.once('error', (caught) => {
       error = caught;
     });

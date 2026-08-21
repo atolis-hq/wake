@@ -87,6 +87,20 @@ describe('runProcess', () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(20);
   });
 
+  it('terminates a child when its signal was already aborted before startup', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const execution = runProcess(
+      process.execPath,
+      ['-e', 'setInterval(() => {}, 1_000)'],
+      undefined,
+      controller.signal,
+      { cancellationGraceMs: 5 },
+    );
+
+    await expect(execution.result).resolves.toMatchObject({ timedOut: false });
+  });
+
   it('classifies output beyond the capture budget without retaining it all in the resident', async () => {
     const execution = runProcess(
       process.execPath,
