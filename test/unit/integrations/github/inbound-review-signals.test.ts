@@ -43,7 +43,7 @@ it('recognizes /changes followed by a blank line and feedback as an issue comman
 
 it('retries an open primary workflow only for a provider-authorized /retry comment', async () => {
   const retried: unknown[] = [];
-  const event = issueCommentEvent('/retry');
+  const event = issueCommentEvent('/retry\n\nplease retry');
   await applyReviewSignal({
     event: {
       ...event,
@@ -364,10 +364,10 @@ it('resumes an eligible blocked issue workflow on /changes followed by a blank l
 it('satisfies a watchGate wait with /approved using its own signal kind', async () => {
   const fixture = await waitingIssueWorkflow(WatchGateVerdictSignal);
 
-  await applyHumanIssueCommand(fixture, '/approved');
+  await applyHumanIssueCommand(fixture, '/approved\n\nthanks');
 
   expect((await fixture.world.viewWorkflow(fixture.workflowId))?.acceptedSignalIds).toContain(
-    fixture.commandEventId('/approved'),
+    fixture.commandEventId('/approved\n\nthanks'),
   );
   expect(await acceptedSignal(fixture)).toMatchObject({
     kind: WatchGateVerdictSignal,

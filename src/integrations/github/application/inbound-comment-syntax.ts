@@ -18,7 +18,7 @@ function commandLine(body: string): string {
 }
 
 function matchesCommand(line: string, command: string): boolean {
-  return line === command || line.startsWith(`${command} `);
+  return line === command || (line.startsWith(command) && /\s/.test(line.charAt(command.length)));
 }
 
 export function recognizedCommand(body: string): IssueCommand | null {

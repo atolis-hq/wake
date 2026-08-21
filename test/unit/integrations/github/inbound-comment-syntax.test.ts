@@ -9,6 +9,7 @@ describe('recognizedCommand', () => {
   it.each([
     ['/changes', GitHubBuiltInCommand.Changes],
     ['/changes please fix the error handling', GitHubBuiltInCommand.Changes],
+    ['/changes\tplease fix the error handling', GitHubBuiltInCommand.Changes],
     ['/changes\n\nplease fix the error handling', GitHubBuiltInCommand.Changes],
     ['/changes\r\n\r\nplease fix the error handling', GitHubBuiltInCommand.Changes],
     ['  /Changes  \n\nfeedback below', GitHubBuiltInCommand.Changes],
