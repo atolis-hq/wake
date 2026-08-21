@@ -87,7 +87,10 @@ function boardClient(fetchSpy?: (url: string) => void) {
 }
 
 describe('board', () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+  });
 
   it('fits all five columns on desktop and stacks them on mobile', () => {
     const stylesheet = readFileSync(
@@ -310,7 +313,7 @@ describe('board', () => {
     expect(seen.filter((url) => url.includes('/resources'))).toEqual([]);
   });
 
-  it('collapses a column, hides its cards, and persists the choice', async () => {
+  it('collapses the finished column, hides its cards, and persists the choice', async () => {
     const user = userEvent.setup();
     window.localStorage.clear();
     render(
@@ -318,15 +321,15 @@ describe('board', () => {
         <App client={boardClient()} />
       </MemoryRouter>,
     );
-    const toggle = await screen.findByRole('button', { name: 'Collapse Ready' });
+    const toggle = await screen.findByRole('button', { name: 'Collapse Finished' });
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     await user.click(toggle);
 
-    expect(screen.queryByRole('link', { name: 'Alpha' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Expand Ready' }).getAttribute('aria-expanded')).toBe(
-      'false',
-    );
-    expect(window.localStorage.getItem('wake:board:collapsed-columns')).toBe('["ready"]');
+    expect(screen.queryByRole('link', { name: 'Gamma' })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Expand Finished' }).getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(window.localStorage.getItem('wake:board:collapsed-columns')).toBe('["finished"]');
   });
 
   it('restores collapsed columns from storage on first render', async () => {
@@ -338,6 +341,20 @@ describe('board', () => {
     );
     expect(await screen.findByRole('button', { name: 'Expand Finished' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Gamma' })).toBeNull();
+    window.localStorage.clear();
+  });
+
+  it('only makes the finished column collapsible on desktop', async () => {
+    window.localStorage.setItem('wake:board:collapsed-columns', '["ready"]');
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Collapse Finished' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Collapse Ready' })).toBeNull();
+    expect(screen.getByRole('link', { name: /Alpha/ })).toBeTruthy();
     window.localStorage.clear();
   });
 
@@ -401,11 +418,11 @@ describe('board', () => {
     await screen.findByRole('listitem', { name: 'Zebra work' });
     await user.selectOptions(screen.getByLabelText('Group by'), 'workflowName');
 
-    const laneHeadings = screen
-      .getAllByRole('heading', { level: 2 })
-      .map((node) => node.textContent)
+    const laneButtons = screen
+      .getAllByRole('button')
+      .map((node) => node.textContent?.replace(/[▸▾]/g, ''))
       .filter((text) => text === 'apple-flow (1)' || text === 'zebra-flow (1)');
-    expect(laneHeadings).toEqual(['apple-flow (1)', 'zebra-flow (1)']);
+    expect(laneButtons).toEqual(['apple-flow (1)', 'zebra-flow (1)']);
   });
 
   it('buckets items missing a workflow or stage under a fallback swimlane', async () => {
@@ -468,6 +485,41 @@ describe('board', () => {
     );
     const select = await screen.findByLabelText<HTMLSelectElement>('Group by');
     expect(select.value).toBe('stage');
+    window.localStorage.clear();
+  });
+
+  it('collapses a swimlane from its heading and restores it for the same grouping', async () => {
+    const user = userEvent.setup();
+    window.localStorage.clear();
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('listitem', { name: 'Alpha' });
+    await user.selectOptions(screen.getByLabelText('Group by'), 'workflowName');
+
+    const laneToggle = screen.getByRole('button', { name: 'delivery (3)' });
+    expect(laneToggle.getAttribute('aria-expanded')).toBe('true');
+    await user.click(laneToggle);
+    expect(screen.queryByRole('link', { name: 'Alpha' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'delivery (3)' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(window.localStorage.getItem('wake:board:collapsed-swimlanes')).toBe(
+      '["[\\\"workflowName\\\",\\\"delivery\\\"]"]',
+    );
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+    expect(
+      (await screen.findByRole('button', { name: 'delivery (3)' })).getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(screen.queryByRole('link', { name: 'Alpha' })).toBeNull();
     window.localStorage.clear();
   });
 });
