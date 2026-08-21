@@ -30,7 +30,7 @@ export function createCursorRunner(options: CliRunnerOptions = {}): Runner {
     options.command ?? 'cursor',
     (request: RunnerRequest) => cursorCommandArgs(request, options.args, options),
     {
-      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseCursorOutput,
       classifyFailure: classifyCursorFailure,

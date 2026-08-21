@@ -4,7 +4,14 @@ const isReservedFlag = (arg: string) => arg === '--output-format' || arg === '--
 const agentRunnerBase = {
   model: z.string().trim().min(1).optional(),
   effort: z.string().trim().min(1).optional(),
-  timeoutMs: z.number().int().positive().default(1_800_000),
+  runnerTimeouts: z
+    .object({
+      idleMs: z.number().int().positive().default(600_000),
+      hardMs: z.number().int().positive().default(7_200_000),
+      cancellationGraceMs: z.number().int().positive().default(30_000),
+    })
+    .strict()
+    .prefault({}),
   args: z.array(z.string()).default([]),
 };
 const commandRunner = (kind: string) =>
@@ -49,7 +56,11 @@ export interface ExecutionConfig {
         readonly command?: string;
         readonly model?: string;
         readonly effort?: string;
-        readonly timeoutMs: number;
+        readonly runnerTimeouts: {
+          readonly idleMs: number;
+          readonly hardMs: number;
+          readonly cancellationGraceMs: number;
+        };
         readonly args: readonly string[];
       }
     >

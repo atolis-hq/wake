@@ -7,7 +7,7 @@ import type {
 } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
-import { runProcess } from '../process-execution.js';
+import { runProcess, type ProcessTimeouts } from '../process-execution.js';
 
 export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
   return cliRunner(
@@ -15,7 +15,7 @@ export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
     options.command ?? 'claude',
     (request) => claudeCommandArgs(request, options.args, options),
     {
-      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseClaudeOutput,
       classifyFailure: classifyClaudeFailure,
@@ -122,7 +122,7 @@ export function cliRunner(
   command: string,
   args: (request: RunnerRequest) => string[],
   options: {
-    readonly timeoutMs?: number;
+    readonly runnerTimeouts?: ProcessTimeouts;
     readonly defaultModel?: string;
     readonly supportsSessionResume?: boolean;
     readonly parseSuccessfulOutput?: (
@@ -143,7 +143,7 @@ export function cliRunner(
         args(request),
         request.workspacePath,
         signal,
-        options.timeoutMs,
+        options.runnerTimeouts,
       );
       return {
         identity: {
@@ -181,11 +181,12 @@ function failureFor(
     readonly stderr: string;
     readonly exitCode: number | undefined;
     readonly timedOut: boolean;
+    readonly timeoutKind?: 'idle' | 'hard';
     readonly failureKind?: 'output-limit';
     readonly failureMessage?: string;
   },
   options: {
-    readonly timeoutMs?: number;
+    readonly runnerTimeouts?: ProcessTimeouts;
     readonly classifyFailure?: (input: {
       readonly stdout: string;
       readonly stderr: string;
@@ -194,8 +195,14 @@ function failureFor(
 ): { readonly kind: string; readonly message: string } {
   if (value.timedOut)
     return {
-      kind: ExecutionCancellationReason.Timeout,
-      message: `Runner timed out after ${options.timeoutMs}ms`,
+      kind:
+        value.timeoutKind === 'idle'
+          ? ExecutionCancellationReason.IdleTimeout
+          : ExecutionCancellationReason.Timeout,
+      message:
+        value.timeoutKind === 'idle'
+          ? `Runner was idle for ${options.runnerTimeouts?.idleMs}ms`
+          : `Runner exceeded the hard timeout of ${options.runnerTimeouts?.hardMs}ms`,
     };
   if (value.failureKind !== undefined)
     return {
@@ -214,7 +221,7 @@ export interface RunnerDefaults {
 
 export interface CliRunnerOptions extends RunnerDefaults {
   readonly command?: string;
-  readonly timeoutMs?: number;
+  readonly runnerTimeouts?: ProcessTimeouts;
   readonly args?: readonly string[];
 }
 

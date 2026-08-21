@@ -24,12 +24,12 @@ function configYaml(containerName: string): string {
 execution:
   agentRunners:
     fake: { kind: fake }
-    claude-haiku: { kind: claude-cli, command: claude, model: haiku, timeoutMs: 1800000 }
-    claude-opus: { kind: claude-cli, command: claude, model: claude-opus-4-8, timeoutMs: 1800000 }
-    codex-luna: { kind: codex-cli, command: codex, model: gpt-5.6-luna, timeoutMs: 1800000 }
-    codex-terra: { kind: codex-cli, command: codex, model: gpt-5.6-terra, timeoutMs: 1800000 }
-    codex-sol: { kind: codex-cli, command: codex, model: gpt-5.6-sol, timeoutMs: 1800000 }
-    cursor-composer: { kind: cursor-cli, command: cursor, model: composer-2.5, timeoutMs: 1800000 }
+    claude-haiku: { kind: claude-cli, command: claude, model: haiku }
+    claude-opus: { kind: claude-cli, command: claude, model: claude-opus-4-8 }
+    codex-luna: { kind: codex-cli, command: codex, model: gpt-5.6-luna }
+    codex-terra: { kind: codex-cli, command: codex, model: gpt-5.6-terra }
+    codex-sol: { kind: codex-cli, command: codex, model: gpt-5.6-sol }
+    cursor-composer: { kind: cursor-cli, command: cursor, model: composer-2.5 }
   runnerPools:
     light: [fake]
     standard: [fake]

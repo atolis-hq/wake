@@ -15,9 +15,11 @@ and the same cancellation signal. Wake records the selected runner, its model
 metadata, lifecycle, reported session identity, raw runner result, and final
 normalized Activity outcome in durable Run facts.
 
-The process timeout defaults to 30 minutes (`timeoutMs: 1800000`). A timeout or
-non-zero process exit is a failed transport result, not a successful workflow
-outcome. The Activity translates a successful runner response into `DONE`,
+Process runners time out after 10 minutes without stdout or stderr activity
+(`runnerTimeouts.idleMs: 600000`) or after 2 hours in total
+(`runnerTimeouts.hardMs: 7200000`), then allow 30 seconds for graceful
+cancellation before escalation. A timeout or non-zero process exit is a failed
+transport result, not a successful workflow outcome. The Activity translates a successful runner response into `DONE`,
 `REJECTED`, `BLOCKED`, or `FAILED`; Orchestration then applies the configured
 workflow route.
 

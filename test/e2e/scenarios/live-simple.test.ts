@@ -71,7 +71,6 @@ execution:
     command:
       kind: command
       command: ${JSON.stringify(process.execPath)}
-      timeoutMs: 5000
       args: ['-e', "process.stdout.write('DONE')"]
   runnerPools: { standard: [command] }
   defaultRunnerPool: standard

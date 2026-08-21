@@ -23,22 +23,68 @@ describe('runProcess', () => {
       ['-e', 'process.stdin.resume(); process.stdin.once("end", () => process.exit(0));'],
       undefined,
       new AbortController().signal,
-      1_000,
+      { hardMs: 1_000 },
     );
 
     await expect(execution.result).resolves.toMatchObject({ exitCode: 0, timedOut: false });
   });
 
-  it('terminates a child process at the configured wall-clock deadline', async () => {
+  it('terminates a child process at the configured hard deadline', async () => {
     const execution = runProcess(
       process.execPath,
       ['-e', 'setTimeout(() => process.exit(0), 5_000)'],
       undefined,
       new AbortController().signal,
-      20,
+      { hardMs: 20, cancellationGraceMs: 5 },
     );
 
-    await expect(execution.result).resolves.toMatchObject({ timedOut: true });
+    await expect(execution.result).resolves.toMatchObject({ timedOut: true, timeoutKind: 'hard' });
+  });
+
+  it('terminates a silent child at the idle deadline independently of the hard deadline', async () => {
+    const execution = runProcess(
+      process.execPath,
+      ['-e', 'setTimeout(() => process.exit(0), 5_000)'],
+      undefined,
+      new AbortController().signal,
+      { idleMs: 20, hardMs: 1_000, cancellationGraceMs: 5 },
+    );
+
+    await expect(execution.result).resolves.toMatchObject({ timedOut: true, timeoutKind: 'idle' });
+  });
+
+  it('resets the idle deadline for stdout and stderr activity', async () => {
+    const execution = runProcess(
+      process.execPath,
+      [
+        '-e',
+        'let count = 0; const interval = setInterval(() => { (count++ % 2 ? process.stdout : process.stderr).write("activity"); if (count === 6) { clearInterval(interval); process.exit(0); } }, 30)',
+      ],
+      undefined,
+      new AbortController().signal,
+      { idleMs: 120, hardMs: 1_500, cancellationGraceMs: 5 },
+    );
+
+    await expect(execution.result).resolves.toMatchObject({ exitCode: 0, timedOut: false });
+  });
+
+  it('escalates from SIGTERM to SIGKILL after the cancellation grace period', async () => {
+    const execution = runProcess(
+      process.execPath,
+      [
+        '-e',
+        'process.on("SIGTERM", () => process.stdout.write("terminated")); setInterval(() => {}, 1_000)',
+      ],
+      undefined,
+      new AbortController().signal,
+      { cancellationGraceMs: 30 },
+    );
+    const started = Date.now();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await execution.cancel();
+    await expect(execution.result).resolves.toMatchObject({ timedOut: false });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(20);
   });
 
   it('classifies output beyond the capture budget without retaining it all in the resident', async () => {
@@ -47,7 +93,7 @@ describe('runProcess', () => {
       ['-e', 'process.stdout.write("x".repeat(2 * 1024 * 1024))'],
       undefined,
       new AbortController().signal,
-      1_000,
+      { hardMs: 1_000 },
     );
 
     await expect(execution.result).resolves.toMatchObject({ failureKind: 'output-limit' });
@@ -70,7 +116,7 @@ describe('runProcess', () => {
       ],
       undefined,
       new AbortController().signal,
-      5_000,
+      { hardMs: 5_000 },
     );
 
     await expect(execution.result).resolves.toMatchObject({ failureKind: 'output-limit' });
@@ -258,7 +304,7 @@ describe('cliRunner', () => {
       'test-cli',
       process.execPath,
       () => ['-e', 'setTimeout(() => process.exit(0), 5_000)'],
-      { timeoutMs: 20 },
+      { runnerTimeouts: { hardMs: 20, cancellationGraceMs: 5 } },
     );
     const execution = await runner.start(
       { runId: 'run-1', prompt: 'ignored', allowedTools: [] },
@@ -268,6 +314,24 @@ describe('cliRunner', () => {
     await expect(execution.result).resolves.toMatchObject({
       transport: 'failed',
       failure: { kind: ExecutionCancellationReason.Timeout },
+    });
+  });
+
+  it('classifies an idle timeout separately from the hard timeout', async () => {
+    const runner = cliRunner(
+      'test-cli',
+      process.execPath,
+      () => ['-e', 'setTimeout(() => process.exit(0), 5_000)'],
+      { runnerTimeouts: { idleMs: 20, hardMs: 1_000, cancellationGraceMs: 5 } },
+    );
+    const execution = await runner.start(
+      { runId: 'run-1', prompt: 'ignored', allowedTools: [] },
+      new AbortController().signal,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({
+      transport: 'failed',
+      failure: { kind: ExecutionCancellationReason.IdleTimeout },
     });
   });
 

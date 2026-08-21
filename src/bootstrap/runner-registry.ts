@@ -51,7 +51,7 @@ function createConfiguredRunner(
       return createCursorRunner(runner);
     case 'command': {
       if (runner.command === undefined) throw new Error('Command runner requires a command');
-      return createCommandRunner(runner.command, runner.args, runner.timeoutMs);
+      return createCommandRunner(runner.command, runner.args, runner.runnerTimeouts);
     }
   }
 }

@@ -86,26 +86,26 @@ execution:
   agentRunners:
     fake:
       kind: fake
-      timeoutMs: 1800000
+      runnerTimeouts: { idleMs: 600000, hardMs: 7200000, cancellationGraceMs: 30000 }
       args: []
     claude-haiku:
       kind: claude-cli
       command: claude
       model: haiku
-      timeoutMs: 1800000
+      runnerTimeouts: { idleMs: 600000, hardMs: 7200000, cancellationGraceMs: 30000 }
       args: []
     codex-terra:
       kind: codex-cli
       command: codex
       model: gpt-5.6-terra
       effort: high
-      timeoutMs: 1800000
+      runnerTimeouts: { idleMs: 600000, hardMs: 7200000, cancellationGraceMs: 30000 }
       args: []
     cursor-composer:
       kind: cursor-cli
       command: cursor
       model: composer-2.5
-      timeoutMs: 1800000
+      runnerTimeouts: { idleMs: 600000, hardMs: 7200000, cancellationGraceMs: 30000 }
       args: []
   runnerPools:
     light: [fake]
@@ -279,7 +279,10 @@ Each `execution.agentRunners.<name>` definition has the following shape.
 | `command` | non-empty string; required except for `fake` | Executable used by command-backed runners. |
 | `model` | non-empty string; optional | Runner's configured model metadata/default. A prompt or Activity may request a different model. |
 | `effort` | non-empty string; optional | Runner-specific reasoning-effort setting. |
-| `timeoutMs` | positive integer; default `1800000` | Wall-clock timeout for one runner invocation. |
+| `runnerTimeouts` | object; defaults below | Bounds and graceful-cancellation timing for one runner invocation. |
+| `runnerTimeouts.idleMs` | positive integer; default `600000` | Maximum time without stdout or stderr activity. |
+| `runnerTimeouts.hardMs` | positive integer; default `7200000` | Absolute maximum invocation duration, regardless of output. |
+| `runnerTimeouts.cancellationGraceMs` | positive integer; default `30000` | Time to wait after SIGTERM before escalating cancellation to SIGKILL. |
 | `args` | list of strings; default `[]` | Additional adapter arguments. Do not include `--output-format` or `--resume`; Wake manages those flags. |
 
 Pools are tried in order, skipping only runners currently paused as
@@ -290,7 +293,11 @@ silently switch to another pool.
 execution:
   agentRunners:
     fake: { kind: fake }
-    codex: { kind: codex-cli, command: codex, model: gpt-5.6-terra, timeoutMs: 1800000 }
+    codex:
+      kind: codex-cli
+      command: codex
+      model: gpt-5.6-terra
+      runnerTimeouts: { idleMs: 600000, hardMs: 7200000, cancellationGraceMs: 30000 }
   runnerPools:
     light: [fake]
     standard: [codex, fake]
