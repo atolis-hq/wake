@@ -261,7 +261,7 @@ function projectWorkflowUpdate(
     ...(event.eventType === OrchestrationEventType.InstanceBlocked
       ? card
       : withoutBlockReason(card)),
-    condition: boardConditionForStatus(status),
+    condition: boardConditionForStatus(status, card),
     ...(event.eventType === OrchestrationEventType.InstanceBlocked
       ? { blockReason: event.payload.reason }
       : {}),
@@ -279,20 +279,27 @@ function projectWorkflowUpdate(
   return { ...view, cards: { ...view.cards, [workId]: withCondition } };
 }
 
-function boardConditionForStatus(status: WorkflowStatus): BoardConditionValue {
+function boardConditionForStatus(status: WorkflowStatus, card: StoredCard): BoardConditionValue {
   switch (status) {
     // Orchestration "active" means outstanding work, not a run in flight —
     // the board's Active condition is reserved for RunStarted (below).
     case WorkflowStatus.Active:
       return BoardCondition.Ready;
     case WorkflowStatus.Waiting:
-    case WorkflowStatus.Blocked:
       return BoardCondition.NeedsInput;
+    case WorkflowStatus.Blocked:
+      return failedOrAmbiguousRun(card.lastRunOutcome)
+        ? BoardCondition.Error
+        : BoardCondition.NeedsInput;
     case WorkflowStatus.Completed:
       return BoardCondition.Finished;
     case WorkflowStatus.Superseded:
       return BoardCondition.Error;
   }
+}
+
+function failedOrAmbiguousRun(outcome: StoredCard['lastRunOutcome']): boolean {
+  return outcome === RunStatus.Failed || outcome === RunStatus.Ambiguous;
 }
 
 function lookupWorkflowCard(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
-import { boardProjection } from '../../../src/bootstrap/board-projection.js';
+import { boardConditionCounts, boardProjection } from '../../../src/bootstrap/board-projection.js';
 import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
 import {
   OrchestrationEventType,
@@ -896,6 +896,77 @@ describe('operator board projection', () => {
     });
     expect(failed.cards[item]!.activeRuns).toEqual({});
   });
+
+  it.each([
+    {
+      label: 'failed',
+      id: 'failed',
+      terminalEvent: ExecutionEventType.RunSucceeded,
+      terminalPayload: { outcome: { kind: 'failed' }, finishedAt: '2026-08-03T12:05:00.000Z' },
+    },
+    {
+      label: 'ambiguous',
+      id: 'ambiguous',
+      terminalEvent: ExecutionEventType.RunAmbiguous,
+      terminalPayload: {
+        reason: 'runner state could not be recovered',
+        finishedAt: '2026-08-03T12:05:00.000Z',
+      },
+    },
+  ])(
+    'keeps a $label run in Error after its workflow is blocked',
+    ({ id, terminalEvent, terminalPayload }) => {
+      const item = workId(`board-blocked-${id}`);
+      const workflowId = workflowInstanceId(`primary:${item}`);
+      const run = runId(`run-blocked-${id}`);
+      const started = [
+        eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+        eventEnvelope(
+          OrchestrationEventType.InstanceStarted,
+          {
+            workItemId: item,
+            workflowName: 'delivery',
+            orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+            entry: 'refine',
+          },
+          workflowInstanceStream(workflowId),
+          2,
+        ),
+        eventEnvelope(
+          ExecutionEventType.RunStarted,
+          {
+            activationId: activationId(`activation-blocked-${id}`),
+            activity: activityName('refine'),
+            workflowInstanceId: workflowId,
+            orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+            attempt: 1,
+            startedAt: '2026-08-03T12:00:00.000Z',
+          },
+          runStream(run),
+          3,
+        ),
+      ].reduce(
+        (view, event) => boardProjection.project(view, event),
+        boardProjection.initial('global'),
+      );
+      const terminal = boardProjection.project(
+        started,
+        eventEnvelope(terminalEvent, terminalPayload, runStream(run), 4),
+      );
+      const blocked = boardProjection.project(
+        terminal,
+        eventEnvelope(
+          OrchestrationEventType.InstanceBlocked,
+          { reason: 'terminal run requires attention' },
+          workflowInstanceStream(workflowId),
+          5,
+        ),
+      );
+
+      expect(blocked.cards[item]).toMatchObject({ condition: 'error' });
+      expect(boardConditionCounts(blocked)).toEqual({ error: 1 });
+    },
+  );
 
   it('clears a terminal outcome when a primary retry starts', () => {
     const item = workId('board-run-retry');
