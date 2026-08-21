@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { appendFile, mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type {
@@ -29,7 +29,12 @@ export class FileEventJournal implements EventJournal {
   }
 
   private cached:
-    { readonly entries: readonly FileStat[]; readonly events: EventEnvelope[] } | undefined;
+    | {
+        readonly entries: readonly FileStat[];
+        readonly events: EventEnvelope[];
+        readonly segments: readonly SegmentInfo[];
+      }
+    | undefined;
 
   // Every read (readStream/readAll/readLatest/latestGlobalPosition) reaches
   // scan(), and the resident host's tick loop calls those many times a
@@ -93,18 +98,68 @@ export class FileEventJournal implements EventJournal {
           'utf8',
         );
         await this.extendCache(file, current, newEnvelopes);
+        // The manifest is derived data. The event append is authoritative, so
+        // an index-write failure must not turn a successfully recorded event
+        // into a failed append.
+        await this.persistManifest().catch(() => undefined);
         this.changeSignalSource.notify();
       }
       return finalizedEnvelopes;
     });
   }
 
+  // Reads via the persisted per-segment manifest when the in-memory cache is
+  // cold (fresh process, or an on-disk change this instance didn't make),
+  // parsing only the segment files that can hold matching events instead of
+  // the entire history. A missing or stale manifest degrades to scan()'s
+  // full parse rather than to incorrect data; scan() then rebuilds it.
   async readStream(stream: EntityRef) {
-    return (await this.scan()).filter((event) => key(event.stream) === key(stream));
+    const streamKey = key(stream);
+    const entries = await this.readCurrentEntries();
+    if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
+      return this.cached.events.filter((event) => key(event.stream) === streamKey);
+    const manifest = await this.loadManifest();
+    if (manifest !== undefined && isCompleteIndex(manifest, entries)) {
+      try {
+        return await this.parseIndexedEntries(
+          manifest.segments.flatMap((segment) =>
+            segment.events
+              .filter((event) => event.stream === streamKey)
+              .map((event) => ({ ...event, file: segment.file })),
+          ),
+        );
+      } catch {
+        // The segment stats guarded the common stale-index case. If an index
+        // is nevertheless internally inconsistent, the JSONL remains the
+        // authority and retains the original read semantics.
+      }
+    }
+    return (await this.scan(entries)).filter((event) => key(event.stream) === streamKey);
   }
 
   async readAll(after: number, limit = Number.POSITIVE_INFINITY) {
-    return (await this.scan()).filter((event) => event.globalPosition > after).slice(0, limit);
+    const entries = await this.readCurrentEntries();
+    if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
+      return this.cached.events.filter((event) => event.globalPosition > after).slice(0, limit);
+    const manifest = await this.loadManifest();
+    if (manifest !== undefined && isCompleteIndex(manifest, entries)) {
+      try {
+        return await this.parseIndexedEntries(
+          manifest.segments
+            .flatMap((segment) =>
+              segment.events
+                .filter((event) => event.globalPosition > after)
+                .map((event) => ({ ...event, file: segment.file })),
+            )
+            .slice(0, limit),
+        );
+      } catch {
+        // See readStream(): never let a derived index change journal reads.
+      }
+    }
+    return (await this.scan(entries))
+      .filter((event) => event.globalPosition > after)
+      .slice(0, limit);
   }
 
   async readLatest(beforeGlobalPosition?: number, limit = Number.POSITIVE_INFINITY) {
@@ -137,19 +192,79 @@ export class FileEventJournal implements EventJournal {
     const entries = priorEntries.some((entry) => entry.file === file)
       ? priorEntries.map((entry) => (entry.file === file ? updatedEntry : entry))
       : [...priorEntries, updatedEntry];
-    this.cached = { entries, events: [...priorEvents, ...newEnvelopes] };
+    const priorSegments = this.cached?.segments ?? [];
+    const existingSegment = priorSegments.find((segment) => segment.file === file);
+    let offset = existingSegment?.size ?? 0;
+    const indexedEvents = newEnvelopes.map((event) => {
+      const length = Buffer.byteLength(`${JSON.stringify(event)}\n`);
+      const indexed = {
+        globalPosition: event.globalPosition,
+        stream: key(event.stream),
+        offset,
+        length,
+      };
+      offset += length;
+      return indexed;
+    });
+    const segments = existingSegment
+      ? priorSegments.map((segment) =>
+          segment.file === file
+            ? {
+                ...updatedEntry,
+                startPosition: segment.startPosition,
+                count: segment.count + newEnvelopes.length,
+                events: [...segment.events, ...indexedEvents],
+              }
+            : segment,
+        )
+      : [
+          ...priorSegments,
+          {
+            ...updatedEntry,
+            startPosition: priorEvents.length + 1,
+            count: newEnvelopes.length,
+            events: indexedEvents,
+          },
+        ];
+    this.cached = { entries, events: [...priorEvents, ...newEnvelopes], segments };
   }
 
-  private scan(): Promise<EventEnvelope[]> {
+  private manifestPath(): string {
+    return join(this.root, 'events', 'index-manifest.json');
+  }
+
+  // Persisted alongside the segments, so any reader of the same on-disk
+  // journal — not just this instance — can skip straight to the segments
+  // that can hold what it's looking for on a cold cache. append() extends its
+  // contents from the concrete envelopes it has just written while locked.
+  private async persistManifest(): Promise<void> {
+    if (this.cached === undefined) return;
+    const manifest: PersistedIndex = { segments: this.cached.segments };
+    await writeFile(this.manifestPath(), JSON.stringify(manifest), 'utf8');
+  }
+
+  private async loadManifest(): Promise<PersistedIndex | undefined> {
+    try {
+      const raw = await readFile(this.manifestPath(), 'utf8');
+      const parsed: unknown = JSON.parse(raw);
+      return isPersistedIndex(parsed) ? parsed : undefined;
+    } catch {
+      // Missing, corrupt, or foreign-shaped index: degrade to a full scan,
+      // which is rebuilt by the next append.
+      return undefined;
+    }
+  }
+
+  private scan(precomputedEntries?: readonly FileStat[]): Promise<EventEnvelope[]> {
     if (this.inFlightScan !== undefined) return this.inFlightScan;
-    const run = this.scanUncoalesced().finally(() => {
+    const run = this.scanUncoalesced(precomputedEntries).finally(() => {
       if (this.inFlightScan === run) this.inFlightScan = undefined;
     });
     this.inFlightScan = run;
     return run;
   }
 
-  private async scanUncoalesced(): Promise<EventEnvelope[]> {
+  private async readCurrentEntries(): Promise<FileStat[]> {
     const directory = join(this.root, 'events');
     let files: string[];
     try {
@@ -160,19 +275,83 @@ export class FileEventJournal implements EventJournal {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
     }
-    const entries = await Promise.all(
+    return Promise.all(
       files.map(async (file): Promise<FileStat> => {
         const info = await stat(join(directory, file));
         return { file, size: info.size, mtimeMs: info.mtimeMs };
       }),
     );
+  }
+
+  // Reads exactly the indexed JSONL records. Byte offsets make tail reads and
+  // stream reads proportional to the matching events, not segment size.
+  private async parseIndexedEntries(
+    entries: readonly (IndexedEvent & Pick<SegmentInfo, 'file'>)[],
+  ): Promise<EventEnvelope[]> {
+    const directory = join(this.root, 'events');
+    const events: EventEnvelope[] = [];
+    const grouped = new Map<string, (IndexedEvent & Pick<SegmentInfo, 'file'>)[]>();
+    for (const entry of entries) {
+      const group = grouped.get(entry.file) ?? [];
+      group.push(entry);
+      grouped.set(entry.file, group);
+    }
+    for (const [file, indexedEvents] of grouped) {
+      const handle = await open(join(directory, file), 'r');
+      try {
+        for (const indexed of indexedEvents) {
+          const buffer = Buffer.alloc(indexed.length);
+          const { bytesRead } = await handle.read(buffer, 0, indexed.length, indexed.offset);
+          events.push(this.decodeIndexedRecord(file, indexed, buffer, bytesRead));
+        }
+      } finally {
+        await handle.close();
+      }
+    }
+    return events;
+  }
+
+  private decodeIndexedRecord(
+    file: string,
+    indexed: IndexedEvent,
+    buffer: Buffer,
+    bytesRead: number,
+  ): EventEnvelope {
+    if (bytesRead !== indexed.length || buffer.at(-1) !== 10)
+      throw new Error(`Incomplete indexed record in ${file}`);
+    let input: unknown;
+    try {
+      input = JSON.parse(buffer.toString('utf8'));
+      const event = decodeEventEnvelope(input);
+      validateEnvelope(event, indexed.globalPosition);
+      if (key(event.stream) !== indexed.stream) throw new Error('Indexed stream mismatch');
+      return event;
+    } catch (error) {
+      const context = eventContext(input);
+      throw new Error(
+        `Corrupt indexed event at ${file}:${indexed.globalPosition}${context}: ${(error as Error).message}`,
+        { cause: error },
+      );
+    }
+  }
+
+  private async scanUncoalesced(
+    precomputedEntries?: readonly FileStat[],
+  ): Promise<EventEnvelope[]> {
+    const directory = join(this.root, 'events');
+    const entries = precomputedEntries ?? (await this.readCurrentEntries());
     if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
       return this.cached.events;
     const events: EventEnvelope[] = [];
-    for (const file of files) {
+    const segments: SegmentInfo[] = [];
+    for (const entry of entries) {
+      const { file } = entry;
       const raw = await readFile(join(directory, file), 'utf8');
       if (raw.length > 0 && !raw.endsWith('\n'))
         throw new Error(`Incomplete trailing line in ${file}`);
+      const startPosition = events.length + 1;
+      const indexedEvents: IndexedEvent[] = [];
+      let offset = 0;
       for (const [index, line] of raw.split('\n').slice(0, -1).entries()) {
         let input: unknown;
         try {
@@ -180,6 +359,13 @@ export class FileEventJournal implements EventJournal {
           const event = decodeEventEnvelope(input);
           validateEnvelope(event, events.length + 1);
           events.push(event);
+          indexedEvents.push({
+            globalPosition: event.globalPosition,
+            stream: key(event.stream),
+            offset,
+            length: Buffer.byteLength(`${line}\n`),
+          });
+          offset += Buffer.byteLength(`${line}\n`);
         } catch (error) {
           const context = eventContext(input);
           throw new Error(
@@ -188,8 +374,14 @@ export class FileEventJournal implements EventJournal {
           );
         }
       }
+      segments.push({
+        ...entry,
+        startPosition,
+        count: events.length - startPosition + 1,
+        events: indexedEvents,
+      });
     }
-    this.cached = { entries, events };
+    this.cached = { entries, events, segments };
     return events;
   }
 }
@@ -198,6 +390,82 @@ interface FileStat {
   readonly file: string;
   readonly size: number;
   readonly mtimeMs: number;
+}
+
+// Rebuildable read model over each JSONL record. Byte positions are relative
+// to their segment and remain authoritative only while its file stat matches.
+interface SegmentInfo extends FileStat {
+  readonly startPosition: number;
+  readonly count: number;
+  readonly events: readonly IndexedEvent[];
+}
+
+interface IndexedEvent {
+  readonly globalPosition: number;
+  readonly stream: string;
+  readonly offset: number;
+  readonly length: number;
+}
+
+interface PersistedIndex {
+  readonly segments: readonly SegmentInfo[];
+}
+
+function isPersistedIndex(value: unknown): value is PersistedIndex {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as { segments?: unknown }).segments) &&
+    (value as PersistedIndex).segments.every(isSegmentInfo)
+  );
+}
+
+function isSegmentInfo(value: unknown): value is SegmentInfo {
+  if (typeof value !== 'object' || value === null) return false;
+  const segment = value as Partial<SegmentInfo>;
+  return (
+    typeof segment.file === 'string' &&
+    typeof segment.size === 'number' &&
+    typeof segment.mtimeMs === 'number' &&
+    typeof segment.startPosition === 'number' &&
+    typeof segment.count === 'number' &&
+    Array.isArray(segment.events) &&
+    segment.events.every(isIndexedEvent)
+  );
+}
+
+function isIndexedEvent(value: unknown): value is IndexedEvent {
+  if (typeof value !== 'object' || value === null) return false;
+  const event = value as Partial<IndexedEvent>;
+  return (
+    typeof event.globalPosition === 'number' &&
+    typeof event.stream === 'string' &&
+    typeof event.offset === 'number' &&
+    typeof event.length === 'number'
+  );
+}
+
+function isCompleteIndex(index: PersistedIndex, entries: readonly FileStat[]): boolean {
+  if (!sameEntries(index.segments, entries)) return false;
+  let position = 1;
+  return index.segments.every((segment) => {
+    let offset = 0;
+    const complete =
+      segment.startPosition === position &&
+      segment.count === segment.events.length &&
+      segment.events.every((event) => {
+        const matches =
+          event.globalPosition === position &&
+          event.offset === offset &&
+          Number.isSafeInteger(event.length) &&
+          event.length > 0;
+        position += 1;
+        offset += event.length;
+        return matches;
+      }) &&
+      offset === segment.size;
+    return complete;
+  });
 }
 
 function sameEntries(a: readonly FileStat[], b: readonly FileStat[]): boolean {
