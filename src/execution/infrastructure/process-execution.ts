@@ -20,8 +20,15 @@ export function runProcess(
   signal: AbortSignal,
   timeoutMs?: number,
 ): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
+  // Concurrent runs each get their own npm cache, keyed off their workspace
+  // path (a sibling directory, never inside the git-tracked workspace itself).
+  // Every agent CLI's own child shell commands inherit this environment, so
+  // an `npm ci` in one workspace can no longer race another's `npm ci` over
+  // the same on-disk cache -- the corruption that motivated this.
   const child = spawn(command, args, {
-    ...(cwd === undefined ? {} : { cwd }),
+    ...(cwd === undefined
+      ? {}
+      : { cwd, env: { ...process.env, NPM_CONFIG_CACHE: `${cwd}.npm-cache` } }),
     shell: false,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

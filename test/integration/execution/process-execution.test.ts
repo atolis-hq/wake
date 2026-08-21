@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   classifyClaudeFailure,
   classifyCodexFailure,
@@ -17,6 +20,26 @@ import {
 } from '../../../src/execution/infrastructure/runners/cursor.js';
 
 describe('runProcess', () => {
+  const roots: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+
+  it('gives a workspace its own npm cache, isolated from every other concurrent workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-process-cwd-'));
+    roots.push(root);
+    const execution = runProcess(
+      process.execPath,
+      ['-e', 'process.stdout.write(process.env.NPM_CONFIG_CACHE ?? "")'],
+      root,
+      new AbortController().signal,
+      1_000,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({ stdout: `${root}.npm-cache` });
+  });
+
   it('closes stdin so non-interactive CLIs do not wait for more input', async () => {
     const execution = runProcess(
       process.execPath,
