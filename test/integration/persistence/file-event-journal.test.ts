@@ -207,11 +207,11 @@ it('coalesces concurrent reads on a cold cache into a single on-disk decode', as
     draft('event-2', 2),
   ]);
 
-  // A fresh instance starts with no in-memory cache, so every read that
-  // reaches scan() must decide independently whether to hit disk.
+  // Force the scan fallback so this retains coverage for the coalescing
+  // guard even when a valid persisted index would serve readAll directly.
+  await writeFile(join(root, 'events', 'index-manifest.json'), '{not json', 'utf8');
   const reopened = new FileEventJournal(root, new FakeClock());
   readFileMock.mockClear();
-
   const [first, second, third] = await Promise.all([
     reopened.readAll(0),
     reopened.readAll(0),
@@ -225,6 +225,126 @@ it('coalesces concurrent reads on a cold cache into a single on-disk decode', as
     String(path).endsWith('.jsonl'),
   );
   expect(journalFileReads).toHaveLength(1);
+});
+
+it('readStream on a cold cache parses only the segment files that can hold that stream', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-cold-stream-'));
+  const streamA: EntityRef<'work-item', 'work-a'> = { kind: 'work-item', id: 'work-a' };
+  const streamB: EntityRef<'work-item', 'work-b'> = { kind: 'work-item', id: 'work-b' };
+  const draft = (stream: EntityRef, id: string) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.append(streamA, 0, [draft(streamA, 'event-a1')]);
+  clock.advance(24 * 60 * 60 * 1000);
+  await writer.append(streamB, 0, [draft(streamB, 'event-b1')]);
+
+  // A fresh instance has no in-memory cache, so this exercises the persisted
+  // manifest built by the appends above rather than the in-process cache.
+  readFileMock.mockClear();
+  const reader = new FileEventJournal(root, clock);
+  const events = await reader.readStream(streamA);
+  expect(events.map((event) => event.eventId)).toEqual(['event-a1']);
+  const wholeSegmentReads = readFileMock.mock.calls
+    .map(([path]) => String(path))
+    .filter((path) => path.endsWith('.jsonl'));
+  expect(wholeSegmentReads).toEqual([]);
+});
+
+it('readAll(after) on a cold cache skips segments entirely at or before the given position', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-cold-tail-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const draft = (id: string) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.append(stream, 0, [draft('event-1')]);
+  clock.advance(24 * 60 * 60 * 1000);
+  const appended = await writer.append(stream, 1, [draft('event-2')]);
+  expect(appended[0]!.globalPosition).toBe(2);
+
+  readFileMock.mockClear();
+  const reader = new FileEventJournal(root, clock);
+  const events = await reader.readAll(1);
+  expect(events.map((event) => event.eventId)).toEqual(['event-2']);
+  const wholeSegmentReads = readFileMock.mock.calls
+    .map(([path]) => String(path))
+    .filter((path) => path.endsWith('.jsonl'));
+  expect(wholeSegmentReads).toEqual([]);
+});
+
+it('falls back to a full scan and still returns correct data when the persisted index is corrupt', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-stale-index-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const draft = (id: string) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+  const writer = new FileEventJournal(root, new FakeClock());
+  await writer.append(stream, 0, [draft('event-1'), draft('event-2')]);
+  await writeFile(join(root, 'events', 'index-manifest.json'), '{not json', 'utf8');
+
+  const reader = new FileEventJournal(root, new FakeClock());
+  expect((await reader.readAll(0)).map((event) => event.eventId)).toEqual(['event-1', 'event-2']);
+  expect((await reader.readStream(stream)).map((event) => event.eventId)).toEqual([
+    'event-1',
+    'event-2',
+  ]);
+});
+
+it('falls back to a full scan when a valid-shaped persisted index points at the wrong record', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-invalid-index-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const draft = (id: string) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+  const writer = new FileEventJournal(root, new FakeClock());
+  await writer.append(stream, 0, [draft('event-1'), draft('event-2')]);
+  const manifest = JSON.parse(
+    await readFile(join(root, 'events', 'index-manifest.json'), 'utf8'),
+  ) as { segments: Array<{ events: Array<{ offset: number }> }> };
+  manifest.segments[0]!.events[1]!.offset = 0;
+  await writeFile(join(root, 'events', 'index-manifest.json'), JSON.stringify(manifest), 'utf8');
+
+  const reader = new FileEventJournal(root, new FakeClock());
+  expect((await reader.readAll(0)).map((event) => event.eventId)).toEqual(['event-1', 'event-2']);
 });
 
 it('notifies changeSignal after a real write, and wakes multiple subscribers off one append', async () => {
