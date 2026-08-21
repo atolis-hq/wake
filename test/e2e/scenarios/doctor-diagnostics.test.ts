@@ -119,6 +119,33 @@ surfaces:
     );
   });
 
+  it('fails when a retained update maintenance lease is pausing every resident loop', async () => {
+    const world = await ProcessWorld.create();
+    worlds.push(world);
+    await world.tick();
+    await mkdir(join(world.wakeRoot, '.wake'), { recursive: true });
+    await writeFile(
+      join(world.wakeRoot, '.wake', 'update-maintenance.json'),
+      JSON.stringify({
+        attemptId: 'attempt-1',
+        tag: 'v2',
+        phase: 'failed',
+        startedAt: '2026-08-20T22:34:48.328Z',
+        failure: 'active Runs remain after maintenance cancellation: run-1',
+      }),
+    );
+
+    const report = await runDoctor(world.wakeRoot);
+
+    expect(report.failures).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /update maintenance lease is held in phase "failed".*active Runs remain after maintenance cancellation/,
+        ),
+      ]),
+    );
+  });
+
   it('reports a provider that fails to construct as a failure instead of crashing doctor', async () => {
     const world = await ProcessWorld.create();
     worlds.push(world);

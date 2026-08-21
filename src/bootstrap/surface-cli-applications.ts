@@ -624,6 +624,7 @@ async function doctorDiagnostics(root: CompositionRoot) {
     }
   }
   await checkProviders(root, failures, notices);
+  await checkMaintenanceLease(root, failures);
   notices.push(...(await dockerSandboxHealthNotices(root)));
   for (const [name, path] of Object.entries({
     events: root.paths.eventsRoot,
@@ -657,6 +658,23 @@ function referencedPromptTemplateNames(
     }
   }
   return [...names];
+}
+
+// A retained maintenance lease pauses every resident loop (intake and
+// dispatch) regardless of phase -- including Failed, since it's the
+// operator's decision whether a failed attempt is safe to retry or clear.
+// Without this check the pause is invisible: the process ticks normally and
+// logs nothing, so a stuck lease from an update that couldn't quiesce active
+// Runs looks identical to a healthy idle system.
+async function checkMaintenanceLease(root: CompositionRoot, failures: string[]): Promise<void> {
+  const lease = await root.maintenance.read();
+  if (lease === null) return;
+  const detail = lease.failure === undefined ? '' : ` (${lease.failure})`;
+  failures.push(
+    `update maintenance lease is held in phase "${lease.phase}" since ${lease.startedAt}${detail} -- ` +
+      'every resident loop stays paused until it is cleared or resumes; run `wake self-update` ' +
+      'to retry, or clear the lease manually if the attempt is abandoned',
+  );
 }
 
 async function checkProviders(

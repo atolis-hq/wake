@@ -84,8 +84,28 @@ export const decodeControlPlaneStatus: Decoder<ControlPlaneStatusResponse> = (va
     ...optionalStringProperty(record, 'pausedUntil', path),
     ...optionalStringProperty(record, 'reason', path),
     updatedAt: string(record.updatedAt, child(path, 'updatedAt')),
+    ...(record.maintenanceLease === undefined
+      ? {}
+      : {
+          maintenanceLease: decodeControlPlaneMaintenanceLease(
+            record.maintenanceLease,
+            child(path, 'maintenanceLease'),
+          ),
+        }),
   };
 };
+
+function decodeControlPlaneMaintenanceLease(
+  value: unknown,
+  path: string,
+): NonNullable<ControlPlaneStatusResponse['maintenanceLease']> {
+  const record = object(value, path);
+  return {
+    phase: string(record.phase, child(path, 'phase')),
+    startedAt: string(record.startedAt, child(path, 'startedAt')),
+    ...optionalStringProperty(record, 'failure', path),
+  };
+}
 
 export const decodeAcceptedCommand: Decoder<AcceptedCommandResponse> = (value, path = '') => {
   const record = object(value, path);
