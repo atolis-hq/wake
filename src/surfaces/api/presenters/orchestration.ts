@@ -1,5 +1,6 @@
 import {
   isOperatorRetryEligible,
+  WorkflowStatus,
   type WorkflowInstanceView,
 } from '../../../orchestration/index.js';
 import type { WorkflowInstanceResponse } from '../contracts/orchestration.js';
@@ -16,6 +17,9 @@ export function presentWorkflowInstance(value: WorkflowInstanceView): WorkflowIn
       : { parentWorkflowInstanceId: value.parentWorkflowInstanceId }),
     status: value.status,
     currentStage: value.currentStage,
+    ...(value.status === WorkflowStatus.Blocked && value.blockReason !== undefined
+      ? { blockReason: value.blockReason }
+      : {}),
     ...(isOperatorRetryEligible(value) ? { retryEligible: true } : {}),
     ...(value.waitingFor === undefined
       ? {}

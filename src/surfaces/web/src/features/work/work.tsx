@@ -2,6 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type KeyboardEvent, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import type { AuditEventResponse, BoardCardResponse } from '../../../../api/contracts/index.js';
+import {
+  ActivityOutcomeKindValue,
+  RunResolutionStatusValue,
+} from '../../../../api/contracts/transport-values.js';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
@@ -89,7 +93,6 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
   const refresh = async () => {
     await Promise.all([
       cache.invalidateQueries({ queryKey: queryKeys.work.all }),
-      cache.invalidateQueries({ queryKey: queryKeys.work.detail(workItemKey) }),
       cache.invalidateQueries({ queryKey: queryKeys.board.list() }),
     ]);
   };
@@ -107,6 +110,41 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     refetchInterval: refreshPolicy.openWork,
     enabled: workItemKey !== '',
   });
+  const [resolutionStatus, setResolutionStatus] = useState<
+    typeof RunResolutionStatusValue.Failed | typeof RunResolutionStatusValue.Succeeded
+  >(RunResolutionStatusValue.Failed);
+  const [failureReason, setFailureReason] = useState('Operator determined this run failed.');
+  const [successOutcome, setSuccessOutcome] = useState(
+    '{\n  "kind": "done",\n  "data": { "status": "DONE" }\n}',
+  );
+  const resolveAndRetry = useMutation({
+    mutationFn: async ({
+      runId,
+      outcome,
+      status,
+    }: {
+      readonly runId: string;
+      readonly outcome?: unknown;
+      readonly status:
+        typeof RunResolutionStatusValue.Failed | typeof RunResolutionStatusValue.Succeeded;
+    }) => {
+      const idempotencyKey = globalThis.crypto.randomUUID();
+      await client.execution.resolveAmbiguousRun(
+        runId,
+        status === RunResolutionStatusValue.Failed
+          ? { status: RunResolutionStatusValue.Failed, reason: failureReason }
+          : { status: RunResolutionStatusValue.Succeeded, outcome },
+        `web:resolve-ambiguous-run:${idempotencyKey}`,
+      );
+      if (status === RunResolutionStatusValue.Succeeded) return;
+      return client.work.command(
+        workItemKey,
+        'retry',
+        `web:retry-after-ambiguous-resolution:${globalThis.crypto.randomUUID()}`,
+      );
+    },
+    onSuccess: refresh,
+  });
   const [tab, setTab] = useState<'overview' | 'events' | 'transcripts'>('overview');
   const [selectedGroupId, setSelectedGroupId] = useState<string>();
   const [thisRunOnly, setThisRunOnly] = useState(false);
@@ -122,6 +160,19 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
       Number(left.kind === 'run') - Number(right.kind === 'run') ||
       right.latestAt.localeCompare(left.latestAt),
   );
+  const primaryWorkflow = query.data?.data.orchestration.primary;
+  const ambiguousRun = [...(query.data?.data.execution.runs ?? [])]
+    .filter(
+      (run) =>
+        run.workflowInstanceId === primaryWorkflow?.workflowInstanceId &&
+        run.status === 'ambiguous',
+    )
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+  const needsAmbiguityResolution =
+    primaryWorkflow !== undefined &&
+    primaryWorkflow !== null &&
+    primaryWorkflow.status === 'blocked' &&
+    isAmbiguousRunBlock(primaryWorkflow.blockReason);
   const selectedGroup =
     transcriptGroups.find((group) => group.groupId === selectedGroupId) ?? transcriptGroups[0];
   const transcriptQuery = useQuery({
@@ -370,8 +421,122 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                     <dd>{query.data.data.orchestration.primary?.workflowName ?? '?'}</dd>
                     <dt>Stage</dt>
                     <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
+                    {needsAmbiguityResolution && (
+                      <>
+                        <dt>Blocked because</dt>
+                        <dd>Ambiguous run requires an operator decision</dd>
+                      </>
+                    )}
                   </dl>
                 </Panel>
+                {needsAmbiguityResolution && ambiguousRun !== undefined && (
+                  <Panel labelledBy="ambiguous-run-resolution">
+                    <h2 id="ambiguous-run-resolution" className={styles.sidebarSectionTitle}>
+                      Resolve ambiguous run
+                    </h2>
+                    <p>
+                      Decide what happened before retrying this work. Wake will record your
+                      decision, then retry the work item.
+                    </p>
+                    <dl className={styles.summary}>
+                      <dt>Run</dt>
+                      <dd>{ambiguousRun.runId}</dd>
+                      <dt>Token usage</dt>
+                      <dd>
+                        <TokenUsage usage={ambiguousRun} />
+                      </dd>
+                      <dt>Cost</dt>
+                      <dd>{fmtCost(ambiguousRun.totalCostUsd)}</dd>
+                      <dt>Pull request</dt>
+                      <dd>
+                        {query.data.data.activities.pullRequest === undefined
+                          ? 'None recorded'
+                          : 'Recorded for this work item'}
+                      </dd>
+                    </dl>
+                    <fieldset disabled={resolveAndRetry.isPending}>
+                      <legend>Actual outcome</legend>
+                      <label>
+                        <input
+                          type="radio"
+                          name="ambiguous-run-outcome"
+                          checked={resolutionStatus === RunResolutionStatusValue.Failed}
+                          onChange={() => setResolutionStatus(RunResolutionStatusValue.Failed)}
+                        />
+                        Failed
+                      </label>
+                      <label>
+                        <input
+                          type="radio"
+                          name="ambiguous-run-outcome"
+                          checked={resolutionStatus === RunResolutionStatusValue.Succeeded}
+                          onChange={() => setResolutionStatus(RunResolutionStatusValue.Succeeded)}
+                        />
+                        Succeeded
+                      </label>
+                      {resolutionStatus === RunResolutionStatusValue.Failed ? (
+                        <label>
+                          Reason
+                          <textarea
+                            value={failureReason}
+                            onChange={(event) => setFailureReason(event.target.value)}
+                          />
+                        </label>
+                      ) : (
+                        <label>
+                          Actual activity outcome (JSON)
+                          <textarea
+                            value={successOutcome}
+                            onChange={(event) => setSuccessOutcome(event.target.value)}
+                          />
+                        </label>
+                      )}
+                    </fieldset>
+                    <Button
+                      type="button"
+                      disabled={
+                        resolveAndRetry.isPending ||
+                        (resolutionStatus === RunResolutionStatusValue.Failed &&
+                          failureReason.trim() === '') ||
+                        (resolutionStatus === RunResolutionStatusValue.Succeeded &&
+                          parseActivityOutcome(successOutcome) === undefined)
+                      }
+                      onClick={() => {
+                        const outcome =
+                          resolutionStatus === RunResolutionStatusValue.Succeeded
+                            ? parseActivityOutcome(successOutcome)
+                            : undefined;
+                        if (
+                          resolutionStatus === RunResolutionStatusValue.Succeeded &&
+                          outcome === undefined
+                        )
+                          return;
+                        resolveAndRetry.mutate({
+                          runId: ambiguousRun.runId,
+                          outcome,
+                          status: resolutionStatus,
+                        });
+                      }}
+                    >
+                      {resolutionStatus === RunResolutionStatusValue.Failed
+                        ? 'Resolve and retry'
+                        : 'Resolve run'}
+                    </Button>
+                    {resolutionStatus === RunResolutionStatusValue.Succeeded &&
+                      parseActivityOutcome(successOutcome) === undefined && (
+                        <p role="alert">
+                          The actual activity outcome must be an object with a supported outcome
+                          kind.
+                        </p>
+                      )}
+                    <MutationFeedback
+                      pending={resolveAndRetry.isPending}
+                      {...(resolveAndRetry.error === null
+                        ? {}
+                        : { message: resolveAndRetry.error.message })}
+                    />
+                  </Panel>
+                )}
                 <div className={styles.actionBar}>
                   {query.data.data.orchestration.primary?.retryEligible === true && (
                     <Button
@@ -516,4 +681,22 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
       </section>
     </div>
   );
+}
+
+function isAmbiguousRunBlock(reason: string | undefined): boolean {
+  return reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason);
+}
+
+function parseActivityOutcome(value: string): { readonly kind: string } | undefined {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+    const kind = (parsed as { readonly kind?: unknown }).kind;
+    return typeof kind === 'string' &&
+      Object.values(ActivityOutcomeKindValue).includes(kind as never)
+      ? (parsed as { readonly kind: string })
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }

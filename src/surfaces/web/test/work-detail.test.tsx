@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -39,15 +39,18 @@ function detailClient(
   return new WakeApiClient(async (input, init) => {
     const url = String(input);
     requests.push({ url, init });
-    if (url.endsWith('/commands/retry'))
+    if (url.endsWith('/commands/retry') || url.endsWith('/commands/resolve'))
       return (
         commandResponse ??
         new Response(
           JSON.stringify({
-            commandId: 'command-1',
-            idempotencyKey: 'key-1',
-            acceptedAt: asOf,
-            status: 'accepted',
+            data: {
+              commandId: 'command-1',
+              idempotencyKey: 'key-1',
+              acceptedAt: asOf,
+              status: 'accepted',
+            },
+            meta: { asOf },
           }),
           { status: 202, headers: { 'content-type': 'application/json' } },
         )
@@ -102,11 +105,17 @@ function detailClient(
                     workflowInstanceId: 'workflow-1',
                     orchestrationGroupId: 'group-1',
                     attempt: 1,
-                    status: 'succeeded',
+                    status:
+                      primary?.blockReason === 'run-ambiguous-after-3-attempts'
+                        ? 'ambiguous'
+                        : 'succeeded',
                     active: false,
                     startedAt: asOf,
                     finishedAt: asOf,
-                    sentinel: 'DONE',
+                    sentinel:
+                      primary?.blockReason === 'run-ambiguous-after-3-attempts'
+                        ? 'AMBIGUOUS'
+                        : 'DONE',
                     workflowName: 'delivery',
                     stage: 'implement',
                     totalTokens: 0,
@@ -322,7 +331,7 @@ describe('work detail', () => {
     await waitFor(() =>
       expect(requests.filter(({ url }) => url.endsWith('/commands/retry'))).toHaveLength(1),
     );
-    expect(requests.filter(({ url }) => url.includes('/work-items/wk_a'))).toHaveLength(2);
+    expect(requests.filter(({ url }) => url.includes('/work-items/wk_a'))).toHaveLength(3);
     expect(requests.find(({ url }) => url.endsWith('/commands/retry'))?.init?.method).toBe('POST');
   });
 
@@ -354,6 +363,110 @@ describe('work detail', () => {
     await user.click(await screen.findByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Retry rejected')).toBeTruthy();
   });
+
+  it('shows ambiguous-run facts and resolves the run before retrying', async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(
+            {
+              workflowInstanceId: 'workflow-1',
+              workflowName: 'delivery',
+              orchestrationGroupId: 'group-1',
+              status: 'blocked',
+              currentStage: 'implement',
+              blockReason: 'run-ambiguous-after-3-attempts',
+            },
+            undefined,
+            requests,
+          )}
+        />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('heading', { name: 'Resolve ambiguous run' })).toBeTruthy();
+    expect(screen.getByText('Recorded for this work item')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Resolve and retry' }));
+    await waitFor(() =>
+      expect(requests.filter(({ url }) => url.endsWith('/commands/resolve'))).toHaveLength(1),
+    );
+    expect(requests.filter(({ url }) => url.endsWith('/commands/retry'))).toHaveLength(1);
+    const resolve = requests.find(({ url }) => url.endsWith('/commands/resolve'));
+    expect(resolve?.init?.method).toBe('POST');
+    expect(JSON.parse(String(resolve?.init?.body))).toMatchObject({ status: 'failed' });
+  });
+
+  it('sends the operator-confirmed outcome when resolving an ambiguous run as succeeded', async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(
+            {
+              workflowInstanceId: 'workflow-1',
+              workflowName: 'delivery',
+              orchestrationGroupId: 'group-1',
+              status: 'blocked',
+              currentStage: 'implement',
+              blockReason: 'run-ambiguous-after-3-attempts',
+            },
+            undefined,
+            requests,
+          )}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('radio', { name: 'Succeeded' }));
+    await user.click(screen.getByRole('button', { name: 'Resolve run' }));
+
+    await waitFor(() =>
+      expect(requests.filter(({ url }) => url.endsWith('/commands/resolve'))).toHaveLength(1),
+    );
+    expect(requests.filter(({ url }) => url.endsWith('/commands/retry'))).toHaveLength(0);
+    const resolve = requests.find(({ url }) => url.endsWith('/commands/resolve'));
+    expect(JSON.parse(String(resolve?.init?.body))).toMatchObject({
+      status: 'succeeded',
+      outcome: { kind: 'done', data: { status: 'DONE' } },
+    });
+  });
+
+  it.each(['null', '[]', '{}', '{"kind":"unsupported"}'])(
+    'does not submit an invalid succeeded outcome: %s',
+    async (outcome) => {
+      const user = userEvent.setup();
+      const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+      render(
+        <MemoryRouter initialEntries={['/work/wk_a']}>
+          <App
+            client={detailClient(
+              {
+                workflowInstanceId: 'workflow-1',
+                workflowName: 'delivery',
+                orchestrationGroupId: 'group-1',
+                status: 'blocked',
+                currentStage: 'implement',
+                blockReason: 'run-ambiguous-after-3-attempts',
+              },
+              undefined,
+              requests,
+            )}
+          />
+        </MemoryRouter>,
+      );
+      await user.click(await screen.findByRole('radio', { name: 'Succeeded' }));
+      const input = screen.getByRole('textbox', { name: 'Actual activity outcome (JSON)' });
+      fireEvent.change(input, { target: { value: outcome } });
+
+      expect(screen.getByRole('button', { name: 'Resolve run' })).toMatchObject({ disabled: true });
+      expect(screen.getByRole('alert').textContent).toContain(
+        'object with a supported outcome kind',
+      );
+      expect(requests.filter(({ url }) => url.endsWith('/commands/resolve'))).toHaveLength(0);
+    },
+  );
 
   it('renders an unknown resource kind generically, proving no kind-specific branch', async () => {
     render(

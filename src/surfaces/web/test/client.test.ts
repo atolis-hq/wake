@@ -99,4 +99,18 @@ describe('typed Wake API client', () => {
       }),
     ).toMatchObject({ retryEligible: true });
   });
+
+  it('decodes the blocked workflow reason used to identify ambiguous-run recovery', () => {
+    expect(
+      decodeWorkflow({
+        workflowInstanceId: 'workflow-1',
+        workItemKey: 'wk_demo',
+        workflowName: 'default',
+        orchestrationGroupId: 'group-1',
+        status: WorkflowStatus.Blocked,
+        currentStage: 'implement',
+        blockReason: 'run-ambiguous-after-3-attempts',
+      }),
+    ).toMatchObject({ blockReason: 'run-ambiguous-after-3-attempts' });
+  });
 });

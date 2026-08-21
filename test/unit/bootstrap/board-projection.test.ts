@@ -14,6 +14,86 @@ import { eventEnvelope } from '../../support/event-envelope.js';
 import { workId } from '../../support/identities.js';
 
 describe('operator board projection', () => {
+  it('retains an ambiguous-run block reason for the board recovery affordance', () => {
+    const item = workId('board-ambiguous-run');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const view = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Resolve an ambiguous run' },
+        workItemStream(item),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'delivery',
+          orchestrationGroupId: `primary:${item}`,
+          entry: 'implement',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceBlocked,
+        { reason: 'run-ambiguous-after-3-attempts' },
+        workflowInstanceStream(workflowId),
+        3,
+      ),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[item]).toMatchObject({
+      condition: 'needs-input',
+      blockReason: 'run-ambiguous-after-3-attempts',
+    });
+  });
+
+  it('clears an ambiguous-run block reason when the workflow resumes', () => {
+    const item = workId('board-resumed-ambiguous-run');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const view = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Resume after ambiguous run resolution' },
+        workItemStream(item),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'delivery',
+          orchestrationGroupId: `primary:${item}`,
+          entry: 'implement',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceBlocked,
+        { reason: 'run-ambiguous-after-3-attempts' },
+        workflowInstanceStream(workflowId),
+        3,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceCompleted,
+        {},
+        workflowInstanceStream(workflowId),
+        4,
+      ),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[item]).toMatchObject({ condition: 'finished' });
+    expect(view.cards[item]?.blockReason).toBeUndefined();
+  });
+
   it('preserves a work item freeze on its board card', () => {
     const workItemId = workId('board-frozen');
     const view = [

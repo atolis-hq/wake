@@ -162,6 +162,15 @@ export function BoardCard({
               {item.lastRunOutcome}
             </Chip>
           )}
+          {isAmbiguousRunBlock(item.blockReason) && (
+            <Chip
+              variant="outline"
+              tone="warning"
+              title="An operator must resolve an ambiguous run"
+            >
+              ambiguous run needs resolution
+            </Chip>
+          )}
           {item.awaitingApproval === true && (
             <Chip variant="outline" tone="warning" title="Waiting on human approval to continue">
               <ApprovalIcon />
@@ -205,4 +214,8 @@ export function BoardCard({
       </Link>
     </li>
   );
+}
+
+function isAmbiguousRunBlock(reason: string | undefined): boolean {
+  return reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason);
 }

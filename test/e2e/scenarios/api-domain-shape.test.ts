@@ -5,6 +5,7 @@ import {
   ActivityExecutionKind,
   ActivityOutcomeKind,
   ActivityRegistry,
+  ExternalExecutionKind,
   activityName,
 } from '../../../src/activities/index.js';
 import {
@@ -257,6 +258,75 @@ describe(`${scenario.id} API domain shape`, () => {
 });
 
 describe(`${scenario.id} command idempotency`, () => {
+  it('resolves an ambiguous run durably over the composed API before retrying only failed work', async () => {
+    const failed = await createAmbiguousRunWorld('failed');
+    const failedWork = await startAmbiguousRun(failed, 'failed');
+    const failedSurface = createSurfaceApplications(failed.root, {
+      now: () => failed.clock.now().toISOString(),
+    });
+    const failedDispatcher = createApiDispatcher(failedSurface.api);
+    const failedPage = await failedSurface.api.work.list({ limit: 1 });
+
+    expect(
+      await failedDispatcher.dispatch(
+        'POST',
+        `/api/v1/runs/${encodeURIComponent(failedWork.runId)}/commands/resolve`,
+        {
+          idempotencyKey: 'operator-resolve-failed',
+          status: 'failed',
+          reason: 'Operator confirmed no work completed',
+        },
+      ),
+    ).toMatchObject({ status: 202 });
+    expect((await failed.root.execution.list()).at(0)).toMatchObject({ status: 'failed' });
+    expect(await failed.root.orchestration.get(failedWork.workflowInstanceId)).toMatchObject({
+      status: 'blocked',
+    });
+
+    expect(
+      await failedDispatcher.dispatch(
+        'POST',
+        `/api/v1/work-items/${encodeURIComponent(failedPage.items[0]!.workItemKey)}/commands/retry`,
+        { idempotencyKey: 'operator-retry-after-failed-resolution' },
+      ),
+    ).toMatchObject({ status: 202 });
+    await failed.root.advanceOnce({ maxProgress: 1 });
+    expect(await failed.root.execution.list()).toHaveLength(2);
+
+    const succeeded = await createAmbiguousRunWorld('succeeded');
+    const succeededWork = await startAmbiguousRun(succeeded, 'succeeded');
+    const succeededSurface = createSurfaceApplications(succeeded.root, {
+      now: () => succeeded.clock.now().toISOString(),
+    });
+    const succeededDispatcher = createApiDispatcher(succeededSurface.api);
+    const succeededPage = await succeededSurface.api.work.list({ limit: 1 });
+
+    expect(
+      await succeededDispatcher.dispatch(
+        'POST',
+        `/api/v1/runs/${encodeURIComponent(succeededWork.runId)}/commands/resolve`,
+        {
+          idempotencyKey: 'operator-resolve-succeeded',
+          status: 'succeeded',
+          outcome: { kind: 'done' },
+        },
+      ),
+    ).toMatchObject({ status: 202 });
+    expect((await succeeded.root.execution.list()).at(0)).toMatchObject({ status: 'succeeded' });
+    const resolvedWorkflow = await succeeded.root.orchestration.get(
+      succeededWork.workflowInstanceId,
+    );
+    expect(resolvedWorkflow?.status).not.toBe('blocked');
+    expect(resolvedWorkflow?.acceptedOutcomes).toHaveLength(1);
+    expect(
+      await succeededDispatcher.dispatch(
+        'POST',
+        `/api/v1/work-items/${encodeURIComponent(succeededPage.items[0]!.workItemKey)}/commands/retry`,
+        { idempotencyKey: 'retry-after-succeeded-resolution' },
+      ),
+    ).toMatchObject({ status: 409, body: { code: 'retry-ineligible' } });
+  }, 15_000);
+
   it('accepts an eligible blocked-work retry over the composed HTTP API', async () => {
     const { root, clock, context } = await createRetryWorld();
     const work = await root.work.create(
@@ -535,4 +605,127 @@ async function createRetryWorld() {
       actor: { kind: 'system' as const, id: 'test' },
     },
   };
+}
+
+async function createAmbiguousRunWorld(suffix: string) {
+  const activities = new ActivityRegistry();
+  activities.register({
+    name: activityName('external-run'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.literal(ActivityOutcomeKind.Done) }).strict(),
+    outcomeKinds: [ActivityOutcomeKind.Done],
+    resources: [],
+    executionKind: ActivityExecutionKind.Agent,
+    handler: {
+      async execute(_invocation, context) {
+        context.reportRunnerStarted?.();
+        const execution = await context.runner!.start(
+          { runId: context.runId!, prompt: 'recover this run', allowedTools: [] },
+          context.signal,
+        );
+        if (execution.identity !== undefined)
+          await context.reportExternalExecution(execution.identity);
+        return new Promise<never>(() => {});
+      },
+    },
+  });
+  let now = new Date('2026-07-31T10:00:00.000Z');
+  const clock = { now: () => new Date(now) };
+  const root = await createCompositionRoot(`C:/wake-home-${suffix}`, {
+    config: parseRootConfig({
+      schemaVersion: 1,
+      work: {},
+      resources: {},
+      activities: {},
+      orchestration: {
+        workflows: {
+          default: {
+            stages: {
+              implement: { activity: 'external-run', with: {}, on: { done: { then: 'done' } } },
+            },
+          },
+        },
+      },
+      execution: {
+        agentRunners: { fake: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
+      },
+      controlPlane: {},
+      integrations: {},
+      surfaces: {},
+    }),
+    activities,
+    clock,
+    journal: new InMemoryEventJournal(clock),
+    projections: new InMemoryProjectionStore(),
+    checkpoints: new InMemoryCheckpointStore(),
+    decorateRunner: () => ({
+      async start(_request, _signal) {
+        return {
+          identity: {
+            kind: ExternalExecutionKind.Process,
+            id: `process-${suffix}`,
+            startedAt: clock.now().toISOString(),
+          },
+          result: new Promise(() => {}),
+          async cancel() {},
+        };
+      },
+    }),
+  });
+  return {
+    root,
+    clock,
+    advanceClock(milliseconds: number) {
+      now = new Date(now.getTime() + milliseconds);
+    },
+    context: {
+      commandId: `surface-ambiguous-${suffix}`,
+      correlationId: correlationId(`surface-ambiguous-${suffix}`),
+      occurredAt: clock.now().toISOString(),
+      actor: { kind: 'system' as const, id: 'test' },
+    },
+  };
+}
+
+async function startAmbiguousRun(
+  world: Awaited<ReturnType<typeof createAmbiguousRunWorld>>,
+  suffix: string,
+) {
+  const work = await world.root.work.create(
+    {
+      workItemId: workId(`surface-ambiguous-${suffix}`),
+      objective: 'Resolve unknown external work',
+    },
+    world.context,
+  );
+  const instanceId = workflowInstanceId(`workflow-surface-ambiguous-${suffix}`);
+  await world.root.orchestration.start(
+    {
+      workflowInstanceId: instanceId,
+      workItemId: work.workItemId,
+      workflowName: workflowName('default'),
+      orchestrationGroupId: orchestrationGroupId(`group-surface-ambiguous-${suffix}`),
+    },
+    world.context,
+  );
+  await world.root.advanceOnce({ maxProgress: 1 });
+  await vi.waitFor(async () => {
+    expect((await world.root.execution.list()).at(0)).toMatchObject({
+      status: 'started',
+      externalExecution: expect.any(Object),
+    });
+  });
+  const run = (await world.root.execution.list())[0]!;
+  world.advanceClock(60_001);
+  await world.root.recovery.recover(run.runId, 'recovery');
+  await world.root.recovery.recover(run.runId, 'recovery');
+  await world.root.recovery.recover(run.runId, 'recovery');
+  expect((await world.root.execution.list())[0]).toMatchObject({
+    status: 'ambiguous',
+    escalated: true,
+  });
+  await world.root.projectionRunner.runRegisteredOnce();
+  return { runId: run.runId, workflowInstanceId: instanceId };
 }
