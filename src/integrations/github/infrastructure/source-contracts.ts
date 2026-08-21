@@ -1,6 +1,7 @@
 import type { ProviderPermission } from '../../../activities/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { GitHubConfig } from '../contracts/config.js';
+import type { GitHubIssueQueryFilters } from '../contracts/issue-query.js';
 import type { GitHubIssueCommentPayload, GitHubReviewPayload } from '../contracts/payloads.js';
 import type { issueObservation } from './issue-source.js';
 import type { GitHubPullRequestSourceClient } from './pr-source.js';
@@ -11,6 +12,7 @@ export interface GitHubSourceClient extends GitHubPullRequestSourceClient {
     repo: string,
     maxResults: number,
     since?: string,
+    filters?: GitHubIssueQueryFilters,
   ): Promise<readonly Parameters<typeof issueObservation>[0]['issue'][]>;
   listIssueComments(
     owner: string,

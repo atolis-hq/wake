@@ -157,6 +157,39 @@ describe('GitHub client transport contract', () => {
     expect(requests[1]).not.toHaveProperty('headers');
   });
 
+  it('passes lossless intake filters to GitHub and separates their ETag cache entry', async () => {
+    const requests: unknown[] = [];
+    octokit.paginateIterator.mockImplementation((_endpoint, request) => {
+      requests.push(request);
+      return pagesOf({ data: [issue(1)], headers: { etag: '"issues-v1"' } });
+    });
+    const client = createGitHubClient('token');
+
+    await client.listIssues('owner', 'repo', 1);
+    await client.listIssues('owner', 'repo', 1, undefined, {
+      assignee: 'wake-bot',
+      labels: 'wake',
+    });
+
+    expect(requests[1]).toMatchObject({ assignee: 'wake-bot', labels: 'wake' });
+    expect(requests[1]).not.toHaveProperty('headers');
+  });
+
+  it('does not collide an unfiltered issue cache entry with a filter named unfiltered', async () => {
+    const requests: unknown[] = [];
+    octokit.paginateIterator.mockImplementation((_endpoint, request) => {
+      requests.push(request);
+      return pagesOf({ data: [issue(1)], headers: { etag: '"issues-v1"' } });
+    });
+    const client = createGitHubClient('token');
+
+    await client.listIssues('owner', 'repo', 1);
+    await client.listIssues('owner', 'repo', 1, undefined, { assignee: 'unfiltered' });
+
+    expect(requests[1]).toMatchObject({ assignee: 'unfiltered' });
+    expect(requests[1]).not.toHaveProperty('headers');
+  });
+
   it('sends exact merge and comment requests with the durable delivery key marker', async () => {
     octokit.merge.mockResolvedValueOnce({ data: { sha: 'merged-sha' } });
     octokit.createComment.mockResolvedValueOnce({ data: { id: 42 } });

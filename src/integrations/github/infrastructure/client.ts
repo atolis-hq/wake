@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import { MergeMethod, ProviderPermission, PullRequestState } from '../../../activities/index.js';
+import type { GitHubIssueQueryFilters } from '../contracts/issue-query.js';
 import { GitHubOutboundAction } from '../contracts/vocabulary.js';
 import { createBoundedGitHubFetch } from './bounded-fetch.js';
 import {
@@ -89,8 +90,17 @@ export function createGitHubClient(token: string) {
 
 function createGitHubReadClient(octokit: Octokit, cache: ReturnType<typeof createEtagCache>) {
   return {
-    listIssues: (owner: string, repo: string, maxResults: number, since?: string) =>
-      listIssues(octokit, cache, owner, repo, maxResults, since),
+    listIssues: (
+      owner: string,
+      repo: string,
+      maxResults: number,
+      since?: string,
+      filters?: GitHubIssueQueryFilters,
+    ) =>
+      listIssues(octokit, cache, owner, repo, maxResults, {
+        ...(since === undefined ? {} : { since }),
+        ...(filters === undefined ? {} : { filters }),
+      }),
     listPullRequests: (owner: string, repo: string, maxResults: number) =>
       listPullRequests(octokit, cache, owner, repo, maxResults),
     listIssueComments: (

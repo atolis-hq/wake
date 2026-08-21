@@ -2,6 +2,7 @@
 
 import type { Octokit } from '@octokit/rest';
 import { PullRequestState } from '../../../activities/index.js';
+import type { GitHubIssueQueryFilters } from '../contracts/issue-query.js';
 import type { GitHubIssueCommentPayload, GitHubIssuePayload } from '../contracts/payloads.js';
 import { GitHubListState } from '../contracts/vocabulary.js';
 import type { createEtagCache } from './etag-cache.js';
@@ -13,11 +14,12 @@ export function listIssues(
   owner: string,
   repo: string,
   maxResults: number,
-  since?: string,
+  options: { readonly since?: string; readonly filters?: GitHubIssueQueryFilters } = {},
 ): Promise<readonly GitHubIssuePayload[]> {
+  const { since, filters = {} } = options;
   return fetchPaginatedWithEtag({
     cache,
-    key: `issues:${owner}/${repo}:since:${since ?? 'bootstrap'}`,
+    key: `issues:${JSON.stringify([owner, repo, since ?? null, filters.assignee ?? null, filters.labels ?? null])}`,
     maxResults,
     pages: (headers) =>
       octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
@@ -28,6 +30,8 @@ export function listIssues(
         direction: 'desc',
         per_page: Math.min(maxResults, 100),
         ...(since === undefined ? {} : { since }),
+        ...(filters.assignee === undefined ? {} : { assignee: filters.assignee }),
+        ...(filters.labels === undefined ? {} : { labels: filters.labels }),
         ...(headers === undefined ? {} : { headers }),
       }),
   }).then((items) => items.map(normalizeIssue));
