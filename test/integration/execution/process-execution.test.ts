@@ -57,6 +57,18 @@ describe('runProcess', () => {
     });
   });
 
+  it.each([
+    ['printf stdout-first; sleep 0.05; printf stderr-second >&2', 'stdout-firststderr-second'],
+    ['printf stderr-first >&2; sleep 0.05; printf stdout-second', 'stderr-firststdout-second'],
+  ])('captures combined output in received order', async (command, expected) => {
+    const execution = runProcess(command, [], undefined, new AbortController().signal, 1_000, true);
+
+    await expect(execution.result).resolves.toMatchObject({
+      exitCode: 0,
+      combinedOutput: Buffer.from(expected),
+    });
+  });
+
   it('classifies output beyond the capture budget without retaining it all in the resident', async () => {
     const execution = runProcess(
       process.execPath,

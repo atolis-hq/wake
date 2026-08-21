@@ -26,8 +26,6 @@ function prepareFailureMessage(command: string, result: ProcessExecutionResult):
   const reason = result.timedOut
     ? 'timed out'
     : (result.failureMessage ?? `exited with code ${result.exitCode ?? 'unavailable'}`);
-  const output = Buffer.from(result.stdout + result.stderr, 'utf8')
-    .subarray(-prepareOutputTailBytes)
-    .toString('utf8');
+  const output = result.combinedOutput.subarray(-prepareOutputTailBytes).toString('utf8');
   return `Workspace prepare hook (${command}) ${reason}. Combined output tail (last ${prepareOutputTailBytes} bytes):\n${output}`;
 }

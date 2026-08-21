@@ -7,6 +7,8 @@ const maximumCapturedProcessOutputBytes = 1024 * 1024;
 export interface ProcessExecutionResult {
   readonly stdout: string;
   readonly stderr: string;
+  /** Raw stdout and stderr chunks in the order they were received. */
+  readonly combinedOutput: Buffer;
   readonly exitCode: number | undefined;
   readonly timedOut: boolean;
   readonly failureKind?: 'output-limit';
@@ -45,6 +47,7 @@ function captureProcessOutput(
   return new Promise((resolve) => {
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    const combinedOutput: Buffer[] = [];
     let capturedBytes = 0;
     let timedOut = false;
     let overflowed = false;
@@ -59,12 +62,17 @@ function captureProcessOutput(
       if (overflowed) return;
       const remaining = maximumCapturedProcessOutputBytes - capturedBytes;
       if (remaining <= 0 || chunk.length > remaining) {
-        if (remaining > 0) destination.push(chunk.subarray(0, remaining));
+        if (remaining > 0) {
+          const captured = chunk.subarray(0, remaining);
+          destination.push(captured);
+          combinedOutput.push(captured);
+        }
         capturedBytes = maximumCapturedProcessOutputBytes;
         terminateForOverflow();
         return;
       }
       destination.push(chunk);
+      combinedOutput.push(chunk);
       capturedBytes += chunk.length;
     };
     child.stdout?.on('data', capture(stdout));
@@ -87,6 +95,7 @@ function captureProcessOutput(
       resolve({
         stdout: Buffer.concat(stdout).toString('utf8'),
         stderr: error?.message ?? Buffer.concat(stderr).toString('utf8'),
+        combinedOutput: Buffer.concat(combinedOutput),
         exitCode: exitCode ?? undefined,
         timedOut,
         ...(overflowed
