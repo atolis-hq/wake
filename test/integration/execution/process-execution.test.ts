@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -23,21 +23,84 @@ describe('runProcess', () => {
   const roots: string[] = [];
 
   afterEach(async () => {
-    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+    await Promise.all(
+      roots
+        .splice(0)
+        .map((root) => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })),
+    );
   });
+
+  // Every test below sets NPM_CONFIG_CACHE explicitly, even to a path that
+  // doesn't exist -- runProcess's cache seeding otherwise falls back to the
+  // real ambient `~/.npm` on whatever machine runs the suite, which is slow,
+  // uncontrolled, and not what these tests mean to exercise.
+  async function withNpmConfigCache<Value>(
+    value: string,
+    run: () => Promise<Value>,
+  ): Promise<Value> {
+    const previous = process.env.NPM_CONFIG_CACHE;
+    process.env.NPM_CONFIG_CACHE = value;
+    try {
+      return await run();
+    } finally {
+      if (previous === undefined) delete process.env.NPM_CONFIG_CACHE;
+      else process.env.NPM_CONFIG_CACHE = previous;
+    }
+  }
 
   it('gives a workspace its own npm cache, isolated from every other concurrent workspace', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-process-cwd-'));
     roots.push(root);
-    const execution = runProcess(
-      process.execPath,
-      ['-e', 'process.stdout.write(process.env.NPM_CONFIG_CACHE ?? "")'],
-      root,
-      new AbortController().signal,
-      1_000,
+
+    const result = await withNpmConfigCache(join(root, 'no-such-shared-cache'), () => {
+      const execution = runProcess(
+        process.execPath,
+        ['-e', 'process.stdout.write(process.env.NPM_CONFIG_CACHE ?? "")'],
+        root,
+        new AbortController().signal,
+        1_000,
+      );
+      return execution.result;
+    });
+
+    expect(result).toMatchObject({ stdout: `${root}.npm-cache` });
+  });
+
+  it("seeds a workspace's first isolated cache from the shared one instead of starting cold", async () => {
+    const shared = await mkdtemp(join(tmpdir(), 'wake-process-shared-cache-'));
+    roots.push(shared);
+    await writeFile(join(shared, 'marker.txt'), 'warm');
+    const root = await mkdtemp(join(tmpdir(), 'wake-process-cwd-'));
+    roots.push(root);
+
+    await withNpmConfigCache(
+      shared,
+      () =>
+        runProcess(process.execPath, ['-e', ''], root, new AbortController().signal, 1_000).result,
     );
 
-    await expect(execution.result).resolves.toMatchObject({ stdout: `${root}.npm-cache` });
+    await expect(readFile(join(`${root}.npm-cache`, 'marker.txt'), 'utf8')).resolves.toBe('warm');
+  });
+
+  it('does not reseed an isolated cache that a prior spawn for the same workspace already created', async () => {
+    const shared = await mkdtemp(join(tmpdir(), 'wake-process-shared-cache-'));
+    roots.push(shared);
+    await writeFile(join(shared, 'marker.txt'), 'original');
+    const root = await mkdtemp(join(tmpdir(), 'wake-process-cwd-'));
+    roots.push(root);
+
+    await withNpmConfigCache(shared, async () => {
+      await runProcess(process.execPath, ['-e', ''], root, new AbortController().signal, 1_000)
+        .result;
+      await writeFile(join(`${root}.npm-cache`, 'marker.txt'), 'changed-by-workspace');
+      await writeFile(join(shared, 'marker.txt'), 'shared-changed-after-seeding');
+      await runProcess(process.execPath, ['-e', ''], root, new AbortController().signal, 1_000)
+        .result;
+    });
+
+    await expect(readFile(join(`${root}.npm-cache`, 'marker.txt'), 'utf8')).resolves.toBe(
+      'changed-by-workspace',
+    );
   });
 
   it('closes stdin so non-interactive CLIs do not wait for more input', async () => {

@@ -1,4 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { cpSync, existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 // Agent CLIs can emit arbitrarily large machine-readable transcripts. Capture
 // raw bytes ourselves so overflow never enters a third-party string buffer.
@@ -21,14 +24,13 @@ export function runProcess(
   timeoutMs?: number,
 ): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
   // Concurrent runs each get their own npm cache, keyed off their workspace
-  // path (a sibling directory, never inside the git-tracked workspace itself).
-  // Every agent CLI's own child shell commands inherit this environment, so
-  // an `npm ci` in one workspace can no longer race another's `npm ci` over
-  // the same on-disk cache -- the corruption that motivated this.
+  // path (a sibling directory, never inside the git-tracked workspace itself),
+  // so concurrent `npm ci` calls across workspaces can no longer race the
+  // same on-disk cache -- the corruption that motivated this. Seeded once
+  // from the long-lived shared cache so a workspace's first install is still
+  // a local copy, not a fresh download of packages this box already has.
   const child = spawn(command, args, {
-    ...(cwd === undefined
-      ? {}
-      : { cwd, env: { ...process.env, NPM_CONFIG_CACHE: `${cwd}.npm-cache` } }),
+    ...(cwd === undefined ? {} : { cwd, env: { ...process.env, ...npmCacheEnv(cwd) } }),
     shell: false,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -39,6 +41,23 @@ export function runProcess(
       terminate(child);
     },
   };
+}
+
+// Seeds a workspace's isolated cache from the shared one on first use only
+// (existsSync guards every later spawn for the same workspace to a cheap
+// stat). Best-effort: an unreadable or absent shared cache just leaves the
+// workspace cache to build up from a real install, same as before this fix.
+function npmCacheEnv(cwd: string): { readonly NPM_CONFIG_CACHE: string } {
+  const isolated = `${cwd}.npm-cache`;
+  if (!existsSync(isolated)) {
+    const shared = process.env.NPM_CONFIG_CACHE ?? join(homedir(), '.npm');
+    try {
+      if (existsSync(shared)) cpSync(shared, isolated, { recursive: true });
+    } catch {
+      // Fall through to an empty isolated cache.
+    }
+  }
+  return { NPM_CONFIG_CACHE: isolated };
 }
 
 function captureProcessOutput(
