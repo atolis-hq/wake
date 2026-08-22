@@ -50,4 +50,10 @@ EXPOSE 4317
 # sandbox-entrypoint-command.ts) that the CLI should be invoked via the bare
 # `wake` binary that `npm install -g` puts on PATH, rather than a hardcoded
 # npm global lib path that varies by npm/OS setup.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake; exec su wake -s /bin/sh -c 'exec wake sandbox-entrypoint'"]
+#
+# /wake/.wake is bind-mounted from the host and self-update actively creates
+# and deletes its own lock files there while this container is starting, so
+# a recursive chown can race a file disappearing mid-walk. That single ENOENT
+# must not be fatal under set -eu — it would otherwise crash the container
+# before wake start ever runs.
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake || true; exec su wake -s /bin/sh -c 'exec wake sandbox-entrypoint'"]

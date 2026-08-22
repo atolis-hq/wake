@@ -191,4 +191,21 @@ describe('target initialise root', () => {
       expect(dockerfile).toContain('su wake');
     }
   });
+
+  it('does not let a bind-mounted .wake ownership race fail the entrypoint under set -eu', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
+    await initialiseWakeRoot(root);
+
+    for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
+      const scaffolded = await readFile(join(root, 'docker', filename), 'utf8');
+      const repository = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
+
+      // self-update actively creates and deletes its own lock files under the
+      // bind-mounted /wake/.wake while this entrypoint is running, so a
+      // recursive chown can race a file disappearing mid-walk; that single
+      // ENOENT must not be fatal under `set -eu`.
+      expect(scaffolded).toContain('chown -R wake:wake /wake/.wake || true');
+      expect(repository).toContain('chown -R wake:wake /wake/.wake || true');
+    }
+  });
 });
