@@ -15,7 +15,9 @@ const workflowDiagramChildKindShape = {
   'watch-gate': true,
   reactor: true,
 } as const;
+
 type WorkflowDiagramChildKindValue = keyof typeof workflowDiagramChildKindShape;
+
 const workflowDiagramChildKinds = Object.keys(
   workflowDiagramChildKindShape,
 ) as readonly WorkflowDiagramChildKindValue[];
