@@ -118,5 +118,3 @@ export type GitHubIntakeRuleConfig = GitHubConfig['intake'][number];
 export type GitHubReplyPublicationConfig = GitHubConfig['publication']['replies'];
 
 export type GitHubReplyRuleConfig = GitHubReplyPublicationConfig['rules'][number];
-
-export type GitHubReplyTarget = GitHubReplyRuleConfig['target'];
