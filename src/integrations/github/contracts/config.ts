@@ -114,5 +114,3 @@ export const gitHubConfigSchema = z
 export type GitHubConfig = z.output<typeof gitHubConfigSchema>;
 
 export type GitHubIntakeRuleConfig = GitHubConfig['intake'][number];
-
-export type GitHubReplyPublicationConfig = GitHubConfig['publication']['replies'];
