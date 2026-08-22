@@ -1,7 +1,7 @@
 import type { AgentRunPublicationReport } from '../delivery/contracts/intents.js';
 
 export interface TerminalRunAgentResult {
-  readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+  readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED' | 'NEEDS_CLARIFICATION';
   readonly displayBody: string;
   readonly metadata: Readonly<Record<string, string | number | boolean | null>>;
 }

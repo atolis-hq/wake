@@ -101,6 +101,27 @@ describe('surface API contracts', () => {
     expect(run.stage).toBe('refine');
   });
 
+  it('preserves an agent clarification sentinel while retaining the blocked activity outcome', () => {
+    const run = presentRun({
+      runId: runId('run-clarification'),
+      activationId: activationId('activation-clarification'),
+      activity: activityName('agent'),
+      workflowInstanceId: workflowInstanceId('workflow-clarification'),
+      orchestrationGroupId: orchestrationGroupId('group-clarification'),
+      attempt: 1,
+      status: RunStatus.Succeeded,
+      startedAt: '2026-07-31T10:00:00.000Z',
+      agent: {
+        outcome: 'NEEDS_CLARIFICATION',
+        displayBody: 'Which sentinel should I use?',
+        metadata: {},
+      },
+      outcome: { kind: 'blocked', data: { status: 'NEEDS_CLARIFICATION' } },
+    } as unknown as RunView);
+
+    expect(run).toMatchObject({ sentinel: 'NEEDS_CLARIFICATION', outcome: { kind: 'blocked' } });
+  });
+
   it('redacts configuration secrets recursively, including array entries', () => {
     const redacted = redactConfiguration({
       host: '127.0.0.1',

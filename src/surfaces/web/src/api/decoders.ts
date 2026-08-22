@@ -141,6 +141,7 @@ export const decodeWorkItem: Decoder<WorkItemResponse> = (value, path = '') => {
     ...optionalBooleanProperty(record, 'frozen', path),
     ...optionalBooleanProperty(record, 'deleted', path),
     ...optionalStringProperty(record, 'externalRef', path),
+    ...optionalStringProperty(record, 'lastRunOutcome', path),
     relatedWorkItems: array(
       record.relatedWorkItems,
       child(path, 'relatedWorkItems'),

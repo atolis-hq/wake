@@ -17,9 +17,11 @@ normalized Activity outcome in durable Run facts.
 
 The process timeout defaults to 30 minutes (`timeoutMs: 1800000`). A timeout or
 non-zero process exit is a failed transport result, not a successful workflow
-outcome. The Activity translates a successful runner response into `DONE`,
-`REJECTED`, `BLOCKED`, or `FAILED`; Orchestration then applies the configured
-workflow route.
+outcome. A successful runner response may report `DONE`, `REJECTED`,
+`BLOCKED`, `NEEDS_CLARIFICATION`, or `FAILED`. The Activity normalizes
+`NEEDS_CLARIFICATION` to the existing `blocked` outcome, retaining its distinct
+raw sentinel for display; Orchestration then applies the configured workflow
+route.
 
 ## CLI capability matrix
 

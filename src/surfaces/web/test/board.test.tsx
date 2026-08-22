@@ -205,6 +205,44 @@ describe('board', () => {
     expect(outcome.className).toContain('chipOutline');
     expect(outcome.className).toContain('bad');
   });
+  it('uses a distinct icon and colour for a clarification outcome', async () => {
+    const client = new WakeApiClient(async (input) => {
+      const body = String(input).includes('/board')
+        ? {
+            items: [
+              {
+                workItemKey: 'wk_clarification',
+                workItemId: 'work-clarification',
+                objective: 'Clarification needed',
+                condition: 'needs-input',
+                dwellSince: asOf,
+                runCount: 1,
+                lastRunOutcome: 'NEEDS_CLARIFICATION',
+                totalTokens: 0,
+                totalCostUsd: 0,
+                totalDurationMs: 0,
+              },
+            ],
+            conditionCounts: { 'needs-input': 1 },
+            page: { nextCursor: null, hasMore: false },
+            meta: { asOf },
+          }
+        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+
+    const outcome = await screen.findByText('needs clarification');
+    expect(outcome.className).toContain('info');
+    expect(outcome.querySelector('path')?.getAttribute('d')).toContain('a1.9');
+  });
   it('does not show the last run outcome badge when it is done', async () => {
     const client = new WakeApiClient(async (input) => {
       const body = String(input).includes('/board')

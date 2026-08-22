@@ -196,7 +196,7 @@ component's responsibility.
 | `when.action` | string | Matches the Activity's action/template name. |
 | `when.occurrence` | positive integer, optional | Matches a specific activation ordinal; absent matches any ordinal. |
 | `afterMs` | positive integer, or `{min, max, seed}` | Delay before the fake runner resolves; a range resolves deterministically from `seed` plus the matched runner/action/occurrence. |
-| `outcome` | closed vocabulary: `DONE` / `REJECTED` / `BLOCKED` / `FAILED` | The sentinel status the fake runner reports. |
+| `outcome` | closed vocabulary: `DONE` / `REJECTED` / `BLOCKED` / `NEEDS_CLARIFICATION` / `FAILED` | The sentinel status the fake runner reports. |
 | `retrySafety` | closed vocabulary: `safe-to-retry`, optional | Only valid when `outcome` is `FAILED`. |
 | `displayBody` | string, optional | Overrides the sentinel envelope's default display text. |
 

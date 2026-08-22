@@ -345,6 +345,15 @@ function terminalFinishedAt(
 // a failed/blocked sentinel inside its outcome, so the board's condition
 // must follow outcome.kind, not just the event type, or a failed/blocked
 // run leaves the card silently stuck on the prior "active" condition.
+// The agent activity echoes the raw sentinel it was parsed from verbatim
+// under outcome.data.status; preserve NEEDS_CLARIFICATION verbatim on the
+// card while every other blocked run keeps its existing 'blocked' label.
+function needsClarificationOutcome(data: unknown): string | undefined {
+  if (typeof data !== 'object' || data === null) return undefined;
+  const status = (data as Record<string, unknown>).status;
+  return status === 'NEEDS_CLARIFICATION' ? status : undefined;
+}
+
 function terminalRunFields(
   event: ReturnType<typeof selectRunExecutionEvent> & {},
 ): (Pick<StoredCard, 'lastRunOutcome'> & Partial<Pick<StoredCard, 'condition'>>) | undefined {
@@ -357,7 +366,10 @@ function terminalRunFields(
     if (kind === ActivityOutcomeKind.Failed)
       return { lastRunOutcome: kind, condition: BoardCondition.Error };
     if (kind === ActivityOutcomeKind.Blocked)
-      return { lastRunOutcome: kind, condition: BoardCondition.NeedsInput };
+      return {
+        lastRunOutcome: needsClarificationOutcome(event.payload.outcome.data) ?? kind,
+        condition: BoardCondition.NeedsInput,
+      };
     return { lastRunOutcome: kind };
   }
   if (event.eventType === ExecutionEventType.RunFailed)

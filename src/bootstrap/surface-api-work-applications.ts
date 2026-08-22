@@ -172,7 +172,7 @@ async function workDetail(
   const primary = workflows.find((value) => value.parentWorkflowInstanceId === undefined) ?? null;
   const externalRef = await primaryExternalRef(root, work.workItemId, correlations, resources);
   const data: WorkDetailResponse = {
-    work: { ...presentWorkItem(work), ...(externalRef === undefined ? {} : { externalRef }) },
+    work: presentDetailWork(work, externalRef, runs),
     resources: resources.map(presentResource(root.resolveResourceLink)),
     orchestration: {
       primary: primary === null ? null : presentWorkflowInstance(primary),
@@ -197,6 +197,19 @@ async function workDetail(
       [...projections, ...correlationFacts, ...(pullRequest == null ? [] : [pullRequest])],
       now(),
     ),
+  };
+}
+
+function presentDetailWork(
+  work: WorkItemView,
+  externalRef: string | undefined,
+  runs: readonly RunView[],
+) {
+  const latestAgentOutcome = runs.find((run) => run.agent !== undefined)?.agent?.outcome;
+  return {
+    ...presentWorkItem(work),
+    ...(externalRef === undefined ? {} : { externalRef }),
+    ...(latestAgentOutcome === undefined ? {} : { lastRunOutcome: latestAgentOutcome }),
   };
 }
 

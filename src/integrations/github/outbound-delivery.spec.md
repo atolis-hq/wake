@@ -46,7 +46,7 @@ already happened before an intent reached delivery.
   line naming whichever of stage, runner, runner pool, CLI, model,
   duration, token/cost metadata, and run id are present; an outcome line
   reading "Awaiting approval" when the report is awaiting approval,
-  otherwise the run's own outcome (`DONE`/`REJECTED`/`BLOCKED`/`FAILED`);
+  otherwise the run's own outcome (`DONE`/`REJECTED`/`BLOCKED`/`NEEDS_CLARIFICATION`/`FAILED`);
   the report's own display body, or a fixed per-outcome fallback when it is
   empty; reply instructions when awaiting approval or blocked; a session
   resume section when a session id is present; and, when the report carries

@@ -9,7 +9,7 @@ export function Chip({
 }: {
   readonly children: ReactNode;
   readonly variant?: 'default' | 'outline';
-  readonly tone?: 'neutral' | 'good' | 'warning' | 'bad' | 'cold';
+  readonly tone?: 'neutral' | 'good' | 'warning' | 'bad' | 'cold' | 'info';
   readonly title?: string;
 }) {
   return (

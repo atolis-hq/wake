@@ -20,6 +20,7 @@ describe('agent results', () => {
     ['DONE', 'done'],
     ['REJECTED', 'rejected'],
     ['BLOCKED', 'blocked'],
+    ['NEEDS_CLARIFICATION', 'blocked'],
     ['FAILED', 'failed'],
   ] as const)('maps %s', (status, kind) =>
     expect(translateAgentResult({ status })).toEqual({ kind, data: { status } }),

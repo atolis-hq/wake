@@ -17,7 +17,7 @@ output is one JSON object with a `status` field), a **wake-result fence** (a
 Markdown code fence whose opening line or first line is literally
 `wake-result`, containing a JSON object with a `status` field), and a
 **sentinel line** (the output's last non-empty, non-fence line is itself one
-of the four outcome words, optionally wrapped in Markdown bold).
+of the five outcome words, optionally wrapped in Markdown bold).
 
 ## Responsibilities and boundaries
 
@@ -39,7 +39,7 @@ appends the result.
 - When the transport is `succeeded`, the output MUST be parsed by trying
   each convention in order and using the first that matches:
   1. **Bare envelope** — the entire trimmed output parses as JSON with a
-     `status` field naming one of `DONE`/`REJECTED`/`BLOCKED`/`FAILED`.
+     `status` field naming one of `DONE`/`REJECTED`/`BLOCKED`/`NEEDS_CLARIFICATION`/`FAILED`.
      When that envelope supplies a non-blank string `displayBody`, it MUST
      be retained verbatim. Otherwise `displayBody` MUST be a fixed,
      outcome-specific sentence (there is no other text to show once the
@@ -53,7 +53,7 @@ appends the result.
      through to the next rule rather than fail.
   3. **Sentinel line** — the last non-empty, non-fence-marker line of the
      output, with a wrapping `**`/`__` Markdown bold stripped, is itself
-     one of the four outcome words. `displayBody` MUST be the output with
+     one of the five outcome words. `displayBody` MUST be the output with
      that one matched line removed, trimmed.
   4. **No convention matched** — the outcome MUST be `FAILED` when the
      trimmed output is empty, otherwise `BLOCKED`; `displayBody` MUST be

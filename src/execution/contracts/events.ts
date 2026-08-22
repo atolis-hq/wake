@@ -81,7 +81,7 @@ export const runnerResultPayloadSchema = z
     runner: z.string().min(1).optional(),
     agent: z
       .object({
-        outcome: z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED']),
+        outcome: z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED', 'NEEDS_CLARIFICATION']),
         displayBody: z.string(),
         artifacts: z
           .array(
