@@ -13,6 +13,8 @@ import {
   Panel,
 } from '../../components/primitives.js';
 import styles from '../features.module.css';
+import { mockConfiguredWorkflowDiagrams } from '../workflow-diagram/model.js';
+import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
 
 export function ConfigurationPage() {
   const client = useApiClient();
@@ -137,10 +139,15 @@ export function ConfigurationPage() {
             />
           ) : (
             configurationQuery.data && (
-              <Panel>
-                <p>Read-only effective configuration. Secrets are redacted by Wake.</p>
-                <JsonViewer value={configurationQuery.data.data.configuration} />
-              </Panel>
+              <>
+                {mockConfiguredWorkflowDiagrams.map((diagram) => (
+                  <WorkflowDiagramView diagram={diagram} key={diagram.id} />
+                ))}
+                <Panel>
+                  <p>Read-only effective configuration. Secrets are redacted by Wake.</p>
+                  <JsonViewer value={configurationQuery.data.data.configuration} />
+                </Panel>
+              </>
             )
           )}
         </section>

@@ -186,6 +186,18 @@ async function transcriptResponse(
 describe('work detail', () => {
   afterEach(cleanup);
 
+  it('places the mocked workflow diagram above runs in the overview main area', async () => {
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+
+    const diagram = await screen.findByLabelText('Workflow Implement workflow diagram');
+    const runs = screen.getByRole('table', { name: 'Runs' });
+    expect(diagram.compareDocumentPosition(runs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('presents labelled sections rather than a raw structure dump', async () => {
     render(
       <MemoryRouter initialEntries={['/work/wk_a']}>

@@ -18,6 +18,24 @@ describe('configuration page commands tab', () => {
     expect(await screen.findByText(/Read-only effective configuration/)).toBeTruthy();
   });
 
+  it('places every mocked configured workflow diagram before the redacted configuration', async () => {
+    render(
+      <MemoryRouter initialEntries={['/configuration']}>
+        <App client={client()} />
+      </MemoryRouter>,
+    );
+
+    const standard = await screen.findByLabelText('Workflow Standard delivery');
+    const guarded = screen.getByLabelText('Workflow Guarded delivery');
+    const configuration = screen.getByText(/Read-only effective configuration/);
+    expect(
+      standard.compareDocumentPosition(configuration) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      guarded.compareDocumentPosition(configuration) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('lists built-in and configured commands per adapter on the commands tab', async () => {
     render(
       <MemoryRouter initialEntries={['/configuration']}>

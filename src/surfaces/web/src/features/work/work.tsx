@@ -27,6 +27,8 @@ import { TokenUsage } from '../../components/token-usage.js';
 import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
 import { runColumns } from '../runs/runs.js';
+import { mockWorkItemWorkflowDiagram } from '../workflow-diagram/model.js';
+import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
 
 const resourceIcons: Record<string, typeof GitHubIcon> = {
   github: GitHubIcon,
@@ -649,6 +651,7 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
               </aside>
 
               <section className={styles.overviewMain} aria-labelledby="work-runs">
+                <WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />
                 {query.data.data.execution.runs.length === 0 ? (
                   <EmptyState>No runs</EmptyState>
                 ) : (
