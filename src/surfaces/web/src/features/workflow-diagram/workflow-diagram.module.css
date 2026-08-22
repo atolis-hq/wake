@@ -53,6 +53,10 @@
   min-height: var(--graph-height);
 }
 
+.canvasLoading {
+  visibility: hidden;
+}
+
 .edges {
   position: absolute;
   inset: 0;

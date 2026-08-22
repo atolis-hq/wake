@@ -392,7 +392,19 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
   const nodeById = new Map(layout.nodes.map((node) => [node.id, node]));
   const expandedAny = expanded.size > 0;
   const width = layout.width || (direction === 'RIGHT' ? diagram.stages.length * 352 : 300);
-  const height = layout.height || (direction === 'RIGHT' ? 176 : diagram.stages.length * 172);
+  const routePoints = layout.edges.flatMap((edge) =>
+    transitionPoints(edge, diagram, nodeById, anchors, direction),
+  );
+  const measuredHeight = Math.max(
+    0,
+    ...Array.from(anchors.values(), (anchor) => anchor.bottom),
+    ...routePoints.map((point) => point.y),
+  );
+  const height =
+    direction === 'RIGHT' && measuredHeight > 0
+      ? measuredHeight + 20
+      : layout.height || (direction === 'RIGHT' ? 176 : diagram.stages.length * 172);
+  const layoutReady = direction === 'DOWN' || (layout.nodes.length > 0 && anchors.size > 0);
 
   const beginDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (direction !== 'RIGHT' || event.button !== 0) return;
@@ -431,7 +443,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
     >
       <div
         ref={canvasRef}
-        className={styles.canvas}
+        className={`${styles.canvas} ${layoutReady ? '' : styles.canvasLoading}`}
         data-direction={direction}
         style={{ '--graph-width': `${width}px`, '--graph-height': `${height}px` } as CSSProperties}
       >
