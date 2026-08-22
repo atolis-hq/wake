@@ -101,7 +101,7 @@ Expected: FAIL because `model.ts` does not exist.
 Define these exported types in `model.ts`:
 
 ```ts
-export type WorkflowDiagramStatus = 'not-started' | 'active' | 'waiting' | 'blocked' | 'completed';
+export type WorkflowDiagramStatus = 'active' | 'waiting' | 'blocked' | 'completed';
 export type WorkflowDiagramChildKind = 'activity' | 'watch' | 'watch-gate' | 'reactor';
 export interface WorkflowDiagramChild { readonly id: string; readonly kind: WorkflowDiagramChildKind; readonly label: string; readonly status?: WorkflowDiagramStatus; readonly lastOutcome?: string; readonly activeRuns?: readonly { readonly activity: string; readonly runnerName?: string; readonly startedAt: string }[]; readonly runCount?: number; readonly totalDurationMs?: number; readonly totalTokens?: number; readonly inputTokens?: number; readonly outputTokens?: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number; readonly totalCostUsd?: number; }
 export interface WorkflowDiagramStage { readonly id: string; readonly label: string; readonly status?: WorkflowDiagramStatus; readonly lastOutcome?: string; readonly runCount?: number; readonly totalDurationMs?: number; readonly totalTokens?: number; readonly inputTokens?: number; readonly outputTokens?: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number; readonly totalCostUsd?: number; readonly children: readonly WorkflowDiagramChild[]; }
@@ -109,7 +109,7 @@ export interface WorkflowDiagramTransition { readonly id: string; readonly sourc
 export interface WorkflowDiagram { readonly workflowName: string; readonly entryStageId: string; readonly stages: readonly WorkflowDiagramStage[]; readonly transitions: readonly WorkflowDiagramTransition[]; }
 ```
 
-Export `mockWorkItemWorkflowDiagram` with `refine`, `review`, and `deploy` stages. Give `refine` the requested four-run/two-minute aggregate and activity/watch/reactor children. Export `mockConfiguredWorkflowDiagrams` as definition-only variants for two workflow names.
+Export `mockWorkItemWorkflowDiagram` with `refine`, `review`, and `deploy` stages. Give `refine` the requested four-run/two-minute aggregate and activity/watch/reactor children. Leave unreached stages without a status rather than introducing a new status vocabulary. Export `mockConfiguredWorkflowDiagrams` as definition-only variants for two workflow names.
 
 - [ ] **Step 4: Run the focused test to verify it passes**
 
