@@ -1,4 +1,11 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { fmtCost, fmtDuration } from '../../components/format.js';
 import { TokenUsage } from '../../components/token-usage.js';
 import boardStyles from '../features.module.css';
@@ -11,6 +18,13 @@ import type { WorkflowDiagram, WorkflowDiagramChild, WorkflowDiagramMetrics } fr
 import styles from './workflow-diagram.module.css';
 
 const fallbackLayout: WorkflowDiagramLayout = { width: 0, height: 0, nodes: [], edges: [] };
+
+interface DiagramAnchor {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
 
 function useDiagramLayout(diagram: WorkflowDiagram, direction: WorkflowDiagramLayoutDirection) {
   const [layout, setLayout] = useState<WorkflowDiagramLayout>(fallbackLayout);
@@ -38,6 +52,54 @@ function useLayoutDirection(): WorkflowDiagramLayoutDirection {
     return () => query.removeEventListener('change', update);
   }, []);
   return direction;
+}
+
+function useDiagramAnchors(layout: WorkflowDiagramLayout) {
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const elementsRef = useRef(new Map<string, HTMLDivElement>());
+  const [anchors, setAnchors] = useState<ReadonlyMap<string, DiagramAnchor>>(new Map());
+  const stageRef = useCallback((id: string, element: HTMLDivElement | null) => {
+    if (element === null) elementsRef.current.delete(id);
+    else elementsRef.current.set(id, element);
+  }, []);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null || layout.nodes.length === 0) return;
+    const measure = () => {
+      const canvasBox = canvas.getBoundingClientRect();
+      const next = new Map<string, DiagramAnchor>();
+      for (const [id, element] of elementsRef.current) {
+        const box = element.getBoundingClientRect();
+        next.set(id, {
+          left: box.left - canvasBox.left,
+          top: box.top - canvasBox.top,
+          right: box.right - canvasBox.left,
+          bottom: box.bottom - canvasBox.top,
+        });
+        for (const child of element.querySelectorAll<HTMLElement>('[data-diagram-child]')) {
+          const childBox = child.getBoundingClientRect();
+          const childId = child.dataset.diagramChild;
+          if (childId === undefined) continue;
+          next.set(`${id}:${childId}`, {
+            left: childBox.left - canvasBox.left,
+            top: childBox.top - canvasBox.top,
+            right: childBox.right - canvasBox.left,
+            bottom: childBox.bottom - canvasBox.top,
+          });
+        }
+      }
+      setAnchors(next);
+    };
+    measure();
+    const observer =
+      globalThis.ResizeObserver === undefined ? undefined : new ResizeObserver(measure);
+    observer?.observe(canvas);
+    for (const element of elementsRef.current.values()) observer?.observe(element);
+    return () => observer?.disconnect();
+  }, [layout]);
+
+  return { anchors, canvasRef, stageRef };
 }
 
 function tokenUsage(item: WorkflowDiagramMetrics) {
@@ -78,7 +140,11 @@ function metrics(item: WorkflowDiagramChild) {
 function ChildCard({ child }: { readonly child: WorkflowDiagramChild }) {
   const status = child.lastOutcome === 'failed' ? 'failed' : (child.status ?? 'pending');
   return (
-    <article className={`${styles.childCard} ${boardStyles.childRun}`} data-kind={child.kind}>
+    <article
+      className={`${styles.childCard} ${boardStyles.childRun}`}
+      data-diagram-child={child.id}
+      data-kind={child.kind}
+    >
       <span
         aria-label={`${status} status`}
         className={`${boardStyles.childRunDot} ${styles.childStatusDot}`}
@@ -119,16 +185,32 @@ function transitionPoints(
   edge: WorkflowDiagramLayout['edges'][number],
   diagram: WorkflowDiagram,
   nodes: ReadonlyMap<string, WorkflowDiagramLayout['nodes'][number]>,
+  anchors: ReadonlyMap<string, DiagramAnchor>,
   direction: WorkflowDiagramLayoutDirection,
 ) {
-  if (edge.fromChildId === undefined || edge.points.length === 0) return edge.points;
+  if (edge.points.length === 0) return edge.points;
   const source = nodes.get(edge.from);
   const stage = diagram.stages.find((candidate) => candidate.id === edge.from);
   const childIndex = stage?.children.findIndex((child) => child.id === edge.fromChildId) ?? -1;
-  if (source === undefined || childIndex < 0) return edge.points;
+  const sourceAnchor = anchors.get(
+    edge.fromChildId === undefined ? edge.from : `${edge.from}:${edge.fromChildId}`,
+  );
+  const targetAnchor = anchors.get(edge.to);
+  if (sourceAnchor !== undefined && targetAnchor !== undefined) {
+    const sourcePoint =
+      direction === 'RIGHT'
+        ? { x: sourceAnchor.right, y: (sourceAnchor.top + sourceAnchor.bottom) / 2 }
+        : { x: (sourceAnchor.left + sourceAnchor.right) / 2, y: sourceAnchor.bottom };
+    const targetPoint =
+      direction === 'RIGHT'
+        ? { x: targetAnchor.left, y: (targetAnchor.top + targetAnchor.bottom) / 2 }
+        : { x: (targetAnchor.left + targetAnchor.right) / 2, y: targetAnchor.top };
+    return [sourcePoint, ...edge.points.slice(1, -1), targetPoint];
+  }
+  if (edge.fromChildId === undefined || source === undefined || childIndex < 0) return edge.points;
 
   // ELK lays out stages only; this shifts the visible route origin to its nested child card.
-  const childOffset = 104 + 8 + childIndex * 120 + 52;
+  const childOffset = 52 + 5 + childIndex * 59 + 27;
   const childPoint =
     direction === 'RIGHT'
       ? { x: source.x + source.width, y: source.y + childOffset }
@@ -161,6 +243,7 @@ function edgeLabelPoint(points: readonly { readonly x: number; readonly y: numbe
 export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDiagram }) {
   const direction = useLayoutDirection();
   const layout = useDiagramLayout(diagram, direction);
+  const { anchors, canvasRef, stageRef } = useDiagramAnchors(layout);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
     () =>
       new Set(diagram.stages.filter((stage) => stage.status === 'active').map((stage) => stage.id)),
@@ -173,6 +256,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
   return (
     <section className={styles.diagram} aria-label={`Workflow ${diagram.label}`}>
       <div
+        ref={canvasRef}
         className={styles.canvas}
         data-direction={direction}
         style={{ '--graph-width': `${width}px`, '--graph-height': `${height}px` } as CSSProperties}
@@ -196,7 +280,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
             </marker>
           </defs>
           {layout.edges.map((edge) => {
-            const points = transitionPoints(edge, diagram, nodeById, direction);
+            const points = transitionPoints(edge, diagram, nodeById, anchors, direction);
             return (
               <g key={edge.id}>
                 <path d={edgePath(points)} markerEnd="url(#workflow-arrow)" />
@@ -205,7 +289,9 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
           })}
         </svg>
         {layout.edges.map((edge) => {
-          const point = edgeLabelPoint(transitionPoints(edge, diagram, nodeById, direction));
+          const point = edgeLabelPoint(
+            transitionPoints(edge, diagram, nodeById, anchors, direction),
+          );
           return point === undefined || edge.label.length === 0 ? null : (
             <span
               className={styles.edgeLabel}
@@ -230,6 +316,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
           return (
             <div
               className={`${styles.stage} ${boardStyles.card}`}
+              ref={(element) => stageRef(stage.id, element)}
               key={stage.id}
               role="group"
               aria-label={`Stage ${stage.id}`}

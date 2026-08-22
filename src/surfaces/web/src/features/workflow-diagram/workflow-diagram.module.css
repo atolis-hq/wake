@@ -2,7 +2,6 @@
   position: relative;
   min-width: var(--graph-width);
   min-height: var(--graph-height);
-  padding: 1rem;
 }
 
 .edges {

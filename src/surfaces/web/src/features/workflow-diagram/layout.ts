@@ -24,6 +24,7 @@ export interface WorkflowDiagramEdgeLayout {
   readonly id: string;
   readonly label: string;
   readonly from: string;
+  readonly to: string;
   readonly fromChildId?: string;
   readonly points: readonly WorkflowDiagramEdgePoint[];
 }
@@ -36,9 +37,11 @@ export interface WorkflowDiagramLayout {
 }
 
 const stageWidth = 264;
-const stageHeaderHeight = 104;
-const stageChildHeight = 112;
-const stageChildGap = 8;
+// ELK only sees parent stages. These estimates mirror the compact board-card
+// treatment closely enough for its edge endpoints to meet the rendered cards.
+const stageHeaderHeight = 52;
+const stageChildHeight = 54;
+const stageChildGap = 5;
 
 function stageHeight(childCount: number): number {
   if (childCount === 0) return stageHeaderHeight;
@@ -81,17 +84,21 @@ export async function layoutWorkflowDiagram(
     width: node.width ?? stageWidth,
     height: node.height ?? stageHeight(0),
   }));
-  const edges = (graph.edges ?? []).map((edge, index) => ({
-    id: edge.id,
-    label: diagram.transitions[index]?.label ?? '',
-    from: diagram.transitions[index]?.from ?? '',
-    fromChildId: diagram.transitions[index]?.fromChildId,
-    points: (edge.sections ?? []).flatMap((section) => [
-      section.startPoint,
-      ...(section.bendPoints ?? []),
-      section.endPoint,
-    ]),
-  }));
+  const edges = (graph.edges ?? []).map((edge, index) => {
+    const transition = diagram.transitions[index];
+    return {
+      id: edge.id,
+      label: transition?.label ?? '',
+      from: transition?.from ?? '',
+      to: transition?.to ?? '',
+      ...(transition?.fromChildId === undefined ? {} : { fromChildId: transition.fromChildId }),
+      points: (edge.sections ?? []).flatMap((section) => [
+        section.startPoint,
+        ...(section.bendPoints ?? []),
+        section.endPoint,
+      ]),
+    };
+  });
 
   return Object.freeze({
     width: graph.width ?? stageWidth,
