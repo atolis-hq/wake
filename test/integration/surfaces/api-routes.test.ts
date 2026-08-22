@@ -17,6 +17,42 @@ import type {
 import { createApiDispatcher } from '../../../src/surfaces/api/routes/index.js';
 
 describe('API domain routes', () => {
+  it('serves definition diagrams and an optional work-item instance overlay from one endpoint', async () => {
+    const diagrams = [
+      {
+        id: 'dark-factory',
+        label: 'Dark Factory',
+        direction: 'left-to-right' as const,
+        stages: [{ id: 'refine', label: 'Refine', children: [] }],
+        transitions: [],
+      },
+    ];
+    const requests: Array<string | undefined> = [];
+    const dispatcher = createApiDispatcher({
+      ...applications(),
+      workflowDiagrams: {
+        get: async (workItemKey?: string) => {
+          requests.push(workItemKey);
+          return resource({ diagrams });
+        },
+      },
+    } as ApiApplications);
+
+    expect(
+      (await dispatcher.dispatch('GET', '/api/v1/workflow-diagrams', undefined))?.body,
+    ).toMatchObject({ data: { diagrams: [{ id: 'dark-factory' }] } });
+    expect(
+      (
+        await dispatcher.dispatch(
+          'GET',
+          '/api/v1/workflow-diagrams?workItemKey=wk_d29yay1kZW1v',
+          undefined,
+        )
+      )?.body,
+    ).toMatchObject({ data: { diagrams: [{ id: 'dark-factory' }] } });
+    expect(requests).toEqual([undefined, 'wk_d29yay1kZW1v']);
+  });
+
   it('reads a work item transcript group without exposing storage details', async () => {
     const key = 'wk_d29yay1kZW1v';
     const dispatcher = createApiDispatcher(
@@ -503,6 +539,7 @@ function applications(
     },
     resources: { list: async () => page([]) },
     orchestration: { list: async () => page([]) },
+    workflowDiagrams: { get: async () => resource({ diagrams: [] }) },
     execution: { list: async () => page([]), ...overrides.execution },
     events: { list: overrides.eventsList ?? (async () => page([])) },
     observability: {

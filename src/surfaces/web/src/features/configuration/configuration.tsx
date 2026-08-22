@@ -13,10 +13,6 @@ import {
   Panel,
 } from '../../components/primitives.js';
 import styles from '../features.module.css';
-import {
-  mockConfiguredWorkflowDiagrams,
-  mockWorkItemWorkflowDiagram,
-} from '../workflow-diagram/model.js';
 import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
 
 export function ConfigurationPage() {
@@ -32,6 +28,12 @@ export function ConfigurationPage() {
     queryFn: ({ signal }) => client.system.commands(signal),
     refetchInterval: refreshPolicy.commands,
     enabled: tab === 'commands',
+  });
+  const workflowDiagramsQuery = useQuery({
+    queryKey: queryKeys.workflowDiagrams.get(),
+    queryFn: ({ signal }) => client.workflowDiagrams.get(undefined, signal),
+    refetchInterval: refreshPolicy.workflowDiagrams,
+    enabled: tab === 'workflows',
   });
   const navigateTabs = (event: KeyboardEvent<HTMLButtonElement>) => {
     const tabs = Array.from(
@@ -60,10 +62,15 @@ export function ConfigurationPage() {
             type="button"
             variant="secondary"
             onClick={() =>
-              void (tab === 'commands' ? commandsQuery.refetch() : configurationQuery.refetch())
+              void (tab === 'commands'
+                ? commandsQuery.refetch()
+                : tab === 'workflows'
+                  ? workflowDiagramsQuery.refetch()
+                  : configurationQuery.refetch())
             }
           >
-            Refresh {tab === 'commands' ? 'commands' : 'configuration'}
+            Refresh{' '}
+            {tab === 'commands' ? 'commands' : tab === 'workflows' ? 'workflows' : 'configuration'}
           </Button>
         }
       />
@@ -144,14 +151,23 @@ export function ConfigurationPage() {
         </section>
       ) : tab === 'workflows' ? (
         <section id="workflows-panel" role="tabpanel" aria-labelledby="workflows-tab">
-          <section aria-labelledby="configuration-workflow-definition">
-            <h2 id="configuration-workflow-definition">Configuration workflow definition</h2>
-            <WorkflowDiagramView diagram={mockConfiguredWorkflowDiagrams[0]!} />
-          </section>
-          <section aria-labelledby="work-item-workflow-instance">
-            <h2 id="work-item-workflow-instance">Work-item workflow instance</h2>
-            <WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />
-          </section>
+          {workflowDiagramsQuery.isPending ? (
+            <LoadingState label="Loading workflows" />
+          ) : workflowDiagramsQuery.error && !workflowDiagramsQuery.data ? (
+            <ErrorState
+              error={workflowDiagramsQuery.error}
+              retry={() => void workflowDiagramsQuery.refetch()}
+            />
+          ) : workflowDiagramsQuery.data?.data.diagrams.length === 0 ? (
+            <EmptyState>No workflows are configured</EmptyState>
+          ) : (
+            workflowDiagramsQuery.data?.data.diagrams.map((diagram) => (
+              <section aria-labelledby={`workflow-${diagram.id}`} key={diagram.id}>
+                <h2 id={`workflow-${diagram.id}`}>{diagram.label}</h2>
+                <WorkflowDiagramView diagram={diagram} />
+              </section>
+            ))
+          )}
         </section>
       ) : (
         <section id="configuration-panel" role="tabpanel" aria-labelledby="configuration-tab">

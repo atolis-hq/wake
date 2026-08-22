@@ -1,58 +1,21 @@
-export type WorkflowDiagramStatus = 'active' | 'waiting' | 'blocked' | 'completed';
+import type {
+  WorkflowDiagramActiveRunResponse,
+  WorkflowDiagramChildKind,
+  WorkflowDiagramChildResponse,
+  WorkflowDiagramMetricsResponse,
+  WorkflowDiagramResponse,
+  WorkflowDiagramStageResponse,
+  WorkflowDiagramStatus,
+  WorkflowDiagramTransitionResponse,
+} from '../../../../api/contracts/index.js';
 
-export type WorkflowDiagramChildKind = 'activity' | 'watch' | 'watch-gate' | 'reactor';
-
-export interface WorkflowDiagramMetrics {
-  readonly runCount?: number;
-  readonly totalDurationMs?: number;
-  readonly totalTokens?: number;
-  readonly inputTokens?: number;
-  readonly outputTokens?: number;
-  readonly cacheReadTokens?: number;
-  readonly cacheWriteTokens?: number;
-  readonly totalCostUsd?: number;
-}
-
-export interface WorkflowDiagramActiveRun {
-  readonly runId: string;
-  readonly activity: string;
-  readonly runnerName?: string;
-  readonly startedAt: string;
-}
-
-export interface WorkflowDiagramChild extends WorkflowDiagramMetrics {
-  readonly id: string;
-  readonly label: string;
-  readonly kind: WorkflowDiagramChildKind;
-  readonly status?: WorkflowDiagramStatus;
-  readonly lastOutcome?: string;
-  readonly activeRuns?: readonly WorkflowDiagramActiveRun[];
-}
-
-export interface WorkflowDiagramStage extends WorkflowDiagramMetrics {
-  readonly id: string;
-  readonly label: string;
-  readonly status?: WorkflowDiagramStatus;
-  readonly lastOutcome?: string;
-  readonly activeRuns?: readonly WorkflowDiagramActiveRun[];
-  readonly children: readonly WorkflowDiagramChild[];
-}
-
-export interface WorkflowDiagramTransition {
-  readonly from: string;
-  readonly to: string;
-  readonly label: string;
-  /** The nested watch or reactor card from which this route originates. */
-  readonly fromChildId?: string;
-}
-
-export interface WorkflowDiagram {
-  readonly id: string;
-  readonly label: string;
-  readonly direction: 'left-to-right';
-  readonly stages: readonly WorkflowDiagramStage[];
-  readonly transitions: readonly WorkflowDiagramTransition[];
-}
+export type { WorkflowDiagramChildKind, WorkflowDiagramStatus };
+export type WorkflowDiagramMetrics = WorkflowDiagramMetricsResponse;
+export type WorkflowDiagramActiveRun = WorkflowDiagramActiveRunResponse;
+export type WorkflowDiagramChild = WorkflowDiagramChildResponse;
+export type WorkflowDiagramStage = WorkflowDiagramStageResponse;
+export type WorkflowDiagramTransition = WorkflowDiagramTransitionResponse;
+export type WorkflowDiagram = WorkflowDiagramResponse;
 
 export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
   id: 'work-item-dark-factory',

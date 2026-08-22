@@ -18,26 +18,22 @@ describe('configuration page commands tab', () => {
     expect(await screen.findByText(/Read-only effective configuration/)).toBeTruthy();
   });
 
-  it('shows workflow examples only on the workflows tab', async () => {
+  it('shows configured workflow definitions only on the workflows tab', async () => {
     render(
       <MemoryRouter initialEntries={['/configuration']}>
         <App client={client()} />
       </MemoryRouter>,
     );
 
-    expect(screen.queryByLabelText('Workflow Dark Factory - configuration')).toBeNull();
+    expect(screen.queryByLabelText('Workflow Dark Factory')).toBeNull();
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: 'Workflows' }));
 
-    const standard = await screen.findByLabelText('Workflow Dark Factory - configuration');
-    const instance = screen.getByLabelText('Workflow Dark Factory - work-item run');
-    expect(screen.getByRole('heading', { name: 'Configuration workflow definition' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Work-item workflow instance' })).toBeTruthy();
-    expect(standard).toBeTruthy();
-    expect(instance).toBeTruthy();
+    expect(await screen.findByLabelText('Workflow Dark Factory')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Dark Factory' })).toBeTruthy();
   });
 
-  it('shows workflow examples without waiting for the configuration read', async () => {
+  it('shows workflows without waiting for the configuration read', async () => {
     render(
       <MemoryRouter initialEntries={['/configuration']}>
         <App client={loadingClient()} />
@@ -47,8 +43,7 @@ describe('configuration page commands tab', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: 'Workflows' }));
 
-    expect(await screen.findByLabelText('Workflow Dark Factory - configuration')).toBeTruthy();
-    expect(screen.getByLabelText('Workflow Dark Factory - work-item run')).toBeTruthy();
+    expect(await screen.findByLabelText('Workflow Dark Factory')).toBeTruthy();
     expect(screen.queryByText('Loading redacted configuration')).toBeNull();
   });
 
@@ -78,26 +73,28 @@ function client() {
     const url = String(input);
     const body = url.endsWith('/system/configuration')
       ? { data: { configuration: {} }, meta: { asOf } }
-      : url.endsWith('/system/commands')
-        ? {
-            data: {
-              adapters: [
-                {
-                  adapter: 'github',
-                  provider: 'github',
-                  commands: [
-                    { syntax: '/approved' },
-                    { syntax: '/accepted' },
-                    { syntax: '/changes' },
-                    { syntax: '/retry' },
-                    { syntax: '/deploy' },
-                  ],
-                },
-              ],
-            },
-            meta: { asOf },
-          }
-        : { data: {}, meta: { asOf } };
+      : url.includes('/workflow-diagrams')
+        ? { data: { diagrams: [diagram()] }, meta: { asOf } }
+        : url.endsWith('/system/commands')
+          ? {
+              data: {
+                adapters: [
+                  {
+                    adapter: 'github',
+                    provider: 'github',
+                    commands: [
+                      { syntax: '/approved' },
+                      { syntax: '/accepted' },
+                      { syntax: '/changes' },
+                      { syntax: '/retry' },
+                      { syntax: '/deploy' },
+                    ],
+                  },
+                ],
+              },
+              meta: { asOf },
+            }
+          : { data: {}, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -108,9 +105,22 @@ function client() {
 function loadingClient() {
   return new WakeApiClient(async (input) => {
     if (String(input).endsWith('/system/configuration')) return new Promise<Response>(() => {});
-    return new Response(JSON.stringify({ data: {}, meta: { asOf: '2026-08-18T10:00:00.000Z' } }), {
+    const body = String(input).includes('/workflow-diagrams')
+      ? { data: { diagrams: [diagram()] }, meta: { asOf: '2026-08-18T10:00:00.000Z' } }
+      : { data: {}, meta: { asOf: '2026-08-18T10:00:00.000Z' } };
+    return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
   });
+}
+
+function diagram() {
+  return {
+    id: 'dark-factory',
+    label: 'Dark Factory',
+    direction: 'left-to-right',
+    stages: [{ id: 'refine', label: 'Refine', children: [] }],
+    transitions: [],
+  };
 }

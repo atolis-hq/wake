@@ -23,3 +23,5 @@ export * from './status.js';
 export * from './transport-values.js';
 
 export * from './work.js';
+
+export * from './workflow-diagram.js';

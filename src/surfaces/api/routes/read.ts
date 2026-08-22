@@ -55,9 +55,26 @@ async function readSingleton(
       return noQuery(url, async () => ok(await applications.system.configuration()));
     case '/api/v1/system/commands':
       return noQuery(url, async () => ok(await applications.system.commands()));
+    case '/api/v1/workflow-diagrams':
+      return readWorkflowDiagrams(applications, url);
     default:
       return undefined;
   }
+}
+
+async function readWorkflowDiagrams(
+  applications: ApiApplications,
+  url: URL,
+): Promise<ApiHttpResponse> {
+  const allowed = new Set(['workItemKey']);
+  for (const key of url.searchParams.keys()) {
+    if (!allowed.has(key) || url.searchParams.getAll(key).length !== 1)
+      return invalidQuery(`Unknown or repeated query parameter: ${key}`, key);
+  }
+  if (applications.workflowDiagrams === undefined) return unavailable('workflow-diagrams');
+  return ok(
+    await applications.workflowDiagrams.get(url.searchParams.get('workItemKey') ?? undefined),
+  );
 }
 
 async function readMetrics(applications: ApiApplications, url: URL): Promise<ApiHttpResponse> {

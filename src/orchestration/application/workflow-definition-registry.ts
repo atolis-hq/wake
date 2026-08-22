@@ -67,6 +67,16 @@ export class WorkflowDefinitionRegistry {
     return { definition, fingerprint: workflowDefinitionFingerprint(definition) };
   }
 
+  currentDefinitions(): readonly {
+    readonly definition: CompiledWorkflow;
+    readonly fingerprint: string;
+  }[] {
+    return Object.values(this.current).map((definition) => ({
+      definition,
+      fingerprint: workflowDefinitionFingerprint(definition),
+    }));
+  }
+
   async register(
     name: WorkflowName,
     fingerprint: string,
