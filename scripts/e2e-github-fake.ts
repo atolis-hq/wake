@@ -11,7 +11,8 @@ import { main } from '../src/main.js';
 
 async function tick(wakeRoot: string): Promise<void> {
   await main(['tick', '--wake-root', wakeRoot], {
-    compose: async (root) => createSurfaceApplications(await createCompositionRoot(root)).cli,
+    compose: async (root) =>
+      (await createSurfaceApplications(await createCompositionRoot(root))).cli,
     output: { write() {} },
     signal: new AbortController().signal,
   });

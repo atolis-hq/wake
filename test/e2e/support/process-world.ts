@@ -28,7 +28,7 @@ export class ProcessWorld {
     await main(['tick', '--wake-root', this.wakeRoot], {
       compose: async (wakeRoot) => {
         this.root = await createCompositionRoot(wakeRoot);
-        return createSurfaceApplications(this.root).cli;
+        return (await createSurfaceApplications(this.root)).cli;
       },
       output: { write() {} },
       signal: new AbortController().signal,

@@ -28,7 +28,7 @@ defineScenario(
         compose: async (wakeRoot) => {
           const { createCompositionRoot, createSurfaceApplications } =
             await import('../../../src/bootstrap/index.js');
-          return createSurfaceApplications(await createCompositionRoot(wakeRoot)).cli;
+          return (await createSurfaceApplications(await createCompositionRoot(wakeRoot))).cli;
         },
         output: { write() {} },
         signal: new AbortController().signal,

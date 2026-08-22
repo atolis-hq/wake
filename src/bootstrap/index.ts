@@ -78,7 +78,15 @@ export function composeControlPlaneHosts(
   return { tick, resident: new ResidentHost(tick, sleep) };
 }
 
-export * from './composition-root.js';
+export type { CompositionRoot, CompositionRootOptions } from './composition-root.js';
+
+export async function createCompositionRoot(
+  wakeRoot: string,
+  options: import('./composition-root.js').CompositionRootOptions = {},
+) {
+  const { createCompositionRoot: create } = await import('./composition-root.js');
+  return create(wakeRoot, options);
+}
 
 export * from './resource-transition-evidence.js';
 
@@ -98,7 +106,15 @@ export * from './paths.js';
 
 export * from './projection-runtime.js';
 
-export * from './surface-applications.js';
+export type { SurfaceApplications, SurfaceApplicationOptions } from './surface-applications.js';
+
+export async function createSurfaceApplications(
+  root: import('./composition-root.js').CompositionRoot,
+  options: import('./surface-applications.js').SurfaceApplicationOptions = {},
+) {
+  const { createSurfaceApplications: create } = await import('./surface-applications.js');
+  return create(root, options);
+}
 
 export * from './update-ledger.js';
 

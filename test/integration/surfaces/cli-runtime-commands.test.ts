@@ -85,9 +85,9 @@ describe('Wake target CLI runtime commands', () => {
         },
       ),
     } as unknown as CompositionRoot;
-    const applications = createSurfaceApplications(root, {
+    const applications = (await createSurfaceApplications(root, {
       now: () => clock.now().toISOString(),
-    }).cli;
+    })).cli;
     const output: string[] = [];
 
     await runWakeCommand(
