@@ -25,8 +25,8 @@ describe('configuration page commands tab', () => {
       </MemoryRouter>,
     );
 
-    const standard = await screen.findByLabelText('Workflow Dark Factory — configuration');
-    const instance = screen.getByLabelText('Workflow Dark Factory — work-item run');
+    const standard = await screen.findByLabelText('Workflow Dark Factory - configuration');
+    const instance = screen.getByLabelText('Workflow Dark Factory - work-item run');
     const configuration = await screen.findByText(/Read-only effective configuration/);
     expect(screen.getByRole('heading', { name: 'Configuration workflow definition' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Work-item workflow instance' })).toBeTruthy();
@@ -45,8 +45,8 @@ describe('configuration page commands tab', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByLabelText('Workflow Dark Factory — configuration')).toBeTruthy();
-    expect(screen.getByLabelText('Workflow Dark Factory — work-item run')).toBeTruthy();
+    expect(await screen.findByLabelText('Workflow Dark Factory - configuration')).toBeTruthy();
+    expect(screen.getByLabelText('Workflow Dark Factory - work-item run')).toBeTruthy();
     expect(
       screen
         .getAllByRole('status')

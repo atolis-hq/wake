@@ -1,3 +1,7 @@
+import { faBolt } from '@fortawesome/free-solid-svg-icons/faBolt';
+import { faEye } from '@fortawesome/free-solid-svg-icons/faEye';
+import { faRobot } from '@fortawesome/free-solid-svg-icons/faRobot';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   useCallback,
   useEffect,
@@ -18,6 +22,13 @@ import type { WorkflowDiagram, WorkflowDiagramChild, WorkflowDiagramMetrics } fr
 import styles from './workflow-diagram.module.css';
 
 const fallbackLayout: WorkflowDiagramLayout = { width: 0, height: 0, nodes: [], edges: [] };
+
+const childKindIcon = {
+  activity: faRobot,
+  watch: faEye,
+  'watch-gate': faEye,
+  reactor: faBolt,
+} as const;
 
 interface DiagramAnchor {
   readonly left: number;
@@ -163,7 +174,10 @@ function ChildCard({
         role="img"
       />
       <div>
-        <div className={boardStyles.childRunTitle}>{child.label}</div>
+        <div className={`${boardStyles.childRunTitle} ${styles.childTitle}`}>
+          <FontAwesomeIcon className={styles.childKindIcon} icon={childKindIcon[child.kind]} />
+          <span>{child.label}</span>
+        </div>
         {metrics(child)}
         {child.kind === 'reactor'
           ? null

@@ -45,7 +45,7 @@ describe('mockWorkItemWorkflowDiagram', () => {
     expect(refine?.children[0]?.activeRuns).toEqual([
       {
         runId: 'run-refine-004',
-        activity: 'Agent — refine',
+        activity: 'Refine',
         runnerName: 'codex',
         startedAt: '2026-08-22T17:58:00.000Z',
       },
@@ -127,8 +127,8 @@ describe('WorkflowDiagramView', () => {
     });
     const refine = within(diagram).getByRole('group', { name: /Stage refine/i });
     expect(within(refine).getByText('4 runs')).toBeTruthy();
-    expect(within(refine).getByText('Agent — refine')).toBeTruthy();
-    expect(within(refine).getByText('Watch — plan-review')).toBeTruthy();
+    expect(within(refine).getAllByText('Refine').length).toBeGreaterThan(1);
+    expect(within(refine).getByText('Plan review')).toBeTruthy();
     expect(within(refine).getByText('codex')).toBeTruthy();
     expect(within(refine).getByText(/running/)).toBeTruthy();
     expect((await within(diagram).findAllByText('done')).length).toBeGreaterThan(0);
@@ -144,8 +144,8 @@ describe('WorkflowDiagramView', () => {
 
     expect(refine.style.height).toBe('');
     expect(refine.style.minHeight).toBe('');
-    expect(within(refine).getByText('Agent — refine')).toBeTruthy();
-    expect(within(refine).getByText('Watch — plan-review')).toBeTruthy();
+    expect(within(refine).getAllByText('Refine').length).toBeGreaterThan(1);
+    expect(within(refine).getByText('Plan review')).toBeTruthy();
     expect(title.className).toContain('cardTitle');
   });
 

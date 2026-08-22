@@ -120,6 +120,17 @@
   margin-top: 0.22rem;
 }
 
+.childTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.childKindIcon {
+  width: 0.72rem;
+  color: var(--ink-muted);
+}
+
 .metrics,
 .childCard .metrics {
   margin-top: 0.2rem;

@@ -56,7 +56,7 @@ export interface WorkflowDiagram {
 
 export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
   id: 'work-item-dark-factory',
-  label: 'Dark Factory — work-item run',
+  label: 'Dark Factory - work-item run',
   direction: 'left-to-right',
   stages: [
     {
@@ -74,13 +74,13 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
       children: [
         {
           id: 'refine-activity',
-          label: 'Agent — refine',
+          label: 'Refine',
           kind: 'activity',
           status: 'active',
           activeRuns: [
             {
               runId: 'run-refine-004',
-              activity: 'Refine task',
+              activity: 'Refine',
               runnerName: 'codex',
               startedAt: '2026-08-22T17:58:00.000Z',
             },
@@ -96,7 +96,7 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
         },
         {
           id: 'refine-watch',
-          label: 'Watch — plan-review',
+          label: 'Plan review',
           kind: 'watch-gate',
           status: 'waiting',
           runCount: 2,
@@ -117,25 +117,25 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
       children: [
         {
           id: 'implement-activity',
-          label: 'Agent — implement',
+          label: 'Implement',
           kind: 'activity',
           status: 'completed',
         },
         {
           id: 'implement-watch',
-          label: 'Watch — pr-review',
+          label: 'PR review',
           kind: 'watch-gate',
           status: 'waiting',
         },
         {
           id: 'implement-approval-reactor',
-          label: 'Reactor — PR approved',
+          label: 'PR approved',
           kind: 'reactor',
           status: 'completed',
         },
         {
           id: 'implement-merged-reactor',
-          label: 'Reactor — PR merged',
+          label: 'PR merged',
           kind: 'reactor',
         },
       ],
@@ -153,7 +153,7 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
         },
         {
           id: 'merge-merged-reactor',
-          label: 'Reactor — PR merged',
+          label: 'PR merged',
           kind: 'reactor',
           lastOutcome: 'failed',
         },
@@ -199,31 +199,31 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
 export const mockConfiguredWorkflowDiagrams: readonly WorkflowDiagram[] = [
   {
     id: 'dark-factory',
-    label: 'Dark Factory — configuration',
+    label: 'Dark Factory - configuration',
     direction: 'left-to-right',
     stages: [
       {
         id: 'refine',
         label: 'Refine',
         children: [
-          { id: 'refine-activity', label: 'Agent — refine', kind: 'activity' },
-          { id: 'refine-watch', label: 'Watch — plan-review', kind: 'watch-gate' },
+          { id: 'refine-activity', label: 'Refine', kind: 'activity' },
+          { id: 'refine-watch', label: 'Plan review', kind: 'watch-gate' },
         ],
       },
       {
         id: 'implement',
         label: 'Implement',
         children: [
-          { id: 'implement-activity', label: 'Agent — implement', kind: 'activity' },
-          { id: 'implement-watch', label: 'Watch — pr-review', kind: 'watch-gate' },
+          { id: 'implement-activity', label: 'Implement', kind: 'activity' },
+          { id: 'implement-watch', label: 'PR review', kind: 'watch-gate' },
           {
             id: 'implement-approval-reactor',
-            label: 'Reactor — PR approved',
+            label: 'PR approved',
             kind: 'reactor',
           },
           {
             id: 'implement-merged-reactor',
-            label: 'Reactor — PR merged',
+            label: 'PR merged',
             kind: 'reactor',
           },
         ],
@@ -233,7 +233,7 @@ export const mockConfiguredWorkflowDiagrams: readonly WorkflowDiagram[] = [
         label: 'Merge',
         children: [
           { id: 'merge-activity', label: 'PR merge', kind: 'activity' },
-          { id: 'merge-merged-reactor', label: 'Reactor — PR merged', kind: 'reactor' },
+          { id: 'merge-merged-reactor', label: 'PR merged', kind: 'reactor' },
         ],
       },
       {
