@@ -205,7 +205,7 @@ function presentDetailWork(
   externalRef: string | undefined,
   runs: readonly RunView[],
 ) {
-  const latestAgentOutcome = runs.find((run) => run.agent !== undefined)?.agent?.outcome;
+  const latestAgentOutcome = runs[0]?.agent?.outcome;
   return {
     ...presentWorkItem(work),
     ...(externalRef === undefined ? {} : { externalRef }),
