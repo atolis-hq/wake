@@ -34,6 +34,10 @@ plan instead of asking. plan-review checks stated assumptions and rejects a
 wrong one. Block only when the ticket's own intent can't be determined by
 reading the repository.
 
+If you cannot complete this stage, use `FAILED` when required repository or
+tool access prevented the work. Use `BLOCKED` only when the issue requires
+human clarification, a decision, or judgment call before it can proceed.
+
 Wake will provide the issue data and comments below in a delimited untrusted
 data block.
 {{else}}
@@ -52,4 +56,9 @@ Wake will provide them below in a delimited untrusted data block.
 
 Re-evaluate whether the issue is now well-specified enough to implement,
 incorporating the new context above.
+
+Use `FAILED` when required repository or tool access prevented this stage;
+use `BLOCKED` only when the issue needs human clarification, a decision, or
+judgment call. Merge conflicts remain `BLOCKED` because resolving them
+requires judgment.
 {{/if}}
