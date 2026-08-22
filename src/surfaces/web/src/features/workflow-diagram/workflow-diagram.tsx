@@ -403,7 +403,6 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
           const isExpanded = direction === 'RIGHT' || expanded.has(stage.id);
           const fallbackX = direction === 'RIGHT' ? index * 352 : 18;
           const fallbackY = direction === 'RIGHT' ? 20 : index * 172;
-          const status = stage.lastOutcome === 'failed' ? 'failed' : (stage.status ?? 'pending');
           const hasTotals =
             stage.runCount !== undefined ||
             stage.totalDurationMs !== undefined ||
@@ -427,12 +426,6 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
               <div className={`${styles.stageCard} ${boardStyles.cardLink}`}>
                 <div>
                   <div className={styles.stageTitleRow}>
-                    <span
-                      aria-label={`${status} status`}
-                      className={`${boardStyles.childRunDot} ${styles.childStatusDot}`}
-                      data-status={status}
-                      role="img"
-                    />
                     <strong className={boardStyles.cardTitle}>{stage.label}</strong>
                   </div>
                 </div>
