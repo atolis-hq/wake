@@ -140,7 +140,6 @@ export class InboundTranslator {
   private readonly conclusion: WorkConclusion | undefined;
 
   // Adapter filtering, checkpointing, and typed event dispatch must stay together.
-  // eslint-disable-next-line complexity
   async runOnce(limit = 100): Promise<number> {
     if (
       this.journal === undefined ||
@@ -151,21 +150,69 @@ export class InboundTranslator {
       throw new Error('InboundTranslator services are required to run evidence translation');
     }
     const checkpoint = `reactor:integration.${this.adapter}.inbound`;
+    await this.retryPendingTranslations();
     const position = await this.checkpoints.load(checkpoint);
     const events = await this.journal.readAll(position, limit);
     for (const event of events) {
-      const owned = selectGitHubAdapterEvent(event);
-      if (owned?.stream.id === this.adapter && owned.eventType === GitHubEventType.WorkObserved)
-        await this.apply(owned);
+      await this.translateEvent(event);
+      await this.checkpoints.save(checkpoint, event.globalPosition);
+    }
+    return events.length;
+  }
+
+  private async retryPendingTranslations(): Promise<void> {
+    const events = await this.journal!.readStream(integrationStream(this.adapter));
+    const owned = events
+      .map(selectGitHubAdapterEvent)
+      .filter((event): event is GitHubAdapterEvent => event !== null);
+    const failures = new Set(
+      owned
+        .filter((event) => event.eventType === GitHubEventType.InboundTranslationFailed)
+        .map((event) => event.payload.sourceEventId),
+    );
+    const pending = new Set(
+      owned
+        .filter((event) => event.eventType === GitHubEventType.InboundTranslationRetried)
+        .map((event) => event.payload.sourceEventId),
+    );
+    const recovered = new Set(
+      owned
+        .filter((event) => event.eventType === GitHubEventType.InboundTranslationRecovered)
+        .map((event) => event.payload.sourceEventId),
+    );
+    for (const event of owned) {
       if (
-        owned?.stream.id === this.adapter &&
-        owned.eventType === GitHubEventType.CommentObserved
-      ) {
+        pending.has(event.eventId) &&
+        !failures.has(event.eventId) &&
+        !recovered.has(event.eventId) &&
+        this.isTranslatable(event)
+      )
+        await this.translateEvent(event);
+    }
+  }
+
+  private isTranslatable(event: GitHubAdapterEvent): boolean {
+    return (
+      event.stream.id === this.adapter &&
+      (event.eventType === GitHubEventType.WorkObserved ||
+        event.eventType === GitHubEventType.CommentObserved)
+    );
+  }
+
+  private async translateEvent(
+    event: Parameters<typeof selectGitHubAdapterEvent>[0],
+  ): Promise<void> {
+    const owned = selectGitHubAdapterEvent(event);
+    if (owned === null || !this.isTranslatable(owned)) return;
+    if (await this.failureRecorded(owned.eventId)) return;
+    try {
+      if (owned.eventType === GitHubEventType.WorkObserved) await this.apply(owned);
+      if (owned.eventType === GitHubEventType.CommentObserved) {
         await applyReviewSignal({
           event: owned,
-          journal: this.journal,
-          resources: this.resources,
-          work: this.work,
+          journal: this.journal!,
+          resources: this.resources!,
+          work: this.work!,
           lookup: this.lookup,
           pullRequests: this.pullRequests,
           ids: this.ids,
@@ -178,9 +225,144 @@ export class InboundTranslator {
           orchestration: this.orchestration,
         });
       }
-      await this.checkpoints.save(checkpoint, event.globalPosition);
+      if (await this.retryRecorded(owned.eventId)) await this.recordTranslationRecovery(owned);
+    } catch (error) {
+      await this.recordTranslationFailure(owned, error);
     }
-    return events.length;
+  }
+
+  private async failureRecorded(sourceEventId: string): Promise<boolean> {
+    return (await this.journal!.readStream(integrationStream(this.adapter))).some((event) => {
+      const owned = selectGitHubAdapterEvent(event);
+      return (
+        owned?.eventType === GitHubEventType.InboundTranslationFailed &&
+        owned.payload.sourceEventId === sourceEventId
+      );
+    });
+  }
+
+  private async retryRecorded(sourceEventId: string): Promise<boolean> {
+    return (await this.journal!.readStream(integrationStream(this.adapter))).some((event) => {
+      const owned = selectGitHubAdapterEvent(event);
+      return (
+        owned?.eventType === GitHubEventType.InboundTranslationRetried &&
+        owned.payload.sourceEventId === sourceEventId
+      );
+    });
+  }
+
+  private async recordTranslationRecovery(event: GitHubAdapterEvent): Promise<void> {
+    const stream = integrationStream(this.adapter);
+    const eventId = `github:inbound-translation-recovered:${this.adapter}:${event.eventId}`;
+    const existing = await this.journal!.readStream(stream);
+    if (existing.some((candidate) => candidate.eventId === eventId)) return;
+    await this.journal!.append(stream, existing.length, [
+      createEventDraft({
+        eventId,
+        eventType: GitHubEventType.InboundTranslationRecovered,
+        occurredAt: event.occurredAt,
+        correlationId: event.correlationId,
+        causationId: event.eventId,
+        actor: { kind: EventActorKind.Integration, id: this.adapter },
+        source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
+        stream,
+        payload: { adapter: this.adapter, sourceEventId: event.eventId },
+      }),
+    ]);
+  }
+
+  private async recordTranslationFailure(event: GitHubAdapterEvent, error: unknown): Promise<void> {
+    const stream = integrationStream(this.adapter);
+    const existing = await this.journal!.readStream(stream);
+    const retries = existing.reduce((count, candidate) => {
+      const owned = selectGitHubAdapterEvent(candidate);
+      return (
+        count +
+        Number(
+          owned?.eventType === GitHubEventType.InboundTranslationRetried &&
+            owned.payload.sourceEventId === event.eventId,
+        )
+      );
+    }, 0);
+    const attempt = retries + 1;
+    const message = error instanceof Error ? error.message : String(error);
+    const terminal = retries >= 3;
+    const eventId = terminal
+      ? `github:inbound-translation-failed:${this.adapter}:${event.eventId}`
+      : `github:inbound-translation-retried:${this.adapter}:${event.eventId}:${attempt}`;
+    const payload = terminal
+      ? {
+          adapter: this.adapter,
+          sourceEventId: event.eventId,
+          attempt,
+          message,
+          globalPosition: event.globalPosition,
+          eventType: event.eventType,
+          correlationId: event.correlationId,
+          causationId: event.causationId,
+          failedAt: event.occurredAt,
+        }
+      : { adapter: this.adapter, sourceEventId: event.eventId, attempt, message };
+    await this.appendTranslationDiagnostic(
+      eventId,
+      terminal
+        ? GitHubEventType.InboundTranslationFailed
+        : GitHubEventType.InboundTranslationRetried,
+      event,
+      payload,
+    );
+    console.error(`Inbound translation failed for ${event.eventId} (attempt ${attempt})`, error);
+  }
+
+  private async appendTranslationDiagnostic(
+    eventId: string,
+    eventType:
+      | typeof GitHubEventType.InboundTranslationRetried
+      | typeof GitHubEventType.InboundTranslationFailed,
+    source: GitHubAdapterEvent,
+    payload:
+      | {
+          readonly adapter: string;
+          readonly sourceEventId: string;
+          readonly attempt: number;
+          readonly message: string;
+        }
+      | {
+          readonly adapter: string;
+          readonly sourceEventId: string;
+          readonly attempt: number;
+          readonly message: string;
+          readonly globalPosition: number;
+          readonly eventType: string;
+          readonly correlationId: string;
+          readonly causationId: string;
+          readonly failedAt: string;
+        },
+  ): Promise<void> {
+    const stream = integrationStream(this.adapter);
+    for (let contentionAttempts = 0; contentionAttempts < 3; contentionAttempts += 1) {
+      const existing = await this.journal!.readStream(stream);
+      if (existing.some((event) => event.eventId === eventId)) return;
+      try {
+        await this.journal!.append(stream, existing.length, [
+          createEventDraft({
+            eventId,
+            eventType,
+            occurredAt: source.occurredAt,
+            correlationId: source.correlationId,
+            causationId: source.eventId,
+            actor: { kind: EventActorKind.Integration, id: this.adapter },
+            source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
+            stream,
+            payload,
+          }),
+        ]);
+        return;
+      } catch (error) {
+        if (!(error instanceof WrongExpectedSequenceError)) throw error;
+      }
+    }
+    throw new Error(`Could not record inbound translation diagnostic ${eventId} after contention`);
   }
 
   private async apply(

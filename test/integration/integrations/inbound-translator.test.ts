@@ -10,11 +10,12 @@ import {
   GitHubEventType,
   InboundTranslator,
   integrationStream,
+  UlidIdGenerator,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
-import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
+import { resourceCapability, resourceId, resourceKind } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock, TestWorld } from '../../e2e/support/world.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
@@ -119,6 +120,86 @@ describe('InboundTranslator', () => {
     expect(
       await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#7' }),
     ).toBeNull();
+  });
+
+  it('bounds a poison event across restarts and continues translating later evidence', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const stream = integrationStream(BuiltInAdapterId.GitHub);
+    const [poison, later] = await journal.append(stream, 0, [
+      createEventDraft({
+        eventId: 'github:issue:owner/repo#poison:v1',
+        eventType: GitHubEventType.WorkObserved,
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'github:owner/repo#poison',
+        causationId: 'github:issue:owner/repo#poison:v1',
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: 'github' },
+        stream,
+        payload: observation(),
+      }),
+      createEventDraft({
+        eventId: 'github:issue:owner/repo#later:v1',
+        eventType: GitHubEventType.WorkObserved,
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'github:owner/repo#later',
+        causationId: 'github:issue:owner/repo#later:v1',
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: 'github' },
+        stream,
+        payload: { ...observation(), externalKey: 'owner/repo#later' },
+      }),
+    ]);
+    await resources.discover(
+      {
+        resourceId: resourceId(new UlidIdGenerator().next('resource')),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'owner/repo#7' },
+        capabilities: [],
+      },
+      {
+        commandId: 'discover-poison-resource',
+        correlationId: 'discover-poison-resource' as never,
+        occurredAt: clock.now().toISOString(),
+        actor: { kind: 'system', id: 'test' },
+      },
+    );
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
+
+    await translator.runOnce();
+    expect(await checkpoints.load('reactor:integration.github.inbound')).toBeGreaterThanOrEqual(
+      later!.globalPosition,
+    );
+    expect(
+      await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#later' }),
+    ).not.toBeNull();
+
+    await translator.runOnce();
+    await translator.runOnce();
+    await translator.runOnce();
+    const failures = (await journal.readStream(stream)).filter(
+      (event) => event.eventType === GitHubEventType.InboundTranslationFailed,
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      payload: {
+        adapter: 'github',
+        sourceEventId: poison!.eventId,
+        attempt: 4,
+        globalPosition: poison!.globalPosition,
+        eventType: GitHubEventType.WorkObserved,
+        correlationId: poison!.correlationId,
+        causationId: poison!.causationId,
+      },
+    });
   });
 
   it('records one skip diagnostic for a deleted correlation and continues later inbound work', async () => {
