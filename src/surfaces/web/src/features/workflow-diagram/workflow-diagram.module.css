@@ -187,6 +187,7 @@
 }
 
 .canvas[data-direction='DOWN'] {
+  align-items: start;
   display: grid;
   gap: 0.5rem;
   min-height: 0;
@@ -205,6 +206,7 @@
 
 .canvas[data-direction='DOWN'] .stageCard {
   cursor: pointer;
+  min-height: 0;
 }
 
 .canvas[data-direction='DOWN'] .stageCard button {
