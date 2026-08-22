@@ -7,7 +7,7 @@ import type {
 } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
-import { runProcess } from '../process-execution.js';
+import { runProcess, type ProcessTimeouts } from '../process-execution.js';
 
 export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
   return cliRunner(
@@ -15,7 +15,7 @@ export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
     options.command ?? 'claude',
     (request) => claudeCommandArgs(request, options.args, options),
     {
-      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseClaudeOutput,
       classifyFailure: classifyClaudeFailure,
@@ -122,7 +122,7 @@ export function cliRunner(
   command: string,
   args: (request: RunnerRequest) => string[],
   options: {
-    readonly timeoutMs?: number;
+    readonly runnerTimeouts?: ProcessTimeouts;
     readonly defaultModel?: string;
     readonly supportsSessionResume?: boolean;
     readonly parseSuccessfulOutput?: (
@@ -138,13 +138,10 @@ export function cliRunner(
   return {
     supportsSessionResume: options.supportsSessionResume === true,
     async start(request, signal): Promise<RunnerExecution> {
-      const process = runProcess(
-        command,
-        args(request),
-        request.workspacePath,
-        signal,
-        options.timeoutMs,
-      );
+      const process = runProcess(command, args(request), request.workspacePath, signal, {
+        ...options.runnerTimeouts,
+        ...(request.onTimeout === undefined ? {} : { onTimeout: request.onTimeout }),
+      });
       return {
         identity: {
           kind: ExternalExecutionKind.Process,
@@ -181,11 +178,12 @@ function failureFor(
     readonly stderr: string;
     readonly exitCode: number | undefined;
     readonly timedOut: boolean;
+    readonly timeoutKind?: 'idle' | 'hard';
     readonly failureKind?: 'output-limit';
     readonly failureMessage?: string;
   },
   options: {
-    readonly timeoutMs?: number;
+    readonly runnerTimeouts?: ProcessTimeouts;
     readonly classifyFailure?: (input: {
       readonly stdout: string;
       readonly stderr: string;
@@ -194,8 +192,14 @@ function failureFor(
 ): { readonly kind: string; readonly message: string } {
   if (value.timedOut)
     return {
-      kind: ExecutionCancellationReason.Timeout,
-      message: `Runner timed out after ${options.timeoutMs}ms`,
+      kind:
+        value.timeoutKind === 'idle'
+          ? ExecutionCancellationReason.IdleTimeout
+          : ExecutionCancellationReason.Timeout,
+      message:
+        value.timeoutKind === 'idle'
+          ? timeoutMessage('idle', options.runnerTimeouts?.idleMs)
+          : timeoutMessage('hard', options.runnerTimeouts?.hardMs),
     };
   if (value.failureKind !== undefined)
     return {
@@ -207,6 +211,16 @@ function failureFor(
   return { kind: 'process-exit', message: value.stderr || `exit ${value.exitCode}` };
 }
 
+function timeoutMessage(kind: 'idle' | 'hard', timeoutMs: number | undefined): string {
+  if (timeoutMs === undefined)
+    return kind === 'idle'
+      ? 'Runner exceeded its idle timeout'
+      : 'Runner exceeded its hard timeout';
+  return kind === 'idle'
+    ? `Runner was idle for ${timeoutMs}ms`
+    : `Runner exceeded the hard timeout of ${timeoutMs}ms`;
+}
+
 export interface RunnerDefaults {
   readonly model?: string;
   readonly effort?: string;
@@ -214,7 +228,7 @@ export interface RunnerDefaults {
 
 export interface CliRunnerOptions extends RunnerDefaults {
   readonly command?: string;
-  readonly timeoutMs?: number;
+  readonly runnerTimeouts?: ProcessTimeouts;
   readonly args?: readonly string[];
 }
 

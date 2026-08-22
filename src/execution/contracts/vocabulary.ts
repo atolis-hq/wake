@@ -23,6 +23,7 @@ export const ExecutionCancellationReason = defineClosedVocabulary({
   WorkCancelled: 'work-cancelled',
   WorkClosed: 'work-closed',
   WorkflowSuperseded: 'workflow-superseded',
+  IdleTimeout: 'idle-timeout',
   Timeout: 'timeout',
   Shutdown: 'shutdown',
   Maintenance: 'maintenance',

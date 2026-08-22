@@ -14,7 +14,7 @@ export async function prepareWorkspace(
     [],
     path,
     new AbortController().signal,
-    hook.timeoutMs,
+    { hardMs: hook.timeoutMs },
     true,
   );
   const result = await process.result;

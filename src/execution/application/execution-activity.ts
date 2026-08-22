@@ -5,10 +5,12 @@ import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type RunExecutionEventDraft } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
 import { ProviderQuotaExceededFailureKind } from '../contracts/runner.js';
+import { ExecutionCancellationReason } from '../contracts/vocabulary.js';
 import type { WorkspaceProvider } from '../contracts/workspace.js';
 import { parseAgentRunnerResponse } from '../infrastructure/agent-runner-adapter.js';
 import type { RunnerRegistry } from '../infrastructure/runners/registry.js';
 import { createRunEvent } from './run-lifecycle.js';
+import { confirmCancellation, requestCancellation } from './run-liveness-service.js';
 import type { RunRepository } from './run-repository.js';
 
 export interface ExecutionDependencies {
@@ -91,6 +93,7 @@ export async function executeActivity(
         }),
     reportExternalExecution: externalExecutionReporter(runtime, currentRunId, context, activation),
     reportRunnerResult: runnerResultReporter(runtime, currentRunId, context, activation, request),
+    reportRunnerTimeout: runnerTimeoutReporter(runtime, currentRunId),
   };
   return runtime.activities.execute(
     {
@@ -105,6 +108,24 @@ export async function executeActivity(
     },
     executionContext,
   );
+}
+
+function runnerTimeoutReporter(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+): NonNullable<ActivityExecutionContext['reportRunnerTimeout']> {
+  return async (kind) => {
+    await requestCancellation(
+      runtime.repository,
+      runtime.dependencies.clock,
+      currentRunId,
+      kind === 'idle'
+        ? ExecutionCancellationReason.IdleTimeout
+        : ExecutionCancellationReason.Timeout,
+      runtime.active,
+    );
+    await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
+  };
 }
 
 function externalExecutionReporter(

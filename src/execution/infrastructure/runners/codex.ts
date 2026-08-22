@@ -45,7 +45,7 @@ export function createCodexRunner(options: CliRunnerOptions = {}): Runner {
     options.command ?? 'codex',
     (request: RunnerRequest) => codexCommandArgs(request, options.args, options),
     {
-      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseCodexOutput,
       classifyFailure: classifyCodexFailure,

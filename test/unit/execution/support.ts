@@ -12,7 +12,7 @@ import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestra
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 
-export function executionFixture() {
+export function executionFixture(timeoutKind?: 'idle' | 'hard') {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
   const ids = new SequentialIds();
@@ -35,6 +35,7 @@ export function executionFixture() {
           id: 'process-1',
           startedAt: clock.now().toISOString(),
         });
+        if (timeoutKind !== undefined) await context.reportRunnerTimeout?.(timeoutKind);
         context.signal.addEventListener('abort', () => {
           cancelled = true;
         });

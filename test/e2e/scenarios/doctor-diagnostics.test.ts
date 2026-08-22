@@ -93,7 +93,7 @@ describe('E2E-OPS-002: doctor diagnostics — prompt templates and provider conn
       `schemaVersion: 1
 execution:
   agentRunners:
-    fake: { kind: fake, timeoutMs: 5000 }
+    fake: { kind: fake }
   runnerPools: { standard: [fake] }
   defaultRunnerPool: standard
 controlPlane: {}
@@ -155,7 +155,7 @@ surfaces:
       `schemaVersion: 1
 execution:
   agentRunners:
-    fake: { kind: fake, timeoutMs: 5000 }
+    fake: { kind: fake }
   runnerPools: { standard: [fake] }
   defaultRunnerPool: standard
 controlPlane: {}

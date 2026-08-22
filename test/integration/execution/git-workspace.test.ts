@@ -7,6 +7,10 @@ import { GitWorkspaceProvider } from '../../../src/execution/infrastructure/work
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
+function nodeCommand(script: string): string {
+  return `"${process.execPath}" -e "${script}"`;
+}
+
 describe('GitWorkspaceProvider', () => {
   const roots: string[] = [];
   afterEach(async () => {
@@ -132,7 +136,12 @@ describe('GitWorkspaceProvider', () => {
           if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
         },
         undefined,
-        { command: `printf ${outputName} > .wake-prepare-result`, timeoutMs: 1_000 },
+        {
+          command: nodeCommand(
+            `require('node:fs').writeFileSync('.wake-prepare-result', '${outputName}')`,
+          ),
+          timeoutMs: 1_000,
+        },
       );
 
       const lease = await provider.acquire({
@@ -188,7 +197,12 @@ describe('GitWorkspaceProvider', () => {
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
       undefined,
-      { command: 'printf prepared >> .wake-prepare-result', timeoutMs: 1_000 },
+      {
+        command: nodeCommand(
+          "require('node:fs').appendFileSync('.wake-prepare-result', 'prepared')",
+        ),
+        timeoutMs: 1_000,
+      },
     );
     const request = {
       mode: 'branch' as const,
@@ -222,7 +236,9 @@ describe('GitWorkspaceProvider', () => {
       },
       undefined,
       {
-        command: `printf 'discard-this-prefix${'x'.repeat(5_000)}'; printf '${diagnostic}' >&2; exit 7`,
+        command: nodeCommand(
+          `process.stdout.write('discard-this-prefix${'x'.repeat(5_000)}'); process.stderr.write('${diagnostic}'); process.exit(7)`,
+        ),
         timeoutMs: 1_000,
       },
     );
@@ -256,7 +272,7 @@ describe('GitWorkspaceProvider', () => {
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
       undefined,
-      { command: 'sleep 5', timeoutMs: 20 },
+      { command: nodeCommand('setTimeout(() => {}, 5_000)'), timeoutMs: 20 },
     );
 
     await expect(

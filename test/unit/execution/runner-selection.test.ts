@@ -163,12 +163,18 @@ describe('Execution runner selection', () => {
       journal,
       new RunnerRegistry({ standard: ['replacement'] }, { replacement }),
       {
-        paused: { kind: 'fake', model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
+        paused: {
+          kind: 'fake',
+          model: 'test-model',
+          effort: 'high',
+          runnerTimeouts: testRunnerTimeouts,
+          args: [],
+        },
         replacement: {
           kind: 'fake',
           model: 'test-model',
           effort: 'high',
-          timeoutMs: 1_000,
+          runnerTimeouts: testRunnerTimeouts,
           args: [],
         },
       },
@@ -544,12 +550,14 @@ function fixtureWithJournal(
   );
 }
 
+const testRunnerTimeouts = { idleMs: 600_000, hardMs: 7_200_000, cancellationGraceMs: 30_000 };
+
 const standardAgentRunners = {
   standard: {
     kind: 'fake' as const,
     model: 'test-model',
     effort: 'high',
-    timeoutMs: 1_000,
+    runnerTimeouts: testRunnerTimeouts,
     args: [],
   },
 } satisfies NonNullable<ExecutionConfig['agentRunners']>;

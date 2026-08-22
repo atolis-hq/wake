@@ -244,7 +244,7 @@ async function appendAmbiguous(
 const fixtureConfig = `schemaVersion: 1
 execution:
   agentRunners:
-    fake: { kind: fake, timeoutMs: 5000 }
+    fake: { kind: fake }
   runnerPools: { standard: [fake] }
   defaultRunnerPool: standard
 controlPlane: {}

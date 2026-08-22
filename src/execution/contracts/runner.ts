@@ -17,6 +17,7 @@ export interface RunnerRequest {
   readonly workspaceMode?: Exclude<WorkspaceMode, typeof WorkspaceMode.None>;
   readonly allowedTools: readonly string[];
   readonly maxTurns?: number;
+  readonly onTimeout?: (kind: 'idle' | 'hard') => Promise<void>;
   readonly resumeSessionId?: string;
   readonly usageBaseline?: {
     readonly input: number;
