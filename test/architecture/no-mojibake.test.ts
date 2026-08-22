@@ -24,5 +24,5 @@ describe('committed source encoding', () => {
       return forbidden.some((value) => text.includes(value));
     });
     expect(offenders).toEqual([]);
-  }, 30_000);
+  });
 });
