@@ -21,7 +21,12 @@
 }
 
 .edges marker path {
-  fill: var(--border-strong);
+  fill: context-stroke;
+}
+
+.edgeActive path {
+  stroke: var(--accent);
+  stroke-width: 2;
 }
 
 .edgeLabel {
@@ -36,11 +41,23 @@
   font-size: var(--text-xs);
   line-height: 1.2;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+}
+
+.edgeLabelActive {
+  opacity: 1;
 }
 
 .stage {
   position: absolute;
   z-index: 1;
+}
+
+.stage:hover,
+.stage:focus-within {
+  border-color: var(--border);
+  border-left-color: var(--border-strong);
 }
 
 .stageCard {
@@ -49,6 +66,10 @@
   gap: 0.2rem;
   padding: 0.5rem;
   border-bottom: 1px solid var(--border);
+}
+
+.stageCard:hover {
+  background: var(--surface-card);
 }
 
 .stageTitleRow {
@@ -89,6 +110,11 @@
   padding: 0.35rem;
 }
 
+.childCard:hover,
+.childCard:focus-within {
+  border-color: var(--accent);
+}
+
 .childStatusDot {
   align-self: start;
   margin-top: 0.22rem;
@@ -109,6 +135,21 @@
 .childStatusDot[data-status='active'],
 .childStatusDot[data-status='completed'] {
   background: var(--good);
+}
+
+.childStatusDot[data-active-run='true'] {
+  animation: active-run-pulse 1.5s ease-out infinite;
+  box-shadow: 0 0 0 0 rgb(134 239 172 / 0.6);
+}
+
+@keyframes active-run-pulse {
+  70% {
+    box-shadow: 0 0 0 0.38rem rgb(134 239 172 / 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgb(134 239 172 / 0);
+  }
 }
 
 .childStatusDot[data-status='waiting'] {

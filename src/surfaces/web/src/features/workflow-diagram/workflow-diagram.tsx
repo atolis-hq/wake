@@ -137,18 +137,28 @@ function metrics(item: WorkflowDiagramChild) {
   );
 }
 
-function ChildCard({ child }: { readonly child: WorkflowDiagramChild }) {
+function ChildCard({
+  child,
+  onHover,
+}: {
+  readonly child: WorkflowDiagramChild;
+  readonly onHover: (childId: string | undefined) => void;
+}) {
   const status = child.lastOutcome === 'failed' ? 'failed' : (child.status ?? 'pending');
+  const hasActiveRun = (child.activeRuns?.length ?? 0) > 0;
   return (
     <article
       className={`${styles.childCard} ${boardStyles.childRun}`}
       data-diagram-child={child.id}
       data-kind={child.kind}
+      onMouseEnter={() => onHover(child.id)}
+      onMouseLeave={() => onHover(undefined)}
     >
       <span
-        aria-label={`${status} status`}
+        aria-label={hasActiveRun ? 'active run' : `${status} status`}
         className={`${boardStyles.childRunDot} ${styles.childStatusDot}`}
         data-status={status}
+        data-active-run={hasActiveRun || undefined}
         data-testid={`child-status-${child.id}`}
         role="img"
       />
@@ -217,6 +227,13 @@ function edgePath(points: readonly { readonly x: number; readonly y: number }[])
   return path;
 }
 
+function sourceChildIdFor(edge: WorkflowDiagramLayout['edges'][number], diagram: WorkflowDiagram) {
+  if (edge.fromChildId !== undefined) return edge.fromChildId;
+  return diagram.stages
+    .find((stage) => stage.id === edge.from)
+    ?.children.find((child) => child.kind === 'activity')?.id;
+}
+
 function transitionPoints(
   edge: WorkflowDiagramLayout['edges'][number],
   diagram: WorkflowDiagram,
@@ -227,9 +244,10 @@ function transitionPoints(
   if (edge.points.length === 0) return edge.points;
   const source = nodes.get(edge.from);
   const stage = diagram.stages.find((candidate) => candidate.id === edge.from);
-  const childIndex = stage?.children.findIndex((child) => child.id === edge.fromChildId) ?? -1;
+  const sourceChildId = sourceChildIdFor(edge, diagram);
+  const childIndex = stage?.children.findIndex((child) => child.id === sourceChildId) ?? -1;
   const sourceAnchor = anchors.get(
-    edge.fromChildId === undefined ? edge.from : `${edge.from}:${edge.fromChildId}`,
+    sourceChildId === undefined ? edge.from : `${edge.from}:${sourceChildId}`,
   );
   const targetAnchor = anchors.get(edge.to);
   if (sourceAnchor !== undefined && targetAnchor !== undefined) {
@@ -239,9 +257,31 @@ function transitionPoints(
         : { x: (sourceAnchor.left + sourceAnchor.right) / 2, y: sourceAnchor.bottom };
     const targetPoint =
       direction === 'RIGHT'
-        ? { x: targetAnchor.left, y: (targetAnchor.top + targetAnchor.bottom) / 2 }
+        ? { x: targetAnchor.left, y: targetAnchor.top + 16 }
         : { x: (targetAnchor.left + targetAnchor.right) / 2, y: targetAnchor.top };
     if (direction === 'RIGHT') {
+      const obstacles = diagram.stages
+        .filter((stage) => stage.id !== edge.from && stage.id !== edge.to)
+        .map((stage) => anchors.get(stage.id))
+        .filter(
+          (anchor): anchor is DiagramAnchor =>
+            anchor !== undefined && anchor.left >= sourcePoint.x && anchor.right <= targetPoint.x,
+        );
+      if (obstacles.length > 0) {
+        const laneY =
+          Math.max(sourceAnchor.bottom, targetAnchor.bottom, ...obstacles.map((x) => x.bottom)) +
+          24;
+        const exitX = sourcePoint.x + 18;
+        const entryX = targetPoint.x - 18;
+        return [
+          sourcePoint,
+          { x: exitX, y: sourcePoint.y },
+          { x: exitX, y: laneY },
+          { x: entryX, y: laneY },
+          { x: entryX, y: targetPoint.y },
+          targetPoint,
+        ];
+      }
       if (sourcePoint.y === targetPoint.y) return [sourcePoint, targetPoint];
       const middleX = (sourcePoint.x + targetPoint.x) / 2;
       return [
@@ -260,7 +300,7 @@ function transitionPoints(
       targetPoint,
     ];
   }
-  if (edge.fromChildId === undefined || source === undefined || childIndex < 0) return edge.points;
+  if (sourceChildId === undefined || source === undefined || childIndex < 0) return edge.points;
 
   // ELK lays out stages only; this shifts the visible route origin to its nested child card.
   const childOffset = 52 + 5 + childIndex * 59 + 27;
@@ -301,6 +341,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
     () =>
       new Set(diagram.stages.filter((stage) => stage.status === 'active').map((stage) => stage.id)),
   );
+  const [hoveredChildId, setHoveredChildId] = useState<string>();
   const nodeById = new Map(layout.nodes.map((node) => [node.id, node]));
   const expandedAny = expanded.size > 0;
   const width = layout.width || (direction === 'RIGHT' ? diagram.stages.length * 352 : 300);
@@ -329,13 +370,14 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
               refY="4"
               orient="auto"
             >
-              <path d="M 0 0 L 8 4 L 0 8 z" />
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="context-stroke" />
             </marker>
           </defs>
           {layout.edges.map((edge) => {
             const points = transitionPoints(edge, diagram, nodeById, anchors, direction);
+            const isHighlighted = sourceChildIdFor(edge, diagram) === hoveredChildId;
             return (
-              <g key={edge.id}>
+              <g className={isHighlighted ? styles.edgeActive : styles.edge} key={edge.id}>
                 <path d={edgePath(points)} markerEnd="url(#workflow-arrow)" />
               </g>
             );
@@ -345,9 +387,10 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
           const point = edgeLabelPoint(
             transitionPoints(edge, diagram, nodeById, anchors, direction),
           );
+          const isHighlighted = sourceChildIdFor(edge, diagram) === hoveredChildId;
           return point === undefined || edge.label.length === 0 ? null : (
             <span
-              className={styles.edgeLabel}
+              className={`${styles.edgeLabel} ${isHighlighted ? styles.edgeLabelActive : ''}`}
               key={`${edge.id}-label`}
               style={{ left: `${point.x}px`, top: `${point.y}px` }}
             >
@@ -426,7 +469,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
               {isExpanded ? (
                 <div className={styles.children}>
                   {stage.children.map((child) => (
-                    <ChildCard child={child} key={child.id} />
+                    <ChildCard child={child} key={child.id} onHover={setHoveredChildId} />
                   ))}
                 </div>
               ) : null}
