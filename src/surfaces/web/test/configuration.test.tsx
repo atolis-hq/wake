@@ -27,13 +27,29 @@ describe('configuration page commands tab', () => {
 
     const standard = await screen.findByLabelText('Workflow Standard delivery');
     const guarded = screen.getByLabelText('Workflow Guarded delivery');
-    const configuration = screen.getByText(/Read-only effective configuration/);
+    const configuration = await screen.findByText(/Read-only effective configuration/);
     expect(
       standard.compareDocumentPosition(configuration) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
       guarded.compareDocumentPosition(configuration) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('keeps mocked configured workflow diagrams visible while configuration loads', async () => {
+    render(
+      <MemoryRouter initialEntries={['/configuration']}>
+        <App client={loadingClient()} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByLabelText('Workflow Standard delivery')).toBeTruthy();
+    expect(screen.getByLabelText('Workflow Guarded delivery')).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole('status')
+        .some(({ textContent }) => textContent?.includes('Loading redacted configuration')),
+    ).toBe(true);
   });
 
   it('lists built-in and configured commands per adapter on the commands tab', async () => {
@@ -83,6 +99,16 @@ function client() {
           }
         : { data: {}, meta: { asOf } };
     return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+}
+
+function loadingClient() {
+  return new WakeApiClient(async (input) => {
+    if (String(input).endsWith('/system/configuration')) return new Promise<Response>(() => {});
+    return new Response(JSON.stringify({ data: {}, meta: { asOf: '2026-08-18T10:00:00.000Z' } }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });

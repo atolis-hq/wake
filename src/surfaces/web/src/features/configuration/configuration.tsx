@@ -130,6 +130,9 @@ export function ConfigurationPage() {
         </section>
       ) : (
         <section id="configuration-panel" role="tabpanel" aria-labelledby="configuration-tab">
+          {mockConfiguredWorkflowDiagrams.map((diagram) => (
+            <WorkflowDiagramView diagram={diagram} key={diagram.id} />
+          ))}
           {configurationQuery.isPending ? (
             <LoadingState label="Loading redacted configuration" />
           ) : configurationQuery.error && !configurationQuery.data ? (
@@ -139,15 +142,10 @@ export function ConfigurationPage() {
             />
           ) : (
             configurationQuery.data && (
-              <>
-                {mockConfiguredWorkflowDiagrams.map((diagram) => (
-                  <WorkflowDiagramView diagram={diagram} key={diagram.id} />
-                ))}
-                <Panel>
-                  <p>Read-only effective configuration. Secrets are redacted by Wake.</p>
-                  <JsonViewer value={configurationQuery.data.data.configuration} />
-                </Panel>
-              </>
+              <Panel>
+                <p>Read-only effective configuration. Secrets are redacted by Wake.</p>
+                <JsonViewer value={configurationQuery.data.data.configuration} />
+              </Panel>
             )
           )}
         </section>
