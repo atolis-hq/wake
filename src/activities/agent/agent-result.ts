@@ -44,7 +44,11 @@ export const agentActivityOutcomeSchema = z.union([
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Blocked),
-      data: z.union([structuredResult('BLOCKED'), blockedReason]),
+      data: z.union([
+        structuredResult('BLOCKED'),
+        structuredResult('NEEDS_CLARIFICATION'),
+        blockedReason,
+      ]),
     })
     .strict(),
   z
@@ -83,6 +87,7 @@ export function translateAgentResult(value: unknown): AgentActivityOutcome {
     case 'REJECTED':
       return terminalResult(ActivityOutcomeKind.Rejected, structured);
     case 'BLOCKED':
+    case 'NEEDS_CLARIFICATION':
       return terminalResult(ActivityOutcomeKind.Blocked, structured);
     case 'FAILED':
       return terminalResult(ActivityOutcomeKind.Failed, structured);

@@ -20,9 +20,10 @@ const outcomeSentinels: Readonly<Record<ActivityOutcomeKind, string>> = {
 export function presentRun(value: RunView): RunResponse {
   const usage = agentTokenUsage(value.agent?.metadata);
   const sentinel =
-    value.outcome?.kind !== undefined && isActivityOutcomeKind(value.outcome.kind)
+    value.agent?.outcome ??
+    (value.outcome?.kind !== undefined && isActivityOutcomeKind(value.outcome.kind)
       ? outcomeSentinels[value.outcome.kind]
-      : value.status.toUpperCase();
+      : value.status.toUpperCase());
   return {
     runId: value.runId,
     activationId: value.activationId,

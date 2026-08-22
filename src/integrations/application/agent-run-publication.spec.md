@@ -80,7 +80,7 @@ recorded fact.
 | `runner`, `runnerPool`, `cli`, `model` | string (optional) | The run's own runner identity, when recorded. |
 | `startedAt`, `finishedAt` | timestamp | The run's own start/finish times. |
 | `displayBody` | string | The rendered outcome text; see Core policies above. |
-| `outcome` | closed vocabulary: `DONE` / `REJECTED` / `BLOCKED` / `FAILED` | The run's own agent outcome, or `FAILED` when none was recorded. |
+| `outcome` | closed vocabulary: `DONE` / `REJECTED` / `BLOCKED` / `NEEDS_CLARIFICATION` / `FAILED` | The run's own agent outcome, or `FAILED` when none was recorded. |
 | `sessionId` | string (optional) | The run's own resumable session id, when the agent recorded one. |
 | `workspacePath` | string (optional) | The run's own workspace path, when recorded. |
 | `metadata` | map of string to string/number/boolean/null | The run's own agent-reported metadata (tokens, cost, and provider-specific fields), passed through unchanged. |

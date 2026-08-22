@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { RetrySafety } from '../../../activities/index.js';
 
-const outcomeSchema = z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED']);
+const outcomeSchema = z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED', 'NEEDS_CLARIFICATION']);
 const matchSchema = z
   .object({
     runner: z.string().trim().min(1),

@@ -60,8 +60,8 @@ Execution does not own:
 - **Agent run response** — a structured `{outcome, displayBody, artifacts,
   metadata}` record Execution itself derives from an agent-kind runner's raw
   output once its invocation settles, attached to the Run as `agent`. Its
-  `outcome` uses the same `DONE`/`REJECTED`/`BLOCKED`/`FAILED` vocabulary as
-  an Activity's own outcome, but is Execution's own independent parse of the
+  `outcome` uses the `DONE`/`REJECTED`/`BLOCKED`/`NEEDS_CLARIFICATION`/`FAILED` vocabulary,
+  but is Execution's own independent parse of the
   runner's raw text — it is not derived from, and does not substitute for,
   the Activity outcome recorded via `RunSucceeded`.
 - **Lease** — a time-bounded ownership claim (`owner`, `acquiredAt`,
@@ -196,7 +196,7 @@ Execution does not own:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `outcome` | closed vocabulary: `DONE` / `REJECTED` / `BLOCKED` / `FAILED` | Execution's own parse of the runner's raw output; shares its vocabulary with, but is independent of, an Activity's own outcome. |
+| `outcome` | closed vocabulary: `DONE` / `REJECTED` / `BLOCKED` / `NEEDS_CLARIFICATION` / `FAILED` | Execution's own parse of the runner's raw output; independent of the Activity outcome. |
 | `displayBody` | string | Human-readable text extracted from the runner's raw output, for display outside Execution. |
 | `artifacts` | list of `{kind, externalKey}`, optional | Reserved for artifacts the agent reported inline in its output; not currently populated by Execution's own parse. |
 | `metadata` | open map of string to scalar | Diagnostic values carried from the runner's result (runner name, model, session id, and token/cost counters when available); `agentTokenUsage()` recovers a token-usage summary from it. |

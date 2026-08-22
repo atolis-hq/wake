@@ -1,7 +1,7 @@
 export interface AgentRunComment {
   readonly idempotencyKey: string;
   readonly displayBody: string;
-  readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+  readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED' | 'NEEDS_CLARIFICATION';
   readonly metadata: Readonly<Record<string, string | number | boolean | null>>;
   readonly stage?: string | undefined;
   readonly runner?: string | undefined;
@@ -31,7 +31,7 @@ export function formatAgentRunComment(value: AgentRunComment): string {
     sections.push(
       '_To approve this work, reply with /approved. To request changes, reply with /changes followed by your feedback. To ask a question without requesting changes, reply with /ask followed by your question._',
     );
-  if (value.outcome === 'BLOCKED')
+  if (value.outcome === 'BLOCKED' || value.outcome === 'NEEDS_CLARIFICATION')
     sections.push(
       '_Reply on this thread to continue. To request changes instead, reply with /changes followed by your feedback._',
     );
@@ -100,6 +100,7 @@ function outcome(value: AgentRunComment['outcome']) {
     REJECTED: '\u{1F534} Changes Requested',
     BLOCKED: '\u{1F7E0} Blocked',
     FAILED: '\u274C Failed',
+    NEEDS_CLARIFICATION: '\u{1F7E0} Blocked',
   }[value];
 }
 
@@ -109,6 +110,7 @@ function fallback(value: AgentRunComment['outcome']) {
     REJECTED: 'Run rejected - needs changes.',
     BLOCKED: 'Run blocked - needs input.',
     FAILED: 'Run failed.',
+    NEEDS_CLARIFICATION: 'Run blocked - needs input.',
   }[value];
 }
 

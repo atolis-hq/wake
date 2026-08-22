@@ -37,7 +37,7 @@ export interface AgentRunPublicationReport {
   readonly startedAt: string;
   readonly finishedAt: string;
   readonly displayBody: string;
-  readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+  readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED' | 'NEEDS_CLARIFICATION';
   readonly sessionId?: string | undefined;
   readonly workspacePath?: string | undefined;
   readonly metadata: Readonly<Record<string, string | number | boolean | null>>;
@@ -81,7 +81,7 @@ const reportSchema = z
     startedAt: z.string().min(1),
     finishedAt: z.string().min(1),
     displayBody: z.string(),
-    outcome: z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED']),
+    outcome: z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED', 'NEEDS_CLARIFICATION']),
     sessionId: z.string().min(1).optional(),
     workspacePath: z.string().min(1).optional(),
     metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),

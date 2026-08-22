@@ -26,7 +26,7 @@ export interface RunnerRequest {
   };
 }
 
-export type AgentRunOutcome = 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+export type AgentRunOutcome = 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED' | 'NEEDS_CLARIFICATION';
 
 export interface AgentRunResponse {
   readonly outcome: AgentRunOutcome;

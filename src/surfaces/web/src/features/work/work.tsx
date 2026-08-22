@@ -13,6 +13,7 @@ import { Chip } from '../../components/chip.js';
 import { DataTable } from '../../components/data-table.js';
 import { fmtCost, fmtDuration } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
+import { OutcomeChip } from '../../components/outcome-chip.js';
 import {
   Button,
   EmptyState,
@@ -81,6 +82,11 @@ const columns = (location: ReturnType<typeof useLocation>) => [
     label: 'Last run',
     render: (item: BoardCardResponse) =>
       item.lastRunAt === undefined ? '?' : <LocalTime value={item.lastRunAt} />,
+  },
+  {
+    label: 'Outcome',
+    render: (item: BoardCardResponse) =>
+      item.lastRunOutcome === undefined ? '?' : <OutcomeChip outcome={item.lastRunOutcome} />,
   },
   { label: 'Cost', render: (item: BoardCardResponse) => fmtCost(item.totalCostUsd) },
   { label: 'Usage', render: (item: BoardCardResponse) => <TokenUsage usage={item} /> },
@@ -425,6 +431,17 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                       <>
                         <dt>Blocked because</dt>
                         <dd>Ambiguous run requires an operator decision</dd>
+                      </>
+                    )}
+                    {query.data.data.work.lastRunOutcome !== undefined && (
+                      <>
+                        <dt>Last run</dt>
+                        <dd>
+                          <OutcomeChip
+                            outcome={query.data.data.work.lastRunOutcome}
+                            title="Outcome of the most recent run"
+                          />
+                        </dd>
                       </>
                     )}
                   </dl>

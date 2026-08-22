@@ -153,6 +153,25 @@ it('preserves an explicit result-envelope display body', () => {
 });
 
 it.each([
+  {
+    name: 'JSON envelope',
+    output: '{"status":"NEEDS_CLARIFICATION","displayBody":"Which sentinel should I use?"}',
+  },
+  {
+    name: 'wake-result fence',
+    output: 'Which sentinel should I use?\n\n```wake-result\n{"status":"NEEDS_CLARIFICATION"}\n```',
+  },
+  { name: 'trailing sentinel', output: 'Which sentinel should I use?\n\nNEEDS_CLARIFICATION' },
+])('parses NEEDS_CLARIFICATION from a $name', ({ output }) => {
+  expect(
+    parseAgentRunnerResponse({ transport: RunStatus.Succeeded, output, runner: 'fake' }),
+  ).toMatchObject({
+    outcome: 'NEEDS_CLARIFICATION',
+    displayBody: 'Which sentinel should I use?',
+  });
+});
+
+it.each([
   { name: 'empty output', output: '', outcome: 'FAILED' },
   { name: 'malformed result envelope', output: '{"status":', outcome: 'BLOCKED' },
   { name: 'unknown result status', output: '{"status":"PENDING"}', outcome: 'BLOCKED' },

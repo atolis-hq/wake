@@ -967,6 +967,64 @@ describe('operator board projection', () => {
       expect(boardConditionCounts(blocked)).toEqual({ error: 1 });
     },
   );
+  it('retains NEEDS_CLARIFICATION on a blocked card', () => {
+    const item = workId('board-clarification');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-clarification');
+    const started = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Need an answer' },
+        workItemStream(item),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'default',
+          orchestrationGroupId: `primary:${item}`,
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-clarification'),
+          activity: activityName('agent'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-03T12:00:00.000Z',
+        },
+        runStream(run),
+        3,
+      ),
+    ].reduce(
+      (view, event) => boardProjection.project(view, event),
+      boardProjection.initial('global'),
+    );
+
+    const finished = boardProjection.project(
+      started,
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        {
+          outcome: { kind: 'blocked', data: { status: 'NEEDS_CLARIFICATION' } },
+          finishedAt: '2026-08-03T12:05:00.000Z',
+        },
+        runStream(run),
+        4,
+      ),
+    );
+
+    expect(finished.cards[item]).toMatchObject({
+      condition: 'needs-input',
+      lastRunOutcome: 'NEEDS_CLARIFICATION',
+    });
+  });
 
   it('clears a terminal outcome when a primary retry starts', () => {
     const item = workId('board-run-retry');
