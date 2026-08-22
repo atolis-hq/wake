@@ -241,6 +241,21 @@ export const mockConfiguredWorkflowDiagrams: readonly WorkflowDiagram[] = [
         label: 'Complete issue',
         children: [{ id: 'complete-issue-activity', label: 'Issue complete', kind: 'activity' }],
       },
+      {
+        id: 'verify',
+        label: 'Verify',
+        children: [{ id: 'verify-activity', label: 'Verify delivery', kind: 'activity' }],
+      },
+      {
+        id: 'publish',
+        label: 'Publish',
+        children: [{ id: 'publish-activity', label: 'Publish update', kind: 'activity' }],
+      },
+      {
+        id: 'archive',
+        label: 'Archive',
+        children: [{ id: 'archive-activity', label: 'Archive record', kind: 'activity' }],
+      },
     ],
     transitions: [
       { from: 'refine', to: 'implement', label: 'done' },
@@ -270,6 +285,9 @@ export const mockConfiguredWorkflowDiagrams: readonly WorkflowDiagram[] = [
         to: 'complete-issue',
         label: 'pr.state-changed: merged',
       },
+      { from: 'complete-issue', to: 'verify', label: 'done' },
+      { from: 'verify', to: 'publish', label: 'verified' },
+      { from: 'publish', to: 'archive', label: 'published' },
     ],
   },
 ];
