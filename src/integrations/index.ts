@@ -28,6 +28,8 @@ export * from './contracts/intake.js';
 
 export * from './contracts/provider.js';
 
+export * from './contracts/reply-routing.js';
+
 export * from './contracts/streams.js';
 
 export * from './delivery/application/delivery-outcome-reactor.js';

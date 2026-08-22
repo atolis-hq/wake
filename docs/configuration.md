@@ -168,6 +168,12 @@ integrations:
         tags: [automation]
     publication:
       postStatusComments: true
+      replies:
+        rules:
+          - match: { stage: review, outcome: [blocked, needs-clarification] }
+            matchMode: all
+            target: pull-request
+        default: primary
   fake:
     provider: fake
     enabled: false
@@ -431,6 +437,7 @@ Use `provider: github` for the built-in GitHub integration.
 | `polling.intervalMs` | positive integer; default `30000` | Minimum time between real GitHub polls. Ticks that land before this interval has elapsed since the last real poll skip the GitHub API call and return no drafts, independent of `controlPlane.resident.pollBackoffMs`, which governs the intake resident loop's own tick cadence, not any one adapter's call rate. |
 | `intake` | list; default `[]` | Admission/tagging rules. With no rules, every observation is admitted with no added tags. |
 | `publication.postStatusComments` | boolean; default `true` | Allows GitHub status-comment publication. |
+| `publication.replies` | object; default `{ rules: [], default: primary }` | Routes agent-run reply comments. Rules are evaluated in order and the first match wins. |
 | `commands` | string list; default `[]` | Additional command syntax advertised on the web UI's Configuration → Commands tab alongside the adapter's built-in commands (`/approved`, `/accepted`, `/changes`, `/retry`). Purely descriptive: Wake does not recognize these itself, so any behavior they imply must be handled by whatever reads the comment. |
 
 Each `intake[]` rule has `where`, optional `matchMode` (`any` by default or
@@ -442,6 +449,16 @@ or correlates work, regardless of whether it otherwise matches an intake rule.
 `where.labels` are string lists, each defaulting to `[]`. Intake tags must not
 use a Wake-owned marker family, so Wake cannot ingest and reroute its own
 markers.
+
+`publication.replies.rules` controls where terminal agent-run reply comments go. Each rule has a
+required `target` of `primary`, `issue`, `pull-request`, or `none`; `none` suppresses the comment.
+`match.stage` and `match.outcome` are independently optional facets, each accepting one value or a
+non-empty list. Outcomes are case-sensitive lowercase-kebab values: `done`, `rejected`, `blocked`,
+`failed`, and `needs-clarification`. Facets are combined with `matchMode` (`any` by default, or
+`all`), and rules are evaluated in listed order: the first match wins. If no rule matches, `default`
+is used and defaults to `primary`. `primary` preserves the existing behavior by selecting the first
+primary correlation. `issue` and `pull-request` select the first correlation of that kind; if none
+exists, they use the same primary resolution.
 
 ### GitHub workflow labels
 

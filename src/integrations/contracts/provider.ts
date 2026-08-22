@@ -19,6 +19,7 @@ import type { ArtifactVerificationResult } from './artifact-vocabulary.js';
 import type { IntegrationsConfig } from './config.js';
 import { adapterId, type AdapterId } from './identifiers.js';
 import type { ExternalEventSource, InboundTranslation } from './intake.js';
+import type { ReplyPublicationConfig } from './reply-routing.js';
 
 // Configuration decides routing; providers supply facts. An adapter can ask which
 // workflow a candidate belongs to, but never proposes a workflow name.
@@ -102,6 +103,7 @@ export interface ProviderInstance {
   // Optional list of commands this adapter recognizes, built-in plus any
   // configuration-defined additions. Synchronous and cheap, like health().
   readonly commands?: () => readonly AdapterCommand[];
+  readonly replyPublication?: ReplyPublicationConfig | undefined;
 }
 
 // What a definition's create() builds, before ProviderRegistry.compose() stamps

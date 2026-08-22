@@ -17,19 +17,30 @@ import {
   type WorkflowInstanceView,
 } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
-import { ResourceCorrelationRole, resourceStream } from '../../resources/index.js';
+import {
+  BuiltInResourceKind,
+  ResourceCorrelationRole,
+  resourceStream,
+  type ResourceCorrelationView,
+} from '../../resources/index.js';
+import { ReplyTarget, type ReplyPublicationConfig } from '../contracts/reply-routing.js';
 import { DeliveryIntentEventType } from '../delivery/contracts/intents.js';
+import {
+  defaultReplyPublication,
+  selectReplyTarget,
+} from '../github/application/reply-target-selector.js';
 import { projectTerminalAgentRunReport, type TerminalRun } from './terminal-agent-run-report.js';
 
-/** Projects terminal agent runs into one durable outbound intent per primary resource. */
+/** Projects terminal agent runs into one durable outbound intent per configured resource. */
 export class AgentRunPublicationReactor {
   constructor(
     private readonly dependencies: {
       readonly journal: EventJournal;
       readonly checkpoints: CheckpointStore;
       readonly runs: RunRepository;
-      readonly resources: Pick<ResourceService, 'correlationsForWork'>;
+      readonly resources: Pick<ResourceService, 'correlationsForWork' | 'get'>;
       readonly orchestration: Pick<OrchestrationService, 'listAll'>;
+      readonly replies?: ReplyPublicationConfig | undefined;
     },
   ) {}
 
@@ -90,14 +101,19 @@ export class AgentRunPublicationReactor {
       (value) => value.workflowInstanceId === run.workflowInstanceId,
     );
     if (workflow === undefined) return;
-    const primary = (
-      await this.dependencies.resources.correlationsForWork(workflow.workItemId)
-    ).find((value) => value.role === ResourceCorrelationRole.Primary);
-    if (primary === undefined) return;
     const stage = await this.stageForActivation(workflow.workflowInstanceId, run.activationId);
     const report = projectTerminalAgentRunReport(reportInput(run, stage, workflow, allWorkflows));
     if (report === null) return;
-    const stream = resourceStream(primary.resourceId);
+    const replies = this.dependencies.replies ?? defaultReplyPublication;
+    const target = selectReplyTarget(
+      { stage, outcome: report.outcome },
+      replies.rules,
+      replies.default,
+    );
+    if (target === ReplyTarget.None) return;
+    const resource = await this.resourceForTarget(workflow.workItemId, target);
+    if (resource === undefined) return;
+    const stream = resourceStream(resource.resourceId);
     const sequence = (await this.dependencies.journal.readStream(stream)).length;
     try {
       await this.dependencies.journal.append(stream, sequence, [
@@ -113,7 +129,7 @@ export class AgentRunPublicationReactor {
           payload: {
             workflowInstanceId: run.workflowInstanceId,
             activationId: run.activationId,
-            resourceId: primary.resourceId,
+            resourceId: resource.resourceId,
             report,
           },
         }),
@@ -121,6 +137,23 @@ export class AgentRunPublicationReactor {
     } catch {
       /* idempotency is the deterministic run event id */
     }
+  }
+
+  private async resourceForTarget(
+    workItemId: WorkflowInstanceView['workItemId'],
+    target: Exclude<ReplyPublicationConfig['default'], typeof ReplyTarget.None>,
+  ): Promise<ResourceCorrelationView | undefined> {
+    const correlations = await this.dependencies.resources.correlationsForWork(workItemId);
+    const primary = () =>
+      correlations.find((value) => value.role === ResourceCorrelationRole.Primary);
+    if (target === ReplyTarget.Primary) return primary();
+    const kind =
+      target === ReplyTarget.Issue ? BuiltInResourceKind.Issue : BuiltInResourceKind.PullRequest;
+    for (const correlation of correlations) {
+      const resource = await this.dependencies.resources.get(correlation.resourceId);
+      if (resource?.kind === kind) return correlation;
+    }
+    return primary();
   }
 
   private async stageForActivation(
