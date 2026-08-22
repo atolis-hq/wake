@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   mockConfiguredWorkflowDiagrams,
   mockWorkItemWorkflowDiagram,
 } from '../src/features/workflow-diagram/model.js';
+import { WorkflowDiagramView } from '../src/features/workflow-diagram/workflow-diagram.js';
 
 const instanceOverlayKeys = [
   'status',
@@ -98,5 +101,39 @@ describe('mockWorkItemWorkflowDiagram', () => {
         }
       }
     }
+  });
+});
+
+describe('WorkflowDiagramView', () => {
+  afterEach(cleanup);
+
+  it('renders an accessible, expandable workflow graph with stage and run detail', async () => {
+    const user = userEvent.setup();
+    render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
+
+    const diagram = screen.getByRole('region', {
+      name: `Workflow ${mockWorkItemWorkflowDiagram.label}`,
+    });
+    const refine = within(diagram).getByRole('group', { name: /Stage refine/i });
+    expect(within(refine).getByText('4 runs')).toBeTruthy();
+    expect(within(refine).getByText('Refine task')).toBeTruthy();
+    expect(within(refine).getByText('Wait for review')).toBeTruthy();
+    expect(within(refine).getByText('codex')).toBeTruthy();
+    expect(within(refine).getByText(/running/)).toBeTruthy();
+    expect((await within(diagram).findAllByText('ready')).length).toBeGreaterThan(0);
+
+    expect(
+      screen.getByRole('button', { name: 'Collapse Refine' }).getAttribute('aria-expanded'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: 'Expand Deploy' }).getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(screen.queryByText('Deploy release')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Expand Deploy' }));
+    expect(
+      screen.getByRole('button', { name: 'Collapse Deploy' }).getAttribute('aria-expanded'),
+    ).toBe('true');
+    expect(screen.getByText('Deploy release')).toBeTruthy();
   });
 });

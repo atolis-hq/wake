@@ -1,0 +1,109 @@
+.canvas {
+  position: relative;
+  min-width: var(--graph-width);
+  min-height: var(--graph-height);
+  padding: 1rem;
+}
+
+.edges {
+  position: absolute;
+  inset: 0;
+  width: var(--graph-width);
+  height: var(--graph-height);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.edges path {
+  fill: none;
+  stroke: var(--border-strong, #64748b);
+  stroke-width: 1.5;
+}
+
+.edges text {
+  fill: var(--muted, #64748b);
+  font-size: 12px;
+  text-anchor: middle;
+}
+
+.edgeLabel {
+  position: absolute;
+  left: -9999px;
+}
+
+.stage {
+  position: absolute;
+}
+
+.stageCard,
+.childCard {
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 0.5rem;
+  background: var(--surface, #fff);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+
+.stageCard {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.stageCard button {
+  align-self: start;
+}
+
+.chips,
+.metrics,
+.stageTotals,
+.activeRun {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.stageTotals {
+  grid-column: 1 / -1;
+  color: var(--muted, #64748b);
+  font-size: 0.8125rem;
+}
+
+.children {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.childCard {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.65rem;
+  font-size: 0.875rem;
+}
+
+.metrics,
+.activeRun {
+  color: var(--muted, #64748b);
+  font-size: 0.8125rem;
+}
+
+.activeRun {
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border, #cbd5e1);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+@media (max-width: 42rem) {
+  .canvas[data-direction='DOWN'] {
+    min-width: 100%;
+  }
+}
