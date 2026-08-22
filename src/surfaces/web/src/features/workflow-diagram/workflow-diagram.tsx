@@ -155,28 +155,32 @@ function metrics(item: WorkflowDiagramChild) {
 function ChildCard({
   child,
   onHover,
+  showStatus,
 }: {
   readonly child: WorkflowDiagramChild;
   readonly onHover: (childId: string | undefined) => void;
+  readonly showStatus: boolean;
 }) {
   const status = childStatus(child);
   const hasActiveRun = (child.activeRuns?.length ?? 0) > 0;
   return (
     <article
-      className={`${styles.childCard} ${boardStyles.childRun}`}
+      className={`${styles.childCard} ${boardStyles.childRun} ${showStatus ? '' : styles.childCardWithoutStatus}`}
       data-diagram-child={child.id}
       data-kind={child.kind}
       onMouseEnter={() => onHover(child.id)}
       onMouseLeave={() => onHover(undefined)}
     >
-      <span
-        aria-label={hasActiveRun ? 'active run' : `${status} status`}
-        className={`${boardStyles.childRunDot} ${styles.childStatusDot}`}
-        data-status={status}
-        data-active-run={hasActiveRun || undefined}
-        data-testid={`child-status-${child.id}`}
-        role="img"
-      />
+      {showStatus ? (
+        <span
+          aria-label={hasActiveRun ? 'active run' : `${status} status`}
+          className={`${boardStyles.childRunDot} ${styles.childStatusDot}`}
+          data-status={status}
+          data-active-run={hasActiveRun || undefined}
+          data-testid={`child-status-${child.id}`}
+          role="img"
+        />
+      ) : null}
       <div>
         <div className={`${boardStyles.childRunTitle} ${styles.childTitle}`}>
           <FontAwesomeIcon className={styles.childKindIcon} icon={childKindIcon[child.kind]} />
@@ -366,6 +370,20 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
     );
   });
   const [hoveredChildId, setHoveredChildId] = useState<string>();
+  const isRunAware = diagram.stages.some(
+    (stage) =>
+      stage.status !== undefined ||
+      stage.lastOutcome !== undefined ||
+      stage.activeRuns !== undefined ||
+      stage.runCount !== undefined ||
+      stage.children.some(
+        (child) =>
+          child.status !== undefined ||
+          child.lastOutcome !== undefined ||
+          child.activeRuns !== undefined ||
+          child.runCount !== undefined,
+      ),
+  );
   const nodeById = new Map(layout.nodes.map((node) => [node.id, node]));
   const expandedAny = expanded.size > 0;
   const width = layout.width || (direction === 'RIGHT' ? diagram.stages.length * 352 : 300);
@@ -478,7 +496,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                     <strong className={boardStyles.cardTitle}>{stage.label}</strong>
                   </div>
                 </div>
-                {direction === 'DOWN' && !isExpanded ? (
+                {direction === 'DOWN' && isRunAware && !isExpanded ? (
                   <span className={styles.collapsedStatusDots}>
                     {stage.children.map((child) => (
                       <span
@@ -518,6 +536,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                       child={child}
                       key={child.id}
                       onHover={direction === 'RIGHT' ? setHoveredChildId : () => undefined}
+                      showStatus={isRunAware}
                     />
                   ))}
                 </div>

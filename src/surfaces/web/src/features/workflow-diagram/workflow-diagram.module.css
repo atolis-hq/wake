@@ -109,6 +109,10 @@
   padding: 0.35rem;
 }
 
+.childCardWithoutStatus {
+  grid-template-columns: 1fr;
+}
+
 .childCard:hover,
 .childCard:focus-within {
   border-color: var(--accent);

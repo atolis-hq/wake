@@ -161,6 +161,12 @@ describe('WorkflowDiagramView', () => {
     expect(screen.getByTestId('child-status-merge-merged-reactor').dataset.status).toBe('failed');
   });
 
+  it('omits child status dots for definition-only diagrams', () => {
+    render(<WorkflowDiagramView diagram={mockConfiguredWorkflowDiagrams[0]!} />);
+
+    expect(screen.queryByTestId('child-status-refine-activity')).toBeNull();
+  });
+
   it('uses semantic positioned labels and arrowheads for graph edges', async () => {
     render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
 
