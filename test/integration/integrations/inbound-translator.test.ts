@@ -10,12 +10,11 @@ import {
   GitHubEventType,
   InboundTranslator,
   integrationStream,
-  UlidIdGenerator,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
-import { resourceCapability, resourceId, resourceKind } from '../../../src/resources/index.js';
+import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock, TestWorld } from '../../e2e/support/world.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
