@@ -86,9 +86,10 @@ edges.
 
 ## Surface integration
 
-`GET /work-items/:workItemKey` gains `orchestration.diagram`, resolved from
-the primary workflow instance's fingerprinted definition and overlaid with the
-primary instance, watch-child instances, and their runs.
+`GET /work-items/:workItemKey/workflow-diagram` is a dedicated diagram read.
+It resolves the primary workflow instance's fingerprinted definition and
+overlays the primary instance, watch-child instances, and their runs. The
+existing work-detail response remains unchanged.
 
 A new read-only system workflow-diagrams endpoint returns exactly one diagram
 for each current configured workflow name. It does not expose historical
