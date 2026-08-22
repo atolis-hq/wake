@@ -14,15 +14,18 @@ const workflowDiagramChildKindShape = {
   watch: true,
   'watch-gate': true,
   reactor: true,
-};
-const workflowDiagramChildKinds = Object.keys(workflowDiagramChildKindShape);
+} as const;
+type WorkflowDiagramChildKindValue = keyof typeof workflowDiagramChildKindShape;
+const workflowDiagramChildKinds = Object.keys(
+  workflowDiagramChildKindShape,
+) as readonly WorkflowDiagramChildKindValue[];
 
 export const WorkflowDiagramChildKind = {
   Activity: workflowDiagramChildKinds[0]!,
   Watch: workflowDiagramChildKinds[1]!,
   WatchGate: workflowDiagramChildKinds[2]!,
   Reactor: workflowDiagramChildKinds[3]!,
-} as const;
+} as const satisfies Record<string, WorkflowDiagramChildKindValue>;
 
 export type WorkflowDiagramChildKind = ValueOf<typeof WorkflowDiagramChildKind>;
 
