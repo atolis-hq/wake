@@ -18,6 +18,17 @@ const instanceOverlayKeys = [
   'totalCostUsd',
 ] as const;
 
+const aggregateFields = [
+  'runCount',
+  'totalDurationMs',
+  'totalTokens',
+  'inputTokens',
+  'outputTokens',
+  'cacheReadTokens',
+  'cacheWriteTokens',
+  'totalCostUsd',
+] as const;
+
 describe('mockWorkItemWorkflowDiagram', () => {
   it('provides the requested refine run and child breakdown', () => {
     const refine = mockWorkItemWorkflowDiagram.stages.find((stage) => stage.id === 'refine');
@@ -27,8 +38,8 @@ describe('mockWorkItemWorkflowDiagram', () => {
       totalDurationMs: 120_000,
     });
     expect(refine?.children.map((child) => child.kind)).toEqual(['activity', 'watch', 'reactor']);
-    expect(refine?.children.map((child) => child.runCount)).toEqual([1, 2, undefined]);
-    expect(refine?.activeRuns).toEqual([
+    expect(refine?.children.map((child) => child.runCount)).toEqual([2, 2, undefined]);
+    expect(refine?.children[0]?.activeRuns).toEqual([
       {
         runId: 'run-refine-004',
         activity: 'Refine task',
@@ -44,6 +55,16 @@ describe('mockWorkItemWorkflowDiagram', () => {
       cacheWriteTokens: 300,
       totalCostUsd: 0.41,
     });
+
+    const runnableChildren = refine?.children.filter((child) => child.kind !== 'reactor') ?? [];
+    for (const field of aggregateFields) {
+      const aggregate = runnableChildren.reduce((total, child) => total + (child[field] ?? 0), 0);
+      if (field === 'totalCostUsd') {
+        expect(refine?.[field]).toBeCloseTo(aggregate);
+      } else {
+        expect(refine?.[field]).toBe(aggregate);
+      }
+    }
   });
 
   it('leaves unreached stages without a status and reactors without agent metrics', () => {
