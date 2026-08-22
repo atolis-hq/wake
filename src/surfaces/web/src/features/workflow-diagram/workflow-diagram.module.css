@@ -152,9 +152,15 @@
   box-shadow: none;
 }
 
-.childStatusDot[data-status='active'],
-.childStatusDot[data-status='completed'] {
+.childStatusDot[data-status='active'] {
   background: var(--good);
+}
+
+.childStatusDot[data-status='completed'] {
+  box-sizing: border-box;
+  border: 2px solid var(--good);
+  background: transparent;
+  box-shadow: none;
 }
 
 .childStatusDot[data-active-run='true'] {
