@@ -3,43 +3,53 @@ export type WorkflowDiagramStatus = 'active' | 'waiting' | 'blocked' | 'complete
 export type WorkflowDiagramChildKind = 'activity' | 'watch' | 'watch-gate' | 'reactor';
 
 export interface WorkflowDiagramMetrics {
-  runCount?: number;
-  totalDurationMs?: number;
-  totalInputTokens?: number;
-  totalOutputTokens?: number;
-  totalCostUsd?: number;
+  readonly runCount?: number;
+  readonly totalDurationMs?: number;
+  readonly totalTokens?: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly cacheReadTokens?: number;
+  readonly cacheWriteTokens?: number;
+  readonly totalCostUsd?: number;
+}
+
+export interface WorkflowDiagramActiveRun {
+  readonly runId: string;
+  readonly activity: string;
+  readonly runnerName?: string;
+  readonly startedAt: string;
 }
 
 export interface WorkflowDiagramChild extends WorkflowDiagramMetrics {
-  id: string;
-  label: string;
-  kind: WorkflowDiagramChildKind;
-  status?: WorkflowDiagramStatus;
-  lastOutcome?: string;
-  activeRuns?: number;
+  readonly id: string;
+  readonly label: string;
+  readonly kind: WorkflowDiagramChildKind;
+  readonly status?: WorkflowDiagramStatus;
+  readonly lastOutcome?: string;
+  readonly activeRuns?: readonly WorkflowDiagramActiveRun[];
 }
 
 export interface WorkflowDiagramStage extends WorkflowDiagramMetrics {
-  id: string;
-  label: string;
-  status?: WorkflowDiagramStatus;
-  lastOutcome?: string;
-  activeRuns?: number;
-  children: readonly WorkflowDiagramChild[];
+  readonly id: string;
+  readonly label: string;
+  readonly status?: WorkflowDiagramStatus;
+  readonly lastOutcome?: string;
+  readonly activeRuns?: readonly WorkflowDiagramActiveRun[];
+  readonly children: readonly WorkflowDiagramChild[];
 }
 
 export interface WorkflowDiagramTransition {
-  from: string;
-  to: string;
-  label: string;
+  readonly from: string;
+  readonly to: string;
+  readonly label: string;
 }
 
 export interface WorkflowDiagram {
-  id: string;
-  label: string;
-  direction: 'left-to-right';
-  stages: readonly WorkflowDiagramStage[];
-  transitions: readonly WorkflowDiagramTransition[];
+  readonly id: string;
+  readonly label: string;
+  readonly direction: 'left-to-right';
+  readonly stages: readonly WorkflowDiagramStage[];
+  readonly transitions: readonly WorkflowDiagramTransition[];
 }
 
 export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
@@ -51,11 +61,21 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
       id: 'refine',
       label: 'Refine',
       status: 'active',
-      activeRuns: 1,
+      activeRuns: [
+        {
+          runId: 'run-refine-004',
+          activity: 'Refine task',
+          runnerName: 'codex',
+          startedAt: '2026-08-22T17:58:00.000Z',
+        },
+      ],
       runCount: 4,
       totalDurationMs: 120_000,
-      totalInputTokens: 18_400,
-      totalOutputTokens: 5_200,
+      totalTokens: 23_600,
+      inputTokens: 18_400,
+      outputTokens: 5_200,
+      cacheReadTokens: 4_100,
+      cacheWriteTokens: 300,
       totalCostUsd: 0.41,
       children: [
         {
@@ -63,11 +83,13 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
           label: 'Refine task',
           kind: 'activity',
           status: 'active',
-          activeRuns: 1,
           runCount: 1,
           totalDurationMs: 75_000,
-          totalInputTokens: 12_300,
-          totalOutputTokens: 3_400,
+          totalTokens: 15_700,
+          inputTokens: 12_300,
+          outputTokens: 3_400,
+          cacheReadTokens: 2_500,
+          cacheWriteTokens: 200,
           totalCostUsd: 0.28,
         },
         {
