@@ -156,11 +156,26 @@
   background: var(--good);
 }
 
-.childStatusDot[data-status='completed'] {
+.childStatusDot[data-status='completed'],
+.childStatusDot[data-status='waiting'],
+.childStatusDot[data-status='blocked'],
+.childStatusDot[data-status='failed'] {
   box-sizing: border-box;
-  border: 2px solid var(--good);
   background: transparent;
   box-shadow: none;
+}
+
+.childStatusDot[data-status='completed'] {
+  border: 2px solid var(--good);
+}
+
+.childStatusDot[data-status='waiting'],
+.childStatusDot[data-status='blocked'] {
+  border: 2px solid var(--warning);
+}
+
+.childStatusDot[data-status='failed'] {
+  border: 2px solid var(--bad);
 }
 
 .childStatusDot[data-active-run='true'] {
@@ -176,21 +191,6 @@
   100% {
     box-shadow: 0 0 0 0 rgb(134 239 172 / 0);
   }
-}
-
-.childStatusDot[data-status='waiting'] {
-  background: var(--warning);
-  box-shadow: 0 0 0 3px rgb(245 158 11 / 0.14);
-}
-
-.childStatusDot[data-status='failed'] {
-  background: var(--bad);
-  box-shadow: 0 0 0 3px rgb(239 68 68 / 0.14);
-}
-
-.childStatusDot[data-status='blocked'] {
-  background: var(--warning);
-  box-shadow: 0 0 0 3px rgb(245 158 11 / 0.14);
 }
 
 .srOnly {
