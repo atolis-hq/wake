@@ -147,6 +147,52 @@ describe('Resource correlations', () => {
     await expect(service.get(resource)).resolves.toMatchObject({ resourceId: resId('one') });
     await expect(service.correlations(resource)).resolves.toEqual([]);
   });
+
+  it('bounds missing-primary retries per resource and exposes the terminal fact', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createTestResourceServices(journal).resources;
+    const resource = resId('unresolvable');
+    await service.discover(discovery(resource), context('discover'));
+    await service.noteMissingPrimaryCorrelation(
+      resource,
+      'no primary correlation',
+      context('observe'),
+    );
+
+    await service.retryPendingWorkCorrelations();
+    await service.retryPendingWorkCorrelations();
+    await service.retryPendingWorkCorrelations();
+
+    expect(await service.get(resource)).toMatchObject({ correlationStatus: 'unresolvable' });
+    expect((await journal.readStream(resourceStream(resource))).at(-1)).toMatchObject({
+      eventType: 'resources.work-correlation-unresolvable',
+      payload: { attemptCount: 4, lastFailureReason: 'no primary correlation' },
+    });
+    await service.retryPendingWorkCorrelations();
+    expect(
+      (await journal.readStream(resourceStream(resource))).filter(
+        (event) => event.eventType === 'resources.work-correlation-unresolvable',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('clears the projected unresolvable state when an operator establishes a primary correlation', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createTestResourceServices(journal).resources;
+    const resource = resId('recover');
+    await service.discover(discovery(resource), context('discover'));
+    await service.noteMissingPrimaryCorrelation(
+      resource,
+      'no primary correlation',
+      context('observe'),
+    );
+    await service.retryPendingWorkCorrelations();
+    await service.retryPendingWorkCorrelations();
+    await service.retryPendingWorkCorrelations();
+    await service.correlate(resource, workId('recover'), 'primary', context('correlate'));
+
+    expect(await service.get(resource)).not.toHaveProperty('correlationStatus');
+  });
 });
 
 function discovery(resource: ReturnType<typeof resourceId>) {

@@ -1,6 +1,7 @@
 import type { ProjectionDefinition } from '../../kernel/index.js';
 import { ResourceEventType, selectResourceEvent } from '../contracts/events.js';
 import type { ResourceCorrelationView, ResourceView } from '../contracts/views.js';
+import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
 
 export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
   name: 'resources',
@@ -37,10 +38,29 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
               },
             };
       case ResourceEventType.WorkCorrelationEstablished:
+        return previous === null
+          ? previous
+          : owned.payload.role === ResourceCorrelationRole.Primary
+            ? { ...previous, correlationStatus: undefined }
+            : previous;
+      case ResourceEventType.WorkCorrelationRetryPending:
       case ResourceEventType.WorkCorrelationRetracted:
       case ResourceEventType.IssueCompletionObservationConsumed:
       case ResourceEventType.IssueCompletionObservationSuperseded:
         return previous;
+      case ResourceEventType.WorkCorrelationUnresolvable:
+        return previous === null ? previous : { ...previous, correlationStatus: 'unresolvable' };
+      case ResourceEventType.ExternalOutcomeObserved:
+        return previous === null
+          ? previous
+          : { ...previous, pendingExternalOutcome: owned.payload };
+      case ResourceEventType.ExternalOutcomeReopened:
+        return previous === null ? previous : { ...previous, pendingExternalOutcome: undefined };
+      case ResourceEventType.ExternalOutcomeConsumed:
+        return previous?.pendingExternalOutcome?.sourceObservationId ===
+          owned.payload.sourceObservationId
+          ? { ...previous, pendingExternalOutcome: undefined }
+          : previous;
       default:
         return assertNever(owned);
     }
@@ -77,6 +97,11 @@ export const resourceCorrelationProjection: ProjectionDefinition<
       case ResourceEventType.ResourceDiscovered:
       case ResourceEventType.ResourceRevisionObserved:
       case ResourceEventType.WorkCorrelationConflicted:
+      case ResourceEventType.WorkCorrelationRetryPending:
+      case ResourceEventType.WorkCorrelationUnresolvable:
+      case ResourceEventType.ExternalOutcomeObserved:
+      case ResourceEventType.ExternalOutcomeReopened:
+      case ResourceEventType.ExternalOutcomeConsumed:
       case ResourceEventType.IssueCompletionObservationConsumed:
       case ResourceEventType.IssueCompletionObservationSuperseded:
         return previous;

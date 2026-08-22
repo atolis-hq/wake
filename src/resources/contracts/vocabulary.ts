@@ -40,6 +40,13 @@ export const ResourceCorrelationProvenance = defineClosedVocabulary({
 
 export type ResourceCorrelationProvenance = ValueOf<typeof ResourceCorrelationProvenance>;
 
+export const ResourceExternalOutcome = defineClosedVocabulary({
+  Completed: 'completed',
+  Cancelled: 'cancelled',
+} as const);
+
+export type ResourceExternalOutcome = ValueOf<typeof ResourceExternalOutcome>;
+
 abstract class OpenResourceVocabularyRegistry<Value extends string> {
   private readonly values = new Set<Value>();
 

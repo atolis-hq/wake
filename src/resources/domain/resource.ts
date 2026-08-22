@@ -1,10 +1,12 @@
 import type { WorkItemId } from '../../work/index.js';
 import { ResourceEventType, type ResourceEvent } from '../contracts/events.js';
 import type { ResourceCorrelationView, ResourceView } from '../contracts/views.js';
+import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
 
 export interface FoldedResource {
   readonly view: ResourceView;
   readonly correlations: readonly ResourceCorrelationView[];
+  readonly events: readonly ResourceEvent[];
 }
 
 export function foldResource(events: readonly ResourceEvent[]): FoldedResource | null {
@@ -16,7 +18,7 @@ export function foldResource(events: readonly ResourceEvent[]): FoldedResource |
   const active = new Map<WorkItemId, ResourceCorrelationView>();
 
   for (const event of events) applyResourceEvent(resource, active, event);
-  return { view: resource, correlations: [...active.values()] };
+  return { view: resource, correlations: [...active.values()], events };
 }
 
 function discoveredResource(
@@ -46,6 +48,7 @@ function applyResourceEvent(
       Object.assign(resource, { revision: event.payload.revision });
       break;
     case ResourceEventType.WorkCorrelationEstablished:
+      if (event.payload.role === ResourceCorrelationRole.Primary) delete resource.correlationStatus;
       active.set(event.payload.workItemId, {
         resourceId: resource.resourceId,
         workItemId: event.payload.workItemId,
@@ -53,6 +56,23 @@ function applyResourceEvent(
         provenance: event.payload.provenance,
         establishedByEventId: event.eventId,
       });
+      break;
+    case ResourceEventType.WorkCorrelationRetryPending:
+      break;
+    case ResourceEventType.WorkCorrelationUnresolvable:
+      Object.assign(resource, { correlationStatus: 'unresolvable' });
+      break;
+    case ResourceEventType.ExternalOutcomeObserved:
+      Object.assign(resource, { pendingExternalOutcome: event.payload });
+      break;
+    case ResourceEventType.ExternalOutcomeReopened:
+      delete resource.pendingExternalOutcome;
+      break;
+    case ResourceEventType.ExternalOutcomeConsumed:
+      if (
+        resource.pendingExternalOutcome?.sourceObservationId === event.payload.sourceObservationId
+      )
+        delete resource.pendingExternalOutcome;
       break;
     case ResourceEventType.WorkCorrelationConflicted:
       Object.assign(resource, {

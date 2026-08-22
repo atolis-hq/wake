@@ -149,6 +149,10 @@ export class InboundTranslator {
     ) {
       throw new Error('InboundTranslator services are required to run evidence translation');
     }
+    // Retry state is resource-scoped, so it progresses even when the provider
+    // has no further observations for the broken resource.
+    await this.resources.retryPendingWorkCorrelations();
+    await this.applyDeferredExternalOutcomes();
     const checkpoint = `reactor:integration.${this.adapter}.inbound`;
     await this.retryPendingTranslations();
     const position = await this.checkpoints.load(checkpoint);

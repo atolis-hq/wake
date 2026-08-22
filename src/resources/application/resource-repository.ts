@@ -1,5 +1,6 @@
 import type { EventJournal } from '../../kernel/index.js';
 import {
+  ResourceEventType,
   decodeResourceEvent,
   selectResourceEvent,
   type ResourceEvent,
@@ -30,5 +31,17 @@ export class ResourceRepository {
   ): Promise<readonly ResourceEvent[]> {
     const events = await this.journal.append(resourceStream(resourceId), expectedSequence, drafts);
     return events.map(decodeResourceEvent);
+  }
+
+  async resourceIds(): Promise<readonly ResourceId[]> {
+    const events = await this.journal.readAll(0);
+    return [
+      ...new Set(
+        events
+          .map(selectResourceEvent)
+          .filter((event) => event?.eventType === ResourceEventType.ResourceDiscovered)
+          .map((event) => event!.stream.id),
+      ),
+    ];
   }
 }
