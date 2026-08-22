@@ -24,6 +24,9 @@ export const GitHubEventType = {
   CommentObserved: 'integration.github.comment-observed',
   DeliveryObserved: 'integration.github.delivery-observed',
   DeletedWorkObservationSkipped: 'integration.github.deleted-work-observation-skipped',
+  InboundTranslationRetried: 'integration.github.inbound-translation-retried',
+  InboundTranslationRecovered: 'integration.github.inbound-translation-recovered',
+  InboundTranslationFailed: 'integration.github.inbound-translation-failed',
 } as const;
 
 export interface ExternalWorkObservedPayload {
@@ -122,11 +125,34 @@ interface GitHubDeletedWorkObservationSkippedPayload {
   readonly reason: 'work-item-deleted';
 }
 
+interface InboundTranslationRetryPayload {
+  readonly adapter: string;
+  readonly sourceEventId: string;
+  readonly attempt: number;
+  readonly message: string;
+}
+
+interface InboundTranslationFailurePayload extends InboundTranslationRetryPayload {
+  readonly globalPosition: number;
+  readonly eventType: string;
+  readonly correlationId: string;
+  readonly causationId: string;
+  readonly failedAt: string;
+}
+
+interface InboundTranslationRecoveredPayload {
+  readonly adapter: string;
+  readonly sourceEventId: string;
+}
+
 export interface GitHubEventPayloads {
   readonly [GitHubEventType.WorkObserved]: ExternalWorkObservedPayload;
   readonly [GitHubEventType.CommentObserved]: GitHubCommentObservedPayload;
   readonly [GitHubEventType.DeliveryObserved]: GitHubDeliveryObservedPayload;
   readonly [GitHubEventType.DeletedWorkObservationSkipped]: GitHubDeletedWorkObservationSkippedPayload;
+  readonly [GitHubEventType.InboundTranslationRetried]: InboundTranslationRetryPayload;
+  readonly [GitHubEventType.InboundTranslationRecovered]: InboundTranslationRecoveredPayload;
+  readonly [GitHubEventType.InboundTranslationFailed]: InboundTranslationFailurePayload;
 }
 
 export type GitHubAdapterEvent = EventUnion<GitHubEventPayloads, IntegrationStreamRef>;
@@ -248,6 +274,40 @@ const eventSchema = z.discriminatedUnion('eventType', [
         sourceEventId: z.string(),
         revision: z.string(),
         reason: z.literal('work-item-deleted'),
+      })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(GitHubEventType.InboundTranslationRetried),
+    stream: streamSchema,
+    payload: z
+      .object({
+        adapter: z.string(),
+        sourceEventId: z.string(),
+        attempt: z.number().int().positive(),
+        message: z.string(),
+      })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(GitHubEventType.InboundTranslationRecovered),
+    stream: streamSchema,
+    payload: z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(GitHubEventType.InboundTranslationFailed),
+    stream: streamSchema,
+    payload: z
+      .object({
+        adapter: z.string(),
+        sourceEventId: z.string(),
+        attempt: z.number().int().positive(),
+        message: z.string(),
+        globalPosition: z.number().int().positive(),
+        eventType: z.string(),
+        correlationId: z.string(),
+        causationId: z.string(),
+        failedAt: z.string(),
       })
       .strict(),
   }),

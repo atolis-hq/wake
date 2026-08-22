@@ -49,6 +49,33 @@ const samples = [
   ],
   [GitHubEventType.DeliveryObserved, { deliveryId: 'delivery-1', raw: { status: 'ok' } }],
   [
+    GitHubEventType.InboundTranslationRetried,
+    {
+      adapter: 'github',
+      sourceEventId: 'github:issue:atolis/wake#1:v2',
+      attempt: 1,
+      message: 'primary correlation missing',
+    },
+  ],
+  [
+    GitHubEventType.InboundTranslationFailed,
+    {
+      adapter: 'github',
+      sourceEventId: 'github:issue:atolis/wake#1:v2',
+      attempt: 4,
+      message: 'primary correlation missing',
+      globalPosition: 4,
+      eventType: GitHubEventType.WorkObserved,
+      correlationId: 'github:atolis/wake#1',
+      causationId: 'github:issue:atolis/wake#1:v2',
+      failedAt: '2026-08-22T00:00:00.000Z',
+    },
+  ],
+  [
+    GitHubEventType.InboundTranslationRecovered,
+    { adapter: 'github', sourceEventId: 'github:issue:atolis/wake#1:v2' },
+  ],
+  [
     GitHubEventType.DeletedWorkObservationSkipped,
     {
       externalKey: 'atolis/wake#1',

@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { createPullRequestService } from '../activities/index.js';
 import {
   ControlStreamKind,
@@ -51,7 +52,7 @@ import {
   workflowName,
   type createOrchestrationService,
 } from '../orchestration/index.js';
-import type { ProjectionRunSerialiser } from '../persistence/index.js';
+import { withFileLock, type ProjectionRunSerialiser } from '../persistence/index.js';
 import {
   BuiltInResourceCapability,
   resourceId,
@@ -264,7 +265,10 @@ export async function composeIntegrationRuntime(
       return observeMemory(memoryProfile, 'intake.poll', async () => {
         let appended = 0;
         for (const provider of providers)
-          appended += await new PollService(input.journal, provider).pollOnce(signal);
+          appended += await withFileLock(
+            join(input.wakeRoot, '.wake', 'locks', `poll-${provider.adapter}.lock`),
+            async () => (await new PollService(input.journal, provider).pollOnce(signal)).appended,
+          );
         return appended;
       });
     },
