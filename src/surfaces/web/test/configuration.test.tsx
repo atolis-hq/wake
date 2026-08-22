@@ -18,6 +18,35 @@ describe('configuration page commands tab', () => {
     expect(await screen.findByText(/Read-only effective configuration/)).toBeTruthy();
   });
 
+  it('shows configured workflow definitions only on the workflows tab', async () => {
+    render(
+      <MemoryRouter initialEntries={['/configuration']}>
+        <App client={client()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByLabelText('Workflow Dark Factory')).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Workflows' }));
+
+    expect(await screen.findByLabelText('Workflow Dark Factory')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Dark Factory' })).toBeTruthy();
+  });
+
+  it('shows workflows without waiting for the configuration read', async () => {
+    render(
+      <MemoryRouter initialEntries={['/configuration']}>
+        <App client={loadingClient()} />
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Workflows' }));
+
+    expect(await screen.findByLabelText('Workflow Dark Factory')).toBeTruthy();
+    expect(screen.queryByText('Loading redacted configuration')).toBeNull();
+  });
+
   it('lists built-in and configured commands per adapter on the commands tab', async () => {
     render(
       <MemoryRouter initialEntries={['/configuration']}>
@@ -44,29 +73,54 @@ function client() {
     const url = String(input);
     const body = url.endsWith('/system/configuration')
       ? { data: { configuration: {} }, meta: { asOf } }
-      : url.endsWith('/system/commands')
-        ? {
-            data: {
-              adapters: [
-                {
-                  adapter: 'github',
-                  provider: 'github',
-                  commands: [
-                    { syntax: '/approved' },
-                    { syntax: '/accepted' },
-                    { syntax: '/changes' },
-                    { syntax: '/retry' },
-                    { syntax: '/deploy' },
-                  ],
-                },
-              ],
-            },
-            meta: { asOf },
-          }
-        : { data: {}, meta: { asOf } };
+      : url.includes('/workflow-diagrams')
+        ? { data: { diagrams: [diagram()] }, meta: { asOf } }
+        : url.endsWith('/system/commands')
+          ? {
+              data: {
+                adapters: [
+                  {
+                    adapter: 'github',
+                    provider: 'github',
+                    commands: [
+                      { syntax: '/approved' },
+                      { syntax: '/accepted' },
+                      { syntax: '/changes' },
+                      { syntax: '/retry' },
+                      { syntax: '/deploy' },
+                    ],
+                  },
+                ],
+              },
+              meta: { asOf },
+            }
+          : { data: {}, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
   });
+}
+
+function loadingClient() {
+  return new WakeApiClient(async (input) => {
+    if (String(input).endsWith('/system/configuration')) return new Promise<Response>(() => {});
+    const body = String(input).includes('/workflow-diagrams')
+      ? { data: { diagrams: [diagram()] }, meta: { asOf: '2026-08-18T10:00:00.000Z' } }
+      : { data: {}, meta: { asOf: '2026-08-18T10:00:00.000Z' } };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+}
+
+function diagram() {
+  return {
+    id: 'dark-factory',
+    label: 'Dark Factory',
+    direction: 'left-to-right',
+    stages: [{ id: 'refine', label: 'Refine', children: [] }],
+    transitions: [],
+  };
 }

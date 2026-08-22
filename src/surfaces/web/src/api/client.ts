@@ -13,6 +13,7 @@ import {
   decodeTranscript,
   decodeWorkDetail,
   decodeWorkflow,
+  decodeWorkflowDiagrams,
   decodeWorkItem,
   decodeWorkTranscript,
   resourceDecoder,
@@ -102,6 +103,15 @@ export class WakeApiClient {
       this.get(
         `/workflow-instances${query({ cursor })}`,
         collectionDecoder(decodeWorkflow),
+        signal,
+      ),
+  };
+
+  readonly workflowDiagrams = {
+    get: (workItemKey?: string, signal?: AbortSignal) =>
+      this.get(
+        `/workflow-diagrams${query({ workItemKey })}`,
+        resourceDecoder(decodeWorkflowDiagrams),
         signal,
       ),
   };

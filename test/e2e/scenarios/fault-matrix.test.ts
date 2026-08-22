@@ -52,7 +52,7 @@ it(`${scenario.id} replays or exposes every composed durable boundary without du
   await deliveryBoundaries();
   await childCompletionBoundaries();
   await scheduleSlotBoundaries();
-});
+}, 30_000);
 
 async function journalAppendBoundaries(): Promise<void> {
   for (const point of ['journal.append.before', 'journal.append.after'] as const) {

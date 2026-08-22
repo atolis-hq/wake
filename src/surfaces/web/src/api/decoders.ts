@@ -12,11 +12,14 @@ import type {
   TranscriptEntryResponse,
   TranscriptGroupResponse,
   WorkDetailResponse,
+  WorkflowDiagramResponse,
+  WorkflowDiagramsResponse,
   WorkflowInstanceResponse,
   WorkItemResponse,
   WorkItemTranscriptResponse,
 } from '../../../api/contracts/index.js';
 import {
+  WorkflowDiagramChildKind,
   type AcceptedCommandResponse,
   type TickCommandResponse,
 } from '../../../api/contracts/index.js';
@@ -248,6 +251,86 @@ export const decodeWorkflow: Decoder<WorkflowInstanceResponse> = (value, path = 
   };
 };
 
+export const decodeWorkflowDiagrams: Decoder<WorkflowDiagramsResponse> = (value, path = '') => {
+  const record = object(value, path);
+  return { diagrams: array(record.diagrams, child(path, 'diagrams'), decodeWorkflowDiagram) };
+};
+
+function decodeWorkflowDiagram(value: unknown, path = ''): WorkflowDiagramResponse {
+  const record = object(value, path);
+  return {
+    id: string(record.id, child(path, 'id')),
+    label: string(record.label, child(path, 'label')),
+    direction: 'left-to-right',
+    stages: array(record.stages, child(path, 'stages'), (stage, stagePath = '') => {
+      const item = object(stage, stagePath);
+      return {
+        id: string(item.id, child(stagePath, 'id')),
+        label: string(item.label, child(stagePath, 'label')),
+        children: array(item.children, child(stagePath, 'children'), (card, cardPath = '') => {
+          const childCard = object(card, cardPath);
+          return {
+            id: string(childCard.id, child(cardPath, 'id')),
+            label: string(childCard.label, child(cardPath, 'label')),
+            kind: workflowDiagramChildKind(childCard.kind, child(cardPath, 'kind')),
+            ...diagramOverlayFields(childCard, cardPath),
+          };
+        }),
+        ...diagramOverlayFields(item, stagePath),
+      };
+    }),
+    transitions: array(
+      record.transitions,
+      child(path, 'transitions'),
+      (transition, transitionPath = '') => {
+        const item = object(transition, transitionPath);
+        return {
+          from: string(item.from, child(transitionPath, 'from')),
+          to: string(item.to, child(transitionPath, 'to')),
+          label: string(item.label, child(transitionPath, 'label')),
+          ...optionalStringProperty(item, 'fromChildId', transitionPath),
+        };
+      },
+    ),
+  };
+}
+
+function workflowDiagramChildKind(value: unknown, path: string) {
+  const kind = string(value, path);
+  if (!Object.values(WorkflowDiagramChildKind).includes(kind as WorkflowDiagramChildKind))
+    invalid(path);
+  return kind as WorkflowDiagramChildKind;
+}
+
+function diagramOverlayFields(record: Record<string, unknown>, path: string) {
+  const activeRuns = record.activeRuns;
+  return {
+    ...optionalStringProperty(record, 'status', path),
+    ...optionalStringProperty(record, 'lastOutcome', path),
+    ...optionalNumberProperty(record, 'runCount', path),
+    ...optionalNumberProperty(record, 'totalDurationMs', path),
+    ...optionalNumberProperty(record, 'totalTokens', path),
+    ...optionalNumberProperty(record, 'inputTokens', path),
+    ...optionalNumberProperty(record, 'outputTokens', path),
+    ...optionalNumberProperty(record, 'cacheReadTokens', path),
+    ...optionalNumberProperty(record, 'cacheWriteTokens', path),
+    ...optionalNumberProperty(record, 'totalCostUsd', path),
+    ...(activeRuns === undefined
+      ? {}
+      : {
+          activeRuns: array(activeRuns, child(path, 'activeRuns'), (run, runPath = '') => {
+            const item = object(run, runPath);
+            return {
+              runId: string(item.runId, child(runPath, 'runId')),
+              activity: string(item.activity, child(runPath, 'activity')),
+              startedAt: string(item.startedAt, child(runPath, 'startedAt')),
+              ...optionalStringProperty(item, 'runnerName', runPath),
+            };
+          }),
+        }),
+  };
+}
+
 const runResolutionSentinels = ['DONE', 'FAILED', 'AMBIGUOUS'] as const;
 
 function decodeRunResolution(
@@ -322,6 +405,10 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
         orchestration.children,
         child(path, 'orchestration.children'),
         decodeWorkflow,
+      ),
+      diagram: decodeWorkflowDiagramLink(
+        orchestration.diagram,
+        child(path, 'orchestration.diagram'),
       ),
     },
     execution: {
@@ -425,6 +512,11 @@ function decodeTranscriptEntry(item: unknown, itemPath = '') {
     groupId: string(entry.groupId, child(itemPath, 'groupId')),
     ...optionalNumberProperty(entry, 'durationMs', itemPath),
   };
+}
+
+function decodeWorkflowDiagramLink(value: unknown, path: string) {
+  const record = object(value, path);
+  return { href: string(record.href, child(path, 'href')) };
 }
 
 function transcriptChannel(value: unknown, path: string): TranscriptEntryResponse['channel'] {

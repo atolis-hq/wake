@@ -10,6 +10,7 @@ import type {
   SupplementalActivityRequest,
 } from '../contracts/events.js';
 import type { SignalName, WorkflowInstanceId } from '../contracts/identifiers.js';
+import type { WorkflowInstanceView } from '../contracts/views.js';
 import { AcceptActivityOutcome } from './accept-activity-outcome.js';
 import { AcceptSignal } from './accept-signal.js';
 import { AdvanceWorkflow } from './advance-workflow.js';
@@ -29,6 +30,7 @@ export class OrchestrationService {
   private readonly advanceWorkflow: AdvanceWorkflow;
   private readonly childWorkflows: RequestChild;
   private readonly projections: ProjectionStore | undefined;
+  private readonly definitions: WorkflowDefinitionRegistry;
   private coordinateAcceptSignal: OperationCoordinator = (operation) => operation();
   private watchChildCancellation: WatchChildCancellation | undefined;
 
@@ -41,12 +43,8 @@ export class OrchestrationService {
     this.projections = projections;
     const repository = new OrchestrationRepository(journal);
     const claims = new CoordinationClaims(journal);
-    this.startWorkflow = new StartWorkflow(
-      repository,
-      claims,
-      work,
-      new WorkflowDefinitionRegistry(journal, projections, definitions),
-    );
+    this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
+    this.startWorkflow = new StartWorkflow(repository, claims, work, this.definitions);
     this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow);
     this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.childWorkflows = new RequestChild(
@@ -202,6 +200,17 @@ export class OrchestrationService {
 
   listAll() {
     return this.advanceWorkflow.listAll();
+  }
+
+  listCurrentDefinitions() {
+    return this.definitions.currentDefinitions();
+  }
+
+  definitionFor(view: {
+    readonly workflowName: WorkflowInstanceView['workflowName'];
+    readonly workflowDefinitionFingerprint?: string;
+  }) {
+    return this.definitions.resolve(view);
   }
 
   async listForWorkItem(workItemId: WorkItemId) {

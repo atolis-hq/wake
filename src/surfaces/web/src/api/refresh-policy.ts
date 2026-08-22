@@ -14,6 +14,7 @@ export const refreshPolicy = {
   observability: false,
   configuration: false,
   commands: false,
+  workflowDiagrams: 3_000,
 } as const;
 
 export const refreshInterval = {

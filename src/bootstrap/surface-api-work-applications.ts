@@ -179,6 +179,7 @@ async function workDetail(
       children: workflows
         .filter((value) => value.parentWorkflowInstanceId !== undefined)
         .map(presentWorkflowInstance),
+      diagram: { href: `/api/v1/workflow-diagrams?workItemKey=${encodeURIComponent(key)}` },
     },
     execution: {
       runs: await Promise.all(runs.map((run) => enrichRun(root, presentRun(run)))),

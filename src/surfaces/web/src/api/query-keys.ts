@@ -11,6 +11,7 @@ export const queryKeys = {
   },
   resources: { list: ['resources', 'list'] as const },
   orchestration: { list: ['orchestration', 'list'] as const },
+  workflowDiagrams: { get: (workItemKey = '') => ['workflowDiagrams', workItemKey] as const },
   execution: {
     runs: ['execution', 'runs'] as const,
     runList: (cursor = '') => ['execution', 'runs', cursor] as const,

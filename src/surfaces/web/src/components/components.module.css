@@ -75,6 +75,7 @@
   font-weight: 700;
 }
 .main {
+  min-width: 0;
   width: 100%;
   margin: 0;
   padding: var(--space-6) var(--space-4);

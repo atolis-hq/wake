@@ -125,7 +125,11 @@ function client(
           ? {
               work: items[0],
               resources: [],
-              orchestration: { primary: null, children: [] },
+              orchestration: {
+                primary: null,
+                children: [],
+                diagram: { href: '/api/v1/workflow-diagrams?workItemKey=wk_demo' },
+              },
               execution: { runs: [], transcriptGroups: [] },
               activities: {},
             }

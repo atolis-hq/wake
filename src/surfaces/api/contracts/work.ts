@@ -27,6 +27,7 @@ export interface WorkDetailResponse {
   readonly orchestration: {
     readonly primary: WorkflowInstanceResponse | null;
     readonly children: readonly WorkflowInstanceResponse[];
+    readonly diagram: { readonly href: string };
   };
   readonly execution: {
     readonly runs: readonly RunResponse[];

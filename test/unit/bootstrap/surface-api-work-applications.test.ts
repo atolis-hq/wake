@@ -162,6 +162,9 @@ it('omits the last run outcome when a newer transport-failed run follows an agen
 
   const response = await detail(toWorkItemKey(workItemId));
   expect(response).toMatchObject({ data: { work: { workItemId } } });
+  expect(response?.data.orchestration.diagram).toEqual({
+    href: `/api/v1/workflow-diagrams?workItemKey=${encodeURIComponent(toWorkItemKey(workItemId))}`,
+  });
   expect(response?.data.work).not.toHaveProperty('lastRunOutcome');
 });
 

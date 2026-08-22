@@ -27,6 +27,7 @@ import { TokenUsage } from '../../components/token-usage.js';
 import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
 import { runColumns } from '../runs/runs.js';
+import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
 
 const resourceIcons: Record<string, typeof GitHubIcon> = {
   github: GitHubIcon,
@@ -115,6 +116,12 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     queryFn: ({ signal }) => client.work.detail(workItemKey, signal),
     refetchInterval: refreshPolicy.openWork,
     enabled: workItemKey !== '',
+  });
+  const diagramQuery = useQuery({
+    queryKey: queryKeys.workflowDiagrams.get(workItemKey),
+    queryFn: ({ signal }) => client.workflowDiagrams.get(workItemKey, signal),
+    refetchInterval: refreshPolicy.workflowDiagrams,
+    enabled: workItemKey !== '' && query.data?.data.orchestration.primary !== null,
   });
   const [resolutionStatus, setResolutionStatus] = useState<
     typeof RunResolutionStatusValue.Failed | typeof RunResolutionStatusValue.Succeeded
@@ -649,6 +656,9 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
               </aside>
 
               <section className={styles.overviewMain} aria-labelledby="work-runs">
+                {diagramQuery.data?.data.diagrams[0] === undefined ? null : (
+                  <WorkflowDiagramView diagram={diagramQuery.data.data.diagrams[0]} />
+                )}
                 {query.data.data.execution.runs.length === 0 ? (
                   <EmptyState>No runs</EmptyState>
                 ) : (

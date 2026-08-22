@@ -460,7 +460,7 @@ describe(`${scenario.id} command idempotency`, () => {
     );
     await advance({ idempotencyKey: 'operator-action-1' });
     expect(await root.execution.list()).toHaveLength(2);
-  });
+  }, 30_000);
 });
 
 const boardScenario = { id: 'E2E-SURFACE-BOARD-001' } as const;

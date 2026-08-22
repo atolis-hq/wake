@@ -31,6 +31,7 @@ import { createExecutionApplications } from './surface-api-execution-application
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { createSurfaceWorkApplications } from './surface-api-work-applications.js';
+import { createWorkflowDiagramApplications } from './surface-api-workflow-diagrams.js';
 import { wakeVersion } from './version.js';
 
 export function createSurfaceApiApplications(
@@ -45,6 +46,7 @@ export function createSurfaceApiApplications(
     work: createSurfaceWorkApplications(root, now),
     resources: createResourceApplications(root, now),
     orchestration: createOrchestrationApplications(root, now),
+    workflowDiagrams: createWorkflowDiagramApplications(root, now),
     execution: createExecutionApplications(root, now),
     events: createEventApplications(root, now),
     observability: createObservabilityApplications(root, now),

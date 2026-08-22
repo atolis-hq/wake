@@ -18,6 +18,7 @@ import type {
   RunTranscriptResponse,
   StatusResponse,
   WorkDetailResponse,
+  WorkflowDiagramsResponse,
   WorkflowInstanceResponse,
   WorkItemResponse,
   WorkItemTranscriptResponse,
@@ -88,6 +89,9 @@ export interface ApiApplications {
   };
   readonly orchestration: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<WorkflowInstanceResponse>>;
+  };
+  readonly workflowDiagrams?: {
+    get(workItemKey?: string): Promise<ApiResourceResult<WorkflowDiagramsResponse>>;
   };
   readonly execution: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<RunResponse>>;

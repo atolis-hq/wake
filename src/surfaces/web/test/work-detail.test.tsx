@@ -79,67 +79,83 @@ function detailClient(
           page: { nextCursor: null, hasMore: false },
           meta: { asOf },
         }
-      : url.includes('/work-items/wk_a')
+      : url.includes('/workflow-diagrams')
         ? {
             data: {
-              work,
-              resources: [
+              diagrams: [
                 {
-                  resourceId: 'resource-1',
-                  adapter: 'unknown-adapter',
-                  kind: 'unheard-of-kind',
-                  locatorLabel: 'unheard-of-kind resource-1',
-                  capabilities: ['inspect', 'annotate'],
-                  revision: 'rev-9',
+                  id: 'delivery',
+                  label: 'Delivery',
+                  direction: 'left-to-right',
+                  stages: [{ id: 'implement', label: 'Implement', children: [] }],
+                  transitions: [],
                 },
               ],
-              orchestration: {
-                primary: primary === null ? null : { workItemKey: 'wk_a', ...primary },
-                children: [],
-              },
-              execution: {
-                transcriptGroups: transcripts.groups,
-                runs: [
-                  {
-                    runId: 'run-1',
-                    activationId: 'activation-1',
-                    activity: 'agent',
-                    workflowInstanceId: 'workflow-1',
-                    orchestrationGroupId: 'group-1',
-                    attempt: 1,
-                    status:
-                      primary?.blockReason === 'run-ambiguous-after-3-attempts'
-                        ? 'ambiguous'
-                        : 'succeeded',
-                    active: false,
-                    startedAt: asOf,
-                    finishedAt: asOf,
-                    sentinel:
-                      primary?.blockReason === 'run-ambiguous-after-3-attempts'
-                        ? 'AMBIGUOUS'
-                        : 'DONE',
-                    workflowName: 'delivery',
-                    stage: 'implement',
-                    totalTokens: 0,
-                    totalCostUsd: 0,
-                  },
-                ],
-              },
-              activities: {
-                pullRequest: {
-                  resourceId: 'resource-1',
-                  state: 'open',
-                  headRevision: 'abc123',
-                  baseRevision: 'def456',
-                  checks: 'passing',
-                },
-              },
             },
             meta: { asOf },
           }
-        : url.includes('/work-items')
-          ? { items: [work], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
-          : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : url.includes('/work-items/wk_a')
+          ? {
+              data: {
+                work,
+                resources: [
+                  {
+                    resourceId: 'resource-1',
+                    adapter: 'unknown-adapter',
+                    kind: 'unheard-of-kind',
+                    locatorLabel: 'unheard-of-kind resource-1',
+                    capabilities: ['inspect', 'annotate'],
+                    revision: 'rev-9',
+                  },
+                ],
+                orchestration: {
+                  primary: primary === null ? null : { workItemKey: 'wk_a', ...primary },
+                  children: [],
+                  diagram: { href: '/api/v1/workflow-diagrams?workItemKey=wk_a' },
+                },
+                execution: {
+                  transcriptGroups: transcripts.groups,
+                  runs: [
+                    {
+                      runId: 'run-1',
+                      activationId: 'activation-1',
+                      activity: 'agent',
+                      workflowInstanceId: 'workflow-1',
+                      orchestrationGroupId: 'group-1',
+                      attempt: 1,
+                      status:
+                        primary?.blockReason === 'run-ambiguous-after-3-attempts'
+                          ? 'ambiguous'
+                          : 'succeeded',
+                      active: false,
+                      startedAt: asOf,
+                      finishedAt: asOf,
+                      sentinel:
+                        primary?.blockReason === 'run-ambiguous-after-3-attempts'
+                          ? 'AMBIGUOUS'
+                          : 'DONE',
+                      workflowName: 'delivery',
+                      stage: 'implement',
+                      totalTokens: 0,
+                      totalCostUsd: 0,
+                    },
+                  ],
+                },
+                activities: {
+                  pullRequest: {
+                    resourceId: 'resource-1',
+                    state: 'open',
+                    headRevision: 'abc123',
+                    baseRevision: 'def456',
+                    checks: 'passing',
+                  },
+                },
+              },
+              meta: { asOf },
+            }
+          : url.includes('/work-items')
+            ? { items: [work], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
+            : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -185,6 +201,26 @@ async function transcriptResponse(
 
 describe('work detail', () => {
   afterEach(cleanup);
+
+  it('places the mocked workflow diagram above runs in the overview main area', async () => {
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient({
+            workflowInstanceId: 'workflow-1',
+            workflowName: 'delivery',
+            orchestrationGroupId: 'group-1',
+            status: 'active',
+            currentStage: 'implement',
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    const diagram = await screen.findByLabelText('Workflow Delivery');
+    const runs = screen.getByRole('table', { name: 'Runs' });
+    expect(diagram.compareDocumentPosition(runs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 
   it('presents labelled sections rather than a raw structure dump', async () => {
     render(
@@ -529,7 +565,11 @@ describe('work detail', () => {
                     capabilities: ['commentable'],
                   },
                 ],
-                orchestration: { primary: null, children: [] },
+                orchestration: {
+                  primary: null,
+                  children: [],
+                  diagram: { href: '/api/v1/workflow-diagrams?workItemKey=wk_a' },
+                },
                 execution: { runs: [], transcriptGroups: [] },
                 activities: {},
               },
