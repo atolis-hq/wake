@@ -18,40 +18,38 @@ describe('configuration page commands tab', () => {
     expect(await screen.findByText(/Read-only effective configuration/)).toBeTruthy();
   });
 
-  it('shows labelled definition and work-item workflow examples before the redacted configuration', async () => {
+  it('shows workflow examples only on the workflows tab', async () => {
     render(
       <MemoryRouter initialEntries={['/configuration']}>
         <App client={client()} />
       </MemoryRouter>,
     );
 
+    expect(screen.queryByLabelText('Workflow Dark Factory - configuration')).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Workflows' }));
+
     const standard = await screen.findByLabelText('Workflow Dark Factory - configuration');
     const instance = screen.getByLabelText('Workflow Dark Factory - work-item run');
-    const configuration = await screen.findByText(/Read-only effective configuration/);
     expect(screen.getByRole('heading', { name: 'Configuration workflow definition' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Work-item workflow instance' })).toBeTruthy();
-    expect(
-      standard.compareDocumentPosition(configuration) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      instance.compareDocumentPosition(configuration) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(standard).toBeTruthy();
+    expect(instance).toBeTruthy();
   });
 
-  it('keeps both mocked workflow examples visible while configuration loads', async () => {
+  it('shows workflow examples without waiting for the configuration read', async () => {
     render(
       <MemoryRouter initialEntries={['/configuration']}>
         <App client={loadingClient()} />
       </MemoryRouter>,
     );
 
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Workflows' }));
+
     expect(await screen.findByLabelText('Workflow Dark Factory - configuration')).toBeTruthy();
     expect(screen.getByLabelText('Workflow Dark Factory - work-item run')).toBeTruthy();
-    expect(
-      screen
-        .getAllByRole('status')
-        .some(({ textContent }) => textContent?.includes('Loading redacted configuration')),
-    ).toBe(true);
+    expect(screen.queryByText('Loading redacted configuration')).toBeNull();
   });
 
   it('lists built-in and configured commands per adapter on the commands tab', async () => {

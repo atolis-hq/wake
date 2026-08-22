@@ -21,7 +21,7 @@ import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
 
 export function ConfigurationPage() {
   const client = useApiClient();
-  const [tab, setTab] = useState<'configuration' | 'commands'>('configuration');
+  const [tab, setTab] = useState<'configuration' | 'commands' | 'workflows'>('configuration');
   const configurationQuery = useQuery({
     queryKey: queryKeys.system.configuration,
     queryFn: ({ signal }) => client.system.configuration(signal),
@@ -60,12 +60,10 @@ export function ConfigurationPage() {
             type="button"
             variant="secondary"
             onClick={() =>
-              void (tab === 'configuration'
-                ? configurationQuery.refetch()
-                : commandsQuery.refetch())
+              void (tab === 'commands' ? commandsQuery.refetch() : configurationQuery.refetch())
             }
           >
-            Refresh {tab === 'configuration' ? 'configuration' : 'commands'}
+            Refresh {tab === 'commands' ? 'commands' : 'configuration'}
           </Button>
         }
       />
@@ -95,6 +93,19 @@ export function ConfigurationPage() {
           onClick={() => setTab('commands')}
         >
           Commands
+        </button>
+        <button
+          type="button"
+          role="tab"
+          data-tab="workflows"
+          id="workflows-tab"
+          aria-controls="workflows-panel"
+          aria-selected={tab === 'workflows'}
+          tabIndex={tab === 'workflows' ? 0 : -1}
+          onKeyDown={navigateTabs}
+          onClick={() => setTab('workflows')}
+        >
+          Workflows
         </button>
       </div>
       {tab === 'commands' ? (
@@ -131,8 +142,8 @@ export function ConfigurationPage() {
             )
           )}
         </section>
-      ) : (
-        <section id="configuration-panel" role="tabpanel" aria-labelledby="configuration-tab">
+      ) : tab === 'workflows' ? (
+        <section id="workflows-panel" role="tabpanel" aria-labelledby="workflows-tab">
           <section aria-labelledby="configuration-workflow-definition">
             <h2 id="configuration-workflow-definition">Configuration workflow definition</h2>
             <WorkflowDiagramView diagram={mockConfiguredWorkflowDiagrams[0]!} />
@@ -141,6 +152,9 @@ export function ConfigurationPage() {
             <h2 id="work-item-workflow-instance">Work-item workflow instance</h2>
             <WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />
           </section>
+        </section>
+      ) : (
+        <section id="configuration-panel" role="tabpanel" aria-labelledby="configuration-tab">
           {configurationQuery.isPending ? (
             <LoadingState label="Loading redacted configuration" />
           ) : configurationQuery.error && !configurationQuery.data ? (
