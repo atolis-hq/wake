@@ -124,6 +124,18 @@ describe('WorkflowDiagramView', () => {
     expect(screen.queryByRole('button', { name: /^(Expand|Collapse) / })).toBeNull();
   });
 
+  it('lets desktop stage cards grow around their children and uses a compact card title', () => {
+    render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
+
+    const refine = screen.getByRole('group', { name: /Stage refine/i });
+    const title = within(refine).getByText('Refine');
+
+    expect(refine.style.height).toBe('');
+    expect(within(refine).getByText('Refine task')).toBeTruthy();
+    expect(within(refine).getByText('Wait for review')).toBeTruthy();
+    expect(title.className).toContain('stageTitle');
+  });
+
   it('uses semantic positioned labels and arrowheads for graph edges', async () => {
     render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
 

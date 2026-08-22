@@ -46,6 +46,7 @@
   border-radius: 0.5rem;
   border-left: 3px solid var(--border-strong);
   background: var(--surface-card);
+  min-height: var(--stage-layout-height, 104px);
   overflow: hidden;
 }
 
@@ -59,6 +60,14 @@
 
 .stageCard button {
   align-self: start;
+}
+
+.stageTitle {
+  display: block;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-bottom: 0.25rem;
 }
 
 .chips,

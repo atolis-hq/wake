@@ -205,16 +205,18 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
               key={stage.id}
               role="group"
               aria-label={`Stage ${stage.id}`}
-              style={{
-                left: `${node?.x ?? fallbackX}px`,
-                top: `${node?.y ?? fallbackY}px`,
-                width: `${node?.width ?? 264}px`,
-                height: `${node?.height ?? 104}px`,
-              }}
+              style={
+                {
+                  left: `${node?.x ?? fallbackX}px`,
+                  top: `${node?.y ?? fallbackY}px`,
+                  width: `${node?.width ?? 264}px`,
+                  '--stage-layout-height': `${node?.height ?? 104}px`,
+                } as CSSProperties
+              }
             >
               <div className={styles.stageCard}>
                 <div>
-                  <strong>{stage.label}</strong>
+                  <strong className={styles.stageTitle}>{stage.label}</strong>
                   <div className={styles.chips}>
                     {stage.status === undefined ? null : (
                       <Chip variant="outline" tone={tone(stage.status)}>
