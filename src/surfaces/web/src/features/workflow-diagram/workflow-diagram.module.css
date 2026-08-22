@@ -188,6 +188,26 @@
 
 @media (max-width: 42rem) {
   .canvas[data-direction='DOWN'] {
+    display: grid;
+    gap: 0.5rem;
+    min-height: 0;
     min-width: 100%;
+  }
+
+  .canvas[data-direction='DOWN'] .edges,
+  .canvas[data-direction='DOWN'] .edgeLabel {
+    display: none;
+  }
+
+  .canvas[data-direction='DOWN'] .stage {
+    position: relative;
+    top: auto !important;
+    left: auto !important;
+    width: 100% !important;
+  }
+
+  .canvas[data-direction='DOWN'] .childCard:hover,
+  .canvas[data-direction='DOWN'] .childCard:focus-within {
+    border-color: var(--border);
   }
 }

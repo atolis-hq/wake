@@ -476,7 +476,11 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
               {isExpanded ? (
                 <div className={styles.children}>
                   {stage.children.map((child) => (
-                    <ChildCard child={child} key={child.id} onHover={setHoveredChildId} />
+                    <ChildCard
+                      child={child}
+                      key={child.id}
+                      onHover={direction === 'RIGHT' ? setHoveredChildId : () => undefined}
+                    />
                   ))}
                 </div>
               ) : null}
