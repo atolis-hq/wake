@@ -10,7 +10,13 @@
 }
 
 .diagram::-webkit-scrollbar {
-  height: 0.55rem;
+  height: 0.35rem;
+}
+
+.diagram::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
 }
 
 .diagram::-webkit-scrollbar-thumb {
