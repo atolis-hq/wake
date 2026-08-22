@@ -127,6 +127,14 @@ it('omits the last run outcome when a newer transport-failed run follows an agen
     startedAt: '2026-08-17T11:00:00.000Z',
     status: RunStatus.Failed,
   } as unknown as RunView;
+  const projections: Readonly<Record<string, unknown>> = {
+    [`work-correlations:${workItemId}`]: [],
+    [`workflows-by-work-item:${workItemId}`]: [workflowId],
+    [`orchestration:${workflowId}`]: { view: { workflowInstanceId: workflowId } },
+    [`runs-by-workflow-instance:${workflowId}`]: [olderAgentRun.runId, newerFailedRun.runId],
+    [`execution:${olderAgentRun.runId}`]: { view: olderAgentRun },
+    [`execution:${newerFailedRun.runId}`]: { view: newerFailedRun },
+  };
   const applications = createSurfaceWorkApplications(
     {
       work: {
@@ -140,24 +148,10 @@ it('omits the last run outcome when a newer transport-failed run follows an agen
       resources: { get: async () => null },
       orchestration: { get: async () => null },
       projections: {
-        read: async (stream: string, key: string) => {
-          if (stream === 'work-correlations' && key === workItemId)
-            return { value: [], lastGlobalPosition: 0 };
-          if (stream === 'workflows-by-work-item' && key === workItemId)
-            return { value: [workflowId], lastGlobalPosition: 0 };
-          if (stream === 'orchestration' && key === workflowId)
-            return { value: { view: { workflowInstanceId: workflowId } }, lastGlobalPosition: 0 };
-          if (stream === 'runs-by-workflow-instance' && key === workflowId)
-            return {
-              value: [olderAgentRun.runId, newerFailedRun.runId],
-              lastGlobalPosition: 0,
-            };
-          if (stream === 'execution' && key === olderAgentRun.runId)
-            return { value: { view: olderAgentRun }, lastGlobalPosition: 0 };
-          if (stream === 'execution' && key === newerFailedRun.runId)
-            return { value: { view: newerFailedRun }, lastGlobalPosition: 0 };
-          return null;
-        },
+        read: async (stream: string, key: string) =>
+          `${stream}:${key}` in projections
+            ? { value: projections[`${stream}:${key}`], lastGlobalPosition: 0 }
+            : null,
       },
       journal: { readAll: async () => [] },
     } as unknown as CompositionRoot,
