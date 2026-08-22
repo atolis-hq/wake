@@ -75,7 +75,7 @@ export function OutcomeChip({
 }) {
   const Icon = normalize(outcome) === 'needs-clarification' ? QuestionIcon : OutcomeIcon;
   return (
-    <Chip variant="outline" tone={outcomeTone(outcome)} title={title}>
+    <Chip variant="outline" tone={outcomeTone(outcome)} {...(title === undefined ? {} : { title })}>
       <Icon />
       {outcomeLabel(outcome)}
     </Chip>
