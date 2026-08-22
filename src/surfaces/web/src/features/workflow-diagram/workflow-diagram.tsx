@@ -159,7 +159,7 @@ function ChildCard({
   readonly child: WorkflowDiagramChild;
   readonly onHover: (childId: string | undefined) => void;
 }) {
-  const status = child.lastOutcome === 'failed' ? 'failed' : (child.status ?? 'pending');
+  const status = childStatus(child);
   const hasActiveRun = (child.activeRuns?.length ?? 0) > 0;
   return (
     <article
@@ -203,6 +203,10 @@ function ChildCard({
       </div>
     </article>
   );
+}
+
+function childStatus(child: WorkflowDiagramChild) {
+  return child.lastOutcome === 'failed' ? 'failed' : (child.status ?? 'pending');
 }
 
 function edgePath(points: readonly { readonly x: number; readonly y: number }[]): string {
@@ -435,6 +439,9 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
               else next.add(stage.id);
               return next;
             });
+          const primaryChild =
+            stage.children.find((child) => child.kind === 'activity') ?? stage.children[0];
+          const primaryHasActiveRun = (primaryChild?.activeRuns?.length ?? 0) > 0;
           return (
             <div
               className={`${styles.stage} ${boardStyles.card}`}
@@ -474,6 +481,16 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                     <strong className={boardStyles.cardTitle}>{stage.label}</strong>
                   </div>
                 </div>
+                {direction === 'DOWN' && !isExpanded && primaryChild !== undefined ? (
+                  <span
+                    aria-label={`${childStatus(primaryChild)} status`}
+                    className={`${boardStyles.childRunDot} ${styles.childStatusDot} ${styles.collapsedStatusDot}`}
+                    data-active-run={primaryHasActiveRun || undefined}
+                    data-status={childStatus(primaryChild)}
+                    data-testid={`collapsed-status-${stage.id}`}
+                    role="img"
+                  />
+                ) : null}
                 {hasTotals ? (
                   <div className={styles.stageTotals}>
                     {stage.runCount === undefined ? null : <span>{stage.runCount} runs</span>}

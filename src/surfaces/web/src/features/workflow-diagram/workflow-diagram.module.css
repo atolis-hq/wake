@@ -120,6 +120,10 @@
   margin-top: 0.22rem;
 }
 
+.collapsedStatusDot {
+  justify-self: end;
+}
+
 .childTitle {
   display: flex;
   align-items: center;
