@@ -77,7 +77,7 @@ export async function layoutWorkflowDiagram(
     x: node.x ?? 0,
     y: node.y ?? 0,
     width: node.width ?? stageWidth,
-    height: node.height ?? stageHeight,
+    height: node.height ?? stageHeight(0),
   }));
   const edges = (graph.edges ?? []).map((edge, index) => ({
     id: edge.id,
@@ -91,7 +91,7 @@ export async function layoutWorkflowDiagram(
 
   return Object.freeze({
     width: graph.width ?? stageWidth,
-    height: graph.height ?? stageHeight,
+    height: graph.height ?? stageHeight(0),
     nodes: Object.freeze(nodes.map((node) => Object.freeze(node))),
     edges: Object.freeze(
       edges.map((edge) =>
