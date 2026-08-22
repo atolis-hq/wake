@@ -1,6 +1,45 @@
 import { z } from 'zod';
 import { MatchMode } from '../../../kernel/index.js';
+import { ReplyOutcome, ReplyOutcomeConfig, ReplyTarget } from '../../contracts/reply-routing.js';
 import { isGitHubWakeMarker } from './vocabulary.js';
+
+const replyTargetSchema = z.enum(Object.values(ReplyTarget));
+const replyOutcomeSchema = z
+  .enum(Object.values(ReplyOutcomeConfig))
+  .transform((value): typeof ReplyOutcome[keyof typeof ReplyOutcome] => replyOutcomeMap[value]);
+const replyOutcomeMap = {
+  [ReplyOutcomeConfig.Done]: ReplyOutcome.Done,
+  [ReplyOutcomeConfig.Rejected]: ReplyOutcome.Rejected,
+  [ReplyOutcomeConfig.Blocked]: ReplyOutcome.Blocked,
+  [ReplyOutcomeConfig.Failed]: ReplyOutcome.Failed,
+  [ReplyOutcomeConfig.NeedsClarification]: ReplyOutcome.NeedsClarification,
+} as const;
+const replySelectorValues = <T extends z.ZodType>(value: T) =>
+  z
+    .union([value, z.array(value).min(1)])
+    .transform((values): readonly z.output<T>[] => (Array.isArray(values) ? values : [values]));
+const replyRuleSchema = z
+  .object({
+    match: z
+      .object({
+        stage: replySelectorValues(z.string().trim().min(1)).optional(),
+        outcome: replySelectorValues(replyOutcomeSchema).optional(),
+      })
+      .strict()
+      .refine((value) => Object.values(value).some((facet) => facet !== undefined), {
+        message: 'Reply routing match requires at least one facet',
+      }),
+    matchMode: z.enum([MatchMode.Any, MatchMode.All]).default(MatchMode.Any),
+    target: replyTargetSchema,
+  })
+  .strict();
+const replyPublicationSchema = z
+  .object({
+    rules: z.array(replyRuleSchema).default([]),
+    default: replyTargetSchema.default(ReplyTarget.Primary),
+  })
+  .strict()
+  .default({ rules: [], default: ReplyTarget.Primary });
 
 const repositorySchema = z
   .object({ owner: z.string().trim().min(1), repo: z.string().trim().min(1) })
@@ -52,9 +91,12 @@ export const gitHubConfigSchema = z
       }),
     intake: z.array(intakeRuleSchema).default([]),
     publication: z
-      .object({ postStatusComments: z.boolean().default(true) })
+      .object({
+        postStatusComments: z.boolean().default(true),
+        replies: replyPublicationSchema,
+      })
       .strict()
-      .default({ postStatusComments: true }),
+      .default({ postStatusComments: true, replies: { rules: [], default: ReplyTarget.Primary } }),
     // Additional command syntax to advertise on the commands/instructions
     // surface alongside the adapter's built-in commands. Purely descriptive:
     // Wake does not recognize these itself, so any behavior they imply must
@@ -66,3 +108,7 @@ export const gitHubConfigSchema = z
 export type GitHubConfig = z.output<typeof gitHubConfigSchema>;
 
 export type GitHubIntakeRuleConfig = GitHubConfig['intake'][number];
+
+export type GitHubReplyPublicationConfig = GitHubConfig['publication']['replies'];
+export type GitHubReplyRuleConfig = GitHubReplyPublicationConfig['rules'][number];
+export type GitHubReplyTarget = GitHubReplyRuleConfig['target'];

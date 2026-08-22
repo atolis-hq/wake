@@ -30,6 +30,8 @@ export * from './application/agent-context-reader.js';
 
 export * from './application/poll-service.js';
 
+export * from './application/reply-target-selector.js';
+
 export * from './application/resource-links.js';
 
 export * from './application/review-command-translator.js';

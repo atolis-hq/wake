@@ -152,6 +152,24 @@ it('adds awaitingApproval for a watchGate signal', async () => {
   expect(published.payload.report.awaitingApproval).toBe(true);
 });
 
+it.each([
+  ['primary', 'resource-primary'],
+  ['issue', 'resource-issue'],
+  ['pull-request', 'resource-pr'],
+] as const)('routes a %s reply to the requested resource kind', async (target, resourceId) => {
+  const published = await publishWithReplyTarget(target);
+  expect(published.payload.resourceId).toBe(resourceId);
+});
+
+it('suppresses a reply when its configured target is none', async () => {
+  await expect(publishWithReplyTarget('none')).resolves.toBeUndefined();
+});
+
+it('falls back to the primary correlation when the requested kind is absent', async () => {
+  const published = await publishWithReplyTarget('pull-request', false);
+  expect(published.payload.resourceId).toBe('resource-primary');
+});
+
 async function publishWatchChildOutcome(input: {
   readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
   readonly parentWatchId?: string;
@@ -161,7 +179,13 @@ async function publishWatchChildOutcome(input: {
   const appended: unknown[][] = [];
   const reactor = new AgentRunPublicationReactor({
     journal: {
-      readStream: async () => [],
+      readStream: async () => [
+        { eventType: 'orchestration.stage-entered', payload: { stage: 'review' } },
+        {
+          eventType: 'orchestration.activity-requested',
+          payload: { activationId: 'activation-1' },
+        },
+      ],
       append: async (_stream: unknown, _sequence: number, events: unknown[]) => {
         appended.push(events);
       },
@@ -216,4 +240,65 @@ async function publishWatchChildOutcome(input: {
     }
   ).publish('run-1', '2026-08-08T00:01:00.000Z', 'event-1', 'correlation-1');
   return (appended[0] as Array<{ payload: { report: Record<string, unknown> } }>)[0]!;
+}
+
+async function publishWithReplyTarget(
+  target: 'primary' | 'issue' | 'pull-request' | 'none',
+  includePullRequest = true,
+) {
+  const appended: unknown[][] = [];
+  const reactor = new AgentRunPublicationReactor({
+    journal: {
+      readStream: async () => [],
+      append: async (_stream: unknown, _sequence: number, events: unknown[]) => {
+        appended.push(events);
+      },
+    },
+    checkpoints: {},
+    runs: {
+      load: async () => ({
+        view: {
+          runId: 'run-1',
+          activity: 'agent',
+          workflowInstanceId: 'workflow-1',
+          activationId: 'activation-1',
+          startedAt: '2026-08-08T00:00:00.000Z',
+          finishedAt: '2026-08-08T00:01:00.000Z',
+          agent: { outcome: 'DONE', displayBody: 'Completed.', metadata: {} },
+        },
+      }),
+    },
+    resources: {
+      correlationsForWork: async () => [
+        { role: 'primary', resourceId: 'resource-primary' },
+        { role: 'secondary', resourceId: 'resource-issue' },
+        ...(includePullRequest ? [{ role: 'secondary', resourceId: 'resource-pr' }] : []),
+      ],
+      get: async (id: string) => ({
+        resourceId: id,
+        kind:
+          id === 'resource-issue'
+            ? 'issue'
+            : id === 'resource-pr'
+              ? 'pull-request'
+              : 'repository',
+      }),
+    },
+    orchestration: {
+      listAll: async () => [{ workflowInstanceId: 'workflow-1', workItemId: 'work-1' }],
+    },
+    replies: { rules: [{ match: { stage: ['review'] }, matchMode: 'any', target }], default: 'primary' },
+  } as never);
+  await (
+    reactor as never as {
+      publish: (
+        id: string,
+        occurredAt: string,
+        causationId: string,
+        correlationId: string,
+      ) => Promise<void>;
+    }
+  ).publish('run-1', '2026-08-08T00:01:00.000Z', 'event-1', 'correlation-1');
+  if (target === 'none') return undefined;
+  return (appended[0] as Array<{ payload: { resourceId: string } }>)[0]!;
 }

@@ -55,6 +55,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         ...Object.values(GitHubBuiltInCommand).map((syntax) => ({ syntax })),
         ...config.commands.map((syntax) => ({ syntax })),
       ],
+      replyPublication: config.publication.replies,
       delivery: createGitHubDelivery(
         async (intent, idempotencyKey) => {
           const resource = await services.resources.get(resourceId(intent.resourceId));

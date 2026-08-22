@@ -215,12 +215,14 @@ export async function composeIntegrationRuntime(
     runs: input.execution,
   });
   const runs = new RunRepository(input.journal);
+  const replies = providers.find((provider) => provider.replyPublication !== undefined)?.replyPublication;
   const agentRunPublications = new AgentRunPublicationReactor({
     journal: input.journal,
     checkpoints: input.checkpoints,
     runs,
     resources: input.resources,
     orchestration: input.orchestration,
+    ...(replies === undefined ? {} : { replies }),
   });
   const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints, runs);
   const resourceTransitionEvidence = createCapabilityResourceTransitionEvidence({
