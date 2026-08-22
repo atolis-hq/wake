@@ -18,7 +18,12 @@ export async function verifyResidentStart(
   expectedCmdlineFragment: string,
   options?: { readonly attempts?: number; readonly intervalMs?: number },
 ): Promise<void> {
-  const attempts = options?.attempts ?? 15;
+  // A mature Wake home's bind-mounted .wake can hold weeks of accumulated
+  // event, projection, and transcript files; the entrypoint's recursive
+  // chown over all of it — especially through Docker Desktop's virtualized
+  // filesystem on Windows — can alone take longer than a short, test-sized
+  // budget before the resident process ever gets to write its PID file.
+  const attempts = options?.attempts ?? 90;
   const intervalMs = options?.intervalMs ?? 1000;
   const check = [
     'pid="$(cat /wake/.wake/logs/start.pid)"',
