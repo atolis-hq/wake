@@ -65,9 +65,11 @@ describe(`${scenario.id} API metadata provenance`, () => {
       occurredAt: retractedAt,
     });
     await root.projectionRunner.runRegisteredOnce();
-    const work = (await createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    })).api.work;
+    const work = (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.work;
     const page = await work.list({ limit: 1 });
     const detail = await work.detail(page.items[0]!.workItemKey);
 
@@ -89,9 +91,11 @@ describe(`${scenario.id} API metadata provenance`, () => {
         correlationId: correlationId('surface-event-later'),
       },
     );
-    const events = (await createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    })).api.events;
+    const events = (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.events;
 
     const first = await events.list({ limit: 1 });
     const second = await events.list({ limit: 1, cursor: { position: first.nextPosition! } });
@@ -109,9 +113,11 @@ describe(`${scenario.id} API metadata provenance`, () => {
       { ...context, commandId: 'surface-flow-later', occurredAt: laterAt },
     );
     await root.projectionRunner.runRegisteredOnce();
-    const work = (await createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    })).api.work;
+    const work = (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.work;
 
     const firstPage = await work.list({ limit: 1 });
     const emptyFilter = await work.list({ limit: 1, search: 'no-match' });
@@ -143,7 +149,9 @@ describe(`${scenario.id} API domain shape`, () => {
     await root.advanceOnce({ maxProgress: 1 });
     await root.projectionRunner.runRegisteredOnce();
 
-    const surface = await createSurfaceApplications(root, { now: () => '2026-07-31T11:00:00.000Z' });
+    const surface = await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    });
     const page = await surface.api.work.list({ limit: 1 });
     const detail = await surface.api.work.detail(page.items[0]!.workItemKey);
 
@@ -170,15 +178,19 @@ describe(`${scenario.id} API domain shape`, () => {
     await root.advanceOnce({ maxProgress: 1 });
     await root.projectionRunner.runRegisteredOnce();
 
-    const page = await (await createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    })).api.work.list({ limit: 1 });
+    const page = await (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.work.list({ limit: 1 });
     const list = vi.spyOn(root.projections, 'list').mockRejectedValue(new Error('global list'));
     const journalReads = vi.spyOn(root.journal, 'readAll');
 
-    const detail = await (await createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    })).api.work.detail(page.items[0]!.workItemKey);
+    const detail = await (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.work.detail(page.items[0]!.workItemKey);
 
     expect(detail?.data.execution.runs).toHaveLength(1);
     expect(list).not.toHaveBeenCalled();
@@ -220,7 +232,9 @@ describe(`${scenario.id} API domain shape`, () => {
     await root.projectionRunner.runRegisteredOnce();
 
     // When the real Node HTTP Surface queries the injected production facade.
-    const surface = await createSurfaceApplications(root, { now: () => '2026-07-31T11:00:00.000Z' });
+    const surface = await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    });
     const server = createApiHttpServer(createApiDispatcher(surface.api));
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -469,9 +483,11 @@ it(`${boardScenario.id} projects composed Work and Run state into bounded operat
   await root.advanceOnce({ maxProgress: 1 });
   await root.projectionRunner.runRegisteredOnce();
 
-  const page = await (await createSurfaceApplications(root, {
-    now: () => '2026-07-31T11:00:00.000Z',
-  })).api.board!.list({ limit: 10 });
+  const page = await (
+    await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    })
+  ).api.board!.list({ limit: 10 });
 
   expect(page.total).toBe(1);
   expect(page.items[0]).toMatchObject({ workItemKey: expect.stringMatching(/^wk_/) });
@@ -488,9 +504,11 @@ it(`${analyticsScenario.id} returns an incremental composed analytics window wit
   );
   await root.projectionRunner.runRegisteredOnce();
 
-  const result = await (await createSurfaceApplications(root, {
-    now: () => '2026-07-31T11:00:00.000Z',
-  })).api.observability!.metrics({ days: 1 });
+  const result = await (
+    await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    })
+  ).api.observability!.metrics({ days: 1 });
 
   expect(result.data.window).toEqual({ days: 1, from: '2026-07-31', to: '2026-07-31' });
   expect(result.data.values).toMatchObject({ events: expect.any(Number), workItems: 1 });

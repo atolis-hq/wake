@@ -55,8 +55,8 @@ const internalBoundaryRules = modules.map((module) => ({
       module === 'bootstrap'
         ? [`^src/${module}/`, '^src/main\\.ts$']
         : module === 'integrations'
-        ? [`^src/${module}/`, '^src/bootstrap/composition-root\\.ts$']
-        : `^src/${module}/`,
+          ? [`^src/${module}/`, '^src/bootstrap/composition-root\\.ts$']
+          : `^src/${module}/`,
   },
   to: { path: `^src/${module}/(?!index\\.ts$)` },
 }));
