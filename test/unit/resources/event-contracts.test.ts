@@ -22,6 +22,24 @@ const samples = [
     },
   ],
   [ResourceEventType.ResourceRevisionObserved, { revision: 'def' }],
+  [
+    ResourceEventType.WorkCorrelationRetryPending,
+    { attemptCount: 1, lastFailureReason: 'no primary correlation' },
+  ],
+  [
+    ResourceEventType.WorkCorrelationUnresolvable,
+    {
+      externalKey: { adapter: 'github', key: 'wake#1' },
+      attemptCount: 4,
+      lastFailureReason: 'no primary correlation',
+    },
+  ],
+  [
+    ResourceEventType.ExternalOutcomeObserved,
+    { sourceObservationId: 'github:issue:1', outcome: 'completed', revision: 'def' },
+  ],
+  [ResourceEventType.ExternalOutcomeReopened, { revision: 'ghi' }],
+  [ResourceEventType.ExternalOutcomeConsumed, { sourceObservationId: 'github:issue:1' }],
   [ResourceEventType.IssueCompletionObservationConsumed, { intentEventId: 'complete-intent' }],
   [ResourceEventType.IssueCompletionObservationSuperseded, { intentEventId: 'complete-intent' }],
   [

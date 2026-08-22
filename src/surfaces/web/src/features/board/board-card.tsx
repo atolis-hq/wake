@@ -2,39 +2,9 @@
 import type { BoardCardResponse } from '../../../../api/contracts/index.js';
 import { Chip } from '../../components/chip.js';
 import { fmtCost, fmtDuration } from '../../components/format.js';
+import { OutcomeChip } from '../../components/outcome-chip.js';
 import { TokenUsage } from '../../components/token-usage.js';
 import styles from '../features.module.css';
-
-const badTones = new Set(['failed', 'cancelled', 'ambiguous']);
-const warningTones = new Set(['blocked', 'rejected']);
-
-function outcomeTone(outcome: string): 'good' | 'warning' | 'bad' | 'neutral' {
-  if (badTones.has(outcome)) return 'bad';
-  if (warningTones.has(outcome)) return 'warning';
-  if (outcome === 'done') return 'good';
-  return 'neutral';
-}
-
-function OutcomeIcon() {
-  return (
-    <svg
-      className={styles.metaIcon}
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.4" />
-      <path
-        d="M5.4 8.2 7.1 9.9 10.6 6.1"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function ApprovalIcon() {
   return (
@@ -153,14 +123,7 @@ export function BoardCard({
             </Chip>
           )}
           {item.lastRunOutcome !== undefined && item.lastRunOutcome !== 'done' && (
-            <Chip
-              variant="outline"
-              tone={outcomeTone(item.lastRunOutcome)}
-              title="Outcome of the most recent run"
-            >
-              <OutcomeIcon />
-              {item.lastRunOutcome}
-            </Chip>
+            <OutcomeChip outcome={item.lastRunOutcome} title="Outcome of the most recent run" />
           )}
           {isAmbiguousRunBlock(item.blockReason) && (
             <Chip

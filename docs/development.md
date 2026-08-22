@@ -107,6 +107,10 @@ the configured sandbox image, restores service, health-checks it, and rolls
 back a failed deployment while recording the failure. It requires a clean
 source working tree and is unavailable in packaged mode.
 
+If self-update repeatedly cannot recover the source checkout, repair the host
+checkout manually with `git checkout main && npm ci`, then clear `pendingTag`
+from `.wake/update-ledger.json` before retrying.
+
 | Option | Meaning |
 | --- | --- |
 | `--tag <tag>` | Update to one explicit tag instead of discovering the latest eligible tag. |

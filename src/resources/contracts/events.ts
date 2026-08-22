@@ -19,6 +19,7 @@ import type { ExternalResourceKey, ResourceCapability } from './views.js';
 import {
   ResourceCorrelationProvenance,
   ResourceCorrelationRole,
+  ResourceExternalOutcome,
   type ResourceCorrelationProvenance as Provenance,
   type ResourceCorrelationRole as Role,
 } from './vocabulary.js';
@@ -29,6 +30,11 @@ export const ResourceEventType = {
   WorkCorrelationEstablished: 'resources.work-correlation-established',
   WorkCorrelationRetracted: 'resources.work-correlation-retracted',
   WorkCorrelationConflicted: 'resources.work-correlation-conflicted',
+  WorkCorrelationRetryPending: 'resources.work-correlation-retry-pending',
+  WorkCorrelationUnresolvable: 'resources.work-correlation-unresolvable',
+  ExternalOutcomeObserved: 'resources.external-outcome-observed',
+  ExternalOutcomeReopened: 'resources.external-outcome-reopened',
+  ExternalOutcomeConsumed: 'resources.external-outcome-consumed',
   IssueCompletionObservationConsumed: 'resources.issue-completion-observation-consumed',
   IssueCompletionObservationSuperseded: 'resources.issue-completion-observation-superseded',
 } as const;
@@ -54,6 +60,22 @@ export interface ResourceEventPayloads {
     readonly workItemId: WorkItemId;
     readonly existingWorkItemId: WorkItemId;
   };
+  readonly [ResourceEventType.WorkCorrelationRetryPending]: {
+    readonly attemptCount: number;
+    readonly lastFailureReason: string;
+  };
+  readonly [ResourceEventType.WorkCorrelationUnresolvable]: {
+    readonly externalKey: ExternalResourceKey;
+    readonly attemptCount: number;
+    readonly lastFailureReason: string;
+  };
+  readonly [ResourceEventType.ExternalOutcomeObserved]: {
+    readonly sourceObservationId: string;
+    readonly outcome: ResourceExternalOutcome;
+    readonly revision: string;
+  };
+  readonly [ResourceEventType.ExternalOutcomeReopened]: { readonly revision: string };
+  readonly [ResourceEventType.ExternalOutcomeConsumed]: { readonly sourceObservationId: string };
   readonly [ResourceEventType.IssueCompletionObservationConsumed]: {
     readonly intentEventId: string;
   };
@@ -90,6 +112,45 @@ const eventSchema = z.discriminatedUnion('eventType', [
         capabilities: z.array(brandedStringSchema(resourceCapability)),
         revision: z.string().optional(),
         title: z.string().optional(),
+      })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ResourceEventType.ExternalOutcomeObserved),
+    stream: streamSchema,
+    payload: z
+      .object({
+        sourceObservationId: z.string().min(1),
+        outcome: z.enum([ResourceExternalOutcome.Completed, ResourceExternalOutcome.Cancelled]),
+        revision: z.string().min(1),
+      })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ResourceEventType.ExternalOutcomeReopened),
+    stream: streamSchema,
+    payload: z.object({ revision: z.string().min(1) }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ResourceEventType.ExternalOutcomeConsumed),
+    stream: streamSchema,
+    payload: z.object({ sourceObservationId: z.string().min(1) }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ResourceEventType.WorkCorrelationRetryPending),
+    stream: streamSchema,
+    payload: z
+      .object({ attemptCount: z.number().int().min(1), lastFailureReason: z.string().min(1) })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ResourceEventType.WorkCorrelationUnresolvable),
+    stream: streamSchema,
+    payload: z
+      .object({
+        externalKey: z.object({ adapter: z.string(), key: z.string() }).strict(),
+        attemptCount: z.number().int().min(1),
+        lastFailureReason: z.string().min(1),
       })
       .strict(),
   }),

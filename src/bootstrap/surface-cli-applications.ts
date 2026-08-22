@@ -337,11 +337,20 @@ function sandboxWakeInvocation(root: CompositionRoot): readonly string[] {
 }
 
 async function activeExecutionRuns(root: CompositionRoot) {
+  // advanceOnce skips recoverActive entirely while dispatch is paused, so a
+  // Run whose lease already expired would otherwise never be recovered during
+  // a maintenance quiesce wait. Recover it here so an owner that is truly gone
+  // (no heartbeat, no lease renewal) reaches a terminal or ambiguous status
+  // instead of sitting as "started" and blocking the update forever.
+  await root.recovery.recoverActive('self-update', root.execution.isLocallyActive);
+  // Ambiguous Runs are always terminal (finishedAt is set the moment escalation
+  // occurs) and require an operator's `run-resolve`, not a maintenance drain or
+  // cancellation. Treating them as active would deadlock every future update.
   return (await root.execution.list())
-    .filter((run) => run.status === RunStatus.Started || run.status === RunStatus.Ambiguous)
+    .filter((run) => run.status === RunStatus.Started)
     .map((run) => ({
       runId: run.runId,
-      maintenanceCancellable: run.status === RunStatus.Started && run.cancellation === undefined,
+      maintenanceCancellable: run.cancellation === undefined,
     }));
 }
 
@@ -413,7 +422,12 @@ async function deploySandboxTag(
     root.config.host.sandbox.containerName,
     [...wakeInvocation, 'start', '--wake-root', '/wake'].join(' '),
   );
-  await port.exec(['tick', '--wake-root', `/tmp/wake-self-update-healthcheck-${tag}`]);
+  await port.exec([
+    ...wakeInvocation,
+    'tick',
+    '--wake-root',
+    `/tmp/wake-self-update-healthcheck-${tag}`,
+  ]);
 }
 
 async function rollbackSandboxTag(root: CompositionRoot, docker: DockerCli, image: string) {

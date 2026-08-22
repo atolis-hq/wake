@@ -7,6 +7,10 @@ import { GitWorkspaceProvider } from '../../../src/execution/infrastructure/work
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
+function nodeCommand(script: string): string {
+  return `"${process.execPath}" -e "${script}"`;
+}
+
 describe('GitWorkspaceProvider', () => {
   const roots: string[] = [];
   afterEach(async () => {
@@ -117,6 +121,173 @@ describe('GitWorkspaceProvider', () => {
       ['-C', first.path, 'switch', '--create', workItemId],
       ['-C', first.path, 'switch', workItemId],
     ]);
+  });
+
+  it.each(['branch', 'read-only'] as const)(
+    'runs the prepare hook in each %s workspace before returning its lease',
+    async (mode) => {
+      const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+      roots.push(root);
+      const outputName = `prepared-${mode}`;
+      const provider = new GitWorkspaceProvider(
+        root,
+        { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+        async (args) => {
+          if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+        },
+        undefined,
+        {
+          command: nodeCommand(
+            `require('node:fs').writeFileSync('.wake-prepare-result', '${outputName}')`,
+          ),
+          timeoutMs: 1_000,
+        },
+      );
+
+      const lease = await provider.acquire({
+        runId: runId(`run-${mode}`),
+        mode,
+        workItemId: workId(`prepare-${mode}`),
+        repositoryResource: {
+          resourceId: resId('workspace-resource'),
+          kind: resourceKind('issue'),
+          externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+          capabilities: [],
+        },
+      });
+
+      await expect(readFile(join(lease.path, '.wake-prepare-result'), 'utf8')).resolves.toBe(
+        outputName,
+      );
+    },
+  );
+
+  it('does not run a prepare command when it is not configured', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+    );
+    const lease = await provider.acquire({
+      runId: runId('run-no-prepare'),
+      mode: 'read-only',
+      workItemId: workId('no-prepare'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+      },
+    });
+
+    await expect(access(join(lease.path, '.wake-prepare-result'))).rejects.toThrow();
+  });
+
+  it('runs the prepare hook again when a retained branch workspace is reacquired', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+      undefined,
+      {
+        command: nodeCommand(
+          "require('node:fs').appendFileSync('.wake-prepare-result', 'prepared')",
+        ),
+        timeoutMs: 1_000,
+      },
+    );
+    const request = {
+      mode: 'branch' as const,
+      workItemId: workId('prepare-reacquire'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+      },
+    };
+
+    const first = await provider.acquire({ ...request, runId: runId('run-prepare-first') });
+    await first.release();
+    const second = await provider.acquire({ ...request, runId: runId('run-prepare-second') });
+
+    await expect(readFile(join(second.path, '.wake-prepare-result'), 'utf8')).resolves.toBe(
+      'preparedprepared',
+    );
+  });
+
+  it('fails acquisition with the final combined prepare output tail', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const diagnostic = 'diagnostic-at-the-end';
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+      undefined,
+      {
+        command: nodeCommand(
+          `process.stdout.write('discard-this-prefix${'x'.repeat(5_000)}'); process.stderr.write('${diagnostic}'); process.exit(7)`,
+        ),
+        timeoutMs: 1_000,
+      },
+    );
+
+    const acquisition = provider.acquire({
+      runId: runId('run-prepare-failure'),
+      mode: 'read-only',
+      workItemId: workId('prepare-failure'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+      },
+    });
+    const error = await acquisition.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(
+      new RegExp(`exited with code 7[\\s\\S]*${diagnostic}`),
+    );
+    expect((error as Error).message.split(':\n')[1]).not.toContain('discard-this-prefix');
+  });
+
+  it('honors the prepare command timeout', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+      undefined,
+      { command: nodeCommand('setTimeout(() => {}, 5_000)'), timeoutMs: 20 },
+    );
+
+    await expect(
+      provider.acquire({
+        runId: runId('run-prepare-timeout'),
+        mode: 'read-only',
+        workItemId: workId('prepare-timeout'),
+        repositoryResource: {
+          resourceId: resId('workspace-resource'),
+          kind: resourceKind('issue'),
+          externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+          capabilities: [],
+        },
+      }),
+    ).rejects.toThrow(/prepare hook.*timed out/i);
   });
 
   it('records ownership before cloning and removes a read-only workspace when the lease releases', async () => {

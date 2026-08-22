@@ -19,7 +19,7 @@ async function runDoctor(wakeRoot: string): Promise<{
     compose: async (root) => {
       const { createCompositionRoot, createSurfaceApplications } =
         await import('../../../src/bootstrap/index.js');
-      return createSurfaceApplications(await createCompositionRoot(root)).cli;
+      return (await createSurfaceApplications(await createCompositionRoot(root))).cli;
     },
     output: { write: (value) => output.push(value) },
     signal: new AbortController().signal,
@@ -220,7 +220,7 @@ describe('E2E-OPS-002: doctor diagnostics — sandbox absence and configuration 
     const root = await createCompositionRoot(world.wakeRoot);
     await writeFile(configPath, validConfig.replace('schemaVersion: 1', 'schemaVersion: 2'));
 
-    const report = (await createSurfaceApplications(root).cli.operational?.doctor([])) as {
+    const report = (await (await createSurfaceApplications(root)).cli.operational?.doctor([])) as {
       readonly failures: readonly string[];
     };
 

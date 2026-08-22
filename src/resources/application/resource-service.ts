@@ -22,7 +22,14 @@ import {
   ResourceCorrelationProvenance,
   ResourceCorrelationRole,
   type ResourceCorrelationProvenance as CorrelationProvenance,
+  type ResourceExternalOutcome,
 } from '../contracts/vocabulary.js';
+import {
+  noteMissingPrimaryCorrelation,
+  observeExternalOutcome,
+  pendingExternalOutcomes,
+  retryPendingWorkCorrelations,
+} from './resource-correlation-retry.js';
 import type { ResourceLookup } from './resource-lookup.js';
 import { ResourceRepository } from './resource-repository.js';
 
@@ -41,6 +48,34 @@ export interface ResourceService {
     provenance?: CorrelationProvenance,
   ): Promise<ResourceCorrelationView>;
   retract(resourceId: ResourceId, workItemId: WorkItemId, context: CommandContext): Promise<void>;
+  /** Records a failed active-primary lookup; retries are advanced independently each tick. */
+  noteMissingPrimaryCorrelation(
+    resourceId: ResourceId,
+    reason: string,
+    context: CommandContext,
+  ): Promise<void>;
+  retryPendingWorkCorrelations(): Promise<number>;
+  observeExternalOutcome(
+    resourceId: ResourceId,
+    observation: {
+      readonly sourceObservationId: string;
+      readonly outcome?: ResourceExternalOutcome;
+      readonly revision: string;
+    },
+    context: CommandContext,
+  ): Promise<void>;
+  pendingExternalOutcomes(): Promise<
+    readonly {
+      readonly resourceId: ResourceId;
+      readonly outcome: ResourceExternalOutcome;
+      readonly sourceObservationId: string;
+    }[]
+  >;
+  consumeExternalOutcome(
+    resourceId: ResourceId,
+    sourceObservationId: string,
+    context: CommandContext,
+  ): Promise<void>;
   consumeIssueCompletion(
     resourceId: ResourceId,
     intentEventId: string,
@@ -83,6 +118,20 @@ export function createResourceService(
         }),
       );
     },
+    noteMissingPrimaryCorrelation: (resourceId, reason, context) =>
+      noteMissingPrimaryCorrelation(repository, resourceId, reason, context),
+    retryPendingWorkCorrelations: () => retryPendingWorkCorrelations(repository),
+    observeExternalOutcome: (resourceId, observation, context) =>
+      observeExternalOutcome(repository, resourceId, observation, context),
+    pendingExternalOutcomes: () => pendingExternalOutcomes(repository),
+    consumeExternalOutcome: (resourceId, sourceObservationId, context) =>
+      appendResourceEvent(
+        repository,
+        resourceId,
+        resourceDraft(resourceId, context, ResourceEventType.ExternalOutcomeConsumed, {
+          sourceObservationId,
+        }),
+      ),
     async consumeIssueCompletion(resourceId, intentEventId, context) {
       await appendResourceEvent(
         repository,
@@ -109,6 +158,18 @@ async function discoverResource(
   command: DiscoverResource,
   context: CommandContext,
 ): Promise<ResourceView> {
+  const existing = (await repository.load(command.resourceId)).resource;
+  if (existing !== null) {
+    if (command.revision !== undefined && existing.view.revision !== command.revision)
+      await appendResourceEvent(
+        repository,
+        command.resourceId,
+        resourceDraft(command.resourceId, context, ResourceEventType.ResourceRevisionObserved, {
+          revision: command.revision,
+        }),
+      );
+    return (await repository.load(command.resourceId)).resource!.view;
+  }
   await appendResourceEvent(
     repository,
     command.resourceId,

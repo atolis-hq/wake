@@ -156,9 +156,11 @@ async function startAndAdvance(
 }
 
 async function runnerHealth(root: Awaited<ReturnType<typeof createRoot>>, clock: FakeClock) {
-  const runners = createSurfaceApplications(root, {
-    now: () => clock.now().toISOString(),
-  }).api.execution.runners;
+  const runners = (
+    await createSurfaceApplications(root, {
+      now: () => clock.now().toISOString(),
+    })
+  ).api.execution.runners;
   if (runners === undefined) throw new Error('Expected production runner health application');
   return (await runners({ limit: 10 })).items;
 }

@@ -46,6 +46,7 @@ export class FakeInboundTranslator {
   ) {}
 
   async runOnce(limit = 100): Promise<number> {
+    await this.services.resources.retryPendingWorkCorrelations();
     const checkpoint = `reactor:integration.${this.adapter}.inbound`;
     const events = await this.services.journal.readAll(
       await this.services.checkpoints.load(checkpoint),
@@ -124,8 +125,25 @@ export class FakeInboundTranslator {
     const correlation = (await this.services.resources.correlations(existing.resourceId)).find(
       (candidate) => candidate.role === ResourceCorrelationRole.Primary,
     );
-    if (correlation === undefined)
-      throw new Error(`Resource ${existing.resourceId} lacks a primary work correlation`);
+    if (correlation === undefined) {
+      if (existing.revision !== evidence.revision)
+        await this.services.resources.discover(
+          {
+            resourceId: existing.resourceId,
+            kind: existing.kind,
+            externalKey,
+            capabilities: existing.capabilities,
+            ...(evidence.revision === undefined ? {} : { revision: evidence.revision }),
+          },
+          context,
+        );
+      await this.services.resources.noteMissingPrimaryCorrelation(
+        existing.resourceId,
+        'Resource has no active primary WorkItem correlation',
+        context,
+      );
+      return true;
+    }
     if (existing.revision !== evidence.revision)
       await this.services.resources.discover(
         {

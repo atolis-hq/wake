@@ -134,6 +134,9 @@
   background: rgb(14 116 144 / 0.18);
   box-shadow: inset 0 0 0 1px rgb(125 211 252 / 0.35);
 }
+.info {
+  color: var(--accent-light);
+}
 .button {
   appearance: none;
   border: 1px solid var(--border-strong);
@@ -294,6 +297,9 @@
 }
 .chipOutline.cold {
   color: #7dd3fc;
+}
+.chipOutline.info {
+  color: var(--accent-light);
 }
 .tile {
   background: var(--surface-panel);

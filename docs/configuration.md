@@ -115,6 +115,10 @@ execution:
   leaseDurationMs: 300000
   leaseRenewalIntervalMs: 60000
   maxAmbiguityReconciliationAttempts: 3
+  workspaceHooks:
+    prepare:
+      command: "npm ls --depth=0 > /dev/null 2>&1 || (rm -rf node_modules && npm ci)"
+      timeoutMs: 300000
 
 controlPlane:
   maxDispatches: 1
@@ -270,6 +274,9 @@ CLI before allowing real agent execution.
 | `execution.leaseDurationMs` | positive integer; optional | Overrides the durable Run lease duration. |
 | `execution.leaseRenewalIntervalMs` | positive integer; optional | Overrides how often a local active Run renews its lease. |
 | `execution.maxAmbiguityReconciliationAttempts` | positive integer; optional | Limits recovery reconciliation attempts for an ambiguous Run. |
+| `execution.workspaceHooks.prepare` | object; optional | Runs an operator-authored shell command in every acquired branch or read-only workspace before its runner starts. |
+| `execution.workspaceHooks.prepare.command` | non-empty string; required | Raw shell command or script path to prepare or repair workspace state. |
+| `execution.workspaceHooks.prepare.timeoutMs` | positive integer; default `300000` | Wall-clock timeout for the prepare command. |
 
 Each `execution.agentRunners.<name>` definition has the following shape.
 
@@ -302,6 +309,10 @@ execution:
     light: [fake]
     standard: [codex, fake]
   defaultRunnerPool: standard
+  workspaceHooks:
+    prepare:
+      command: "npm ls --depth=0 > /dev/null 2>&1 || (rm -rf node_modules && npm ci)"
+      timeoutMs: 300000
 ```
 
 ## `controlPlane`

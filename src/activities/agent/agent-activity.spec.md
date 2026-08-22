@@ -14,7 +14,7 @@ result back into one of the Activity's declared outcomes.
   underlying agent process or session itself completed, independent of what
   the agent produced.
 - **Sentinel** — the agent's own structured result
-  (`{ status: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED', ... }`), parsed
+  (`{ status: 'DONE' | 'REJECTED' | 'BLOCKED' | 'NEEDS_CLARIFICATION' | 'FAILED', ... }`), parsed
   from the runner's output text.
 - **Template** — a named, externally rendered prompt (prompt text, optional
   model, allowed tools, and `maxTurns`) an invocation may reference instead
@@ -70,11 +70,11 @@ supplies.
   parsing fails, the whole trimmed output text is treated as the sentinel's
   `status`.
 - A parsed result without a string `status` field, or with a `status`
-  outside `DONE`/`REJECTED`/`BLOCKED`/`FAILED`, MUST translate to a `failed`
+  outside `DONE`/`REJECTED`/`BLOCKED`/`NEEDS_CLARIFICATION`/`FAILED`, MUST translate to a `failed`
   outcome with reason `invalid-agent-result`.
 - A recognized `status` MUST translate to the outcome kind of the same name
   (`DONE`→`done`, `REJECTED`→`rejected`, `BLOCKED`→`blocked`,
-  `FAILED`→`failed`), carrying the full parsed sentinel object as outcome
+  `NEEDS_CLARIFICATION`→`blocked`, `FAILED`→`failed`), carrying the full parsed sentinel object as outcome
   data.
 - The runner's external-execution identity (when the runner provides one)
   and its final result MUST be reported back through the execution context
@@ -121,7 +121,7 @@ supplies.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `status` | closed vocabulary: `DONE`/`REJECTED`/`BLOCKED`/`FAILED` (recognized case only) | The agent's own reported sentinel, echoed into outcome data verbatim. |
+| `status` | closed vocabulary: `DONE`/`REJECTED`/`BLOCKED`/`NEEDS_CLARIFICATION`/`FAILED` (recognized case only) | The agent's own reported sentinel, echoed into outcome data verbatim. `NEEDS_CLARIFICATION` follows the `blocked` workflow route. |
 | `reason` | closed vocabulary: `ambiguous-runner-result` / `invalid-agent-result` / `runner-failed` (failure cases only) | Why the Activity could not translate a recognized agent result. |
 | `message` | string (optional) | The runner's own failure message, when `runner-failed` and one was reported. |
 | `retrySafety` | closed-vocabulary value, agent-supplied (optional) | Free-form data in a recognized `FAILED` sentinel; Orchestration, not this Activity, interprets `requires-reconciliation` as disqualifying retry — see the module page. |

@@ -47,7 +47,7 @@ describe('PollService', () => {
     ]);
   });
 
-  it('reads the integration stream once and appends a whole poll batch atomically', async () => {
+  it('reads the integration stream once and appends a whole GitHub poll batch atomically', async () => {
     const delegate = new InMemoryEventJournal(new FakeClock());
     let reads = 0;
     const journal = {

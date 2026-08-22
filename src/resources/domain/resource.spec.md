@@ -27,11 +27,9 @@ command it receives is currently valid.
   identity from the external key.
 - Discovering a `ResourceId` for the first time MUST establish it with the
   given kind, external key, capabilities, and (if given) revision and title.
-- Discovering a `ResourceId` that already exists MUST be accepted, but MUST
-  NOT change the Resource's recorded kind, external key, capabilities,
-  revision, or title: the first-recorded discovery remains canonical for this
-  aggregate's own view. A repeat discovery is therefore observably a no-op
-  even though it is accepted rather than rejected.
+- Discovering a `ResourceId` that already exists MUST be accepted. It preserves
+  the recorded kind, external key, capabilities, and title; a supplied revision
+  that differs from the current revision records a revision observation.
 
 **Existence gating**
 
@@ -83,6 +81,11 @@ command it receives is currently valid.
 | `resources.work-correlation-established` | A correlate command is accepted | A correlation of the given role now exists from this Resource to the named `WorkItemId`. |
 | `resources.work-correlation-retracted` | A retract command is accepted | The named `WorkItemId`'s correlation to this Resource, if any, no longer exists. |
 | `resources.work-correlation-conflicted` | A `primary` correlate command names a `WorkItemId` different from the existing primary | An attempted primary correlation disagreed with the Resource's canonical primary; the attempt is rejected and the disagreement is now a durable fact. |
+| `resources.work-correlation-retry-pending` | Inbound translation finds this Resource without an active primary | Records one resource-scoped missing-correlation attempt for tick-driven retry. |
+| `resources.work-correlation-unresolvable` | The fourth missing-correlation attempt fails | A durable operator-visible terminal classification; a newly established primary clears its projected current-state flag but not history. |
+| `resources.external-outcome-observed` | A terminal external outcome arrives while correlation is unresolved | Retains the latest terminal outcome for one deferred application after a primary correlation is restored. |
+| `resources.external-outcome-reopened` | A later non-terminal observation arrives | Supersedes the pending terminal external outcome. |
+| `resources.external-outcome-consumed` | Deferred terminal outcome is applied to its restored WorkItem | Marks the source observation consumed, preventing duplicate application. |
 
 ## Conceptual schema
 
@@ -99,6 +102,8 @@ fact; a stream with no such fact folds to no Resource at all.
 | `revision` | optional string | Set by the first discovery fact if given; updated by each accepted revision fact. |
 | `title` | optional string | Set by the first discovery fact if given; unaffected by any later discovery fact. |
 | `primaryCorrelationConflict` | optional conflict record | Absent until the first conflict fact; replaced wholesale by each subsequent conflict fact. |
+| `correlationStatus` | optional `unresolvable` | Current terminal missing-correlation classification; cleared by a new primary correlation. |
+| `pendingExternalOutcome` | optional terminal observation | Latest terminal external outcome awaiting a restored primary correlation; removed by reopening or consumption. |
 | `correlations` | list of `Resource correlation` entry | Starts empty; gains or updates one entry per distinct `workItemId` established, keyed by `workItemId`, and loses an entry on retraction. |
 
 **Resource correlation** (child entity, this aggregate's own fold)

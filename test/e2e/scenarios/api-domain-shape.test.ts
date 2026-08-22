@@ -65,9 +65,11 @@ describe(`${scenario.id} API metadata provenance`, () => {
       occurredAt: retractedAt,
     });
     await root.projectionRunner.runRegisteredOnce();
-    const work = createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    }).api.work;
+    const work = (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.work;
     const page = await work.list({ limit: 1 });
     const detail = await work.detail(page.items[0]!.workItemKey);
 
@@ -89,9 +91,11 @@ describe(`${scenario.id} API metadata provenance`, () => {
         correlationId: correlationId('surface-event-later'),
       },
     );
-    const events = createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    }).api.events;
+    const events = (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.events;
 
     const first = await events.list({ limit: 1 });
     const second = await events.list({ limit: 1, cursor: { position: first.nextPosition! } });
@@ -109,9 +113,11 @@ describe(`${scenario.id} API metadata provenance`, () => {
       { ...context, commandId: 'surface-flow-later', occurredAt: laterAt },
     );
     await root.projectionRunner.runRegisteredOnce();
-    const work = createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    }).api.work;
+    const work = (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.work;
 
     const firstPage = await work.list({ limit: 1 });
     const emptyFilter = await work.list({ limit: 1, search: 'no-match' });
@@ -143,7 +149,9 @@ describe(`${scenario.id} API domain shape`, () => {
     await root.advanceOnce({ maxProgress: 1 });
     await root.projectionRunner.runRegisteredOnce();
 
-    const surface = createSurfaceApplications(root, { now: () => '2026-07-31T11:00:00.000Z' });
+    const surface = await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    });
     const page = await surface.api.work.list({ limit: 1 });
     const detail = await surface.api.work.detail(page.items[0]!.workItemKey);
 
@@ -170,15 +178,19 @@ describe(`${scenario.id} API domain shape`, () => {
     await root.advanceOnce({ maxProgress: 1 });
     await root.projectionRunner.runRegisteredOnce();
 
-    const page = await createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    }).api.work.list({ limit: 1 });
+    const page = await (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.work.list({ limit: 1 });
     const list = vi.spyOn(root.projections, 'list').mockRejectedValue(new Error('global list'));
     const journalReads = vi.spyOn(root.journal, 'readAll');
 
-    const detail = await createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    }).api.work.detail(page.items[0]!.workItemKey);
+    const detail = await (
+      await createSurfaceApplications(root, {
+        now: () => '2026-07-31T11:00:00.000Z',
+      })
+    ).api.work.detail(page.items[0]!.workItemKey);
 
     expect(detail?.data.execution.runs).toHaveLength(1);
     expect(list).not.toHaveBeenCalled();
@@ -220,7 +232,9 @@ describe(`${scenario.id} API domain shape`, () => {
     await root.projectionRunner.runRegisteredOnce();
 
     // When the real Node HTTP Surface queries the injected production facade.
-    const surface = createSurfaceApplications(root, { now: () => '2026-07-31T11:00:00.000Z' });
+    const surface = await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    });
     const server = createApiHttpServer(createApiDispatcher(surface.api));
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -261,7 +275,7 @@ describe(`${scenario.id} command idempotency`, () => {
   it('resolves an ambiguous run durably over the composed API before retrying only failed work', async () => {
     const failed = await createAmbiguousRunWorld('failed');
     const failedWork = await startAmbiguousRun(failed, 'failed');
-    const failedSurface = createSurfaceApplications(failed.root, {
+    const failedSurface = await createSurfaceApplications(failed.root, {
       now: () => failed.clock.now().toISOString(),
     });
     const failedDispatcher = createApiDispatcher(failedSurface.api);
@@ -295,7 +309,7 @@ describe(`${scenario.id} command idempotency`, () => {
 
     const succeeded = await createAmbiguousRunWorld('succeeded');
     const succeededWork = await startAmbiguousRun(succeeded, 'succeeded');
-    const succeededSurface = createSurfaceApplications(succeeded.root, {
+    const succeededSurface = await createSurfaceApplications(succeeded.root, {
       now: () => succeeded.clock.now().toISOString(),
     });
     const succeededDispatcher = createApiDispatcher(succeededSurface.api);
@@ -349,7 +363,7 @@ describe(`${scenario.id} command idempotency`, () => {
     await root.advanceOnce({ maxProgress: 1 });
     await root.projectionRunner.runRegisteredOnce();
 
-    const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
+    const surface = await createSurfaceApplications(root, { now: () => clock.now().toISOString() });
     const page = await surface.api.work.list({ limit: 1 });
     const detail = await surface.api.work.detail(page.items[0]!.workItemKey);
     expect(detail?.data.orchestration.primary?.retryEligible).toBe(true);
@@ -377,7 +391,7 @@ describe(`${scenario.id} command idempotency`, () => {
     );
     await root.projectionRunner.runRegisteredOnce();
 
-    const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
+    const surface = await createSurfaceApplications(root, { now: () => clock.now().toISOString() });
     const page = await surface.api.work.list({ limit: 1 });
     const response = await createApiDispatcher(surface.api).dispatch(
       'POST',
@@ -394,7 +408,7 @@ describe(`${scenario.id} command idempotency`, () => {
 
   it('deduplicates a production advance command by idempotency key', async () => {
     const { root, clock, context } = await createWorld();
-    const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
+    const surface = await createSurfaceApplications(root, { now: () => clock.now().toISOString() });
     const advance = surface.api.controlPlane.tick;
     if (advance === undefined) throw new Error('Expected the production advance command');
 
@@ -469,9 +483,11 @@ it(`${boardScenario.id} projects composed Work and Run state into bounded operat
   await root.advanceOnce({ maxProgress: 1 });
   await root.projectionRunner.runRegisteredOnce();
 
-  const page = await createSurfaceApplications(root, {
-    now: () => '2026-07-31T11:00:00.000Z',
-  }).api.board!.list({ limit: 10 });
+  const page = await (
+    await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    })
+  ).api.board!.list({ limit: 10 });
 
   expect(page.total).toBe(1);
   expect(page.items[0]).toMatchObject({ workItemKey: expect.stringMatching(/^wk_/) });
@@ -488,9 +504,11 @@ it(`${analyticsScenario.id} returns an incremental composed analytics window wit
   );
   await root.projectionRunner.runRegisteredOnce();
 
-  const result = await createSurfaceApplications(root, {
-    now: () => '2026-07-31T11:00:00.000Z',
-  }).api.observability!.metrics({ days: 1 });
+  const result = await (
+    await createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    })
+  ).api.observability!.metrics({ days: 1 });
 
   expect(result.data.window).toEqual({ days: 1, from: '2026-07-31', to: '2026-07-31' });
   expect(result.data.values).toMatchObject({ events: expect.any(Number), workItems: 1 });

@@ -26,7 +26,7 @@ it('commits a provider cursor only after its evidence is durable', async () => {
   expect(await journal.readAll(0)).toHaveLength(1);
 });
 
-it('does not commit a provider cursor when evidence persistence fails', async () => {
+it('continues after a persistence failure and withholds the provider cursor', async () => {
   const delegate = new InMemoryEventJournal(new FakeClock());
   let committed = 0;
   const journal = {
@@ -34,15 +34,21 @@ it('does not commit a provider cursor when evidence persistence fails', async ()
     readStream: delegate.readStream.bind(delegate),
     latestGlobalPosition: delegate.latestGlobalPosition.bind(delegate),
     changeSignal: delegate.changeSignal,
-    async append() {
-      throw new Error('disk unavailable');
+    async append(
+      stream: Parameters<typeof delegate.append>[0],
+      sequence: number,
+      events: Parameters<typeof delegate.append>[2],
+    ) {
+      if (events[0]?.eventId === 'github:issue:owner/repo#1:revision')
+        throw new Error('disk unavailable');
+      return delegate.append(stream, sequence, events);
     },
   };
   const service = new PollService(
     journal,
     provider({
       async poll() {
-        return [draft()];
+        return [draft(), draft('github:issue:owner/repo#2:revision')];
       },
       async markPollPersisted() {
         committed += 1;
@@ -50,9 +56,13 @@ it('does not commit a provider cursor when evidence persistence fails', async ()
     }),
   );
 
-  await expect(service.pollOnce(new AbortController().signal)).rejects.toThrow('disk unavailable');
+  await expect(service.pollOnce(new AbortController().signal)).resolves.toEqual({
+    appended: 1,
+    failed: 1,
+  });
 
   expect(committed).toBe(0);
+  expect(await delegate.readAll(0)).toHaveLength(1);
 });
 
 function provider(source: {
@@ -66,9 +76,9 @@ function provider(source: {
   } as never;
 }
 
-function draft() {
+function draft(eventId = 'github:issue:owner/repo#1:revision') {
   return createEventDraft({
-    eventId: 'github:issue:owner/repo#1:revision',
+    eventId,
     eventType: 'integration.github.work-observed',
     occurredAt: '2026-08-16T19:22:00.000Z',
     correlationId: 'github:owner/repo#1',

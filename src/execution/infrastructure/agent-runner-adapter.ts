@@ -30,7 +30,10 @@ function parseResult(output: string): {
   while ((match = fence.exec(output)) !== null) last = match;
   if (last !== null) {
     try {
-      const json = (last[1] ?? '').replace(/\n(?:DONE|REJECTED|BLOCKED|FAILED)[ \t]*\n?$/, '');
+      const json = (last[1] ?? '').replace(
+        /\n(?:DONE|REJECTED|BLOCKED|FAILED|NEEDS_CLARIFICATION)[ \t]*\n?$/,
+        '',
+      );
       const value = JSON.parse(json) as { status?: unknown };
       if (isOutcome(value.status))
         return {
@@ -88,7 +91,13 @@ function parseEnvelope(
 }
 
 function isOutcome(value: unknown): value is AgentRunOutcome {
-  return value === 'DONE' || value === 'REJECTED' || value === 'BLOCKED' || value === 'FAILED';
+  return (
+    value === 'DONE' ||
+    value === 'REJECTED' ||
+    value === 'BLOCKED' ||
+    value === 'FAILED' ||
+    value === 'NEEDS_CLARIFICATION'
+  );
 }
 
 function synthesized(outcome: AgentRunOutcome): string {
@@ -97,6 +106,7 @@ function synthesized(outcome: AgentRunOutcome): string {
     REJECTED: 'Run rejected - needs changes.',
     BLOCKED: 'Run blocked - needs input.',
     FAILED: 'Run failed.',
+    NEEDS_CLARIFICATION: 'Run needs clarification.',
   }[outcome];
 }
 

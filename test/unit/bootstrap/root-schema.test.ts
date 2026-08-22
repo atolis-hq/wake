@@ -31,6 +31,35 @@ describe('transcript capture configuration', () => {
   });
 });
 
+describe('workspace prepare configuration', () => {
+  it('defaults the prepare timeout and rejects malformed hook definitions', () => {
+    expect(
+      parseRootConfig({
+        ...baseConfig,
+        execution: {
+          ...baseConfig.execution,
+          workspaceHooks: { prepare: { command: 'prepare.sh' } },
+        },
+      }).execution.workspaceHooks,
+    ).toEqual({ prepare: { command: 'prepare.sh', timeoutMs: 300_000 } });
+    expect(() =>
+      parseRootConfig({
+        ...baseConfig,
+        execution: { ...baseConfig.execution, workspaceHooks: { prepare: { command: ' ' } } },
+      }),
+    ).toThrow(/command/);
+    expect(() =>
+      parseRootConfig({
+        ...baseConfig,
+        execution: {
+          ...baseConfig.execution,
+          workspaceHooks: { prepare: { command: 'prepare.sh', unexpected: true } },
+        },
+      }),
+    ).toThrow(/unexpected/);
+  });
+});
+
 describe('control-plane concurrency configuration', () => {
   it('defaults to one concurrent Run and requires a positive integer', () => {
     expect(parseRootConfig(baseConfig).controlPlane.maxConcurrentRuns).toBe(1);

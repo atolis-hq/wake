@@ -128,9 +128,11 @@ Does not own:
   external key (`"<kind> <externalKey.key>"`); its `externalUrl` MUST be
   resolved through the injected `ResourceLinkResolver` and omitted whenever
   the resolver reports no link.
-- A run's `sentinel` MUST be derived from the run's own activity outcome kind
+- A run's `sentinel` MUST preserve the raw outcome from the recorded agent
+  response when present (including `NEEDS_CLARIFICATION`); otherwise it is
+  derived from the run's own activity outcome kind
   (`DONE`/`REJECTED`/`BLOCKED`/`FAILED`/`WAITING`), falling back to the run's
-  own status uppercased when no outcome is present yet; `totalTokens` and
+  own status uppercased when no outcome is present yet. `totalTokens` and
   `totalCostUsd` MUST be aggregated from the run's agent metadata rather than
   left for the caller to compute.
 

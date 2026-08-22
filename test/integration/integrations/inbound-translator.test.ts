@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { activityName, ActivityOutcomeKind } from '../../../src/activities/index.js';
@@ -119,6 +119,77 @@ describe('InboundTranslator', () => {
     expect(
       await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#7' }),
     ).toBeNull();
+  });
+
+  it('bounds a poison event across restarts and continues translating later evidence', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const resourceIdForExternalKey = lookup.resourceIdForExternalKey.bind(lookup);
+    vi.spyOn(lookup, 'resourceIdForExternalKey').mockImplementation(async (externalKey) => {
+      if (externalKey.key === 'owner/repo#poison') throw new Error('poison lookup');
+      return resourceIdForExternalKey(externalKey);
+    });
+    const stream = integrationStream(BuiltInAdapterId.GitHub);
+    const [poison, later] = await journal.append(stream, 0, [
+      createEventDraft({
+        eventId: 'github:issue:owner/repo#poison:v1',
+        eventType: GitHubEventType.WorkObserved,
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'github:owner/repo#poison',
+        causationId: 'github:issue:owner/repo#poison:v1',
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: 'github' },
+        stream,
+        payload: { ...observation(), externalKey: 'owner/repo#poison' },
+      }),
+      createEventDraft({
+        eventId: 'github:issue:owner/repo#later:v1',
+        eventType: GitHubEventType.WorkObserved,
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'github:owner/repo#later',
+        causationId: 'github:issue:owner/repo#later:v1',
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: 'github' },
+        stream,
+        payload: { ...observation(), externalKey: 'owner/repo#later' },
+      }),
+    ]);
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
+
+    await translator.runOnce();
+    expect(await checkpoints.load('reactor:integration.github.inbound')).toBeGreaterThanOrEqual(
+      later!.globalPosition,
+    );
+    expect(
+      await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#later' }),
+    ).not.toBeNull();
+
+    await translator.runOnce();
+    await translator.runOnce();
+    await translator.runOnce();
+    const failures = (await journal.readStream(stream)).filter(
+      (event) => event.eventType === GitHubEventType.InboundTranslationFailed,
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      payload: {
+        adapter: 'github',
+        sourceEventId: poison!.eventId,
+        attempt: 4,
+        globalPosition: poison!.globalPosition,
+        eventType: GitHubEventType.WorkObserved,
+        correlationId: poison!.correlationId,
+        causationId: poison!.causationId,
+      },
+    });
   });
 
   it('records one skip diagnostic for a deleted correlation and continues later inbound work', async () => {

@@ -468,7 +468,7 @@ describe('target composition root', () => {
     });
 
     await expect(
-      createSurfaceApplications(runtime).api.execution.transcript?.('run-transcript'),
+      (await createSurfaceApplications(runtime)).api.execution.transcript?.('run-transcript'),
     ).resolves.toMatchObject({
       data: { available: true, entries: [{ text: 'captured input' }, { text: 'captured output' }] },
     });
@@ -513,7 +513,7 @@ describe('target composition root', () => {
     });
 
     await expect(
-      createSurfaceApplications(runtime).api.execution.transcript?.('run-session-second'),
+      (await createSurfaceApplications(runtime)).api.execution.transcript?.('run-session-second'),
     ).resolves.toMatchObject({
       data: {
         runId: 'run-session-second',

@@ -174,6 +174,14 @@ async function terminateGracefully(
 }
 
 function terminate(child: ChildProcess, shell: boolean, signal: NodeJS.Signals): void {
+  if (shell && process.platform === 'win32' && child.pid !== undefined) {
+    const taskkill = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    taskkill.unref();
+    return;
+  }
   if (shell && process.platform !== 'win32' && child.pid !== undefined) {
     try {
       process.kill(-child.pid, signal);

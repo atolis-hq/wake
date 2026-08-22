@@ -28,12 +28,14 @@ function detailClient(
     readonly waitFor?: Promise<void>;
     readonly error?: boolean;
   } = { groups: [], entries: [] },
+  lastRunOutcome: string | undefined = 'DONE',
 ) {
   const work = {
     workItemKey: 'wk_a',
     workItemId: 'work-a',
     objective: 'Alpha',
     state: 'open',
+    ...(lastRunOutcome === undefined ? {} : { lastRunOutcome }),
     relatedWorkItems: [],
   };
   return new WakeApiClient(async (input, init) => {
@@ -208,10 +210,29 @@ describe('work detail', () => {
     );
 
     const details = title.parentElement?.querySelector('dl');
-    expect(details?.textContent).toMatch(/Work identity.*State.*Workflow.*Stage/);
+    expect(details?.textContent).toMatch(/Work identity.*State.*Workflow.*Stage.*Last run/);
 
     const resources = screen.getByRole('list', { name: 'Resources' });
     expect(resources.textContent).not.toContain('rev-9');
+  });
+
+  it('shows a distinct clarification pill from work.lastRunOutcome', async () => {
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(
+            null,
+            undefined,
+            [],
+            { groups: [], entries: [] },
+            'NEEDS_CLARIFICATION',
+          )}
+        />
+      </MemoryRouter>,
+    );
+
+    const outcome = await screen.findByText('needs clarification');
+    expect(outcome.className).toContain('info');
   });
 
   it('uses accessible tab and tabpanel semantics for detail sections', async () => {

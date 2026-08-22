@@ -17,6 +17,8 @@ export interface WorkItemResponse {
     readonly relation: string;
   }[];
   readonly externalRef?: string;
+  /** Raw outcome emitted by the latest agent run, when one is available. */
+  readonly lastRunOutcome?: string;
 }
 
 export interface WorkDetailResponse {

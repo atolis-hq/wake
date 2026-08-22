@@ -56,7 +56,8 @@ API surface application's board and status applications do that).
   event type, so a new status-changing event automatically reaches the
   board. `SignalWaitStarted` MUST additionally set `awaitingApproval` when
   the wait's signal kind is an approval-awaiting kind; `SignalAccepted`
-  MUST clear it.
+  MUST clear it. A workflow block following a failed or ambiguous terminal
+  run MUST retain condition `error`; other workflow blocks use `needs-input`.
 - `RunStarted` MUST increment `runCount`, record its `activeRuns` entry keyed
   by Run ID (action, optional runner name, start time), and `lastRunAt`; for a primary-instance
   run only, it MUST also set condition `active` and clear

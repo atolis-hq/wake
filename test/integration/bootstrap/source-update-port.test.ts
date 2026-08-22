@@ -1,8 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import { createSourceUpdatePort } from '../../../src/bootstrap/source-update-port.js';
 
+const roots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
 describe('target source update port', () => {
-  it('uses git status, checkout, and build verification within the configured repository', async () => {
+  it('uses git status, checkout, dependency install, and build verification within the configured repository', async () => {
     const calls: { command: string; args: readonly string[]; cwd: string }[] = [];
     const port = createSourceUpdatePort({
       repoRoot: '/source/wake',
@@ -17,8 +26,43 @@ describe('target source update port', () => {
     expect(calls).toEqual([
       { command: 'git', args: ['status', '--porcelain'], cwd: '/source/wake' },
       { command: 'git', args: ['checkout', 'v2'], cwd: '/source/wake' },
+      { command: 'npm', args: ['install'], cwd: '/source/wake' },
       { command: 'npm', args: ['exec', 'tsc', '--'], cwd: '/source/wake' },
     ]);
+  });
+
+  it('installs from the lockfile deterministically when checking out a repo that has one', async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), 'wake-source-update-port-'));
+    roots.push(repoRoot);
+    await writeFile(join(repoRoot, 'package-lock.json'), '{}');
+    const calls: string[][] = [];
+    const port = createSourceUpdatePort({
+      repoRoot,
+      execute: async (_command, args) => {
+        calls.push([...args]);
+        return 'ok';
+      },
+    });
+    await port.checkout('v2');
+    expect(calls).toEqual([
+      ['checkout', 'v2'],
+      ['ci', '--include=dev'],
+    ]);
+  });
+
+  it('falls back to a plain install when checking out a repo with no lockfile', async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), 'wake-source-update-port-'));
+    roots.push(repoRoot);
+    const calls: string[][] = [];
+    const port = createSourceUpdatePort({
+      repoRoot,
+      execute: async (_command, args) => {
+        calls.push([...args]);
+        return 'ok';
+      },
+    });
+    await port.checkout('v2');
+    expect(calls).toEqual([['checkout', 'v2'], ['install']]);
   });
 
   it('fetches remote release tags before discovering the latest version tag', async () => {
