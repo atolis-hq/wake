@@ -193,6 +193,35 @@ describe('Resource correlations', () => {
 
     expect(await service.get(resource)).not.toHaveProperty('correlationStatus');
   });
+
+  it('starts a new missing-primary retry cycle after a recovered primary is retracted', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createTestResourceServices(journal).resources;
+    const resource = resId('retry-after-retraction');
+    const work = workId('recover');
+    await service.discover(discovery(resource), context('discover'));
+    await service.noteMissingPrimaryCorrelation(
+      resource,
+      'no primary correlation',
+      context('observe-1'),
+    );
+    await service.retryPendingWorkCorrelations();
+    await service.retryPendingWorkCorrelations();
+    await service.retryPendingWorkCorrelations();
+    await service.correlate(resource, work, 'primary', context('correlate'));
+    await service.retract(resource, work, context('retract'));
+
+    await service.noteMissingPrimaryCorrelation(
+      resource,
+      'no primary correlation',
+      context('observe-2'),
+    );
+
+    expect((await journal.readStream(resourceStream(resource))).at(-1)).toMatchObject({
+      eventType: 'resources.work-correlation-retry-pending',
+      payload: { attemptCount: 1, lastFailureReason: 'no primary correlation' },
+    });
+  });
 });
 
 function discovery(resource: ReturnType<typeof resourceId>) {

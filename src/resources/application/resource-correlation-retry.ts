@@ -131,13 +131,18 @@ function hasPrimary(correlations: readonly ResourceCorrelationView[]): boolean {
 }
 
 function retryAttempts(events: readonly ResourceEvent[]): number {
-  return events.reduce(
-    (attempts, event) =>
-      event.eventType === ResourceEventType.WorkCorrelationRetryPending
-        ? Math.max(attempts, event.payload.attemptCount)
-        : attempts,
-    0,
-  );
+  let attempts = 0;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (
+      event.eventType === ResourceEventType.WorkCorrelationEstablished &&
+      event.payload.role === ResourceCorrelationRole.Primary
+    )
+      break;
+    if (event.eventType === ResourceEventType.WorkCorrelationRetryPending)
+      attempts = Math.max(attempts, event.payload.attemptCount);
+  }
+  return attempts;
 }
 
 async function appendResourceEvent(
