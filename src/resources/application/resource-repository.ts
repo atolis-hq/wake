@@ -1,4 +1,8 @@
-import type { EventJournal } from '../../kernel/index.js';
+import {
+  cachedJournalView,
+  type CachedJournalView,
+  type EventJournal,
+} from '../../kernel/index.js';
 import {
   ResourceEventType,
   decodeResourceEvent,
@@ -16,7 +20,11 @@ export interface LoadedResource {
 }
 
 export class ResourceRepository {
-  constructor(private readonly journal: EventJournal) {}
+  private readonly resourceIds: CachedJournalView<readonly ResourceId[]>;
+
+  constructor(private readonly journal: EventJournal) {
+    this.resourceIds = cachedJournalView(journal, deriveResourceIds);
+  }
 
   async load(resourceId: ResourceId): Promise<LoadedResource> {
     const events = await this.journal.readStream(resourceStream(resourceId));
@@ -33,15 +41,20 @@ export class ResourceRepository {
     return events.map(decodeResourceEvent);
   }
 
-  async resourceIds(): Promise<readonly ResourceId[]> {
-    const events = await this.journal.readAll(0);
-    return [
-      ...new Set(
-        events
-          .map(selectResourceEvent)
-          .filter((event) => event?.eventType === ResourceEventType.ResourceDiscovered)
-          .map((event) => event!.stream.id),
-      ),
-    ];
+  async listResourceIds(): Promise<readonly ResourceId[]> {
+    return this.resourceIds.get();
   }
+}
+
+function deriveResourceIds(
+  events: Awaited<ReturnType<EventJournal['readAll']>>,
+): readonly ResourceId[] {
+  return [
+    ...new Set(
+      events
+        .map(selectResourceEvent)
+        .filter((event) => event?.eventType === ResourceEventType.ResourceDiscovered)
+        .map((event) => event!.stream.id),
+    ),
+  ];
 }

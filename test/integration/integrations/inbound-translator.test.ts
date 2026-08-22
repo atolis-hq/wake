@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { activityName, ActivityOutcomeKind } from '../../../src/activities/index.js';
@@ -129,6 +129,11 @@ describe('InboundTranslator', () => {
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const resourceIdForExternalKey = lookup.resourceIdForExternalKey.bind(lookup);
+    vi.spyOn(lookup, 'resourceIdForExternalKey').mockImplementation(async (externalKey) => {
+      if (externalKey.key === 'owner/repo#poison') throw new Error('poison lookup');
+      return resourceIdForExternalKey(externalKey);
+    });
     const stream = integrationStream(BuiltInAdapterId.GitHub);
     const [poison, later] = await journal.append(stream, 0, [
       createEventDraft({
@@ -140,7 +145,7 @@ describe('InboundTranslator', () => {
         actor: { kind: 'integration', id: 'github' },
         source: { kind: 'adapter', id: 'github' },
         stream,
-        payload: observation(),
+        payload: { ...observation(), externalKey: 'owner/repo#poison' },
       }),
       createEventDraft({
         eventId: 'github:issue:owner/repo#later:v1',
@@ -154,20 +159,6 @@ describe('InboundTranslator', () => {
         payload: { ...observation(), externalKey: 'owner/repo#later' },
       }),
     ]);
-    await resources.discover(
-      {
-        resourceId: resourceId(new UlidIdGenerator().next('resource')),
-        kind: resourceKind('issue'),
-        externalKey: { adapter: 'github', key: 'owner/repo#7' },
-        capabilities: [],
-      },
-      {
-        commandId: 'discover-poison-resource',
-        correlationId: 'discover-poison-resource' as never,
-        occurredAt: clock.now().toISOString(),
-        actor: { kind: 'system', id: 'test' },
-      },
-    );
     const translator = new InboundTranslator(journal, checkpoints, work, resources, {
       lookup,
       orchestration,
