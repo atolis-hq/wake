@@ -10,7 +10,7 @@ const forbidden = [
 const excluded = /^(?:node_modules|dist|coverage|\.git)\//;
 
 describe('committed source encoding', () => {
-  it('contains no mojibake signatures', () => {
+  it('contains no mojibake signatures', { timeout: 30_000 }, () => {
     const files = execFileSync('git', ['ls-files', '-z'], { encoding: 'buffer' })
       .toString('utf8')
       .split('\0')
@@ -24,5 +24,5 @@ describe('committed source encoding', () => {
       return forbidden.some((value) => text.includes(value));
     });
     expect(offenders).toEqual([]);
-  }, 30_000);
+  });
 });

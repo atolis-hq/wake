@@ -10,15 +10,22 @@ type IssueCommand =
   | typeof GitHubBuiltInCommand.Changes
   | typeof GitHubBuiltInCommand.Retry;
 
+function commandLine(body: string): string {
+  const trimmed = body.trim();
+  const newlineIndex = trimmed.indexOf('\n');
+  const line = newlineIndex === -1 ? trimmed : trimmed.slice(0, newlineIndex);
+  return line.trim().toLowerCase();
+}
+
+function matchesCommand(line: string, command: string): boolean {
+  return line === command || (line.startsWith(command) && /\s/.test(line.charAt(command.length)));
+}
+
 export function recognizedCommand(body: string): IssueCommand | null {
-  const normalized = body.trim().toLowerCase();
-  if (normalized === GitHubBuiltInCommand.Approved) return GitHubBuiltInCommand.Approved;
-  if (
-    normalized === GitHubBuiltInCommand.Changes ||
-    normalized.startsWith(`${GitHubBuiltInCommand.Changes} `)
-  )
-    return GitHubBuiltInCommand.Changes;
-  if (normalized === GitHubBuiltInCommand.Retry) return GitHubBuiltInCommand.Retry;
+  const line = commandLine(body);
+  if (matchesCommand(line, GitHubBuiltInCommand.Approved)) return GitHubBuiltInCommand.Approved;
+  if (matchesCommand(line, GitHubBuiltInCommand.Changes)) return GitHubBuiltInCommand.Changes;
+  if (matchesCommand(line, GitHubBuiltInCommand.Retry)) return GitHubBuiltInCommand.Retry;
   return null;
 }
 
