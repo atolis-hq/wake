@@ -457,6 +457,53 @@ function quiesce(
 }
 
 describe('self-update application: updateLatest with bad tag handling', () => {
+  it('continues to an older candidate when a failed update rolls back successfully', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1.0.0', calls),
+      source: {
+        isClean: async () => true,
+        latestTag: async () => 'v2.0.0',
+        candidateTags: async () => ['v2.0.0', 'v1.5.0'],
+        checkout: async (tag) => {
+          calls.push(`checkout:${tag}`);
+        },
+        healthy: async () => calls.includes('checkout:v1.5.0'),
+      },
+    });
+
+    await expect(application.updateLatest()).resolves.toEqual({ tag: 'v1.5.0', updated: true });
+    expect(calls).toEqual([
+      'begin:v2.0.0',
+      'checkout:v2.0.0',
+      'checkout:v1.0.0',
+      'bad:v2.0.0',
+      'begin:v1.5.0',
+      'checkout:v1.5.0',
+      'ledger:v1.5.0',
+    ]);
+  });
+
+  it('propagates a failed rollback instead of treating the candidate as safely skipped', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1.0.0', calls),
+      source: {
+        isClean: async () => true,
+        latestTag: async () => 'v2.0.0',
+        candidateTags: async () => ['v2.0.0', 'v1.5.0'],
+        checkout: async (tag) => {
+          calls.push(`checkout:${tag}`);
+          if (tag === 'v1.0.0') throw new Error('rollback checkout failed');
+        },
+        healthy: async () => false,
+      },
+    });
+
+    await expect(application.updateLatest()).rejects.toThrow('rollback checkout failed');
+    expect(calls).toEqual(['begin:v2.0.0', 'checkout:v2.0.0', 'checkout:v1.0.0', 'bad:v2.0.0']);
+  });
+
   it('skips bad candidate tags and updates to the first good one', async () => {
     const calls: string[] = [];
     const isBadMap: Record<string, boolean> = {

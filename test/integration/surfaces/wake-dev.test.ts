@@ -32,7 +32,7 @@ describe('target development launcher', () => {
     });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('Unknown wake command: not-a-command');
+    expect(result.stderr).toBe('wake: Unknown wake command: not-a-command\n');
   });
 
   it(
