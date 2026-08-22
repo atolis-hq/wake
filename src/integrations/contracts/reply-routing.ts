@@ -9,6 +9,7 @@ export const ReplyTarget = {
   PullRequest: BuiltInResourceKind.PullRequest,
   None: ProviderPermission.None,
 } as const;
+
 export type ReplyTarget = ValueOf<typeof ReplyTarget>;
 
 export type ReplyOutcome = AgentRunOutcome;
@@ -22,6 +23,7 @@ export const ReplyOutcomeConfig = {
   Failed: ActivityOutcomeKind.Failed,
   NeedsClarification: ReplyNeedsClarificationConfig,
 } as const;
+
 export type ReplyOutcomeConfig = ValueOf<typeof ReplyOutcomeConfig>;
 
 export interface ReplyRoutingRule {
