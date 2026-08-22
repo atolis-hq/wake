@@ -439,9 +439,6 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
               else next.add(stage.id);
               return next;
             });
-          const primaryChild =
-            stage.children.find((child) => child.kind === 'activity') ?? stage.children[0];
-          const primaryHasActiveRun = (primaryChild?.activeRuns?.length ?? 0) > 0;
           return (
             <div
               className={`${styles.stage} ${boardStyles.card}`}
@@ -481,15 +478,20 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                     <strong className={boardStyles.cardTitle}>{stage.label}</strong>
                   </div>
                 </div>
-                {direction === 'DOWN' && !isExpanded && primaryChild !== undefined ? (
-                  <span
-                    aria-label={`${childStatus(primaryChild)} status`}
-                    className={`${boardStyles.childRunDot} ${styles.childStatusDot} ${styles.collapsedStatusDot}`}
-                    data-active-run={primaryHasActiveRun || undefined}
-                    data-status={childStatus(primaryChild)}
-                    data-testid={`collapsed-status-${stage.id}`}
-                    role="img"
-                  />
+                {direction === 'DOWN' && !isExpanded ? (
+                  <span className={styles.collapsedStatusDots}>
+                    {stage.children.map((child) => (
+                      <span
+                        aria-label={`${childStatus(child)} status`}
+                        className={`${boardStyles.childRunDot} ${styles.childStatusDot} ${styles.collapsedStatusDot}`}
+                        data-active-run={(child.activeRuns?.length ?? 0) > 0 || undefined}
+                        data-status={childStatus(child)}
+                        data-testid={`collapsed-status-${stage.id}-${child.id}`}
+                        key={child.id}
+                        role="img"
+                      />
+                    ))}
+                  </span>
                 ) : null}
                 {hasTotals ? (
                   <div className={styles.stageTotals}>

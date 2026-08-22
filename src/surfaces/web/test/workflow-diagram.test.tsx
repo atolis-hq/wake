@@ -199,14 +199,19 @@ describe('WorkflowDiagramView', () => {
     expect(screen.getByRole('button', { name: /^Merge/ }).getAttribute('aria-expanded')).toBe(
       'false',
     );
-    expect(screen.getByTestId('collapsed-status-merge').dataset.status).toBe('blocked');
+    expect(screen.getByTestId('collapsed-status-merge-merge-activity').dataset.status).toBe(
+      'blocked',
+    );
+    expect(screen.getByTestId('collapsed-status-merge-merge-merged-reactor').dataset.status).toBe(
+      'failed',
+    );
     expect(screen.queryByText('PR merge')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /^Merge/ }));
     expect(screen.getByRole('button', { name: /^Merge/ }).getAttribute('aria-expanded')).toBe(
       'true',
     );
-    expect(screen.queryByTestId('collapsed-status-merge')).toBeNull();
+    expect(screen.queryByTestId('collapsed-status-merge-merge-activity')).toBeNull();
     expect(screen.getByText('PR merge')).toBeTruthy();
 
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
