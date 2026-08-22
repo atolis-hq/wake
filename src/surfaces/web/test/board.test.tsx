@@ -164,6 +164,9 @@ describe('board', () => {
     const inactive = screen.getByRole('listitem', { name: 'Beta' });
     expect(within(active).getByText('pr-review running')).toBeTruthy();
     expect(within(active).getByText('implement running')).toBeTruthy();
+    expect(within(active).getByTestId('active-run-dot-run-pr-review').dataset.activeRun).toBe(
+      'true',
+    );
     expect(within(inactive).queryByText(/running/i)).toBeNull();
   });
   it('shows the last run outcome returned by the board API', async () => {

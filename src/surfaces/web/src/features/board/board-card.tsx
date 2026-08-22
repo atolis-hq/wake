@@ -163,7 +163,12 @@ export function BoardCard({
         </span>
         {Object.entries(item.activeRuns ?? {}).map(([runId, activeRun]) => (
           <div key={runId} className={styles.childRun}>
-            <span className={styles.childRunDot} aria-hidden="true" />
+            <span
+              aria-hidden="true"
+              className={styles.childRunDot}
+              data-active-run="true"
+              data-testid={`active-run-dot-${runId}`}
+            />
             <div>
               <div className={styles.childRunTitle}>{`${activeRun.action} running`}</div>
               <div className={styles.childRunMeta}>

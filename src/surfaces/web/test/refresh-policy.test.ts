@@ -15,6 +15,7 @@ describe('independent operational refresh policy', () => {
       observability: false,
       configuration: false,
       commands: false,
+      workflowDiagrams: 3_000,
     });
     expect(refreshInterval.runs([{ active: true }])).toBe(3_000);
     expect(refreshInterval.runs([{ active: false }])).toBe(5_000);
