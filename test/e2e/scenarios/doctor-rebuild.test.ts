@@ -31,7 +31,7 @@ describe(`${scenario.id}: doctor rebuild`, () => {
       compose: async (wakeRoot) => {
         const { createCompositionRoot, createSurfaceApplications } =
           await import('../../../src/bootstrap/index.js');
-        return createSurfaceApplications(await createCompositionRoot(wakeRoot)).cli;
+        return (await createSurfaceApplications(await createCompositionRoot(wakeRoot))).cli;
       },
       output: { write: (value) => output.push(value) },
       signal: new AbortController().signal,
@@ -44,7 +44,7 @@ describe(`${scenario.id}: doctor rebuild`, () => {
       compose: async (wakeRoot) => {
         const { createCompositionRoot, createSurfaceApplications } =
           await import('../../../src/bootstrap/index.js');
-        return createSurfaceApplications(await createCompositionRoot(wakeRoot)).cli;
+        return (await createSurfaceApplications(await createCompositionRoot(wakeRoot))).cli;
       },
       output: { write() {} },
       signal: new AbortController().signal,
@@ -73,7 +73,7 @@ surfaces: {}
       compose: async (wakeRoot) => {
         const { createCompositionRoot, createSurfaceApplications } =
           await import('../../../src/bootstrap/index.js');
-        return createSurfaceApplications(await createCompositionRoot(wakeRoot)).cli;
+        return (await createSurfaceApplications(await createCompositionRoot(wakeRoot))).cli;
       },
       output: { write: (value) => output.push(value) },
       signal: new AbortController().signal,
@@ -93,7 +93,7 @@ surfaces: {}
       compose: async (wakeRoot) => {
         const { createCompositionRoot, createSurfaceApplications } =
           await import('../../../src/bootstrap/index.js');
-        return createSurfaceApplications(await createCompositionRoot(wakeRoot)).cli;
+        return (await createSurfaceApplications(await createCompositionRoot(wakeRoot))).cli;
       },
       output: { write: (value) => output.push(value) },
       signal: new AbortController().signal,

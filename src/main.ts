@@ -3,13 +3,8 @@ import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import {
-  createCompositionRoot,
-  createSurfaceApplications,
-  initialiseWakeRoot,
-  loadConfig,
-  wakeVersion,
-} from './bootstrap/index.js';
+import { initialiseWakeRoot } from './bootstrap/initialise.js';
+import { wakeVersion } from './bootstrap/version.js';
 import {
   parseWakeCommand,
   runWakeCommand,
@@ -170,8 +165,12 @@ function productionDependencies(): TargetMainDependencies {
     initialise: initialiseWakeRoot,
     sandboxRuntime: productionSandboxRuntime(),
     async compose(wakeRoot) {
+      const [{ createCompositionRoot }, { createSurfaceApplications }] = await Promise.all([
+        import('./bootstrap/composition-root.js'),
+        import('./bootstrap/surface-applications.js'),
+      ]);
       const root = await createCompositionRoot(wakeRoot);
-      return createSurfaceApplications(root).cli;
+      return (await createSurfaceApplications(root)).cli;
     },
     output: productionOutput(),
     signal: controller.signal,
@@ -193,6 +192,7 @@ function productionSandboxRuntime(): SandboxRuntimeRouter {
       }
     },
     async exec(wakeRoot, arguments_) {
+      const { loadConfig } = await import('./bootstrap/config/load-config.js');
       const config = await loadConfig(wakeRoot);
       const invocation =
         config.host.development.mode === 'source' ? ['node', '/app/dist/src/main.js'] : ['wake'];

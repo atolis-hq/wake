@@ -52,9 +52,11 @@ const internalBoundaryRules = modules.map((module) => ({
   severity: 'error',
   from: {
     pathNot:
-      module === 'integrations'
-        ? [`^src/${module}/`, '^src/bootstrap/composition-root\\.ts$']
-        : `^src/${module}/`,
+      module === 'bootstrap'
+        ? [`^src/${module}/`, '^src/main\\.ts$']
+        : module === 'integrations'
+          ? [`^src/${module}/`, '^src/bootstrap/composition-root\\.ts$']
+          : `^src/${module}/`,
   },
   to: { path: `^src/${module}/(?!index\\.ts$)` },
 }));
@@ -67,6 +69,16 @@ const compositionRootBarrelRule = {
   from: { path: '^src/bootstrap/composition-root\\.ts$' },
   to: { path: '^src/integrations/(?!index\\.ts$)(?![^/]+/index\\.ts$)' },
 };
+const mainBootstrapEntrypointRule = {
+  name: 'main-bootstrap-entrypoints-only',
+  severity: 'error',
+  comment:
+    'The process entrypoint may select lightweight bootstrap modules before dynamically loading runtime composition.',
+  from: { path: '^src/main\\.ts$' },
+  to: {
+    path: '^src/bootstrap/(?!initialise\\.ts$|version\\.ts$|config/load-config\\.ts$|composition-root\\.ts$|surface-applications\\.ts$)',
+  },
+};
 const undeclaredDependencyRules = Object.entries(dependencyMap).map(([module, dependencies]) => ({
   name: `no-undeclared-${module}-dependency`,
   severity: 'error',
@@ -77,6 +89,7 @@ const undeclaredDependencyRules = Object.entries(dependencyMap).map(([module, de
 export default {
   forbidden: [
     { name: 'no-circular', severity: 'error', from: {}, to: { circular: true } },
+    mainBootstrapEntrypointRule,
     {
       name: 'no-archive-imports',
       severity: 'error',
