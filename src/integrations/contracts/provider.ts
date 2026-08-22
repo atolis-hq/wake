@@ -15,11 +15,11 @@ import type {
 } from '../../resources/index.js';
 import type { WorkItemId, WorkItemView, WorkService } from '../../work/index.js';
 import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
-import type { ReplyPublicationConfig } from './reply-routing.js';
 import type { ArtifactVerificationResult } from './artifact-vocabulary.js';
 import type { IntegrationsConfig } from './config.js';
 import { adapterId, type AdapterId } from './identifiers.js';
 import type { ExternalEventSource, InboundTranslation } from './intake.js';
+import type { ReplyPublicationConfig } from './reply-routing.js';
 
 // Configuration decides routing; providers supply facts. An adapter can ask which
 // workflow a candidate belongs to, but never proposes a workflow name.

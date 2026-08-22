@@ -23,12 +23,12 @@ import {
   resourceStream,
   type ResourceCorrelationView,
 } from '../../resources/index.js';
+import { ReplyTarget, type ReplyPublicationConfig } from '../contracts/reply-routing.js';
+import { DeliveryIntentEventType } from '../delivery/contracts/intents.js';
 import {
   defaultReplyPublication,
   selectReplyTarget,
 } from '../github/application/reply-target-selector.js';
-import { ReplyTarget, type ReplyPublicationConfig } from '../contracts/reply-routing.js';
-import { DeliveryIntentEventType } from '../delivery/contracts/intents.js';
 import { projectTerminalAgentRunReport, type TerminalRun } from './terminal-agent-run-report.js';
 
 /** Projects terminal agent runs into one durable outbound intent per configured resource. */
@@ -105,7 +105,11 @@ export class AgentRunPublicationReactor {
     const report = projectTerminalAgentRunReport(reportInput(run, stage, workflow, allWorkflows));
     if (report === null) return;
     const replies = this.dependencies.replies ?? defaultReplyPublication;
-    const target = selectReplyTarget({ stage, outcome: report.outcome }, replies.rules, replies.default);
+    const target = selectReplyTarget(
+      { stage, outcome: report.outcome },
+      replies.rules,
+      replies.default,
+    );
     if (target === ReplyTarget.None) return;
     const resource = await this.resourceForTarget(workflow.workItemId, target);
     if (resource === undefined) return;
@@ -143,7 +147,8 @@ export class AgentRunPublicationReactor {
     const primary = () =>
       correlations.find((value) => value.role === ResourceCorrelationRole.Primary);
     if (target === ReplyTarget.Primary) return primary();
-    const kind = target === ReplyTarget.Issue ? BuiltInResourceKind.Issue : BuiltInResourceKind.PullRequest;
+    const kind =
+      target === ReplyTarget.Issue ? BuiltInResourceKind.Issue : BuiltInResourceKind.PullRequest;
     for (const correlation of correlations) {
       const resource = await this.dependencies.resources.get(correlation.resourceId);
       if (resource?.kind === kind) return correlation;

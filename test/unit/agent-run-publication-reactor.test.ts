@@ -158,6 +158,7 @@ it.each([
   ['pull-request', 'resource-pr'],
 ] as const)('routes a %s reply to the requested resource kind', async (target, resourceId) => {
   const published = await publishWithReplyTarget(target);
+  if (published === undefined) throw new Error('expected a publication');
   expect(published.payload.resourceId).toBe(resourceId);
 });
 
@@ -167,6 +168,7 @@ it('suppresses a reply when its configured target is none', async () => {
 
 it('falls back to the primary correlation when the requested kind is absent', async () => {
   const published = await publishWithReplyTarget('pull-request', false);
+  if (published === undefined) throw new Error('expected a publication');
   expect(published.payload.resourceId).toBe('resource-primary');
 });
 
@@ -249,7 +251,13 @@ async function publishWithReplyTarget(
   const appended: unknown[][] = [];
   const reactor = new AgentRunPublicationReactor({
     journal: {
-      readStream: async () => [],
+      readStream: async () => [
+        { eventType: 'orchestration.stage-entered', payload: { stage: 'review' } },
+        {
+          eventType: 'orchestration.activity-requested',
+          payload: { activationId: 'activation-1' },
+        },
+      ],
       append: async (_stream: unknown, _sequence: number, events: unknown[]) => {
         appended.push(events);
       },
@@ -277,17 +285,16 @@ async function publishWithReplyTarget(
       get: async (id: string) => ({
         resourceId: id,
         kind:
-          id === 'resource-issue'
-            ? 'issue'
-            : id === 'resource-pr'
-              ? 'pull-request'
-              : 'repository',
+          id === 'resource-issue' ? 'issue' : id === 'resource-pr' ? 'pull-request' : 'repository',
       }),
     },
     orchestration: {
       listAll: async () => [{ workflowInstanceId: 'workflow-1', workItemId: 'work-1' }],
     },
-    replies: { rules: [{ match: { stage: ['review'] }, matchMode: 'any', target }], default: 'primary' },
+    replies: {
+      rules: [{ match: { stage: ['review'] }, matchMode: 'any', target }],
+      default: 'primary',
+    },
   } as never);
   await (
     reactor as never as {

@@ -1,18 +1,24 @@
 import { z } from 'zod';
 import { MatchMode } from '../../../kernel/index.js';
-import { ReplyOutcome, ReplyOutcomeConfig, ReplyTarget } from '../../contracts/reply-routing.js';
+import {
+  type ReplyOutcome,
+  ReplyOutcomeConfig,
+  ReplyTarget,
+} from '../../contracts/reply-routing.js';
 import { isGitHubWakeMarker } from './vocabulary.js';
 
 const replyTargetSchema = z.enum(Object.values(ReplyTarget));
 const replyOutcomeSchema = z
   .enum(Object.values(ReplyOutcomeConfig))
-  .transform((value): typeof ReplyOutcome[keyof typeof ReplyOutcome] => replyOutcomeMap[value]);
-const replyOutcomeMap = {
-  [ReplyOutcomeConfig.Done]: ReplyOutcome.Done,
-  [ReplyOutcomeConfig.Rejected]: ReplyOutcome.Rejected,
-  [ReplyOutcomeConfig.Blocked]: ReplyOutcome.Blocked,
-  [ReplyOutcomeConfig.Failed]: ReplyOutcome.Failed,
-  [ReplyOutcomeConfig.NeedsClarification]: ReplyOutcome.NeedsClarification,
+  .transform((value): ReplyOutcome => replyOutcomeMap[value]);
+const replyOutcomeMap: Readonly<
+  Record<(typeof ReplyOutcomeConfig)[keyof typeof ReplyOutcomeConfig], ReplyOutcome>
+> = {
+  [ReplyOutcomeConfig.Done]: 'DONE',
+  [ReplyOutcomeConfig.Rejected]: 'REJECTED',
+  [ReplyOutcomeConfig.Blocked]: 'BLOCKED',
+  [ReplyOutcomeConfig.Failed]: 'FAILED',
+  [ReplyOutcomeConfig.NeedsClarification]: 'NEEDS_CLARIFICATION',
 } as const;
 const replySelectorValues = <T extends z.ZodType>(value: T) =>
   z

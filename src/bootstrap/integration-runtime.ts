@@ -215,7 +215,9 @@ export async function composeIntegrationRuntime(
     runs: input.execution,
   });
   const runs = new RunRepository(input.journal);
-  const replies = providers.find((provider) => provider.replyPublication !== undefined)?.replyPublication;
+  const replies = providers.find(
+    (provider) => provider.replyPublication !== undefined,
+  )?.replyPublication;
   const agentRunPublications = new AgentRunPublicationReactor({
     journal: input.journal,
     checkpoints: input.checkpoints,

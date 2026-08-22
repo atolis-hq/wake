@@ -92,8 +92,8 @@ describe('selectReplyTarget', () => {
   });
 
   it('uses the configured default when nothing matches', () => {
-    expect(selectReplyTarget({ stage: 'implement', outcome: 'DONE' }, routing.rules, routing.default)).toBe(
-      'none',
-    );
+    expect(
+      selectReplyTarget({ stage: 'implement', outcome: 'DONE' }, routing.rules, routing.default),
+    ).toBe('none');
   });
 });

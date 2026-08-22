@@ -1,5 +1,10 @@
 import { matchesRequiredValues } from '../../../kernel/index.js';
-import { ReplyTarget, type ReplyOutcome, type ReplyPublicationConfig, type ReplyRoutingRule } from '../../contracts/reply-routing.js';
+import {
+  ReplyTarget,
+  type ReplyOutcome,
+  type ReplyPublicationConfig,
+  type ReplyRoutingRule,
+} from '../../contracts/reply-routing.js';
 
 export interface ReplyTargetCandidate {
   readonly stage?: string | undefined;
