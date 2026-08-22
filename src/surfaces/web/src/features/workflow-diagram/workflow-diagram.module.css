@@ -206,6 +206,14 @@
     width: 100% !important;
   }
 
+  .canvas[data-direction='DOWN'] .stageCard {
+    cursor: pointer;
+  }
+
+  .canvas[data-direction='DOWN'] .stageCard button {
+    display: none;
+  }
+
   .canvas[data-direction='DOWN'] .childCard:hover,
   .canvas[data-direction='DOWN'] .childCard:focus-within {
     border-color: var(--border);

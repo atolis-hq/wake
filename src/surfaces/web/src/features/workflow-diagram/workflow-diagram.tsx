@@ -351,10 +351,12 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
   const direction = useLayoutDirection();
   const layout = useDiagramLayout(diagram, direction);
   const { anchors, canvasRef, stageRef } = useDiagramAnchors(layout);
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
-    () =>
-      new Set(diagram.stages.filter((stage) => stage.status === 'active').map((stage) => stage.id)),
-  );
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => {
+    const activeStages = diagram.stages.filter((stage) => stage.status === 'active');
+    return new Set(
+      (activeStages.length === 0 ? diagram.stages : activeStages).map((stage) => stage.id),
+    );
+  });
   const [hoveredChildId, setHoveredChildId] = useState<string>();
   const nodeById = new Map(layout.nodes.map((node) => [node.id, node]));
   const expandedAny = expanded.size > 0;
@@ -422,6 +424,13 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
             stage.totalDurationMs !== undefined ||
             stage.totalCostUsd !== undefined ||
             stage.totalTokens !== undefined;
+          const toggle = () =>
+            setExpanded((current) => {
+              const next = new Set(current);
+              if (next.has(stage.id)) next.delete(stage.id);
+              else next.add(stage.id);
+              return next;
+            });
           return (
             <div
               className={`${styles.stage} ${boardStyles.card}`}
@@ -437,7 +446,23 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                 } as CSSProperties
               }
             >
-              <div className={`${styles.stageCard} ${boardStyles.cardLink}`}>
+              <div
+                aria-expanded={direction === 'DOWN' ? isExpanded : undefined}
+                className={`${styles.stageCard} ${boardStyles.cardLink}`}
+                onClick={direction === 'DOWN' ? toggle : undefined}
+                onKeyDown={
+                  direction === 'DOWN'
+                    ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          toggle();
+                        }
+                      }
+                    : undefined
+                }
+                role={direction === 'DOWN' ? 'button' : undefined}
+                tabIndex={direction === 'DOWN' ? 0 : undefined}
+              >
                 <div>
                   <div className={styles.stageTitleRow}>
                     <strong className={boardStyles.cardTitle}>{stage.label}</strong>
@@ -448,14 +473,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                     type="button"
                     aria-expanded={isExpanded}
                     aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${stage.label}`}
-                    onClick={() =>
-                      setExpanded((current) => {
-                        const next = new Set(current);
-                        if (next.has(stage.id)) next.delete(stage.id);
-                        else next.add(stage.id);
-                        return next;
-                      })
-                    }
+                    onClick={toggle}
                   >
                     {isExpanded ? '−' : '+'}
                   </button>
