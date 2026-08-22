@@ -13,7 +13,10 @@ import {
   Panel,
 } from '../../components/primitives.js';
 import styles from '../features.module.css';
-import { mockConfiguredWorkflowDiagrams } from '../workflow-diagram/model.js';
+import {
+  mockConfiguredWorkflowDiagrams,
+  mockWorkItemWorkflowDiagram,
+} from '../workflow-diagram/model.js';
 import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
 
 export function ConfigurationPage() {
@@ -130,9 +133,14 @@ export function ConfigurationPage() {
         </section>
       ) : (
         <section id="configuration-panel" role="tabpanel" aria-labelledby="configuration-tab">
-          {mockConfiguredWorkflowDiagrams.map((diagram) => (
-            <WorkflowDiagramView diagram={diagram} key={diagram.id} />
-          ))}
+          <section aria-labelledby="configuration-workflow-definition">
+            <h2 id="configuration-workflow-definition">Configuration workflow definition</h2>
+            <WorkflowDiagramView diagram={mockConfiguredWorkflowDiagrams[0]!} />
+          </section>
+          <section aria-labelledby="work-item-workflow-instance">
+            <h2 id="work-item-workflow-instance">Work-item workflow instance</h2>
+            <WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />
+          </section>
           {configurationQuery.isPending ? (
             <LoadingState label="Loading redacted configuration" />
           ) : configurationQuery.error && !configurationQuery.data ? (

@@ -18,7 +18,7 @@ describe('configuration page commands tab', () => {
     expect(await screen.findByText(/Read-only effective configuration/)).toBeTruthy();
   });
 
-  it('places every mocked configured workflow diagram before the redacted configuration', async () => {
+  it('shows labelled definition and work-item workflow examples before the redacted configuration', async () => {
     render(
       <MemoryRouter initialEntries={['/configuration']}>
         <App client={client()} />
@@ -26,17 +26,19 @@ describe('configuration page commands tab', () => {
     );
 
     const standard = await screen.findByLabelText('Workflow Standard delivery');
-    const guarded = screen.getByLabelText('Workflow Guarded delivery');
+    const instance = screen.getByLabelText('Workflow Implement workflow diagram');
     const configuration = await screen.findByText(/Read-only effective configuration/);
+    expect(screen.getByRole('heading', { name: 'Configuration workflow definition' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Work-item workflow instance' })).toBeTruthy();
     expect(
       standard.compareDocumentPosition(configuration) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      guarded.compareDocumentPosition(configuration) & Node.DOCUMENT_POSITION_FOLLOWING,
+      instance.compareDocumentPosition(configuration) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
-  it('keeps mocked configured workflow diagrams visible while configuration loads', async () => {
+  it('keeps both mocked workflow examples visible while configuration loads', async () => {
     render(
       <MemoryRouter initialEntries={['/configuration']}>
         <App client={loadingClient()} />
@@ -44,7 +46,7 @@ describe('configuration page commands tab', () => {
     );
 
     expect(await screen.findByLabelText('Workflow Standard delivery')).toBeTruthy();
-    expect(screen.getByLabelText('Workflow Guarded delivery')).toBeTruthy();
+    expect(screen.getByLabelText('Workflow Implement workflow diagram')).toBeTruthy();
     expect(
       screen
         .getAllByRole('status')

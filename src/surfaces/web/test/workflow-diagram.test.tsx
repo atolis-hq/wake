@@ -131,9 +131,20 @@ describe('WorkflowDiagramView', () => {
     const title = within(refine).getByText('Refine');
 
     expect(refine.style.height).toBe('');
+    expect(refine.style.minHeight).toBe('');
     expect(within(refine).getByText('Refine task')).toBeTruthy();
     expect(within(refine).getByText('Wait for review')).toBeTruthy();
-    expect(title.className).toContain('stageTitle');
+    expect(title.className).toContain('cardTitle');
+  });
+
+  it('exposes board-style child status dots for every mocked child state', () => {
+    render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
+
+    expect(screen.getByTestId('child-status-refine-activity').dataset.status).toBe('active');
+    expect(screen.getByTestId('child-status-review-activity').dataset.status).toBe('completed');
+    expect(screen.getByTestId('child-status-review-gate').dataset.status).toBe('pending');
+    expect(screen.getByTestId('child-status-deploy-activity').dataset.status).toBe('blocked');
+    expect(screen.getByTestId('child-status-deploy-reactor').dataset.status).toBe('failed');
   });
 
   it('uses semantic positioned labels and arrowheads for graph edges', async () => {

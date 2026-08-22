@@ -3,6 +3,7 @@ import { Chip } from '../../components/chip.js';
 import { fmtCost, fmtDuration } from '../../components/format.js';
 import { OutcomeChip } from '../../components/outcome-chip.js';
 import { TokenUsage } from '../../components/token-usage.js';
+import boardStyles from '../features.module.css';
 import {
   layoutWorkflowDiagram,
   type WorkflowDiagramLayout,
@@ -84,29 +85,45 @@ function metrics(item: WorkflowDiagramChild) {
 }
 
 function ChildCard({ child }: { readonly child: WorkflowDiagramChild }) {
+  const status = child.lastOutcome === 'failed' ? 'failed' : (child.status ?? 'pending');
   return (
-    <article className={styles.childCard} data-kind={child.kind}>
-      <strong>{child.label}</strong>
-      <div className={styles.chips}>
-        {child.status === undefined ? null : (
-          <Chip variant="outline" tone={tone(child.status)}>
-            {child.status}
-          </Chip>
-        )}
-        {child.lastOutcome === undefined ? null : <OutcomeChip outcome={child.lastOutcome} />}
+    <article className={`${styles.childCard} ${boardStyles.childRun}`} data-kind={child.kind}>
+      <span
+        aria-label={`${status} status`}
+        className={`${boardStyles.childRunDot} ${styles.childStatusDot}`}
+        data-status={status}
+        data-testid={`child-status-${child.id}`}
+        role="img"
+      />
+      <div>
+        <div className={boardStyles.childRunTitle}>{child.label}</div>
+        <div className={styles.chips}>
+          {child.status === undefined ? null : (
+            <Chip variant="outline" tone={tone(child.status)}>
+              {child.status}
+            </Chip>
+          )}
+          {child.lastOutcome === undefined ? null : <OutcomeChip outcome={child.lastOutcome} />}
+        </div>
+        {metrics(child)}
+        {child.kind === 'reactor'
+          ? null
+          : child.activeRuns?.map((run) => (
+              <div className={boardStyles.childRunMeta} key={run.runId}>
+                <span>{run.activity} running</span>
+                {run.runnerName === undefined ? null : (
+                  <>
+                    {' '}
+                    · <span>{run.runnerName}</span>
+                  </>
+                )}
+                {' · '}
+                <span>
+                  {fmtDuration(Math.max(0, Date.now() - new Date(run.startedAt).getTime()))}
+                </span>
+              </div>
+            ))}
       </div>
-      {metrics(child)}
-      {child.kind === 'reactor'
-        ? null
-        : child.activeRuns?.map((run) => (
-            <div className={styles.activeRun} key={run.runId}>
-              <span>{run.activity} running</span>
-              {run.runnerName === undefined ? null : <span>{run.runnerName}</span>}
-              <span>
-                {fmtDuration(Math.max(0, Date.now() - new Date(run.startedAt).getTime()))}
-              </span>
-            </div>
-          ))}
     </article>
   );
 }
@@ -201,7 +218,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
           const fallbackY = direction === 'RIGHT' ? 20 : index * 172;
           return (
             <div
-              className={styles.stage}
+              className={`${styles.stage} ${boardStyles.card}`}
               key={stage.id}
               role="group"
               aria-label={`Stage ${stage.id}`}
@@ -210,13 +227,12 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                   left: `${node?.x ?? fallbackX}px`,
                   top: `${node?.y ?? fallbackY}px`,
                   width: `${node?.width ?? 264}px`,
-                  '--stage-layout-height': `${node?.height ?? 104}px`,
                 } as CSSProperties
               }
             >
-              <div className={styles.stageCard}>
+              <div className={`${styles.stageCard} ${boardStyles.cardLink}`}>
                 <div>
-                  <strong className={styles.stageTitle}>{stage.label}</strong>
+                  <strong className={boardStyles.cardTitle}>{stage.label}</strong>
                   <div className={styles.chips}>
                     {stage.status === undefined ? null : (
                       <Chip variant="outline" tone={tone(stage.status)}>

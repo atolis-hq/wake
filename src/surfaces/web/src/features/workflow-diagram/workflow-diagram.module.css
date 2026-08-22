@@ -42,19 +42,13 @@
 .stage {
   position: absolute;
   z-index: 1;
-  border: 1px solid var(--border, #cbd5e1);
-  border-radius: 0.5rem;
-  border-left: 3px solid var(--border-strong);
-  background: var(--surface-card);
-  min-height: var(--stage-layout-height, 104px);
-  overflow: hidden;
 }
 
 .stageCard {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 0.5rem;
-  padding: 0.65rem;
+  gap: 0.3rem;
+  padding: 0.5rem;
   border-bottom: 1px solid var(--border);
 }
 
@@ -62,18 +56,9 @@
   align-self: start;
 }
 
-.stageTitle {
-  display: block;
-  color: var(--ink);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-}
-
 .chips,
 .metrics,
-.stageTotals,
-.activeRun {
+.stageTotals {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
@@ -82,37 +67,45 @@
 
 .stageTotals {
   grid-column: 1 / -1;
-  color: var(--muted, #64748b);
-  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  font-size: 0.7rem;
 }
 
 .children {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.45rem;
   padding: 0.5rem;
 }
 
 .childCard {
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.55rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-inset);
-  font-size: 0.875rem;
+  align-items: start;
 }
 
 .metrics,
-.activeRun {
-  color: var(--muted, #64748b);
-  font-size: 0.8125rem;
+.childCard .metrics {
+  margin-top: 0.2rem;
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
 }
 
-.activeRun {
-  padding: 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
+.childStatusDot[data-status='pending'] {
+  background: var(--border-strong);
+  box-shadow: none;
+}
+
+.childStatusDot[data-status='failed'] {
+  background: var(--bad);
+  box-shadow: 0 0 0 3px rgb(239 68 68 / 0.14);
+}
+
+.childStatusDot[data-status='blocked'] {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px rgb(245 158 11 / 0.14);
+}
+
+.childStatusDot[data-status='completed'] {
+  background: var(--good);
+  box-shadow: none;
 }
 
 .srOnly {

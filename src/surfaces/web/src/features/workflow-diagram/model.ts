@@ -122,6 +122,7 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
           id: 'review-activity',
           label: 'Review change',
           kind: 'activity',
+          status: 'completed',
         },
         {
           id: 'review-gate',
@@ -138,11 +139,13 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
           id: 'deploy-activity',
           label: 'Deploy release',
           kind: 'activity',
+          status: 'blocked',
         },
         {
           id: 'deploy-reactor',
           label: 'Publish deployment',
           kind: 'reactor',
+          lastOutcome: 'failed',
         },
       ],
     },
