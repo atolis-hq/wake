@@ -138,13 +138,10 @@ export function cliRunner(
   return {
     supportsSessionResume: options.supportsSessionResume === true,
     async start(request, signal): Promise<RunnerExecution> {
-      const process = runProcess(
-        command,
-        args(request),
-        request.workspacePath,
-        signal,
-        options.runnerTimeouts,
-      );
+      const process = runProcess(command, args(request), request.workspacePath, signal, {
+        ...options.runnerTimeouts,
+        ...(request.onTimeout === undefined ? {} : { onTimeout: request.onTimeout }),
+      });
       return {
         identity: {
           kind: ExternalExecutionKind.Process,
@@ -201,8 +198,8 @@ function failureFor(
           : ExecutionCancellationReason.Timeout,
       message:
         value.timeoutKind === 'idle'
-          ? `Runner was idle for ${options.runnerTimeouts?.idleMs}ms`
-          : `Runner exceeded the hard timeout of ${options.runnerTimeouts?.hardMs}ms`,
+          ? timeoutMessage('idle', options.runnerTimeouts?.idleMs)
+          : timeoutMessage('hard', options.runnerTimeouts?.hardMs),
     };
   if (value.failureKind !== undefined)
     return {
@@ -212,6 +209,16 @@ function failureFor(
   const classified = options.classifyFailure?.({ stdout: value.stdout, stderr: value.stderr });
   if (classified !== undefined) return classified;
   return { kind: 'process-exit', message: value.stderr || `exit ${value.exitCode}` };
+}
+
+function timeoutMessage(kind: 'idle' | 'hard', timeoutMs: number | undefined): string {
+  if (timeoutMs === undefined)
+    return kind === 'idle'
+      ? 'Runner exceeded its idle timeout'
+      : 'Runner exceeded its hard timeout';
+  return kind === 'idle'
+    ? `Runner was idle for ${timeoutMs}ms`
+    : `Runner exceeded the hard timeout of ${timeoutMs}ms`;
 }
 
 export interface RunnerDefaults {

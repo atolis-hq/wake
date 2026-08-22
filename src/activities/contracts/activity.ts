@@ -65,6 +65,8 @@ export interface AgentRunnerPort {
       readonly effort?: string;
       readonly allowedTools: readonly string[];
       readonly maxTurns?: number;
+      /** Reports a runner deadline before the runner process is cancelled. */
+      readonly onTimeout?: (kind: 'idle' | 'hard') => Promise<void>;
       /** Opaque prior adapter session selected by Execution for this activation. */
       readonly resumeSessionId?: string;
       readonly usageBaseline?: {
@@ -159,6 +161,8 @@ export interface ActivityExecutionContext {
   readonly logOperationalError?: (error: unknown) => void;
   /** Signals that an agent runner invocation has begun. */
   readonly reportRunnerStarted?: () => void;
+  /** Reports a runner deadline before the runner process is cancelled. */
+  readonly reportRunnerTimeout?: (kind: 'idle' | 'hard') => Promise<void>;
   reportExternalExecution(reference: {
     readonly kind: ExternalExecutionKind;
     readonly id: string;

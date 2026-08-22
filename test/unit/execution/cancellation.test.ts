@@ -4,6 +4,22 @@ import { ExecutionEventType, RunStatus } from '../../../src/execution/index.js';
 import { executionFixture } from './support.js';
 
 describe('Run cancellation', () => {
+  it.each([
+    ['idle', 'idle-timeout'],
+    ['hard', 'timeout'],
+  ] as const)('cancels a Run when the runner reaches its %s deadline', async (kind, reason) => {
+    const fixture = executionFixture(kind);
+    const pending = fixture.start();
+
+    await expect(fixture.finished(RunStatus.Cancelled)).resolves.toMatchObject({
+      status: 'cancelled',
+      cancellation: { reason, confirmedAt: '2026-07-30T12:00:00.000Z' },
+    });
+
+    fixture.complete({ kind: 'done' });
+    await pending;
+  });
+
   it('records cancellation request before signalling the runner', async () => {
     const fixture = executionFixture();
     const pending = fixture.start();

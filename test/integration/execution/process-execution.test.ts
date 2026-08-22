@@ -41,6 +41,26 @@ describe('runProcess', () => {
     await expect(execution.result).resolves.toMatchObject({ timedOut: true, timeoutKind: 'hard' });
   });
 
+  it('notifies deadline handling before terminating the child', async () => {
+    const notified: string[] = [];
+    const execution = runProcess(
+      process.execPath,
+      ['-e', 'setTimeout(() => process.exit(0), 5_000)'],
+      undefined,
+      new AbortController().signal,
+      {
+        hardMs: 20,
+        cancellationGraceMs: 5,
+        onTimeout(kind) {
+          notified.push(kind);
+        },
+      },
+    );
+
+    await expect(execution.result).resolves.toMatchObject({ timedOut: true, timeoutKind: 'hard' });
+    expect(notified).toEqual(['hard']);
+  });
+
   it('terminates a silent child at the idle deadline independently of the hard deadline', async () => {
     const execution = runProcess(
       process.execPath,
@@ -58,11 +78,11 @@ describe('runProcess', () => {
       process.execPath,
       [
         '-e',
-        'let count = 0; const interval = setInterval(() => { (count++ % 2 ? process.stdout : process.stderr).write("activity"); if (count === 6) { clearInterval(interval); process.exit(0); } }, 30)',
+        'let count = 0; const interval = setInterval(() => { (count++ % 2 ? process.stdout : process.stderr).write("activity"); if (count === 6) { clearInterval(interval); process.exit(0); } }, 50)',
       ],
       undefined,
       new AbortController().signal,
-      { idleMs: 120, hardMs: 1_500, cancellationGraceMs: 5 },
+      { idleMs: 500, hardMs: 2_000, cancellationGraceMs: 5 },
     );
 
     await expect(execution.result).resolves.toMatchObject({ exitCode: 0, timedOut: false });
@@ -99,6 +119,47 @@ describe('runProcess', () => {
     );
 
     await expect(execution.result).resolves.toMatchObject({ timedOut: false });
+  });
+
+  it('uses shell interpretation only when requested', async () => {
+    const execution = runProcess(
+      `"${process.execPath}" -e "process.stdout.write('workspace-shell')"`,
+      [],
+      undefined,
+      new AbortController().signal,
+      { hardMs: 1_000 },
+      true,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({
+      exitCode: 0,
+      stdout: 'workspace-shell',
+    });
+  });
+
+  it.each([
+    [
+      `"${process.execPath}" -e "process.stdout.write('stdout-first'); setTimeout(() => process.stderr.write('stderr-second'), 50)"`,
+      'stdout-firststderr-second',
+    ],
+    [
+      `"${process.execPath}" -e "process.stderr.write('stderr-first'); setTimeout(() => process.stdout.write('stdout-second'), 50)"`,
+      'stderr-firststdout-second',
+    ],
+  ])('captures combined output in received order', async (command, expected) => {
+    const execution = runProcess(
+      command,
+      [],
+      undefined,
+      new AbortController().signal,
+      { hardMs: 1_000 },
+      true,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({
+      exitCode: 0,
+      combinedOutput: Buffer.from(expected),
+    });
   });
 
   it('classifies output beyond the capture budget without retaining it all in the resident', async () => {

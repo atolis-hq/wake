@@ -76,6 +76,7 @@ export function createAgentActivity(
         resumeStartedAt: context.resumeStartedAt,
         usageBaseline: context.usageBaseline,
         workspace: context.workspace,
+        reportRunnerTimeout: context.reportRunnerTimeout,
       });
       await capturePrompt(context, invocation.workItemId, request);
       const result = await runnerResult(context, invocation.workItemId, request);
@@ -195,6 +196,7 @@ async function agentRequest(
     context.resumeSessionId,
     context.usageBaseline,
     context.workspace,
+    context.reportRunnerTimeout,
   );
 }
 
@@ -220,6 +222,7 @@ interface AgentRequestContext {
       }
     | undefined;
   readonly workspace: ActivityExecutionContext['workspace'];
+  readonly reportRunnerTimeout: ActivityExecutionContext['reportRunnerTimeout'];
 }
 
 async function resolveTemplate(
@@ -347,6 +350,7 @@ function requestFrom(
       }
     | undefined,
   workspace: ActivityExecutionContext['workspace'],
+  reportRunnerTimeout: ActivityExecutionContext['reportRunnerTimeout'],
 ) {
   return {
     runId,
@@ -359,6 +363,7 @@ function requestFrom(
     ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
     ...(usageBaseline === undefined ? {} : { usageBaseline }),
     ...workspaceFields(workspace),
+    ...(reportRunnerTimeout === undefined ? {} : { onTimeout: reportRunnerTimeout }),
   };
 }
 

@@ -10,9 +10,15 @@ export interface ProcessTimeouts {
   readonly cancellationGraceMs?: number;
 }
 
-interface ProcessExecutionResult {
+export interface ProcessExecutionOptions extends ProcessTimeouts {
+  readonly onTimeout?: (kind: 'idle' | 'hard') => void | Promise<void>;
+}
+
+export interface ProcessExecutionResult {
   readonly stdout: string;
   readonly stderr: string;
+  /** Raw stdout and stderr chunks in the order they were received. */
+  readonly combinedOutput: Buffer;
   readonly exitCode: number | undefined;
   readonly timedOut: boolean;
   readonly timeoutKind?: 'idle' | 'hard';
@@ -25,14 +31,16 @@ export function runProcess(
   args: readonly string[],
   cwd: string | undefined,
   signal: AbortSignal,
-  timeouts?: ProcessTimeouts,
+  options?: ProcessExecutionOptions,
+  shell = false,
 ): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
   const child = spawn(command, args, {
     ...(cwd === undefined ? {} : { cwd }),
-    shell: false,
+    shell,
+    ...(shell && process.platform !== 'win32' ? { detached: true } : {}),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  return captureProcessOutput(child, signal, timeouts);
+  return captureProcessOutput(child, signal, options, shell);
 }
 
 // Lifecycle coordination must share these closures so first-event-wins is atomic.
@@ -40,16 +48,18 @@ export function runProcess(
 function captureProcessOutput(
   child: ChildProcess,
   signal: AbortSignal,
-  timeouts: ProcessTimeouts | undefined,
+  options: ProcessExecutionOptions | undefined,
+  shell: boolean,
 ): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
   let terminatePromise: Promise<void> | undefined;
   const terminate = () =>
-    (terminatePromise ??= terminateGracefully(child, timeouts?.cancellationGraceMs));
+    (terminatePromise ??= terminateGracefully(child, shell, options?.cancellationGraceMs));
   let cancel = terminate;
   // eslint-disable-next-line max-lines-per-function
   const result = new Promise<ProcessExecutionResult>((resolve) => {
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    const combinedOutput: Buffer[] = [];
     let capturedBytes = 0;
     let timedOut = false;
     let timeoutKind: 'idle' | 'hard' | undefined;
@@ -62,18 +72,22 @@ function captureProcessOutput(
       if (idleTimeout !== undefined) clearTimeout(idleTimeout);
       if (hardTimeout !== undefined) clearTimeout(hardTimeout);
     };
-    const terminateForTimeout = (kind: 'idle' | 'hard') => {
+    const terminateForTimeout = async (kind: 'idle' | 'hard') => {
       if (settled) return;
       settled = true;
       timedOut = true;
       timeoutKind = kind;
       clearTimeouts();
-      void terminate();
+      try {
+        await options?.onTimeout?.(kind);
+      } finally {
+        void terminate();
+      }
     };
     const resetIdleTimeout = () => {
-      if (settled || timeouts?.idleMs === undefined) return;
+      if (settled || options?.idleMs === undefined) return;
       if (idleTimeout !== undefined) clearTimeout(idleTimeout);
-      idleTimeout = setTimeout(() => terminateForTimeout('idle'), timeouts.idleMs);
+      idleTimeout = setTimeout(() => void terminateForTimeout('idle'), options.idleMs);
     };
     const terminateForOverflow = () => {
       if (settled) return;
@@ -90,18 +104,20 @@ function captureProcessOutput(
       const remaining = maximumCapturedProcessOutputBytes - capturedBytes;
       if (remaining <= 0 || chunk.length > remaining) {
         if (remaining > 0) destination.push(chunk.subarray(0, remaining));
+        if (remaining > 0) combinedOutput.push(chunk.subarray(0, remaining));
         capturedBytes = maximumCapturedProcessOutputBytes;
         terminateForOverflow();
         return;
       }
       destination.push(chunk);
+      combinedOutput.push(chunk);
       capturedBytes += chunk.length;
     };
     child.stdout?.on('data', capture(stdout));
     child.stderr?.on('data', capture(stderr));
     resetIdleTimeout();
-    if (timeouts?.hardMs !== undefined)
-      hardTimeout = setTimeout(() => terminateForTimeout('hard'), timeouts.hardMs);
+    if (options?.hardMs !== undefined)
+      hardTimeout = setTimeout(() => void terminateForTimeout('hard'), options.hardMs);
     const onAbort = () => {
       if (settled) return;
       settled = true;
@@ -127,6 +143,7 @@ function captureProcessOutput(
       resolve({
         stdout: Buffer.concat(stdout).toString('utf8'),
         stderr: error?.message ?? Buffer.concat(stderr).toString('utf8'),
+        combinedOutput: Buffer.concat(combinedOutput),
         exitCode: exitCode ?? undefined,
         timedOut,
         ...(timeoutKind === undefined ? {} : { timeoutKind }),
@@ -144,15 +161,28 @@ function captureProcessOutput(
 
 async function terminateGracefully(
   child: ChildProcess,
+  shell: boolean,
   cancellationGraceMs: number | undefined,
 ): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
-  child.kill('SIGTERM');
+  terminate(child, shell, 'SIGTERM');
   // Windows does not distinguish these signals, so its SIGTERM already has
   // immediate-kill semantics and waiting would not make cancellation gentler.
-  if (process.platform === 'win32' || cancellationGraceMs === undefined) return;
-  await waitForExit(child, cancellationGraceMs);
-  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  if (process.platform === 'win32') return;
+  await waitForExit(child, cancellationGraceMs ?? 0);
+  if (child.exitCode === null && child.signalCode === null) terminate(child, shell, 'SIGKILL');
+}
+
+function terminate(child: ChildProcess, shell: boolean, signal: NodeJS.Signals): void {
+  if (shell && process.platform !== 'win32' && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // The process may have already exited; fall through to the direct signal.
+    }
+  }
+  if (child.exitCode === null && child.signalCode === null) child.kill(signal);
 }
 
 function waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {
