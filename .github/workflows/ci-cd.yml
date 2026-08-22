@@ -49,6 +49,12 @@ jobs:
       - run: npm ci
       - name: Run fast verification and unused-code checks
         run: npm run verify && npm run knip
+      - name: Diagnose formatting failure
+        if: failure()
+        run: |
+          npx prettier --write .
+          git diff --stat
+          git diff
 
   integration:
     needs: changes
