@@ -369,10 +369,12 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
   >(undefined);
   const [isDragging, setIsDragging] = useState(false);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => {
-    const activeStages = diagram.stages.filter((stage) => stage.status === 'active');
-    return new Set(
-      (activeStages.length === 0 ? diagram.stages : activeStages).map((stage) => stage.id),
+    const activeStages = diagram.stages.filter(
+      (stage) =>
+        (stage.activeRuns?.length ?? 0) > 0 ||
+        stage.children.some((child) => (child.activeRuns?.length ?? 0) > 0),
     );
+    return new Set(activeStages.map((stage) => stage.id));
   });
   const [hoveredChildId, setHoveredChildId] = useState<string>();
   const isRunAware = diagram.stages.some(
