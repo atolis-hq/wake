@@ -200,10 +200,8 @@
   }
 
   .canvas[data-direction='DOWN'] .stage {
-    position: relative;
-    top: auto !important;
-    left: auto !important;
-    width: 100% !important;
+    position: static;
+    width: 100%;
   }
 
   .canvas[data-direction='DOWN'] .stageCard {

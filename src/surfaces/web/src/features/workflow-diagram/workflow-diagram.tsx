@@ -40,6 +40,10 @@ interface DiagramAnchor {
 function useDiagramLayout(diagram: WorkflowDiagram, direction: WorkflowDiagramLayoutDirection) {
   const [layout, setLayout] = useState<WorkflowDiagramLayout>(fallbackLayout);
   useEffect(() => {
+    if (direction === 'DOWN') {
+      setLayout(fallbackLayout);
+      return;
+    }
     let current = true;
     void layoutWorkflowDiagram(diagram, direction).then((next) => {
       if (current) setLayout(next);
@@ -439,11 +443,13 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
               role="group"
               aria-label={`Stage ${stage.id}`}
               style={
-                {
-                  left: `${node?.x ?? fallbackX}px`,
-                  top: `${node?.y ?? fallbackY}px`,
-                  width: `${node?.width ?? 264}px`,
-                } as CSSProperties
+                direction === 'RIGHT'
+                  ? ({
+                      left: `${node?.x ?? fallbackX}px`,
+                      top: `${node?.y ?? fallbackY}px`,
+                      width: `${node?.width ?? 264}px`,
+                    } as CSSProperties)
+                  : undefined
               }
             >
               <div
