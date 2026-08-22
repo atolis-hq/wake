@@ -1,6 +1,10 @@
 import type { WorkItemId } from '../../work/index.js';
 import type { ResourceCapability, ResourceId, ResourceKind } from './identifiers.js';
-import type { ResourceCorrelationProvenance, ResourceCorrelationRole } from './vocabulary.js';
+import type {
+  ResourceCorrelationProvenance,
+  ResourceCorrelationRole,
+  ResourceExternalOutcome,
+} from './vocabulary.js';
 
 export type { ResourceCapability, ResourceKind } from './identifiers.js';
 
@@ -20,6 +24,12 @@ export interface ResourceView {
     readonly attemptedWorkItemId: WorkItemId;
     readonly existingWorkItemId: WorkItemId;
     readonly eventId: string;
+  };
+  readonly correlationStatus?: 'unresolvable';
+  readonly pendingExternalOutcome?: {
+    readonly sourceObservationId: string;
+    readonly outcome: ResourceExternalOutcome;
+    readonly revision: string;
   };
 }
 

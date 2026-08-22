@@ -7,6 +7,7 @@ import {
 } from '../../../activities/index.js';
 import type { RunRepository } from '../../../execution/index.js';
 import {
+  correlationId,
   createEventDraft,
   EventActorKind,
   EventSourceKind,
@@ -67,9 +68,10 @@ type InboundCommandCandidate =
 
 type ResolvedIdentity = {
   readonly resourceId: ResourceId;
-  readonly workItemId: WorkItemId;
+  readonly workItemId: WorkItemId | null;
   readonly created: boolean;
   readonly deleted: boolean;
+  readonly missingPrimary?: true;
 };
 
 interface InboundTranslatorDependencies {
@@ -149,6 +151,10 @@ export class InboundTranslator {
     ) {
       throw new Error('InboundTranslator services are required to run evidence translation');
     }
+    // Retry state is resource-scoped, so it progresses even when the provider
+    // has no further observations for the broken resource.
+    await this.resources.retryPendingWorkCorrelations();
+    await this.applyDeferredExternalOutcomes();
     const checkpoint = `reactor:integration.${this.adapter}.inbound`;
     await this.retryPendingTranslations();
     const position = await this.checkpoints.load(checkpoint);
@@ -208,17 +214,18 @@ export class InboundTranslator {
     try {
       if (owned.eventType === GitHubEventType.WorkObserved) await this.apply(owned);
       if (owned.eventType === GitHubEventType.CommentObserved) {
-        await applyReviewSignal({
-          event: owned,
-          journal: this.journal!,
-          resources: this.resources!,
-          work: this.work!,
-          lookup: this.lookup,
-          pullRequests: this.pullRequests,
-          ids: this.ids,
-          adapter: this.adapter,
-          orchestration: this.orchestration,
-        });
+        if (!(await this.suppressWorkItemEffects(owned)))
+          await applyReviewSignal({
+            event: owned,
+            journal: this.journal!,
+            resources: this.resources!,
+            work: this.work!,
+            lookup: this.lookup,
+            pullRequests: this.pullRequests,
+            ids: this.ids,
+            adapter: this.adapter,
+            orchestration: this.orchestration,
+          });
         await applyWatchGateVerdictSignal({
           event: owned,
           runs: this.runs,
@@ -365,6 +372,26 @@ export class InboundTranslator {
     throw new Error(`Could not record inbound translation diagnostic ${eventId} after contention`);
   }
 
+  private async suppressWorkItemEffects(
+    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.CommentObserved }>,
+  ): Promise<boolean> {
+    const resourceIdValue = await this.lookup?.resourceIdForExternalKey({
+      adapter: this.adapter,
+      key: event.payload.externalKey,
+    });
+    if (resourceIdValue === null || resourceIdValue === undefined) return false;
+    const hasPrimary = (await this.resources!.correlations(resourceIdValue)).some(
+      (correlation) => correlation.role === ResourceCorrelationRole.Primary,
+    );
+    if (hasPrimary) return false;
+    await this.resources!.noteMissingPrimaryCorrelation(
+      resourceIdValue,
+      'Resource has no active primary WorkItem correlation',
+      commandContext(event),
+    );
+    return true;
+  }
+
   private async apply(
     event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.WorkObserved }>,
   ): Promise<void> {
@@ -380,21 +407,13 @@ export class InboundTranslator {
       intake.admitted,
     );
     if (identity === null) return;
-    if (identity.deleted) {
-      await this.recordDeletedWorkObservation(event, identity.workItemId);
-      return;
-    }
     if (!identity.created) {
-      await this.applyReobservation({
-        payload,
-        context,
-        pullRequests,
-        resourceId: identity.resourceId,
-        workItemId: identity.workItemId,
-      });
+      await this.applyExistingObservation(event, payload, context, pullRequests, identity);
       return;
     }
-    const { resourceId: resourceIdValue, workItemId: workItemIdValue } = identity;
+    const resourceIdValue = identity.resourceId;
+    const workItemIdValue = identity.workItemId;
+    if (workItemIdValue === null) throw new Error('Created identity is missing a WorkItem');
     const isPullRequest = payload.kind === 'pull-request';
     await admitObservedWork(
       this.admissionServices(),
@@ -427,6 +446,95 @@ export class InboundTranslator {
           }
         : undefined,
     );
+  }
+
+  private async applyExistingObservation(
+    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.WorkObserved }>,
+    payload: ExternalWorkObservedPayload,
+    context: ReturnType<typeof commandContext>,
+    pullRequests: PullRequestService,
+    identity: ResolvedIdentity,
+  ): Promise<void> {
+    if (identity.missingPrimary) {
+      await this.recordMissingPrimaryObservation(identity.resourceId, payload, context);
+      return;
+    }
+    const workItemIdValue = identity.workItemId;
+    if (workItemIdValue === null) throw new Error('Resolved identity is missing a WorkItem');
+    if (identity.deleted) {
+      await this.recordDeletedWorkObservation(event, workItemIdValue);
+      return;
+    }
+    await this.applyReobservation({
+      payload,
+      context,
+      pullRequests,
+      resourceId: identity.resourceId,
+      workItemId: workItemIdValue,
+    });
+  }
+
+  private async recordMissingPrimaryObservation(
+    resourceIdValue: ResourceId,
+    payload: ExternalWorkObservedPayload,
+    context: ReturnType<typeof commandContext>,
+  ): Promise<void> {
+    const current = await this.resources!.get(resourceIdValue);
+    if (current === null) throw new Error(`Resource ${resourceIdValue} could not be loaded`);
+    if (current.revision !== payload.revision)
+      await this.resources!.discover(
+        {
+          resourceId: current.resourceId,
+          kind: current.kind,
+          externalKey: current.externalKey,
+          capabilities: current.capabilities,
+          revision: payload.revision,
+          ...(current.title === undefined ? {} : { title: current.title }),
+        },
+        context,
+      );
+    await this.resources!.noteMissingPrimaryCorrelation(
+      resourceIdValue,
+      'Resource has no active primary WorkItem correlation',
+      context,
+    );
+    await this.resources!.observeExternalOutcome(
+      resourceIdValue,
+      {
+        sourceObservationId: context.commandId,
+        ...(payload.outcome === undefined ? {} : { outcome: payload.outcome }),
+        revision: payload.revision,
+      },
+      context,
+    );
+  }
+
+  private async applyDeferredExternalOutcomes(): Promise<void> {
+    if (this.conclusion === undefined) return;
+    for (const pending of await this.resources!.pendingExternalOutcomes()) {
+      const primary = (await this.resources!.correlations(pending.resourceId)).find(
+        (correlation) => correlation.role === ResourceCorrelationRole.Primary,
+      );
+      if (primary === undefined) continue;
+      await concludeObservedWork(
+        { work: this.work!, conclusion: this.conclusion },
+        {
+          workItemId: primary.workItemId,
+          outcome: pending.outcome,
+          reason: `${this.adapter} external outcome observed while correlation was unresolved`,
+        },
+      );
+      await this.resources!.consumeExternalOutcome(
+        pending.resourceId,
+        pending.sourceObservationId,
+        {
+          commandId: `github:consume-external-outcome:${pending.sourceObservationId}`,
+          correlationId: correlationId(`github:external-outcome:${pending.sourceObservationId}`),
+          occurredAt: new Date().toISOString(),
+          actor: { kind: EventActorKind.Integration, id: this.adapter },
+        },
+      );
+    }
   }
 
   private async applyReobservation(input: {
@@ -599,7 +707,13 @@ export class InboundTranslator {
   private async historicalIdentity(resourceIdValue: ResourceId): Promise<ResolvedIdentity> {
     const historical = await this.resources!.primaryCorrelation(resourceIdValue);
     if (historical === null)
-      throw new Error(`Resource ${resourceIdValue} has no primary correlation`);
+      return {
+        resourceId: resourceIdValue,
+        workItemId: null,
+        created: false,
+        deleted: false,
+        missingPrimary: true,
+      };
     const historicalWork = await this.work?.get(historical.workItemId);
     if (historicalWork?.deleted)
       return {
@@ -608,7 +722,13 @@ export class InboundTranslator {
         created: false,
         deleted: true,
       };
-    throw new Error(`Resource ${resourceIdValue} has no active primary correlation`);
+    return {
+      resourceId: resourceIdValue,
+      workItemId: historical.workItemId,
+      created: false,
+      deleted: false,
+      missingPrimary: true,
+    };
   }
 
   private async recordDeletedWorkObservation(
