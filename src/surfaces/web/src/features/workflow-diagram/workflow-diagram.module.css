@@ -1,4 +1,8 @@
 .diagram {
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
   overflow-x: auto;
   overflow-y: visible;
   scrollbar-color: transparent transparent;
