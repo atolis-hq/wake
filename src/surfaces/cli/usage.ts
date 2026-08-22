@@ -10,6 +10,8 @@ export const usage = [
   '  wake stop                  Wait for active runs to finish',
   '  wake smoke                 Smoke-test the configured runner',
   '  wake ui                    Run the control-plane UI server',
+  '  wake ui token              Print the UI login access key',
+  '  wake ui token set <key>    Replace the UI login access key',
   '  wake audit                 Show autonomous decision audit history',
   '  wake correlate             Manually correlate a resource to a work item',
   '  wake run resolve           Resolve an escalated ambiguous run',

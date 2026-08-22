@@ -19,17 +19,20 @@ import {
   DockerProcessError,
   createApiDispatcher,
   createApiHttpServer,
+  createHttpAuth,
   createLoggedDockerCli,
   createPackagedAssetSource,
   createProcessLogSink,
   createSandboxDockerPort,
   drainProcessOutput,
+  loadOrCreateCredentials,
   runDoctor,
   runSandbox,
   runSandboxEntrypoint,
   runSandboxSetup,
   runSelfUpdateLatestLoop,
   runTargetSmoke,
+  setAccessKey,
   verifyResidentStart,
   waitForActiveRuns,
   waitForever,
@@ -150,6 +153,15 @@ export function createSurfaceCliApplications(
     },
     api: { start: (options) => startHttp(options, false) },
     ui: { start: (options) => startHttp(options, true) },
+    auth: {
+      async token(accessKey) {
+        const credentials =
+          accessKey === undefined
+            ? await loadOrCreateCredentials(root.paths.wakeRoot)
+            : await setAccessKey(root.paths.wakeRoot, accessKey);
+        return credentials.accessKey;
+      },
+    },
     audit: {
       async read(id) {
         return (await root.journal.readAll(0))
@@ -263,7 +275,12 @@ function createHttpStarter(root: CompositionRoot, api: ApiApplications, servers:
     const assets = web ? createPackagedAssetSource() : undefined;
     if (web && (await assets!.get('/index.html')) === undefined)
       throw new Error('Packaged Wake web assets are missing');
-    const server = createApiHttpServer(createApiDispatcher(api), assets);
+    const credentials = await loadOrCreateCredentials(root.paths.wakeRoot);
+    const server = createApiHttpServer(
+      createApiDispatcher(api),
+      assets,
+      createHttpAuth(credentials),
+    );
     servers.add(server);
     server.listen(
       options.port ?? root.config.surfaces.api.port,

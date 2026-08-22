@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { initialiseWakeHome } from '../surfaces/index.js';
+import { initialiseWakeHome, loadOrCreateCredentials } from '../surfaces/index.js';
 
 // Mirrors legacy sandbox.containerName derivation (src/cli/scaffold-assets.ts):
 // lowercase, collapse disallowed characters to `-`, and trim stray separators
@@ -472,5 +472,6 @@ export async function initialiseWakeRoot(wakeRoot: string): Promise<{ readonly w
     'docker/Dockerfile': dockerfile,
     'docker/Dockerfile.packaged': packagedDockerfile,
   });
+  await loadOrCreateCredentials(wakeRoot);
   return { wakeRoot };
 }
