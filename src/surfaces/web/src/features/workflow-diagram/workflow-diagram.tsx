@@ -474,16 +474,6 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                     <strong className={boardStyles.cardTitle}>{stage.label}</strong>
                   </div>
                 </div>
-                {direction === 'DOWN' ? (
-                  <button
-                    type="button"
-                    aria-expanded={isExpanded}
-                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${stage.label}`}
-                    onClick={toggle}
-                  >
-                    {isExpanded ? '−' : '+'}
-                  </button>
-                ) : null}
                 {hasTotals ? (
                   <div className={styles.stageTotals}>
                     {stage.runCount === undefined ? null : <span>{stage.runCount} runs</span>}

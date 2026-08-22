@@ -140,7 +140,7 @@ describe('WorkflowDiagramView', () => {
     render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
 
     const refine = screen.getByRole('group', { name: /Stage refine/i });
-    const title = within(refine).getByText('Refine');
+    const title = within(refine).getByText('Refine', { selector: 'strong' });
 
     expect(refine.style.height).toBe('');
     expect(refine.style.minHeight).toBe('');
@@ -167,7 +167,7 @@ describe('WorkflowDiagramView', () => {
     const diagram = screen.getByRole('region', {
       name: `Workflow ${mockWorkItemWorkflowDiagram.label}`,
     });
-    const edgeLabel = await within(diagram).findByText('done', { selector: 'span' });
+    const edgeLabel = (await within(diagram).findAllByText('done', { selector: 'span' }))[0]!;
     expect(edgeLabel.className).toContain('edgeLabel');
     expect(edgeLabel.getAttribute('style')).toMatch(/left: .*px/);
     expect(edgeLabel.getAttribute('style')).not.toContain('-9999px');
@@ -175,7 +175,7 @@ describe('WorkflowDiagramView', () => {
     expect(diagram.querySelector('path[marker-end="url(#workflow-arrow)"]')).toBeTruthy();
   });
 
-  it('only exposes collapse controls on mobile and initially expands active stages', async () => {
+  it('uses the mobile card surface to toggle stages and initially expands active stages', async () => {
     const originalMatchMedia = window.matchMedia;
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
@@ -193,18 +193,18 @@ describe('WorkflowDiagramView', () => {
     const user = userEvent.setup();
     render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
 
-    expect(
-      screen.getByRole('button', { name: 'Collapse Refine' }).getAttribute('aria-expanded'),
-    ).toBe('true');
-    expect(screen.getByRole('button', { name: 'Expand Merge' }).getAttribute('aria-expanded')).toBe(
+    expect(screen.getByRole('button', { name: /^Refine/ }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /^Merge/ }).getAttribute('aria-expanded')).toBe(
       'false',
     );
     expect(screen.queryByText('PR merge')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Expand Merge' }));
-    expect(
-      screen.getByRole('button', { name: 'Collapse Merge' }).getAttribute('aria-expanded'),
-    ).toBe('true');
+    await user.click(screen.getByRole('button', { name: /^Merge/ }));
+    expect(screen.getByRole('button', { name: /^Merge/ }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
     expect(screen.getByText('PR merge')).toBeTruthy();
 
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
