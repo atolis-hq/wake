@@ -33,19 +33,19 @@ const aggregateFields = [
 ] as const;
 
 describe('mockWorkItemWorkflowDiagram', () => {
-  it('provides the requested refine run and child breakdown', () => {
+  it('provides the Dark Factory refine run and child breakdown', () => {
     const refine = mockWorkItemWorkflowDiagram.stages.find((stage) => stage.id === 'refine');
 
     expect(refine).toMatchObject({
       runCount: 4,
       totalDurationMs: 120_000,
     });
-    expect(refine?.children.map((child) => child.kind)).toEqual(['activity', 'watch', 'reactor']);
-    expect(refine?.children.map((child) => child.runCount)).toEqual([2, 2, undefined]);
+    expect(refine?.children.map((child) => child.kind)).toEqual(['activity', 'watch-gate']);
+    expect(refine?.children.map((child) => child.runCount)).toEqual([2, 2]);
     expect(refine?.children[0]?.activeRuns).toEqual([
       {
         runId: 'run-refine-004',
-        activity: 'Refine task',
+        activity: 'Agent — refine',
         runnerName: 'codex',
         startedAt: '2026-08-22T17:58:00.000Z',
       },
@@ -75,10 +75,8 @@ describe('mockWorkItemWorkflowDiagram', () => {
       stage.children.filter((child) => child.kind === 'reactor'),
     );
 
-    expect(
-      mockWorkItemWorkflowDiagram.stages.slice(1).every((stage) => stage.status === undefined),
-    ).toBe(true);
-    expect(reactors).toHaveLength(2);
+    expect(mockWorkItemWorkflowDiagram.stages.at(-1)?.status).toBeUndefined();
+    expect(reactors).toHaveLength(3);
     for (const reactor of reactors) {
       for (const key of instanceOverlayKeys.slice(3)) {
         expect(reactor).not.toHaveProperty(key);
@@ -102,6 +100,20 @@ describe('mockWorkItemWorkflowDiagram', () => {
       }
     }
   });
+
+  it('models event routes as transitions from their nested watch or reactor cards', () => {
+    const childRoutes = mockWorkItemWorkflowDiagram.transitions.filter(
+      (transition) => transition.fromChildId !== undefined,
+    );
+
+    expect(childRoutes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ fromChildId: 'refine-watch', to: 'implement' }),
+        expect.objectContaining({ fromChildId: 'implement-approval-reactor', to: 'merge' }),
+        expect.objectContaining({ fromChildId: 'implement-merged-reactor', to: 'complete-issue' }),
+      ]),
+    );
+  });
 });
 
 describe('WorkflowDiagramView', () => {
@@ -115,12 +127,12 @@ describe('WorkflowDiagramView', () => {
     });
     const refine = within(diagram).getByRole('group', { name: /Stage refine/i });
     expect(within(refine).getByText('4 runs')).toBeTruthy();
-    expect(within(refine).getByText('Refine task')).toBeTruthy();
-    expect(within(refine).getByText('Wait for review')).toBeTruthy();
+    expect(within(refine).getByText('Agent — refine')).toBeTruthy();
+    expect(within(refine).getByText('Watch — plan-review')).toBeTruthy();
     expect(within(refine).getByText('codex')).toBeTruthy();
     expect(within(refine).getByText(/running/)).toBeTruthy();
-    expect((await within(diagram).findAllByText('ready')).length).toBeGreaterThan(0);
-    expect(screen.getByText('Deploy release')).toBeTruthy();
+    expect((await within(diagram).findAllByText('done')).length).toBeGreaterThan(0);
+    expect(screen.getByText('PR merge')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^(Expand|Collapse) / })).toBeNull();
   });
 
@@ -132,8 +144,8 @@ describe('WorkflowDiagramView', () => {
 
     expect(refine.style.height).toBe('');
     expect(refine.style.minHeight).toBe('');
-    expect(within(refine).getByText('Refine task')).toBeTruthy();
-    expect(within(refine).getByText('Wait for review')).toBeTruthy();
+    expect(within(refine).getByText('Agent — refine')).toBeTruthy();
+    expect(within(refine).getByText('Watch — plan-review')).toBeTruthy();
     expect(title.className).toContain('cardTitle');
   });
 
@@ -141,10 +153,12 @@ describe('WorkflowDiagramView', () => {
     render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
 
     expect(screen.getByTestId('child-status-refine-activity').dataset.status).toBe('active');
-    expect(screen.getByTestId('child-status-review-activity').dataset.status).toBe('completed');
-    expect(screen.getByTestId('child-status-review-gate').dataset.status).toBe('pending');
-    expect(screen.getByTestId('child-status-deploy-activity').dataset.status).toBe('blocked');
-    expect(screen.getByTestId('child-status-deploy-reactor').dataset.status).toBe('failed');
+    expect(screen.getByTestId('child-status-implement-activity').dataset.status).toBe('completed');
+    expect(screen.getByTestId('child-status-implement-merged-reactor').dataset.status).toBe(
+      'pending',
+    );
+    expect(screen.getByTestId('child-status-merge-activity').dataset.status).toBe('blocked');
+    expect(screen.getByTestId('child-status-merge-merged-reactor').dataset.status).toBe('failed');
   });
 
   it('uses semantic positioned labels and arrowheads for graph edges', async () => {
@@ -153,7 +167,7 @@ describe('WorkflowDiagramView', () => {
     const diagram = screen.getByRole('region', {
       name: `Workflow ${mockWorkItemWorkflowDiagram.label}`,
     });
-    const edgeLabel = await within(diagram).findByText('ready', { selector: 'span' });
+    const edgeLabel = await within(diagram).findByText('done', { selector: 'span' });
     expect(edgeLabel.className).toContain('edgeLabel');
     expect(edgeLabel.getAttribute('style')).toMatch(/left: .*px/);
     expect(edgeLabel.getAttribute('style')).not.toContain('-9999px');
@@ -182,16 +196,16 @@ describe('WorkflowDiagramView', () => {
     expect(
       screen.getByRole('button', { name: 'Collapse Refine' }).getAttribute('aria-expanded'),
     ).toBe('true');
-    expect(
-      screen.getByRole('button', { name: 'Expand Deploy' }).getAttribute('aria-expanded'),
-    ).toBe('false');
-    expect(screen.queryByText('Deploy release')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Expand Merge' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(screen.queryByText('PR merge')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Expand Deploy' }));
+    await user.click(screen.getByRole('button', { name: 'Expand Merge' }));
     expect(
-      screen.getByRole('button', { name: 'Collapse Deploy' }).getAttribute('aria-expanded'),
+      screen.getByRole('button', { name: 'Collapse Merge' }).getAttribute('aria-expanded'),
     ).toBe('true');
-    expect(screen.getByText('Deploy release')).toBeTruthy();
+    expect(screen.getByText('PR merge')).toBeTruthy();
 
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
   });

@@ -42,6 +42,8 @@ export interface WorkflowDiagramTransition {
   readonly from: string;
   readonly to: string;
   readonly label: string;
+  /** The nested watch or reactor card from which this route originates. */
+  readonly fromChildId?: string;
 }
 
 export interface WorkflowDiagram {
@@ -53,8 +55,8 @@ export interface WorkflowDiagram {
 }
 
 export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
-  id: 'work-item-481',
-  label: 'Implement workflow diagram',
+  id: 'work-item-dark-factory',
+  label: 'Dark Factory — work-item run',
   direction: 'left-to-right',
   stages: [
     {
@@ -72,7 +74,7 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
       children: [
         {
           id: 'refine-activity',
-          label: 'Refine task',
+          label: 'Agent — refine',
           kind: 'activity',
           status: 'active',
           activeRuns: [
@@ -94,8 +96,8 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
         },
         {
           id: 'refine-watch',
-          label: 'Wait for review',
-          kind: 'watch',
+          label: 'Watch — plan-review',
+          kind: 'watch-gate',
           status: 'waiting',
           runCount: 2,
           totalDurationMs: 45_000,
@@ -106,117 +108,168 @@ export const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
           cacheWriteTokens: 100,
           totalCostUsd: 0.13,
         },
-        {
-          id: 'refine-reactor',
-          label: 'React to updates',
-          kind: 'reactor',
-          status: 'active',
-        },
       ],
     },
     {
-      id: 'review',
-      label: 'Review',
+      id: 'implement',
+      label: 'Implement',
+      status: 'waiting',
       children: [
         {
-          id: 'review-activity',
-          label: 'Review change',
+          id: 'implement-activity',
+          label: 'Agent — implement',
           kind: 'activity',
           status: 'completed',
         },
         {
-          id: 'review-gate',
-          label: 'Approval gate',
+          id: 'implement-watch',
+          label: 'Watch — pr-review',
           kind: 'watch-gate',
+          status: 'waiting',
+        },
+        {
+          id: 'implement-approval-reactor',
+          label: 'Reactor — PR approved',
+          kind: 'reactor',
+          status: 'completed',
+        },
+        {
+          id: 'implement-merged-reactor',
+          label: 'Reactor — PR merged',
+          kind: 'reactor',
         },
       ],
     },
     {
-      id: 'deploy',
-      label: 'Deploy',
+      id: 'merge',
+      label: 'Merge',
+      status: 'blocked',
       children: [
         {
-          id: 'deploy-activity',
-          label: 'Deploy release',
+          id: 'merge-activity',
+          label: 'PR merge',
           kind: 'activity',
           status: 'blocked',
         },
         {
-          id: 'deploy-reactor',
-          label: 'Publish deployment',
+          id: 'merge-merged-reactor',
+          label: 'Reactor — PR merged',
           kind: 'reactor',
           lastOutcome: 'failed',
         },
       ],
     },
+    {
+      id: 'complete-issue',
+      label: 'Complete issue',
+      children: [{ id: 'complete-issue-activity', label: 'Issue complete', kind: 'activity' }],
+    },
   ],
   transitions: [
-    { from: 'refine', to: 'review', label: 'ready' },
-    { from: 'review', to: 'deploy', label: 'approved' },
+    { from: 'refine', to: 'implement', label: 'done' },
+    {
+      from: 'refine',
+      fromChildId: 'refine-watch',
+      to: 'implement',
+      label: 'accepted',
+    },
+    { from: 'implement', to: 'merge', label: 'done' },
+    {
+      from: 'implement',
+      fromChildId: 'implement-approval-reactor',
+      to: 'merge',
+      label: 'pr.review-accepted',
+    },
+    {
+      from: 'implement',
+      to: 'complete-issue',
+      label: 'pr merged',
+      fromChildId: 'implement-merged-reactor',
+    },
+    { from: 'merge', to: 'complete-issue', label: 'done' },
+    {
+      from: 'merge',
+      to: 'complete-issue',
+      label: 'pr merged',
+      fromChildId: 'merge-merged-reactor',
+    },
   ],
 };
 
 export const mockConfiguredWorkflowDiagrams: readonly WorkflowDiagram[] = [
   {
-    id: 'standard-delivery',
-    label: 'Standard delivery',
-    direction: 'left-to-right',
-    stages: [
-      {
-        id: 'refine',
-        label: 'Refine',
-        children: [{ id: 'refine-activity', label: 'Refine task', kind: 'activity' }],
-      },
-      {
-        id: 'review',
-        label: 'Review',
-        children: [{ id: 'review-activity', label: 'Review change', kind: 'activity' }],
-      },
-      {
-        id: 'deploy',
-        label: 'Deploy',
-        children: [{ id: 'deploy-activity', label: 'Deploy release', kind: 'activity' }],
-      },
-    ],
-    transitions: [
-      { from: 'refine', to: 'review', label: 'ready' },
-      { from: 'review', to: 'deploy', label: 'approved' },
-    ],
-  },
-  {
-    id: 'guarded-delivery',
-    label: 'Guarded delivery',
+    id: 'dark-factory',
+    label: 'Dark Factory — configuration',
     direction: 'left-to-right',
     stages: [
       {
         id: 'refine',
         label: 'Refine',
         children: [
-          { id: 'refine-activity', label: 'Refine task', kind: 'activity' },
-          { id: 'refine-reactor', label: 'React to updates', kind: 'reactor' },
+          { id: 'refine-activity', label: 'Agent — refine', kind: 'activity' },
+          { id: 'refine-watch', label: 'Watch — plan-review', kind: 'watch-gate' },
         ],
       },
       {
-        id: 'review',
-        label: 'Review',
-        children: [{ id: 'review-gate', label: 'Approval gate', kind: 'watch-gate' }],
-      },
-      {
-        id: 'deploy',
-        label: 'Deploy',
+        id: 'implement',
+        label: 'Implement',
         children: [
-          { id: 'deploy-activity', label: 'Deploy release', kind: 'activity' },
+          { id: 'implement-activity', label: 'Agent — implement', kind: 'activity' },
+          { id: 'implement-watch', label: 'Watch — pr-review', kind: 'watch-gate' },
           {
-            id: 'deploy-reactor',
-            label: 'Publish deployment',
+            id: 'implement-approval-reactor',
+            label: 'Reactor — PR approved',
+            kind: 'reactor',
+          },
+          {
+            id: 'implement-merged-reactor',
+            label: 'Reactor — PR merged',
             kind: 'reactor',
           },
         ],
       },
+      {
+        id: 'merge',
+        label: 'Merge',
+        children: [
+          { id: 'merge-activity', label: 'PR merge', kind: 'activity' },
+          { id: 'merge-merged-reactor', label: 'Reactor — PR merged', kind: 'reactor' },
+        ],
+      },
+      {
+        id: 'complete-issue',
+        label: 'Complete issue',
+        children: [{ id: 'complete-issue-activity', label: 'Issue complete', kind: 'activity' }],
+      },
     ],
     transitions: [
-      { from: 'refine', to: 'review', label: 'ready' },
-      { from: 'review', to: 'deploy', label: 'approved' },
+      { from: 'refine', to: 'implement', label: 'done' },
+      {
+        from: 'refine',
+        fromChildId: 'refine-watch',
+        to: 'implement',
+        label: 'accepted',
+      },
+      { from: 'implement', to: 'merge', label: 'done' },
+      {
+        from: 'implement',
+        fromChildId: 'implement-approval-reactor',
+        to: 'merge',
+        label: 'pr.review-accepted',
+      },
+      {
+        from: 'implement',
+        fromChildId: 'implement-merged-reactor',
+        to: 'complete-issue',
+        label: 'pr.state-changed: merged',
+      },
+      { from: 'merge', to: 'complete-issue', label: 'done' },
+      {
+        from: 'merge',
+        fromChildId: 'merge-merged-reactor',
+        to: 'complete-issue',
+        label: 'pr.state-changed: merged',
+      },
     ],
   },
 ];

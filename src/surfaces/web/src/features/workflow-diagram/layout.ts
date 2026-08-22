@@ -23,6 +23,8 @@ export interface WorkflowDiagramEdgePoint {
 export interface WorkflowDiagramEdgeLayout {
   readonly id: string;
   readonly label: string;
+  readonly from: string;
+  readonly fromChildId?: string;
   readonly points: readonly WorkflowDiagramEdgePoint[];
 }
 
@@ -82,6 +84,8 @@ export async function layoutWorkflowDiagram(
   const edges = (graph.edges ?? []).map((edge, index) => ({
     id: edge.id,
     label: diagram.transitions[index]?.label ?? '',
+    from: diagram.transitions[index]?.from ?? '',
+    fromChildId: diagram.transitions[index]?.fromChildId,
     points: (edge.sections ?? []).flatMap((section) => [
       section.startPoint,
       ...(section.bendPoints ?? []),

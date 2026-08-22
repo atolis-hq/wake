@@ -1,7 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Chip } from '../../components/chip.js';
 import { fmtCost, fmtDuration } from '../../components/format.js';
-import { OutcomeChip } from '../../components/outcome-chip.js';
 import { TokenUsage } from '../../components/token-usage.js';
 import boardStyles from '../features.module.css';
 import {
@@ -9,25 +7,10 @@ import {
   type WorkflowDiagramLayout,
   type WorkflowDiagramLayoutDirection,
 } from './layout.js';
-import type {
-  WorkflowDiagram,
-  WorkflowDiagramChild,
-  WorkflowDiagramMetrics,
-  WorkflowDiagramStatus,
-} from './model.js';
+import type { WorkflowDiagram, WorkflowDiagramChild, WorkflowDiagramMetrics } from './model.js';
 import styles from './workflow-diagram.module.css';
 
 const fallbackLayout: WorkflowDiagramLayout = { width: 0, height: 0, nodes: [], edges: [] };
-
-function tone(
-  status: WorkflowDiagramStatus | undefined,
-): 'good' | 'warning' | 'bad' | 'info' | 'neutral' {
-  if (status === 'active') return 'info';
-  if (status === 'waiting') return 'warning';
-  if (status === 'blocked') return 'bad';
-  if (status === 'completed') return 'good';
-  return 'neutral';
-}
 
 function useDiagramLayout(diagram: WorkflowDiagram, direction: WorkflowDiagramLayoutDirection) {
   const [layout, setLayout] = useState<WorkflowDiagramLayout>(fallbackLayout);
@@ -73,13 +56,21 @@ function tokenUsage(item: WorkflowDiagramMetrics) {
 }
 
 function metrics(item: WorkflowDiagramChild) {
-  if (item.kind === 'reactor') return null;
+  if (
+    item.kind === 'reactor' ||
+    (item.runCount === undefined &&
+      item.totalDurationMs === undefined &&
+      item.totalCostUsd === undefined &&
+      item.totalTokens === undefined)
+  ) {
+    return null;
+  }
   return (
     <div className={styles.metrics}>
       {item.runCount === undefined ? null : <span>{item.runCount} runs</span>}
       {item.totalDurationMs === undefined ? null : <span>{fmtDuration(item.totalDurationMs)}</span>}
       {item.totalCostUsd === undefined ? null : <span>{fmtCost(item.totalCostUsd)}</span>}
-      {item.totalTokens === undefined ? <span>no token usage</span> : tokenUsage(item)}
+      {item.totalTokens === undefined ? null : tokenUsage(item)}
     </div>
   );
 }
@@ -97,14 +88,6 @@ function ChildCard({ child }: { readonly child: WorkflowDiagramChild }) {
       />
       <div>
         <div className={boardStyles.childRunTitle}>{child.label}</div>
-        <div className={styles.chips}>
-          {child.status === undefined ? null : (
-            <Chip variant="outline" tone={tone(child.status)}>
-              {child.status}
-            </Chip>
-          )}
-          {child.lastOutcome === undefined ? null : <OutcomeChip outcome={child.lastOutcome} />}
-        </div>
         {metrics(child)}
         {child.kind === 'reactor'
           ? null
@@ -130,6 +113,27 @@ function ChildCard({ child }: { readonly child: WorkflowDiagramChild }) {
 
 function edgePath(points: readonly { readonly x: number; readonly y: number }[]): string {
   return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+}
+
+function transitionPoints(
+  edge: WorkflowDiagramLayout['edges'][number],
+  diagram: WorkflowDiagram,
+  nodes: ReadonlyMap<string, WorkflowDiagramLayout['nodes'][number]>,
+  direction: WorkflowDiagramLayoutDirection,
+) {
+  if (edge.fromChildId === undefined || edge.points.length === 0) return edge.points;
+  const source = nodes.get(edge.from);
+  const stage = diagram.stages.find((candidate) => candidate.id === edge.from);
+  const childIndex = stage?.children.findIndex((child) => child.id === edge.fromChildId) ?? -1;
+  if (source === undefined || childIndex < 0) return edge.points;
+
+  // ELK lays out stages only; this shifts the visible route origin to its nested child card.
+  const childOffset = 104 + 8 + childIndex * 120 + 52;
+  const childPoint =
+    direction === 'RIGHT'
+      ? { x: source.x + source.width, y: source.y + childOffset }
+      : { x: source.x + source.width / 2, y: source.y + childOffset + 52 };
+  return [childPoint, ...edge.points.slice(1)];
 }
 
 function edgeLabelPoint(points: readonly { readonly x: number; readonly y: number }[]) {
@@ -192,15 +196,16 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
             </marker>
           </defs>
           {layout.edges.map((edge) => {
+            const points = transitionPoints(edge, diagram, nodeById, direction);
             return (
               <g key={edge.id}>
-                <path d={edgePath(edge.points)} markerEnd="url(#workflow-arrow)" />
+                <path d={edgePath(points)} markerEnd="url(#workflow-arrow)" />
               </g>
             );
           })}
         </svg>
         {layout.edges.map((edge) => {
-          const point = edgeLabelPoint(edge.points);
+          const point = edgeLabelPoint(transitionPoints(edge, diagram, nodeById, direction));
           return point === undefined || edge.label.length === 0 ? null : (
             <span
               className={styles.edgeLabel}
@@ -216,6 +221,12 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
           const isExpanded = direction === 'RIGHT' || expanded.has(stage.id);
           const fallbackX = direction === 'RIGHT' ? index * 352 : 18;
           const fallbackY = direction === 'RIGHT' ? 20 : index * 172;
+          const status = stage.lastOutcome === 'failed' ? 'failed' : (stage.status ?? 'pending');
+          const hasTotals =
+            stage.runCount !== undefined ||
+            stage.totalDurationMs !== undefined ||
+            stage.totalCostUsd !== undefined ||
+            stage.totalTokens !== undefined;
           return (
             <div
               className={`${styles.stage} ${boardStyles.card}`}
@@ -232,16 +243,14 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
             >
               <div className={`${styles.stageCard} ${boardStyles.cardLink}`}>
                 <div>
-                  <strong className={boardStyles.cardTitle}>{stage.label}</strong>
-                  <div className={styles.chips}>
-                    {stage.status === undefined ? null : (
-                      <Chip variant="outline" tone={tone(stage.status)}>
-                        {stage.status}
-                      </Chip>
-                    )}
-                    {stage.lastOutcome === undefined ? null : (
-                      <OutcomeChip outcome={stage.lastOutcome} />
-                    )}
+                  <div className={styles.stageTitleRow}>
+                    <span
+                      aria-label={`${status} status`}
+                      className={`${boardStyles.childRunDot} ${styles.childStatusDot}`}
+                      data-status={status}
+                      role="img"
+                    />
+                    <strong className={boardStyles.cardTitle}>{stage.label}</strong>
                   </div>
                 </div>
                 {direction === 'DOWN' ? (
@@ -261,16 +270,18 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                     {isExpanded ? '−' : '+'}
                   </button>
                 ) : null}
-                <div className={styles.stageTotals}>
-                  <span>{stage.runCount === undefined ? 'no runs' : `${stage.runCount} runs`}</span>
-                  {stage.totalDurationMs === undefined ? null : (
-                    <span>{fmtDuration(stage.totalDurationMs)}</span>
-                  )}
-                  {stage.totalCostUsd === undefined ? null : (
-                    <span>{fmtCost(stage.totalCostUsd)}</span>
-                  )}
-                  {tokenUsage(stage)}
-                </div>
+                {hasTotals ? (
+                  <div className={styles.stageTotals}>
+                    {stage.runCount === undefined ? null : <span>{stage.runCount} runs</span>}
+                    {stage.totalDurationMs === undefined ? null : (
+                      <span>{fmtDuration(stage.totalDurationMs)}</span>
+                    )}
+                    {stage.totalCostUsd === undefined ? null : (
+                      <span>{fmtCost(stage.totalCostUsd)}</span>
+                    )}
+                    {stage.totalTokens === undefined ? null : tokenUsage(stage)}
+                  </div>
+                ) : null}
               </div>
               {isExpanded ? (
                 <div className={styles.children}>
