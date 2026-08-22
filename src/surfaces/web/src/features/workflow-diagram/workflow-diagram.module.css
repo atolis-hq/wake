@@ -1,3 +1,42 @@
+.diagram {
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+}
+
+.diagram::-webkit-scrollbar {
+  height: 0.55rem;
+}
+
+.diagram::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+}
+
+.diagram:hover,
+.diagram:focus-within {
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.diagram:hover::-webkit-scrollbar-thumb,
+.diagram:focus-within::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  background-clip: padding-box;
+}
+
+.diagram[data-direction='RIGHT'] {
+  cursor: grab;
+  touch-action: pan-y;
+}
+
+.dragging {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 .canvas {
   position: relative;
   min-width: var(--graph-width);

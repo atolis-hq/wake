@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { fmtCost, fmtDuration } from '../../components/format.js';
 import { TokenUsage } from '../../components/token-usage.js';
@@ -363,6 +364,10 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
   const direction = useLayoutDirection();
   const layout = useDiagramLayout(diagram, direction);
   const { anchors, canvasRef, stageRef } = useDiagramAnchors(layout);
+  const dragRef = useRef<
+    { readonly pointerId: number; readonly startX: number; readonly scrollLeft: number } | undefined
+  >(undefined);
+  const [isDragging, setIsDragging] = useState(false);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => {
     const activeStages = diagram.stages.filter((stage) => stage.status === 'active');
     return new Set(
@@ -389,8 +394,41 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
   const width = layout.width || (direction === 'RIGHT' ? diagram.stages.length * 352 : 300);
   const height = layout.height || (direction === 'RIGHT' ? 176 : diagram.stages.length * 172);
 
+  const beginDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (direction !== 'RIGHT' || event.button !== 0) return;
+    const surface = event.currentTarget;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      scrollLeft: surface.scrollLeft,
+    };
+    surface.setPointerCapture(event.pointerId);
+    setIsDragging(true);
+  };
+  const moveDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (drag === undefined || drag.pointerId !== event.pointerId) return;
+    event.currentTarget.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+  };
+  const endDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = undefined;
+    setIsDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
   return (
-    <section className={styles.diagram} aria-label={`Workflow ${diagram.label}`}>
+    <section
+      aria-label={`Workflow ${diagram.label}`}
+      className={`${styles.diagram} ${isDragging ? styles.dragging : ''}`}
+      data-direction={direction}
+      onPointerCancel={endDrag}
+      onPointerDown={beginDrag}
+      onPointerMove={moveDrag}
+      onPointerUp={endDrag}
+    >
       <div
         ref={canvasRef}
         className={styles.canvas}
