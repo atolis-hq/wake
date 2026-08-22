@@ -74,7 +74,13 @@ export function createSelfUpdateApplication(input: {
         if (!force && (await input.ledger.isBad(tag))) {
           continue;
         }
-        const updated = await this.update(tag, force);
+        let updated: boolean;
+        try {
+          updated = await this.update(tag, force);
+        } catch (error) {
+          if (error instanceof UpdateCandidateFailure) continue;
+          throw error;
+        }
         if (updated) {
           return { tag, updated: true };
         }
@@ -185,20 +191,44 @@ async function runForwardUpdate(
     throw new Error('Self-update requires a clean source checkout');
   await input.ledger.begin(tag);
   await input.quiesce?.transition(UpdateMaintenancePhase.Updating, attemptId);
-  const updated = await runSelfUpdate({
-    tag,
-    force: true,
-    readLedger: input.ledger.read,
-    writeLedger: input.ledger.write,
-    update: async (nextTag) => {
-      await input.source.checkout(nextTag);
-      context.deployError = await deployRollout(input.rollout, nextTag);
-    },
-    health: async () => context.deployError === undefined && input.source.healthy(),
-    rollback: async (priorTag) => rollbackUpdate(input, priorTag, attemptId),
-  });
+  let rollbackSucceeded = false;
+  let updated: boolean;
+  try {
+    updated = await runSelfUpdate({
+      tag,
+      force: true,
+      readLedger: input.ledger.read,
+      writeLedger: input.ledger.write,
+      update: async (nextTag) => {
+        await input.source.checkout(nextTag);
+        context.deployError = await deployRollout(input.rollout, nextTag);
+      },
+      health: async () => context.deployError === undefined && input.source.healthy(),
+      rollback: async (priorTag) => {
+        await rollbackUpdate(input, priorTag, attemptId);
+        rollbackSucceeded = true;
+      },
+    });
+  } catch (error) {
+    if (!rollbackSucceeded) throw new UpdateRollbackError(error);
+    throw new UpdateCandidateFailure(error);
+  }
   await input.quiesce?.clear(attemptId);
   return updated;
+}
+
+class UpdateRollbackError extends Error {
+  constructor(error: unknown) {
+    super(formatError(error), { cause: error });
+    this.name = 'UpdateRollbackError';
+  }
+}
+
+class UpdateCandidateFailure extends Error {
+  constructor(error: unknown) {
+    super(formatError(error), { cause: error });
+    this.name = 'UpdateCandidateFailure';
+  }
 }
 
 async function deployRollout(
