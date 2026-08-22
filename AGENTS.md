@@ -134,3 +134,25 @@ historical designs, handoffs, plans, reports, `docs/superpowers/`,
 `docs/vision-inputs/`, or specifications merely to reflect a later design.
 
 Do not introduce mojibake; use valid UTF-8 or ASCII text.
+
+## Raising Wake work items
+
+Before creating a GitHub issue, ask the user (via a single-select menu) how
+it should be dispatched — do not default to any of these:
+
+- No assignment — file for manual triage.
+- Assign to `atolis-hq-agent` — Wake starts working it on the next tick.
+- Assign to `atolis-hq-agent` and label `dark-factory` — Wake works it
+  end-to-end, unattended, via the dark-factory workflow.
+- Label `dark-factory` with no assignment — routes into the dark-factory
+  workflow once someone assigns it later.
+
+Most issues raised here end up dark-factory, but not all; assigning is
+dispatch, so guessing wrong starts real work.
+
+When the chosen dispatch is unattended (assigned and/or labelled
+`dark-factory`), use `.github/ISSUE_TEMPLATE/dark-factory-task.md`. State the
+intended outcome explicitly and separately from any suggested approach. A
+prescriptive fix sketch with no stated outcome leaves the working agent
+unable to tell whether to extend scope when the sketch turns out incomplete
+— it will correctly report back blocked instead of guessing.
