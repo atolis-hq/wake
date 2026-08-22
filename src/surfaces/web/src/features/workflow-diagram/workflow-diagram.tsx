@@ -498,7 +498,12 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                 ) : null}
               </div>
               {isExpanded ? (
-                <div className={styles.children}>
+                <div
+                  className={styles.children}
+                  style={
+                    direction === 'DOWN' ? { display: 'grid', visibility: 'visible' } : undefined
+                  }
+                >
                   {stage.children.map((child) => (
                     <ChildCard
                       child={child}
