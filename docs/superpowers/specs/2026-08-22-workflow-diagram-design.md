@@ -86,15 +86,16 @@ edges.
 
 ## Surface integration
 
-`GET /work-items/:workItemKey/workflow-diagram` is a dedicated diagram read.
-It resolves the primary workflow instance's fingerprinted definition and
-overlays the primary instance, watch-child instances, and their runs. The
-existing work-detail response remains unchanged.
+`GET /workflow-diagrams` is the dedicated diagram collection read. Without a
+query parameter, it returns one definition-only diagram for each current
+configured workflow name. With `?workItemKey=...`, it returns a one-item
+collection resolved from that work item's primary workflow instance and its
+fingerprinted definition, overlaid with the primary instance, watch-child
+instances, and their runs. The response shape remains a collection in both
+cases; the existing work-detail and configuration responses remain unchanged.
 
-A new read-only system workflow-diagrams endpoint returns exactly one diagram
-for each current configured workflow name. It does not expose historical
-fingerprints or instance data. Configuration renders these diagrams using the
-same component and retains the redacted effective configuration separately.
+Configuration renders the definition-only diagrams using the same component
+and retains the redacted effective configuration separately.
 
 ## Validation
 
