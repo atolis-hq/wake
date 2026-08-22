@@ -19,6 +19,7 @@ import type {
   WorkItemTranscriptResponse,
 } from '../../../api/contracts/index.js';
 import {
+  WorkflowDiagramChildKind,
   type AcceptedCommandResponse,
   type TickCommandResponse,
 } from '../../../api/contracts/index.js';
@@ -271,8 +272,7 @@ function decodeWorkflowDiagram(value: unknown, path = ''): WorkflowDiagramRespon
           return {
             id: string(childCard.id, child(cardPath, 'id')),
             label: string(childCard.label, child(cardPath, 'label')),
-            kind: string(childCard.kind, child(cardPath, 'kind')) as
-              'activity' | 'watch' | 'watch-gate' | 'reactor',
+            kind: workflowDiagramChildKind(childCard.kind, child(cardPath, 'kind')),
             ...diagramOverlayFields(childCard, cardPath),
           };
         }),
@@ -293,6 +293,13 @@ function decodeWorkflowDiagram(value: unknown, path = ''): WorkflowDiagramRespon
       },
     ),
   };
+}
+
+function workflowDiagramChildKind(value: unknown, path: string) {
+  const kind = string(value, path);
+  if (!Object.values(WorkflowDiagramChildKind).includes(kind as WorkflowDiagramChildKind))
+    invalid(path);
+  return kind as WorkflowDiagramChildKind;
 }
 
 function diagramOverlayFields(record: Record<string, unknown>, path: string) {

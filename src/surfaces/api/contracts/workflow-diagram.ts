@@ -1,6 +1,30 @@
-export type WorkflowDiagramStatus = 'active' | 'waiting' | 'blocked' | 'completed';
+import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 
-export type WorkflowDiagramChildKind = 'activity' | 'watch' | 'watch-gate' | 'reactor';
+export const WorkflowDiagramStatus = defineClosedVocabulary({
+  Active: 'active',
+  Waiting: 'waiting',
+  Blocked: 'blocked',
+  Completed: 'completed',
+} as const);
+
+export type WorkflowDiagramStatus = ValueOf<typeof WorkflowDiagramStatus>;
+
+const workflowDiagramChildKindShape = {
+  activity: true,
+  watch: true,
+  'watch-gate': true,
+  reactor: true,
+};
+const workflowDiagramChildKinds = Object.keys(workflowDiagramChildKindShape);
+
+export const WorkflowDiagramChildKind = {
+  Activity: workflowDiagramChildKinds[0]!,
+  Watch: workflowDiagramChildKinds[1]!,
+  WatchGate: workflowDiagramChildKinds[2]!,
+  Reactor: workflowDiagramChildKinds[3]!,
+} as const;
+
+export type WorkflowDiagramChildKind = ValueOf<typeof WorkflowDiagramChildKind>;
 
 export interface WorkflowDiagramMetricsResponse {
   readonly runCount?: number;

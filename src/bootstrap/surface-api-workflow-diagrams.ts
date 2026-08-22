@@ -1,3 +1,4 @@
+import { ActivityOutcomeKind } from '../activities/index.js';
 import { agentTokenUsage, RunStatus, type RunView } from '../execution/index.js';
 import {
   TransitionTargetKind,
@@ -7,6 +8,8 @@ import {
 } from '../orchestration/index.js';
 import {
   fromWorkItemKey,
+  WorkflowDiagramChildKind,
+  WorkflowDiagramStatus,
   type ApiApplications,
   type WorkflowDiagramChildResponse,
   type WorkflowDiagramMetricsResponse,
@@ -74,7 +77,7 @@ export function presentWorkflowDiagram(
         children.push({
           id: childId,
           label: resourceTransitionLabel(reactor.event, reactor.where),
-          kind: 'reactor',
+          kind: WorkflowDiagramChildKind.Reactor,
         });
         if (reactor.target.kind === TransitionTargetKind.Stage)
           transitions.push({
@@ -146,7 +149,7 @@ function presentActivity(
   return {
     id: `${stageId}:activity`,
     label: title(activity),
-    kind: 'activity',
+    kind: WorkflowDiagramChildKind.Activity,
     ...runSummary(runs),
   };
 }
@@ -166,24 +169,28 @@ function presentWatch(
   return {
     id: watchChildId(stageId, watchId),
     label: title(watchId),
-    kind: 'watch-gate',
+    kind: WorkflowDiagramChildKind.WatchGate,
     ...(active === undefined && blocked === undefined
       ? {}
-      : { status: active === undefined ? 'blocked' : 'active' }),
+      : {
+          status:
+            active === undefined ? WorkflowDiagramStatus.Blocked : WorkflowDiagramStatus.Active,
+        }),
     ...runSummary(runs),
   };
 }
 
 function stageStatus(stageId: string, primary: WorkflowInstanceView) {
   if (primary.currentStage !== stageId) return {};
-  if (primary.status === WorkflowStatus.Completed) return { status: 'completed' as const };
-  if (primary.status === WorkflowStatus.Blocked) return { status: 'blocked' as const };
-  if (primary.status === WorkflowStatus.Waiting) return { status: 'waiting' as const };
-  return { status: 'active' as const };
+  if (primary.status === WorkflowStatus.Completed)
+    return { status: WorkflowDiagramStatus.Completed };
+  if (primary.status === WorkflowStatus.Blocked) return { status: WorkflowDiagramStatus.Blocked };
+  if (primary.status === WorkflowStatus.Waiting) return { status: WorkflowDiagramStatus.Waiting };
+  return { status: WorkflowDiagramStatus.Active };
 }
 
 function runSummary(runs: readonly RunView[]): WorkflowDiagramMetricsResponse & {
-  readonly status?: 'active' | 'blocked' | 'completed';
+  readonly status?: WorkflowDiagramStatus;
   readonly lastOutcome?: string;
   readonly activeRuns?: readonly {
     readonly runId: string;
@@ -235,15 +242,15 @@ function runSummary(runs: readonly RunView[]): WorkflowDiagramMetricsResponse & 
     runCount: runs.length,
     ...usage,
     ...(activeRuns.length > 0
-      ? { status: 'active' as const, activeRuns }
+      ? { status: WorkflowDiagramStatus.Active, activeRuns }
       : latest.status === RunStatus.Succeeded
         ? {
-            status: 'completed' as const,
+            status: WorkflowDiagramStatus.Completed,
             ...(latest.agent?.outcome === undefined
               ? {}
               : { lastOutcome: latest.agent.outcome.toLowerCase() }),
           }
-        : { status: 'blocked' as const, lastOutcome: 'failed' }),
+        : { status: WorkflowDiagramStatus.Blocked, lastOutcome: ActivityOutcomeKind.Failed }),
   };
 }
 

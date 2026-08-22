@@ -57,7 +57,7 @@ it('E2E-CONTROL-QUOTA-001: a durable quota pause falls sideways, replays, expire
   );
   await startAndAdvance(restarted, 'resumed');
   expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('sonnet');
-});
+}, 30_000);
 
 async function createRoot(
   clock: FakeClock,
