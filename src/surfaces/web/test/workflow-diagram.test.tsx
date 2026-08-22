@@ -107,8 +107,7 @@ describe('mockWorkItemWorkflowDiagram', () => {
 describe('WorkflowDiagramView', () => {
   afterEach(cleanup);
 
-  it('renders an accessible, expandable workflow graph with stage and run detail', async () => {
-    const user = userEvent.setup();
+  it('renders every child inside its desktop stage card without collapse controls', async () => {
     render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
 
     const diagram = screen.getByRole('region', {
@@ -121,6 +120,41 @@ describe('WorkflowDiagramView', () => {
     expect(within(refine).getByText('codex')).toBeTruthy();
     expect(within(refine).getByText(/running/)).toBeTruthy();
     expect((await within(diagram).findAllByText('ready')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Deploy release')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^(Expand|Collapse) / })).toBeNull();
+  });
+
+  it('uses semantic positioned labels and arrowheads for graph edges', async () => {
+    render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
+
+    const diagram = screen.getByRole('region', {
+      name: `Workflow ${mockWorkItemWorkflowDiagram.label}`,
+    });
+    const edgeLabel = await within(diagram).findByText('ready', { selector: 'span' });
+    expect(edgeLabel.className).toContain('edgeLabel');
+    expect(edgeLabel.getAttribute('style')).toMatch(/left: .*px/);
+    expect(edgeLabel.getAttribute('style')).not.toContain('-9999px');
+    expect(diagram.querySelector('marker#workflow-arrow')).toBeTruthy();
+    expect(diagram.querySelector('path[marker-end="url(#workflow-arrow)"]')).toBeTruthy();
+  });
+
+  it('only exposes collapse controls on mobile and initially expands active stages', async () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({
+        matches: true,
+        media: '(max-width: 42rem)',
+        onchange: null,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }),
+    });
+    const user = userEvent.setup();
+    render(<WorkflowDiagramView diagram={mockWorkItemWorkflowDiagram} />);
 
     expect(
       screen.getByRole('button', { name: 'Collapse Refine' }).getAttribute('aria-expanded'),
@@ -135,5 +169,7 @@ describe('WorkflowDiagramView', () => {
       screen.getByRole('button', { name: 'Collapse Deploy' }).getAttribute('aria-expanded'),
     ).toBe('true');
     expect(screen.getByText('Deploy release')).toBeTruthy();
+
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
   });
 });

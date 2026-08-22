@@ -12,6 +12,7 @@
   height: var(--graph-height);
   overflow: visible;
   pointer-events: none;
+  z-index: 0;
 }
 
 .edges path {
@@ -20,34 +21,40 @@
   stroke-width: 1.5;
 }
 
-.edges text {
-  fill: var(--muted, #64748b);
-  font-size: 12px;
-  text-anchor: middle;
+.edges marker path {
+  fill: var(--border-strong);
 }
 
 .edgeLabel {
   position: absolute;
-  left: -9999px;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  line-height: 1.2;
+  pointer-events: none;
 }
 
 .stage {
   position: absolute;
-}
-
-.stageCard,
-.childCard {
+  z-index: 1;
   border: 1px solid var(--border, #cbd5e1);
   border-radius: 0.5rem;
-  background: var(--surface, #fff);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+  border-left: 3px solid var(--border-strong);
+  background: var(--surface-card);
+  overflow: hidden;
 }
 
 .stageCard {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.5rem;
-  padding: 0.75rem;
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .stageCard button {
@@ -73,13 +80,16 @@
 .children {
   display: grid;
   gap: 0.5rem;
-  margin-top: 0.5rem;
+  padding: 0.5rem;
 }
 
 .childCard {
   display: grid;
   gap: 0.45rem;
-  padding: 0.65rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
   font-size: 0.875rem;
 }
 
@@ -90,8 +100,10 @@
 }
 
 .activeRun {
-  padding-top: 0.35rem;
-  border-top: 1px solid var(--border, #cbd5e1);
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
 }
 
 .srOnly {

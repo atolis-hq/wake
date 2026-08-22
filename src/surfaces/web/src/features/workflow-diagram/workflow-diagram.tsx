@@ -115,6 +115,28 @@ function edgePath(points: readonly { readonly x: number; readonly y: number }[])
   return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
 }
 
+function edgeLabelPoint(points: readonly { readonly x: number; readonly y: number }[]) {
+  if (points.length === 0) return undefined;
+  if (points.length === 1) return points[0];
+
+  const lengths = points
+    .slice(1)
+    .map((point, index) => Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y));
+  const halfLength = lengths.reduce((total, length) => total + length, 0) / 2;
+  let travelled = 0;
+  for (let index = 0; index < lengths.length; index += 1) {
+    const length = lengths[index]!;
+    if (travelled + length >= halfLength) {
+      const start = points[index]!;
+      const end = points[index + 1]!;
+      const ratio = (halfLength - travelled) / length;
+      return { x: start.x + (end.x - start.x) * ratio, y: start.y + (end.y - start.y) * ratio };
+    }
+    travelled += length;
+  }
+  return points.at(-1);
+}
+
 export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDiagram }) {
   const direction = useLayoutDirection();
   const layout = useDiagramLayout(diagram, direction);
@@ -140,28 +162,41 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
           viewBox={`0 0 ${width} ${height}`}
           preserveAspectRatio="none"
         >
+          <defs>
+            <marker
+              id="workflow-arrow"
+              markerWidth="8"
+              markerHeight="8"
+              refX="7"
+              refY="4"
+              orient="auto"
+            >
+              <path d="M 0 0 L 8 4 L 0 8 z" />
+            </marker>
+          </defs>
           {layout.edges.map((edge) => {
-            const midpoint = edge.points[Math.floor(edge.points.length / 2)];
             return (
               <g key={edge.id}>
-                <path d={edgePath(edge.points)} />
-                {midpoint === undefined ? null : (
-                  <text x={midpoint.x} y={midpoint.y - 8}>
-                    {edge.label}
-                  </text>
-                )}
+                <path d={edgePath(edge.points)} markerEnd="url(#workflow-arrow)" />
               </g>
             );
           })}
         </svg>
-        {layout.edges.map((edge) => (
-          <span className={styles.edgeLabel} key={`${edge.id}-label`}>
-            {edge.label}
-          </span>
-        ))}
+        {layout.edges.map((edge) => {
+          const point = edgeLabelPoint(edge.points);
+          return point === undefined || edge.label.length === 0 ? null : (
+            <span
+              className={styles.edgeLabel}
+              key={`${edge.id}-label`}
+              style={{ left: `${point.x}px`, top: `${point.y}px` }}
+            >
+              {edge.label}
+            </span>
+          );
+        })}
         {diagram.stages.map((stage, index) => {
           const node = nodeById.get(stage.id);
-          const isExpanded = expanded.has(stage.id);
+          const isExpanded = direction === 'RIGHT' || expanded.has(stage.id);
           const fallbackX = direction === 'RIGHT' ? index * 352 : 18;
           const fallbackY = direction === 'RIGHT' ? 20 : index * 172;
           return (
@@ -174,6 +209,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                 left: `${node?.x ?? fallbackX}px`,
                 top: `${node?.y ?? fallbackY}px`,
                 width: `${node?.width ?? 264}px`,
+                height: `${node?.height ?? 104}px`,
               }}
             >
               <div className={styles.stageCard}>
@@ -190,21 +226,23 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                     )}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  aria-expanded={isExpanded}
-                  aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${stage.label}`}
-                  onClick={() =>
-                    setExpanded((current) => {
-                      const next = new Set(current);
-                      if (next.has(stage.id)) next.delete(stage.id);
-                      else next.add(stage.id);
-                      return next;
-                    })
-                  }
-                >
-                  {isExpanded ? '−' : '+'}
-                </button>
+                {direction === 'DOWN' ? (
+                  <button
+                    type="button"
+                    aria-expanded={isExpanded}
+                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${stage.label}`}
+                    onClick={() =>
+                      setExpanded((current) => {
+                        const next = new Set(current);
+                        if (next.has(stage.id)) next.delete(stage.id);
+                        else next.add(stage.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {isExpanded ? '−' : '+'}
+                  </button>
+                ) : null}
                 <div className={styles.stageTotals}>
                   <span>{stage.runCount === undefined ? 'no runs' : `${stage.runCount} runs`}</span>
                   {stage.totalDurationMs === undefined ? null : (

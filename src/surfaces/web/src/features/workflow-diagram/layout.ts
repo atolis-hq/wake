@@ -34,7 +34,19 @@ export interface WorkflowDiagramLayout {
 }
 
 const stageWidth = 264;
-const stageHeight = 116;
+const stageHeaderHeight = 104;
+const stageChildHeight = 112;
+const stageChildGap = 8;
+
+function stageHeight(childCount: number): number {
+  if (childCount === 0) return stageHeaderHeight;
+  return (
+    stageHeaderHeight +
+    stageChildGap +
+    childCount * stageChildHeight +
+    (childCount - 1) * stageChildGap
+  );
+}
 
 export async function layoutWorkflowDiagram(
   diagram: WorkflowDiagram,
@@ -51,7 +63,7 @@ export async function layoutWorkflowDiagram(
     children: diagram.stages.map((stage) => ({
       id: stage.id,
       width: stageWidth,
-      height: stageHeight,
+      height: stageHeight(stage.children.length),
     })),
     edges: diagram.transitions.map((transition, index) => ({
       id: `${transition.from}-${transition.to}-${index}`,
