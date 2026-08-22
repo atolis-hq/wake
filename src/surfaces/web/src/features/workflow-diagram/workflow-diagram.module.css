@@ -89,6 +89,11 @@
   padding: 0.35rem;
 }
 
+.childStatusDot {
+  align-self: start;
+  margin-top: 0.22rem;
+}
+
 .metrics,
 .childCard .metrics {
   margin-top: 0.2rem;

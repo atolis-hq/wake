@@ -178,7 +178,43 @@ function ChildCard({ child }: { readonly child: WorkflowDiagramChild }) {
 }
 
 function edgePath(points: readonly { readonly x: number; readonly y: number }[]): string {
-  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+  if (points.length < 2) return '';
+  const radius = 10;
+  let path = `M ${points[0]!.x} ${points[0]!.y}`;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1]!;
+    const current = points[index]!;
+    const next = points[index + 1];
+    if (next === undefined) {
+      path += ` L ${current.x} ${current.y}`;
+      continue;
+    }
+    const incoming = Math.min(
+      radius,
+      Math.hypot(current.x - previous.x, current.y - previous.y) / 2,
+    );
+    const outgoing = Math.min(radius, Math.hypot(next.x - current.x, next.y - current.y) / 2);
+    const before = {
+      x:
+        current.x +
+        ((previous.x - current.x) * incoming) /
+          Math.hypot(previous.x - current.x, previous.y - current.y),
+      y:
+        current.y +
+        ((previous.y - current.y) * incoming) /
+          Math.hypot(previous.x - current.x, previous.y - current.y),
+    };
+    const after = {
+      x:
+        current.x +
+        ((next.x - current.x) * outgoing) / Math.hypot(next.x - current.x, next.y - current.y),
+      y:
+        current.y +
+        ((next.y - current.y) * outgoing) / Math.hypot(next.x - current.x, next.y - current.y),
+    };
+    path += ` L ${before.x} ${before.y} Q ${current.x} ${current.y} ${after.x} ${after.y}`;
+  }
+  return path;
 }
 
 function transitionPoints(
@@ -205,7 +241,24 @@ function transitionPoints(
       direction === 'RIGHT'
         ? { x: targetAnchor.left, y: (targetAnchor.top + targetAnchor.bottom) / 2 }
         : { x: (targetAnchor.left + targetAnchor.right) / 2, y: targetAnchor.top };
-    return [sourcePoint, ...edge.points.slice(1, -1), targetPoint];
+    if (direction === 'RIGHT') {
+      if (sourcePoint.y === targetPoint.y) return [sourcePoint, targetPoint];
+      const middleX = (sourcePoint.x + targetPoint.x) / 2;
+      return [
+        sourcePoint,
+        { x: middleX, y: sourcePoint.y },
+        { x: middleX, y: targetPoint.y },
+        targetPoint,
+      ];
+    }
+    if (sourcePoint.x === targetPoint.x) return [sourcePoint, targetPoint];
+    const middleY = (sourcePoint.y + targetPoint.y) / 2;
+    return [
+      sourcePoint,
+      { x: sourcePoint.x, y: middleY },
+      { x: targetPoint.x, y: middleY },
+      targetPoint,
+    ];
   }
   if (edge.fromChildId === undefined || source === undefined || childIndex < 0) return edge.points;
 

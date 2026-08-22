@@ -80,7 +80,9 @@ export async function layoutWorkflowDiagram(
   const nodes = (graph.children ?? []).map((node) => ({
     id: node.id,
     x: node.x ?? 0,
-    y: node.y ?? 0,
+    // The desktop visual is a single left-to-right workflow lane. Child-card
+    // routes may vary vertically, but stage cards always retain a shared top.
+    y: direction === 'RIGHT' ? 0 : (node.y ?? 0),
     width: node.width ?? stageWidth,
     height: node.height ?? stageHeight(0),
   }));
