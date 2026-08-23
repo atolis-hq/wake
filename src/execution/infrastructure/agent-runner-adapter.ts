@@ -3,12 +3,20 @@ import { RunStatus } from '../contracts/vocabulary.js';
 
 export function parseAgentRunnerResponse(result: AgentRunnerResult): AgentRunResponse {
   const parsed = parseResult(result.output);
+  const outcome =
+    result.transport === RunStatus.Succeeded && result.unverifiedCompletionReason !== undefined
+      ? 'BLOCKED'
+      : result.transport === RunStatus.Succeeded
+        ? parsed.outcome
+        : 'FAILED';
   return {
-    outcome: result.transport === RunStatus.Succeeded ? parsed.outcome : 'FAILED',
+    outcome,
     displayBody:
-      result.transport === RunStatus.Succeeded
+      result.transport === RunStatus.Succeeded && result.unverifiedCompletionReason === undefined
         ? parsed.displayBody
-        : result.failure?.message || parsed.displayBody || 'Runner failed without a response.',
+        : result.unverifiedCompletionReason !== undefined
+          ? result.unverifiedCompletionReason
+          : result.failure?.message || parsed.displayBody || 'Runner failed without a response.',
     metadata: metadata(result),
   };
 }

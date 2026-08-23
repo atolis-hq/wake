@@ -81,6 +81,8 @@ export interface AgentRunnerResult {
       }
     | undefined;
   readonly failure?: { readonly kind: string; readonly message: string } | undefined;
+  /** Present only when Codex's own telemetry cannot verify a claimed completion. */
+  readonly unverifiedCompletionReason?: string | undefined;
 }
 
 export interface RunnerExecution {

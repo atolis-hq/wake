@@ -103,6 +103,8 @@ export interface AgentRunnerPort {
           }
         | undefined;
       readonly failure?: { readonly kind: string; readonly message: string } | undefined;
+      /** Present when the runner's native telemetry cannot verify completion. */
+      readonly unverifiedCompletionReason?: string | undefined;
     }>;
   }>;
 }
@@ -184,6 +186,7 @@ export interface ActivityExecutionContext {
         }
       | undefined;
     readonly failure?: { readonly kind: string; readonly message: string } | undefined;
+    readonly unverifiedCompletionReason?: string | undefined;
   }): Promise<void>;
 }
 

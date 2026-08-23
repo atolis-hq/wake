@@ -140,6 +140,11 @@ describe('target initialise root', () => {
     expect(dockerfile).toContain('cursor.com/install');
     expect(dockerfile).toContain('npm run build:docker');
     expect(dockerfile).toContain('dist/src/main.js');
+    expect(dockerfile).toContain('/etc/codex/requirements.toml');
+    expect(dockerfile).toContain('managed_dir = "/usr/local/lib/wake"');
+    expect(dockerfile).toContain('node /usr/local/lib/wake/codex-stop-hook.js');
+    expect(dockerfile).toContain('[features]');
+    expect(dockerfile).toContain('hooks = true');
   });
 
   it('points the source-mode Dockerfile entrypoint at the supervised sandbox-entrypoint command', async () => {
