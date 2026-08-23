@@ -63,7 +63,7 @@ export class ProjectionRunner {
       latestGlobalPosition <= this.caughtUpToGlobalPosition
     ) {
       this.caughtUpRevision = observedRevision;
-      this.caughtUpAt = checkedAt;
+      this.caughtUpAt = this.now();
       return 0;
     }
     let failed = false;
@@ -87,7 +87,7 @@ export class ProjectionRunner {
       // Keep the revision from before the read so a concurrent append is
       // never mistaken for content already included in this pass.
       this.caughtUpRevision = observedRevision;
-      this.caughtUpAt = checkedAt;
+      this.caughtUpAt = this.now();
     }
     return counts.reduce((total, count) => total + count, 0);
   }

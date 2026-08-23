@@ -134,6 +134,48 @@ it('checks again on the fallback when a notification is missed', async () => {
   expect(readAllSpy).toHaveBeenCalledTimes(1);
 });
 
+it('starts the fallback window after a slow projection pass completes', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const stream: EntityRef<'counter', 'slow'> = { kind: 'counter', id: 'slow' };
+  await journal.append(stream, 0, [
+    createEventDraft({
+      eventId: 'slow-event',
+      eventType: 'counted',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'cause',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: {},
+    }),
+  ]);
+  let now = 0;
+  const runner = new ProjectionRunner(
+    journal,
+    new InMemoryProjectionStore(),
+    new InMemoryCheckpointStore(),
+    [
+      {
+        ...projectionDefinition('slow-counts'),
+        project: (previous: number) => {
+          now = JOURNAL_CHANGE_FALLBACK_MS;
+          return previous + 1;
+        },
+      },
+    ],
+    undefined,
+    () => now,
+  );
+  const readAllSpy = vi.spyOn(journal, 'readAll');
+
+  await runner.runRegisteredOnce();
+  readAllSpy.mockClear();
+  await runner.runRegisteredOnce();
+
+  expect(readAllSpy).not.toHaveBeenCalled();
+});
+
 it('retries a failed projection pass without another notification', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const stream: EntityRef<'counter', 'retry'> = { kind: 'counter', id: 'retry' };

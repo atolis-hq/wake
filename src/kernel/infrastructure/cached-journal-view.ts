@@ -36,7 +36,7 @@ export function cachedJournalView<Value>(
       const value = await derive(await journal.readAll(0));
       // Retain the revision observed before the read. An append that races
       // this derivation must force one more pass instead of being hidden.
-      cache = { observedRevision, checkedAt, value };
+      cache = { observedRevision, checkedAt: now(), value };
       return value;
     },
   };

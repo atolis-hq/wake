@@ -98,3 +98,18 @@ it('refreshes on the fallback when an in-process notification is missed', async 
   expect(await view.get()).toBe(0);
   expect(derive).toHaveBeenCalledTimes(2);
 });
+
+it('starts the fallback window after a slow derivation completes', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  let now = 0;
+  const derive = vi.fn((events: readonly unknown[]) => {
+    now = JOURNAL_CHANGE_FALLBACK_MS;
+    return events.length;
+  });
+  const view = cachedJournalView(journal, derive, () => now);
+
+  await view.get();
+  await view.get();
+
+  expect(derive).toHaveBeenCalledTimes(1);
+});
