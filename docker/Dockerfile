@@ -53,6 +53,22 @@ COPY src/ src/
 ARG WAKE_BUILD_TAG
 RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:docker
 
+RUN mkdir -p /etc/codex /usr/local/lib/wake \
+  && cp /app/dist/src/execution/infrastructure/codex-stop-hook.js /usr/local/lib/wake/codex-stop-hook.js \
+  && printf '%s\n' \
+    '[features]' \
+    'hooks = true' \
+    '' \
+    '[hooks]' \
+    'managed_dir = "/usr/local/lib/wake"' \
+    '' \
+    '[[hooks.Stop]]' \
+    '[[hooks.Stop.hooks]]' \
+    'type = "command"' \
+    'command = "node /usr/local/lib/wake/codex-stop-hook.js"' \
+    'timeout = 10' \
+    > /etc/codex/requirements.toml
+
 USER root
 WORKDIR /home/wake
 

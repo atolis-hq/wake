@@ -1,6 +1,7 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
-import { WorkspaceMode } from '../../contracts/vocabulary.js';
+import { RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
+import { verifyCodexSession } from '../codex-stop-hook.js';
 import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
 
 // Deliberately narrow: only genuine provider usage/rate-limit phrasing.
@@ -39,8 +40,12 @@ function extractCodexErrorMessage(stdout: string): string | undefined {
   return undefined;
 }
 
-export function createCodexRunner(options: CliRunnerOptions = {}): Runner {
-  return cliRunner(
+export interface CodexRunnerOptions extends CliRunnerOptions {
+  readonly codexHome?: string;
+}
+
+export function createCodexRunner(options: CodexRunnerOptions = {}): Runner {
+  const runner = cliRunner(
     'codex',
     options.command ?? 'codex',
     (request: RunnerRequest) => codexCommandArgs(request, options.args, options),
@@ -52,6 +57,25 @@ export function createCodexRunner(options: CliRunnerOptions = {}): Runner {
       supportsSessionResume: true,
     },
   );
+  return {
+    supportsSessionResume: true,
+    async start(request, signal) {
+      const execution = await runner.start(request, signal);
+      return {
+        ...execution,
+        result: execution.result.then(async (result) => {
+          if (result.transport !== RunStatus.Succeeded) return result;
+          const decision = await verifyCodexSession(
+            options.codexHome ?? process.env.CODEX_HOME,
+            result.sessionId,
+          );
+          return decision.decision === undefined
+            ? result
+            : { ...result, unverifiedCompletionReason: decision.reason };
+        }),
+      };
+    },
+  };
 }
 
 export function codexCommandArgs(

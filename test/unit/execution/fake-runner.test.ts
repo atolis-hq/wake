@@ -6,6 +6,20 @@ import {
 } from '../../../src/execution/index.js';
 import { parseAgentRunnerResponse } from '../../../src/execution/infrastructure/agent-runner-adapter.js';
 
+it('downgrades a claimed done result when the Codex adapter cannot verify completion', () => {
+  expect(
+    parseAgentRunnerResponse({
+      transport: RunStatus.Succeeded,
+      output: 'DONE',
+      runner: 'codex',
+      unverifiedCompletionReason: 'unverified: could not confirm background command completion',
+    }),
+  ).toMatchObject({
+    outcome: 'BLOCKED',
+    displayBody: 'unverified: could not confirm background command completion',
+  });
+});
+
 it('parses a legacy wake-result envelope into a typed response without retaining protocol output', () => {
   expect(
     parseAgentRunnerResponse({

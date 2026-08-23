@@ -404,6 +404,11 @@ function contextField(
 function agentOutcome(
   result: Awaited<Awaited<ReturnType<AgentRunnerPort['start']>>['result']>,
 ): AgentActivityOutcome {
+  if (result.unverifiedCompletionReason !== undefined)
+    return {
+      kind: ActivityOutcomeKind.Blocked,
+      data: { status: 'BLOCKED', unverifiedCompletionReason: result.unverifiedCompletionReason },
+    };
   if (result.transport === ActivityRunnerTransportStatus.Ambiguous)
     return {
       kind: ActivityOutcomeKind.Blocked,

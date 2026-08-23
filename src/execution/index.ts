@@ -44,6 +44,8 @@ export * from './infrastructure/runners/claude.js';
 
 export * from './infrastructure/runners/codex.js';
 
+export * from './infrastructure/codex-stop-hook.js';
+
 export * from './infrastructure/runners/command.js';
 
 export * from './infrastructure/runners/cursor.js';

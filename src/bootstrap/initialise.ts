@@ -378,6 +378,22 @@ COPY . .
 ARG WAKE_BUILD_TAG
 RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:docker
 
+RUN mkdir -p /etc/codex /usr/local/lib/wake \\
+  && cp /app/dist/src/execution/infrastructure/codex-stop-hook.js /usr/local/lib/wake/codex-stop-hook.js \\
+  && printf '%s\\n' \\
+    '[features]' \\
+    'hooks = true' \\
+    '' \\
+    '[hooks]' \\
+    'managed_dir = "/usr/local/lib/wake"' \\
+    '' \\
+    '[[hooks.Stop]]' \\
+    '[[hooks.Stop.hooks]]' \\
+    'type = "command"' \\
+    'command = "node /usr/local/lib/wake/codex-stop-hook.js"' \\
+    'timeout = 10' \\
+    > /etc/codex/requirements.toml
+
 USER root
 WORKDIR /home/wake
 
@@ -425,6 +441,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\
 ARG WAKE_VERSION=0.1.0
 RUN --mount=type=cache,target=/root/.npm \\
   npm install -g @anthropic-ai/claude-code @openai/codex "@atolis-hq/wake@\${WAKE_VERSION}"
+
+RUN mkdir -p /etc/codex /usr/local/lib/wake \\
+  && cp /usr/local/lib/node_modules/@atolis-hq/wake/dist/src/execution/infrastructure/codex-stop-hook.js /usr/local/lib/wake/codex-stop-hook.js \\
+  && printf '%s\\n' \\
+    '[features]' \\
+    'hooks = true' \\
+    '' \\
+    '[hooks]' \\
+    'managed_dir = "/usr/local/lib/wake"' \\
+    '' \\
+    '[[hooks.Stop]]' \\
+    '[[hooks.Stop.hooks]]' \\
+    'type = "command"' \\
+    'command = "node /usr/local/lib/wake/codex-stop-hook.js"' \\
+    'timeout = 10' \\
+    > /etc/codex/requirements.toml
 
 RUN useradd --create-home --shell /bin/bash wake \\
   && mkdir -p /home/wake/.codex-runtime \\

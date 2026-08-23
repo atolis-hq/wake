@@ -580,6 +580,36 @@ describe('agent activity template context', () => {
 
     expect(outcome).toEqual({ kind: 'done', data: { status: 'DONE' } });
   });
+
+  it('blocks an unverified runner completion instead of accepting its reported sentinel', async () => {
+    const activity = createAgentActivity();
+
+    const outcome = await activity.execute(invocation({ prompt: 'Direct prompt' }), {
+      signal: new AbortController().signal,
+      occurredAt: '2026-08-08T00:00:00.000Z',
+      runner: {
+        async start() {
+          return {
+            result: Promise.resolve({
+              transport: 'succeeded' as const,
+              output: 'DONE',
+              unverifiedCompletionReason:
+                'unverified: could not confirm background command completion',
+            }),
+          };
+        },
+      },
+      async reportExternalExecution() {},
+    });
+
+    expect(outcome).toEqual({
+      kind: 'blocked',
+      data: {
+        status: 'BLOCKED',
+        unverifiedCompletionReason: 'unverified: could not confirm background command completion',
+      },
+    });
+  });
 });
 
 async function execute(
