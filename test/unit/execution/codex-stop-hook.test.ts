@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { inspectCodexTranscript, verifyCodexSession } from '../../../src/execution/index.js';
+import {
+  inspectCodexTranscript,
+  maxLiveHookRetryMs,
+  verifyCodexSession,
+} from '../../../src/execution/index.js';
 
 describe('Codex Stop hook telemetry guard', () => {
   it('blocks the real structured exec/wait sequence when its final managed cell is unresolved', () => {
@@ -48,6 +52,181 @@ describe('Codex Stop hook telemetry guard', () => {
     expect(inspectCodexTranscript(transcript)).toEqual({
       decision: 'block',
       reason: expect.stringContaining('Codex cell 42 has no terminal exit_code'),
+    });
+  });
+
+  it('ignores a cell left unresolved in an earlier process before a resume boundary', () => {
+    const staleSegment = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'function_call', name: 'exec', call_id: 'exec-stale', arguments: '{}' },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-stale',
+          output: 'Script running with cell ID 30\nWall time 11.0 seconds\nOutput:\n',
+        },
+      }),
+    ];
+    const resumeBoundary = JSON.stringify({
+      type: 'turn_context',
+      payload: { turn_id: 'turn-2' },
+    });
+    const currentSegment = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'wait-stale',
+          arguments: '{"cell_id":"30"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'wait-stale',
+          output: [
+            {
+              type: 'input_text',
+              text: 'Script failed\nWall time 0.0 seconds\nOutput:\nScript error:\nexec cell 30 not found',
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'function_call', name: 'exec', call_id: 'exec-2', arguments: '{}' },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'custom_tool_call_output', call_id: 'exec-2', output: '{"exit_code":0}' },
+      }),
+    ];
+    const transcript = [...staleSegment, resumeBoundary, ...currentSegment].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({});
+  });
+
+  it('does not treat polling a persistent interactive session as an unresolved background job', () => {
+    const transcript = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'exec-1',
+          input:
+            'const r = load("web_checks");\nconst next = await tools.write_stdin({session_id:r.session_id,chars:"",yield_time_ms:30000,max_output_tokens:20000});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-1',
+          output: 'Script running with cell ID 5\nWall time 11.0 seconds\nOutput:\n',
+        },
+      }),
+      JSON.stringify({ type: 'task_complete' }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({});
+  });
+
+  it('still blocks a genuine exec_command background job left unresolved', () => {
+    const transcript = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'exec-1',
+          input: 'const r = await tools.exec_command({cmd:"npm run verify",workdir:"/wake"});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-1',
+          output: 'Script running with cell ID 5\nWall time 11.0 seconds\nOutput:\n',
+        },
+      }),
+      JSON.stringify({ type: 'task_complete' }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('Codex cell 5 has no terminal exit_code'),
+    });
+  });
+
+  function execCell(cellId: string) {
+    return [
+      JSON.stringify({
+        timestamp: '2026-08-23T00:00:00.000Z',
+        type: 'response_item',
+        payload: { type: 'function_call', name: 'exec', call_id: 'exec-1', arguments: '{}' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-08-23T00:00:00.500Z',
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-1',
+          output: `Script running with cell ID ${cellId}\nWall time 11.0 seconds\nOutput:\n`,
+        },
+      }),
+    ];
+  }
+
+  function hookRetry(timestamp: string) {
+    return JSON.stringify({
+      timestamp,
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: '<hook_prompt hook_run_id="stop:0:x">unverified: ...</hook_prompt>',
+          },
+        ],
+      },
+    });
+  }
+
+  it('gives up forcing continuation once the elapsed-time backstop is reached, even if still unresolved', () => {
+    const overBackstop = new Date(
+      Date.parse('2026-08-23T00:00:01.000Z') + maxLiveHookRetryMs + 1,
+    ).toISOString();
+    const transcript = [
+      ...execCell('5'),
+      hookRetry('2026-08-23T00:00:01.000Z'),
+      hookRetry(overBackstop),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({});
+  });
+
+  it('still blocks while elapsed time is under the backstop', () => {
+    const underBackstop = new Date(
+      Date.parse('2026-08-23T00:00:01.000Z') + maxLiveHookRetryMs - 1000,
+    ).toISOString();
+    const transcript = [
+      ...execCell('5'),
+      hookRetry('2026-08-23T00:00:01.000Z'),
+      hookRetry(underBackstop),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('Codex cell 5 has no terminal exit_code'),
     });
   });
 
@@ -162,6 +341,116 @@ describe('Codex Stop hook telemetry guard', () => {
       reason: expect.stringMatching(
         /^caught by post-run verification: unverified: could not confirm background command completion from Codex structured telemetry: Codex cell 42/,
       ),
+    });
+  });
+
+  it('stops retrying a cell the runtime has already discarded, without treating it as resolved', () => {
+    const transcript = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'exec-1',
+          input: 'const r = await tools.exec_command({cmd:"npm run build",workdir:"/wake"});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-1',
+          output: 'Script running with cell ID 1\nWall time 17.0 seconds\nOutput:\n',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'wait-1',
+          arguments: '{"cell_id":"1"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'wait-1',
+          output: [
+            {
+              type: 'input_text',
+              text: 'Script failed\nWall time 0.0 seconds\nOutput:\nScript error:\nexec cell 1 not found',
+            },
+          ],
+        },
+      }),
+      JSON.stringify({ type: 'task_complete' }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({});
+  });
+
+  it('keeps retrying a different still-queryable cell even when another cell is confirmed discarded', () => {
+    const goneCell = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'function_call', name: 'exec', call_id: 'exec-1', arguments: '{}' },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-1',
+          output: 'Script running with cell ID 1\nWall time 17.0 seconds\nOutput:\n',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'wait-1',
+          arguments: '{"cell_id":"1"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'wait-1',
+          output: [
+            {
+              type: 'input_text',
+              text: 'Script failed\nWall time 0.0 seconds\nOutput:\nScript error:\nexec cell 1 not found',
+            },
+          ],
+        },
+      }),
+    ];
+    const stillPendingCell = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'function_call', name: 'exec', call_id: 'exec-2', arguments: '{}' },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-2',
+          output: 'Script running with cell ID 2\nWall time 11.0 seconds\nOutput:\n',
+        },
+      }),
+    ];
+    const transcript = [
+      ...goneCell,
+      ...stillPendingCell,
+      JSON.stringify({ type: 'task_complete' }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('Codex cell 2 has no terminal exit_code'),
     });
   });
 });
