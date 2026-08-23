@@ -2,6 +2,7 @@ import {
   createEventDraft,
   EventActorKind,
   EventSourceKind,
+  WrongExpectedSequenceError,
   type Clock,
 } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
@@ -74,20 +75,28 @@ export async function requestCancellation(
   reason: NonNullable<RunView['cancellation']>['reason'],
   active: ReadonlyMap<string, AbortController>,
 ) {
-  const loaded = await repository.load(currentRunId);
-  const run = requireActiveRun(loaded.view);
-  const requestedAt = clock.now().toISOString();
-  await repository.append(currentRunId, loaded.sequence, [
-    livenessEvent(
-      currentRunId,
-      run,
-      ExecutionEventType.RunCancellationRequested,
-      { requestedAt, reason },
-      requestedAt,
-    ),
-  ]);
-  active.get(currentRunId)?.abort(reason);
-  return (await repository.load(currentRunId)).view!;
+  while (true) {
+    const loaded = await repository.load(currentRunId);
+    const run = requireActiveRun(loaded.view);
+    if (run.cancellation !== undefined) return run;
+    const requestedAt = clock.now().toISOString();
+    try {
+      await repository.append(currentRunId, loaded.sequence, [
+        livenessEvent(
+          currentRunId,
+          run,
+          ExecutionEventType.RunCancellationRequested,
+          { requestedAt, reason },
+          requestedAt,
+        ),
+      ]);
+    } catch (error) {
+      if (error instanceof WrongExpectedSequenceError) continue;
+      throw error;
+    }
+    active.get(currentRunId)?.abort(reason);
+    return (await repository.load(currentRunId)).view!;
+  }
 }
 
 export async function confirmCancellation(

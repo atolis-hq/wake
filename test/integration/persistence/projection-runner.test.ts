@@ -1,5 +1,9 @@
 import { expect, it, vi } from 'vitest';
-import { createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
+import {
+  createEventDraft,
+  JOURNAL_CHANGE_FALLBACK_MS,
+  type EntityRef,
+} from '../../../src/kernel/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -107,6 +111,53 @@ it('reads the journal again after an append notification', async () => {
   expect(await runner.runRegisteredOnce()).toBe(1);
 
   expect(readAllSpy).toHaveBeenCalledTimes(1);
+});
+
+it('checks again on the fallback when a notification is missed', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  let now = 0;
+  const runner = new ProjectionRunner(
+    journal,
+    new InMemoryProjectionStore(),
+    new InMemoryCheckpointStore(),
+    [projectionDefinition('fallback-counts')],
+    undefined,
+    () => now,
+  );
+  const readAllSpy = vi.spyOn(journal, 'readAll');
+
+  await runner.runRegisteredOnce();
+  readAllSpy.mockClear();
+  now = JOURNAL_CHANGE_FALLBACK_MS;
+  await runner.runRegisteredOnce();
+
+  expect(readAllSpy).toHaveBeenCalledTimes(1);
+});
+
+it('retries a failed projection pass without another notification', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const stream: EntityRef<'counter', 'retry'> = { kind: 'counter', id: 'retry' };
+  await journal.append(stream, 0, [
+    createEventDraft({
+      eventId: 'retry-event',
+      eventType: 'counted',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'cause',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: {},
+    }),
+  ]);
+  const projections = new FailOnceProjectionStore();
+  const runner = new ProjectionRunner(journal, projections, new InMemoryCheckpointStore(), [
+    projectionDefinition('retry-counts'),
+  ]);
+
+  await expect(runner.runRegisteredOnce()).rejects.toThrow('injected projection failure');
+  expect(await runner.runRegisteredOnce()).toBe(1);
+  expect(projections.readAttempts).toBe(2);
 });
 
 it('keeps draining a backlog larger than the batch limit across repeat calls', async () => {
@@ -319,6 +370,16 @@ class FailingSiblingProjectionStore extends InMemoryProjectionStore {
 
   releaseFirstSlowWrite() {
     this.firstSlowWriteRelease?.();
+  }
+}
+
+class FailOnceProjectionStore extends InMemoryProjectionStore {
+  readAttempts = 0;
+
+  override async read<Value>(namespace: string, key: string) {
+    this.readAttempts += 1;
+    if (this.readAttempts === 1) throw new Error('injected projection failure');
+    return super.read<Value>(namespace, key);
   }
 }
 
