@@ -129,7 +129,9 @@ describe('Codex Stop hook telemetry guard', () => {
   it('fails closed when the post-run fallback cannot locate session telemetry', async () => {
     await expect(verifyCodexSession(undefined, 'session-1')).resolves.toMatchObject({
       decision: 'block',
-      reason: expect.stringContaining('could not locate Codex structured telemetry'),
+      reason: expect.stringMatching(
+        /^caught by post-run verification: unverified: could not confirm background command completion from Codex structured telemetry: could not locate Codex structured telemetry$/,
+      ),
     });
   });
 
@@ -157,7 +159,9 @@ describe('Codex Stop hook telemetry guard', () => {
 
     await expect(verifyCodexSession(home, 'session-1')).resolves.toMatchObject({
       decision: 'block',
-      reason: expect.stringContaining('Codex cell 42'),
+      reason: expect.stringMatching(
+        /^caught by post-run verification: unverified: could not confirm background command completion from Codex structured telemetry: Codex cell 42/,
+      ),
     });
   });
 });

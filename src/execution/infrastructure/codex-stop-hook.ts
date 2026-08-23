@@ -98,10 +98,11 @@ export async function verifyCodexSession(
   sessionId: string | undefined,
 ): Promise<CodexStopHookDecision> {
   if (codexHome === undefined || sessionId === undefined)
-    return blocked('could not locate Codex structured telemetry');
+    return postRunBlocked('could not locate Codex structured telemetry');
   const transcriptPath = await transcriptForSession(join(codexHome, 'sessions'), sessionId);
-  if (transcriptPath === undefined) return blocked('could not locate Codex structured telemetry');
-  return runCodexStopHook({ transcript_path: transcriptPath });
+  if (transcriptPath === undefined)
+    return postRunBlocked('could not locate Codex structured telemetry');
+  return postRunDecision(await runCodexStopHook({ transcript_path: transcriptPath }));
 }
 
 async function transcriptForSession(
@@ -163,6 +164,16 @@ function cellArgument(value: unknown): { readonly cellId?: string } {
 
 function blocked(detail: string): CodexStopHookDecision {
   return { decision: 'block', reason: `${unverifiedCodexCompletionReason}: ${detail}` };
+}
+
+function postRunBlocked(detail: string): CodexStopHookDecision {
+  return postRunDecision(blocked(detail));
+}
+
+function postRunDecision(decision: CodexStopHookDecision): CodexStopHookDecision {
+  return decision.decision === 'block' && decision.reason !== undefined
+    ? { ...decision, reason: `caught by post-run verification: ${decision.reason}` }
+    : decision;
 }
 
 function parseJson(value: string): Record<string, unknown> | undefined {
