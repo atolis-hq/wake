@@ -2,8 +2,14 @@ import type { JournalChangeSignal } from '../contracts/journal-change-signal.js'
 
 export class InProcessJournalChangeSignal implements JournalChangeSignal {
   private waiters: Array<() => void> = [];
+  private currentRevision = 0;
+
+  revision(): number {
+    return this.currentRevision;
+  }
 
   notify(): void {
+    this.currentRevision += 1;
     const waiters = this.waiters;
     this.waiters = [];
     for (const resolve of waiters) resolve();

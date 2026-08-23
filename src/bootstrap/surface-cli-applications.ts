@@ -13,7 +13,7 @@ import {
   RunStatus,
   loadPromptTemplate,
 } from '../execution/index.js';
-import { EventActorKind, correlationId } from '../kernel/index.js';
+import { EventActorKind, JOURNAL_CHANGE_FALLBACK_MS, correlationId } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
   DockerProcessError,
@@ -94,7 +94,7 @@ export function createSurfaceCliApplications(
       // Genuine idle (no errors): wait for the journal to actually change.
       return consecutiveIdleTicks === 0
         ? Promise.resolve()
-        : root.journal.changeSignal.waitForChange(signal, JOURNAL_WAIT_FALLBACK_MS);
+        : root.journal.changeSignal.waitForChange(signal, JOURNAL_CHANGE_FALLBACK_MS);
     },
     reportResidentError('runner'),
   );
@@ -213,11 +213,6 @@ export function createSurfaceCliApplications(
   };
 }
 
-// Safety net for a missed in-process notify() or a cross-process writer the
-// EventEmitter can't see; a real append wakes waiters within milliseconds
-// regardless, so there's no operational reason to make this configurable.
-const JOURNAL_WAIT_FALLBACK_MS = 30_000;
-
 export async function runProjectionPump(
   root: Pick<CompositionRoot, 'projectionRunner' | 'journal'>,
   signal: AbortSignal,
@@ -230,7 +225,7 @@ export async function runProjectionPump(
         `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
-    await root.journal.changeSignal.waitForChange(signal, JOURNAL_WAIT_FALLBACK_MS);
+    await root.journal.changeSignal.waitForChange(signal, JOURNAL_CHANGE_FALLBACK_MS);
   }
 }
 

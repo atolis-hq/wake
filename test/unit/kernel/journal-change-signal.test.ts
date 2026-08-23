@@ -41,6 +41,15 @@ it('resolves as soon as notify() is called, before the fallback elapses', async 
   expect(resolved).toBe(true);
 });
 
+it('increments its revision for every notification', () => {
+  const changeSignal = new InProcessJournalChangeSignal();
+
+  expect(changeSignal.revision()).toBe(0);
+  changeSignal.notify();
+  changeSignal.notify();
+  expect(changeSignal.revision()).toBe(2);
+});
+
 it('resolves via the fallback timeout when notify() never fires', async () => {
   const changeSignal = new InProcessJournalChangeSignal();
   const controller = new AbortController();

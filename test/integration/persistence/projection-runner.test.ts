@@ -62,6 +62,53 @@ it('skips per-projection checkpoint reads on a repeat call when no new events la
   expect(loadSpy).not.toHaveBeenCalled();
 });
 
+it('does not read the journal again after catching up until it changes', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const runner = new ProjectionRunner(
+    journal,
+    new InMemoryProjectionStore(),
+    new InMemoryCheckpointStore(),
+    [projectionDefinition('unchanged-journal')],
+  );
+  const readAllSpy = vi.spyOn(journal, 'readAll');
+
+  await runner.runRegisteredOnce();
+  readAllSpy.mockClear();
+  await runner.runRegisteredOnce();
+
+  expect(readAllSpy).not.toHaveBeenCalled();
+});
+
+it('reads the journal again after an append notification', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const stream: EntityRef<'counter', 'notification'> = { kind: 'counter', id: 'notification' };
+  const runner = new ProjectionRunner(
+    journal,
+    new InMemoryProjectionStore(),
+    new InMemoryCheckpointStore(),
+    [projectionDefinition('notification-counts')],
+  );
+
+  await runner.runRegisteredOnce();
+  const readAllSpy = vi.spyOn(journal, 'readAll');
+  await journal.append(stream, 0, [
+    createEventDraft({
+      eventId: 'notification-event',
+      eventType: 'counted',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'cause',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: {},
+    }),
+  ]);
+  expect(await runner.runRegisteredOnce()).toBe(1);
+
+  expect(readAllSpy).toHaveBeenCalledTimes(1);
+});
+
 it('keeps draining a backlog larger than the batch limit across repeat calls', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const stream: EntityRef<'counter', 'two'> = { kind: 'counter', id: 'two' };
