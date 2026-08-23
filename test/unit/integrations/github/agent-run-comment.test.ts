@@ -39,4 +39,19 @@ describe('formatAgentRunComment', () => {
 
     expect(comment).toContain('**[Wake](https://wake.example.com)**');
   });
+
+  it('labels needs-clarification outcomes without changing the blocked label', () => {
+    const common = {
+      idempotencyKey: 'k4',
+      displayBody: 'Waiting for input.',
+      metadata: {},
+    };
+
+    expect(formatAgentRunComment({ ...common, outcome: 'NEEDS_CLARIFICATION' })).toContain(
+      '**Outcome:** \u{1F7E0} Needs clarification',
+    );
+    expect(formatAgentRunComment({ ...common, outcome: 'BLOCKED' })).toContain(
+      '**Outcome:** \u{1F7E0} Blocked',
+    );
+  });
 });
