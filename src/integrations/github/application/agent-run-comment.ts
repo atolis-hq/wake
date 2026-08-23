@@ -100,7 +100,7 @@ function outcome(value: AgentRunComment['outcome']) {
     REJECTED: '\u{1F534} Changes Requested',
     BLOCKED: '\u{1F7E0} Blocked',
     FAILED: '\u274C Failed',
-    NEEDS_CLARIFICATION: '\u{1F7E0} Blocked',
+    NEEDS_CLARIFICATION: '\u{1F7E0} Needs clarification',
   }[value];
 }
 
