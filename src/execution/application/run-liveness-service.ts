@@ -78,7 +78,10 @@ export async function requestCancellation(
   while (true) {
     const loaded = await repository.load(currentRunId);
     const run = requireActiveRun(loaded.view);
-    if (run.cancellation !== undefined) return run;
+    if (run.cancellation !== undefined) {
+      active.get(currentRunId)?.abort(reason);
+      return run;
+    }
     const requestedAt = clock.now().toISOString();
     try {
       await repository.append(currentRunId, loaded.sequence, [
