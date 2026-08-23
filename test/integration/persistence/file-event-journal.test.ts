@@ -214,6 +214,9 @@ it('uses the refreshed warm-cache stream index for ordered, isolated stream read
   await writer.append(workStream, 1, [draft(workStream, 'work-2')]);
 
   const reader = new FileEventJournal(root, clock);
+  // A full read, unlike the cold manifest path, populates the in-memory
+  // cache that the next stream read must refresh after an external append.
+  await reader.latestGlobalPosition();
   expect((await reader.readStream(workStream)).map((event) => event.eventId)).toEqual([
     'work-1',
     'work-2',
@@ -228,6 +231,15 @@ it('uses the refreshed warm-cache stream index for ordered, isolated stream read
     'run-1',
     'run-2',
   ]);
+
+  readFileMock.mockClear();
+  expect((await reader.readStream(workStream)).map((event) => event.eventId)).toEqual([
+    'work-1',
+    'work-2',
+  ]);
+  expect(readFileMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(
+    0,
+  );
 });
 
 it('coalesces concurrent reads on a cold cache into a single on-disk decode', async () => {

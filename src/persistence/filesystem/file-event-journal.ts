@@ -117,8 +117,12 @@ export class FileEventJournal implements EventJournal {
   async readStream(stream: EntityRef) {
     const streamKey = key(stream);
     const entries = await this.readCurrentEntries();
-    if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
-      return this.cached.eventsByStream.get(streamKey) ?? [];
+    if (this.cached !== undefined) {
+      if (sameEntries(this.cached.entries, entries))
+        return this.cached.eventsByStream.get(streamKey) ?? [];
+      await this.scan(entries);
+      return this.cachedEventsForStream(stream);
+    }
     const manifest = await this.loadManifest();
     if (manifest !== undefined && isCompleteIndex(manifest, entries)) {
       try {
