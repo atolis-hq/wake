@@ -187,6 +187,49 @@ it('does not re-parse prior history from disk after appending new events', async
   expect(journalFileReads).toHaveLength(0);
 });
 
+it('uses the refreshed warm-cache stream index for ordered, isolated stream reads', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-stream-index-'));
+  const workStream: EntityRef<'work-item', 'shared-id'> = {
+    kind: 'work-item',
+    id: 'shared-id',
+  };
+  const runStream: EntityRef<'run', 'shared-id'> = { kind: 'run', id: 'shared-id' };
+  const missingStream: EntityRef<'work-item', 'missing'> = { kind: 'work-item', id: 'missing' };
+  const draft = (stream: EntityRef, id: string) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.append(workStream, 0, [draft(workStream, 'work-1')]);
+  await writer.append(runStream, 0, [draft(runStream, 'run-1')]);
+  await writer.append(workStream, 1, [draft(workStream, 'work-2')]);
+
+  const reader = new FileEventJournal(root, clock);
+  expect((await reader.readStream(workStream)).map((event) => event.eventId)).toEqual([
+    'work-1',
+    'work-2',
+  ]);
+  expect((await reader.readStream(runStream)).map((event) => event.eventId)).toEqual(['run-1']);
+  expect(await reader.readStream(missingStream)).toEqual([]);
+
+  // A different journal instance changes the segment after this reader has
+  // warmed its cache, so the next read must rebuild both cache and index.
+  await writer.append(runStream, 1, [draft(runStream, 'run-2')]);
+  expect((await reader.readStream(runStream)).map((event) => event.eventId)).toEqual([
+    'run-1',
+    'run-2',
+  ]);
+});
+
 it('coalesces concurrent reads on a cold cache into a single on-disk decode', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-concurrent-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };

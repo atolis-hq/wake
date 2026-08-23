@@ -32,6 +32,7 @@ export class FileEventJournal implements EventJournal {
     | {
         readonly entries: readonly FileStat[];
         readonly events: EventEnvelope[];
+        readonly eventsByStream: ReadonlyMap<string, readonly EventEnvelope[]>;
         readonly segments: readonly SegmentInfo[];
       }
     | undefined;
@@ -65,7 +66,7 @@ export class FileEventJournal implements EventJournal {
         if (event !== undefined && !sameDraft(event, drafts[index]!))
           throw new Error(`Event id ${event.eventId} has already been used with different content`);
       if (drafts.length > 0 && existing.every(isDefined)) return existing.filter(isDefined);
-      const streamEvents = current.filter((event) => key(event.stream) === key(stream));
+      const streamEvents = this.cachedEventsForStream(stream);
       if (streamEvents.length !== expectedSequence)
         throw new WrongExpectedSequenceError(
           `Expected sequence ${expectedSequence} for ${key(stream)}, actual ${streamEvents.length}`,
@@ -117,7 +118,7 @@ export class FileEventJournal implements EventJournal {
     const streamKey = key(stream);
     const entries = await this.readCurrentEntries();
     if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
-      return this.cached.events.filter((event) => key(event.stream) === streamKey);
+      return this.cached.eventsByStream.get(streamKey) ?? [];
     const manifest = await this.loadManifest();
     if (manifest !== undefined && isCompleteIndex(manifest, entries)) {
       try {
@@ -226,11 +227,16 @@ export class FileEventJournal implements EventJournal {
             events: indexedEvents,
           },
         ];
-    this.cached = { entries, events: [...priorEvents, ...newEnvelopes], segments };
+    const events = [...priorEvents, ...newEnvelopes];
+    this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
   }
 
   private manifestPath(): string {
     return join(this.root, 'events', 'index-manifest.json');
+  }
+
+  private cachedEventsForStream(stream: EntityRef): readonly EventEnvelope[] {
+    return this.cached?.eventsByStream.get(key(stream)) ?? [];
   }
 
   // Persisted alongside the segments, so any reader of the same on-disk
@@ -381,7 +387,7 @@ export class FileEventJournal implements EventJournal {
         events: indexedEvents,
       });
     }
-    this.cached = { entries, events, segments };
+    this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
     return events;
   }
 }
@@ -481,6 +487,20 @@ function sameEntries(a: readonly FileStat[], b: readonly FileStat[]): boolean {
 }
 
 const key = (stream: EntityRef) => `${stream.kind}:${stream.id}`;
+
+function indexEventsByStream(
+  events: readonly EventEnvelope[],
+): ReadonlyMap<string, readonly EventEnvelope[]> {
+  const indexed = new Map<string, EventEnvelope[]>();
+  for (const event of events) {
+    const streamKey = key(event.stream);
+    const streamEvents = indexed.get(streamKey);
+    if (streamEvents === undefined) indexed.set(streamKey, [event]);
+    else streamEvents.push(event);
+  }
+  return indexed;
+}
+
 const sameDraft = (event: EventEnvelope, draft: EventDraft) =>
   isDeepStrictEqual(
     {
