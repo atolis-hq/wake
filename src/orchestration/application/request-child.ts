@@ -46,7 +46,13 @@ export class RequestChild {
     const group = childOrchestrationGroupStream(parent.view.orchestrationGroupId, request.watchId);
     const metadata = coordinationMetadata(parent.view, request);
     if (!(await this.claims.claimWithinBudget(group, request, context))) {
-      await this.groupBudgets.record(parent.view, metadata, request.maxPerGroup, context);
+      await this.groupBudgets.record(
+        parent.view,
+        metadata,
+        request.workflowName,
+        request.maxPerGroup,
+        context,
+      );
       return { kind: 'group-budget-exhausted', requestId: request.requestId };
     }
     return this.workflows.execute(

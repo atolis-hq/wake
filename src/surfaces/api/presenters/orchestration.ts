@@ -1,4 +1,5 @@
 import {
+  isGroupBudgetExtensionEligible,
   isOperatorRetryEligible,
   WorkflowStatus,
   type WorkflowInstanceView,
@@ -21,6 +22,7 @@ export function presentWorkflowInstance(value: WorkflowInstanceView): WorkflowIn
       ? { blockReason: value.blockReason }
       : {}),
     ...(isOperatorRetryEligible(value) ? { retryEligible: true } : {}),
+    ...(isGroupBudgetExtensionEligible(value) ? { extendEligible: true } : {}),
     ...(value.waitingFor === undefined
       ? {}
       : { waitingFor: { signalKind: value.waitingFor.signalKind } }),

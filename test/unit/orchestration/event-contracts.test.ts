@@ -158,6 +158,11 @@ const samples = [
     workflow,
   ),
   eventEnvelope(
+    OrchestrationEventType.GroupBudgetGranted,
+    { key: childGroup.id, requestId: 'request-1', commandId: 'extend-command-1' },
+    childGroup,
+  ),
+  eventEnvelope(
     OrchestrationEventType.WorkflowDefinitionRegistered,
     {
       workflowName: workflowName('default'),

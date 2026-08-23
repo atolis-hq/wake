@@ -96,6 +96,14 @@ export function isChangesResumeEligible(view: WorkflowInstanceView): boolean {
   );
 }
 
+export function isGroupBudgetExtensionEligible(view: WorkflowInstanceView): boolean {
+  return (
+    view.status === WorkflowStatus.Blocked &&
+    view.blockReason?.startsWith('watch group budget exhausted for ') === true &&
+    view.waitingFor !== undefined
+  );
+}
+
 export function requestOperatorRetry(
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,

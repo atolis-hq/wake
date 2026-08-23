@@ -19,7 +19,7 @@ import {
   unavailable,
 } from './responses.js';
 
-type WorkCommandName = 'freeze' | 'unfreeze' | 'delete' | 'retry';
+type WorkCommandName = 'freeze' | 'unfreeze' | 'delete' | 'retry' | 'extend';
 
 type ControlCommandName = 'pause' | 'resume' | 'tick';
 
@@ -67,9 +67,10 @@ async function dispatchWorkCommand(
   pathname: string,
   request: ApiCommandRequest,
 ): Promise<ApiHttpResponse | undefined> {
-  const match = /^\/api\/v1\/work-items\/([^/]+)\/commands\/(freeze|unfreeze|delete|retry)$/.exec(
-    pathname,
-  );
+  const match =
+    /^\/api\/v1\/work-items\/([^/]+)\/commands\/(freeze|unfreeze|delete|retry|extend)$/.exec(
+      pathname,
+    );
   if (match === null) return undefined;
   const decoded = decodePathSegment(match[1]!);
   if (decoded instanceof ApiPathError) return invalidPath(decoded.message);

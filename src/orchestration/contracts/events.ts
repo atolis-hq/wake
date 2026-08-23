@@ -59,6 +59,7 @@ export const OrchestrationEventType = {
   GroupBudgetExhausted: 'orchestration.group-budget-exhausted',
   PrimaryClaimed: 'orchestration.primary-claimed',
   GroupClaimed: 'orchestration.group-claimed',
+  GroupBudgetGranted: 'orchestration.group-budget-granted',
 } as const;
 
 export interface OrchestrationEventPayloads {
@@ -144,12 +145,18 @@ export interface OrchestrationEventPayloads {
     readonly key: ChildOrchestrationGroupStreamId;
     readonly requestId: string;
   };
+  readonly [OrchestrationEventType.GroupBudgetGranted]: {
+    readonly key: ChildOrchestrationGroupStreamId;
+    readonly requestId: string;
+    readonly commandId: string;
+  };
 }
 
 type WorkflowEventType = Exclude<
   keyof OrchestrationEventPayloads,
   | typeof OrchestrationEventType.PrimaryClaimed
   | typeof OrchestrationEventType.GroupClaimed
+  | typeof OrchestrationEventType.GroupBudgetGranted
   | typeof OrchestrationEventType.WorkflowDefinitionRegistered
 >;
 
@@ -164,7 +171,7 @@ type PrimaryGroupEventPayloads = Pick<
 
 type ChildGroupEventPayloads = Pick<
   OrchestrationEventPayloads,
-  typeof OrchestrationEventType.GroupClaimed
+  typeof OrchestrationEventType.GroupClaimed | typeof OrchestrationEventType.GroupBudgetGranted
 >;
 
 type WorkflowDefinitionEventPayloads = Pick<
@@ -265,6 +272,7 @@ export type CausalActivationRejectedPayload = ChildCoordinationMetadata;
 
 export interface GroupBudgetExhaustedPayload extends ChildCoordinationMetadata {
   readonly maxPerGroup: number;
+  readonly workflowName?: WorkflowName;
 }
 
 export interface ActivityRequestedPayload {

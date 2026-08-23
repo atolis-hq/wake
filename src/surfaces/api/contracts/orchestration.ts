@@ -9,5 +9,6 @@ export interface WorkflowInstanceResponse {
   /** Why a blocked workflow requires operator intervention. */
   readonly blockReason?: string;
   readonly retryEligible?: boolean;
+  readonly extendEligible?: boolean;
   readonly waitingFor?: { readonly signalKind: string };
 }

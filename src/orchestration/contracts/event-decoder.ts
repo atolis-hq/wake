@@ -253,6 +253,19 @@ const groupClaimedEnvelope = childGroupEnvelope(
       message: 'Group claim key must identify its stream',
     });
 });
+const groupBudgetGrantedEnvelope = childGroupEnvelope(
+  OrchestrationEventType.GroupBudgetGranted,
+  z
+    .object({ key: childGroupIdSchema, requestId: z.string().min(1), commandId: z.string().min(1) })
+    .strict(),
+).superRefine((event, context) => {
+  if (event.payload.key !== event.stream.id)
+    context.addIssue({
+      code: 'custom',
+      path: ['payload', 'key'],
+      message: 'Group budget grant key must identify its stream',
+    });
+});
 const eventSchema = z.discriminatedUnion('eventType', [
   workflowEnvelope(
     OrchestrationEventType.InstanceStarted,
@@ -282,7 +295,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
     stream: workflowDefinitionsStreamSchema,
     payload: z
       .object({
-        workflowName: brandedStringSchema(workflowName),
+        workflowName: brandedStringSchema(workflowName).optional(),
         fingerprint: z.string().min(1),
         compiledDefinition: z.custom<CompiledWorkflow>(),
       })
@@ -390,10 +403,17 @@ const eventSchema = z.discriminatedUnion('eventType', [
   workflowEnvelope(OrchestrationEventType.CausalActivationRejected, childMetadataSchema),
   workflowEnvelope(
     OrchestrationEventType.GroupBudgetExhausted,
-    z.object({ ...childMetadataShape, maxPerGroup: z.number().int().positive() }).strict(),
+    z
+      .object({
+        ...childMetadataShape,
+        maxPerGroup: z.number().int().positive(),
+        workflowName: brandedStringSchema(workflowName).optional(),
+      })
+      .strict(),
   ),
   primaryClaimedEnvelope,
   groupClaimedEnvelope,
+  groupBudgetGrantedEnvelope,
 ]);
 
 export function decodeOrchestrationEvent(event: EventEnvelope): OrchestrationEvent {
@@ -416,6 +436,7 @@ export function selectWorkflowOrchestrationEvent(
   switch (owned.eventType) {
     case OrchestrationEventType.PrimaryClaimed:
     case OrchestrationEventType.GroupClaimed:
+    case OrchestrationEventType.GroupBudgetGranted:
     case OrchestrationEventType.WorkflowDefinitionRegistered:
       return null;
     default:

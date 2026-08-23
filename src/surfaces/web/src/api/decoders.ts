@@ -238,6 +238,7 @@ export const decodeWorkflow: Decoder<WorkflowInstanceResponse> = (value, path = 
     currentStage: string(record.currentStage, child(path, 'currentStage')),
     ...optionalStringProperty(record, 'blockReason', path),
     ...optionalBooleanProperty(record, 'retryEligible', path),
+    ...optionalBooleanProperty(record, 'extendEligible', path),
     ...(waiting === undefined
       ? {}
       : {

@@ -571,6 +571,15 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                       Retry
                     </Button>
                   )}
+                  {query.data.data.orchestration.primary?.extendEligible === true && (
+                    <Button
+                      type="button"
+                      disabled={command.isPending}
+                      onClick={() => command.mutate('extend')}
+                    >
+                      Extend
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     disabled={command.isPending}

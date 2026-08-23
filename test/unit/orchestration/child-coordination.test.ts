@@ -9,10 +9,12 @@ import {
 import {
   orchestrationGroupId,
   signalName,
+  watchId,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/contracts/identifiers.js';
 import {
+  ApprovalAuthorityKind,
   compileWorkflow,
   createOrchestrationService,
   type ChildWorkflowRequest,
@@ -169,6 +171,52 @@ it('enforces a group budget in a Promise.all race and durably records the loser'
     (await journal.readAll(0)).filter(
       (event) => event.eventType === 'orchestration.group-budget-exhausted',
     ),
+  ).toHaveLength(2);
+});
+
+it('extends one exhausted group only after a human-authorized grant', async () => {
+  const { journal, service } = await fixture();
+  const parent = await startParent(service);
+  await service.block(parent.workflowInstanceId, 'prepare review wait', context('block-parent'));
+  await service.waitForSignal(
+    parent.workflowInstanceId,
+    {
+      signalKind: signalName('orchestration.watch-gate-verdict'),
+      from: [
+        { kind: ApprovalAuthorityKind.Human },
+        { kind: ApprovalAuthorityKind.Watch, watch: watchId('review') },
+      ],
+    },
+    context('wait-for-review'),
+  );
+  await service.requestChild(childRequest('trigger-a'), context('request-a'));
+  await service.requestChild(childRequest('trigger-b'), context('request-b'));
+
+  await expect(
+    service.extendBlockedGroupBudget(
+      parent.workflowInstanceId,
+      { kind: ApprovalAuthorityKind.Watch },
+      context('automated-rejection'),
+    ),
+  ).rejects.toThrow('requires human authority');
+  expect(
+    (await journal.readAll(0)).filter(
+      (event) => event.eventType === 'orchestration.group-budget-granted',
+    ),
+  ).toHaveLength(0);
+
+  await service.extendBlockedGroupBudget(
+    parent.workflowInstanceId,
+    { kind: ApprovalAuthorityKind.Human },
+    context('operator-extend'),
+  );
+  expect(
+    (await journal.readAll(0)).filter(
+      (event) => event.eventType === 'orchestration.group-budget-granted',
+    ),
+  ).toHaveLength(1);
+  expect(
+    (await journal.readAll(0)).filter((event) => event.eventType === 'orchestration.child-started'),
   ).toHaveLength(2);
 });
 

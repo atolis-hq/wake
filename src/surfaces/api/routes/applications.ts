@@ -83,6 +83,7 @@ export interface ApiApplications {
     unfreeze?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     delete?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     retry?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
+    extend?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
   };
   readonly resources: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<ResourceItemResponse>>;

@@ -7,6 +7,7 @@ import {
   ReviewActorKind,
   ReviewerAuthorizationSource,
 } from '../../../../src/activities/index.js';
+import { recognizedCommand } from '../../../../src/integrations/github/application/inbound-comment-syntax.js';
 import { applyReviewSignal } from '../../../../src/integrations/github/application/inbound-review-signals.js';
 import {
   GitHubEventType,
@@ -39,6 +40,11 @@ it('recognizes /changes with feedback as an issue command', async () => {
 
 it('recognizes /changes followed by a blank line and feedback as an issue command', async () => {
   expect(await issueCommentSignals('/changes\n\nplease retry the error handling')).toHaveLength(1);
+});
+
+it('recognizes /extend as a dedicated issue command', () => {
+  expect(recognizedCommand('/extend')).toBe('/extend');
+  expect(recognizedCommand('/extend another review')).toBe('/extend');
 });
 
 it('retries an open primary workflow only for a provider-authorized /retry comment', async () => {

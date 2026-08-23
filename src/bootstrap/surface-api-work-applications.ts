@@ -6,6 +6,9 @@ import {
 } from '../execution/index.js';
 import { correlationId, EventActorKind } from '../kernel/index.js';
 import {
+  ApprovalAuthorityKind,
+  GroupBudgetExtensionIneligibleError,
+  isGroupBudgetExtensionEligible,
   OperatorRetryIneligibleError,
   orchestrationProjection,
   selectOperatorRetryTarget,
@@ -121,6 +124,32 @@ export function createSurfaceWorkApplications(
         );
       } catch (error) {
         if (error instanceof OperatorRetryIneligibleError) return retryIneligible(error.message);
+        throw error;
+      }
+      return accepted(command.idempotencyKey, now());
+    },
+    async extend(key, command) {
+      const id = decodeWorkItemId(key);
+      if (id === undefined) return extendIneligible('Work item was not found');
+      const work = await root.work.get(id);
+      if (work === null) return extendIneligible('Work item was not found');
+      if (work.deleted === true) return extendIneligible('Work item is deleted');
+      if (work.state !== WorkStatus.Open) return extendIneligible('Work item is not open');
+      const primary = (await root.orchestration.listForWorkItem(id)).find(
+        (workflow) => workflow.parentWorkflowInstanceId === undefined,
+      );
+      if (primary === undefined) return extendIneligible('Work item has no primary workflow');
+      if (!isGroupBudgetExtensionEligible(primary))
+        return extendIneligible('Workflow is not blocked on a gate budget exhaustion');
+      try {
+        await root.orchestration.extendBlockedGroupBudget(
+          primary.workflowInstanceId,
+          { kind: ApprovalAuthorityKind.Human },
+          commandContext(command.idempotencyKey, now),
+        );
+      } catch (error) {
+        if (error instanceof GroupBudgetExtensionIneligibleError)
+          return extendIneligible(error.message);
         throw error;
       }
       return accepted(command.idempotencyKey, now());
@@ -322,4 +351,8 @@ function accepted(idempotencyKey: string, acceptedAt: string) {
 
 function retryIneligible(detail: string) {
   return { conflict: true as const, code: 'retry-ineligible', detail };
+}
+
+function extendIneligible(detail: string) {
+  return { conflict: true as const, code: 'extend-ineligible', detail };
 }
