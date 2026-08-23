@@ -91,11 +91,21 @@ it('refreshes on the fallback when an in-process notification is missed', async 
   const journal = new InMemoryEventJournal(new FakeClock());
   let now = 0;
   const derive = vi.fn((events: readonly unknown[]) => events.length);
-  const view = cachedJournalView(journal, derive, () => now);
+  const view = cachedJournalView(
+    {
+      readAll: journal.readAll.bind(journal),
+      // Models a notification the consumer misses, including writes by a
+      // separate process that cannot reach this process-local signal.
+      changeSignal: { revision: () => 0 },
+    } as never,
+    derive,
+    () => now,
+  );
 
   expect(await view.get()).toBe(0);
+  await journal.append(stream, 0, [draft('missed-notification')]);
   now = JOURNAL_CHANGE_FALLBACK_MS;
-  expect(await view.get()).toBe(0);
+  expect(await view.get()).toBe(1);
   expect(derive).toHaveBeenCalledTimes(2);
 });
 
