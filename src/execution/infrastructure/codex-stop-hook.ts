@@ -10,6 +10,8 @@ export interface CodexStopHookDecision {
   readonly reason?: string;
 }
 
+type CodexSessionId = string | number;
+
 /**
  * Bound on how long this hook will keep forcing continuation for the same
  * unresolved cell within one process segment before giving up and letting
@@ -38,6 +40,7 @@ interface ToolCall {
   readonly name: 'exec' | 'wait';
   readonly cellId?: string;
   readonly spawnsBackgroundJob?: boolean;
+  readonly writeStdinSessionId?: CodexSessionId;
 }
 
 /**
@@ -61,6 +64,7 @@ export function inspectCodexTranscript(transcript: string): CodexStopHookDecisio
     pendingCells: new Set<string>(),
     resolvedCells: new Set<string>(),
     unresolvableCells: new Set<string>(),
+    sessionsByCell: new Map<string, CodexSessionId>(),
   };
 
   for (const line of lines.slice(boundary + 1)) {
@@ -151,6 +155,7 @@ interface TelemetryState {
   readonly pendingCells: Set<string>;
   readonly resolvedCells: Set<string>;
   readonly unresolvableCells: Set<string>;
+  readonly sessionsByCell: Map<string, CodexSessionId>;
 }
 
 function consumePayload(payload: Record<string, unknown>, telemetry: TelemetryState): void {
@@ -170,6 +175,7 @@ function recordToolCall(payload: Record<string, unknown>, calls: Map<string, Too
     name,
     ...(name === 'wait' ? cellArgument(payload.arguments ?? payload.input) : {}),
     ...(name === 'exec' ? { spawnsBackgroundJob: spawnsBackgroundJob(payload.input) } : {}),
+    ...(name === 'exec' ? writeStdinSessionArgument(payload.input) : {}),
   });
 }
 
@@ -204,10 +210,16 @@ function recordToolOutput(payload: Record<string, unknown>, telemetry: Telemetry
       result.pendingCellId !== undefined
     )
       telemetry.pendingCells.add(result.pendingCellId);
+    if (call.writeStdinSessionId !== undefined && result.jsonExitCode !== undefined) {
+      for (const [cellId, sessionId] of telemetry.sessionsByCell) {
+        if (sessionId === call.writeStdinSessionId) telemetry.resolvedCells.add(cellId);
+      }
+    }
     return;
   }
   if (call.cellId === undefined) return;
   if (result.exitCode !== undefined) telemetry.resolvedCells.add(call.cellId);
+  if (result.sessionId !== undefined) telemetry.sessionsByCell.set(call.cellId, result.sessionId);
   if (result.notFoundCellId === call.cellId) telemetry.unresolvableCells.add(call.cellId);
 }
 
@@ -254,15 +266,22 @@ async function transcriptForSession(
 
 function structuredResult(value: unknown): {
   readonly exitCode?: number;
+  readonly jsonExitCode?: number;
   readonly pendingCellId?: string;
   readonly notFoundCellId?: string;
+  readonly sessionId?: CodexSessionId;
 } {
   const texts = outputTexts(value);
   let exitCode: number | undefined;
+  let jsonExitCode: number | undefined;
   let pendingCellId: string | undefined;
   let notFoundCellId: string | undefined;
+  let sessionId: CodexSessionId | undefined;
   for (const text of texts) {
-    exitCode = exitCodeInText(text) ?? exitCode;
+    const structuredExitCode = jsonExitCodeInText(text);
+    jsonExitCode = structuredExitCode ?? jsonExitCode;
+    exitCode = structuredExitCode ?? legacyExitCodeInText(text) ?? exitCode;
+    sessionId = sessionIdInText(text) ?? sessionId;
     pendingCellId = /Script running with cell ID ([^\s]+)/.exec(text)?.[1] ?? pendingCellId;
     // A cell-identity-specific protocol error: the runtime has discarded
     // this cell's bookkeeping and no exit code will ever be available for
@@ -271,17 +290,26 @@ function structuredResult(value: unknown): {
   }
   return {
     ...(exitCode === undefined ? {} : { exitCode }),
+    ...(jsonExitCode === undefined ? {} : { jsonExitCode }),
     ...(pendingCellId === undefined ? {} : { pendingCellId }),
     ...(notFoundCellId === undefined ? {} : { notFoundCellId }),
+    ...(sessionId === undefined ? {} : { sessionId }),
   };
 }
 
-function exitCodeInText(text: string): number | undefined {
+function jsonExitCodeInText(text: string): number | undefined {
   const result = parseJson(text);
-  const code = result === undefined ? undefined : number(result.exit_code);
-  if (code !== undefined) return code;
+  return result === undefined ? undefined : number(result.exit_code);
+}
+
+function legacyExitCodeInText(text: string): number | undefined {
   const rendered = /Exit code:\s*(-?\d+)/.exec(text)?.[1];
   return rendered === undefined ? undefined : Number(rendered);
+}
+
+function sessionIdInText(text: string): CodexSessionId | undefined {
+  const result = parseJson(text);
+  return result === undefined ? undefined : sessionId(result.session_id);
 }
 
 function outputTexts(value: unknown): readonly string[] {
@@ -298,6 +326,134 @@ function cellArgument(value: unknown): { readonly cellId?: string } {
   const arguments_ = typeof value === 'string' ? parseJson(value) : record(value);
   const cellId = arguments_ === undefined ? undefined : string(arguments_.cell_id);
   return cellId === undefined ? {} : { cellId };
+}
+
+/**
+ * The `write_stdin` target appears only in its source, so trace only its
+ * literal argument. Source strings and command output are otherwise opaque:
+ * dynamic expressions intentionally do not establish lineage.
+ */
+function writeStdinSessionArgument(input: unknown): {
+  readonly writeStdinSessionId?: CodexSessionId;
+} {
+  if (typeof input !== 'string') return {};
+  const code = codeMask(input);
+  const calls = [...code.matchAll(/\btools\.write_stdin\s*\(\s*\{/g)];
+  if (calls.length !== 1) return {};
+  const call = calls[0];
+  if (call === undefined || call.index === undefined) return {};
+  const openObject = call.index + call[0].lastIndexOf('{');
+  const literal = directSessionIdArgument(input, code, openObject);
+  return literal === undefined ? {} : { writeStdinSessionId: literal };
+}
+
+function directSessionIdArgument(
+  source: string,
+  code: string,
+  openObject: number,
+): CodexSessionId | undefined {
+  const literals: CodexSessionId[] = [];
+  let depth = 1;
+  for (let index = openObject + 1; index < code.length && depth > 0; index += 1) {
+    const character = code[index];
+    if (character === '{' || character === '[' || character === '(') {
+      depth += 1;
+      continue;
+    }
+    if (character === '}' || character === ']' || character === ')') {
+      depth -= 1;
+      continue;
+    }
+    if (
+      depth === 1 &&
+      code.startsWith('session_id', index) &&
+      !/[A-Za-z0-9_$]/.test(code[index - 1] ?? '') &&
+      !/[A-Za-z0-9_$]/.test(code[index + 'session_id'.length] ?? '')
+    ) {
+      let valueStart = index + 'session_id'.length;
+      while (/\s/.test(code[valueStart] ?? '')) valueStart += 1;
+      if (code[valueStart] !== ':') continue;
+      const literal = sourceSessionLiteralAt(source, valueStart + 1);
+      if (literal === undefined) return undefined;
+      literals.push(literal);
+    }
+  }
+  return literals.length === 1 ? literals[0] : undefined;
+}
+
+function codeMask(source: string): string {
+  const characters = source.split('');
+  for (let index = 0; index < characters.length; index += 1) {
+    const quote = characters[index];
+    if (quote === '/' && characters[index + 1] === '/') {
+      while (index < characters.length && characters[index] !== '\n') characters[index++] = ' ';
+      continue;
+    }
+    if (quote === '/' && characters[index + 1] === '*') {
+      characters[index++] = ' ';
+      characters[index++] = ' ';
+      while (
+        index < characters.length &&
+        !(characters[index] === '*' && characters[index + 1] === '/')
+      )
+        characters[index++] = ' ';
+      characters[index++] = ' ';
+      characters[index] = ' ';
+      continue;
+    }
+    if (quote !== '"' && quote !== "'" && quote !== '`') continue;
+    characters[index++] = ' ';
+    while (index < characters.length) {
+      const current = characters[index];
+      characters[index++] = ' ';
+      if (current === '\\') {
+        characters[index++] = ' ';
+        continue;
+      }
+      if (current === quote) break;
+    }
+  }
+  return characters.join('');
+}
+
+function sourceSessionLiteralAt(source: string, start: number): CodexSessionId | undefined {
+  while (/\s/.test(source[start] ?? '')) start += 1;
+  const numeric = sourceNumberLiteralAt(source, start);
+  if (numeric !== undefined) return sessionId(numeric);
+  if (source[start] === "'") return sessionId(singleQuotedStringAt(source, start));
+  if (source[start] !== '"') return undefined;
+  let end = start + 1;
+  while (end < source.length) {
+    if (source[end] === '\\') {
+      end += 2;
+      continue;
+    }
+    if (source[end] === '"') {
+      const value = parseJson(`{"value":${source.slice(start, end + 1)}}`);
+      return value === undefined ? undefined : sessionId(value.value);
+    }
+    end += 1;
+  }
+  return undefined;
+}
+
+function sourceNumberLiteralAt(source: string, start: number): number | undefined {
+  const match = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  match.lastIndex = start;
+  const literal = match.exec(source)?.[0];
+  if (literal === undefined || /[A-Za-z0-9_$.]/.test(source[start + literal.length] ?? ''))
+    return undefined;
+  const value = Number(literal);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function singleQuotedStringAt(source: string, start: number): string | undefined {
+  let end = start + 1;
+  while (end < source.length && source[end] !== "'") {
+    if (source[end] === '\\') return undefined;
+    end += 1;
+  }
+  return end < source.length ? source.slice(start + 1, end) : undefined;
 }
 
 function blocked(detail: string): CodexStopHookDecision {
@@ -338,6 +494,11 @@ function string(value: unknown): string | undefined {
 
 function number(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function sessionId(value: unknown): CodexSessionId | undefined {
+  const text = string(value);
+  return text === undefined || text.length === 0 ? number(value) : text;
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

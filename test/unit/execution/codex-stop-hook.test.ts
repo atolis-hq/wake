@@ -298,6 +298,171 @@ describe('Codex Stop hook telemetry guard', () => {
     expect(inspectCodexTranscript(transcript)).toEqual({});
   });
 
+  it('resolves a pending exec cell through a literal write_stdin session lineage', () => {
+    const transcript = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'exec-command',
+          input: 'const result = await tools.exec_command({cmd:"npm run verify"});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-command',
+          output: 'Script running with cell ID 42',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'wait',
+          call_id: 'wait-command',
+          input: { cell_id: '42' },
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'wait-command',
+          output: '{"session_id":"generic-session-17"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'write-stdin',
+          input:
+            'const result = await tools.write_stdin({session_id:"generic-session-17",chars:"",yield_time_ms:30000});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'write-stdin',
+          output: '{"exit_code":17}',
+        },
+      }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({});
+  });
+
+  it('keeps a session-linked cell unresolved when write_stdin reports a legacy exit-code string', () => {
+    const transcript = sessionLineageTranscript('Exit code: 1');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('Codex cell 42 has no terminal exit_code'),
+    });
+  });
+
+  it('keeps a session-linked cell unresolved when session_id is nested in write_stdin arguments', () => {
+    const transcript = sessionLineageTranscript('{"exit_code":1}', {
+      writeStdinInput:
+        'const result = await tools.write_stdin({options:{session_id:"generic-session-17"},chars:""});',
+    });
+
+    expect(inspectCodexTranscript(transcript)).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('Codex cell 42 has no terminal exit_code'),
+    });
+  });
+
+  it('resolves a pending cell through numeric session lineage', () => {
+    const transcript = sessionLineageTranscript([{ type: 'input_text', text: '{"exit_code":1}' }], {
+      waitOutput: [{ type: 'input_text', text: '{"session_id":85120}' }],
+      writeStdinInput: 'const result = await tools.write_stdin({session_id:85120,chars:""});',
+    });
+
+    expect(inspectCodexTranscript(transcript)).toEqual({});
+  });
+
+  it('keeps a cell unresolved for an empty-string session lineage', () => {
+    const transcript = sessionLineageTranscript('{"exit_code":1}', {
+      waitOutput: '{"session_id":""}',
+      writeStdinInput: 'const result = await tools.write_stdin({session_id:"",chars:""});',
+    });
+
+    expect(inspectCodexTranscript(transcript)).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('Codex cell 42 has no terminal exit_code'),
+    });
+  });
+
+  function sessionLineageTranscript(
+    writeStdinOutput: unknown,
+    options: {
+      readonly writeStdinInput?: string;
+      readonly waitOutput?: unknown;
+    } = {},
+  ) {
+    return [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'exec-command',
+          input: 'const result = await tools.exec_command({cmd:"npm run verify"});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-command',
+          output: 'Script running with cell ID 42',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'wait',
+          call_id: 'wait-command',
+          input: { cell_id: '42' },
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'wait-command',
+          output: options.waitOutput ?? '{"session_id":"generic-session-17"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'write-stdin',
+          input:
+            options.writeStdinInput ??
+            'const result = await tools.write_stdin({session_id:"generic-session-17",chars:"",yield_time_ms:30000});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'write-stdin',
+          output: writeStdinOutput,
+        },
+      }),
+    ].join('\n');
+  }
+
   it('fails closed for malformed structured telemetry', () => {
     expect(inspectCodexTranscript('{not json')).toEqual({
       decision: 'block',
