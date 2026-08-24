@@ -104,7 +104,6 @@ export function EventsFeed({ records }: { readonly records: readonly AuditEventR
       const scrollable = document.scrollingElement ?? document.documentElement;
       setScrolledAway(scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight > 1);
     };
-    checkScrolledAway();
     window.addEventListener('scroll', checkScrolledAway, { passive: true });
     return () => window.removeEventListener('scroll', checkScrolledAway);
   }, []);
