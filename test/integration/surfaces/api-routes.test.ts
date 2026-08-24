@@ -426,6 +426,7 @@ describe('API command conflicts', () => {
       '/api/v1/work-items/wk_demo/commands/unfreeze',
       '/api/v1/work-items/wk_demo/commands/delete',
       '/api/v1/work-items/wk_demo/commands/retry',
+      '/api/v1/work-items/wk_demo/commands/extend',
       '/api/v1/runners/runner-1/commands/unpause',
     ]) {
       const response = await dispatcher.dispatch('POST', path, { idempotencyKey: 'operator-42' });
@@ -490,6 +491,32 @@ describe('API command conflicts', () => {
       detail: 'Workflow is not retry eligible',
     });
   });
+
+  it('returns the extend application conflict as a 409 problem', async () => {
+    const dispatcher = createApiDispatcher(
+      applications({
+        work: {
+          extend: async () => ({
+            conflict: true,
+            code: 'extend-ineligible',
+            detail: 'Workflow is not blocked on a gate budget exhaustion',
+          }),
+        },
+      }),
+    );
+
+    const response = await dispatcher.dispatch(
+      'POST',
+      '/api/v1/work-items/wk_demo/commands/extend',
+      { idempotencyKey: 'operator-42' },
+    );
+
+    expect(response?.status).toBe(409);
+    expect(response?.body).toMatchObject({
+      code: 'extend-ineligible',
+      detail: 'Workflow is not blocked on a gate budget exhaustion',
+    });
+  });
 });
 
 function applications(
@@ -512,6 +539,7 @@ function applications(
         command: { readonly idempotencyKey: string },
       ): Promise<AcceptedCommandResponse>;
       retry(key: string, command: { readonly idempotencyKey: string }): Promise<ApiCommandResult>;
+      extend(key: string, command: { readonly idempotencyKey: string }): Promise<ApiCommandResult>;
     }>;
     readonly execution?: Partial<{
       transcript(runId: string): Promise<ApiResourceResult<RunTranscriptResponse>>;

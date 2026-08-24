@@ -11,6 +11,7 @@ import {
 import type { EventJournal, IdGenerator } from '../../../kernel/index.js';
 import {
   ApprovalAuthorityKind,
+  isGroupBudgetExtensionEligible,
   selectOperatorRetryTarget,
   type OrchestrationService,
 } from '../../../orchestration/index.js';
@@ -138,15 +139,18 @@ async function applyIssueReviewSignal(input: {
   const resource = await resources.get(resourceIdValue);
   const command = recognizedCommand(event.payload.body);
   const plainReply = isPlainReply(event.payload.body);
-  if (command === GitHubBuiltInCommand.Retry) {
-    return applyIssueRetrySignal({
+  if (command !== null)
+    return applyIssueCommand({
       event,
+      command,
+      resource,
       resources,
       work,
+      lookup,
       orchestration,
+      adapter,
       resourceId: resourceIdValue,
     });
-  }
   if (resource?.kind === BuiltInResourceKind.PullRequest) {
     await applyWorkflowSignal({
       event,
@@ -163,8 +167,7 @@ async function applyIssueReviewSignal(input: {
     });
     return;
   }
-  if (command !== null) await applyIssueApprovalSignal({ ...input, command });
-  else if (plainReply) {
+  if (plainReply) {
     await applyWorkflowSignal({
       event,
       resources,
@@ -175,6 +178,75 @@ async function applyIssueReviewSignal(input: {
       acceptWaitingSignal: false,
       resumeBlockedOnChanges: true,
     });
+  }
+}
+
+async function applyIssueCommand(input: {
+  readonly event: CommentObservedEvent;
+  readonly command: NonNullable<ReturnType<typeof recognizedCommand>>;
+  readonly resource: Awaited<ReturnType<ResourceService['get']>>;
+  readonly resources: ResourceService;
+  readonly work: WorkService;
+  readonly lookup: ResourceLookup;
+  readonly orchestration: OrchestrationService;
+  readonly adapter: AdapterId;
+  readonly resourceId: ReturnType<typeof resourceId>;
+}): Promise<void> {
+  const { command, resource, resourceId: resourceIdValue } = input;
+  if (command === GitHubBuiltInCommand.Retry)
+    return applyIssueRetrySignal({ ...input, resourceId: resourceIdValue });
+  if (command === GitHubBuiltInCommand.Extend)
+    return applyIssueBudgetExtension({ ...input, resourceId: resourceIdValue });
+  if (resource?.kind === BuiltInResourceKind.PullRequest)
+    return applyWorkflowSignal({
+      ...input,
+      resourceId: resourceIdValue,
+      outcome:
+        command === GitHubBuiltInCommand.Approved
+          ? ActivityOutcomeKind.Done
+          : ActivityOutcomeKind.Rejected,
+      acceptWaitingSignal: true,
+      resumeBlockedOnChanges: command === GitHubBuiltInCommand.Changes,
+    });
+  return applyIssueApprovalSignal({
+    ...input,
+    command: command as typeof GitHubBuiltInCommand.Approved | typeof GitHubBuiltInCommand.Changes,
+  });
+}
+
+async function applyIssueBudgetExtension(input: {
+  readonly event: CommentObservedEvent;
+  readonly resources: ResourceService;
+  readonly work: WorkService;
+  readonly orchestration: OrchestrationService | undefined;
+  readonly resourceId: ReturnType<typeof resourceId>;
+}): Promise<void> {
+  const { event, resources, work, orchestration, resourceId: resourceIdValue } = input;
+  if (orchestration === undefined) return;
+  if (
+    !isReviewAuthorized({
+      actorId: event.payload.actor.id,
+      actorKind: event.payload.actor.kind,
+      resourceAuthorId: UnknownGitHubIdentity,
+      authorization: event.payload.authorization ?? { source: ReviewerAuthorizationSource.None },
+    })
+  )
+    return;
+  const workItemIds = (await resources.correlations(resourceIdValue))
+    .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
+    .map((correlation) => correlation.workItemId);
+  for (const workItemId of workItemIds) {
+    if (!(await isEligibleWorkItem(work, workItemId))) continue;
+    const primary = (await orchestration.listAll()).find(
+      (workflow) =>
+        workflow.workItemId === workItemId && workflow.parentWorkflowInstanceId === undefined,
+    );
+    if (primary === undefined || !isGroupBudgetExtensionEligible(primary)) continue;
+    await orchestration.extendBlockedGroupBudget(
+      primary.workflowInstanceId,
+      { kind: ApprovalAuthorityKind.Human },
+      commandContext(event),
+    );
   }
 }
 

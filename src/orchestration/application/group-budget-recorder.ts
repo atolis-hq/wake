@@ -9,6 +9,7 @@ import type {
   GroupBudgetExhaustedPayload,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
+import type { WorkflowName } from '../contracts/identifiers.js';
 import { workflowInstanceId } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -21,11 +22,12 @@ export class GroupBudgetRecorder {
   async record(
     parent: WorkflowInstanceView,
     metadata: ChildCoordinationMetadata,
+    workflowName: WorkflowName,
     maxPerGroup: number,
     context: CommandContext,
   ): Promise<void> {
     const stream = workflowInstanceStream(workflowInstanceId(parent.workflowInstanceId));
-    const payload: GroupBudgetExhaustedPayload = { ...metadata, maxPerGroup };
+    const payload: GroupBudgetExhaustedPayload = { ...metadata, workflowName, maxPerGroup };
     for (;;) {
       const events = await this.journal.readStream(stream);
       if (

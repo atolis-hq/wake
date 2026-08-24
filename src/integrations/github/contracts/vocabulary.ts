@@ -83,7 +83,8 @@ export type GitHubOutboundAction = ValueOf<typeof GitHubOutboundAction>;
 // Comment-channel commands the GitHub adapter recognizes from human replies.
 // /approved and /changes drive issue-review and PR-issue-comment signals;
 // /accepted and /changes drive formal (native) PR review comments; /retry
-// resumes a blocked/failed stage. Kept as the single source of truth for both
+// resumes a blocked/failed stage; /extend grants one exhausted gate attempt.
+// Kept as the single source of truth for both
 // recognition (inbound-comment-syntax.ts, review-command-translator.ts) and
 // the commands/instructions surface, so the two cannot drift.
 export const GitHubBuiltInCommand = defineClosedVocabulary({
@@ -91,6 +92,7 @@ export const GitHubBuiltInCommand = defineClosedVocabulary({
   Accepted: '/accepted',
   Changes: '/changes',
   Retry: '/retry',
+  Extend: '/extend',
 } as const);
 
 export type GitHubBuiltInCommand = ValueOf<typeof GitHubBuiltInCommand>;

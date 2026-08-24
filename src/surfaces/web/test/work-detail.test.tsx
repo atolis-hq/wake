@@ -41,7 +41,11 @@ function detailClient(
   return new WakeApiClient(async (input, init) => {
     const url = String(input);
     requests.push({ url, init });
-    if (url.endsWith('/commands/retry') || url.endsWith('/commands/resolve'))
+    if (
+      url.endsWith('/commands/retry') ||
+      url.endsWith('/commands/extend') ||
+      url.endsWith('/commands/resolve')
+    )
       return (
         commandResponse ??
         new Response(
@@ -390,6 +394,34 @@ describe('work detail', () => {
     );
     expect(requests.filter(({ url }) => url.includes('/work-items/wk_a'))).toHaveLength(3);
     expect(requests.find(({ url }) => url.endsWith('/commands/retry'))?.init?.method).toBe('POST');
+  });
+
+  it('posts Extend when the primary workflow has an exhausted gate budget', async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(
+            {
+              workflowInstanceId: 'workflow-1',
+              workflowName: 'delivery',
+              orchestrationGroupId: 'group-1',
+              status: 'blocked',
+              currentStage: 'implement',
+              extendEligible: true,
+            },
+            undefined,
+            requests,
+          )}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Extend' }));
+    await waitFor(() =>
+      expect(requests.filter(({ url }) => url.endsWith('/commands/extend'))).toHaveLength(1),
+    );
+    expect(requests.find(({ url }) => url.endsWith('/commands/extend'))?.init?.method).toBe('POST');
   });
 
   it('shows a Retry command failure', async () => {

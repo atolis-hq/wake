@@ -81,7 +81,7 @@ export class WakeApiClient {
       ),
     command: (
       key: string,
-      name: 'freeze' | 'unfreeze' | 'delete' | 'retry',
+      name: 'freeze' | 'unfreeze' | 'delete' | 'retry' | 'extend',
       idempotencyKey: string,
       signal?: AbortSignal,
     ) =>

@@ -1,16 +1,26 @@
+/* eslint-disable max-lines */
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import type { CommandContext, EventJournal, ProjectionStore } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
+import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import type {
   ChildWorkflowRequest,
   OrchestrationSignal,
   SignalExpectation,
   SupplementalActivityRequest,
 } from '../contracts/events.js';
-import type { SignalName, WorkflowInstanceId } from '../contracts/identifiers.js';
+import { OrchestrationEventType } from '../contracts/events.js';
+import {
+  workflowInstanceId as toWorkflowInstanceId,
+  type SignalName,
+  type WorkflowInstanceId,
+} from '../contracts/identifiers.js';
+import { childOrchestrationGroupStream, workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
+import { ApprovalAuthorityKind } from '../contracts/vocabulary.js';
+import { isGroupBudgetExtensionEligible } from '../domain/operator-retry-policy.js';
 import { AcceptActivityOutcome } from './accept-activity-outcome.js';
 import { AcceptSignal } from './accept-signal.js';
 import { AdvanceWorkflow } from './advance-workflow.js';
@@ -30,9 +40,11 @@ export class OrchestrationService {
   private readonly advanceWorkflow: AdvanceWorkflow;
   private readonly childWorkflows: RequestChild;
   private readonly projections: ProjectionStore | undefined;
-  private readonly definitions: WorkflowDefinitionRegistry;
   private coordinateAcceptSignal: OperationCoordinator = (operation) => operation();
   private watchChildCancellation: WatchChildCancellation | undefined;
+  private readonly claims: CoordinationClaims;
+  private readonly journal: EventJournal;
+  private readonly definitions: WorkflowDefinitionRegistry;
 
   constructor(
     journal: EventJournal,
@@ -41,15 +53,16 @@ export class OrchestrationService {
     projections?: ProjectionStore,
   ) {
     this.projections = projections;
+    this.journal = journal;
     const repository = new OrchestrationRepository(journal);
-    const claims = new CoordinationClaims(journal);
+    this.claims = new CoordinationClaims(journal);
     this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
-    this.startWorkflow = new StartWorkflow(repository, claims, work, this.definitions);
+    this.startWorkflow = new StartWorkflow(repository, this.claims, work, this.definitions);
     this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow);
     this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.childWorkflows = new RequestChild(
       repository,
-      claims,
+      this.claims,
       new GroupBudgetRecorder(journal),
       this.startWorkflow,
       this.advanceWorkflow,
@@ -182,6 +195,50 @@ export class OrchestrationService {
     );
   }
 
+  async extendBlockedGroupBudget(
+    workflowInstanceId: WorkflowInstanceId,
+    authority: { readonly kind: string },
+    context: CommandContext,
+  ) {
+    if (authority.kind !== ApprovalAuthorityKind.Human)
+      throw new GroupBudgetExtensionIneligibleError(
+        'A group budget extension requires human authority',
+      );
+    const parent = await this.advanceWorkflow.get(workflowInstanceId);
+    if (parent === null || !isGroupBudgetExtensionEligible(parent))
+      throw new GroupBudgetExtensionIneligibleError(
+        'Workflow is not blocked on a gate budget exhaustion',
+      );
+    const exhausted = (
+      await journalGroupBudgetExhaustion(this.journal, parent.workflowInstanceId)
+    ).at(-1);
+    if (exhausted === undefined)
+      throw new GroupBudgetExtensionIneligibleError(
+        'Workflow has no durable gate budget exhaustion to extend',
+      );
+    const workflowName =
+      exhausted.workflowName ??
+      this.definitions
+        .currentDefinition(parent.workflowName)
+        .definition.watches.find((watch) => watch.id === exhausted.watchId)?.workflow;
+    if (workflowName === undefined)
+      throw new GroupBudgetExtensionIneligibleError(
+        'Workflow has no durable gate definition to extend',
+      );
+    const group = childOrchestrationGroupStream(parent.orchestrationGroupId, exhausted.watchId);
+    await this.claims.grantBudget(group, exhausted.requestId, context, authority);
+    await this.waitForSignal(parent.workflowInstanceId, parent.waitingFor!, context);
+    return this.requestChild(
+      {
+        ...exhausted,
+        workflowName,
+        maxPerGroup: exhausted.maxPerGroup,
+        requestId: toWorkflowInstanceId(exhausted.requestId),
+      },
+      { ...context, commandId: `${context.commandId}:dispatch` },
+    );
+  }
+
   get(id: WorkflowInstanceId) {
     return this.advanceWorkflow.get(id);
   }
@@ -301,6 +358,23 @@ export class OrchestrationService {
       this.advanceWorkflow.applyResourceTransition(workflowInstanceId, target, evidenceId, context),
     );
   }
+}
+
+export class GroupBudgetExtensionIneligibleError extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = 'GroupBudgetExtensionIneligibleError';
+  }
+}
+
+async function journalGroupBudgetExhaustion(
+  journal: EventJournal,
+  workflowInstanceId: WorkflowInstanceId,
+) {
+  return (await journal.readStream(workflowInstanceStream(workflowInstanceId))).flatMap((event) => {
+    const owned = selectOrchestrationEvent(event);
+    return owned?.eventType === OrchestrationEventType.GroupBudgetExhausted ? [owned.payload] : [];
+  });
 }
 
 export type OperationCoordinator = <Result>(operation: () => Promise<Result>) => Promise<Result>;

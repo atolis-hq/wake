@@ -1,6 +1,10 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
-import { activityName } from '../../../src/activities/index.js';
+import {
+  ProviderPermission,
+  ReviewActorKind,
+  activityName,
+} from '../../../src/activities/index.js';
 import {
   ExecutionEventType,
   RunRepository,
@@ -95,7 +99,11 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
     fixture.world.checkpoints,
     fixture.world.work,
     fixture.world.resources,
-    { orchestration: fixture.world.orchestration, runs: new RunRepository(fixture.world.journal) },
+    {
+      orchestration: fixture.world.orchestration,
+      runs: new RunRepository(fixture.world.journal),
+      lookup: fixture.world.resourceLookup,
+    },
   ).runOnce();
 
   expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
@@ -120,6 +128,81 @@ it('supersedes a queued watch child when human approval leaves its gate', async 
   expect((await fixture.world.viewWorkflow(fixture.child.workflowInstanceId))?.status).toBe(
     'superseded',
   );
+});
+
+it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after gate exhaustion', async () => {
+  const fixture = await waitingWatchGate();
+  const resource = await fixture.world.discoverResource({
+    resourceId: resId('extend-1'),
+    kind: resourceKind('issue'),
+    externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'owner/repo#17' },
+    capabilities: [],
+  });
+  await fixture.world.resources.correlate(resource.resourceId, fixture.workItemId, 'primary', {
+    commandId: 'correlate-extend-resource',
+    correlationId: correlationId('watch-gate-extend'),
+    occurredAt: fixture.world.clock.now().toISOString(),
+    actor: { kind: 'operator', id: 'owner' },
+  });
+  await fixture.world.triggerWatch('pr-review.requested', 'pr-review-trigger-exhausted');
+  expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
+    'blocked',
+  );
+  expect(
+    (await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.waitingFor,
+  ).toMatchObject({
+    signalKind: 'orchestration.watch-gate-verdict',
+  });
+
+  await fixture.world.journal.append(integrationStream(BuiltInAdapterId.GitHub), 0, [
+    createEventDraft({
+      eventId: 'github:comment:watch-gate-extend',
+      eventType: 'integration.github.comment-observed',
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:owner/repo#17',
+      causationId: 'github:comment:watch-gate-extend',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'owner/repo#17',
+        body: '/extend',
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'maintainer', kind: ReviewActorKind.Human },
+        authorization: {
+          source: 'provider-permission',
+          permission: ProviderPermission.Write,
+        },
+        raw: { id: 17 },
+      },
+    }),
+  ]);
+
+  await new InboundTranslator(
+    fixture.world.journal,
+    fixture.world.checkpoints,
+    fixture.world.work,
+    fixture.world.resources,
+    {
+      orchestration: fixture.world.orchestration,
+      runs: new RunRepository(fixture.world.journal),
+      lookup: fixture.world.resourceLookup,
+    },
+  ).runOnce();
+
+  expect(await fixture.world.events('integration.github.inbound-translation-retried')).toHaveLength(
+    0,
+  );
+  expect(await fixture.world.events('orchestration.group-budget-granted')).toHaveLength(1);
+  expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
+    'waiting',
+  );
+  expect(
+    (await fixture.world.orchestration.listAll()).filter(
+      (workflow) => workflow.parentWorkflowInstanceId === fixture.parent.workflowInstanceId,
+    ),
+  ).toHaveLength(2);
 });
 
 it('cancels an active watch-child run when human approval leaves its gate', async () => {

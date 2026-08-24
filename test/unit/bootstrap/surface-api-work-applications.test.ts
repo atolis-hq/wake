@@ -76,6 +76,42 @@ it('retries an eligible child only while its parent waits on that child watch', 
   expect(retried).toEqual([[child.workflowInstanceId, expect.any(Object)]]);
 });
 
+it('extends an eligible exhausted watch group with human authority', async () => {
+  const extended: unknown[] = [];
+  const primary = {
+    workflowInstanceId: 'primary-extend' as never,
+    parentWorkflowInstanceId: undefined,
+    status: 'blocked' as const,
+    blockReason: 'watch group budget exhausted for review',
+    waitingFor: { signalKind: 'orchestration.watch-gate-verdict' as never },
+  };
+  const applications = createSurfaceWorkApplications(
+    {
+      work: { get: async () => ({ state: 'open', deleted: false }) },
+      orchestration: {
+        listForWorkItem: async () => [primary],
+        extendBlockedGroupBudget: async (...input: unknown[]) => {
+          extended.push(input);
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+  const extend = applications.extend;
+  if (extend === undefined) throw new Error('Expected extend work application');
+
+  await expect(extend(toWorkItemKey(id), { idempotencyKey: 'operator-1' })).resolves.toMatchObject({
+    status: 'accepted',
+  });
+  expect(extended).toEqual([
+    [
+      primary.workflowInstanceId,
+      { kind: 'human' },
+      expect.objectContaining({ commandId: 'work:operator-1' }),
+    ],
+  ]);
+});
+
 it('uses stable resource-specific command ids when deleting multiple correlations', async () => {
   const workItemId = workId('delete-multiple-correlations');
   const first = resId('delete-correlation-first');

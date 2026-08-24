@@ -13,6 +13,7 @@ import {
   primaryOrchestrationGroupStream,
   type ChildOrchestrationGroupStreamRef,
 } from '../contracts/streams.js';
+import { ApprovalAuthorityKind } from '../contracts/vocabulary.js';
 import { claimWithCasRetry } from './durable-append.js';
 
 export class CoordinationClaims {
@@ -68,7 +69,8 @@ export class CoordinationClaims {
       read: () => this.journal.readStream(stream),
       decode: groupEvents,
       alreadyClaimed: (events) => claimedRequestIds(events).has(request.requestId),
-      canAppend: (events) => events.length < request.maxPerGroup,
+      canAppend: (_rawEvents, events) =>
+        claimedRequestIds(events).size < request.maxPerGroup + budgetGrants(events),
       append: async (sequence) => {
         await this.journal.append(stream, sequence, [
           createEventDraft({
@@ -90,6 +92,41 @@ export class CoordinationClaims {
       request.requestId,
     );
   }
+
+  async grantBudget(
+    stream: ChildOrchestrationGroupStreamRef,
+    requestId: string,
+    context: CommandContext,
+    authority: { readonly kind: string },
+  ): Promise<void> {
+    if (authority.kind !== ApprovalAuthorityKind.Human)
+      throw new Error('A group budget extension requires human authority');
+    await claimWithCasRetry({
+      read: () => this.journal.readStream(stream),
+      decode: groupEvents,
+      alreadyClaimed: (events) =>
+        events.some(
+          (event) =>
+            event.eventType === OrchestrationEventType.GroupBudgetGranted &&
+            event.payload.commandId === context.commandId,
+        ),
+      append: async (sequence) => {
+        await this.journal.append(stream, sequence, [
+          createEventDraft({
+            eventId: `${context.commandId}:${OrchestrationEventType.GroupBudgetGranted}:${requestId}`,
+            eventType: OrchestrationEventType.GroupBudgetGranted,
+            occurredAt: context.occurredAt,
+            correlationId: context.correlationId,
+            causationId: context.commandId,
+            actor: context.actor,
+            source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
+            stream,
+            payload: { key: stream.id, requestId, commandId: context.commandId },
+          }),
+        ]);
+      },
+    });
+  }
 }
 
 function primaryOwner(events: readonly OrchestrationGroupEvent[]): string | undefined {
@@ -98,6 +135,7 @@ function primaryOwner(events: readonly OrchestrationGroupEvent[]): string | unde
       case OrchestrationEventType.PrimaryClaimed:
         return event.payload.workflowInstanceId;
       case OrchestrationEventType.GroupClaimed:
+      case OrchestrationEventType.GroupBudgetGranted:
         break;
       default:
         assertNever(event);
@@ -113,12 +151,18 @@ function claimedRequestIds(events: readonly OrchestrationGroupEvent[]): Readonly
         case OrchestrationEventType.GroupClaimed:
           return [event.payload.requestId];
         case OrchestrationEventType.PrimaryClaimed:
+        case OrchestrationEventType.GroupBudgetGranted:
           return [];
         default:
           return assertNever(event);
       }
     }),
   );
+}
+
+function budgetGrants(events: readonly OrchestrationGroupEvent[]): number {
+  return events.filter((event) => event.eventType === OrchestrationEventType.GroupBudgetGranted)
+    .length;
 }
 
 function groupEvents(

@@ -158,6 +158,11 @@ const samples = [
     workflow,
   ),
   eventEnvelope(
+    OrchestrationEventType.GroupBudgetGranted,
+    { key: childGroup.id, requestId: 'request-1', commandId: 'extend-command-1' },
+    childGroup,
+  ),
+  eventEnvelope(
     OrchestrationEventType.WorkflowDefinitionRegistered,
     {
       workflowName: workflowName('default'),
@@ -173,6 +178,27 @@ const samples = [
     workflowDefinitions,
   ),
 ] as const;
+
+it('rejects a workflow definition registration without its workflow name', () => {
+  expect(() =>
+    decodeOrchestrationEvent(
+      eventEnvelope(
+        OrchestrationEventType.WorkflowDefinitionRegistered,
+        {
+          fingerprint: 'a'.repeat(64),
+          compiledDefinition: {
+            name: workflowName('default'),
+            entry: stageName('implement'),
+            commands: {},
+            watches: [],
+            stages: {},
+          },
+        },
+        workflowDefinitions,
+      ),
+    ),
+  ).toThrow(/workflowName/i);
+});
 
 it('types decoded and draft ActivityWaiting outcomes with the Orchestration brand', () => {
   type WaitingEvent = Extract<
