@@ -235,6 +235,10 @@
   border: 2px solid var(--bad);
 }
 
+.childStatusDot[data-status='needs-clarification'] {
+  border: 2px solid var(--accent-light);
+}
+
 .childStatusDot[data-active-run='true'] {
   animation: active-run-pulse 1.5s ease-out infinite;
   box-shadow: 0 0 0 0 rgb(134 239 172 / 0.6);
