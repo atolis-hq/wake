@@ -216,6 +216,8 @@ function recordExecOutput(
 ): void {
   if (call.spawnsBackgroundJob === true && result.exitCode === undefined && result.pendingCellId)
     telemetry.pendingCells.add(result.pendingCellId);
+  if (call.writeStdinSessionId !== undefined && result.pendingCellId !== undefined)
+    telemetry.sessionsByCell.set(result.pendingCellId, call.writeStdinSessionId);
   if (call.writeStdinSessionId === undefined || result.jsonExitCode === undefined) return;
   resolveSession(call.writeStdinSessionId, telemetry);
 }
@@ -232,7 +234,12 @@ function recordWaitOutput(
   telemetry: TelemetryState,
 ): void {
   if (call.cellId === undefined) return;
-  if (result.exitCode !== undefined) telemetry.resolvedCells.add(call.cellId);
+  if (result.exitCode !== undefined) {
+    telemetry.resolvedCells.add(call.cellId);
+    const sessionId = telemetry.sessionsByCell.get(call.cellId);
+    if (sessionId !== undefined && result.jsonExitCode !== undefined)
+      resolveSession(sessionId, telemetry);
+  }
   if (result.sessionId !== undefined) telemetry.sessionsByCell.set(call.cellId, result.sessionId);
   if (result.notFoundCellId === call.cellId) telemetry.unresolvableCells.add(call.cellId);
 }

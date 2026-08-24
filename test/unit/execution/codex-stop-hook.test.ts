@@ -357,6 +357,110 @@ describe('Codex Stop hook telemetry guard', () => {
     expect(inspectCodexTranscript(transcript)).toEqual({});
   });
 
+  it('resolves the originating cell when a write_stdin wrapper wait reports its exit code', () => {
+    const transcript = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'exec-command',
+          input: 'const result = await tools.exec_command({cmd:"npm run verify"});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-command',
+          output: 'Script running with cell ID 42',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'wait',
+          call_id: 'wait-command',
+          input: { cell_id: '42' },
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'wait-command',
+          output: '{"session_id":"generic-session-17"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'write-stdin',
+          input:
+            'const result = await tools.write_stdin({session_id:"generic-session-17",chars:"",yield_time_ms:30000});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'write-stdin',
+          output: 'Script running with cell ID 43',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'wait-wrapper',
+          arguments: '{"cell_id":"43"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'wait-wrapper',
+          output: [{ type: 'input_text', text: '{"exit_code":0}' }],
+        },
+      }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({});
+  });
+
+  it('keeps the originating cell unresolved when a write_stdin wrapper wait reports legacy exit text', () => {
+    const transcript = [
+      sessionLineageTranscript('Script running with cell ID 43'),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'wait',
+          call_id: 'wait-wrapper',
+          input: { cell_id: '43' },
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'wait-wrapper',
+          output: 'Exit code: 0',
+        },
+      }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('Codex cell 42 has no terminal exit_code'),
+    });
+  });
+
   it('keeps a session-linked cell unresolved when write_stdin reports a legacy exit-code string', () => {
     const transcript = sessionLineageTranscript('Exit code: 1');
 
