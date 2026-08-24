@@ -39,14 +39,12 @@ test('operates Wake through the real HTTP Surface and packaged application', asy
 
   await page.getByRole('link', { name: 'Events' }).click();
   const firstEvent = page.getByText('event-1');
-  if (testInfo.project.name === 'desktop') await expect(firstEvent).toBeVisible();
-  else await expect(firstEvent).toBeAttached();
+  await expect(firstEvent).toBeVisible();
   await page.getByRole('button', { name: 'Pause live view' }).click();
   await expect(page.getByRole('button', { name: /new event/ })).toBeVisible({ timeout: 7_000 });
   await page.getByRole('button', { name: 'Resume live view' }).click();
   const thirdEvent = page.getByText('event-3');
-  if (testInfo.project.name === 'desktop') await expect(thirdEvent).toBeVisible();
-  else await expect(thirdEvent).toBeAttached();
+  await expect(thirdEvent).toBeVisible();
 
   await page.goto('/health');
   await expect(page.getByRole('table', { name: 'Runner availability' })).toContainText(

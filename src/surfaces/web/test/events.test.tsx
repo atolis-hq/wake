@@ -63,6 +63,15 @@ describe('incremental event feed', () => {
       ),
     ).toHaveLength(200);
   });
+  it('shows initial records in live view even when the page is initially scrollable', () => {
+    const page = document.scrollingElement ?? document.documentElement;
+    dimensions(page as HTMLElement, { clientHeight: 100, scrollHeight: 300 });
+    const { rerender } = render(<EventsFeed records={[]} />);
+    rerender(<EventsFeed records={[event(1)]} />);
+    expect(screen.getByText('event-1')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pause live view' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /new event/ })).toBeNull();
+  });
   it('resumes logical live updates without moving the viewport or selection', async () => {
     const { rerender } = render(<EventsFeed records={[event(1)]} />);
     const page = document.scrollingElement ?? document.documentElement;
