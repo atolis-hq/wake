@@ -22,9 +22,10 @@ name is recognised.
 
 ## Core policies, invariants, and behaviours
 
-- Compilation MUST fail if a configured stage id is a reserved terminal
-  (`done` or `await-human`) — these are never ordinary Stage names; they
-  compile to a `complete` target and an implicit-wait target respectively.
+- Compilation MUST fail if a configured stage id is a reserved target
+  (`done`, `await-human`, or `wait`) — these are never ordinary Stage names;
+  they compile to a `complete`, implicit-wait, or resource-transition-wait
+  target respectively.
 - The entry Stage MUST be one of the configured stages; when no `entry` is
   configured, the first declared stage is used.
 - Every Stage's `activity` and `with` input MUST validate against the
@@ -33,7 +34,7 @@ name is recognised.
 - Every outcome route's key MUST be one of the named Activity's declared
   outcome kinds; a route for a kind the Activity cannot produce fails
   compilation.
-- Every outcome route's `then` MUST be `done`, `await-human`, or another
+- Every outcome route's `then` MUST be `done`, `await-human`, `wait`, or another
   configured stage; any other value fails compilation.
 - A route MUST NOT configure both `await` and `watchGates`; declaring both
   fails compilation.
@@ -45,6 +46,9 @@ name is recognised.
   route's own Stage when omitted, and MUST otherwise be `done`,
   `await-human`, or another configured stage, validated the same way as a
   route's own `then`.
+- `wait` is valid only on a `done` route with one or more
+  `resourceTransitions`. Each transition MUST declare its own `then`, and that
+  target MUST NOT be `wait`.
 - A `done` outcome route with neither an explicit `await` nor `watchGates`
   compiles an implicit Await gating on the `approved` Signal from `human` —
   approval-by-default — unless its Stage sets `requiresApproval: false`. A

@@ -148,6 +148,81 @@ describe('compiled workflow contracts', () => {
     });
     expect(routes.done).not.toHaveProperty('then');
   });
+
+  it('compiles a done route to a durable resource-transition wait', () => {
+    const compiled = compileWorkflow(
+      'default',
+      {
+        stages: {
+          merge: {
+            activity: 'implement',
+            with: {},
+            on: {
+              done: {
+                then: 'wait',
+                resourceTransitions: [
+                  {
+                    events: ['pr.state-changed'],
+                    where: { state: 'merged' },
+                    then: 'complete-issue',
+                  },
+                ],
+              },
+              blocked: { then: 'await-human' },
+            },
+            requiresApproval: false,
+          },
+          'complete-issue': {
+            activity: 'implement',
+            with: {},
+            on: { done: { then: 'done' }, blocked: { then: 'await-human' } },
+          },
+        },
+      },
+      registry(),
+    );
+
+    expect(compiled.stages[stageName('merge')]?.on.done?.target).toEqual({
+      kind: TransitionTargetKind.ResourceTransitionWait,
+    });
+  });
+
+  it.each([
+    ['omits resourceTransitions', { then: 'wait' }],
+    [
+      'omits a resource transition target',
+      {
+        then: 'wait',
+        resourceTransitions: [{ events: ['pr.state-changed'], where: { state: 'merged' } }],
+      },
+    ],
+    [
+      'targets wait from a resource transition',
+      {
+        then: 'wait',
+        resourceTransitions: [
+          { events: ['pr.state-changed'], where: { state: 'merged' }, then: 'wait' },
+        ],
+      },
+    ],
+  ])('rejects a wait route that %s', (_reason, done) => {
+    expect(() =>
+      compileWorkflow(
+        'default',
+        {
+          stages: {
+            merge: {
+              activity: 'implement',
+              with: {},
+              on: { done, blocked: { then: 'await-human' } },
+              requiresApproval: false,
+            },
+          },
+        },
+        registry(),
+      ),
+    ).toThrow(/wait.*resourceTransitions|resourceTransitions.*wait/i);
+  });
 });
 
 describe('compiled workflow signal contracts', () => {
@@ -184,7 +259,7 @@ describe('compiled workflow signal contracts', () => {
     ).toThrow(/invalid signal name.*needs_input/i);
   });
 
-  it.each(['done', 'await-human'])('rejects the reserved stage name %s', (reserved) => {
+  it.each(['done', 'await-human', 'wait'])('rejects the reserved stage name %s', (reserved) => {
     expect(() =>
       compileWorkflow(
         'default',

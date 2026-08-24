@@ -167,5 +167,7 @@ export function resumeToTarget(
     );
     return;
   }
+  if (target.kind === TransitionTargetKind.ResourceTransitionWait)
+    throw new Error('resource-transition wait must be resumed by a resource transition');
   pushStageEntry(events, definition, state, input, target.stage);
 }

@@ -4,6 +4,7 @@ export const TransitionTargetKind = defineClosedVocabulary({
   Stage: 'stage',
   Complete: 'complete',
   AwaitSignal: 'await-signal',
+  ResourceTransitionWait: 'resource-transition-wait',
 } as const);
 
 export type TransitionTargetKind = ValueOf<typeof TransitionTargetKind>;
