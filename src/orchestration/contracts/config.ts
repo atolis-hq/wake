@@ -201,7 +201,8 @@ export type WorkflowDefinitionConfig = z.infer<typeof workflowDefinitionConfigSc
 export type TransitionTarget =
   | { readonly kind: typeof TransitionTargetKind.Stage; readonly stage: StageName }
   | { readonly kind: typeof TransitionTargetKind.Complete }
-  | { readonly kind: typeof TransitionTargetKind.AwaitSignal; readonly signal: SignalName };
+  | { readonly kind: typeof TransitionTargetKind.AwaitSignal; readonly signal: SignalName }
+  | { readonly kind: typeof TransitionTargetKind.ResourceTransitionWait };
 
 // A discriminated union, not `{ kind, id? }`: a flat optional id would let
 // `{ kind: 'human', id: x }` and `{ kind: 'watch' }` both type-check.

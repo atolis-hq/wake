@@ -41,7 +41,7 @@ export function compileWorkflow(
   const config = workflowDefinitionConfigSchema.parse(input) as WorkflowDefinitionConfig;
   const rawStageNames = Object.keys(config.stages);
   for (const candidate of rawStageNames) {
-    if (isReservedTerminal(candidate)) throw new Error(`Reserved stage name: ${candidate}`);
+    if (isReservedRouteTarget(candidate)) throw new Error(`Reserved stage name: ${candidate}`);
   }
   const stageNames = rawStageNames.map(stageName);
   const entry = config.entry ?? stageNames[0]!;
@@ -142,7 +142,7 @@ function compileStage(
           throw new Error(
             `Workflow outcome route ${outcomeKind} is not declared by Activity ${definition.name}`,
           );
-        if (!isReservedTerminal(route.then) && !(route.then in allStages))
+        if (!isReservedRouteTarget(route.then) && !(route.then in allStages))
           throw new Error(`Unknown transition target: ${route.then}`);
         if (route.await !== undefined && route.watchGates !== undefined)
           throw new Error(
@@ -152,6 +152,12 @@ function compileStage(
           throw new Error(
             `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} resourceTransitions are only valid on done`,
           );
+        if (route.then === 'wait' && outcomeKind !== ActivityOutcomeKind.Done)
+          throw new Error('then: wait is only valid on done');
+        if (route.then === 'wait' && route.resourceTransitions === undefined)
+          throw new Error('then: wait requires resourceTransitions');
+        if (route.then === 'wait' && (route.await !== undefined || route.watchGates !== undefined))
+          throw new Error('then: wait cannot configure await or watchGates');
         const followOns = route.activities?.map((activity) => ({
           use: activityName(activity.use),
           with: activities.validateInput(activityName(activity.use), activity.with),
@@ -192,10 +198,13 @@ function compileStage(
             : {
                 resourceTransitions: compileResourceTransitions(
                   route.resourceTransitions,
-                  route.then,
-                  outcomeKind,
+                  {
+                    inheritedThen: route.then,
+                    outcomeKind,
+                    requiresExplicitTarget: route.then === 'wait',
+                  },
                   allStages,
-                  isReservedTerminal,
+                  isReservedRouteTarget,
                   compileTarget,
                 ),
               }),
@@ -233,7 +242,7 @@ function compileWatchGates(
           `Unknown watch reference in workflow "${workflow}" stage "${rawStageName}": "${normalized.watch}"`,
         );
       const onRejectThen = normalized.onReject?.then ?? rawStageName;
-      if (!isReservedTerminal(onRejectThen) && !(onRejectThen in allStages))
+      if (!isReservedTerminalTarget(onRejectThen) && !(onRejectThen in allStages))
         throw new Error(`Unknown watchGates onReject target: ${onRejectThen}`);
       return Object.freeze({
         watch: watchId(normalized.watch),
@@ -290,12 +299,16 @@ function compileCommands(
   ) as Record<ReturnType<typeof commandName>, CompiledSupplementalCommand>;
 }
 
-const isReservedTerminal = (target: string): boolean =>
+const isReservedRouteTarget = (target: string): boolean =>
+  target === ActivityOutcomeKind.Done || target === 'await-human' || target === 'wait';
+
+const isReservedTerminalTarget = (target: string): boolean =>
   target === ActivityOutcomeKind.Done || target === 'await-human';
 
 function compileTarget(target: string, outcomeKind: string): CompiledOutcomeRoute['target'] {
   if (target === ActivityOutcomeKind.Done) return { kind: TransitionTargetKind.Complete };
   if (target === 'await-human')
     return { kind: TransitionTargetKind.AwaitSignal, signal: signalName(outcomeKind) };
+  if (target === 'wait') return { kind: TransitionTargetKind.ResourceTransitionWait };
   return { kind: TransitionTargetKind.Stage, stage: stageName(target) };
 }

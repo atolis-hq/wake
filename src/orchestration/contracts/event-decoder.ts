@@ -142,6 +142,7 @@ const transitionTargetSchema = z.discriminatedUnion('kind', [
       signal: brandedStringSchema(signalName),
     })
     .strict(),
+  z.object({ kind: z.literal(TransitionTargetKind.ResourceTransitionWait) }).strict(),
 ]);
 const resourceTransitionSchema = z
   .object({

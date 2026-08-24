@@ -137,8 +137,8 @@ on:
 
 ## Outcome routes and their evaluation order
 
-Every `on.<outcome>` route requires `then`: another stage, `done`, or
-`await-human`. Its additional fields are:
+Every `on.<outcome>` route requires `then`: another stage, `done`,
+`await-human`, or the resource-transition-only `wait`. Its additional fields are:
 
 | Field | Use |
 | --- | --- |
@@ -189,6 +189,39 @@ transition, not to a resource-transition resume. If failing checks can route
 back into the stage that produced them, as above, verify the target
 Activity's own behavior bounds retries (for example, a repair template that
 gives up after N attempts), or route to a distinct stage instead of looping.
+
+To wait solely for a durable resource fact after an Activity completes, set the
+route target to `wait`. This is not the named-signal and authority mechanism
+`await`; it records a resource-transition wait without entering another stage
+or requesting the Activity again. `wait` is valid only on a `done` route with
+at least one `resourceTransitions` entry. Every entry must declare its own
+final `then` target, which cannot be `wait`:
+
+```yaml
+merge:
+  activity: pr.merge
+  with:
+    target: primary
+    method: squash
+    requireApproval: false
+    requireChecks: true
+    autoMerge: true
+  on:
+    done:
+      then: wait
+      resourceTransitions:
+        - events: [pr.state-changed]
+          where: { state: merged }
+          then: complete-issue
+    blocked: { then: await-human }
+    failed: { then: await-human }
+  requiresApproval: false
+```
+
+This is useful for native auto-merge: delivery confirmation means the provider
+accepted the enablement request, not that the pull request merged. Wake stays
+waiting until the matching merged-PR fact arrives, including through the
+existing catch-up path for a fact observed before the wait was recorded.
 
 Wake processes `resourceTransitions` through two durable reactor paths. A
 matching resource fact observed while the route is waiting is evaluated as it
