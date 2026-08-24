@@ -67,8 +67,16 @@ it('fails closed for an unauthorized /extend comment', async () => {
         return { kind: resourceKind('issue') };
       },
     } as never,
-    work: { async get() { return { state: 'open', frozen: false, deleted: false }; } } as never,
-    lookup: { async resourceIdForExternalKey() { return 'resource-7'; } } as never,
+    work: {
+      async get() {
+        return { state: 'open', frozen: false, deleted: false };
+      },
+    } as never,
+    lookup: {
+      async resourceIdForExternalKey() {
+        return 'resource-7';
+      },
+    } as never,
     pullRequests: undefined,
     ids: {} as never,
     adapter: GitHubAdapter,

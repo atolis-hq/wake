@@ -1,6 +1,10 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
-import { activityName, ProviderPermission, ReviewActorKind } from '../../../src/activities/index.js';
+import {
+  ProviderPermission,
+  ReviewActorKind,
+  activityName,
+} from '../../../src/activities/index.js';
 import {
   ExecutionEventType,
   RunRepository,
@@ -144,7 +148,9 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
   expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
     'blocked',
   );
-  expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.waitingFor).toMatchObject({
+  expect(
+    (await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.waitingFor,
+  ).toMatchObject({
     signalKind: 'orchestration.watch-gate-verdict',
   });
 
@@ -185,7 +191,9 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
     },
   ).runOnce();
 
-  expect(await fixture.world.events('integration.github.inbound-translation-retried')).toHaveLength(0);
+  expect(await fixture.world.events('integration.github.inbound-translation-retried')).toHaveLength(
+    0,
+  );
   expect(await fixture.world.events('orchestration.group-budget-granted')).toHaveLength(1);
   expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
     'waiting',
