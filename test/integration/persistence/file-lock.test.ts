@@ -3,7 +3,7 @@ import { access, mkdir, mkdtemp, open, readdir, readFile, rm, writeFile } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { acquireFileLock } from '../../../src/persistence/index.js';
+import { acquireFileLock, withFileLock } from '../../../src/persistence/index.js';
 
 const roots: string[] = [];
 
@@ -26,6 +26,22 @@ it('permits one file-lock owner at a time', async () => {
   } finally {
     await first.release();
   }
+});
+
+it('waits for a briefly contended lock when configured to do so', async () => {
+  const path = await lockPath('wait.lock');
+  const owner = await acquireFileLock(path, { staleRequiresDeadProcess: true });
+  const contender = withFileLock(path, async () => 'acquired-after-wait', {
+    staleAfterMs: 60_000,
+    staleRequiresDeadProcess: true,
+    waitMs: 250,
+    retryIntervalMs: 5,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await owner.release();
+
+  await expect(contender).resolves.toBe('acquired-after-wait');
 });
 
 it('removes an empty strict owner directory after the last release', async () => {

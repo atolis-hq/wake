@@ -14,7 +14,11 @@ import {
 } from '../../../src/integrations/github/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
-import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
+import {
+  resourceCapability,
+  ResourceCorrelationRole,
+  resourceKind,
+} from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock, TestWorld } from '../../e2e/support/world.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
@@ -78,6 +82,52 @@ describe('InboundTranslator', () => {
     expect(resource).not.toMatch(/github/);
     expect(
       await resources.correlationsForWork((await resources.correlations(resource!))[0]!.workItemId),
+    ).toHaveLength(1);
+  });
+
+  it('resumes a partially admitted observation after restarting the translator', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const stream = integrationStream(BuiltInAdapterId.GitHub);
+    await journal.append(stream, 0, [
+      createEventDraft({
+        eventId: 'github:issue:owner/repo#partial:v1',
+        eventType: GitHubEventType.WorkObserved,
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'github:owner/repo#partial',
+        causationId: 'github:issue:owner/repo#partial:v1',
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: 'github' },
+        stream,
+        payload: { ...observation(), externalKey: 'owner/repo#partial' },
+      }),
+    ]);
+    const originalCreate = work.create.bind(work);
+    vi.spyOn(work, 'create').mockRejectedValueOnce(new Error('transient create failure'));
+    const dependencies = { lookup, orchestration, routing };
+
+    await new InboundTranslator(journal, checkpoints, work, resources, dependencies).runOnce();
+    vi.mocked(work.create).mockImplementation(originalCreate);
+    await new InboundTranslator(journal, checkpoints, work, resources, dependencies).runOnce();
+
+    const resource = await lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#partial',
+    });
+    expect(resource).not.toBeNull();
+    const correlation = (await resources.correlations(resource!)).find(
+      (value) => value.role === ResourceCorrelationRole.Primary,
+    );
+    expect(correlation).toBeDefined();
+    expect(await work.get(correlation!.workItemId)).not.toBeNull();
+    expect(
+      (await journal.readStream(stream)).filter(
+        (candidate) => candidate.eventType === GitHubEventType.AdmissionStarted,
+      ),
     ).toHaveLength(1);
   });
 
@@ -236,30 +286,34 @@ describe('InboundTranslator', () => {
       routing,
     });
 
-    const [ignored, admitted] = await journal.append(initial.stream, 1, [
-      createEventDraft({
-        eventId: 'github:issue:owner/repo#7:v2',
-        eventType: 'integration.github.work-observed',
-        occurredAt: clock.now().toISOString(),
-        correlationId: 'github:owner/repo#7',
-        causationId: 'github:issue:owner/repo#7:v2',
-        actor: { kind: 'integration', id: 'github' },
-        source: { kind: 'adapter', id: 'github' },
-        stream: integrationStream(BuiltInAdapterId.GitHub),
-        payload: { ...observation(), revision: 'def456' },
-      }),
-      createEventDraft({
-        eventId: 'github:issue:owner/repo#8:v1',
-        eventType: 'integration.github.work-observed',
-        occurredAt: clock.now().toISOString(),
-        correlationId: 'github:owner/repo#8',
-        causationId: 'github:issue:owner/repo#8:v1',
-        actor: { kind: 'integration', id: 'github' },
-        source: { kind: 'adapter', id: 'github' },
-        stream: integrationStream(BuiltInAdapterId.GitHub),
-        payload: { ...observation(), externalKey: 'owner/repo#8', revision: 'ghi789' },
-      }),
-    ]);
+    const [ignored, admitted] = await journal.append(
+      initial.stream,
+      (await journal.readStream(initial.stream)).length,
+      [
+        createEventDraft({
+          eventId: 'github:issue:owner/repo#7:v2',
+          eventType: 'integration.github.work-observed',
+          occurredAt: clock.now().toISOString(),
+          correlationId: 'github:owner/repo#7',
+          causationId: 'github:issue:owner/repo#7:v2',
+          actor: { kind: 'integration', id: 'github' },
+          source: { kind: 'adapter', id: 'github' },
+          stream: integrationStream(BuiltInAdapterId.GitHub),
+          payload: { ...observation(), revision: 'def456' },
+        }),
+        createEventDraft({
+          eventId: 'github:issue:owner/repo#8:v1',
+          eventType: 'integration.github.work-observed',
+          occurredAt: clock.now().toISOString(),
+          correlationId: 'github:owner/repo#8',
+          causationId: 'github:issue:owner/repo#8:v1',
+          actor: { kind: 'integration', id: 'github' },
+          source: { kind: 'adapter', id: 'github' },
+          stream: integrationStream(BuiltInAdapterId.GitHub),
+          payload: { ...observation(), externalKey: 'owner/repo#8', revision: 'ghi789' },
+        }),
+      ],
+    );
 
     await expect(resumed.runOnce()).resolves.toBeGreaterThan(0);
     expect(await checkpoints.load('reactor:integration.github.inbound')).toBe(
@@ -508,7 +562,7 @@ describe('InboundTranslator conclusion', () => {
         outcome: 'completed',
       },
     });
-    await journal.append(closed.stream, 1, [closed]);
+    await journal.append(closed.stream, (await journal.readStream(closed.stream)).length, [closed]);
     await translator.runOnce();
 
     expect(calls).toEqual([
@@ -572,7 +626,7 @@ describe('InboundTranslator conclusion', () => {
         outcome: 'cancelled',
       },
     });
-    await journal.append(closed.stream, 1, [closed]);
+    await journal.append(closed.stream, (await journal.readStream(closed.stream)).length, [closed]);
     await translator.runOnce();
 
     expect(calls).toEqual([

@@ -20,6 +20,13 @@ export interface FileLockOptions {
   readonly processStartedAt?: (pid: number) => Promise<Date | null>;
 }
 
+export interface WithFileLockOptions extends FileLockOptions {
+  /** Wait for a contended lock for at most this long before reporting contention. */
+  readonly waitMs?: number;
+  /** Delay between acquisition attempts while waiting for a contended lock. */
+  readonly retryIntervalMs?: number;
+}
+
 interface UnavailableFileLock {
   readonly acquired: false;
   readonly release: () => Promise<void>;
@@ -371,10 +378,12 @@ async function linuxProcessStartTicks(pid: number): Promise<number> {
 export async function withFileLock<Value>(
   path: string,
   operation: () => Promise<Value>,
+  options: WithFileLockOptions = {},
 ): Promise<Value> {
-  const lock = await acquireFileLock(path, {
+  const lock = await acquireFileLockWithWait(path, {
     staleAfterMs: 60_000,
     staleRequiresDeadProcess: true,
+    ...options,
   });
   if (!lock.acquired) throw new Error(`File lock is already held: ${path}`);
   try {
@@ -382,4 +391,20 @@ export async function withFileLock<Value>(
   } finally {
     await lock.release();
   }
+}
+
+async function acquireFileLockWithWait(path: string, options: WithFileLockOptions) {
+  const waitMs = options.waitMs ?? 0;
+  const retryIntervalMs = options.retryIntervalMs ?? 25;
+  const deadline = Date.now() + waitMs;
+  do {
+    const lock = await acquireFileLock(path, options);
+    if (lock.acquired || Date.now() >= deadline) return lock;
+    await delay(Math.min(retryIntervalMs, Math.max(0, deadline - Date.now())));
+  } while (Date.now() < deadline);
+  return acquireFileLock(path, options);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

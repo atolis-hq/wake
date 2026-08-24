@@ -43,12 +43,18 @@ poll GitHub itself — GitHub Inbound Evidence does.
 
 ## Core policies, invariants, and behaviours
 
-- Resolving an external key MUST check, in order: identities already minted
-  earlier in the same translation batch; then the durable lookup for an
-  existing correlation; only when neither applies does resolution mint a
-  fresh Resource/WorkItem identity pair, and only if the observation's
-  intake decision admits it. An ineligible object Wake has never seen MUST
-  produce no WorkItem, Resource, or effect.
+- Before beginning an admitted Work Admission sequence, translation MUST append
+  one `integration.github.admission-started` fact containing the source event
+  id and the chosen Resource/WorkItem ids. A replay of that source event MUST
+  reuse those ids and resume the idempotent admission sequence. This recovery
+  is source-scoped; it MUST NOT attempt to correlate arbitrary unowned
+  Resources.
+- Resolving an external key MUST check, in order: a durable admission identity
+  for the source event; identities already minted earlier in the same
+  translation batch; then the durable lookup for an existing correlation; only
+  when none applies does resolution mint a fresh Resource/WorkItem identity
+  pair, and only if the observation's intake decision admits it. An ineligible
+  object Wake has never seen MUST produce no WorkItem, Resource, or effect.
 - An already-correlated Resource whose lookup succeeds but has no active
   `primary` correlation MUST use Resources' history-aware primary lookup. If
   its most recent retracted primary targets a deleted WorkItem, translation

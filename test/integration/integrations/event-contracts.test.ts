@@ -49,6 +49,14 @@ const samples = [
   ],
   [GitHubEventType.DeliveryObserved, { deliveryId: 'delivery-1', raw: { status: 'ok' } }],
   [
+    GitHubEventType.AdmissionStarted,
+    {
+      sourceEventId: 'github:issue:atolis/wake#1:v2',
+      resourceId: 'resource-01m03zgw1tgd1f0wggdt8081q2',
+      workItemId: 'work-01m03zgw1tgd1f0wggdt8081q2',
+    },
+  ],
+  [
     GitHubEventType.InboundTranslationRetried,
     {
       adapter: 'github',

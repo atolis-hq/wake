@@ -14,6 +14,7 @@ import {
   type EventEnvelope,
   type EventUnion,
 } from '../../../kernel/index.js';
+import { resourceId, type ResourceId } from '../../../resources/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
 import { adapterId } from '../../contracts/identifiers.js';
 import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
@@ -24,6 +25,7 @@ export const GitHubEventType = {
   CommentObserved: 'integration.github.comment-observed',
   DeliveryObserved: 'integration.github.delivery-observed',
   DeletedWorkObservationSkipped: 'integration.github.deleted-work-observation-skipped',
+  AdmissionStarted: 'integration.github.admission-started',
   InboundTranslationRetried: 'integration.github.inbound-translation-retried',
   InboundTranslationRecovered: 'integration.github.inbound-translation-recovered',
   InboundTranslationFailed: 'integration.github.inbound-translation-failed',
@@ -125,6 +127,12 @@ interface GitHubDeletedWorkObservationSkippedPayload {
   readonly reason: 'work-item-deleted';
 }
 
+interface GitHubAdmissionStartedPayload {
+  readonly sourceEventId: string;
+  readonly resourceId: ResourceId;
+  readonly workItemId: WorkItemId;
+}
+
 interface InboundTranslationRetryPayload {
   readonly adapter: string;
   readonly sourceEventId: string;
@@ -150,6 +158,7 @@ export interface GitHubEventPayloads {
   readonly [GitHubEventType.CommentObserved]: GitHubCommentObservedPayload;
   readonly [GitHubEventType.DeliveryObserved]: GitHubDeliveryObservedPayload;
   readonly [GitHubEventType.DeletedWorkObservationSkipped]: GitHubDeletedWorkObservationSkippedPayload;
+  readonly [GitHubEventType.AdmissionStarted]: GitHubAdmissionStartedPayload;
   readonly [GitHubEventType.InboundTranslationRetried]: InboundTranslationRetryPayload;
   readonly [GitHubEventType.InboundTranslationRecovered]: InboundTranslationRecoveredPayload;
   readonly [GitHubEventType.InboundTranslationFailed]: InboundTranslationFailurePayload;
@@ -219,6 +228,17 @@ const eventSchema = z.discriminatedUnion('eventType', [
         assignees: z.array(z.string()).readonly().optional(),
         changedFiles: z.array(z.string()).readonly().optional(),
         raw: rawSchema,
+      })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(GitHubEventType.AdmissionStarted),
+    stream: streamSchema,
+    payload: z
+      .object({
+        sourceEventId: z.string(),
+        resourceId: brandedStringSchema(resourceId),
+        workItemId: brandedStringSchema(workItemId),
       })
       .strict(),
   }),

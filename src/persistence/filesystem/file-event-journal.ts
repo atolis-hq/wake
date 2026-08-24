@@ -52,61 +52,67 @@ export class FileEventJournal implements EventJournal {
     expectedSequence: number,
     drafts: readonly EventDraft[],
   ): Promise<readonly EventEnvelope[]> {
-    return withFileLock(join(this.root, 'locks', 'event-journal.lock'), async () => {
-      const current = await this.scan();
-      const byId = new Map(current.map((event) => [event.eventId, event]));
-      const batchIds = new Set<string>();
-      for (const draft of drafts) {
-        if (batchIds.has(draft.eventId))
-          throw new Error(`Event id ${draft.eventId} is repeated in one append`);
-        batchIds.add(draft.eventId);
-      }
-      const existing = drafts.map((draft) => byId.get(draft.eventId));
-      for (const [index, event] of existing.entries())
-        if (event !== undefined && !sameDraft(event, drafts[index]!))
-          throw new Error(`Event id ${event.eventId} has already been used with different content`);
-      if (drafts.length > 0 && existing.every(isDefined)) return existing.filter(isDefined);
-      const streamEvents = this.cachedEventsForStream(stream);
-      if (streamEvents.length !== expectedSequence)
-        throw new WrongExpectedSequenceError(
-          `Expected sequence ${expectedSequence} for ${key(stream)}, actual ${streamEvents.length}`,
-        );
-      for (const draft of drafts)
-        if (key(draft.stream) !== key(stream)) throw new Error('Event stream mismatch');
-      const recordedAt = this.clock.now().toISOString();
-      let newCount = 0;
-      const envelopes = drafts.map((draft, index): EventEnvelope => {
-        const prior = existing[index];
-        if (prior !== undefined) return prior;
-        newCount += 1;
-        return {
-          ...draft,
-          recordedAt,
-          sequence: streamEvents.length + newCount,
-          globalPosition: current.length + newCount,
-        };
-      });
-      const finalizedEnvelopes = envelopes.map((event) => decodeEventEnvelope(event));
-      const newEnvelopes = finalizedEnvelopes.filter((event) => !byId.has(event.eventId));
-      if (newEnvelopes.length > 0) {
-        const directory = join(this.root, 'events');
-        await mkdir(directory, { recursive: true });
-        const day = recordedAt.slice(0, 10);
-        const file = `${day}.jsonl`;
-        await appendFile(
-          join(directory, file),
-          newEnvelopes.map((event) => JSON.stringify(event)).join('\n') + '\n',
-          'utf8',
-        );
-        await this.extendCache(file, current, newEnvelopes);
-        // The manifest is derived data. The event append is authoritative, so
-        // an index-write failure must not turn a successfully recorded event
-        // into a failed append.
-        await this.persistManifest().catch(() => undefined);
-        this.changeSignalSource.notify();
-      }
-      return finalizedEnvelopes;
-    });
+    return withFileLock(
+      join(this.root, 'locks', 'event-journal.lock'),
+      async () => {
+        const current = await this.scan();
+        const byId = new Map(current.map((event) => [event.eventId, event]));
+        const batchIds = new Set<string>();
+        for (const draft of drafts) {
+          if (batchIds.has(draft.eventId))
+            throw new Error(`Event id ${draft.eventId} is repeated in one append`);
+          batchIds.add(draft.eventId);
+        }
+        const existing = drafts.map((draft) => byId.get(draft.eventId));
+        for (const [index, event] of existing.entries())
+          if (event !== undefined && !sameDraft(event, drafts[index]!))
+            throw new Error(
+              `Event id ${event.eventId} has already been used with different content`,
+            );
+        if (drafts.length > 0 && existing.every(isDefined)) return existing.filter(isDefined);
+        const streamEvents = this.cachedEventsForStream(stream);
+        if (streamEvents.length !== expectedSequence)
+          throw new WrongExpectedSequenceError(
+            `Expected sequence ${expectedSequence} for ${key(stream)}, actual ${streamEvents.length}`,
+          );
+        for (const draft of drafts)
+          if (key(draft.stream) !== key(stream)) throw new Error('Event stream mismatch');
+        const recordedAt = this.clock.now().toISOString();
+        let newCount = 0;
+        const envelopes = drafts.map((draft, index): EventEnvelope => {
+          const prior = existing[index];
+          if (prior !== undefined) return prior;
+          newCount += 1;
+          return {
+            ...draft,
+            recordedAt,
+            sequence: streamEvents.length + newCount,
+            globalPosition: current.length + newCount,
+          };
+        });
+        const finalizedEnvelopes = envelopes.map((event) => decodeEventEnvelope(event));
+        const newEnvelopes = finalizedEnvelopes.filter((event) => !byId.has(event.eventId));
+        if (newEnvelopes.length > 0) {
+          const directory = join(this.root, 'events');
+          await mkdir(directory, { recursive: true });
+          const day = recordedAt.slice(0, 10);
+          const file = `${day}.jsonl`;
+          await appendFile(
+            join(directory, file),
+            newEnvelopes.map((event) => JSON.stringify(event)).join('\n') + '\n',
+            'utf8',
+          );
+          await this.extendCache(file, current, newEnvelopes);
+          // The manifest is derived data. The event append is authoritative, so
+          // an index-write failure must not turn a successfully recorded event
+          // into a failed append.
+          await this.persistManifest().catch(() => undefined);
+          this.changeSignalSource.notify();
+        }
+        return finalizedEnvelopes;
+      },
+      { waitMs: 5_000, retryIntervalMs: 25 },
+    );
   }
 
   // Reads via the persisted per-segment manifest when the in-memory cache is
