@@ -73,6 +73,12 @@ const mockWorkItemWorkflowDiagram: WorkflowDiagram = {
           kind: 'reactor',
           status: 'completed',
         },
+        {
+          id: 'implement-clarification-reactor',
+          label: 'Clarification requested',
+          kind: 'reactor',
+          lastOutcome: 'NEEDS_CLARIFICATION',
+        },
         { id: 'implement-merged-reactor', label: 'PR merged', kind: 'reactor' },
       ],
     },
@@ -239,7 +245,7 @@ describe('mockWorkItemWorkflowDiagram', () => {
     );
 
     expect(mockWorkItemWorkflowDiagram.stages.at(-1)?.status).toBeUndefined();
-    expect(reactors).toHaveLength(3);
+    expect(reactors).toHaveLength(4);
     for (const reactor of reactors) {
       for (const key of instanceOverlayKeys.slice(3)) {
         expect(reactor).not.toHaveProperty(key);
@@ -317,6 +323,9 @@ describe('WorkflowDiagramView', () => {
 
     expect(screen.getByTestId('child-status-refine-activity').dataset.status).toBe('active');
     expect(screen.getByTestId('child-status-implement-activity').dataset.status).toBe('completed');
+    expect(screen.getByTestId('child-status-implement-clarification-reactor').dataset.status).toBe(
+      'needs-clarification',
+    );
     expect(screen.getByTestId('child-status-implement-merged-reactor').dataset.status).toBe(
       'pending',
     );

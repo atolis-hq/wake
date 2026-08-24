@@ -216,7 +216,8 @@
 .childStatusDot[data-status='completed'],
 .childStatusDot[data-status='waiting'],
 .childStatusDot[data-status='blocked'],
-.childStatusDot[data-status='failed'] {
+.childStatusDot[data-status='failed'],
+.childStatusDot[data-status='needs-clarification'] {
   box-sizing: border-box;
   background: transparent;
   box-shadow: none;
