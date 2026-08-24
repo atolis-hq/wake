@@ -104,7 +104,7 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     ]);
   };
   const command = useMutation({
-    mutationFn: (name: 'freeze' | 'unfreeze' | 'delete' | 'retry') =>
+    mutationFn: (name: 'freeze' | 'unfreeze' | 'delete' | 'retry' | 'extend') =>
       client.work.command(workItemKey, name, `web:${name}:${globalThis.crypto.randomUUID()}`),
     onSuccess: async (_result, name) => {
       await refresh();

@@ -9,7 +9,6 @@ import {
 import {
   orchestrationGroupId,
   signalName,
-  watchId,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/contracts/identifiers.js';
@@ -76,7 +75,10 @@ async function fixture() {
           work: {
             activity: 'parent-work',
             with: {},
-            on: { done: { then: 'done', watchGates: ['review'] }, blocked: { then: 'await-human' } },
+            on: {
+              done: { then: 'done', watchGates: ['review'] },
+              blocked: { then: 'await-human' },
+            },
           },
         },
         watches: [
@@ -205,7 +207,8 @@ it('extends each exhausted group only after a human-authorized grant', async () 
     context('watch-rejected-1'),
   );
   const resumed = await service.get(parent.workflowInstanceId);
-  if (resumed?.pendingActivation === undefined) throw new Error('Expected rejected gate to resume parent');
+  if (resumed?.pendingActivation === undefined)
+    throw new Error('Expected rejected gate to resume parent');
   await service.acceptOutcome(
     {
       workflowInstanceId: resumed.workflowInstanceId,
@@ -245,9 +248,11 @@ it('extends each exhausted group only after a human-authorized grant', async () 
 
   const retried = (await service.listAll()).find(
     (workflow) =>
-      workflow.parentWorkflowInstanceId === parent.workflowInstanceId && workflow.triggerId === 'trigger-b',
+      workflow.parentWorkflowInstanceId === parent.workflowInstanceId &&
+      workflow.triggerId === 'trigger-b',
   );
-  if (retried?.pendingActivation === undefined) throw new Error('Expected the extended watch child');
+  if (retried?.pendingActivation === undefined)
+    throw new Error('Expected the extended watch child');
   await service.acceptOutcome(
     {
       workflowInstanceId: retried.workflowInstanceId,

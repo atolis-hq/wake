@@ -73,6 +73,7 @@ describe('GitHub adapter commands', () => {
       { syntax: '/accepted' },
       { syntax: '/changes' },
       { syntax: '/retry' },
+      { syntax: '/extend' },
       { syntax: '/deploy' },
     ]);
   });
@@ -85,6 +86,7 @@ describe('GitHub adapter commands', () => {
       { syntax: '/accepted' },
       { syntax: '/changes' },
       { syntax: '/retry' },
+      { syntax: '/extend' },
     ]);
   });
 });
