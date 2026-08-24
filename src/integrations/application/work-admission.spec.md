@@ -75,6 +75,7 @@ workflow name and never proposes one itself.
 
 ## Decisions, exclusions, and deferred capability
 
-- Work Admission does not retry a partially-completed sequence itself; a
-  failure partway through surfaces to its caller, which decides what to do
-  next.
+- Work Admission's caller persists the identity pair before invoking this
+  sequence. If a failure partway through is retried, the same idempotent
+  `discover`, `create`, `correlate`, and `start` operations resume with that
+  pair rather than minting a second WorkItem.

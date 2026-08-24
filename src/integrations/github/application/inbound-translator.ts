@@ -403,6 +403,7 @@ export class InboundTranslator {
     const intake = evaluateIntakeRules(this.intake, gitHubIntakeFacts(payload));
     if (intake.ignored) return;
     const identity = await this.resolveIdentity(
+      event.eventId,
       { adapter: this.adapter, key: payload.externalKey },
       intake.admitted,
     );
@@ -414,6 +415,7 @@ export class InboundTranslator {
     const resourceIdValue = identity.resourceId;
     const workItemIdValue = identity.workItemId;
     if (workItemIdValue === null) throw new Error('Created identity is missing a WorkItem');
+    await this.recordAdmissionStarted(event, identity);
     const isPullRequest = payload.kind === 'pull-request';
     await admitObservedWork(
       this.admissionServices(),
@@ -668,10 +670,16 @@ export class InboundTranslator {
   }
 
   private async resolveIdentity(
+    sourceEventId: string,
     externalKey: { readonly adapter: string; readonly key: string },
     admitted: boolean,
   ): Promise<ResolvedIdentity | null> {
     const key = `${externalKey.adapter}:${externalKey.key}`;
+    const recorded = await this.recordedAdmissionIdentity(sourceEventId);
+    if (recorded !== undefined) {
+      this.minted.set(key, recorded);
+      return this.resumeAdmissionIdentity(recorded);
+    }
     const inBatch = this.minted.get(key);
     if (inBatch !== undefined) return this.inBatchIdentity(inBatch);
     if (this.lookup === undefined) throw new Error('InboundTranslator lookup is required');
@@ -680,6 +688,60 @@ export class InboundTranslator {
     // An ineligible object Wake has never seen produces no WorkItem, Run, or effect.
     if (!admitted) return null;
     return { ...this.mintIdentity(externalKey), created: true, deleted: false };
+  }
+
+  private async recordedAdmissionIdentity(sourceEventId: string) {
+    const event = (await this.journal!.readStream(integrationStream(this.adapter)))
+      .map(selectGitHubAdapterEvent)
+      .find(
+        (candidate) =>
+          candidate?.eventType === GitHubEventType.AdmissionStarted &&
+          candidate.payload.sourceEventId === sourceEventId,
+      );
+    if (event?.eventType !== GitHubEventType.AdmissionStarted) return undefined;
+    return { resourceId: event.payload.resourceId, workItemId: event.payload.workItemId };
+  }
+
+  private async resumeAdmissionIdentity(identity: {
+    readonly resourceId: ResourceId;
+    readonly workItemId: WorkItemId;
+  }): Promise<ResolvedIdentity> {
+    const work = await this.work!.get(identity.workItemId);
+    if (work?.deleted) return { ...identity, created: false, deleted: true };
+    const correlation = (await this.resources!.correlations(identity.resourceId)).find(
+      (candidate) =>
+        candidate.role === ResourceCorrelationRole.Primary &&
+        candidate.workItemId === identity.workItemId,
+    );
+    return { ...identity, created: correlation === undefined || work === null, deleted: false };
+  }
+
+  private async recordAdmissionStarted(
+    source: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.WorkObserved }>,
+    identity: ResolvedIdentity,
+  ): Promise<void> {
+    if (identity.workItemId === null) throw new Error('Created identity is missing a WorkItem');
+    const stream = integrationStream(this.adapter);
+    const eventId = `github:admission-started:${this.adapter}:${source.eventId}`;
+    const existing = await this.journal!.readStream(stream);
+    if (existing.some((event) => event.eventId === eventId)) return;
+    await this.journal!.append(stream, existing.length, [
+      createEventDraft({
+        eventId,
+        eventType: GitHubEventType.AdmissionStarted,
+        occurredAt: source.occurredAt,
+        correlationId: source.correlationId,
+        causationId: source.eventId,
+        actor: { kind: EventActorKind.Integration, id: this.adapter },
+        source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
+        stream,
+        payload: {
+          sourceEventId: source.eventId,
+          resourceId: identity.resourceId,
+          workItemId: identity.workItemId,
+        },
+      }),
+    ]);
   }
 
   private async inBatchIdentity(identity: {
