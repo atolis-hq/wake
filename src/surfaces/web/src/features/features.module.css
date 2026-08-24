@@ -463,6 +463,20 @@ a.resourceCard:hover {
     grid-column: 1;
     grid-row: auto;
   }
+  .resourceList > li,
+  .resourceCard,
+  .resourceCardTop {
+    min-width: 0;
+  }
+  .resourceCardTitle {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .resourceCardExt {
+    opacity: 1;
+  }
   .board {
     display: block;
     overflow: visible;
