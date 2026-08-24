@@ -1,5 +1,10 @@
 import { expect, it, vi } from 'vitest';
-import { cachedJournalView, createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
+import {
+  cachedJournalView,
+  createEventDraft,
+  JOURNAL_CHANGE_FALLBACK_MS,
+  type EntityRef,
+} from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -58,4 +63,63 @@ it('does not call readAll at all when the cache is still valid', async () => {
   await view.get();
 
   expect(readAllSpy).not.toHaveBeenCalled();
+});
+
+it('does not probe the journal position when the cached view is unchanged', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const latestPositionSpy = vi.spyOn(journal, 'latestGlobalPosition');
+  const view = cachedJournalView(journal, (events) => events.length);
+
+  await view.get();
+  await view.get();
+
+  expect(latestPositionSpy).not.toHaveBeenCalled();
+});
+
+it('refreshes after an in-process append notification', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const derive = vi.fn((events: readonly unknown[]) => events.length);
+  const view = cachedJournalView(journal, derive);
+
+  expect(await view.get()).toBe(0);
+  await journal.append(stream, 0, [draft('event-1')]);
+  expect(await view.get()).toBe(1);
+  expect(derive).toHaveBeenCalledTimes(2);
+});
+
+it('refreshes on the fallback when an in-process notification is missed', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  let now = 0;
+  const derive = vi.fn((events: readonly unknown[]) => events.length);
+  const view = cachedJournalView(
+    {
+      readAll: journal.readAll.bind(journal),
+      // Models a notification the consumer misses, including writes by a
+      // separate process that cannot reach this process-local signal.
+      changeSignal: { revision: () => 0 },
+    } as never,
+    derive,
+    () => now,
+  );
+
+  expect(await view.get()).toBe(0);
+  await journal.append(stream, 0, [draft('missed-notification')]);
+  now = JOURNAL_CHANGE_FALLBACK_MS;
+  expect(await view.get()).toBe(1);
+  expect(derive).toHaveBeenCalledTimes(2);
+});
+
+it('starts the fallback window after a slow derivation completes', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  let now = 0;
+  const derive = vi.fn((events: readonly unknown[]) => {
+    now = JOURNAL_CHANGE_FALLBACK_MS;
+    return events.length;
+  });
+  const view = cachedJournalView(journal, derive, () => now);
+
+  await view.get();
+  await view.get();
+
+  expect(derive).toHaveBeenCalledTimes(1);
 });

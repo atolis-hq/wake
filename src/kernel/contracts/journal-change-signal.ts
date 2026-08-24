@@ -1,4 +1,8 @@
 export interface JournalChangeSignal {
+  // A process-local monotonically increasing revision. Consumers use it to
+  // avoid probing the journal again when no local append has occurred.
+  revision(): number;
+
   // Resolves as soon as a change has been signalled since this call started,
   // or after fallbackMs elapses, or if the signal aborts — whichever first.
   // Never rejects. Coalesces: any number of notify() calls between

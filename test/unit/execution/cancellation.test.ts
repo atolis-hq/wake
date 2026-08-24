@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ExecutionEventType, RunStatus } from '../../../src/execution/index.js';
 import { executionFixture } from './support.js';
@@ -54,5 +54,20 @@ describe('Run cancellation', () => {
     await expect(fixture.finished(RunStatus.Cancelled)).resolves.toMatchObject({
       status: 'cancelled',
     });
+  });
+
+  it('signals the active runner again when cancellation was already recorded', async () => {
+    const fixture = executionFixture();
+    const pending = fixture.start();
+    const run = await fixture.started();
+    const abort = vi.spyOn(AbortController.prototype, 'abort');
+
+    await fixture.service.requestCancellation(run.runId, 'operator');
+    abort.mockClear();
+    await fixture.service.requestCancellation(run.runId, 'operator');
+
+    expect(abort).toHaveBeenCalledWith('operator');
+    fixture.complete({ kind: 'done' });
+    await pending;
   });
 });

@@ -1,6 +1,8 @@
 import type { EventJournal } from '../contracts/event-journal.js';
 import type { EventEnvelope } from '../contracts/events.js';
 
+export const JOURNAL_CHANGE_FALLBACK_MS = 30_000;
+
 export interface CachedJournalView<Value> {
   get(): Promise<Value>;
 }
@@ -14,16 +16,27 @@ export interface CachedJournalView<Value> {
 // concrete persistence implementation, so it lives in kernel rather than
 // persistence — domain and adapter modules may call it directly.
 export function cachedJournalView<Value>(
-  journal: Pick<EventJournal, 'readAll' | 'latestGlobalPosition'>,
+  journal: Pick<EventJournal, 'readAll' | 'changeSignal'>,
   derive: (events: readonly EventEnvelope[]) => Value | Promise<Value>,
+  now: () => number = Date.now,
 ): CachedJournalView<Value> {
-  let cache: { readonly position: number; readonly value: Value } | undefined;
+  let cache:
+    | { readonly observedRevision: number; readonly checkedAt: number; readonly value: Value }
+    | undefined;
   return {
     async get(): Promise<Value> {
-      const position = await journal.latestGlobalPosition();
-      if (cache !== undefined && cache.position === position) return cache.value;
+      const observedRevision = journal.changeSignal.revision();
+      const checkedAt = now();
+      if (
+        cache !== undefined &&
+        cache.observedRevision === observedRevision &&
+        checkedAt - cache.checkedAt < JOURNAL_CHANGE_FALLBACK_MS
+      )
+        return cache.value;
       const value = await derive(await journal.readAll(0));
-      cache = { position, value };
+      // Retain the revision observed before the read. An append that races
+      // this derivation must force one more pass instead of being hidden.
+      cache = { observedRevision, checkedAt: now(), value };
       return value;
     },
   };
