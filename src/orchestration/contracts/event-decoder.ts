@@ -295,7 +295,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
     stream: workflowDefinitionsStreamSchema,
     payload: z
       .object({
-        workflowName: brandedStringSchema(workflowName).optional(),
+        workflowName: brandedStringSchema(workflowName),
         fingerprint: z.string().min(1),
         compiledDefinition: z.custom<CompiledWorkflow>(),
       })

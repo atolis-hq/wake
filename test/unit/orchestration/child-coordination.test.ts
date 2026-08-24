@@ -45,8 +45,8 @@ async function fixture() {
   activities.register({
     name: activityName('parent-work'),
     inputSchema: z.object({}).strict(),
-    outcomeSchema: z.object({ kind: z.literal('blocked') }).strict(),
-    outcomeKinds: ['blocked'],
+    outcomeSchema: z.object({ kind: z.enum(['done', 'blocked']) }).strict(),
+    outcomeKinds: ['done', 'blocked'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -58,8 +58,8 @@ async function fixture() {
   activities.register({
     name: activityName('child-work'),
     inputSchema: z.object({}).strict(),
-    outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
-    outcomeKinds: ['done'],
+    outcomeSchema: z.object({ kind: z.enum(['done', 'rejected']) }).strict(),
+    outcomeKinds: ['done', 'rejected'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -76,9 +76,18 @@ async function fixture() {
           work: {
             activity: 'parent-work',
             with: {},
-            on: { blocked: { then: 'await-human' } },
+            on: { done: { then: 'done', watchGates: ['review'] }, blocked: { then: 'await-human' } },
           },
         },
+        watches: [
+          {
+            id: 'review',
+            while: { stages: ['work'], statuses: ['waiting'] },
+            on: { events: ['review.requested'] },
+            workflow: 'child',
+            maxPerGroup: 1,
+          },
+        ],
       },
       activities,
       ['parent', 'child'],
@@ -90,7 +99,7 @@ async function fixture() {
           work: {
             activity: 'child-work',
             with: {},
-            on: { done: { then: 'done' } },
+            on: { done: { then: 'done' }, rejected: { then: 'done' } },
             requiresApproval: false,
           },
         },
@@ -174,22 +183,37 @@ it('enforces a group budget in a Promise.all race and durably records the loser'
   ).toHaveLength(2);
 });
 
-it('extends one exhausted group only after a human-authorized grant', async () => {
+it('extends each exhausted group only after a human-authorized grant', async () => {
   const { journal, service } = await fixture();
   const parent = await startParent(service);
-  await service.block(parent.workflowInstanceId, 'prepare review wait', context('block-parent'));
-  await service.waitForSignal(
-    parent.workflowInstanceId,
+  await service.acceptOutcome(
     {
-      signalKind: signalName('orchestration.watch-gate-verdict'),
-      from: [
-        { kind: ApprovalAuthorityKind.Human },
-        { kind: ApprovalAuthorityKind.Watch, watch: watchId('review') },
-      ],
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      outcome: { kind: 'done' },
     },
-    context('wait-for-review'),
+    context('parent-done-1'),
   );
-  await service.requestChild(childRequest('trigger-a'), context('request-a'));
+  const first = await service.requestChild(childRequest('trigger-a'), context('request-a'));
+  if ('kind' in first) throw new Error('Expected the first watch child to start');
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: first.workflowInstanceId,
+      activationId: first.pendingActivation!.activationId,
+      outcome: { kind: 'rejected' },
+    },
+    context('watch-rejected-1'),
+  );
+  const resumed = await service.get(parent.workflowInstanceId);
+  if (resumed?.pendingActivation === undefined) throw new Error('Expected rejected gate to resume parent');
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: resumed.workflowInstanceId,
+      activationId: resumed.pendingActivation.activationId,
+      outcome: { kind: 'done' },
+    },
+    context('parent-done-2'),
+  );
   await service.requestChild(childRequest('trigger-b'), context('request-b'));
 
   await expect(
@@ -217,6 +241,42 @@ it('extends one exhausted group only after a human-authorized grant', async () =
   ).toHaveLength(1);
   expect(
     (await journal.readAll(0)).filter((event) => event.eventType === 'orchestration.child-started'),
+  ).toHaveLength(2);
+
+  const retried = (await service.listAll()).find(
+    (workflow) =>
+      workflow.parentWorkflowInstanceId === parent.workflowInstanceId && workflow.triggerId === 'trigger-b',
+  );
+  if (retried?.pendingActivation === undefined) throw new Error('Expected the extended watch child');
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: retried.workflowInstanceId,
+      activationId: retried.pendingActivation.activationId,
+      outcome: { kind: 'rejected' },
+    },
+    context('watch-rejected-2'),
+  );
+  const resumedAgain = await service.get(parent.workflowInstanceId);
+  if (resumedAgain?.pendingActivation === undefined)
+    throw new Error('Expected the second rejected gate to resume parent');
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: resumedAgain.workflowInstanceId,
+      activationId: resumedAgain.pendingActivation.activationId,
+      outcome: { kind: 'done' },
+    },
+    context('parent-done-3'),
+  );
+  await service.requestChild(childRequest('trigger-c'), context('request-c'));
+  await service.extendBlockedGroupBudget(
+    parent.workflowInstanceId,
+    { kind: ApprovalAuthorityKind.Human },
+    context('operator-extend-2'),
+  );
+  expect(
+    (await journal.readAll(0)).filter(
+      (event) => event.eventType === 'orchestration.group-budget-granted',
+    ),
   ).toHaveLength(2);
 });
 

@@ -27,7 +27,7 @@ export function recognizedCommand(body: string): IssueCommand | null {
   if (matchesCommand(line, GitHubBuiltInCommand.Approved)) return GitHubBuiltInCommand.Approved;
   if (matchesCommand(line, GitHubBuiltInCommand.Changes)) return GitHubBuiltInCommand.Changes;
   if (matchesCommand(line, GitHubBuiltInCommand.Retry)) return GitHubBuiltInCommand.Retry;
-  if (matchesCommand(line, GitHubBuiltInCommand.Extend)) return GitHubBuiltInCommand.Extend;
+  if (line === GitHubBuiltInCommand.Extend) return GitHubBuiltInCommand.Extend;
   return null;
 }
 

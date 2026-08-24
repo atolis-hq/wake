@@ -42,9 +42,55 @@ it('recognizes /changes followed by a blank line and feedback as an issue comman
   expect(await issueCommentSignals('/changes\n\nplease retry the error handling')).toHaveLength(1);
 });
 
-it('recognizes /extend as a dedicated issue command', () => {
+it('recognizes only an exact /extend issue command', () => {
   expect(recognizedCommand('/extend')).toBe('/extend');
-  expect(recognizedCommand('/extend another review')).toBe('/extend');
+  expect(recognizedCommand('/extend another review')).toBeNull();
+});
+
+it('fails closed for an unauthorized /extend comment', async () => {
+  let extended = false;
+
+  await applyReviewSignal({
+    event: {
+      ...issueCommentEvent('/extend'),
+      payload: {
+        ...issueCommentEvent('/extend').payload,
+        authorization: { source: ReviewerAuthorizationSource.None },
+      },
+    },
+    journal: {} as never,
+    resources: {
+      async correlations() {
+        return [{ role: 'primary', workItemId: 'work-7' }];
+      },
+      async get() {
+        return { kind: resourceKind('issue') };
+      },
+    } as never,
+    work: { async get() { return { state: 'open', frozen: false, deleted: false }; } } as never,
+    lookup: { async resourceIdForExternalKey() { return 'resource-7'; } } as never,
+    pullRequests: undefined,
+    ids: {} as never,
+    adapter: GitHubAdapter,
+    orchestration: {
+      async listForWorkItem() {
+        return [
+          {
+            workflowInstanceId: 'primary-7',
+            parentWorkflowInstanceId: undefined,
+            status: 'blocked',
+            blockReason: 'watch group budget exhausted for review',
+            waitingFor: { signalKind: 'orchestration.watch-gate-verdict' },
+          },
+        ];
+      },
+      async extendBlockedGroupBudget() {
+        extended = true;
+      },
+    } as never,
+  });
+
+  expect(extended).toBe(false);
 });
 
 it('retries an open primary workflow only for a provider-authorized /retry comment', async () => {

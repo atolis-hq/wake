@@ -223,13 +223,23 @@ async function applyIssueBudgetExtension(input: {
 }): Promise<void> {
   const { event, resources, work, orchestration, resourceId: resourceIdValue } = input;
   if (orchestration === undefined) return;
+  if (
+    !isReviewAuthorized({
+      actorId: event.payload.actor.id,
+      actorKind: event.payload.actor.kind,
+      resourceAuthorId: UnknownGitHubIdentity,
+      authorization: event.payload.authorization ?? { source: ReviewerAuthorizationSource.None },
+    })
+  )
+    return;
   const workItemIds = (await resources.correlations(resourceIdValue))
     .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
     .map((correlation) => correlation.workItemId);
   for (const workItemId of workItemIds) {
     if (!(await isEligibleWorkItem(work, workItemId))) continue;
-    const primary = (await orchestration.listForWorkItem(workItemId)).find(
-      (workflow) => workflow.parentWorkflowInstanceId === undefined,
+    const primary = (await orchestration.listAll()).find(
+      (workflow) =>
+        workflow.workItemId === workItemId && workflow.parentWorkflowInstanceId === undefined,
     );
     if (primary === undefined || !isGroupBudgetExtensionEligible(primary)) continue;
     await orchestration.extendBlockedGroupBudget(

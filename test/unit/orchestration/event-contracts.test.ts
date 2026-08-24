@@ -179,6 +179,27 @@ const samples = [
   ),
 ] as const;
 
+it('rejects a workflow definition registration without its workflow name', () => {
+  expect(() =>
+    decodeOrchestrationEvent(
+      eventEnvelope(
+        OrchestrationEventType.WorkflowDefinitionRegistered,
+        {
+          fingerprint: 'a'.repeat(64),
+          compiledDefinition: {
+            name: workflowName('default'),
+            entry: stageName('implement'),
+            commands: {},
+            watches: [],
+            stages: {},
+          },
+        },
+        workflowDefinitions,
+      ),
+    ),
+  ).toThrow(/workflowName/i);
+});
+
 it('types decoded and draft ActivityWaiting outcomes with the Orchestration brand', () => {
   type WaitingEvent = Extract<
     WorkflowOrchestrationEvent,
