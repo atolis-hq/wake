@@ -9,7 +9,7 @@ function normalize(outcome: string): string {
   return outcome.toLowerCase().replaceAll('_', '-');
 }
 
-function outcomeTone(outcome: string): 'good' | 'warning' | 'bad' | 'info' | 'neutral' {
+export function outcomeTone(outcome: string): 'good' | 'warning' | 'bad' | 'info' | 'neutral' {
   const normalized = normalize(outcome);
   if (badOutcomes.has(normalized)) return 'bad';
   if (infoOutcomes.has(normalized)) return 'info';

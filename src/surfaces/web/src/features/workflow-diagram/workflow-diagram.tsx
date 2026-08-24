@@ -12,6 +12,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { fmtCost, fmtDuration } from '../../components/format.js';
+import { outcomeTone } from '../../components/outcome-chip.js';
 import { TokenUsage } from '../../components/token-usage.js';
 import boardStyles from '../features.module.css';
 import {
@@ -162,8 +163,8 @@ function ChildCard({
   readonly onHover: (childId: string | undefined) => void;
   readonly showStatus: boolean;
 }) {
-  const status = childStatus(child);
   const hasActiveRun = (child.activeRuns?.length ?? 0) > 0;
+  const status = childStatus(child, hasActiveRun);
   return (
     <article
       className={`${styles.childCard} ${boardStyles.childRun} ${showStatus ? '' : styles.childCardWithoutStatus}`}
@@ -210,8 +211,21 @@ function ChildCard({
   );
 }
 
-function childStatus(child: WorkflowDiagramChild) {
-  return child.lastOutcome === 'failed' ? 'failed' : (child.status ?? 'pending');
+function childStatus(child: WorkflowDiagramChild, hasActiveRun = false) {
+  if (hasActiveRun) return 'active';
+  if (child.lastOutcome === undefined) return child.status ?? 'pending';
+  switch (outcomeTone(child.lastOutcome)) {
+    case 'good':
+      return 'completed';
+    case 'warning':
+      return 'blocked';
+    case 'bad':
+      return 'failed';
+    case 'info':
+      return 'needs-clarification';
+    case 'neutral':
+      return 'pending';
+  }
 }
 
 function edgePath(points: readonly { readonly x: number; readonly y: number }[]): string {
@@ -552,10 +566,10 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
                   <span className={styles.collapsedStatusDots}>
                     {stage.children.map((child) => (
                       <span
-                        aria-label={`${childStatus(child)} status`}
+                        aria-label={`${childStatus(child, (child.activeRuns?.length ?? 0) > 0)} status`}
                         className={`${boardStyles.childRunDot} ${styles.childStatusDot} ${styles.collapsedStatusDot}`}
                         data-active-run={(child.activeRuns?.length ?? 0) > 0 || undefined}
-                        data-status={childStatus(child)}
+                        data-status={childStatus(child, (child.activeRuns?.length ?? 0) > 0)}
                         data-testid={`collapsed-status-${stage.id}-${child.id}`}
                         key={child.id}
                         role="img"
