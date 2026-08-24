@@ -1,6 +1,11 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  structuredResult,
+  writeStdinSessionArgument,
+  type CodexSessionId,
+} from './codex-stop-hook-protocol.js';
 
 export const unverifiedCodexCompletionReason =
   'unverified: could not confirm background command completion from Codex structured telemetry';
@@ -38,6 +43,7 @@ interface ToolCall {
   readonly name: 'exec' | 'wait';
   readonly cellId?: string;
   readonly spawnsBackgroundJob?: boolean;
+  readonly writeStdinSessionId?: CodexSessionId;
 }
 
 /**
@@ -61,6 +67,7 @@ export function inspectCodexTranscript(transcript: string): CodexStopHookDecisio
     pendingCells: new Set<string>(),
     resolvedCells: new Set<string>(),
     unresolvableCells: new Set<string>(),
+    sessionsByCell: new Map<string, CodexSessionId>(),
   };
 
   for (const line of lines.slice(boundary + 1)) {
@@ -151,6 +158,7 @@ interface TelemetryState {
   readonly pendingCells: Set<string>;
   readonly resolvedCells: Set<string>;
   readonly unresolvableCells: Set<string>;
+  readonly sessionsByCell: Map<string, CodexSessionId>;
 }
 
 function consumePayload(payload: Record<string, unknown>, telemetry: TelemetryState): void {
@@ -170,6 +178,7 @@ function recordToolCall(payload: Record<string, unknown>, calls: Map<string, Too
     name,
     ...(name === 'wait' ? cellArgument(payload.arguments ?? payload.input) : {}),
     ...(name === 'exec' ? { spawnsBackgroundJob: spawnsBackgroundJob(payload.input) } : {}),
+    ...(name === 'exec' ? writeStdinSessionArgument(payload.input) : {}),
   });
 }
 
@@ -193,21 +202,38 @@ function spawnsBackgroundJob(input: unknown): boolean {
 
 function recordToolOutput(payload: Record<string, unknown>, telemetry: TelemetryState): void {
   const callId = string(payload.call_id);
-  if (callId === undefined) return;
-  const call = telemetry.calls.get(callId);
+  const call = callId === undefined ? undefined : telemetry.calls.get(callId);
   if (call === undefined) return;
   const result = structuredResult(payload.output);
-  if (call.name === 'exec') {
-    if (
-      call.spawnsBackgroundJob === true &&
-      result.exitCode === undefined &&
-      result.pendingCellId !== undefined
-    )
-      telemetry.pendingCells.add(result.pendingCellId);
-    return;
+  if (call.name === 'exec') return recordExecOutput(call, result, telemetry);
+  recordWaitOutput(call, result, telemetry);
+}
+
+function recordExecOutput(
+  call: ToolCall,
+  result: ReturnType<typeof structuredResult>,
+  telemetry: TelemetryState,
+): void {
+  if (call.spawnsBackgroundJob === true && result.exitCode === undefined && result.pendingCellId)
+    telemetry.pendingCells.add(result.pendingCellId);
+  if (call.writeStdinSessionId === undefined || result.jsonExitCode === undefined) return;
+  resolveSession(call.writeStdinSessionId, telemetry);
+}
+
+function resolveSession(sessionId: CodexSessionId, telemetry: TelemetryState): void {
+  for (const [cellId, recordedSessionId] of telemetry.sessionsByCell) {
+    if (recordedSessionId === sessionId) telemetry.resolvedCells.add(cellId);
   }
+}
+
+function recordWaitOutput(
+  call: ToolCall,
+  result: ReturnType<typeof structuredResult>,
+  telemetry: TelemetryState,
+): void {
   if (call.cellId === undefined) return;
   if (result.exitCode !== undefined) telemetry.resolvedCells.add(call.cellId);
+  if (result.sessionId !== undefined) telemetry.sessionsByCell.set(call.cellId, result.sessionId);
   if (result.notFoundCellId === call.cellId) telemetry.unresolvableCells.add(call.cellId);
 }
 
@@ -252,48 +278,6 @@ async function transcriptForSession(
   return undefined;
 }
 
-function structuredResult(value: unknown): {
-  readonly exitCode?: number;
-  readonly pendingCellId?: string;
-  readonly notFoundCellId?: string;
-} {
-  const texts = outputTexts(value);
-  let exitCode: number | undefined;
-  let pendingCellId: string | undefined;
-  let notFoundCellId: string | undefined;
-  for (const text of texts) {
-    exitCode = exitCodeInText(text) ?? exitCode;
-    pendingCellId = /Script running with cell ID ([^\s]+)/.exec(text)?.[1] ?? pendingCellId;
-    // A cell-identity-specific protocol error: the runtime has discarded
-    // this cell's bookkeeping and no exit code will ever be available for
-    // it, distinct from a generic tool/script failure with a real message.
-    notFoundCellId = /exec cell ([^\s]+) not found/.exec(text)?.[1] ?? notFoundCellId;
-  }
-  return {
-    ...(exitCode === undefined ? {} : { exitCode }),
-    ...(pendingCellId === undefined ? {} : { pendingCellId }),
-    ...(notFoundCellId === undefined ? {} : { notFoundCellId }),
-  };
-}
-
-function exitCodeInText(text: string): number | undefined {
-  const result = parseJson(text);
-  const code = result === undefined ? undefined : number(result.exit_code);
-  if (code !== undefined) return code;
-  const rendered = /Exit code:\s*(-?\d+)/.exec(text)?.[1];
-  return rendered === undefined ? undefined : Number(rendered);
-}
-
-function outputTexts(value: unknown): readonly string[] {
-  if (typeof value === 'string') return [value];
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    const content = record(item);
-    const text = content === undefined ? undefined : string(content.text);
-    return text === undefined ? [] : [text];
-  });
-}
-
 function cellArgument(value: unknown): { readonly cellId?: string } {
   const arguments_ = typeof value === 'string' ? parseJson(value) : record(value);
   const cellId = arguments_ === undefined ? undefined : string(arguments_.cell_id);
@@ -334,10 +318,6 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function string(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
-}
-
-function number(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
