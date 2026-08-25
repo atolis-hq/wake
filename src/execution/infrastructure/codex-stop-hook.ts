@@ -2,6 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
+  isTerminalWaitOutput,
   structuredResult,
   writeStdinSessionArgument,
   type CodexSessionId,
@@ -206,7 +207,7 @@ function recordToolOutput(payload: Record<string, unknown>, telemetry: Telemetry
   if (call === undefined) return;
   const result = structuredResult(payload.output);
   if (call.name === 'exec') return recordExecOutput(call, result, telemetry);
-  recordWaitOutput(call, result, telemetry);
+  recordWaitOutput(call, result, payload.output, telemetry);
 }
 
 function recordExecOutput(
@@ -231,13 +232,16 @@ function resolveSession(sessionId: CodexSessionId, telemetry: TelemetryState): v
 function recordWaitOutput(
   call: ToolCall,
   result: ReturnType<typeof structuredResult>,
+  output: unknown,
   telemetry: TelemetryState,
 ): void {
   if (call.cellId === undefined) return;
-  if (result.exitCode !== undefined) {
+  const nativeTerminal = result.sessionId === undefined && isTerminalWaitOutput(output);
+  const terminal = result.exitCode !== undefined || nativeTerminal;
+  if (terminal) {
     telemetry.resolvedCells.add(call.cellId);
     const sessionId = telemetry.sessionsByCell.get(call.cellId);
-    if (sessionId !== undefined && result.jsonExitCode !== undefined)
+    if (sessionId !== undefined && (result.jsonExitCode !== undefined || nativeTerminal))
       resolveSession(sessionId, telemetry);
   }
   if (result.sessionId !== undefined) telemetry.sessionsByCell.set(call.cellId, result.sessionId);
