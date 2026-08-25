@@ -1,7 +1,6 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
-import { RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
-import { verifyCodexSession } from '../codex-stop-hook.js';
+import { WorkspaceMode } from '../../contracts/vocabulary.js';
 import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
 
 // Deliberately narrow: only genuine provider usage/rate-limit phrasing.
@@ -41,14 +40,19 @@ function extractCodexErrorMessage(stdout: string): string | undefined {
 }
 
 export interface CodexRunnerOptions extends CliRunnerOptions {
-  readonly codexHome?: string;
+  readonly waitBackgroundHook?: boolean;
 }
 
 export function createCodexRunner(options: CodexRunnerOptions = {}): Runner {
   const runner = cliRunner(
     'codex',
     options.command ?? 'codex',
-    (request: RunnerRequest) => codexCommandArgs(request, options.args, options),
+    (request: RunnerRequest) =>
+      codexCommandArgs(request, options.args, {
+        ...options,
+        waitBackgroundHook:
+          options.waitBackgroundHook ?? process.env.WAKE_CODEX_WAIT_BACKGROUND_HOOK === '1',
+      }),
     {
       ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
@@ -57,31 +61,13 @@ export function createCodexRunner(options: CodexRunnerOptions = {}): Runner {
       supportsSessionResume: true,
     },
   );
-  return {
-    supportsSessionResume: true,
-    async start(request, signal) {
-      const execution = await runner.start(request, signal);
-      return {
-        ...execution,
-        result: execution.result.then(async (result) => {
-          if (result.transport !== RunStatus.Succeeded) return result;
-          const decision = await verifyCodexSession(
-            options.codexHome ?? process.env.CODEX_HOME,
-            result.sessionId,
-          );
-          return decision.decision === undefined
-            ? result
-            : { ...result, unverifiedCompletionReason: decision.reason };
-        }),
-      };
-    },
-  };
+  return runner;
 }
 
 export function codexCommandArgs(
   request: RunnerRequest,
   passthroughArgs: readonly string[] = [],
-  defaults: RunnerDefaults = {},
+  defaults: RunnerDefaults & Pick<CodexRunnerOptions, 'waitBackgroundHook'> = {},
 ): string[] {
   const model = request.model ?? defaults.model;
   return [
@@ -98,9 +84,13 @@ export function codexCommandArgs(
       : ['-c', `model_reasoning_effort=${request.effort ?? defaults.effort}`]),
     ...(request.resumeSessionId === undefined ? [] : ['resume', request.resumeSessionId]),
     ...passthroughArgs,
-    request.prompt,
+    defaults.waitBackgroundHook === true
+      ? `${request.prompt}\n\n${waitBackgroundInstruction}`
+      : request.prompt,
   ];
 }
+
+const waitBackgroundInstruction = `When a command you started is still running or lacks a terminal result, do not report a normal Wake outcome. Make your entire final response exactly WAIT_BACKGROUND. Wake will reject that stop attempt and ask you to continue. After that hook prompt, poll the still-running command and report a normal terminal status only after it has settled. Do not use WAIT_BACKGROUND for a human-input or implementation blocker.`;
 
 function codexSandboxMode(workspaceMode: NonNullable<RunnerRequest['workspaceMode']>) {
   return workspaceMode === WorkspaceMode.Branch ? 'danger-full-access' : 'workspace-write';

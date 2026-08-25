@@ -29,6 +29,7 @@ RUN useradd --create-home --shell /bin/bash wake \
   && chown -R wake:wake /home/wake/.cursor
 
 ENV CODEX_HOME=/home/wake/.codex-runtime
+ENV WAKE_CODEX_WAIT_BACKGROUND_HOOK=1
 ENV PATH=/home/wake/.local/bin:$PATH
 
 # Bump this date to force a fresh cursor.com/install instead of an indefinitely cached one.

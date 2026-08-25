@@ -143,6 +143,7 @@ describe('target initialise root', () => {
     expect(dockerfile).toContain('/etc/codex/requirements.toml');
     expect(dockerfile).toContain('managed_dir = "/usr/local/lib/wake"');
     expect(dockerfile).toContain('node /usr/local/lib/wake/codex-stop-hook.js');
+    expect(dockerfile).toContain('WAKE_CODEX_WAIT_BACKGROUND_HOOK=1');
     expect(dockerfile).toContain('[features]');
     expect(dockerfile).toContain('hooks = true');
   });
@@ -190,6 +191,7 @@ describe('target initialise root', () => {
     for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
       const dockerfile = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
 
+      expect(dockerfile).toContain('WAKE_CODEX_WAIT_BACKGROUND_HOOK=1');
       expect(dockerfile).toContain('USER root');
       expect(dockerfile).toContain('mkdir -p /wake/.wake');
       expect(dockerfile).toContain('chown -R wake:wake /wake/.wake');

@@ -469,6 +469,15 @@ describe('cliRunner', () => {
     );
   });
 
+  it('adds the Codex-only WAIT_BACKGROUND continuation protocol when its stop hook is enabled', () => {
+    const request = { runId: 'run-1', prompt: 'ship', allowedTools: [] };
+
+    expect(codexCommandArgs(request).at(-1)).toBe('ship');
+    expect(codexCommandArgs(request, [], { waitBackgroundHook: true }).at(-1)).toEqual(
+      expect.stringMatching(/^ship\n\n.*WAIT_BACKGROUND/u),
+    );
+  });
+
   it('forwards Claude maxTurns and allowedTools using the established CLI flags', () => {
     const request = {
       runId: 'run-1',
