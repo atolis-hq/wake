@@ -258,7 +258,7 @@ describe('cliRunner', () => {
         'model_reasoning_effort=medium',
         'resume',
         'prior-session',
-        'ship',
+        expect.stringMatching(/^ship\n\n.*WAIT_BACKGROUND/u),
       ],
     },
     {
@@ -307,7 +307,7 @@ describe('cliRunner', () => {
       'gpt-test',
       'resume',
       'prior-session',
-      'ship',
+      expect.stringMatching(/^ship\n\n.*WAIT_BACKGROUND/u),
     ]);
   });
 
@@ -469,11 +469,10 @@ describe('cliRunner', () => {
     );
   });
 
-  it('adds the Codex-only WAIT_BACKGROUND continuation protocol when its stop hook is enabled', () => {
+  it('adds the Codex-only WAIT_BACKGROUND continuation protocol to every Codex prompt', () => {
     const request = { runId: 'run-1', prompt: 'ship', allowedTools: [] };
 
-    expect(codexCommandArgs(request).at(-1)).toBe('ship');
-    expect(codexCommandArgs(request, [], { waitBackgroundHook: true }).at(-1)).toEqual(
+    expect(codexCommandArgs(request).at(-1)).toEqual(
       expect.stringMatching(/^ship\n\n.*WAIT_BACKGROUND/u),
     );
   });

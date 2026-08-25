@@ -39,20 +39,13 @@ function extractCodexErrorMessage(stdout: string): string | undefined {
   return undefined;
 }
 
-export interface CodexRunnerOptions extends CliRunnerOptions {
-  readonly waitBackgroundHook?: boolean;
-}
+export type CodexRunnerOptions = CliRunnerOptions;
 
 export function createCodexRunner(options: CodexRunnerOptions = {}): Runner {
   const runner = cliRunner(
     'codex',
     options.command ?? 'codex',
-    (request: RunnerRequest) =>
-      codexCommandArgs(request, options.args, {
-        ...options,
-        waitBackgroundHook:
-          options.waitBackgroundHook ?? process.env.WAKE_CODEX_WAIT_BACKGROUND_HOOK === '1',
-      }),
+    (request: RunnerRequest) => codexCommandArgs(request, options.args, options),
     {
       ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
@@ -67,7 +60,7 @@ export function createCodexRunner(options: CodexRunnerOptions = {}): Runner {
 export function codexCommandArgs(
   request: RunnerRequest,
   passthroughArgs: readonly string[] = [],
-  defaults: RunnerDefaults & Pick<CodexRunnerOptions, 'waitBackgroundHook'> = {},
+  defaults: RunnerDefaults = {},
 ): string[] {
   const model = request.model ?? defaults.model;
   return [
@@ -84,9 +77,7 @@ export function codexCommandArgs(
       : ['-c', `model_reasoning_effort=${request.effort ?? defaults.effort}`]),
     ...(request.resumeSessionId === undefined ? [] : ['resume', request.resumeSessionId]),
     ...passthroughArgs,
-    defaults.waitBackgroundHook === true
-      ? `${request.prompt}\n\n${waitBackgroundInstruction}`
-      : request.prompt,
+    `${request.prompt}\n\n${waitBackgroundInstruction}`,
   ];
 }
 
