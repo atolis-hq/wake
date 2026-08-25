@@ -81,7 +81,7 @@ export function codexCommandArgs(
   ];
 }
 
-// Prevents premature Codex completion while its commands run (#763, #633).
+// Work around Codex's missing background-command lifecycle contract (https://github.com/openai/codex/issues/32505, https://github.com/openai/codex/issues/34866).
 const waitBackgroundInstruction = `When a command you started is still running or lacks a terminal result, do not report a normal Wake outcome. Make your entire final response exactly WAIT_BACKGROUND. Wake will reject that stop attempt and ask you to continue. After that hook prompt, poll the still-running command and report a normal terminal status only after it has settled. Do not use WAIT_BACKGROUND for a human-input or implementation blocker.`;
 
 function codexSandboxMode(workspaceMode: NonNullable<RunnerRequest['workspaceMode']>) {
