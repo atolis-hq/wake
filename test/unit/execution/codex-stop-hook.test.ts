@@ -266,6 +266,122 @@ describe('Codex Stop hook telemetry guard', () => {
     expect(inspectCodexTranscript(transcript)).toEqual({});
   });
 
+  it('allows an exec cell when its native wait result reaches the terminal output shape', () => {
+    const transcript = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'exec-1',
+          input: 'const r = await tools.exec_command({cmd:"sleep 20"});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-1',
+          output: 'Script running with cell ID 3',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'wait-1',
+          arguments: '{"cell_id":"3","yield_time_ms":30000}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'wait-1',
+          output: [
+            { type: 'input_text', text: 'Script completed\nWall time 5.6 seconds\nOutput:\n' },
+            { type: 'input_text', text: '' },
+          ],
+        },
+      }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({});
+  });
+
+  it('resolves the originating cell when a wrapper wait reaches the native terminal output shape', () => {
+    const transcript = [
+      sessionLineageTranscript('Script running with cell ID 43'),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'wait-wrapper',
+          arguments: '{"cell_id":"43"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'wait-wrapper',
+          output: [
+            { type: 'input_text', text: 'Script completed\nWall time 5.6 seconds\nOutput:\n' },
+            { type: 'input_text', text: '' },
+          ],
+        },
+      }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({});
+  });
+
+  it('keeps a cell unresolved for a malformed native terminal output shape', () => {
+    const transcript = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'exec-1',
+          input: 'const r = await tools.exec_command({cmd:"sleep 20"});',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'exec-1',
+          output: 'Script running with cell ID 3',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'wait-1',
+          arguments: '{"cell_id":"3"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'wait-1',
+          output: [{}, { type: 'input_text', text: '' }],
+        },
+      }),
+    ].join('\n');
+
+    expect(inspectCodexTranscript(transcript)).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('Codex cell 3 has no terminal exit_code'),
+    });
+  });
+
   it('accepts Codex’s structured terminal Exit code text for a later wait result', () => {
     const transcript = [
       JSON.stringify({

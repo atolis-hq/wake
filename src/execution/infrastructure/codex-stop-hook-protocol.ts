@@ -8,6 +8,18 @@ export interface StructuredResult {
   readonly sessionId?: CodexSessionId;
 }
 
+export function isTerminalWaitOutput(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 2) return false;
+  const initialOutput = record(value[0]);
+  const finalOutput = record(value[1]);
+  return (
+    initialOutput?.type === 'input_text' &&
+    typeof initialOutput.text === 'string' &&
+    finalOutput?.type === 'input_text' &&
+    finalOutput.text === ''
+  );
+}
+
 export function structuredResult(value: unknown): StructuredResult {
   return outputTexts(value).reduce(mergeResult, {});
 }
