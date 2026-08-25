@@ -258,7 +258,7 @@ describe('cliRunner', () => {
         'model_reasoning_effort=medium',
         'resume',
         'prior-session',
-        'ship',
+        expect.stringMatching(/^ship\n\n.*WAIT_BACKGROUND/u),
       ],
     },
     {
@@ -307,7 +307,7 @@ describe('cliRunner', () => {
       'gpt-test',
       'resume',
       'prior-session',
-      'ship',
+      expect.stringMatching(/^ship\n\n.*WAIT_BACKGROUND/u),
     ]);
   });
 
@@ -466,6 +466,14 @@ describe('cliRunner', () => {
     );
     expect(cursorCommandArgs(request, ['--flag', 'cursor'])).toEqual(
       expect.arrayContaining(['--flag', 'cursor']),
+    );
+  });
+
+  it('adds the Codex-only WAIT_BACKGROUND continuation protocol to every Codex prompt', () => {
+    const request = { runId: 'run-1', prompt: 'ship', allowedTools: [] };
+
+    expect(codexCommandArgs(request).at(-1)).toEqual(
+      expect.stringMatching(/^ship\n\n.*WAIT_BACKGROUND/u),
     );
   });
 
