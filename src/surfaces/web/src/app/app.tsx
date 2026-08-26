@@ -78,10 +78,6 @@ function Login({
       <div className="wake-login-panel">
         <section className="wake-login-brand">
           <img className="wake-login-logo" src={wakeLogo} alt="Wake logo" />
-          <div>
-            <strong>Wake</strong>
-            <p>Control plane for autonomous development.</p>
-          </div>
         </section>
         <section className="wake-login-card">
           <h1>Login</h1>

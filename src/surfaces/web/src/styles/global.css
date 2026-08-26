@@ -60,11 +60,6 @@ select {
   align-items: center;
   border-right: 1px solid rgb(0 0 0 / 0.18);
 }
-.wake-login-brand p {
-  color: rgb(255 255 255 / 0.78);
-  max-width: 20rem;
-  margin: var(--space-2) 0 0;
-}
 .wake-login-logo {
   width: 7rem;
   height: 7rem;
@@ -109,6 +104,9 @@ select {
   background: var(--brand-dark);
 }
 @media (max-width: 42rem) {
+  .wake-login {
+    place-items: start center;
+  }
   .wake-login-panel {
     grid-template-columns: 1fr;
   }
