@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
+import wakeLogo from '../../../../../assets/wake-logo.svg';
 import { WakeApiClient } from '../api/client.js';
 import { ApiClientContext } from '../api/context.js';
 import { AppShell } from '../components/app-shell.js';
@@ -75,7 +76,7 @@ function Login({
   return (
     <main className="wake-login">
       <section className="wake-login-brand">
-        <div className="wake-login-mark">W</div>
+        <img className="wake-login-logo" src={wakeLogo} alt="Wake logo" />
         <div>
           <strong>Wake</strong>
           <p>Control plane for autonomous development.</p>

@@ -309,9 +309,7 @@ export async function runWakeCommand(
 
 async function formatUiTokenOutput(message: Promise<string>): Promise<string> {
   const text = await message;
-  const urls = [...text.matchAll(/^\s*(?:Local|Public):\s+(https?:\/\/\S+)$/gm)].map(
-    (match) => match[1]!,
-  );
+  const urls = [...text.matchAll(/^\s*Public:\s+(https:\/\/\S+)$/gm)].map((match) => match[1]!);
   if (urls.length === 0) return `${text}\n`;
   const qr = urls.map((url) => `QR code:\n${renderQr(url)}`).join('\n');
   return `${text}\n${qr}\n`;

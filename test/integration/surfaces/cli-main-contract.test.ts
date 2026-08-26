@@ -211,6 +211,22 @@ describe('target CLI main contract', () => {
     expect(output).toEqual(['generated-access-key\n', 'replacement-key\n']);
   });
 
+  it('renders a QR code only for the configured public pairing URL', async () => {
+    const output: string[] = [];
+    const compose = vi.fn(async () => ({
+      ...applications(),
+      auth: {
+        token: async () =>
+          'Wake login link:\n  Local:  http://localhost:4317/?grant=local\n  Public: https://wake.example.test/?grant=public',
+      },
+    }));
+
+    await main(['ui', 'token'], dependencies(compose, output));
+
+    expect(output.join('')).toContain('Local:  http://localhost:4317/?grant=local');
+    expect(output.join('').match(/QR code:/g)).toHaveLength(1);
+  });
+
   it('initialises the positional wake root without composing applications', async () => {
     const output: string[] = [];
     const compose = vi.fn(async () => applications());
