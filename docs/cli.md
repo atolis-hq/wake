@@ -25,6 +25,7 @@ walkthrough and [Configuration](configuration.md) for Wake-home settings.
 | `wake run resolve <run-id> --failed --reason <message>` | Records an operator-confirmed failure for an escalated ambiguous Run. |
 | `wake self-update` | Safely updates a source installation. |
 | `wake --help` / `wake --version` | Shows the authoritative command summary / installed version. |
+| `wake ui token` | Creates a single-use login grant valid for ten minutes and prints local/public login links with QR codes. |
 
 ## Sandbox commands
 

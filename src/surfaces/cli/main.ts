@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import qrcodeTerminal from 'qrcode-terminal';
 import type { HostBudget, HostResult } from '../../control-plane/index.js';
 import { ExecutionStreamKind, RunStatus } from '../../execution/index.js';
 
@@ -282,7 +283,7 @@ export async function runWakeCommand(
       await applications.ui.start(command);
       return;
     case 'ui-token':
-      output.write(`${await auth(applications).token(command.accessKey)}\n`);
+      output.write(await formatUiTokenOutput(auth(applications).token(command.accessKey)));
       return;
     case 'audit':
       for (const record of await applications.audit.read(command.workItemId))
@@ -304,6 +305,24 @@ export async function runWakeCommand(
       return;
     }
   }
+}
+
+async function formatUiTokenOutput(message: Promise<string>): Promise<string> {
+  const text = await message;
+  const urls = [...text.matchAll(/^\s*(?:Local|Public):\s+(https?:\/\/\S+)$/gm)].map(
+    (match) => match[1]!,
+  );
+  if (urls.length === 0) return `${text}\n`;
+  const qr = urls.map((url) => `QR code:\n${renderQr(url)}`).join('\n');
+  return `${text}\n${qr}\n`;
+}
+
+function renderQr(url: string): string {
+  let output = '';
+  qrcodeTerminal.generate(url, { small: true }, (qr) => {
+    output = qr;
+  });
+  return output;
 }
 
 async function resolveCliOutcome(

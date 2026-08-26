@@ -187,12 +187,16 @@ surfaces:
     port: 4317
   web:
     enabled: false
+    auth:
+      # Authentication is enabled unless this explicit local-development opt-out is true.
+      disabled: false
     # Optional stable HTTPS address Wake links from GitHub agent-run reports.
     # publicUrl: https://wake.example.ngrok.app
 
-# `wake ui token` creates the local operator access key on demand. The key and
-# the Fastify session key are stored as sensitive local state in
-# `.wake/auth/credentials.json`; do not commit or publish that file.
+# `wake ui token` creates a single-use login grant valid for ten minutes and
+# prints login links plus QR codes. The durable access key and Fastify session
+# key remain sensitive local state in `.wake/auth/credentials.json`; do not
+# commit or publish that file.
 
 transcripts:
   enabled: false
