@@ -1,7 +1,6 @@
 import rateLimit from '@fastify/rate-limit';
 import secureSession from '@fastify/secure-session';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { verifyAccessKey, type SurfaceCredentials } from '../auth/credentials.js';
 import { SurfaceCookieSecurity, SurfaceSessionAttribute } from '../auth/vocabulary.js';
 import type { AssetSource } from '../web-host/asset-source.js';
@@ -38,7 +37,7 @@ export interface SurfaceHttpServerOptions {
  * Fastify parses the request body.
  */
 export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): FastifyInstance {
-  const app = Fastify({ bodyLimit: 64 * 1024, trustProxy: true });
+  const app = Fastify({ bodyLimit: 64 * 1024, logger: { level: 'error' }, trustProxy: true });
   app.register(rateLimit, { global: false });
   app.register(secureSession, {
     key: Buffer.from(options.credentials.sessionPassword, 'base64url'),
@@ -46,7 +45,8 @@ export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): Fast
     expiry: 24 * 60 * 60,
     cookie: { httpOnly: true, sameSite: 'lax', secure: SurfaceCookieSecurity.Auto, path: '/' },
   });
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
+    request.log.error({ err: error }, 'Wake HTTP request failed');
     if (isFastifyBodyLimitError(error))
       return sendFastifyJson(
         reply,
@@ -59,7 +59,7 @@ export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): Fast
         },
         false,
       );
-    if (error instanceof SyntaxError)
+    if (error instanceof SyntaxError || isFastifyMalformedJsonError(error))
       return sendFastifyJson(reply, errorResult(new MalformedJsonError()), false);
     return sendFastifyJson(reply, errorResult(error), false);
   });
@@ -136,80 +136,6 @@ export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): Fast
   return app;
 }
 
-export function createApiHttpServer(dispatcher: ApiDispatcher, assets?: AssetSource) {
-  return createServer((request, response) => {
-    void handleRequest(dispatcher, assets, request, response);
-  });
-}
-
-async function handleRequest(
-  dispatcher: ApiDispatcher,
-  assets: AssetSource | undefined,
-  request: IncomingMessage,
-  response: ServerResponse,
-): Promise<void> {
-  try {
-    await dispatchRequest(dispatcher, assets, request, response);
-  } catch (error) {
-    sendJson(response, errorResult(error));
-  }
-}
-
-async function dispatchRequest(
-  dispatcher: ApiDispatcher,
-  assets: AssetSource | undefined,
-  request: IncomingMessage,
-  response: ServerResponse,
-): Promise<void> {
-  const url = new URL(request.url ?? '/', 'http://wake.local');
-  const method = request.method ?? 'GET';
-  const head = method === 'HEAD';
-  const result = await dispatcher.dispatch(
-    method,
-    `${url.pathname}${url.search}`,
-    await jsonBody(request),
-  );
-  if (result !== undefined) return sendJson(response, result, head);
-  await serveWebRequest(assets, method, url.pathname, response, head);
-}
-
-async function serveWebRequest(
-  assets: AssetSource | undefined,
-  method: string,
-  pathname: string,
-  response: ServerResponse,
-  head: boolean,
-): Promise<void> {
-  const asset = method === 'GET' || head ? await assets?.get(pathname) : undefined;
-  if (asset !== undefined) return send(response, { status: 200, ...asset, head });
-  if (routeBrowserRequest(method, pathname) === BrowserRouteOutcome.Spa) {
-    const index = await assets?.get('/index.html');
-    if (index !== undefined)
-      return send(response, {
-        status: 200,
-        ...index,
-        contentType: 'text/html; charset=utf-8',
-        head,
-      });
-  }
-  if (pathname.startsWith('/api/'))
-    return sendJson(
-      response,
-      {
-        status: 404,
-        body: problemDetails(404, 'Not Found', `No route for ${pathname}`),
-        contentType: 'application/problem+json',
-      },
-      head,
-    );
-  return send(response, {
-    status: 404,
-    contentType: 'text/plain; charset=utf-8',
-    body: Buffer.from('Not Found'),
-    head,
-  });
-}
-
 function errorResult(error: unknown): ApiHttpResponse {
   if (error instanceof MalformedJsonError)
     return {
@@ -254,46 +180,7 @@ function isUpstreamProviderError(error: unknown): boolean {
   );
 }
 
-async function jsonBody(request: IncomingMessage): Promise<unknown> {
-  if (request.method === 'GET' || request.method === 'HEAD') return undefined;
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  if (chunks.length === 0) return undefined;
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    throw new MalformedJsonError();
-  }
-}
-
 class MalformedJsonError extends Error {}
-
-function sendJson(response: ServerResponse, result: ApiHttpResponse, head = false): void {
-  send(response, {
-    status: result.status,
-    contentType: result.contentType ?? 'application/json; charset=utf-8',
-    body: Buffer.from(JSON.stringify(result.body)),
-    ...(result.headers === undefined ? {} : { headers: result.headers }),
-    head,
-  });
-}
-
-interface SendOptions {
-  readonly status: number;
-  readonly contentType: string;
-  readonly body: Uint8Array;
-  readonly headers?: Readonly<Record<string, string>>;
-  readonly head?: boolean;
-}
-
-function send(response: ServerResponse, options: SendOptions): void {
-  response.writeHead(options.status, {
-    'content-type': options.contentType,
-    'content-length': options.body.byteLength,
-    ...options.headers,
-  });
-  response.end(options.head ? undefined : options.body);
-}
 
 function sendFastifyJson(reply: FastifyReply, result: ApiHttpResponse, head: boolean) {
   reply.code(result.status);
@@ -324,5 +211,14 @@ function isFastifyBodyLimitError(error: unknown): boolean {
     error !== null &&
     'code' in error &&
     error.code === 'FST_ERR_CTP_BODY_TOO_LARGE'
+  );
+}
+
+function isFastifyMalformedJsonError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'FST_ERR_CTP_INVALID_JSON_BODY'
   );
 }
