@@ -43,6 +43,25 @@ describe('browser history routing', () => {
 });
 
 describe('HTTP Surface hardening', () => {
+  it('allows operational API access only when auth is explicitly disabled', async () => {
+    const server = createSurfaceHttpServer({
+      dispatcher: createApiDispatcher(applications()),
+      credentials: {
+        accessKey: 'operator-key',
+        sessionPassword: Buffer.alloc(32, 4).toString('base64url'),
+        createdAt: '2026-08-26T00:00:00.000Z',
+      },
+      auth: { disabled: true, redeemGrant: async () => false },
+    });
+    try {
+      const response = await server.inject('/api/v1/control-plane/status');
+      expect(response.statusCode).toBe(200);
+      expect((await server.inject('/api/v1/auth/session')).json()).toEqual({ authenticated: true });
+    } finally {
+      await server.close();
+    }
+  });
+
   it('requires a configured auth boundary for every operational API route', async () => {
     const server = surfaceServer(createApiDispatcher(applications()));
     try {
