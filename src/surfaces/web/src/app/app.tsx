@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { WakeApiClient } from '../api/client.js';
 import { ApiClientContext } from '../api/context.js';
@@ -26,12 +26,56 @@ export function App({ client = new WakeApiClient() }: { readonly client?: WakeAp
         },
       }),
   );
+  const [authenticated, setAuthenticated] = useState<boolean | undefined>();
+  useEffect(() => {
+    void client.auth
+      .session()
+      .then(setAuthenticated)
+      .catch(() => setAuthenticated(false));
+  }, [client]);
+  if (authenticated === undefined) return null;
+  if (!authenticated)
+    return <Login client={client} onAuthenticated={() => setAuthenticated(true)} />;
   return (
     <QueryClientProvider client={queryClient}>
       <ApiClientContext.Provider value={client}>
         <AppRoutes />
       </ApiClientContext.Provider>
     </QueryClientProvider>
+  );
+}
+
+function Login({
+  client,
+  onAuthenticated,
+}: {
+  readonly client: WakeApiClient;
+  readonly onAuthenticated: () => void;
+}) {
+  const [accessKey, setAccessKey] = useState('');
+  const [failed, setFailed] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (await client.auth.login(accessKey)) onAuthenticated();
+    else setFailed(true);
+  }
+  return (
+    <main style={{ maxWidth: '24rem', margin: '15vh auto', padding: '1.5rem' }}>
+      <h1>Wake login</h1>
+      <form onSubmit={submit}>
+        <label htmlFor="access-key">Access key</label>
+        <input
+          id="access-key"
+          type="password"
+          value={accessKey}
+          onChange={(event) => setAccessKey(event.target.value)}
+          autoFocus
+          required
+        />
+        <button type="submit">Sign in</button>
+        {failed && <p role="alert">Unable to sign in.</p>}
+      </form>
+    </main>
   );
 }
 

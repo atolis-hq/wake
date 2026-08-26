@@ -190,6 +190,10 @@ surfaces:
     # Optional stable HTTPS address Wake links from GitHub agent-run reports.
     # publicUrl: https://wake.example.ngrok.app
 
+# `wake ui token` creates the local operator access key on demand. The key and
+# the Fastify session key are stored as sensitive local state in
+# `.wake/auth/credentials.json`; do not commit or publish that file.
+
 transcripts:
   enabled: false
   retentionMs: 86400000

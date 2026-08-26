@@ -9,7 +9,7 @@ import {
   type AuditEventResponse,
   type WorkItemResponse,
 } from '../../api/contracts/index.js';
-import { createApiHttpServer, type ApiDispatcher } from '../../api/http-server.js';
+import { createSurfaceHttpServer, type ApiDispatcher } from '../../api/http-server.js';
 import { createApiDispatcher, type ApiApplications } from '../../api/routes/index.js';
 import { PackagedAssets } from '../../web-host/packaged-assets.js';
 
@@ -250,10 +250,19 @@ const assets = new PackagedAssets(async (path) => {
     return (error as NodeJS.ErrnoException).code === 'ENOENT' ? undefined : Promise.reject(error);
   }
 });
-const server = createApiHttpServer(dispatcher, assets);
-server.listen(4319, '127.0.0.1');
+const server = createSurfaceHttpServer({
+  dispatcher,
+  assets,
+  credentials: {
+    accessKey: 'e2e-access-key',
+    sessionPassword: Buffer.alloc(32, 3).toString('base64url'),
+    createdAt: instant,
+  },
+});
+await server.listen({ port: 4319, host: '127.0.0.1' });
 
-for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => server.close());
+for (const signal of ['SIGINT', 'SIGTERM'] as const)
+  process.once(signal, () => void server.close());
 
 function freshState(): FixtureState {
   return {

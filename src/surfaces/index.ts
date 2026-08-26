@@ -2,6 +2,10 @@ export * from './api/contracts/index.js';
 
 export * from './api/http-server.js';
 
+export * from './auth/credentials.js';
+
+export * from './auth/vocabulary.js';
+
 export * from './api/presenters/activities.js';
 
 export * from './api/presenters/board.js';

@@ -1,8 +1,12 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
-test.beforeEach(async ({ request }) => {
-  const response = await request.post('/__wake-e2e/reset');
+test.beforeEach(async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Access key').fill('e2e-access-key');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Board' })).toBeVisible();
+  const response = await page.request.post('/__wake-e2e/reset');
   expect(response.ok()).toBeTruthy();
 });
 

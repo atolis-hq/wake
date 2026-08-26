@@ -14,6 +14,8 @@ const expectedUsage = [
   '  wake stop                  Wait for active runs to finish',
   '  wake smoke                 Smoke-test the configured runner',
   '  wake ui                    Run the control-plane UI server',
+  '  wake ui token              Print the UI login access key',
+  '  wake ui token set <key>    Replace the UI login access key',
   '  wake audit                 Show autonomous decision audit history',
   '  wake correlate             Manually correlate a resource to a work item',
   '  wake run resolve           Resolve an escalated ambiguous run',
@@ -196,6 +198,19 @@ describe('target CLI main contract', () => {
     expect(output).toEqual(['{"failures":[],"notices":[]}\n']);
   });
 
+  it('prints and replaces the UI access key through the CLI auth facade', async () => {
+    const output: string[] = [];
+    const token = vi.fn(async (accessKey?: string) => accessKey ?? 'generated-access-key');
+    const compose = vi.fn(async () => ({ ...applications(), auth: { token } }));
+
+    await main(['ui', 'token'], dependencies(compose, output));
+    await main(['ui', 'token', 'set', 'replacement-key'], dependencies(compose, output));
+
+    expect(token).toHaveBeenNthCalledWith(1, undefined);
+    expect(token).toHaveBeenNthCalledWith(2, 'replacement-key');
+    expect(output).toEqual(['generated-access-key\n', 'replacement-key\n']);
+  });
+
   it('initialises the positional wake root without composing applications', async () => {
     const output: string[] = [];
     const compose = vi.fn(async () => applications());
@@ -267,6 +282,7 @@ function applications(calls: string[] = []) {
     stop: { stop: async () => undefined },
     api: { start: async () => undefined },
     ui: { start: async () => undefined },
+    auth: { token: async () => 'test-access-key' },
     audit: { read: async () => [] },
     correlate: { correlate: async () => ({}) },
     validateState: {

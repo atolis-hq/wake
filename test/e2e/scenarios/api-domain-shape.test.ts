@@ -1,4 +1,3 @@
-import { once } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
@@ -29,7 +28,7 @@ import {
   resourceCapability,
   resourceKind,
 } from '../../../src/resources/index.js';
-import { createApiDispatcher, createApiHttpServer } from '../../../src/surfaces/index.js';
+import { createApiDispatcher, createSurfaceHttpServer } from '../../../src/surfaces/index.js';
 import {} from '../../../src/work/index.js';
 import { resId, workId } from '../../support/identities.js';
 
@@ -231,29 +230,44 @@ describe(`${scenario.id} API domain shape`, () => {
     await root.advanceOnce({ maxProgress: 1 });
     await root.projectionRunner.runRegisteredOnce();
 
-    // When the real Node HTTP Surface queries the injected production facade.
+    // When the real Fastify HTTP Surface queries the injected production facade.
     const surface = await createSurfaceApplications(root, {
       now: () => '2026-07-31T11:00:00.000Z',
     });
-    const server = createApiHttpServer(createApiDispatcher(surface.api));
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    const address = server.address();
-    if (address === null || typeof address === 'string') throw new Error('Expected TCP address');
+    const server = createSurfaceHttpServer({
+      dispatcher: createApiDispatcher(surface.api),
+      credentials: {
+        accessKey: 'e2e-access-key',
+        sessionPassword: Buffer.alloc(32, 4).toString('base64url'),
+        createdAt: clock.now().toISOString(),
+      },
+    });
     try {
-      const list = (await (
-        await fetch(`http://127.0.0.1:${address.port}/api/v1/work-items`)
-      ).json()) as { items: readonly { workItemKey: string }[] };
-      const response = await fetch(
-        `http://127.0.0.1:${address.port}/api/v1/work-items/${encodeURIComponent(list.items[0]!.workItemKey)}`,
-      );
-      const body = (await response.json()) as {
+      const login = await server.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: { accessKey: 'e2e-access-key' },
+      });
+      const setCookie = login.headers['set-cookie'];
+      if (typeof setCookie !== 'string') throw new Error('Expected login session cookie');
+      const headers = { cookie: setCookie.split(';', 1)[0]! };
+      const list = (
+        await server.inject({ method: 'GET', url: '/api/v1/work-items', headers })
+      ).json() as {
+        items: readonly { workItemKey: string }[];
+      };
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/v1/work-items/${encodeURIComponent(list.items[0]!.workItemKey)}`,
+        headers,
+      });
+      const body = response.json() as {
         data: Record<string, unknown>;
         meta: { asOf: string; position?: number };
       };
 
       // Then identity is Wake-owned and cross-domain data stays nested and redacted.
-      expect(response.status).toBe(200);
+      expect(response.statusCode).toBe(200);
       expect(list.items[0]!.workItemKey).toMatch(/^wk_/);
       expect(body.data).toHaveProperty('work');
       expect(body.data).toHaveProperty('resources');
@@ -265,8 +279,7 @@ describe(`${scenario.id} API domain shape`, () => {
       expect(JSON.stringify(body)).toContain('https://github.com/atolis/wake/issues/25');
       expect(JSON.stringify(body)).not.toContain('workspace');
     } finally {
-      server.close();
-      await once(server, 'close');
+      await server.close();
     }
   });
 });

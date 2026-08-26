@@ -71,8 +71,11 @@
     "*.{ts,tsx,js,mjs,cjs,json,yaml,yml,css,html}": "prettier --write"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/secure-session": "^8.3.0",
     "@octokit/rest": "^22.0.0",
     "cron-parser": "^5.10.0",
+    "fastify": "^5.12.1",
     "handlebars": "^4.7.9",
     "ulid": "^3.0.2",
     "yaml": "^2.9.0",

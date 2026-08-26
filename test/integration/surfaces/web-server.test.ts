@@ -1,6 +1,9 @@
 import { once } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { createApiHttpServer } from '../../../src/surfaces/api/http-server.js';
+import {
+  createApiHttpServer,
+  createSurfaceHttpServer,
+} from '../../../src/surfaces/api/http-server.js';
 import { routeBrowserRequest } from '../../../src/surfaces/api/router.js';
 import { createApiDispatcher } from '../../../src/surfaces/api/routes/index.js';
 
@@ -44,6 +47,73 @@ describe('browser history routing', () => {
 });
 
 describe('HTTP Surface hardening', () => {
+  it('requires a configured auth boundary for every operational API route', async () => {
+    const server = createSurfaceHttpServer({
+      dispatcher: createApiDispatcher(applications()),
+      credentials: {
+        accessKey: 'operator-key',
+        sessionPassword: Buffer.alloc(32, 1).toString('base64url'),
+        createdAt: '2026-08-26T00:00:00.000Z',
+      },
+    });
+    try {
+      const response = await server.inject({
+        method: 'POST',
+        url: '/api/v1/control-plane/commands/tick',
+        payload: 'x'.repeat(1024 * 1024),
+      });
+      expect(response.statusCode).toBe(401);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('creates a secure login session that grants the protected API scope', async () => {
+    const server = createSurfaceHttpServer({
+      dispatcher: createApiDispatcher(applications()),
+      credentials: {
+        accessKey: 'operator-key',
+        sessionPassword: Buffer.alloc(32, 2).toString('base64url'),
+        createdAt: '2026-08-26T00:00:00.000Z',
+      },
+    });
+    try {
+      const rejected = await server.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: { accessKey: 'incorrect' },
+      });
+      expect(rejected.statusCode).toBe(401);
+
+      const login = await server.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: { accessKey: 'operator-key' },
+      });
+      expect(login.statusCode).toBe(200);
+      const setCookie = login.headers['set-cookie'];
+      if (typeof setCookie !== 'string') throw new Error('Expected login session cookie');
+      const cookie = setCookie.split(';', 1)[0]!;
+      expect(cookie).toContain('wake_session=');
+
+      const session = await server.inject({
+        method: 'GET',
+        url: '/api/v1/auth/session',
+        headers: { cookie },
+      });
+      expect(session.json()).toEqual({ authenticated: true });
+
+      const operational = await server.inject({
+        method: 'GET',
+        url: '/api/v1/control-plane/status',
+        headers: { cookie },
+      });
+      expect(operational.statusCode).toBe(200);
+    } finally {
+      await server.close();
+    }
+  });
+
   it('does not expose an unexpected application error message', async () => {
     const server = createApiHttpServer({
       dispatch: async () => {

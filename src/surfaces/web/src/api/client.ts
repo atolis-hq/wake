@@ -35,6 +35,21 @@ export class ApiProblem extends Error {
 }
 
 export class WakeApiClient {
+  readonly auth = {
+    session: async (): Promise<boolean> => {
+      const response = await this.fetchImplementation(`${this.baseUrl}/auth/session`);
+      return response.ok;
+    },
+    login: async (accessKey: string): Promise<boolean> => {
+      const response = await this.fetchImplementation(`${this.baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ accessKey }),
+      });
+      return response.ok;
+    },
+  };
+
   readonly board = {
     list: (cursor?: string, signal?: AbortSignal) =>
       this.get(`/board${query({ cursor })}`, collectionDecoder(decodeBoardCard), signal),
