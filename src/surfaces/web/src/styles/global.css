@@ -33,3 +33,91 @@ select {
     scroll-behavior: auto;
   }
 }
+/* Operator pairing screen: intentionally self-contained, with no third-party assets. */
+.wake-login {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) minmax(22rem, 1fr);
+  background: var(--surface, #f7f8fa);
+}
+.wake-login-brand {
+  background: #111827;
+  color: #fff;
+  padding: clamp(2rem, 8vw, 8rem);
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  font: inherit;
+}
+.wake-login-brand p {
+  color: #cbd5e1;
+  max-width: 20rem;
+}
+.wake-login-mark {
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: #38bdf8;
+  color: #0f172a;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+.wake-login-card {
+  align-self: center;
+  width: min(100% - 3rem, 28rem);
+  margin: auto;
+  padding: 2.5rem;
+  border: 1px solid #dbe1ea;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 1rem 3rem rgb(15 23 42 / 0.1);
+}
+.wake-login-card h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2rem;
+}
+.wake-login-card p {
+  color: #526071;
+  line-height: 1.5;
+}
+.wake-login-card form {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1.5rem;
+}
+.wake-login-card input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #aab4c2;
+  border-radius: 0.5rem;
+  font: inherit;
+}
+.wake-login-submit {
+  margin-top: 0.6rem;
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: #0f766e;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.wake-login-submit:hover {
+  background: #115e59;
+}
+@media (max-width: 42rem) {
+  .wake-login {
+    grid-template-columns: 1fr;
+  }
+  .wake-login-brand {
+    padding: 1.5rem;
+  }
+  .wake-login-card {
+    margin: 2rem auto;
+    padding: 1.75rem;
+  }
+}

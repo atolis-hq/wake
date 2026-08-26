@@ -29,6 +29,10 @@ export interface SurfaceHttpServerOptions {
   readonly dispatcher: ApiDispatcher;
   readonly credentials: SurfaceCredentials;
   readonly assets?: AssetSource;
+  readonly auth?: {
+    readonly disabled: boolean;
+    readonly redeemGrant: (grant: string) => Promise<boolean>;
+  };
 }
 
 /**
@@ -39,6 +43,7 @@ export interface SurfaceHttpServerOptions {
 export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): FastifyInstance {
   const app = Fastify({ bodyLimit: 64 * 1024, logger: { level: 'error' }, trustProxy: true });
   app.register(rateLimit, { global: false });
+  const authDisabled = options.auth?.disabled === true;
   app.register(secureSession, {
     key: Buffer.from(options.credentials.sessionPassword, 'base64url'),
     cookieName: 'wake_session',
@@ -65,26 +70,40 @@ export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): Fast
   });
 
   app.get('/api/v1/auth/session', async (request, reply) => {
+    if (authDisabled) return { authenticated: true };
     if (request.session.get(SurfaceSessionAttribute.Operator) === true)
       return { authenticated: true };
     return reply.code(401).send({ status: 401, title: 'Unauthorized' });
   });
-  app.post<{ Body: { accessKey?: unknown } }>(
-    '/api/v1/auth/login',
-    { bodyLimit: 1024, config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
-    async (request, reply) => {
-      const key = typeof request.body?.accessKey === 'string' ? request.body.accessKey : '';
-      if (!verifyAccessKey(key, options.credentials.accessKey))
-        return reply.code(401).send({ status: 401, title: 'Unauthorized' });
-      request.session.set(SurfaceSessionAttribute.Operator, true);
-      return { authenticated: true };
-    },
-  );
+  if (!authDisabled)
+    app.post<{ Body: { accessKey?: unknown } }>(
+      '/api/v1/auth/login',
+      { bodyLimit: 1024, config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const key = typeof request.body?.accessKey === 'string' ? request.body.accessKey : '';
+        if (!verifyAccessKey(key, options.credentials.accessKey))
+          return reply.code(401).send({ status: 401, title: 'Unauthorized' });
+        request.session.set(SurfaceSessionAttribute.Operator, true);
+        return { authenticated: true };
+      },
+    );
+  if (!authDisabled)
+    app.post<{ Body: { grant?: unknown } }>(
+      '/api/v1/auth/redeem',
+      { bodyLimit: 1024, config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+      async (request, reply) => {
+        const grant = typeof request.body?.grant === 'string' ? request.body.grant : '';
+        if (options.auth === undefined || !(await options.auth.redeemGrant(grant)))
+          return reply.code(401).send({ status: 401, title: 'Unauthorized' });
+        request.session.set(SurfaceSessionAttribute.Operator, true);
+        return { authenticated: true };
+      },
+    );
 
   app.register(
     (protectedApi, _pluginOptions, done) => {
       protectedApi.addHook('onRequest', async (request, reply) => {
-        if (request.session.get(SurfaceSessionAttribute.Operator) !== true)
+        if (!authDisabled && request.session.get(SurfaceSessionAttribute.Operator) !== true)
           return reply.code(401).send({ status: 401, title: 'Unauthorized' });
       });
       protectedApi.all('/*', async (request, reply) => {

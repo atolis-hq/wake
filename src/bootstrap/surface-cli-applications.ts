@@ -19,11 +19,13 @@ import {
   createApiDispatcher,
   createLoggedDockerCli,
   createPackagedAssetSource,
+  createPairingGrant,
   createProcessLogSink,
   createSandboxDockerPort,
   createSurfaceHttpServer,
   drainProcessOutput,
   loadOrCreateCredentials,
+  redeemPairingGrant,
   replaceAccessKey,
   runDoctor,
   runSandbox,
@@ -153,11 +155,24 @@ export function createSurfaceCliApplications(
     ui: { start: (options) => startHttp(options, true) },
     auth: {
       async token(accessKey: string | undefined) {
-        const credentials =
-          accessKey === undefined
-            ? await loadOrCreateCredentials(root.paths.wakeRoot)
-            : await replaceAccessKey(root.paths.wakeRoot, accessKey);
-        return credentials.accessKey;
+        if (root.config.surfaces.web.auth.disabled)
+          return 'UI authentication is disabled by surfaces.web.auth.disabled.';
+        if (accessKey !== undefined) await replaceAccessKey(root.paths.wakeRoot, accessKey);
+        const grant = await createPairingGrant(root.paths.wakeRoot);
+        const local = `http://${root.config.surfaces.api.host}:${root.config.surfaces.api.port}/?grant=${encodeURIComponent(grant.value)}`;
+        const publicUrl = root.config.surfaces.web.publicUrl;
+        return [
+          'Wake login link (single use; expires in 10 minutes):',
+          `  Local:  ${local}`,
+          ...(publicUrl === undefined
+            ? []
+            : [
+                `  Public: ${new URL(`?grant=${encodeURIComponent(grant.value)}`, publicUrl).href}`,
+              ]),
+          '',
+          'Open a link on this device or scan its QR code from a mobile device. Do not share the link.',
+          '',
+        ].join('\n');
       },
     },
     audit: {
@@ -275,6 +290,10 @@ function createHttpStarter(
     const server = createSurfaceHttpServer({
       dispatcher: createApiDispatcher(api),
       credentials: await loadOrCreateCredentials(root.paths.wakeRoot),
+      auth: {
+        disabled: root.config.surfaces.web.auth.disabled,
+        redeemGrant: (grant) => redeemPairingGrant(root.paths.wakeRoot, grant),
+      },
       ...(assets === undefined ? {} : { assets }),
     });
     servers.add(server);

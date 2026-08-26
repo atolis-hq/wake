@@ -28,10 +28,23 @@ export function App({ client = new WakeApiClient() }: { readonly client?: WakeAp
   );
   const [authenticated, setAuthenticated] = useState<boolean | undefined>();
   useEffect(() => {
-    void client.auth
-      .session()
-      .then(setAuthenticated)
-      .catch(() => setAuthenticated(false));
+    const grant = new URLSearchParams(globalThis.location.search).get('grant');
+    const authenticate = async () => {
+      if (grant !== null) {
+        const redeemed = await client.auth.redeem(grant);
+        globalThis.history.replaceState(
+          {},
+          '',
+          `${globalThis.location.pathname}${globalThis.location.hash}`,
+        );
+        if (redeemed) return setAuthenticated(true);
+      }
+      return client.auth
+        .session()
+        .then(setAuthenticated)
+        .catch(() => setAuthenticated(false));
+    };
+    void authenticate();
   }, [client]);
   if (authenticated === undefined) return null;
   if (!authenticated)
@@ -56,25 +69,37 @@ function Login({
   const [failed, setFailed] = useState(false);
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (await client.auth.login(accessKey)) onAuthenticated();
+    if (await client.auth.redeem(accessKey)) onAuthenticated();
     else setFailed(true);
   }
   return (
-    <main style={{ maxWidth: '24rem', margin: '15vh auto', padding: '1.5rem' }}>
-      <h1>Wake login</h1>
-      <form onSubmit={submit}>
-        <label htmlFor="access-key">Access key</label>
-        <input
-          id="access-key"
-          type="password"
-          value={accessKey}
-          onChange={(event) => setAccessKey(event.target.value)}
-          autoFocus
-          required
-        />
-        <button type="submit">Sign in</button>
-        {failed && <p role="alert">Unable to sign in.</p>}
-      </form>
+    <main className="wake-login">
+      <section className="wake-login-brand">
+        <div className="wake-login-mark">W</div>
+        <div>
+          <strong>Wake</strong>
+          <p>Control plane for autonomous development.</p>
+        </div>
+      </section>
+      <section className="wake-login-card">
+        <h1>Login</h1>
+        <p>Enter a temporary login code, or scan the code from your operator terminal.</p>
+        <form onSubmit={submit}>
+          <label htmlFor="access-key">Temporary login code</label>
+          <input
+            id="access-key"
+            type="password"
+            value={accessKey}
+            onChange={(event) => setAccessKey(event.target.value)}
+            autoFocus
+            required
+          />
+          <button className="wake-login-submit" type="submit">
+            Sign in
+          </button>
+          {failed && <p role="alert">Unable to sign in.</p>}
+        </form>
+      </section>
     </main>
   );
 }

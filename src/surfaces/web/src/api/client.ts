@@ -50,6 +50,15 @@ export class WakeApiClient {
       });
       return response.ok;
     },
+    redeem: async (grant: string): Promise<boolean> => {
+      const fetchImplementation = this.fetchImplementation;
+      const response = await fetchImplementation(`${this.baseUrl}/auth/redeem`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ grant }),
+      });
+      return response.ok;
+    },
   };
 
   readonly board = {

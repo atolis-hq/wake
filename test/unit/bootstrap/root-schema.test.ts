@@ -80,7 +80,15 @@ describe('web surface configuration', () => {
         ...baseConfig,
         surfaces: { web: { publicUrl: 'https://wake.example.com' } },
       }).surfaces.web,
-    ).toEqual({ enabled: false, publicUrl: 'https://wake.example.com' });
+    ).toEqual({ enabled: false, auth: { disabled: false }, publicUrl: 'https://wake.example.com' });
+  });
+
+  it('keeps web authentication enabled unless explicitly disabled', () => {
+    expect(parseRootConfig(baseConfig).surfaces.web.auth.disabled).toBe(false);
+    expect(
+      parseRootConfig({ ...baseConfig, surfaces: { web: { auth: { disabled: true } } } }).surfaces
+        .web.auth.disabled,
+    ).toBe(true);
   });
 
   it('rejects a non-HTTPS public URL', () => {
