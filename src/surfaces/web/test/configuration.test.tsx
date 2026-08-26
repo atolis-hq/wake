@@ -27,7 +27,7 @@ describe('configuration page commands tab', () => {
 
     expect(screen.queryByLabelText('Workflow Dark Factory')).toBeNull();
     const user = userEvent.setup();
-    await user.click(screen.getByRole('tab', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('tab', { name: 'Workflows' }));
 
     expect(await screen.findByLabelText('Workflow Dark Factory')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Dark Factory' })).toBeTruthy();
@@ -41,7 +41,7 @@ describe('configuration page commands tab', () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('tab', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('tab', { name: 'Workflows' }));
 
     expect(await screen.findByLabelText('Workflow Dark Factory')).toBeTruthy();
     expect(screen.queryByText('Loading redacted configuration')).toBeNull();
