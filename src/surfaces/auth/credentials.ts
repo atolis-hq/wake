@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { withFileLock } from '../../persistence/index.js';
 
 export interface SurfaceCredentials {
   readonly accessKey: string;
@@ -20,7 +21,7 @@ export interface SurfacePairingGrant {
 }
 
 const pairingGrantLifetimeMs = 10 * 60 * 1000;
-const credentialMutationLocks = new Map<string, Promise<void>>();
+const credentialLockName = 'surface-credentials.lock';
 
 export function credentialsPath(wakeRoot: string): string {
   return join(wakeRoot, '.wake', 'auth', 'credentials.json');
@@ -126,19 +127,14 @@ async function mutateCredentials<Result>(
   path: string,
   mutation: () => Promise<Result>,
 ): Promise<Result> {
-  const previous = credentialMutationLocks.get(path) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
+  return withFileLock(credentialLockPath(path), mutation, {
+    waitMs: 5_000,
+    retryIntervalMs: 10,
   });
-  credentialMutationLocks.set(path, current);
-  await previous;
-  try {
-    return await mutation();
-  } finally {
-    release();
-    if (credentialMutationLocks.get(path) === current) credentialMutationLocks.delete(path);
-  }
+}
+
+function credentialLockPath(credentials: string): string {
+  return join(dirname(dirname(credentials)), 'locks', credentialLockName);
 }
 
 function decodeCredentials(value: unknown): SurfaceCredentials {
