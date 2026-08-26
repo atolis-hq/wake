@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -6,7 +6,20 @@ export interface SurfaceCredentials {
   readonly accessKey: string;
   readonly sessionPassword: string;
   readonly createdAt: string;
+  readonly pairingGrants?: readonly PairingGrantRecord[];
 }
+
+interface PairingGrantRecord {
+  readonly hash: string;
+  readonly expiresAt: string;
+}
+
+export interface SurfacePairingGrant {
+  readonly value: string;
+  readonly expiresAt: string;
+}
+
+const pairingGrantLifetimeMs = 10 * 60 * 1000;
 
 export function credentialsPath(wakeRoot: string): string {
   return join(wakeRoot, '.wake', 'auth', 'credentials.json');
@@ -39,6 +52,43 @@ export async function replaceAccessKey(
   return replacement;
 }
 
+export async function createPairingGrant(
+  wakeRoot: string,
+  now = new Date(),
+): Promise<SurfacePairingGrant> {
+  const current = await loadOrCreateCredentials(wakeRoot);
+  const value = randomBytes(24).toString('base64url');
+  const expiresAt = new Date(now.getTime() + pairingGrantLifetimeMs).toISOString();
+  const active = (current.pairingGrants ?? [])
+    .filter((grant) => grant.expiresAt > now.toISOString())
+    .slice(-19);
+  await saveCredentials(credentialsPath(wakeRoot), {
+    ...current,
+    pairingGrants: [...active, { hash: grantHash(value), expiresAt }],
+  });
+  return { value, expiresAt };
+}
+
+export async function redeemPairingGrant(
+  wakeRoot: string,
+  value: string,
+  now = new Date(),
+): Promise<boolean> {
+  const current = await loadOrCreateCredentials(wakeRoot);
+  const nowIso = now.toISOString();
+  const hash = grantHash(value);
+  const grants = current.pairingGrants ?? [];
+  const matching = grants.find((grant) => grant.hash === hash && grant.expiresAt > nowIso);
+  const remaining = grants.filter((grant) => grant.expiresAt > nowIso && grant.hash !== hash);
+  if (matching === undefined) {
+    if (remaining.length !== grants.length)
+      await saveCredentials(credentialsPath(wakeRoot), { ...current, pairingGrants: remaining });
+    return false;
+  }
+  await saveCredentials(credentialsPath(wakeRoot), { ...current, pairingGrants: remaining });
+  return true;
+}
+
 export function verifyAccessKey(candidate: string, expected: string): boolean {
   const left = Buffer.from(candidate);
   const right = Buffer.from(expected);
@@ -50,6 +100,7 @@ function createCredentials(): SurfaceCredentials {
     accessKey: randomBytes(24).toString('base64url'),
     sessionPassword: randomBytes(32).toString('base64url'),
     createdAt: new Date().toISOString(),
+    pairingGrants: [],
   };
 }
 
@@ -78,7 +129,24 @@ function decodeCredentials(value: unknown): SurfaceCredentials {
     accessKey: value.accessKey,
     sessionPassword: value.sessionPassword,
     createdAt: value.createdAt,
+    pairingGrants:
+      'pairingGrants' in value && Array.isArray(value.pairingGrants)
+        ? value.pairingGrants.flatMap((grant) =>
+            typeof grant === 'object' &&
+            grant !== null &&
+            'hash' in grant &&
+            'expiresAt' in grant &&
+            typeof grant.hash === 'string' &&
+            typeof grant.expiresAt === 'string'
+              ? [{ hash: grant.hash, expiresAt: grant.expiresAt }]
+              : [],
+          )
+        : [],
   };
+}
+
+function grantHash(value: string): string {
+  return createHash('sha256').update(value).digest('base64url');
 }
 
 function isMissing(error: unknown): boolean {
