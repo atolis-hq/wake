@@ -1,4 +1,5 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
@@ -15,6 +16,12 @@ describe('Wake operator app', () => {
 
     const logo = await screen.findByRole('img', { name: 'Wake logo' });
     expect(logo.closest('.wake-login-brand')?.textContent).toBe('');
+  });
+
+  it('keeps the login brand pane compact around its centered logo', () => {
+    const styles = readFileSync('src/styles/global.css', 'utf8');
+    expect(styles).toContain('grid-template-columns: minmax(12rem, 14rem) minmax(22rem, 1fr);');
+    expect(styles).toContain('justify-content: center;');
   });
 
   it('redirects its clean root route to the board', async () => {
