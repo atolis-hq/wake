@@ -115,19 +115,27 @@ const applications: ApiApplications = {
               ? [
                   {
                     resourceId: 'resource-1',
+                    adapter: 'github',
                     kind: 'ticket',
+                    locatorLabel: 'Demo ticket',
                     capabilities: ['comment', 'label'],
                     revision: 'rev-1',
                   },
                   {
                     resourceId: 'resource-2',
+                    adapter: 'github',
                     kind: 'change-proposal',
+                    locatorLabel: 'Demo pull request',
                     capabilities: ['review', MergeMethod.Merge],
                   },
                 ]
               : [],
-          orchestration: { primary: null, children: [] },
-          execution: { runs: item.workItemId === 'work-demo' ? [run()] : [] },
+          orchestration: {
+            primary: null,
+            children: [],
+            diagram: { href: '/api/v1/workflow-diagrams' },
+          },
+          execution: { runs: [], transcriptGroups: [] },
           activities: {},
         },
         meta: { asOf: instant },
