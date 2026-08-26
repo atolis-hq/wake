@@ -41,7 +41,10 @@ const applications: ApiApplications = {
             : ('ready' as const),
         dwellSince: instant,
         runCount: 0,
+        totalTokens: 0,
+        totalCostUsd: 0,
         totalDurationMs: 0,
+        activeRuns: {},
       }));
       return {
         items,
@@ -235,10 +238,6 @@ const applications: ApiApplications = {
 const production = createApiDispatcher(applications);
 const dispatcher: ApiDispatcher = {
   async dispatch(method, target, body) {
-    if (method === 'POST' && target === '/__wake-e2e/reset') {
-      state = freshState();
-      return { status: 200, body: { reset: true } };
-    }
     return production.dispatch(method, target, body);
   },
 };
@@ -258,6 +257,10 @@ const server = createSurfaceHttpServer({
     sessionPassword: Buffer.alloc(32, 3).toString('base64url'),
     createdAt: instant,
   },
+});
+server.post('/__wake-e2e/reset', async () => {
+  state = freshState();
+  return { reset: true };
 });
 await server.listen({ port: 4319, host: '127.0.0.1' });
 

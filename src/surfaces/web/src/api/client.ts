@@ -37,11 +37,13 @@ export class ApiProblem extends Error {
 export class WakeApiClient {
   readonly auth = {
     session: async (): Promise<boolean> => {
-      const response = await this.fetchImplementation(`${this.baseUrl}/auth/session`);
+      const fetchImplementation = this.fetchImplementation;
+      const response = await fetchImplementation(`${this.baseUrl}/auth/session`);
       return response.ok;
     },
     login: async (accessKey: string): Promise<boolean> => {
-      const response = await this.fetchImplementation(`${this.baseUrl}/auth/login`, {
+      const fetchImplementation = this.fetchImplementation;
+      const response = await fetchImplementation(`${this.baseUrl}/auth/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ accessKey }),
