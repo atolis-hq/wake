@@ -37,13 +37,24 @@ select {
 .wake-login {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(20rem, 0.9fr) minmax(24rem, 1.1fr);
+  place-items: center;
+  padding: var(--space-5);
   background: var(--surface);
+}
+.wake-login-panel {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.8fr) minmax(22rem, 1fr);
+  width: min(100%, 54rem);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  box-shadow: var(--shadow);
 }
 .wake-login-brand {
   background: var(--brand);
   color: var(--ink-inverse);
-  padding: clamp(var(--space-6), 8vw, 8rem);
+  padding: clamp(var(--space-6), 6vw, 5rem);
   display: flex;
   gap: var(--space-4);
   align-items: center;
@@ -55,19 +66,13 @@ select {
   margin: var(--space-2) 0 0;
 }
 .wake-login-logo {
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 7rem;
+  height: 7rem;
   flex: 0 0 auto;
 }
 .wake-login-card {
   align-self: center;
-  width: min(100% - 3rem, 28rem);
-  margin: auto;
-  padding: var(--space-6);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-card);
-  box-shadow: var(--shadow);
+  padding: clamp(var(--space-5), 5vw, 3rem);
 }
 .wake-login-card h1 {
   margin: 0 0 var(--space-2);
@@ -104,7 +109,7 @@ select {
   background: var(--brand-dark);
 }
 @media (max-width: 42rem) {
-  .wake-login {
+  .wake-login-panel {
     grid-template-columns: 1fr;
   }
   .wake-login-brand {
@@ -113,7 +118,6 @@ select {
     border-bottom: 1px solid rgb(0 0 0 / 0.18);
   }
   .wake-login-card {
-    margin: 2rem auto;
-    padding: 1.75rem;
+    padding: var(--space-5);
   }
 }

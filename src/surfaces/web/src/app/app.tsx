@@ -75,32 +75,34 @@ function Login({
   }
   return (
     <main className="wake-login">
-      <section className="wake-login-brand">
-        <img className="wake-login-logo" src={wakeLogo} alt="Wake logo" />
-        <div>
-          <strong>Wake</strong>
-          <p>Control plane for autonomous development.</p>
-        </div>
-      </section>
-      <section className="wake-login-card">
-        <h1>Login</h1>
-        <p>Enter a temporary login code, or scan the code from your operator terminal.</p>
-        <form onSubmit={submit}>
-          <label htmlFor="access-key">Temporary login code</label>
-          <input
-            id="access-key"
-            type="password"
-            value={accessKey}
-            onChange={(event) => setAccessKey(event.target.value)}
-            autoFocus
-            required
-          />
-          <button className="wake-login-submit" type="submit">
-            Sign in
-          </button>
-          {failed && <p role="alert">Unable to sign in.</p>}
-        </form>
-      </section>
+      <div className="wake-login-panel">
+        <section className="wake-login-brand">
+          <img className="wake-login-logo" src={wakeLogo} alt="Wake logo" />
+          <div>
+            <strong>Wake</strong>
+            <p>Control plane for autonomous development.</p>
+          </div>
+        </section>
+        <section className="wake-login-card">
+          <h1>Login</h1>
+          <p>Enter a temporary login code, or scan the code from your operator terminal.</p>
+          <form onSubmit={submit}>
+            <label htmlFor="access-key">Temporary login code</label>
+            <input
+              id="access-key"
+              type="password"
+              value={accessKey}
+              onChange={(event) => setAccessKey(event.target.value)}
+              autoFocus
+              required
+            />
+            <button className="wake-login-submit" type="submit">
+              Sign in
+            </button>
+            {failed && <p role="alert">Unable to sign in.</p>}
+          </form>
+        </section>
+      </div>
     </main>
   );
 }
