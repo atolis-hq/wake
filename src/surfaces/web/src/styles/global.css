@@ -33,3 +33,89 @@ select {
     scroll-behavior: auto;
   }
 }
+/* Operator pairing screen uses the shared Wake palette and typography. */
+.wake-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: var(--surface);
+}
+.wake-login-panel {
+  display: grid;
+  grid-template-columns: minmax(12rem, 14rem) minmax(22rem, 1fr);
+  width: min(100%, 54rem);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  box-shadow: var(--shadow);
+}
+.wake-login-brand {
+  background: var(--brand);
+  color: var(--ink-inverse);
+  padding: clamp(var(--space-6), 6vw, 5rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid rgb(0 0 0 / 0.18);
+}
+.wake-login-logo {
+  width: 7rem;
+  height: 7rem;
+  flex: 0 0 auto;
+}
+.wake-login-card {
+  align-self: center;
+  padding: clamp(var(--space-5), 5vw, 3rem);
+}
+.wake-login-card h1 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+.wake-login-card p {
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+.wake-login-card form {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+.wake-login-card input {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+  color: var(--ink);
+}
+.wake-login-submit {
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--brand);
+  color: var(--ink-inverse);
+  font-weight: 700;
+  cursor: pointer;
+}
+.wake-login-submit:hover {
+  background: var(--brand-dark);
+}
+@media (max-width: 42rem) {
+  .wake-login {
+    place-items: start center;
+  }
+  .wake-login-panel {
+    grid-template-columns: 1fr;
+  }
+  .wake-login-brand {
+    padding: var(--space-5);
+    border-right: 0;
+    border-bottom: 1px solid rgb(0 0 0 / 0.18);
+  }
+  .wake-login-card {
+    padding: var(--space-5);
+  }
+}

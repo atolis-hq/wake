@@ -1,4 +1,5 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
@@ -6,6 +7,23 @@ import { App } from '../src/app/app.js';
 
 describe('Wake operator app', () => {
   afterEach(cleanup);
+  it('shows only the Wake logo in the login brand pane', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App client={client({ authenticated: false })} />
+      </MemoryRouter>,
+    );
+
+    const logo = await screen.findByRole('img', { name: 'Wake logo' });
+    expect(logo.closest('.wake-login-brand')?.textContent).toBe('');
+  });
+
+  it('keeps the login brand pane compact around its centered logo', () => {
+    const styles = readFileSync('src/styles/global.css', 'utf8');
+    expect(styles).toContain('grid-template-columns: minmax(12rem, 14rem) minmax(22rem, 1fr);');
+    expect(styles).toContain('justify-content: center;');
+  });
+
   it('redirects its clean root route to the board', async () => {
     render(
       <MemoryRouter initialEntries={['/']}>
@@ -98,11 +116,17 @@ function client(
       readonly relatedWorkItems: readonly unknown[];
     }[];
     failHealth?: boolean;
+    authenticated?: boolean;
   } = {},
 ) {
   const asOf = '2026-07-31T10:00:00.000Z';
   return new WakeApiClient(async (input) => {
     const url = String(input);
+    if (url.endsWith('/auth/session'))
+      return new Response(JSON.stringify({ authenticated: options.authenticated ?? true }), {
+        status: options.authenticated === false ? 401 : 200,
+        headers: { 'content-type': 'application/json' },
+      });
     if (options.failHealth && url.endsWith('/system/health'))
       return new Response(
         JSON.stringify({ type: 'about:blank', title: 'Health unavailable', status: 500 }),

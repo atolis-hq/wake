@@ -9,7 +9,7 @@ import {
   type AuditEventResponse,
   type WorkItemResponse,
 } from '../../api/contracts/index.js';
-import { createApiHttpServer, type ApiDispatcher } from '../../api/http-server.js';
+import { createSurfaceHttpServer, type ApiDispatcher } from '../../api/http-server.js';
 import { createApiDispatcher, type ApiApplications } from '../../api/routes/index.js';
 import { PackagedAssets } from '../../web-host/packaged-assets.js';
 
@@ -41,7 +41,10 @@ const applications: ApiApplications = {
             : ('ready' as const),
         dwellSince: instant,
         runCount: 0,
+        totalTokens: 0,
+        totalCostUsd: 0,
         totalDurationMs: 0,
+        activeRuns: {},
       }));
       return {
         items,
@@ -112,19 +115,27 @@ const applications: ApiApplications = {
               ? [
                   {
                     resourceId: 'resource-1',
+                    adapter: 'github',
                     kind: 'ticket',
+                    locatorLabel: 'Demo ticket',
                     capabilities: ['comment', 'label'],
                     revision: 'rev-1',
                   },
                   {
                     resourceId: 'resource-2',
+                    adapter: 'github',
                     kind: 'change-proposal',
+                    locatorLabel: 'Demo pull request',
                     capabilities: ['review', MergeMethod.Merge],
                   },
                 ]
               : [],
-          orchestration: { primary: null, children: [] },
-          execution: { runs: item.workItemId === 'work-demo' ? [run()] : [] },
+          orchestration: {
+            primary: null,
+            children: [],
+            diagram: { href: '/api/v1/workflow-diagrams' },
+          },
+          execution: { runs: [], transcriptGroups: [] },
           activities: {},
         },
         meta: { asOf: instant },
@@ -235,10 +246,6 @@ const applications: ApiApplications = {
 const production = createApiDispatcher(applications);
 const dispatcher: ApiDispatcher = {
   async dispatch(method, target, body) {
-    if (method === 'POST' && target === '/__wake-e2e/reset') {
-      state = freshState();
-      return { status: 200, body: { reset: true } };
-    }
     return production.dispatch(method, target, body);
   },
 };
@@ -250,10 +257,23 @@ const assets = new PackagedAssets(async (path) => {
     return (error as NodeJS.ErrnoException).code === 'ENOENT' ? undefined : Promise.reject(error);
   }
 });
-const server = createApiHttpServer(dispatcher, assets);
-server.listen(4319, '127.0.0.1');
+const server = createSurfaceHttpServer({
+  dispatcher,
+  assets,
+  credentials: {
+    accessKey: 'e2e-access-key',
+    sessionPassword: Buffer.alloc(32, 3).toString('base64url'),
+    createdAt: instant,
+  },
+});
+server.post('/__wake-e2e/reset', async () => {
+  state = freshState();
+  return { reset: true };
+});
+await server.listen({ port: 4319, host: '127.0.0.1' });
 
-for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => server.close());
+for (const signal of ['SIGINT', 'SIGTERM'] as const)
+  process.once(signal, () => void server.close());
 
 function freshState(): FixtureState {
   return {

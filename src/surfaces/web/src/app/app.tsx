@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
+import wakeLogo from '../../../../../assets/wake-logo.svg';
 import { WakeApiClient } from '../api/client.js';
 import { ApiClientContext } from '../api/context.js';
 import { AppShell } from '../components/app-shell.js';
@@ -26,12 +27,79 @@ export function App({ client = new WakeApiClient() }: { readonly client?: WakeAp
         },
       }),
   );
+  const [authenticated, setAuthenticated] = useState<boolean | undefined>();
+  useEffect(() => {
+    const grant = new URLSearchParams(globalThis.location.search).get('grant');
+    const authenticate = async () => {
+      if (grant !== null) {
+        const redeemed = await client.auth.redeem(grant);
+        globalThis.history.replaceState(
+          {},
+          '',
+          `${globalThis.location.pathname}${globalThis.location.hash}`,
+        );
+        if (redeemed) return setAuthenticated(true);
+      }
+      return client.auth
+        .session()
+        .then(setAuthenticated)
+        .catch(() => setAuthenticated(false));
+    };
+    void authenticate();
+  }, [client]);
+  if (authenticated === undefined) return null;
+  if (!authenticated)
+    return <Login client={client} onAuthenticated={() => setAuthenticated(true)} />;
   return (
     <QueryClientProvider client={queryClient}>
       <ApiClientContext.Provider value={client}>
         <AppRoutes />
       </ApiClientContext.Provider>
     </QueryClientProvider>
+  );
+}
+
+function Login({
+  client,
+  onAuthenticated,
+}: {
+  readonly client: WakeApiClient;
+  readonly onAuthenticated: () => void;
+}) {
+  const [accessKey, setAccessKey] = useState('');
+  const [failed, setFailed] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (await client.auth.redeem(accessKey)) onAuthenticated();
+    else setFailed(true);
+  }
+  return (
+    <main className="wake-login">
+      <div className="wake-login-panel">
+        <section className="wake-login-brand">
+          <img className="wake-login-logo" src={wakeLogo} alt="Wake logo" />
+        </section>
+        <section className="wake-login-card">
+          <h1>Login</h1>
+          <p>Enter a temporary login code, or scan the code from your operator terminal.</p>
+          <form onSubmit={submit}>
+            <label htmlFor="access-key">Temporary login code</label>
+            <input
+              id="access-key"
+              type="password"
+              value={accessKey}
+              onChange={(event) => setAccessKey(event.target.value)}
+              autoFocus
+              required
+            />
+            <button className="wake-login-submit" type="submit">
+              Sign in
+            </button>
+            {failed && <p role="alert">Unable to sign in.</p>}
+          </form>
+        </section>
+      </div>
+    </main>
   );
 }
 

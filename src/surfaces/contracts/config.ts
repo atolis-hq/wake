@@ -13,6 +13,10 @@ export const surfacesConfigSchema = z
     web: z
       .object({
         enabled: z.boolean().default(false),
+        auth: z
+          .object({ disabled: z.boolean().default(false) })
+          .strict()
+          .default({ disabled: false }),
         publicUrl: z
           .string()
           .trim()
@@ -23,10 +27,13 @@ export const surfacesConfigSchema = z
           .optional(),
       })
       .strict()
-      .default({ enabled: false }),
+      .default({ enabled: false, auth: { disabled: false } }),
   })
   .strict()
-  .default({ api: { enabled: false, host: '127.0.0.1', port: 4317 }, web: { enabled: false } })
+  .default({
+    api: { enabled: false, host: '127.0.0.1', port: 4317 },
+    web: { enabled: false, auth: { disabled: false } },
+  })
   .superRefine((value, context) => {
     if (value.web.enabled && !value.api.enabled)
       context.addIssue({
@@ -43,6 +50,7 @@ export const surfacesConfigSchema = z
     },
     web: {
       enabled: value.web.enabled ?? false,
+      auth: { disabled: value.web.auth.disabled ?? false },
       ...(value.web.publicUrl === undefined ? {} : { publicUrl: value.web.publicUrl }),
     },
   }));

@@ -23,6 +23,7 @@ const dependencyMap = {
   integrations: ['kernel', 'work', 'resources', 'activities', 'orchestration', 'execution'],
   surfaces: [
     'kernel',
+    'persistence',
     'work',
     'resources',
     'activities',

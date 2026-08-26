@@ -1,7 +1,6 @@
+import type { FastifyInstance } from 'fastify';
 import { execFile as nodeExecFile, spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { access, copyFile, mkdir, writeFile as writeFileContent } from 'node:fs/promises';
-import type { Server } from 'node:http';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { promisify } from 'node:util';
@@ -18,12 +17,16 @@ import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
   DockerProcessError,
   createApiDispatcher,
-  createApiHttpServer,
   createLoggedDockerCli,
   createPackagedAssetSource,
+  createPairingGrant,
   createProcessLogSink,
   createSandboxDockerPort,
+  createSurfaceHttpServer,
   drainProcessOutput,
+  loadOrCreateCredentials,
+  redeemPairingGrant,
+  replaceAccessKey,
   runDoctor,
   runSandbox,
   runSandboxEntrypoint,
@@ -107,7 +110,7 @@ export function createSurfaceCliApplications(
       ),
     reportResidentError('intake'),
   );
-  const servers = new Set<Server>();
+  const servers = new Set<FastifyInstance>();
   const startHttp = createHttpStarter(root, api, servers);
   return {
     tick: {
@@ -150,6 +153,30 @@ export function createSurfaceCliApplications(
     },
     api: { start: (options) => startHttp(options, false) },
     ui: { start: (options) => startHttp(options, true) },
+    auth: {
+      async token(accessKey: string | undefined) {
+        if (root.config.surfaces.web.auth.disabled)
+          return 'UI authentication is disabled by surfaces.web.auth.disabled.';
+        if (accessKey !== undefined) await replaceAccessKey(root.paths.wakeRoot, accessKey);
+        const grant = await createPairingGrant(root.paths.wakeRoot);
+        const localHost =
+          root.config.surfaces.api.host === '0.0.0.0' ? 'localhost' : root.config.surfaces.api.host;
+        const local = `http://${localHost}:${root.config.surfaces.api.port}/?grant=${encodeURIComponent(grant.value)}`;
+        const publicUrl = root.config.surfaces.web.publicUrl;
+        return [
+          'Wake login link (single use; expires in 10 minutes):',
+          `  Local:  ${local}`,
+          ...(publicUrl === undefined
+            ? []
+            : [
+                `  Public: ${new URL(`?grant=${encodeURIComponent(grant.value)}`, publicUrl).href}`,
+              ]),
+          '',
+          'Open a link on this device or scan its QR code from a mobile device. Do not share the link.',
+          '',
+        ].join('\n');
+      },
+    },
     audit: {
       async read(id) {
         return (await root.journal.readAll(0))
@@ -253,22 +280,30 @@ function sleepUntilAbort(signal: AbortSignal, milliseconds: number): Promise<voi
   });
 }
 
-function createHttpStarter(root: CompositionRoot, api: ApiApplications, servers: Set<Server>) {
+function createHttpStarter(
+  root: CompositionRoot,
+  api: ApiApplications,
+  servers: Set<FastifyInstance>,
+) {
   return async (options: HostOptions = {}, web = false): Promise<void> => {
     const assets = web ? createPackagedAssetSource() : undefined;
     if (web && (await assets!.get('/index.html')) === undefined)
       throw new Error('Packaged Wake web assets are missing');
-    const server = createApiHttpServer(createApiDispatcher(api), assets);
+    const server = createSurfaceHttpServer({
+      dispatcher: createApiDispatcher(api),
+      credentials: await loadOrCreateCredentials(root.paths.wakeRoot),
+      auth: {
+        disabled: root.config.surfaces.web.auth.disabled,
+        redeemGrant: (grant) => redeemPairingGrant(root.paths.wakeRoot, grant),
+      },
+      ...(assets === undefined ? {} : { assets }),
+    });
     servers.add(server);
-    server.listen(
-      options.port ?? root.config.surfaces.api.port,
-      options.host ?? root.config.surfaces.api.host,
-    );
     try {
-      await Promise.race([
-        once(server, 'listening'),
-        once(server, 'error').then(([error]) => Promise.reject(error)),
-      ]);
+      await server.listen({
+        port: options.port ?? root.config.surfaces.api.port,
+        host: options.host ?? root.config.surfaces.api.host,
+      });
     } catch (error) {
       servers.delete(server);
       throw error;
@@ -818,12 +853,11 @@ function commandContext(commandId: string, occurredAt: string) {
   };
 }
 
-async function closeAll(servers: Set<Server>): Promise<void> {
+async function closeAll(servers: Set<FastifyInstance>): Promise<void> {
   await Promise.all(
     [...servers].map(async (server) => {
-      if (!server.listening) return;
-      server.close();
-      await once(server, 'close');
+      if (!server.server.listening) return;
+      await server.close();
       servers.delete(server);
     }),
   );

@@ -1,8 +1,14 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
-test.beforeEach(async ({ request }) => {
-  const response = await request.post('/__wake-e2e/reset');
+test.beforeEach(async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Access key').fill('e2e-access-key');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(
+    page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Board' }),
+  ).toBeVisible();
+  const response = await page.request.post('/__wake-e2e/reset');
   expect(response.ok()).toBeTruthy();
 });
 
@@ -10,7 +16,7 @@ test('operates Wake through the real HTTP Surface and packaged application', asy
   page,
 }, testInfo) => {
   await page.goto('/board');
-  await expect(page.getByRole('heading', { name: 'Board' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Ready \(\d+\)$/ })).toBeVisible();
   await expect(page.getByText('Dispatch active')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Demo Wake' })).toHaveAttribute(
     'href',
@@ -70,16 +76,17 @@ test('operates Wake through the real HTTP Surface and packaged application', asy
 
 test('keeps the restyled board operable and free of serious accessibility faults', async ({
   page,
-}) => {
+}, testInfo) => {
   await page.goto('/board');
   await expect(page.getByRole('heading', { name: /^Ready \(\d+\)$/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: /^Finished \(\d+\)$/ })).toBeVisible();
 
-  const collapse = page.getByRole('button', { name: 'Collapse Ready' });
+  const column = testInfo.project.name === 'desktop' ? 'Finished' : 'Ready';
+  const collapse = page.getByRole('button', { name: `Collapse ${column}` });
   await collapse.click();
-  await expect(page.getByRole('button', { name: 'Expand Ready' })).toBeVisible();
+  await expect(page.getByRole('button', { name: `Expand ${column}` })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Expand Ready' })).toBeVisible();
+  await expect(page.getByRole('button', { name: `Expand ${column}` })).toBeVisible();
 
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

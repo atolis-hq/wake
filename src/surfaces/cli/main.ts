@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import qrcodeTerminal from 'qrcode-terminal';
 import type { HostBudget, HostResult } from '../../control-plane/index.js';
 import { ExecutionStreamKind, RunStatus } from '../../execution/index.js';
 
@@ -11,6 +12,7 @@ export interface HostOptions {
 export type WakeCommand =
   | ({ readonly kind: 'tick' | 'start' | 'stop' } & { readonly wakeRoot?: string })
   | ({ readonly kind: 'api' | 'ui' } & HostOptions)
+  | ({ readonly kind: 'ui-token'; readonly accessKey?: string } & Pick<HostOptions, 'wakeRoot'>)
   | { readonly kind: 'audit'; readonly workItemId: string }
   | { readonly kind: 'correlate'; readonly resource: string; readonly workItemId: string }
   | {
@@ -64,6 +66,7 @@ export interface WakeCliApplications {
   readonly stop: { stop(): Promise<void> };
   readonly api: { start(options?: HostOptions): Promise<void> };
   readonly ui: { start(options?: HostOptions): Promise<void> };
+  readonly auth?: { token(accessKey?: string): Promise<string> };
   readonly audit: { read(workItemId: string): Promise<readonly AuditRecord[]> };
   readonly correlate: { correlate(resource: string, workItemId: string): Promise<unknown> };
   readonly runs?: {
@@ -107,8 +110,9 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
       return parseRunCommand(arguments_.slice(1));
     case 'validate-state':
       return parseValidateState(arguments_.slice(1));
-    case 'api':
     case 'ui':
+      return parseUiCommand(arguments_.slice(1));
+    case 'api':
       return { kind: command, ...parseHostOptions(arguments_.slice(1)) };
     case 'tick':
     case 'start':
@@ -125,6 +129,22 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
     default:
       throw new Error(`Unknown wake command: ${command ?? ''}`);
   }
+}
+
+function parseUiCommand(arguments_: readonly string[]): WakeCommand {
+  if (arguments_[0] !== 'token') return { kind: 'ui', ...parseHostOptions(arguments_) };
+  let index = 1;
+  let accessKey: string | undefined;
+  if (arguments_[index] === 'set') {
+    accessKey = requiredArgument(arguments_[index + 1], 'UI access key');
+    index += 2;
+  }
+  const options = parseHostOptions(arguments_.slice(index), false);
+  return {
+    kind: 'ui-token',
+    ...(accessKey === undefined ? {} : { accessKey }),
+    ...(options.wakeRoot === undefined ? {} : { wakeRoot: options.wakeRoot }),
+  };
 }
 
 // eslint-disable-next-line complexity -- the resolution flags are mutually exclusive by design.
@@ -262,6 +282,9 @@ export async function runWakeCommand(
     case 'ui':
       await applications.ui.start(command);
       return;
+    case 'ui-token':
+      output.write(await formatUiTokenOutput(auth(applications).token(command.accessKey)));
+      return;
     case 'audit':
       for (const record of await applications.audit.read(command.workItemId))
         output.write(`${JSON.stringify(record)}\n`);
@@ -284,6 +307,22 @@ export async function runWakeCommand(
   }
 }
 
+async function formatUiTokenOutput(message: Promise<string>): Promise<string> {
+  const text = await message;
+  const urls = [...text.matchAll(/^\s*Public:\s+(https:\/\/\S+)$/gm)].map((match) => match[1]!);
+  if (urls.length === 0) return `${text}\n`;
+  const qr = urls.map((url) => `QR code:\n${renderQr(url)}`).join('\n');
+  return `${text}\n${qr}\n`;
+}
+
+function renderQr(url: string): string {
+  let output = '';
+  qrcodeTerminal.generate(url, { small: true }, (qr) => {
+    output = qr;
+  });
+  return output;
+}
+
 async function resolveCliOutcome(
   resolution: Extract<WakeCommand, { readonly kind: 'run-resolve' }>['resolution'],
 ): Promise<
@@ -303,6 +342,11 @@ async function resolveCliOutcome(
 function runs(applications: WakeCliApplications): NonNullable<WakeCliApplications['runs']> {
   if (applications.runs === undefined) throw new Error('Run CLI applications were not composed');
   return applications.runs;
+}
+
+function auth(applications: WakeCliApplications): NonNullable<WakeCliApplications['auth']> {
+  if (applications.auth === undefined) throw new Error('UI auth CLI application was not composed');
+  return applications.auth;
 }
 
 function writeResult(output: CliOutput, value: unknown): void {
