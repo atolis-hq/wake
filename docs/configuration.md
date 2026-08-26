@@ -194,9 +194,9 @@ surfaces:
     # publicUrl: https://wake.example.ngrok.app
 
 # `wake ui token` creates a single-use login grant valid for ten minutes and
-# prints login links plus QR codes. The durable access key and Fastify session
-# key remain sensitive local state in `.wake/auth/credentials.json`; do not
-# commit or publish that file.
+# prints login links plus QR codes. The durable access and session keys remain
+# sensitive local state in `.wake/auth/credentials.json`; do not commit or
+# publish that file.
 
 transcripts:
   enabled: false

@@ -45,4 +45,16 @@ describe('surface access credentials', () => {
       redeemPairingGrant(root, grant.value, new Date('2026-08-26T12:09:59.999Z')),
     ).resolves.toBe(false);
   });
+
+  it('redeems a pairing grant only once when requests arrive concurrently', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-auth-'));
+    const grant = await createPairingGrant(root);
+
+    const results = await Promise.all([
+      redeemPairingGrant(root, grant.value),
+      redeemPairingGrant(root, grant.value),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
 });

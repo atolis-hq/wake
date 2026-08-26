@@ -20,6 +20,7 @@ export interface SurfacePairingGrant {
 }
 
 const pairingGrantLifetimeMs = 10 * 60 * 1000;
+const credentialMutationLocks = new Map<string, Promise<void>>();
 
 export function credentialsPath(wakeRoot: string): string {
   return join(wakeRoot, '.wake', 'auth', 'credentials.json');
@@ -42,31 +43,37 @@ export async function replaceAccessKey(
   accessKey: string,
 ): Promise<SurfaceCredentials> {
   if (accessKey.trim() === '') throw new Error('UI access key must not be empty');
-  const current = await loadOrCreateCredentials(wakeRoot);
-  const replacement: SurfaceCredentials = {
-    ...current,
-    accessKey,
-    sessionPassword: randomBytes(32).toString('base64url'),
-  };
-  await saveCredentials(credentialsPath(wakeRoot), replacement);
-  return replacement;
+  const path = credentialsPath(wakeRoot);
+  return mutateCredentials(path, async () => {
+    const current = await loadOrCreateCredentials(wakeRoot);
+    const replacement: SurfaceCredentials = {
+      ...current,
+      accessKey,
+      sessionPassword: randomBytes(32).toString('base64url'),
+    };
+    await saveCredentials(path, replacement);
+    return replacement;
+  });
 }
 
 export async function createPairingGrant(
   wakeRoot: string,
   now = new Date(),
 ): Promise<SurfacePairingGrant> {
-  const current = await loadOrCreateCredentials(wakeRoot);
-  const value = randomBytes(24).toString('base64url');
-  const expiresAt = new Date(now.getTime() + pairingGrantLifetimeMs).toISOString();
-  const active = (current.pairingGrants ?? [])
-    .filter((grant) => grant.expiresAt > now.toISOString())
-    .slice(-19);
-  await saveCredentials(credentialsPath(wakeRoot), {
-    ...current,
-    pairingGrants: [...active, { hash: grantHash(value), expiresAt }],
+  const path = credentialsPath(wakeRoot);
+  return mutateCredentials(path, async () => {
+    const current = await loadOrCreateCredentials(wakeRoot);
+    const value = randomBytes(24).toString('base64url');
+    const expiresAt = new Date(now.getTime() + pairingGrantLifetimeMs).toISOString();
+    const active = (current.pairingGrants ?? [])
+      .filter((grant) => grant.expiresAt > now.toISOString())
+      .slice(-19);
+    await saveCredentials(path, {
+      ...current,
+      pairingGrants: [...active, { hash: grantHash(value), expiresAt }],
+    });
+    return { value, expiresAt };
   });
-  return { value, expiresAt };
 }
 
 export async function redeemPairingGrant(
@@ -74,19 +81,22 @@ export async function redeemPairingGrant(
   value: string,
   now = new Date(),
 ): Promise<boolean> {
-  const current = await loadOrCreateCredentials(wakeRoot);
-  const nowIso = now.toISOString();
-  const hash = grantHash(value);
-  const grants = current.pairingGrants ?? [];
-  const matching = grants.find((grant) => grant.hash === hash && grant.expiresAt > nowIso);
-  const remaining = grants.filter((grant) => grant.expiresAt > nowIso && grant.hash !== hash);
-  if (matching === undefined) {
-    if (remaining.length !== grants.length)
-      await saveCredentials(credentialsPath(wakeRoot), { ...current, pairingGrants: remaining });
-    return false;
-  }
-  await saveCredentials(credentialsPath(wakeRoot), { ...current, pairingGrants: remaining });
-  return true;
+  const path = credentialsPath(wakeRoot);
+  return mutateCredentials(path, async () => {
+    const current = await loadOrCreateCredentials(wakeRoot);
+    const nowIso = now.toISOString();
+    const hash = grantHash(value);
+    const grants = current.pairingGrants ?? [];
+    const matching = grants.find((grant) => grant.hash === hash && grant.expiresAt > nowIso);
+    const remaining = grants.filter((grant) => grant.expiresAt > nowIso && grant.hash !== hash);
+    if (matching === undefined) {
+      if (remaining.length !== grants.length)
+        await saveCredentials(path, { ...current, pairingGrants: remaining });
+      return false;
+    }
+    await saveCredentials(path, { ...current, pairingGrants: remaining });
+    return true;
+  });
 }
 
 export function verifyAccessKey(candidate: string, expected: string): boolean {
@@ -110,6 +120,25 @@ async function saveCredentials(path: string, credentials: SurfaceCredentials): P
   await writeFile(temporaryPath, JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 });
   if (process.platform !== 'win32') await chmod(temporaryPath, 0o600);
   await rename(temporaryPath, path);
+}
+
+async function mutateCredentials<Result>(
+  path: string,
+  mutation: () => Promise<Result>,
+): Promise<Result> {
+  const previous = credentialMutationLocks.get(path) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  credentialMutationLocks.set(path, current);
+  await previous;
+  try {
+    return await mutation();
+  } finally {
+    release();
+    if (credentialMutationLocks.get(path) === current) credentialMutationLocks.delete(path);
+  }
 }
 
 function decodeCredentials(value: unknown): SurfaceCredentials {
