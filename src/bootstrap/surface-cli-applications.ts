@@ -159,7 +159,9 @@ export function createSurfaceCliApplications(
           return 'UI authentication is disabled by surfaces.web.auth.disabled.';
         if (accessKey !== undefined) await replaceAccessKey(root.paths.wakeRoot, accessKey);
         const grant = await createPairingGrant(root.paths.wakeRoot);
-        const local = `http://${root.config.surfaces.api.host}:${root.config.surfaces.api.port}/?grant=${encodeURIComponent(grant.value)}`;
+        const localHost =
+          root.config.surfaces.api.host === '0.0.0.0' ? 'localhost' : root.config.surfaces.api.host;
+        const local = `http://${localHost}:${root.config.surfaces.api.port}/?grant=${encodeURIComponent(grant.value)}`;
         const publicUrl = root.config.surfaces.web.publicUrl;
         return [
           'Wake login link (single use; expires in 10 minutes):',
