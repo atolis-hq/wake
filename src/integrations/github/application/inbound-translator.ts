@@ -5,6 +5,11 @@ import {
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
+import {
+  conversationIdForWorkItem,
+  ConversationOriginKind,
+  type ConversationService,
+} from '../../../conversations/index.js';
 import type { RunRepository } from '../../../execution/index.js';
 import {
   correlationId,
@@ -29,7 +34,6 @@ import {
   type ResourceId,
 } from '../../../resources/index.js';
 import type { WorkService } from '../../../work/index.js';
-import { conversationIdForWorkItem, type ConversationService } from '../../../conversations/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
 import { admitObservedWork, type WorkAdmissionServices } from '../../application/work-admission.js';
 import { concludeObservedWork } from '../../application/work-conclusion.js';
@@ -244,20 +248,36 @@ export class InboundTranslator {
   }
 
   private async recordConversationEntry(
-    event: Extract<GitHubAdapterEvent, { readonly eventType: typeof GitHubEventType.CommentObserved }>,
+    event: Extract<
+      GitHubAdapterEvent,
+      { readonly eventType: typeof GitHubEventType.CommentObserved }
+    >,
   ): Promise<void> {
     if (this.conversations === undefined || this.resources === undefined) return;
-    const resource = await this.resources.findByExternalKey({ adapter: this.adapter, key: event.payload.externalKey });
+    const resource = await this.resources.findByExternalKey({
+      adapter: this.adapter,
+      key: event.payload.externalKey,
+    });
     if (resource === null) return;
     const correlation = await this.resources.primaryCorrelation(resource.resourceId);
     if (correlation === null) return;
     const conversationId = conversationIdForWorkItem(correlation.workItemId);
-    await this.conversations.record({
-      conversationId,
-      entryId: event.eventId,
-      body: event.payload.body,
-      origin: { kind: 'external', adapter: this.adapter, actorId: event.payload.actor.id, resourceId: resource.resourceId, threadId: resource.externalKey.key, messageId: event.eventId },
-    }, commandContext(event));
+    await this.conversations.record(
+      {
+        conversationId,
+        entryId: event.eventId,
+        body: event.payload.body,
+        origin: {
+          kind: ConversationOriginKind.External,
+          adapter: this.adapter,
+          actorId: event.payload.actor.id,
+          resourceId: resource.resourceId,
+          threadId: resource.externalKey.key,
+          messageId: event.eventId,
+        },
+      },
+      commandContext(event),
+    );
   }
 
   private async failureRecorded(sourceEventId: string): Promise<boolean> {

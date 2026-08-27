@@ -1,4 +1,5 @@
 import { pullRequestProjection, type PullRequestView } from '../activities/index.js';
+import { ConversationOriginKind } from '../conversations/index.js';
 import {
   executionProjection,
   runsByWorkflowInstanceProjection,
@@ -200,7 +201,9 @@ async function workDetail(
   ).find((entry) => entry !== null && entry.value !== null);
   const primary = workflows.find((value) => value.parentWorkflowInstanceId === undefined) ?? null;
   const externalRef = await primaryExternalRef(root, work.workItemId, correlations, resources);
-  const conversation = await root.conversations.forWorkItem(id);
+  // Narrow test/application seams may provide a partial composition root while
+  // the production root always composes Conversations.
+  const conversation = await (root as Partial<CompositionRoot>).conversations?.forWorkItem(id);
   const data: WorkDetailResponse = {
     work: presentDetailWork(work, externalRef, runs),
     resources: resources.map(presentResource(root.resolveResourceLink)),
@@ -223,7 +226,7 @@ async function workDetail(
         occurredAt: entry.occurredAt,
         origin: entry.origin.kind,
         actorId: entry.origin.actorId,
-        ...(entry.origin.kind === 'agent'
+        ...(entry.origin.kind === ConversationOriginKind.Agent
           ? { runId: entry.origin.runId, stage: entry.origin.stage }
           : {}),
       })),

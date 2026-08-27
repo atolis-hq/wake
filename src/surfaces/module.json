@@ -10,7 +10,8 @@
     "orchestration",
     "execution",
     "control-plane",
-    "integrations"
+    "integrations",
+    "conversations"
   ],
   "publicEntry": "./index.ts",
   "namespaces": { "events": [], "config": ["surfaces"], "relations": [], "streams": [] }
