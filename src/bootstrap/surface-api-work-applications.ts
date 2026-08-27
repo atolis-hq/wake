@@ -48,7 +48,8 @@ export function createSurfaceWorkApplications(
   now: () => string,
 ): ApiApplications['work'] {
   const conversationMessagesEnabled =
-    (root as Partial<CompositionRoot>).config?.surfaces.api.conversationMessages.enabled === true;
+    (root as Partial<CompositionRoot>).config?.surfaces?.api?.conversationMessages?.enabled ===
+    true;
   return {
     async list(query) {
       const stored = (await root.projections.list<WorkItemView | null>('work')).flatMap((entry) =>

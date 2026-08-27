@@ -22,6 +22,15 @@ it('does not expose control-plane message creation when disabled', () => {
   expect(applications.message).toBeUndefined();
 });
 
+it('treats an incomplete test configuration as conversation messaging disabled', () => {
+  const applications = createSurfaceWorkApplications(
+    { config: { surfaces: { api: {} } } } as unknown as CompositionRoot,
+    () => '2026-08-27T00:00:00.000Z',
+  );
+
+  expect(applications.message).toBeUndefined();
+});
+
 it('maps only a typed operator retry ineligibility to a conflict', async () => {
   const applications = createSurfaceWorkApplications(
     rootThatRejectsRetry(new OperatorRetryIneligibleError('retry eligibility changed')),
