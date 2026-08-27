@@ -1,6 +1,6 @@
 import type { WorkItemId } from '../../work/index.js';
 import type { ConversationId } from './identifiers.js';
-import { ConversationOriginKind } from './vocabulary.js';
+import type { ConversationOriginKind } from './vocabulary.js';
 
 export type ConversationEntryOrigin =
   | { readonly kind: typeof ConversationOriginKind.ControlPlane; readonly actorId: string }
@@ -25,6 +25,7 @@ export interface ConversationEntryView {
   readonly occurredAt: string;
   readonly origin: ConversationEntryOrigin;
 }
+
 export interface ConversationView {
   readonly conversationId: ConversationId;
   readonly workItemId: WorkItemId;

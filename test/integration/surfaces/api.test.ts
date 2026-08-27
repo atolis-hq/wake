@@ -36,8 +36,8 @@ describe('surface API contracts', () => {
         diagram: { href: '/api/v1/workflow-diagrams?workItemKey=wk_demo' },
       },
       execution: { runs: [], transcriptGroups: [] },
-    activities: {},
-    conversation: { entries: [] },
+      activities: {},
+      conversation: { entries: [] },
     };
 
     expect(workItemPath('work-demo')).toBe('/api/v1/work-items/work-demo');

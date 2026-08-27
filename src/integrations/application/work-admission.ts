@@ -1,3 +1,4 @@
+import type { ConversationService } from '../../conversations/index.js';
 import type { CommandContext } from '../../kernel/index.js';
 import {
   orchestrationGroupId,
@@ -12,7 +13,6 @@ import {
   type ResourceService,
 } from '../../resources/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
-import type { ConversationService } from '../../conversations/index.js';
 import type { AdapterId } from '../contracts/identifiers.js';
 import type { WorkflowRouter } from '../contracts/provider.js';
 

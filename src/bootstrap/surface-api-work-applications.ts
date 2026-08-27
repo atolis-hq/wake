@@ -1,5 +1,5 @@
 import { pullRequestProjection, type PullRequestView } from '../activities/index.js';
-import { ConversationOriginKind } from '../conversations/index.js';
+import { ConversationOriginKind, type ConversationStreamKind } from '../conversations/index.js';
 import {
   executionProjection,
   runsByWorkflowInstanceProjection,
@@ -203,7 +203,7 @@ async function workDetail(
   const externalRef = await primaryExternalRef(root, work.workItemId, correlations, resources);
   // Narrow test/application seams may provide a partial composition root while
   // the production root always composes Conversations.
-  const conversation = await (root as Partial<CompositionRoot>).conversations?.forWorkItem(id);
+  const conversation = await conversationForWorkItem(root, id);
   const data: WorkDetailResponse = {
     work: presentDetailWork(work, externalRef, runs),
     resources: resources.map(presentResource(root.resolveResourceLink)),
@@ -219,18 +219,7 @@ async function workDetail(
       transcriptGroups: await transcriptGroups(root.transcriptStore, id, runs),
     },
     activities: presentPullRequest(pullRequest?.value),
-    conversation: {
-      entries: (conversation?.entries ?? []).map((entry) => ({
-        entryId: entry.entryId,
-        body: entry.body,
-        occurredAt: entry.occurredAt,
-        origin: entry.origin.kind,
-        actorId: entry.origin.actorId,
-        ...(entry.origin.kind === ConversationOriginKind.Agent
-          ? { runId: entry.origin.runId, stage: entry.origin.stage }
-          : {}),
-      })),
-    },
+    conversation: presentConversation(conversation),
   };
   const [projections, correlationFacts] = await Promise.all([
     contributingProjections(root, id, resources, workflows, runs),
@@ -243,6 +232,29 @@ async function workDetail(
       [...projections, ...correlationFacts, ...(pullRequest == null ? [] : [pullRequest])],
       now(),
     ),
+  };
+}
+
+async function conversationForWorkItem(root: CompositionRoot, id: ReturnType<typeof workItemId>) {
+  // Narrow test/application seams may provide a partial composition root while
+  // the production root always composes Conversations.
+  return (await (root as Partial<CompositionRoot>).conversations?.forWorkItem(id)) ?? null;
+}
+
+function presentConversation(
+  conversation: Awaited<ReturnType<NonNullable<CompositionRoot['conversations']>['forWorkItem']>>,
+): WorkDetailResponse[typeof ConversationStreamKind.Conversation] {
+  return {
+    entries: (conversation?.entries ?? []).map((entry) => ({
+      entryId: entry.entryId,
+      body: entry.body,
+      occurredAt: entry.occurredAt,
+      origin: entry.origin.kind,
+      actorId: entry.origin.actorId,
+      ...(entry.origin.kind === ConversationOriginKind.Agent
+        ? { runId: entry.origin.runId, stage: entry.origin.stage }
+        : {}),
+    })),
   };
 }
 

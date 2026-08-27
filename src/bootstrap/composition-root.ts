@@ -160,10 +160,15 @@ export async function createCompositionRoot(
       pullRequests,
       resources,
       wakeRoot,
-      createGitHubAgentContextReader(journal, resources, {
-        publicUiUrl: config.surfaces.web.publicUrl,
-        githubAdapters: githubAdapters(config),
-      }, conversations),
+      createGitHubAgentContextReader(
+        journal,
+        resources,
+        {
+          publicUiUrl: config.surfaces.web.publicUrl,
+          githubAdapters: githubAdapters(config),
+        },
+        conversations,
+      ),
     );
   const definitions = Object.fromEntries(
     Object.entries(config.orchestration.workflows).map(([name, definition]) => [

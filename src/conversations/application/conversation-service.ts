@@ -25,6 +25,7 @@ export interface ConversationService {
   get(id: ConversationId): Promise<ConversationView | null>;
   forWorkItem(workItemId: CreateConversation['workItemId']): Promise<ConversationView | null>;
 }
+
 export function createConversationService(journal: EventJournal): ConversationService {
   const repository = new ConversationRepository(journal);
   const change = async <Type extends keyof ConversationEventPayloads>(

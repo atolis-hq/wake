@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { conversationId, createConversationService } from '../../../src/conversations/index.js';
 import { correlationId } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
-import { createConversationService, conversationId } from '../../../src/conversations/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
 

@@ -4,8 +4,8 @@ import {
   type AgentContextPullRequest,
   type AgentContextReader,
 } from '../../../activities/index.js';
-import type { EventJournal } from '../../../kernel/index.js';
 import type { ConversationService } from '../../../conversations/index.js';
+import type { EventJournal } from '../../../kernel/index.js';
 import {
   BuiltInResourceKind,
   ResourceCorrelationRole,

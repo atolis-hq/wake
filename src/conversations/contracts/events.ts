@@ -16,6 +16,7 @@ export const ConversationEventType = {
   Created: 'conversation.created',
   EntryRecorded: 'conversation.entry-recorded',
 } as const;
+
 export interface ConversationEventPayloads {
   readonly [ConversationEventType.Created]: { readonly workItemId: WorkItemId };
   readonly [ConversationEventType.EntryRecorded]: {
@@ -24,7 +25,9 @@ export interface ConversationEventPayloads {
     readonly origin: ConversationEntryOrigin;
   };
 }
+
 export type ConversationEvent = EventUnion<ConversationEventPayloads, ConversationStreamRef>;
+
 export type ConversationEventDraft = EventDraftUnion<
   ConversationEventPayloads,
   ConversationStreamRef
@@ -70,12 +73,14 @@ const schema = z.discriminatedUnion('eventType', [
     payload: z.object({ entryId: z.string().min(1), body: z.string(), origin }).strict(),
   }),
 ]);
+
 export function decodeConversationEvent(event: EventEnvelope): ConversationEvent {
   const result = schema.safeParse(event);
   if (!result.success)
     throw new Error(`Invalid Conversation event ${event.eventId}: ${result.error.message}`);
   return result.data;
 }
+
 export function selectConversationEvent(event: EventEnvelope): ConversationEvent | null {
   return event.eventType.startsWith('conversation.') ? decodeConversationEvent(event) : null;
 }

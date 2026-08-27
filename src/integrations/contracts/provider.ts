@@ -1,4 +1,5 @@
 import type { PullRequestService } from '../../activities/index.js';
+import type { ConversationService } from '../../conversations/index.js';
 import type { RunRepository } from '../../execution/index.js';
 import type { CheckpointStore, Clock, EventJournal, IdGenerator } from '../../kernel/index.js';
 import type {
@@ -14,7 +15,6 @@ import type {
   ResourceService,
 } from '../../resources/index.js';
 import type { WorkItemId, WorkItemView, WorkService } from '../../work/index.js';
-import type { ConversationService } from '../../conversations/index.js';
 import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
 import type { ArtifactVerificationResult } from './artifact-vocabulary.js';
 import type { IntegrationsConfig } from './config.js';
