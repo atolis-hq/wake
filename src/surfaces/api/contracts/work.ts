@@ -43,6 +43,13 @@ export interface WorkDetailResponse {
       readonly actorId: string;
       readonly runId?: string | undefined;
       readonly stage?: string | undefined;
+      readonly sourceResourceId?: string | undefined;
+      readonly sourceThreadId?: string | undefined;
+      readonly deleted: boolean;
+      readonly representations: readonly {
+        readonly resourceId: string;
+        readonly externalId: string;
+      }[];
     }[];
   };
 }

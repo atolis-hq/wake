@@ -98,7 +98,9 @@ or workflow-transition policy. Integrations record provider observations after
 they correlate them to work; agent completion records its report; adapters and
 orchestration continue to own delivery and reaction rules respectively. The
 current GitHub agent context reader uses this canonical history when it exists,
-and the work-detail API/UI exposes it as a timeline.
+and the work-detail API/UI exposes it as a timeline. Operators can record a
+message through the work-item command; it resumes an eligible blocked agent
+stage while non-agent stages remain durable no-ops.
 
 Events serve multiple architectural roles at once: they trigger deterministic
 advancement, form the replayable audit trail, preserve the inputs needed to

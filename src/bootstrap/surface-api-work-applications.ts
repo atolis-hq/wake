@@ -290,8 +290,13 @@ function presentConversation(
       occurredAt: entry.occurredAt,
       origin: entry.origin.kind,
       actorId: entry.origin.actorId,
+      deleted: entry.deleted,
+      representations: entry.representations,
       ...(entry.origin.kind === ConversationOriginKind.Agent
         ? { runId: entry.origin.runId, stage: entry.origin.stage }
+        : {}),
+      ...(entry.origin.kind === ConversationOriginKind.External
+        ? { sourceResourceId: entry.origin.resourceId, sourceThreadId: entry.origin.threadId }
         : {}),
     })),
   };

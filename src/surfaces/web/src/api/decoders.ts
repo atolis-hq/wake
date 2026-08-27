@@ -461,6 +461,26 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
                   actorId: string(entry.actorId, child(itemPath, 'actorId')),
                   ...optionalStringProperty(entry, 'runId', itemPath),
                   ...optionalStringProperty(entry, conversationEntryStageField, itemPath),
+                  ...optionalStringProperty(entry, 'sourceResourceId', itemPath),
+                  ...optionalStringProperty(entry, 'sourceThreadId', itemPath),
+                  deleted: boolean(entry.deleted, child(itemPath, 'deleted')),
+                  representations: array(
+                    entry.representations,
+                    child(itemPath, 'representations'),
+                    (representation, representationPath = '') => {
+                      const value = object(representation, representationPath);
+                      return {
+                        resourceId: string(
+                          value.resourceId,
+                          child(representationPath, 'resourceId'),
+                        ),
+                        externalId: string(
+                          value.externalId,
+                          child(representationPath, 'externalId'),
+                        ),
+                      };
+                    },
+                  ),
                 };
               },
             ),

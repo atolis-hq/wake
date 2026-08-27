@@ -675,7 +675,19 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                         <li key={entry.entryId}>
                           <strong>{entry.actorId}</strong> <span>via {entry.origin}</span>{' '}
                           <LocalTime value={entry.occurredAt} />
-                          <pre style={{ whiteSpace: 'pre-wrap' }}>{entry.body}</pre>
+                          {entry.sourceResourceId !== undefined && (
+                            <span> · {entry.sourceResourceId}</span>
+                          )}
+                          {entry.deleted ? (
+                            <em>Message deleted</em>
+                          ) : (
+                            <pre style={{ whiteSpace: 'pre-wrap' }}>{entry.body}</pre>
+                          )}
+                          {entry.representations.map((representation) => (
+                            <span key={`${representation.resourceId}:${representation.externalId}`}>
+                              Published to {representation.resourceId}
+                            </span>
+                          ))}
                         </li>
                       ))}
                     </ol>

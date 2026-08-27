@@ -213,7 +213,6 @@ Tests must prove:
   multiple WorkItems.
 - Slack implementation, multi-surface fan-out, and configurable publication
   rules.
-- Direct control-plane message composition.
 - Agent-directed history retrieval and advanced context selection.
 - Incorporating full internal agent transcripts into the conversation timeline.
 - Historical backfill.
