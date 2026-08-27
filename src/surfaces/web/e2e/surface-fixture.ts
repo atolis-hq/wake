@@ -137,6 +137,7 @@ const applications: ApiApplications = {
           },
           execution: { runs: [], transcriptGroups: [] },
           activities: {},
+          conversation: { entries: [] },
         },
         meta: { asOf: instant },
       };

@@ -394,7 +394,10 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
   const orchestration = object(record.orchestration, child(path, 'orchestration'));
   const execution = object(record.execution, child(path, 'execution'));
   const activities = object(record.activities, child(path, 'activities'));
-  const conversation = object(record.conversation, child(path, 'conversation'));
+  const conversation =
+    record.conversation === undefined
+      ? undefined
+      : object(record.conversation, child(path, 'conversation'));
   return {
     work: decodeWorkItem(record.work, child(path, 'work')),
     resources: array(record.resources, child(path, 'resources'), decodeResourceItem),
@@ -440,22 +443,25 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
             ),
           },
     conversation: {
-      entries: array(
-        conversation.entries,
-        child(path, 'conversation.entries'),
-        (item, itemPath = '') => {
-          const entry = object(item, itemPath);
-          return {
-            entryId: string(entry.entryId, child(itemPath, 'entryId')),
-            body: string(entry.body, child(itemPath, 'body')),
-            occurredAt: string(entry.occurredAt, child(itemPath, 'occurredAt')),
-            origin: string(entry.origin, child(itemPath, 'origin')),
-            actorId: string(entry.actorId, child(itemPath, 'actorId')),
-            ...optionalStringProperty(entry, 'runId', itemPath),
-            ...optionalStringProperty(entry, 'stage', itemPath),
-          };
-        },
-      ),
+      entries:
+        conversation === undefined
+          ? []
+          : array(
+              conversation.entries,
+              child(path, 'conversation.entries'),
+              (item, itemPath = '') => {
+                const entry = object(item, itemPath);
+                return {
+                  entryId: string(entry.entryId, child(itemPath, 'entryId')),
+                  body: string(entry.body, child(itemPath, 'body')),
+                  occurredAt: string(entry.occurredAt, child(itemPath, 'occurredAt')),
+                  origin: string(entry.origin, child(itemPath, 'origin')),
+                  actorId: string(entry.actorId, child(itemPath, 'actorId')),
+                  ...optionalStringProperty(entry, 'runId', itemPath),
+                  ...optionalStringProperty(entry, 'stage', itemPath),
+                };
+              },
+            ),
     },
   };
 };

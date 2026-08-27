@@ -156,6 +156,7 @@ function client(
               },
               execution: { runs: [], transcriptGroups: [] },
               activities: {},
+              conversation: { entries: [] },
             }
           : url.endsWith('/runners')
             ? undefined

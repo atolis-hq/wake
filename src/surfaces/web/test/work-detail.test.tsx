@@ -604,6 +604,7 @@ describe('work detail', () => {
                 },
                 execution: { runs: [], transcriptGroups: [] },
                 activities: {},
+                conversation: { entries: [] },
               },
               meta: { asOf },
             }
