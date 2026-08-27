@@ -312,3 +312,51 @@ it('does not resolve a different activation even if it is waiting on an unrelate
 
   expect(accepted).toHaveLength(0);
 });
+
+it('continues delivery reconciliation when recording conversation provenance fails', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  const checkpoints = new InMemoryCheckpointStore();
+  await journal.append(deliveryStream(eventId('intent-1')), 0, [
+    confirmedEvent({ intentEventId: 'intent-1' }),
+  ]);
+  const accepted: unknown[] = [];
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    checkpoints,
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
+          waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
+        } as never;
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
+    },
+    {
+      list: async () => [
+        {
+          value: {
+            intentEventId: 'intent-1',
+            resourceId: 'resource-1',
+            payload: {
+              kind: 'agent-run.publish',
+              conversationId: 'conversation-00000000000000000000000001',
+              conversationEntryId: 'agent-run-1',
+            },
+          },
+        },
+      ],
+      read: async () => null,
+      write: async () => undefined,
+    } as never,
+    { recordRepresentation: async () => Promise.reject(new Error('conversation unavailable')) },
+  );
+
+  await expect(reactor.runOnce()).resolves.toBe(1);
+
+  expect(accepted).toHaveLength(1);
+  expect(await checkpoints.load('reactor:delivery-outcomes')).toBeGreaterThan(0);
+});

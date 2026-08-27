@@ -85,7 +85,11 @@ export class DeliveryOutcomeReactor {
           ? { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.payload.code } }
           : null;
     if (outcome === null) return null;
-    await this.recordConversationRepresentation(event, delivery);
+    try {
+      await this.recordConversationRepresentation(event, delivery);
+    } catch {
+      // Delivery reconciliation must continue if optional conversation provenance is unavailable.
+    }
     const command = {
       workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),
       activationId: activationId(delivery.payload.activationId),

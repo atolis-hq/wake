@@ -28,6 +28,70 @@ it('does not publish from a raw execution completion before orchestration resolv
   expect(publish).not.toHaveBeenCalled();
 });
 
+it('publishes a terminal agent reply when conversation recording fails', async () => {
+  const appended: unknown[][] = [];
+  const reactor = new AgentRunPublicationReactor({
+    journal: {
+      readStream: async () => [
+        { eventType: 'orchestration.stage-entered', payload: { stage: 'review' } },
+        {
+          eventType: 'orchestration.activity-requested',
+          payload: { activationId: 'activation-1' },
+        },
+      ],
+      append: async (_stream: unknown, _sequence: number, events: unknown[]) => {
+        appended.push(events);
+      },
+    },
+    checkpoints: {},
+    runs: {
+      load: async () => ({
+        view: {
+          runId: 'run-1',
+          activity: 'agent',
+          workflowInstanceId: 'workflow-1',
+          activationId: 'activation-1',
+          startedAt: '2026-08-08T00:00:00.000Z',
+          finishedAt: '2026-08-08T00:01:00.000Z',
+          agent: { outcome: 'DONE', displayBody: 'Completed.', metadata: {} },
+        },
+      }),
+    },
+    resources: {
+      correlationsForWork: async () => [
+        { role: 'primary', resourceId: 'resource-00000000000000000000000001' },
+      ],
+    },
+    orchestration: {
+      listAll: async () => [
+        { workflowInstanceId: 'workflow-1', workItemId: 'work-00000000000000000000000001' },
+      ],
+    },
+    conversations: {
+      createForWorkItem: async () => Promise.reject(new Error('conversation unavailable')),
+    },
+    replies: {
+      rules: [{ match: { stage: ['review'] }, matchMode: 'any', target: 'primary' }],
+      default: 'primary',
+    },
+  } as never);
+
+  await expect(
+    (
+      reactor as never as {
+        publish: (
+          id: string,
+          occurredAt: string,
+          causationId: string,
+          correlationId: string,
+        ) => Promise<void>;
+      }
+    ).publish('run-1', '2026-08-08T00:01:00.000Z', 'cause-1', 'correlation-1'),
+  ).resolves.toBeUndefined();
+
+  expect(appended).toHaveLength(1);
+});
+
 it('publishes a failed Run only after orchestration records its execution failure', async () => {
   const reactor = new AgentRunPublicationReactor({
     journal: {

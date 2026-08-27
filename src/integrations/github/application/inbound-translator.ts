@@ -247,6 +247,8 @@ export class InboundTranslator {
     }
   }
 
+  // Conversation reconciliation keeps all entry identity decisions in one ordered command path.
+  // eslint-disable-next-line max-lines-per-function, complexity
   private async recordConversationEntry(
     event: Extract<
       GitHubAdapterEvent,
@@ -273,6 +275,29 @@ export class InboundTranslator {
     );
     const externalId = observedCommentExternalId(event);
     const existing = await this.conversations.forWorkItem(correlation.workItemId);
+    const echoedEntryId = wakeDeliveryMarker(event.payload.body);
+    const echoedEntry = existing?.entries.find(
+      (entry) =>
+        entry.entryId === echoedEntryId && entry.origin.kind === ConversationOriginKind.Agent,
+    );
+    if (echoedEntry !== undefined) {
+      await this.conversations.recordRepresentation(
+        {
+          conversationId,
+          entryId: echoedEntry.entryId,
+          resourceId: resource.resourceId,
+          externalId,
+        },
+        commandContext(event),
+      );
+      return;
+    }
+    const priorEntry = existing?.entries.find(
+      (entry) =>
+        entry.origin.kind === ConversationOriginKind.External &&
+        entry.origin.resourceId === resource.resourceId &&
+        entry.origin.messageId === externalId,
+    );
     if (
       existing?.entries.some((entry) =>
         entry.representations.some(
@@ -283,6 +308,18 @@ export class InboundTranslator {
       )
     )
       return;
+    if (priorEntry !== undefined) {
+      if (priorEntry.body !== event.payload.body)
+        await this.conversations.revise(
+          {
+            conversationId,
+            entryId: priorEntry.entryId,
+            body: event.payload.body,
+          },
+          commandContext(event),
+        );
+      return;
+    }
     await this.conversations.record(
       {
         conversationId,
@@ -915,4 +952,8 @@ function observedCommentExternalId(
 ): string {
   const id = event.payload.raw.id;
   return typeof id === 'string' || typeof id === 'number' ? String(id) : event.eventId;
+}
+
+function wakeDeliveryMarker(body: string): string | undefined {
+  return /<!--\s*wake:delivery:([^\s>]+)\s*-->/.exec(body)?.[1];
 }

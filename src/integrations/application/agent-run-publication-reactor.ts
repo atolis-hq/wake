@@ -110,14 +110,18 @@ export class AgentRunPublicationReactor {
     const stage = await this.stageForActivation(workflow.workflowInstanceId, run.activationId);
     const report = projectTerminalAgentRunReport(reportInput(run, stage, workflow, allWorkflows));
     if (report === null) return;
-    await this.recordConversationEntry(
-      workflow.workItemId,
-      run.runId,
-      report.displayBody,
-      stage,
-      occurredAt,
-      correlationId,
-    );
+    try {
+      await this.recordConversationEntry(
+        workflow.workItemId,
+        run.runId,
+        report.displayBody,
+        stage,
+        occurredAt,
+        correlationId,
+      );
+    } catch {
+      // Reply delivery remains available when recording optional conversation provenance fails.
+    }
     const replies = this.dependencies.replies ?? defaultReplyPublication;
     const target = selectReplyTarget(
       { stage, outcome: report.outcome },

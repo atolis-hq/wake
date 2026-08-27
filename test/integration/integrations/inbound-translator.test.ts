@@ -528,15 +528,6 @@ describe('InboundTranslator', () => {
       },
       context,
     );
-    await conversations.recordRepresentation(
-      {
-        conversationId,
-        entryId: 'agent-run-1',
-        resourceId: `resource-${'0'.repeat(25)}3`,
-        externalId: '987',
-      },
-      context,
-    );
     const translator = new InboundTranslator(
       fixture.world.journal,
       fixture.world.checkpoints,
@@ -561,7 +552,7 @@ describe('InboundTranslator', () => {
       payload: {
         reviewKind: 'issue',
         externalKey: 'atolis-hq/wake#583',
-        body: 'I need the latest commit.',
+        body: 'I need the latest commit.\n<!-- wake:delivery:agent-run-1 -->',
         revision: fixture.world.clock.now().toISOString(),
         actor: { id: 'wake-bot', kind: 'bot' },
         raw: { id: 987 },
@@ -571,7 +562,12 @@ describe('InboundTranslator', () => {
 
     await translator.runOnce();
 
-    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toHaveLength(1);
+    const entries = (await conversations.forWorkItem(fixture.workflow.workItemId))?.entries;
+    expect(entries).toHaveLength(1);
+    expect(entries?.[0]?.representations).toContainEqual({
+      resourceId: `resource-${'0'.repeat(25)}3`,
+      externalId: '987',
+    });
   });
 
   it('creates a missing conversation before recording a correlated inbound comment', async () => {
@@ -617,6 +613,27 @@ describe('InboundTranslator', () => {
         entryId: event.eventId,
         body: 'Please continue.',
         origin: { location: { path: 'src/current.ts', line: 41, side: 'RIGHT' } },
+      },
+    ]);
+
+    const updated = createEventDraft({
+      ...event,
+      eventId: 'github:issue-comment:atolis-hq/wake#583:988:updated',
+      occurredAt: '2026-08-18T00:00:00.000Z',
+      payload: { ...event.payload, body: 'Please continue with the updated plan.' },
+    });
+    await fixture.world.journal.append(event.stream, 1, [updated]);
+
+    await translator.runOnce();
+
+    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
+      {
+        entryId: event.eventId,
+        body: 'Please continue with the updated plan.',
+        revisions: [
+          { body: 'Please continue.' },
+          { body: 'Please continue with the updated plan.' },
+        ],
       },
     ]);
   });

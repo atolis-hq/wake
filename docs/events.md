@@ -59,6 +59,13 @@ choose outbound targets or workflow transitions.
   correlated historical WorkItem does not yet have one. Agent context excludes
   tombstoned entries, honors its resume cutoff, and preserves provider-supplied
   inline locations.
+- Re-observation of the same provider message records a revision of its
+  canonical entry. A Wake delivery marker reconciles an observed echo with the
+  existing agent entry even before delivery reconciliation records its external
+  representation.
+- Conversation provenance is optional to delivery and reply progression: a
+  failed provenance write does not block a delivery-result outcome or a
+  terminal agent reply.
 - Express cross-module links with the exported stream identifiers and relation
   vocabulary, not magic strings or copied provider locators.
 - Register production projections in Bootstrap so replay and normal operation

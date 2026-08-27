@@ -1,8 +1,4 @@
-import {
-  BuiltInActivityName,
-  pullRequestProjection,
-  type PullRequestView,
-} from '../activities/index.js';
+import { pullRequestProjection, type PullRequestView } from '../activities/index.js';
 import {
   conversationIdForWorkItem,
   ConversationOriginKind,
@@ -192,12 +188,8 @@ async function resumeAgentStages(
   context: ReturnType<typeof commandContext>,
 ): Promise<void> {
   const workflows = await root.orchestration.listForWorkItem(itemId);
-  for (const workflow of workflows) {
-    if (workflow.currentStage === undefined) continue;
-    const definition = root.config.orchestration.workflows[workflow.workflowName];
-    if (definition?.stages[workflow.currentStage]?.activity !== BuiltInActivityName.Agent) continue;
+  for (const workflow of workflows)
     await root.orchestration.resumeBlockedStageForChanges(workflow.workflowInstanceId, context);
-  }
 }
 
 async function workDetail(
