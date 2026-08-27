@@ -378,6 +378,68 @@ it('merges pre-conversation GitHub history with canonical conversation entries',
   ]);
 });
 
+it('does not repeat a delivered canonical agent message from legacy history', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'avoid repeating agent publication' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000034' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#10' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-agent-publication',
+      correlationId: correlationId('agent-publication-context'),
+      occurredAt: '2026-08-17T00:00:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  const conversations = createConversationService(world.journal);
+  await conversations.createForWorkItem(work.workItemId, {
+    commandId: 'create-agent-conversation',
+    correlationId: correlationId('agent-publication-context'),
+    occurredAt: '2026-08-17T00:01:00.000Z',
+    actor: { kind: 'system', id: 'test' },
+  });
+  await conversations.record(
+    {
+      conversationId: conversationIdForWorkItem(work.workItemId),
+      entryId: 'agent-run-1',
+      body: 'Wake completed the requested change.',
+      origin: { kind: 'agent', actorId: 'wake', runId: 'run-1', stage: 'implement' },
+    },
+    {
+      commandId: 'record-agent-entry',
+      correlationId: correlationId('agent-publication-context'),
+      occurredAt: '2026-08-17T00:01:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendConfirmedAgentRunComment(world, issue.resourceId, {
+    intentEventId: 'agent-run-1',
+    occurredAt: '2026-08-17T00:02:00.000Z',
+    runId: 'run-1',
+    stage: 'implement',
+    outcome: 'DONE',
+    displayBody: 'Wake completed the requested change.',
+  });
+
+  const context = await createGitHubAgentContextReader(
+    world.journal,
+    world.resources,
+    {},
+    conversations,
+  ).forWorkItem(work.workItemId);
+
+  expect(context.comments.map((comment) => comment.body)).toEqual([
+    'Wake completed the requested change.',
+  ]);
+});
+
 it('uses the revised canonical entry once when resuming after its initial GitHub observation', async () => {
   const world = new TestWorld();
   const work = await world.createWork({ objective: 'retain only the latest edited feedback' });

@@ -25,6 +25,7 @@ import {
   sourceMessageIdForComment,
   type CommentHistoryReaderOptions,
 } from './comment-history-reader.js';
+import { deliveryMarker } from './delivery-marker.js';
 
 export function createGitHubAgentContextReader(
   journal: EventJournal,
@@ -84,11 +85,18 @@ async function commentsForWorkItem(
       ...entry.representations.map((representation) => representation.externalId),
     ]),
   );
+  const canonicalAgentEntryIds = new Set(
+    conversation.entries.flatMap((entry) =>
+      entry.origin.kind === ConversationOriginKind.Agent ? [entry.entryId] : [],
+    ),
+  );
   const historic = (await commentHistory.forWorkItem(workItemId, options))
     .map((entry) => ({ ...entry, sourceMessageId: sourceMessageIdForComment(entry) }))
     .filter(
       (entry) =>
-        entry.sourceMessageId === undefined || !representedMessageIds.has(entry.sourceMessageId),
+        (entry.sourceMessageId === undefined ||
+          !representedMessageIds.has(entry.sourceMessageId)) &&
+        !canonicalAgentEntryIds.has(deliveryMarker(entry.body) ?? ''),
     );
   return [...historic, ...canonical]
     .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))

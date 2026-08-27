@@ -508,7 +508,7 @@ describe('InboundTranslator', () => {
     expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
   });
 
-  it('reconciles an observed delivery echo with its canonical agent entry', async () => {
+  it('records an unverified delivery marker as external feedback rather than agent publication', async () => {
     const fixture = await blockedIssueWorkflow();
     const conversations = createConversationService(fixture.world.journal);
     const conversationId = conversationIdForWorkItem(fixture.workflow.workItemId);
@@ -563,10 +563,11 @@ describe('InboundTranslator', () => {
     await translator.runOnce();
 
     const entries = (await conversations.forWorkItem(fixture.workflow.workItemId))?.entries;
-    expect(entries).toHaveLength(1);
-    expect(entries?.[0]?.representations).toContainEqual({
-      resourceId: `resource-${'0'.repeat(25)}3`,
-      externalId: '987',
+    expect(entries).toHaveLength(2);
+    expect(entries?.[1]).toMatchObject({
+      body: 'I need the latest commit.\n<!-- wake:delivery:agent-run-1 -->',
+      origin: { kind: 'external', actorId: 'wake-bot', messageId: '987' },
+      representations: [],
     });
   });
 
@@ -635,6 +636,20 @@ describe('InboundTranslator', () => {
           { body: 'Please continue with the updated plan.' },
         ],
       },
+    ]);
+
+    const retracted = createEventDraft({
+      ...updated,
+      eventId: 'github:issue-comment:atolis-hq/wake#583:988:retracted',
+      occurredAt: '2026-08-18T00:01:00.000Z',
+      payload: { ...updated.payload, body: '', raw: { id: 988, deleted: true } },
+    });
+    await fixture.world.journal.append(event.stream, 2, [retracted]);
+
+    await translator.runOnce();
+
+    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
+      { entryId: event.eventId, deleted: true },
     ]);
   });
 

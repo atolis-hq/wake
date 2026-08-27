@@ -671,25 +671,74 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                     <EmptyState>No conversation messages</EmptyState>
                   ) : (
                     <ol aria-label="Conversation">
-                      {query.data.data.conversation.entries.map((entry) => (
-                        <li key={entry.entryId}>
-                          <strong>{entry.actorId}</strong> <span>via {entry.origin}</span>{' '}
-                          <LocalTime value={entry.occurredAt} />
-                          {entry.sourceResourceId !== undefined && (
-                            <span> · {entry.sourceResourceId}</span>
-                          )}
-                          {entry.deleted ? (
-                            <em>Message deleted</em>
-                          ) : (
-                            <pre style={{ whiteSpace: 'pre-wrap' }}>{entry.body}</pre>
-                          )}
-                          {entry.representations.map((representation) => (
-                            <span key={`${representation.resourceId}:${representation.externalId}`}>
-                              Published to {representation.resourceId}
-                            </span>
-                          ))}
-                        </li>
-                      ))}
+                      {query.data.data.conversation.entries.map((entry) => {
+                        const source = query.data.data.resources.find(
+                          (resource) => resource.resourceId === entry.sourceResourceId,
+                        );
+                        return (
+                          <li key={entry.entryId}>
+                            <strong>{entry.actorId}</strong> <span>via {entry.origin}</span>{' '}
+                            <LocalTime value={entry.occurredAt} />
+                            {entry.runId !== undefined && (
+                              <span>
+                                {' '}
+                                ·{' '}
+                                <Link to={`/runs/${encodeURIComponent(entry.runId)}`}>
+                                  run {entry.runId}
+                                </Link>
+                                {entry.stage === undefined ? '' : ` (${entry.stage})`}
+                              </span>
+                            )}
+                            {source !== undefined && (
+                              <span>
+                                {' '}
+                                ·{' '}
+                                {source.externalUrl === undefined ? (
+                                  source.locatorLabel
+                                ) : (
+                                  <a
+                                    href={source.externalUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    {source.locatorLabel}
+                                  </a>
+                                )}
+                              </span>
+                            )}
+                            {entry.deleted ? (
+                              <em>Message deleted</em>
+                            ) : (
+                              <pre style={{ whiteSpace: 'pre-wrap' }}>{entry.body}</pre>
+                            )}
+                            {entry.representations.map((representation) => {
+                              const resource = query.data.data.resources.find(
+                                (candidate) => candidate.resourceId === representation.resourceId,
+                              );
+                              const label = resource?.locatorLabel ?? representation.resourceId;
+                              return (
+                                <span
+                                  key={`${representation.resourceId}:${representation.externalId}`}
+                                >
+                                  {' '}
+                                  Published to{' '}
+                                  {resource?.externalUrl === undefined ? (
+                                    label
+                                  ) : (
+                                    <a
+                                      href={resource.externalUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      {label}
+                                    </a>
+                                  )}
+                                </span>
+                              );
+                            })}
+                          </li>
+                        );
+                      })}
                     </ol>
                   )}
                 </section>

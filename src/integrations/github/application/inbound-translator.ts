@@ -15,6 +15,7 @@ import {
   correlationId,
   createEventDraft,
   EventActorKind,
+  eventId,
   EventSourceKind,
   UlidIdGenerator,
   WrongExpectedSequenceError,
@@ -42,6 +43,7 @@ import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rul
 import type { WorkConclusion, WorkflowRouter } from '../../contracts/provider.js';
 import { deliveryStream, integrationStream } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
+import { DeliveryResultKind } from '../../delivery/contracts/vocabulary.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
@@ -285,12 +287,29 @@ export class InboundTranslator {
     );
     const externalId = observedCommentExternalId(event);
     const existing = await this.conversations.forWorkItem(correlation.workItemId);
+    const priorEntry = existing?.entries.find(
+      (entry) =>
+        entry.origin.kind === ConversationOriginKind.External &&
+        entry.origin.resourceId === resource.resourceId &&
+        entry.origin.messageId === externalId,
+    );
+    if (isRetractedComment(event)) {
+      if (priorEntry !== undefined && !priorEntry.deleted)
+        await this.conversations.tombstone(
+          { conversationId, entryId: priorEntry.entryId },
+          commandContext(event),
+        );
+      return;
+    }
     const echoedEntryId = deliveryMarker(event.payload.body);
     const echoedEntry = existing?.entries.find(
       (entry) =>
         entry.entryId === echoedEntryId && entry.origin.kind === ConversationOriginKind.Agent,
     );
-    if (echoedEntry !== undefined) {
+    if (
+      echoedEntry !== undefined &&
+      (await this.isConfirmedDeliveryRepresentation(echoedEntry.entryId, externalId))
+    ) {
       await this.conversations.recordRepresentation(
         {
           conversationId,
@@ -302,12 +321,6 @@ export class InboundTranslator {
       );
       return;
     }
-    const priorEntry = existing?.entries.find(
-      (entry) =>
-        entry.origin.kind === ConversationOriginKind.External &&
-        entry.origin.resourceId === resource.resourceId &&
-        entry.origin.messageId === externalId,
-    );
     if (
       existing?.entries.some((entry) =>
         entry.representations.some(
@@ -349,6 +362,29 @@ export class InboundTranslator {
       },
       commandContext(event),
     );
+  }
+
+  private async isConfirmedDeliveryRepresentation(
+    intentEventId: string,
+    externalId: string,
+  ): Promise<boolean> {
+    let events;
+    try {
+      events = await this.journal!.readStream(deliveryStream(eventId(intentEventId)));
+    } catch {
+      return false;
+    }
+    return events.some((event) => {
+      const delivery = selectDeliveryEvent(event);
+      return (
+        delivery !== null &&
+        (delivery.eventType === DeliveryEventType.Confirmed ||
+          (delivery.eventType === DeliveryEventType.Reconciled &&
+            delivery.payload.result === DeliveryResultKind.Confirmed)) &&
+        delivery.payload.intentEventId === intentEventId &&
+        (delivery.payload as { readonly externalId?: string }).externalId === externalId
+      );
+    });
   }
 
   private async failureRecorded(sourceEventId: string): Promise<boolean> {
@@ -962,4 +998,13 @@ function observedCommentExternalId(
 ): string {
   const id = event.payload.raw.id;
   return typeof id === 'string' || typeof id === 'number' ? String(id) : event.eventId;
+}
+
+function isRetractedComment(
+  event: Extract<
+    GitHubAdapterEvent,
+    { readonly eventType: typeof GitHubEventType.CommentObserved }
+  >,
+): boolean {
+  return event.payload.raw.deleted === true;
 }

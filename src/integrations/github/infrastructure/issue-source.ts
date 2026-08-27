@@ -91,8 +91,8 @@ export function issueCommentObservation(input: {
   readonly authorization?: ReviewerAuthorizationEvidence;
   readonly adapter?: AdapterId;
 }): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.CommentObserved }> | null {
-  const body = input.comment.body?.trim();
-  if (body === undefined || body.length === 0) return null;
+  const body = normalizedCommentBody(input.comment.body);
+  if (body === undefined) return null;
   const key = formatGitHubResourceKey({
     ...parseRepository(input.repository),
     number: input.issue.number,
@@ -110,7 +110,7 @@ export function issueCommentObservation(input: {
     payload: {
       reviewKind: 'issue',
       externalKey: key,
-      body,
+      body: body ?? '',
       revision: input.comment.updated_at,
       ...(location === undefined ? {} : { location }),
       actor: {
@@ -118,9 +118,15 @@ export function issueCommentObservation(input: {
         kind: input.comment.user?.type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human,
       },
       ...(input.authorization === undefined ? {} : { authorization: input.authorization }),
-      raw: { id: input.comment.id },
+      raw: { id: input.comment.id, ...(input.comment.body === null ? { deleted: true } : {}) },
     },
   });
+}
+
+function normalizedCommentBody(body: string | null): string | undefined {
+  if (body === null) return '';
+  const normalized = body.trim();
+  return normalized === '' ? undefined : normalized;
 }
 
 function commentLocation(comment: GitHubIssueCommentPayload) {
