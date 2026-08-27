@@ -28,7 +28,7 @@ it('does not publish from a raw execution completion before orchestration resolv
   expect(publish).not.toHaveBeenCalled();
 });
 
-it('publishes a terminal agent reply when conversation recording fails', async () => {
+it('does not publish a terminal agent reply when canonical conversation recording fails', async () => {
   const appended: unknown[][] = [];
   const reactor = new AgentRunPublicationReactor({
     journal: {
@@ -87,9 +87,9 @@ it('publishes a terminal agent reply when conversation recording fails', async (
         ) => Promise<void>;
       }
     ).publish('run-1', '2026-08-08T00:01:00.000Z', 'cause-1', 'correlation-1'),
-  ).resolves.toBeUndefined();
+  ).rejects.toThrow('conversation unavailable');
 
-  expect(appended).toHaveLength(1);
+  expect(appended).toHaveLength(0);
 });
 
 it('publishes a failed Run only after orchestration records its execution failure', async () => {

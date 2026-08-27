@@ -637,6 +637,54 @@ describe('InboundTranslator', () => {
       },
     ]);
   });
+
+  it('does not checkpoint a comment when canonical conversation recording fails', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations: {
+          createForWorkItem: async () => Promise.reject(new Error('conversation unavailable')),
+        } as never,
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:989',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:989',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: 'The missing context is in the latest commit.',
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'maintainer', kind: 'human' },
+        raw: { id: 989 },
+      },
+    });
+    const [observed] = await fixture.world.journal.append(event.stream, 0, [event]);
+    if (observed === undefined) throw new Error('Expected comment observation');
+
+    await expect(translator.runOnce()).rejects.toThrow('conversation unavailable');
+
+    expect(await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId)).toMatchObject({
+      status: 'active',
+      currentStage: 'refine',
+    });
+    await expect(
+      fixture.world.checkpoints.load('reactor:integration.github.inbound'),
+    ).resolves.toBe(observed.globalPosition - 1);
+  });
 });
 
 describe('InboundTranslator conclusion', () => {

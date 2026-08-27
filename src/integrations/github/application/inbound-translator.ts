@@ -93,6 +93,10 @@ interface InboundTranslatorDependencies {
   readonly conversations?: ConversationService;
 }
 
+class ConversationRecordingFailure {
+  constructor(readonly cause: unknown) {}
+}
+
 export class InboundTranslator {
   private readonly minted = new Map<string, { resourceId: ResourceId; workItemId: WorkItemId }>();
 
@@ -223,11 +227,6 @@ export class InboundTranslator {
     try {
       if (owned.eventType === GitHubEventType.WorkObserved) await this.apply(owned);
       if (owned.eventType === GitHubEventType.CommentObserved) {
-        try {
-          await this.recordConversationEntry(owned);
-        } catch (error) {
-          console.error(`Conversation recording failed for ${owned.eventId}`, error);
-        }
         if (!(await this.suppressWorkItemEffects(owned)))
           await applyReviewSignal({
             event: owned,
@@ -245,9 +244,15 @@ export class InboundTranslator {
           runs: this.runs,
           orchestration: this.orchestration,
         });
+        try {
+          await this.recordConversationEntry(owned);
+        } catch (error) {
+          throw new ConversationRecordingFailure(error);
+        }
       }
       if (await this.retryRecorded(owned.eventId)) await this.recordTranslationRecovery(owned);
     } catch (error) {
+      if (error instanceof ConversationRecordingFailure) throw error.cause;
       await this.recordTranslationFailure(owned, error);
     }
   }

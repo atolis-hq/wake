@@ -18,6 +18,7 @@ import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import {
   createCommentHistoryReader,
+  sourceMessageIdForComment,
   type CommentHistoryReaderOptions,
 } from './comment-history-reader.js';
 
@@ -68,18 +69,25 @@ async function commentsForWorkItem(
       entry.origin.location === undefined
         ? {}
         : { location: entry.origin.location }),
+      ...(entry.origin.kind !== ConversationOriginKind.External
+        ? {}
+        : { sourceMessageId: entry.origin.messageId }),
     }));
-  const historic = await commentHistory.forWorkItem(workItemId, options);
-  const canonicalKeys = new Set(
-    canonical.map((entry) => `${entry.author}\u0000${entry.occurredAt}\u0000${entry.body}`),
+  const representedMessageIds = new Set(
+    conversation.entries.flatMap((entry) => [
+      ...(entry.origin.kind !== ConversationOriginKind.External ? [] : [entry.origin.messageId]),
+      ...entry.representations.map((representation) => representation.externalId),
+    ]),
   );
-  return [...historic, ...canonical]
+  const historic = (await commentHistory.forWorkItem(workItemId, options))
+    .map((entry) => ({ ...entry, sourceMessageId: sourceMessageIdForComment(entry) }))
     .filter(
       (entry) =>
-        !canonicalKeys.has(`${entry.author}\u0000${entry.occurredAt}\u0000${entry.body}`) ||
-        canonical.includes(entry),
-    )
-    .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+        entry.sourceMessageId === undefined || !representedMessageIds.has(entry.sourceMessageId),
+    );
+  return [...historic, ...canonical]
+    .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
+    .map(({ sourceMessageId: _sourceMessageId, ...entry }) => entry);
 }
 
 const maximumAgentContextCommentCharacters = 8_000;
