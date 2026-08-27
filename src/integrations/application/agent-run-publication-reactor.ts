@@ -45,7 +45,7 @@ export class AgentRunPublicationReactor {
       readonly runs: RunRepository;
       readonly resources: Pick<ResourceService, 'correlationsForWork' | 'get'>;
       readonly orchestration: Pick<OrchestrationService, 'listAll'>;
-      readonly conversations?: Pick<ConversationService, 'record'>;
+      readonly conversations?: Pick<ConversationService, 'createForWorkItem' | 'record'>;
       readonly replies?: ReplyPublicationConfig | undefined;
     },
   ) {}
@@ -110,6 +110,12 @@ export class AgentRunPublicationReactor {
     const stage = await this.stageForActivation(workflow.workflowInstanceId, run.activationId);
     const report = projectTerminalAgentRunReport(reportInput(run, stage, workflow, allWorkflows));
     if (report === null) return;
+    await this.dependencies.conversations?.createForWorkItem(workflow.workItemId, {
+      commandId: `conversation:${run.runId}`,
+      correlationId: correlationId as never,
+      occurredAt,
+      actor: { kind: EventActorKind.Agent, id: 'wake' },
+    });
     await this.dependencies.conversations?.record(
       {
         conversationId: conversationIdForWorkItem(workflow.workItemId),
