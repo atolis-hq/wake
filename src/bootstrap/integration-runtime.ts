@@ -12,6 +12,7 @@ import {
   type ScheduleCheckpointStore,
   type createControlPlaneService,
 } from '../control-plane/index.js';
+import type { createConversationService } from '../conversations/index.js';
 import {
   RunRepository,
   createRuntimeMemoryProfile,
@@ -60,7 +61,6 @@ import {
   type createResourceService,
 } from '../resources/index.js';
 import type { createWorkService } from '../work/index.js';
-import type { createConversationService } from '../conversations/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
@@ -227,6 +227,7 @@ export async function composeIntegrationRuntime(
     runs,
     resources: input.resources,
     orchestration: input.orchestration,
+    conversations: input.conversations,
     ...(replies === undefined ? {} : { replies }),
   });
   const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints, runs);

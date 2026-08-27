@@ -8,7 +8,7 @@ export type ConversationEntryOrigin =
       readonly kind: typeof ConversationOriginKind.Agent;
       readonly actorId: string;
       readonly runId: string;
-      readonly stage: string;
+      readonly stage?: string | undefined;
     }
   | {
       readonly kind: typeof ConversationOriginKind.External;

@@ -44,7 +44,7 @@ const origin = z.discriminatedUnion('kind', [
       kind: z.literal(ConversationOriginKind.Agent),
       actorId: z.string().min(1),
       runId: z.string().min(1),
-      stage: z.string().min(1),
+      stage: z.string().min(1).optional(),
     })
     .strict(),
   z
