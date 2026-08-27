@@ -29,6 +29,7 @@ import {
   type ResourceId,
 } from '../../../resources/index.js';
 import type { WorkService } from '../../../work/index.js';
+import { conversationIdForWorkItem, type ConversationService } from '../../../conversations/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
 import { admitObservedWork, type WorkAdmissionServices } from '../../application/work-admission.js';
 import { concludeObservedWork } from '../../application/work-conclusion.js';
@@ -84,6 +85,7 @@ interface InboundTranslatorDependencies {
   readonly routing?: WorkflowRouter;
   readonly intake?: readonly GitHubIntakeRuleConfig[];
   readonly conclusion?: WorkConclusion;
+  readonly conversations?: ConversationService;
 }
 
 export class InboundTranslator {
@@ -129,6 +131,7 @@ export class InboundTranslator {
     this.routing = dependencies.routing;
     this.intake = gitHubIntakeRules(dependencies.intake ?? []);
     this.conclusion = dependencies.conclusion;
+    this.conversations = dependencies.conversations;
   }
 
   private readonly pullRequests: PullRequestService | undefined;
@@ -140,6 +143,7 @@ export class InboundTranslator {
   private readonly routing: WorkflowRouter | undefined;
   private readonly intake: readonly IntakeRule[];
   private readonly conclusion: WorkConclusion | undefined;
+  private readonly conversations: ConversationService | undefined;
 
   // Adapter filtering, checkpointing, and typed event dispatch must stay together.
   async runOnce(limit = 100): Promise<number> {
@@ -214,6 +218,7 @@ export class InboundTranslator {
     try {
       if (owned.eventType === GitHubEventType.WorkObserved) await this.apply(owned);
       if (owned.eventType === GitHubEventType.CommentObserved) {
+        await this.recordConversationEntry(owned);
         if (!(await this.suppressWorkItemEffects(owned)))
           await applyReviewSignal({
             event: owned,
@@ -236,6 +241,23 @@ export class InboundTranslator {
     } catch (error) {
       await this.recordTranslationFailure(owned, error);
     }
+  }
+
+  private async recordConversationEntry(
+    event: Extract<GitHubAdapterEvent, { readonly eventType: typeof GitHubEventType.CommentObserved }>,
+  ): Promise<void> {
+    if (this.conversations === undefined || this.resources === undefined) return;
+    const resource = await this.resources.findByExternalKey({ adapter: this.adapter, key: event.payload.externalKey });
+    if (resource === null) return;
+    const correlation = await this.resources.primaryCorrelation(resource.resourceId);
+    if (correlation === null) return;
+    const conversationId = conversationIdForWorkItem(correlation.workItemId);
+    await this.conversations.record({
+      conversationId,
+      entryId: event.eventId,
+      body: event.payload.body,
+      origin: { kind: 'external', adapter: this.adapter, actorId: event.payload.actor.id, resourceId: resource.resourceId, threadId: resource.externalKey.key, messageId: event.eventId },
+    }, commandContext(event));
   }
 
   private async failureRecorded(sourceEventId: string): Promise<boolean> {
@@ -663,6 +685,7 @@ export class InboundTranslator {
       throw new Error('InboundTranslator requires work, resources, orchestration, and routing');
     return {
       work: this.work,
+      conversations: this.conversations,
       resources: this.resources,
       orchestration: this.orchestration,
       routing: this.routing,

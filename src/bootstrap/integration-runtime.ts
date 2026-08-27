@@ -60,6 +60,7 @@ import {
   type createResourceService,
 } from '../resources/index.js';
 import type { createWorkService } from '../work/index.js';
+import type { createConversationService } from '../conversations/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
@@ -83,6 +84,7 @@ export interface IntegrationRuntimeInput {
   readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly pullRequests: ReturnType<typeof createPullRequestService>;
   readonly work: ReturnType<typeof createWorkService>;
+  readonly conversations: ReturnType<typeof createConversationService>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
   readonly advanceOnce: AdvanceOnce;
@@ -133,6 +135,7 @@ export async function composeIntegrationRuntime(
     {
       publicUiUrl: input.config.surfaces.web.publicUrl,
       work: input.work,
+      conversations: input.conversations,
       resources: input.resources,
       resourceLookup: input.lookup,
       pullRequests: input.pullRequests,

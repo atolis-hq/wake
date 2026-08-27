@@ -172,6 +172,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
           routing: services.routing,
           intake: config.intake,
           conclusion: services.conclusion,
+          conversations: services.conversations,
         },
       ),
       checkConnectivity: async () => {

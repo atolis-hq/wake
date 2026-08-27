@@ -12,11 +12,13 @@ import {
   type ResourceService,
 } from '../../resources/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
+import type { ConversationService } from '../../conversations/index.js';
 import type { AdapterId } from '../contracts/identifiers.js';
 import type { WorkflowRouter } from '../contracts/provider.js';
 
 export interface WorkAdmissionServices {
   readonly work: WorkService;
+  readonly conversations?: ConversationService;
   readonly resources: ResourceService;
   readonly orchestration: OrchestrationService;
   readonly routing: WorkflowRouter;
@@ -60,6 +62,7 @@ export async function admitObservedWork(
     { workItemId: input.workItemId, objective: input.objective, tags: input.tags },
     context,
   );
+  await services.conversations?.createForWorkItem(input.workItemId, context);
   await services.resources.correlate(
     input.resourceId,
     input.workItemId,

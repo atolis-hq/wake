@@ -14,6 +14,7 @@ import type {
   ResourceService,
 } from '../../resources/index.js';
 import type { WorkItemId, WorkItemView, WorkService } from '../../work/index.js';
+import type { ConversationService } from '../../conversations/index.js';
 import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
 import type { ArtifactVerificationResult } from './artifact-vocabulary.js';
 import type { IntegrationsConfig } from './config.js';
@@ -39,6 +40,7 @@ export interface ProviderServices {
   /** Stable operator-configured UI address included in provider notifications when present. */
   readonly publicUiUrl?: string | undefined;
   readonly work: WorkService;
+  readonly conversations: ConversationService;
   readonly resources: ResourceService;
   readonly resourceLookup: ResourceLookup;
   readonly orchestration: OrchestrationService;

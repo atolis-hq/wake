@@ -293,6 +293,7 @@ export async function createCompositionRoot(
     isPaused: isRuntimePaused,
     clock,
     work,
+    conversations,
     ids,
     wakeRoot,
     projectionRunSerialiser: createFileProjectionRunSerialiser(paths.dataRoot),
