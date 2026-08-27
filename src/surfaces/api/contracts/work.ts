@@ -34,6 +34,17 @@ export interface WorkDetailResponse {
     readonly transcriptGroups: readonly TranscriptGroupResponse[];
   };
   readonly activities: { readonly pullRequest?: PullRequestResponse };
+  readonly conversation: {
+    readonly entries: readonly {
+      readonly entryId: string;
+      readonly body: string;
+      readonly occurredAt: string;
+      readonly origin: string;
+      readonly actorId: string;
+      readonly runId?: string;
+      readonly stage?: string;
+    }[];
+  };
 }
 
 export interface PullRequestResponse {

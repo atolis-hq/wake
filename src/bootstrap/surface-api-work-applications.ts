@@ -200,6 +200,7 @@ async function workDetail(
   ).find((entry) => entry !== null && entry.value !== null);
   const primary = workflows.find((value) => value.parentWorkflowInstanceId === undefined) ?? null;
   const externalRef = await primaryExternalRef(root, work.workItemId, correlations, resources);
+  const conversation = await root.conversations.forWorkItem(id);
   const data: WorkDetailResponse = {
     work: presentDetailWork(work, externalRef, runs),
     resources: resources.map(presentResource(root.resolveResourceLink)),
@@ -215,6 +216,18 @@ async function workDetail(
       transcriptGroups: await transcriptGroups(root.transcriptStore, id, runs),
     },
     activities: presentPullRequest(pullRequest?.value),
+    conversation: {
+      entries: (conversation?.entries ?? []).map((entry) => ({
+        entryId: entry.entryId,
+        body: entry.body,
+        occurredAt: entry.occurredAt,
+        origin: entry.origin.kind,
+        actorId: entry.origin.actorId,
+        ...(entry.origin.kind === 'agent'
+          ? { runId: entry.origin.runId, stage: entry.origin.stage }
+          : {}),
+      })),
+    },
   };
   const [projections, correlationFacts] = await Promise.all([
     contributingProjections(root, id, resources, workflows, runs),
