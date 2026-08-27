@@ -4,9 +4,10 @@
 
 Wake will introduce `conversations` as a first-class bounded module. It owns
 the canonical, durable discussion record for a WorkItem: conversation identity,
-immutable entries and revisions, projections, and read APIs. Provider adapters,
-agent activities, and the control-plane UI contribute attributed entries to that
-record.
+immutable entries and revisions, projections, and read APIs. The Conversation
+service is the sole producer of `conversation.*` facts. Provider adapters,
+agent activities, and the control-plane UI submit attributed entry commands to
+that service.
 
 Version one deliberately has one active Conversation per WorkItem. A
 Conversation is created with its WorkItem and has a required WorkItem link.
@@ -32,7 +33,7 @@ thread formats, delivery targets, workflow transitions, or agent execution.
 | Module | Responsibility |
 | --- | --- |
 | `conversations` | Conversation IDs, streams, entries, revisions/tombstones, participating resource/thread links, projections, context reads. |
-| `integrations` | Provider polling and validation, raw evidence, external message/thread IDs, delivery, echo reconciliation, and configuration for publication targets. |
+| `integrations` | Provider polling and validation, raw evidence, provider-neutral external-entry commands, external message/thread IDs, delivery, echo reconciliation, and configuration for publication targets. |
 | `activities` | Reads stage-relevant conversation context to render an agent prompt. |
 | `orchestration` | Continues to apply configured workflow transitions and does not acquire a dependency on conversation or resource concepts. |
 | reaction bridge | Applies existing state-aware reply rules to a recorded conversation entry and produces the ordinary workflow signal or no-op. |
@@ -43,6 +44,30 @@ The Conversation module may refer to a WorkItem and resource/thread reference,
 but it does not know provider-specific resource kinds or publication policy.
 Provider-specific external identifiers are carried as opaque adapter-owned
 references.
+
+## One entry command boundary
+
+All entry sources converge on the Conversation service. They do not construct
+or append Conversation event drafts themselves:
+
+```text
+GitHub or Slack adapter -> validated external-entry command --+
+control-plane UI       -> control-plane-entry command        +-> Conversation service
+agent/run reactor      -> agent-entry command                +-> conversation.entry-recorded
+Wake system reactor    -> system-entry command               +
+```
+
+An external adapter first records its own raw evidence, then its integration
+translator maps the validated provider payload to a provider-neutral external
+entry command. The Conversation service owns command validation, idempotency,
+and the event factory. It never decodes provider-specific event payloads.
+
+The command's provenance is discriminated by source: external entries carry an
+adapter and source resource/thread/message references; control-plane entries
+carry an authenticated operator/session; agent entries carry run and stage;
+and system entries carry their causal workflow or activity fact. This is one
+domain mechanism with several trusted producers, not a second internal adapter
+mechanism.
 
 ## Data model
 
@@ -89,14 +114,17 @@ first-primary-resource routing currently identified by issue #755.
 
 1. An adapter polls and validates provider data, then records its normal raw
    integration evidence.
-2. The adapter resolves its participating resource/thread and records one
-   canonical Conversation entry with source provenance.
-3. The reaction bridge evaluates the entry with the existing state-aware
+2. Its integration translator resolves the participating resource/thread and
+   submits one provider-neutral external-entry command with source provenance.
+3. The Conversation service validates it and records one canonical Conversation
+   entry.
+4. The reaction bridge evaluates the entry with the existing state-aware
    workflow reply rules.
 
 ### Wake, agent, or control-plane message
 
-1. Wake records the canonical Conversation entry first.
+1. A UI, agent/run, or Wake-system producer submits its attributed entry command
+   and the Conversation service records the canonical entry first.
 2. Integrations may select zero or more publication targets from their own
    configuration and create durable delivery intents referencing that entry.
 3. Delivery confirmation, reconciliation, or an observed echo attaches an
