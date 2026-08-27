@@ -5,6 +5,7 @@ import {
   type AgentContextReader,
 } from '../../../activities/index.js';
 import type { EventJournal } from '../../../kernel/index.js';
+import type { ConversationService } from '../../../conversations/index.js';
 import {
   BuiltInResourceKind,
   ResourceCorrelationRole,
@@ -24,12 +25,13 @@ export function createGitHubAgentContextReader(
   journal: EventJournal,
   resources: Pick<ResourceService, 'correlationsForWork' | 'get'>,
   options: CommentHistoryReaderOptions = {},
+  conversations?: Pick<ConversationService, 'forWorkItem'>,
 ): AgentContextReader {
   const commentHistory = createCommentHistoryReader(journal, resources, options);
   return {
     async forWorkItem(workItemId, options) {
       const { comments, omittedComments } = boundedAgentContextComments(
-        await commentHistory.forWorkItem(workItemId as WorkItemId, options),
+        await commentsForWorkItem(commentHistory, conversations, workItemId as WorkItemId, options),
       );
       return {
         ...(await currentWorkItemContent(journal, resources, workItemId as WorkItemId)),
@@ -41,6 +43,22 @@ export function createGitHubAgentContextReader(
       };
     },
   };
+}
+
+async function commentsForWorkItem(
+  commentHistory: ReturnType<typeof createCommentHistoryReader>,
+  conversations: Pick<ConversationService, 'forWorkItem'> | undefined,
+  workItemId: WorkItemId,
+  options: Parameters<ReturnType<typeof createCommentHistoryReader>['forWorkItem']>[1],
+): Promise<readonly AgentContextComment[]> {
+  const conversation = await conversations?.forWorkItem(workItemId);
+  if (conversation === null || conversation === undefined)
+    return commentHistory.forWorkItem(workItemId, options);
+  return conversation.entries.map((entry) => ({
+    author: entry.origin.actorId,
+    occurredAt: entry.occurredAt,
+    body: entry.body,
+  }));
 }
 
 const maximumAgentContextCommentCharacters = 8_000;

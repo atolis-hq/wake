@@ -685,7 +685,7 @@ export class InboundTranslator {
       throw new Error('InboundTranslator requires work, resources, orchestration, and routing');
     return {
       work: this.work,
-      conversations: this.conversations,
+      ...(this.conversations === undefined ? {} : { conversations: this.conversations }),
       resources: this.resources,
       orchestration: this.orchestration,
       routing: this.routing,
