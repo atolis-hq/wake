@@ -115,6 +115,21 @@ describe('HTTP Surface hardening', () => {
     }
   });
 
+  it('persists a two-year login cookie', async () => {
+    const server = surfaceServer(createApiDispatcher(applications()));
+    try {
+      const login = await server.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: { accessKey: 'operator-key' },
+      });
+
+      expect(login.headers['set-cookie']).toContain('Max-Age=63072000');
+    } finally {
+      await server.close();
+    }
+  });
+
   it('does not expose an unexpected application error message', async () => {
     const server = surfaceServer({
       dispatch: async () => {

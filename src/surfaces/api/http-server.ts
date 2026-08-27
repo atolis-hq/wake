@@ -7,6 +7,8 @@ import type { AssetSource } from '../web-host/asset-source.js';
 import { problemDetails } from './problem-details.js';
 import { BrowserRouteOutcome, routeBrowserRequest } from './router.js';
 
+const operatorSessionLifetimeSeconds = 2 * 365 * 24 * 60 * 60;
+
 declare module '@fastify/secure-session' {
   interface SessionData {
     operator?: boolean;
@@ -47,8 +49,14 @@ export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): Fast
   app.register(secureSession, {
     key: Buffer.from(options.credentials.sessionPassword, 'base64url'),
     cookieName: 'wake_session',
-    expiry: 24 * 60 * 60,
-    cookie: { httpOnly: true, sameSite: 'lax', secure: SurfaceCookieSecurity.Auto, path: '/' },
+    expiry: operatorSessionLifetimeSeconds,
+    cookie: {
+      httpOnly: true,
+      maxAge: operatorSessionLifetimeSeconds,
+      sameSite: 'lax',
+      secure: SurfaceCookieSecurity.Auto,
+      path: '/',
+    },
   });
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error }, 'Wake HTTP request failed');
