@@ -691,6 +691,59 @@ describe('InboundTranslator', () => {
       ),
     ).toContainEqual({ adapter: BuiltInAdapterId.GitHub, sourceEventId: event.eventId });
   });
+
+  it('recovers deferred canonical recording without replaying inbound workflow signals', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const conversations = createConversationService(fixture.world.journal);
+    const record = vi
+      .spyOn(conversations, 'record')
+      .mockRejectedValueOnce(new Error('conversation temporarily unavailable'));
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations,
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:990',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:990',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: 'Please include the missing migration note.',
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'maintainer', kind: 'human' },
+        raw: { id: 990 },
+      },
+    });
+    await fixture.world.journal.append(event.stream, 0, [event]);
+
+    await translator.runOnce();
+    record.mockRestore();
+    await translator.runOnce();
+
+    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
+      { entryId: event.eventId, body: 'Please include the missing migration note.' },
+    ]);
+    expect(
+      (await fixture.world.events(GitHubEventType.ConversationRecordRecovered)).map(
+        (recovered) => recovered.payload,
+      ),
+    ).toContainEqual({ adapter: BuiltInAdapterId.GitHub, sourceEventId: event.eventId });
+    expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
+  });
 });
 
 describe('InboundTranslator conclusion', () => {
