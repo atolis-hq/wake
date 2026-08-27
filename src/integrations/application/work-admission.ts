@@ -62,7 +62,11 @@ export async function admitObservedWork(
     { workItemId: input.workItemId, objective: input.objective, tags: input.tags },
     context,
   );
-  await services.conversations?.createForWorkItem(input.workItemId, context);
+  try {
+    await services.conversations?.createForWorkItem(input.workItemId, context);
+  } catch (error) {
+    console.error(`Conversation creation failed for admitted WorkItem ${input.workItemId}`, error);
+  }
   await services.resources.correlate(
     input.resourceId,
     input.workItemId,

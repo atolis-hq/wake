@@ -196,7 +196,14 @@ async function resumeAgentStages(
 ): Promise<void> {
   const workflows = await root.orchestration.listForWorkItem(itemId);
   for (const workflow of workflows)
-    await root.orchestration.resumeBlockedStageForChanges(workflow.workflowInstanceId, context);
+    try {
+      await root.orchestration.resumeBlockedStageForChanges(workflow.workflowInstanceId, context);
+    } catch (error) {
+      console.error(
+        `Conversation message resume failed for workflow ${workflow.workflowInstanceId}`,
+        error,
+      );
+    }
 }
 
 async function workDetail(
@@ -288,7 +295,7 @@ function presentConversation(
   return {
     entries: (conversation?.entries ?? []).map((entry) => ({
       entryId: entry.entryId,
-      body: entry.body,
+      body: entry.deleted ? '' : entry.body,
       occurredAt: entry.occurredAt,
       origin: entry.origin.kind,
       actorId: entry.origin.actorId,

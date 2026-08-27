@@ -20,6 +20,7 @@ import {
 import { conversationIdForWorkItem, type ConversationId } from '../contracts/identifiers.js';
 import { conversationStream } from '../contracts/streams.js';
 import type { ConversationView } from '../contracts/views.js';
+import { applyConversationEvent } from '../domain/conversation.js';
 import { ConversationRepository } from './conversation-repository.js';
 
 export interface ConversationService {
@@ -158,10 +159,10 @@ function changeConversation(repository: ConversationRepository) {
       stream: conversationStream(id),
       payload,
     }) as ConversationEventDraft;
-    await repository.append(id, loaded.sequence, [draft]);
-    const result = await repository.load(id);
-    if (result.view === null) throw new Error(`Conversation ${id} was not created`);
-    return result.view;
+    const [recorded] = await repository.append(id, loaded.sequence, [draft]);
+    const next = recorded === undefined ? null : applyConversationEvent(loaded.view, recorded);
+    if (next === null) throw new Error(`Conversation ${id} was not created`);
+    return next;
   };
 }
 

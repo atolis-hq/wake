@@ -322,6 +322,62 @@ it("retains an earlier stage's Wake handoff after a later stage posts its own co
   );
 });
 
+it('merges pre-conversation GitHub history with canonical conversation entries', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'retain historic discussion' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000031' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#10' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-history',
+      correlationId: correlationId('historic-conversation-context'),
+      occurredAt: '2026-08-17T00:00:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendIssueComment(world, 1, 'Historic GitHub discussion.');
+  const conversations = createConversationService(world.journal);
+  await conversations.createForWorkItem(work.workItemId, {
+    commandId: 'create-conversation',
+    correlationId: correlationId('historic-conversation-context'),
+    occurredAt: '2026-08-17T01:00:00.000Z',
+    actor: { kind: 'system', id: 'test' },
+  });
+  await conversations.record(
+    {
+      conversationId: conversationIdForWorkItem(work.workItemId),
+      entryId: 'new-conversation-entry',
+      body: 'New canonical discussion.',
+      origin: { kind: 'control-plane', actorId: 'operator' },
+    },
+    {
+      commandId: 'record-conversation-entry',
+      correlationId: correlationId('historic-conversation-context'),
+      occurredAt: '2026-08-17T02:00:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+
+  const context = await createGitHubAgentContextReader(
+    world.journal,
+    world.resources,
+    {},
+    conversations,
+  ).forWorkItem(work.workItemId);
+
+  expect(context.comments.map((comment) => comment.body)).toEqual([
+    'Historic GitHub discussion.',
+    'New canonical discussion.',
+  ]);
+});
+
 it('uses only active conversation entries after the resume cutoff and preserves inline locations', async () => {
   const world = new TestWorld();
   const work = await world.createWork({ objective: 'resume with current inline feedback' });

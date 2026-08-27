@@ -11,6 +11,7 @@ import { DeliveryResultKind } from '../../delivery/contracts/vocabulary.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { formatAgentRunComment } from './agent-run-comment.js';
+import { appendDeliveryMarker, deliveryMarker } from './delivery-marker.js';
 
 export interface CommentHistoryEntry {
   readonly author: string;
@@ -264,7 +265,6 @@ function deliveredCommentBody(
   intent: ConfirmableCommentIntent,
   publicUiUrl: string | undefined,
 ): string {
-  const marker = `<!-- wake:delivery:${intent.eventId} -->`;
   const body =
     intent.eventType === DeliveryIntentEventType.AgentRunPublishRequested
       ? formatAgentRunComment({
@@ -273,11 +273,7 @@ function deliveredCommentBody(
           publicUiUrl,
         })
       : intent.payload.body;
-  return `${body}\n${marker}`.trim();
-}
-
-function deliveryMarker(body: string): string | undefined {
-  return /<!--\s*wake:delivery:([^\s>]+)\s*-->/.exec(body)?.[1];
+  return appendDeliveryMarker(body, intent.eventId);
 }
 
 function parseAdapterId(value: string) {

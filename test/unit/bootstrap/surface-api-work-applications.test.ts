@@ -100,6 +100,39 @@ it('rejects a control-plane message for a deleted WorkItem before resuming a wor
   ).rejects.toThrow('Work item is deleted');
 });
 
+it('continues resuming sibling workflows when one conversation-message resume fails', async () => {
+  const resumed: string[] = [];
+  const applications = createSurfaceWorkApplications(
+    {
+      config: { surfaces: { api: { conversationMessages: { enabled: true } } } },
+      work: { get: async () => ({ deleted: false }) },
+      conversations: {
+        createForWorkItem: async () => ({}),
+        record: async () => ({}),
+      },
+      orchestration: {
+        listForWorkItem: async () => [
+          { workflowInstanceId: 'first-workflow' },
+          { workflowInstanceId: 'second-workflow' },
+        ],
+        resumeBlockedStageForChanges: async (workflowInstanceId: string) => {
+          if (workflowInstanceId === 'first-workflow') throw new Error('first resume failed');
+          resumed.push(workflowInstanceId);
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-27T00:00:00.000Z',
+  );
+  const message = applications.message;
+  if (message === undefined) throw new Error('Expected message work application');
+
+  await expect(
+    message(toWorkItemKey(id), { idempotencyKey: 'operator-2', body: 'Continue.' }),
+  ).resolves.toMatchObject({ status: 'accepted' });
+
+  expect(resumed).toEqual(['second-workflow']);
+});
+
 it('retries an eligible child only while its parent waits on that child watch', async () => {
   const retried: unknown[] = [];
   const parent = {

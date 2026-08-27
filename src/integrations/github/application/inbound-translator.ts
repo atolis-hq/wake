@@ -46,6 +46,7 @@ import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
+import { deliveryMarker } from './delivery-marker.js';
 import { commandContext } from './inbound-context.js';
 import { applyReviewSignal } from './inbound-review-signals.js';
 import { applyWatchGateVerdictSignal } from './inbound-watch-gate-signals.js';
@@ -222,7 +223,11 @@ export class InboundTranslator {
     try {
       if (owned.eventType === GitHubEventType.WorkObserved) await this.apply(owned);
       if (owned.eventType === GitHubEventType.CommentObserved) {
-        await this.recordConversationEntry(owned);
+        try {
+          await this.recordConversationEntry(owned);
+        } catch (error) {
+          console.error(`Conversation recording failed for ${owned.eventId}`, error);
+        }
         if (!(await this.suppressWorkItemEffects(owned)))
           await applyReviewSignal({
             event: owned,
@@ -275,7 +280,7 @@ export class InboundTranslator {
     );
     const externalId = observedCommentExternalId(event);
     const existing = await this.conversations.forWorkItem(correlation.workItemId);
-    const echoedEntryId = wakeDeliveryMarker(event.payload.body);
+    const echoedEntryId = deliveryMarker(event.payload.body);
     const echoedEntry = existing?.entries.find(
       (entry) =>
         entry.entryId === echoedEntryId && entry.origin.kind === ConversationOriginKind.Agent,
@@ -952,8 +957,4 @@ function observedCommentExternalId(
 ): string {
   const id = event.payload.raw.id;
   return typeof id === 'string' || typeof id === 'number' ? String(id) : event.eventId;
-}
-
-function wakeDeliveryMarker(body: string): string | undefined {
-  return /<!--\s*wake:delivery:([^\s>]+)\s*-->/.exec(body)?.[1];
 }

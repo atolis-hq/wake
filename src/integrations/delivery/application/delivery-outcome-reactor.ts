@@ -87,8 +87,9 @@ export class DeliveryOutcomeReactor {
     if (outcome === null) return null;
     try {
       await this.recordConversationRepresentation(event, delivery);
-    } catch {
+    } catch (error) {
       // Delivery reconciliation must continue if optional conversation provenance is unavailable.
+      console.error(`Conversation provenance recording failed for ${delivery.eventId}`, error);
     }
     const command = {
       workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),

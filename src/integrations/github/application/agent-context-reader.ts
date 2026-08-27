@@ -54,7 +54,7 @@ async function commentsForWorkItem(
   const conversation = await conversations?.forWorkItem(workItemId);
   if (conversation === null || conversation === undefined)
     return commentHistory.forWorkItem(workItemId, options);
-  return conversation.entries
+  const canonical = conversation.entries
     .filter(
       (entry) =>
         !entry.deleted &&
@@ -69,6 +69,17 @@ async function commentsForWorkItem(
         ? {}
         : { location: entry.origin.location }),
     }));
+  const historic = await commentHistory.forWorkItem(workItemId, options);
+  const canonicalKeys = new Set(
+    canonical.map((entry) => `${entry.author}\u0000${entry.occurredAt}\u0000${entry.body}`),
+  );
+  return [...historic, ...canonical]
+    .filter(
+      (entry) =>
+        !canonicalKeys.has(`${entry.author}\u0000${entry.occurredAt}\u0000${entry.body}`) ||
+        canonical.includes(entry),
+    )
+    .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
 }
 
 const maximumAgentContextCommentCharacters = 8_000;
