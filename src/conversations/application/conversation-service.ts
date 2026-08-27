@@ -4,7 +4,13 @@ import {
   type CommandContext,
   type EventJournal,
 } from '../../kernel/index.js';
-import type { CreateConversation, RecordConversationEntry } from '../contracts/commands.js';
+import type {
+  AssociateConversationResource,
+  CreateConversation,
+  RecordConversationEntry,
+  ReviseConversationEntry,
+  TombstoneConversationEntry,
+} from '../contracts/commands.js';
 import {
   ConversationEventType,
   type ConversationEventDraft,
@@ -22,13 +28,86 @@ export interface ConversationService {
     context: CommandContext,
   ): Promise<ConversationView>;
   record(command: RecordConversationEntry, context: CommandContext): Promise<ConversationView>;
+  associateResource(
+    command: AssociateConversationResource,
+    context: CommandContext,
+  ): Promise<ConversationView>;
+  revise(command: ReviseConversationEntry, context: CommandContext): Promise<ConversationView>;
+  tombstone(
+    command: TombstoneConversationEntry,
+    context: CommandContext,
+  ): Promise<ConversationView>;
   get(id: ConversationId): Promise<ConversationView | null>;
   forWorkItem(workItemId: CreateConversation['workItemId']): Promise<ConversationView | null>;
 }
 
 export function createConversationService(journal: EventJournal): ConversationService {
   const repository = new ConversationRepository(journal);
-  const change = async <Type extends keyof ConversationEventPayloads>(
+  const change = changeConversation(repository);
+  const create = createConversation(repository, change);
+  return {
+    create,
+    createForWorkItem: (workItemId, context) =>
+      create({ conversationId: conversationIdForWorkItem(workItemId), workItemId }, context),
+    async record(command, context) {
+      const existing = await repository.load(command.conversationId);
+      if (existing.view === null)
+        throw new Error(`Conversation ${command.conversationId} does not exist`);
+      if (existing.view.entries.some((entry) => entry.entryId === command.entryId))
+        return existing.view;
+      return change(command.conversationId, context, ConversationEventType.EntryRecorded, {
+        entryId: command.entryId,
+        body: command.body,
+        origin: command.origin,
+      });
+    },
+    async associateResource(command, context) {
+      const existing = await repository.load(command.conversationId);
+      if (existing.view === null)
+        throw new Error(`Conversation ${command.conversationId} does not exist`);
+      if (
+        existing.view.resources.some(
+          (resource) =>
+            resource.resourceId === command.resourceId && resource.threadId === command.threadId,
+        )
+      )
+        return existing.view;
+      return change(command.conversationId, context, ConversationEventType.ResourceAssociated, {
+        resourceId: command.resourceId,
+        ...(command.threadId === undefined ? {} : { threadId: command.threadId }),
+      });
+    },
+    async revise(command, context) {
+      const existing = await repository.load(command.conversationId);
+      if (
+        existing.view === null ||
+        !existing.view.entries.some((entry) => entry.entryId === command.entryId)
+      )
+        throw new Error(`Conversation entry ${command.entryId} does not exist`);
+      return change(command.conversationId, context, ConversationEventType.EntryRevised, {
+        entryId: command.entryId,
+        body: command.body,
+      });
+    },
+    async tombstone(command, context) {
+      const existing = await repository.load(command.conversationId);
+      if (
+        existing.view === null ||
+        !existing.view.entries.some((entry) => entry.entryId === command.entryId)
+      )
+        throw new Error(`Conversation entry ${command.entryId} does not exist`);
+      return change(command.conversationId, context, ConversationEventType.EntryTombstoned, {
+        entryId: command.entryId,
+      });
+    },
+    get: async (id) => (await repository.load(id)).view,
+    forWorkItem: async (workItemId) =>
+      (await repository.load(conversationIdForWorkItem(workItemId))).view,
+  };
+}
+
+function changeConversation(repository: ConversationRepository) {
+  return async <Type extends keyof ConversationEventPayloads>(
     id: ConversationId,
     context: CommandContext,
     eventType: Type,
@@ -51,7 +130,13 @@ export function createConversationService(journal: EventJournal): ConversationSe
     if (result.view === null) throw new Error(`Conversation ${id} was not created`);
     return result.view;
   };
-  const create = async (command: CreateConversation, context: CommandContext) => {
+}
+
+function createConversation(
+  repository: ConversationRepository,
+  change: ReturnType<typeof changeConversation>,
+) {
+  return async (command: CreateConversation, context: CommandContext) => {
     const existing = await repository.load(command.conversationId);
     return (
       existing.view ??
@@ -59,25 +144,5 @@ export function createConversationService(journal: EventJournal): ConversationSe
         workItemId: command.workItemId,
       })
     );
-  };
-  return {
-    create,
-    createForWorkItem: (workItemId, context) =>
-      create({ conversationId: conversationIdForWorkItem(workItemId), workItemId }, context),
-    async record(command, context) {
-      const existing = await repository.load(command.conversationId);
-      if (existing.view === null)
-        throw new Error(`Conversation ${command.conversationId} does not exist`);
-      if (existing.view.entries.some((entry) => entry.entryId === command.entryId))
-        return existing.view;
-      return change(command.conversationId, context, ConversationEventType.EntryRecorded, {
-        entryId: command.entryId,
-        body: command.body,
-        origin: command.origin,
-      });
-    },
-    get: async (id) => (await repository.load(id)).view,
-    forWorkItem: async (workItemId) =>
-      (await repository.load(conversationIdForWorkItem(workItemId))).view,
   };
 }

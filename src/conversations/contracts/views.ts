@@ -24,11 +24,18 @@ export interface ConversationEntryView {
   readonly body: string;
   readonly occurredAt: string;
   readonly origin: ConversationEntryOrigin;
+  readonly deleted: boolean;
+  readonly revisions: readonly { readonly body: string; readonly occurredAt: string }[];
+}
+
+export interface ConversationResourceView {
+  readonly resourceId: string;
+  readonly threadId?: string | undefined;
 }
 
 export interface ConversationView {
   readonly conversationId: ConversationId;
   readonly workItemId: WorkItemId;
   readonly entries: readonly ConversationEntryView[];
-  readonly resources: readonly string[];
+  readonly resources: readonly ConversationResourceView[];
 }

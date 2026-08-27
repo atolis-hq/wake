@@ -14,16 +14,28 @@ import { ConversationOriginKind } from './vocabulary.js';
 
 export const ConversationEventType = {
   Created: 'conversation.created',
+  ResourceAssociated: 'conversation.resource-associated',
   EntryRecorded: 'conversation.entry-recorded',
+  EntryRevised: 'conversation.entry-revised',
+  EntryTombstoned: 'conversation.entry-tombstoned',
 } as const;
 
 export interface ConversationEventPayloads {
   readonly [ConversationEventType.Created]: { readonly workItemId: WorkItemId };
+  readonly [ConversationEventType.ResourceAssociated]: {
+    readonly resourceId: string;
+    readonly threadId?: string | undefined;
+  };
   readonly [ConversationEventType.EntryRecorded]: {
     readonly entryId: string;
     readonly body: string;
     readonly origin: ConversationEntryOrigin;
   };
+  readonly [ConversationEventType.EntryRevised]: {
+    readonly entryId: string;
+    readonly body: string;
+  };
+  readonly [ConversationEventType.EntryTombstoned]: { readonly entryId: string };
 }
 
 export type ConversationEvent = EventUnion<ConversationEventPayloads, ConversationStreamRef>;
@@ -68,9 +80,26 @@ const schema = z.discriminatedUnion('eventType', [
     payload: z.object({ workItemId: brandedStringSchema(workItemId) }).strict(),
   }),
   eventEnvelopeSchema.extend({
+    eventType: z.literal(ConversationEventType.ResourceAssociated),
+    stream,
+    payload: z
+      .object({ resourceId: z.string().min(1), threadId: z.string().min(1).optional() })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
     eventType: z.literal(ConversationEventType.EntryRecorded),
     stream,
     payload: z.object({ entryId: z.string().min(1), body: z.string(), origin }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ConversationEventType.EntryRevised),
+    stream,
+    payload: z.object({ entryId: z.string().min(1), body: z.string() }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ConversationEventType.EntryTombstoned),
+    stream,
+    payload: z.object({ entryId: z.string().min(1) }).strict(),
   }),
 ]);
 

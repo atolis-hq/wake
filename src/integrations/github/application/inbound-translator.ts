@@ -262,6 +262,14 @@ export class InboundTranslator {
     const correlation = await this.resources.primaryCorrelation(resource.resourceId);
     if (correlation === null) return;
     const conversationId = conversationIdForWorkItem(correlation.workItemId);
+    await this.conversations.associateResource(
+      {
+        conversationId,
+        resourceId: resource.resourceId,
+        threadId: resource.externalKey.key,
+      },
+      commandContext(event),
+    );
     await this.conversations.record(
       {
         conversationId,

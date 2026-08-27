@@ -13,3 +13,20 @@ export interface RecordConversationEntry {
   readonly body: string;
   readonly origin: ConversationEntryOrigin;
 }
+
+export interface AssociateConversationResource {
+  readonly conversationId: ConversationId;
+  readonly resourceId: string;
+  readonly threadId?: string | undefined;
+}
+
+export interface ReviseConversationEntry {
+  readonly conversationId: ConversationId;
+  readonly entryId: string;
+  readonly body: string;
+}
+
+export interface TombstoneConversationEntry {
+  readonly conversationId: ConversationId;
+  readonly entryId: string;
+}
