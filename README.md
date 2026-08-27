@@ -96,6 +96,9 @@ For more detail, see [docs/vision.md](docs/vision.md) and
 - **Event-sourced and restart-safe.** The durable record is an append-only event
   log; projections can be rebuilt, and the loop can crash and resume without
   losing its place.
+- **Canonical work discussion.** GitHub comments and Wake agent reports are
+  recorded in one immutable conversation per work item, preserving origin and
+  context independently of the surface where they appeared.
 - **Local and inspectable.** Everything lives in a plain-file Wake home
   directory: `config.yaml`, `config.workflows.yaml`, `prompts/`, `SETUP.md`, and
   `workspaces/` at the top level for
@@ -126,8 +129,9 @@ Reviewing, approving, and merging happen exactly where they already do today -
 nothing new to learn, no separate dashboard to babysit.
 
 A local control-plane UI exists for operators who want to watch runs, inspect
-events, or resume a session directly, but it's a window into the same state -
-not a required part of the workflow. The API and UI require an operator login:
+events and the work item's conversation timeline, or resume a session directly,
+but it's a window into the same state - not a required part of the workflow.
+The API and UI require an operator login:
 run `wake ui token` to print a single-use pairing link or temporary code, then
 enter it in the UI. Successful logins persist for two years across browser and
 Wake-container restarts. Use `wake ui token set <key>` to replace the durable
