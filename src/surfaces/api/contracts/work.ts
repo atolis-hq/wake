@@ -47,6 +47,11 @@ export interface WorkDetailResponse {
   };
 }
 
+export interface ConversationMessageRequest {
+  readonly idempotencyKey: string;
+  readonly body: string;
+}
+
 export interface PullRequestResponse {
   readonly resourceId: string;
   readonly state: string;

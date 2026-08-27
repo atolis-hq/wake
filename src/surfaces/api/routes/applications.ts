@@ -8,6 +8,7 @@ import type {
   CommandsResponse,
   ConfigurationResponse,
   ControlPlaneStatusResponse,
+  ConversationMessageRequest,
   HealthResponse,
   MetricsResponse,
   ResourceItemResponse,
@@ -84,6 +85,7 @@ export interface ApiApplications {
     delete?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     retry?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     extend?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
+    message?(key: string, command: ConversationMessageRequest): Promise<ApiCommandResult>;
   };
   readonly resources: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<ResourceItemResponse>>;

@@ -1,5 +1,5 @@
 import { RunStatus } from '../../../execution/index.js';
-import type { RunnerResponse } from '../contracts/index.js';
+import type { ConversationMessageRequest, RunnerResponse } from '../contracts/index.js';
 import type { ApiHttpResponse } from '../http-server.js';
 import type {
   ApiApplications,
@@ -35,10 +35,10 @@ export async function dispatchCommand(
     body,
   );
   if (ambiguityResolution !== undefined) return ambiguityResolution;
+  const work = await dispatchWorkCommand(applications, url.pathname, body);
+  if (work !== undefined) return work;
   const request = commandRequest(body);
   if (isHttpResponse(request)) return request;
-  const work = await dispatchWorkCommand(applications, url.pathname, request);
-  if (work !== undefined) return work;
   const control = await dispatchControlCommand(applications, url.pathname, request);
   if (control !== undefined) return control;
   const runner = await dispatchRunnerCommand(applications, url.pathname, request);
@@ -65,21 +65,43 @@ async function dispatchAmbiguousRunResolution(
 async function dispatchWorkCommand(
   applications: ApiApplications,
   pathname: string,
-  request: ApiCommandRequest,
+  body: unknown,
 ): Promise<ApiHttpResponse | undefined> {
   const match =
-    /^\/api\/v1\/work-items\/([^/]+)\/commands\/(freeze|unfreeze|delete|retry|extend)$/.exec(
+    /^\/api\/v1\/work-items\/([^/]+)\/commands\/(freeze|unfreeze|delete|retry|extend|message)$/.exec(
       pathname,
     );
   if (match === null) return undefined;
   const decoded = decodePathSegment(match[1]!);
   if (decoded instanceof ApiPathError) return invalidPath(decoded.message);
+  if (match[2] === 'message') {
+    const request = conversationMessageRequest(body);
+    if (isHttpResponse(request)) return request;
+    const operation = applications.work.message;
+    return operation === undefined
+      ? unavailable('message', (await applications.work.detail(decoded))?.data)
+      : accepted(await operation(decoded, request), applications.now(), 202);
+  }
+  const request = commandRequest(body);
+  if (isHttpResponse(request)) return request;
   const name = match[2]! as WorkCommandName;
   const operation = applications.work[name];
   if (operation === undefined)
     return unavailable(name, (await applications.work.detail(decoded))?.data);
   const status = name === 'freeze' || name === 'unfreeze' ? 200 : 202;
   return accepted(await operation(decoded, request), applications.now(), status);
+}
+
+function conversationMessageRequest(body: unknown): ConversationMessageRequest | ApiHttpResponse {
+  if (!isObject(body)) return invalidRequest('', 'A JSON object is required');
+  if (Object.keys(body).some((key) => key !== 'idempotencyKey' && key !== 'body'))
+    return invalidRequest('', 'The command body contains unknown fields');
+  const command = commandRequest({ idempotencyKey: body.idempotencyKey });
+  if (isHttpResponse(command)) return command;
+  if (typeof body.body !== 'string' || body.body.trim() === '')
+    return invalidRequest('body', 'Must be a non-empty string');
+  if (body.body.length > 20_000) return invalidRequest('body', 'Must be at most 20000 characters');
+  return { ...command, body: body.body };
 }
 
 async function dispatchControlCommand(
@@ -182,5 +204,11 @@ function runResolutionRequest(body: unknown): ApiRunResolutionRequest | ApiHttpR
 }
 
 function isHttpResponse(value: unknown): value is ApiHttpResponse {
-  return typeof value === 'object' && value !== null && 'body' in value;
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'body' in value &&
+    'status' in value &&
+    typeof value.status === 'number'
+  );
 }

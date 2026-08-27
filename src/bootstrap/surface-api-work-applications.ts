@@ -1,5 +1,13 @@
-import { pullRequestProjection, type PullRequestView } from '../activities/index.js';
-import { ConversationOriginKind, type ConversationStreamKind } from '../conversations/index.js';
+import {
+  BuiltInActivityName,
+  pullRequestProjection,
+  type PullRequestView,
+} from '../activities/index.js';
+import {
+  conversationIdForWorkItem,
+  ConversationOriginKind,
+  type ConversationStreamKind,
+} from '../conversations/index.js';
 import {
   executionProjection,
   runsByWorkflowInstanceProjection,
@@ -155,7 +163,38 @@ export function createSurfaceWorkApplications(
       }
       return accepted(command.idempotencyKey, now());
     },
+    async message(key, command) {
+      const id = decodeWorkItemId(key);
+      if (id === undefined) throw new Error('Work item not found');
+      const context = commandContext(command.idempotencyKey, now);
+      await root.conversations.createForWorkItem(id, context);
+      await root.conversations.record(
+        {
+          conversationId: conversationIdForWorkItem(id),
+          entryId: `control-plane:${command.idempotencyKey}`,
+          body: command.body,
+          origin: { kind: ConversationOriginKind.ControlPlane, actorId: context.actor.id },
+        },
+        context,
+      );
+      await resumeAgentStages(root, id, context);
+      return accepted(command.idempotencyKey, now());
+    },
   };
+}
+
+async function resumeAgentStages(
+  root: CompositionRoot,
+  itemId: ReturnType<typeof workItemId>,
+  context: ReturnType<typeof commandContext>,
+): Promise<void> {
+  const workflows = await root.orchestration.listForWorkItem(itemId);
+  for (const workflow of workflows) {
+    if (workflow.currentStage === undefined) continue;
+    const definition = root.config.orchestration.workflows[workflow.workflowName];
+    if (definition?.stages[workflow.currentStage]?.activity !== BuiltInActivityName.Agent) continue;
+    await root.orchestration.resumeBlockedStageForChanges(workflow.workflowInstanceId, context);
+  }
 }
 
 async function workDetail(
