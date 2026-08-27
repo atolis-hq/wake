@@ -144,8 +144,12 @@ export class AgentRunPublicationReactor {
             workflowInstanceId: run.workflowInstanceId,
             activationId: run.activationId,
             resourceId: resource.resourceId,
-            conversationId: conversationIdForWorkItem(workflow.workItemId),
-            conversationEntryId: `agent-run:${run.runId}`,
+            ...(this.dependencies.conversations === undefined
+              ? {}
+              : {
+                  conversationId: conversationIdForWorkItem(workflow.workItemId),
+                  conversationEntryId: `agent-run:${run.runId}`,
+                }),
             report,
           },
         }),
