@@ -41,8 +41,8 @@ export interface WorkDetailResponse {
       readonly occurredAt: string;
       readonly origin: string;
       readonly actorId: string;
-      readonly runId?: string;
-      readonly stage?: string;
+      readonly runId?: string | undefined;
+      readonly stage?: string | undefined;
     }[];
   };
 }
