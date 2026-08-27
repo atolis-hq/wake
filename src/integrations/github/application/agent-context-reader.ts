@@ -4,7 +4,7 @@ import {
   type AgentContextPullRequest,
   type AgentContextReader,
 } from '../../../activities/index.js';
-import type { ConversationService } from '../../../conversations/index.js';
+import { ConversationOriginKind, type ConversationService } from '../../../conversations/index.js';
 import type { EventJournal } from '../../../kernel/index.js';
 import {
   BuiltInResourceKind,
@@ -54,11 +54,21 @@ async function commentsForWorkItem(
   const conversation = await conversations?.forWorkItem(workItemId);
   if (conversation === null || conversation === undefined)
     return commentHistory.forWorkItem(workItemId, options);
-  return conversation.entries.map((entry) => ({
-    author: entry.origin.actorId,
-    occurredAt: entry.occurredAt,
-    body: entry.body,
-  }));
+  return conversation.entries
+    .filter(
+      (entry) =>
+        !entry.deleted &&
+        (options?.observedSince === undefined || entry.occurredAt > options.observedSince),
+    )
+    .map((entry) => ({
+      author: entry.origin.actorId,
+      occurredAt: entry.occurredAt,
+      body: entry.body,
+      ...(entry.origin.kind !== ConversationOriginKind.External ||
+      entry.origin.location === undefined
+        ? {}
+        : { location: entry.origin.location }),
+    }));
 }
 
 const maximumAgentContextCommentCharacters = 8_000;

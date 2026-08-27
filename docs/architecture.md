@@ -36,8 +36,10 @@ or workflow shape.
   work into provider-specific API calls, so a workflow and agent prompt do not
   need to know a particular issue tracker, chat system, or pull-request API.
 - **Conversation is a durable work context, not a provider thread.** A work
-  item has one canonical, append-only conversation. Provider observations and
-  agent reports record entries there with their origin; adapters retain control
+item has one canonical, append-only conversation. Provider observations and
+agent reports record entries there with their origin. External entries retain
+their source resource/thread and, when supplied by the provider, inline code
+location. Adapters retain control
   of provider-specific publication and workflow policy retains control of
   whether an entry resumes work.
 - **Recovery and idempotency are normal paths.** Leases, activation claims,

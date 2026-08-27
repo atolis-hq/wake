@@ -38,6 +38,46 @@ it('rethrows an unexpected operator retry error', async () => {
   await expect(retry(toWorkItemKey(id), { idempotencyKey: 'operator-1' })).rejects.toBe(unexpected);
 });
 
+it('rejects a control-plane message for a missing WorkItem before creating conversation facts', async () => {
+  const applications = createSurfaceWorkApplications(
+    {
+      work: { get: async () => null },
+      conversations: {
+        createForWorkItem: async () => {
+          throw new Error('Conversation facts must not be written');
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+  const message = applications.message;
+  if (message === undefined) throw new Error('Expected message work application');
+
+  await expect(
+    message(toWorkItemKey(id), { idempotencyKey: 'operator-1', body: 'Please continue.' }),
+  ).rejects.toThrow('Work item not found');
+});
+
+it('rejects a control-plane message for a deleted WorkItem before resuming a workflow', async () => {
+  const applications = createSurfaceWorkApplications(
+    {
+      work: { get: async () => ({ deleted: true }) },
+      conversations: {
+        createForWorkItem: async () => {
+          throw new Error('Conversation facts must not be written');
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+  const message = applications.message;
+  if (message === undefined) throw new Error('Expected message work application');
+
+  await expect(
+    message(toWorkItemKey(id), { idempotencyKey: 'operator-1', body: 'Please continue.' }),
+  ).rejects.toThrow('Work item is deleted');
+});
+
 it('retries an eligible child only while its parent waits on that child watch', async () => {
   const retried: unknown[] = [];
   const parent = {

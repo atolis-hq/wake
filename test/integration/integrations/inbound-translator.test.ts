@@ -573,6 +573,53 @@ describe('InboundTranslator', () => {
 
     expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toHaveLength(1);
   });
+
+  it('creates a missing conversation before recording a correlated inbound comment', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const conversations = createConversationService(fixture.world.journal);
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations,
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:988',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:988',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: 'Please continue.',
+        revision: fixture.world.clock.now().toISOString(),
+        location: { path: 'src/current.ts', line: 41, side: 'RIGHT' },
+        actor: { id: 'maintainer', kind: 'human' },
+        raw: { id: 988 },
+      },
+    });
+    await fixture.world.journal.append(event.stream, 0, [event]);
+
+    await translator.runOnce();
+
+    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
+      {
+        entryId: event.eventId,
+        body: 'Please continue.',
+        origin: { location: { path: 'src/current.ts', line: 41, side: 'RIGHT' } },
+      },
+    ]);
+  });
 });
 
 describe('InboundTranslator conclusion', () => {

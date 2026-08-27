@@ -17,6 +17,13 @@ export type ConversationEntryOrigin =
       readonly resourceId: string;
       readonly threadId: string;
       readonly messageId: string;
+      readonly location?:
+        | {
+            readonly path: string;
+            readonly line: number;
+            readonly side: 'LEFT' | 'RIGHT';
+          }
+        | undefined;
     };
 
 export interface ConversationEntryView {

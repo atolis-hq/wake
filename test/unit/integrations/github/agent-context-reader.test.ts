@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest';
 import { PullRequestCheckState } from '../../../../src/activities/index.js';
+import {
+  conversationIdForWorkItem,
+  createConversationService,
+} from '../../../../src/conversations/index.js';
 import { integrationStream } from '../../../../src/integrations/contracts/streams.js';
 import { createGitHubAgentContextReader } from '../../../../src/integrations/github/application/agent-context-reader.js';
 import { GitHubEventType } from '../../../../src/integrations/github/contracts/events.js';
@@ -316,6 +320,73 @@ it("retains an earlier stage's Wake handoff after a later stage posts its own co
   expect(context.comments.map((comment) => comment.body).join('\n')).toContain(
     'Unable to review: no plan was provided.',
   );
+});
+
+it('uses only active conversation entries after the resume cutoff and preserves inline locations', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'resume with current inline feedback' });
+  const conversations = createConversationService(world.journal);
+  const conversationId = conversationIdForWorkItem(work.workItemId);
+  const context = {
+    commandId: 'conversation-context',
+    correlationId: correlationId('conversation-context'),
+    occurredAt: '2026-08-17T00:00:00.000Z',
+    actor: { kind: 'system' as const, id: 'test' },
+  };
+  await conversations.createForWorkItem(work.workItemId, context);
+  await conversations.record(
+    {
+      conversationId,
+      entryId: 'before-cutoff',
+      body: 'Do not include this earlier message.',
+      origin: { kind: 'control-plane', actorId: 'operator' },
+    },
+    context,
+  );
+  await conversations.record(
+    {
+      conversationId,
+      entryId: 'inline-feedback',
+      body: 'Retain this inline feedback.',
+      origin: {
+        kind: 'external',
+        adapter: GitHubAdapter,
+        actorId: 'reviewer',
+        resourceId: 'resource-00000000000000000000000040',
+        threadId: 'atolis-hq/wake#40',
+        messageId: '40',
+        location: { path: 'src/current.ts', line: 41, side: 'RIGHT' },
+      },
+    },
+    { ...context, commandId: 'inline-feedback', occurredAt: '2026-08-17T01:00:00.000Z' },
+  );
+  await conversations.record(
+    {
+      conversationId,
+      entryId: 'deleted-feedback',
+      body: 'Do not include this deleted message.',
+      origin: { kind: 'control-plane', actorId: 'operator' },
+    },
+    { ...context, commandId: 'deleted-feedback', occurredAt: '2026-08-17T01:01:00.000Z' },
+  );
+  await conversations.tombstone(
+    { conversationId, entryId: 'deleted-feedback' },
+    { ...context, commandId: 'delete-feedback', occurredAt: '2026-08-17T01:02:00.000Z' },
+  );
+
+  const reader = createGitHubAgentContextReader(world.journal, world.resources, {}, conversations);
+  const agentContext = await reader.forWorkItem(work.workItemId, {
+    observedSince: '2026-08-17T00:30:00.000Z',
+  });
+
+  expect(agentContext.comments).toEqual([
+    {
+      author: 'reviewer',
+      occurredAt: '2026-08-17T01:00:00.000Z',
+      body: 'Retain this inline feedback.',
+      location: { path: 'src/current.ts', line: 41, side: 'RIGHT' },
+    },
+  ]);
 });
 
 async function appendConfirmedAgentRunComment(

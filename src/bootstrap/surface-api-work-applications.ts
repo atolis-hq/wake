@@ -166,6 +166,9 @@ export function createSurfaceWorkApplications(
     async message(key, command) {
       const id = decodeWorkItemId(key);
       if (id === undefined) throw new Error('Work item not found');
+      const work = await root.work.get(id);
+      if (work === null) throw new Error('Work item not found');
+      if (work.deleted === true) throw new Error('Work item is deleted');
       const context = commandContext(command.idempotencyKey, now);
       await root.conversations.createForWorkItem(id, context);
       await root.conversations.record(

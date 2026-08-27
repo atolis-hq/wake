@@ -53,8 +53,12 @@ namespace and throw if an event in their own namespace is malformed.
   it into typed Wake facts.
 - Record a conversation entry only through `conversations`; provider adapters
   first emit their own observation and then submit the provider-neutral
-  conversation command after work correlation. Conversation entries do not
-  choose outbound targets or workflow transitions.
+conversation command after work correlation. Conversation entries do not
+choose outbound targets or workflow transitions.
+- Inbound translation creates the deterministic conversation stream when a
+  correlated historical WorkItem does not yet have one. Agent context excludes
+  tombstoned entries, honors its resume cutoff, and preserves provider-supplied
+  inline locations.
 - Express cross-module links with the exported stream identifiers and relation
   vocabulary, not magic strings or copied provider locators.
 - Register production projections in Bootstrap so replay and normal operation
