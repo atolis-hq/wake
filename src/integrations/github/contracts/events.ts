@@ -29,6 +29,8 @@ export const GitHubEventType = {
   InboundTranslationRetried: 'integration.github.inbound-translation-retried',
   InboundTranslationRecovered: 'integration.github.inbound-translation-recovered',
   InboundTranslationFailed: 'integration.github.inbound-translation-failed',
+  ConversationRecordDeferred: 'integration.github.conversation-record-deferred',
+  ConversationRecordRecovered: 'integration.github.conversation-record-recovered',
 } as const;
 
 export interface ExternalWorkObservedPayload {
@@ -153,6 +155,11 @@ interface InboundTranslationRecoveredPayload {
   readonly sourceEventId: string;
 }
 
+interface ConversationRecordPayload {
+  readonly adapter: string;
+  readonly sourceEventId: string;
+}
+
 export interface GitHubEventPayloads {
   readonly [GitHubEventType.WorkObserved]: ExternalWorkObservedPayload;
   readonly [GitHubEventType.CommentObserved]: GitHubCommentObservedPayload;
@@ -162,6 +169,8 @@ export interface GitHubEventPayloads {
   readonly [GitHubEventType.InboundTranslationRetried]: InboundTranslationRetryPayload;
   readonly [GitHubEventType.InboundTranslationRecovered]: InboundTranslationRecoveredPayload;
   readonly [GitHubEventType.InboundTranslationFailed]: InboundTranslationFailurePayload;
+  readonly [GitHubEventType.ConversationRecordDeferred]: ConversationRecordPayload;
+  readonly [GitHubEventType.ConversationRecordRecovered]: ConversationRecordPayload;
 }
 
 export type GitHubAdapterEvent = EventUnion<GitHubEventPayloads, IntegrationStreamRef>;
@@ -201,6 +210,16 @@ const authorizationSchema = z.discriminatedUnion('source', [
   z.object({ source: z.literal(ReviewerAuthorizationSource.None) }).strict(),
 ]);
 const eventSchema = z.discriminatedUnion('eventType', [
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(GitHubEventType.ConversationRecordDeferred),
+    stream: streamSchema,
+    payload: z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(GitHubEventType.ConversationRecordRecovered),
+    stream: streamSchema,
+    payload: z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
+  }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(GitHubEventType.WorkObserved),
     stream: streamSchema,

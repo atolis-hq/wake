@@ -25,9 +25,14 @@ export interface CommentHistoryEntry {
 }
 
 const sourceMessageIds = new WeakMap<object, string>();
+const deliveryIntentIds = new WeakMap<object, string>();
 
 export function sourceMessageIdForComment(entry: CommentHistoryEntry): string | undefined {
   return sourceMessageIds.get(entry);
+}
+
+export function deliveryIntentIdForComment(entry: CommentHistoryEntry): string | undefined {
+  return deliveryIntentIds.get(entry);
 }
 
 export interface CommentHistoryReader {
@@ -283,11 +288,13 @@ function syntheticComment(
   occurredAt: string,
   publicUiUrl: string | undefined,
 ): CommentHistoryEntry {
-  return {
+  const entry = {
     author: UnknownGitHubIdentity,
     occurredAt,
     body: deliveredCommentBody(intent, publicUiUrl),
   };
+  deliveryIntentIds.set(entry, intent.eventId);
+  return entry;
 }
 
 function deliveredCommentBody(

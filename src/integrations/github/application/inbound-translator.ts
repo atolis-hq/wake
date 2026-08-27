@@ -15,7 +15,6 @@ import {
   correlationId,
   createEventDraft,
   EventActorKind,
-  eventId,
   EventSourceKind,
   UlidIdGenerator,
   WrongExpectedSequenceError,
@@ -43,12 +42,10 @@ import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rul
 import type { WorkConclusion, WorkflowRouter } from '../../contracts/provider.js';
 import { deliveryStream, integrationStream } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
-import { DeliveryResultKind } from '../../delivery/contracts/vocabulary.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
-import { deliveryMarker } from './delivery-marker.js';
 import { commandContext } from './inbound-context.js';
 import { applyReviewSignal } from './inbound-review-signals.js';
 import { applyWatchGateVerdictSignal } from './inbound-watch-gate-signals.js';
@@ -93,10 +90,6 @@ interface InboundTranslatorDependencies {
   readonly intake?: readonly GitHubIntakeRuleConfig[];
   readonly conclusion?: WorkConclusion;
   readonly conversations?: ConversationService;
-}
-
-class ConversationRecordingFailure {
-  constructor(readonly cause: unknown) {}
 }
 
 export class InboundTranslator {
@@ -171,6 +164,7 @@ export class InboundTranslator {
     await this.resources.retryPendingWorkCorrelations();
     await this.applyDeferredExternalOutcomes();
     const checkpoint = `reactor:integration.${this.adapter}.inbound`;
+    await this.retryPendingConversationRecords();
     await this.retryPendingTranslations();
     const position = await this.checkpoints.load(checkpoint);
     const events = await this.journal.readAll(position, limit);
@@ -248,15 +242,76 @@ export class InboundTranslator {
         });
         try {
           await this.recordConversationEntry(owned);
-        } catch (error) {
-          throw new ConversationRecordingFailure(error);
+        } catch {
+          await this.recordConversationDeferred(owned);
         }
       }
       if (await this.retryRecorded(owned.eventId)) await this.recordTranslationRecovery(owned);
     } catch (error) {
-      if (error instanceof ConversationRecordingFailure) throw error.cause;
       await this.recordTranslationFailure(owned, error);
     }
+  }
+
+  private async retryPendingConversationRecords(): Promise<void> {
+    const stream = integrationStream(this.adapter);
+    const events = (await this.journal!.readStream(stream))
+      .map(selectGitHubAdapterEvent)
+      .filter((event): event is GitHubAdapterEvent => event !== null);
+    const recovered = new Set(
+      events
+        .filter((event) => event.eventType === GitHubEventType.ConversationRecordRecovered)
+        .map((event) => event.payload.sourceEventId),
+    );
+    for (const deferred of events.filter(
+      (event) => event.eventType === GitHubEventType.ConversationRecordDeferred,
+    )) {
+      if (recovered.has(deferred.payload.sourceEventId)) continue;
+      const source = events.find((event) => event.eventId === deferred.payload.sourceEventId);
+      if (source?.eventType !== GitHubEventType.CommentObserved) continue;
+      try {
+        await this.recordConversationEntry(source);
+      } catch {
+        continue;
+      }
+      await this.appendConversationRecordFact(GitHubEventType.ConversationRecordRecovered, source);
+    }
+  }
+
+  private async recordConversationDeferred(
+    event: Extract<
+      GitHubAdapterEvent,
+      { readonly eventType: typeof GitHubEventType.CommentObserved }
+    >,
+  ): Promise<void> {
+    await this.appendConversationRecordFact(GitHubEventType.ConversationRecordDeferred, event);
+  }
+
+  private async appendConversationRecordFact(
+    eventType:
+      | typeof GitHubEventType.ConversationRecordDeferred
+      | typeof GitHubEventType.ConversationRecordRecovered,
+    source: Extract<
+      GitHubAdapterEvent,
+      { readonly eventType: typeof GitHubEventType.CommentObserved }
+    >,
+  ): Promise<void> {
+    const stream = integrationStream(this.adapter);
+    const eventId = `github:${eventType}:${this.adapter}:${source.eventId}`;
+    const existing = await this.journal!.readStream(stream);
+    if (existing.some((event) => event.eventId === eventId)) return;
+    await this.journal!.append(stream, existing.length, [
+      createEventDraft({
+        eventId,
+        eventType,
+        occurredAt: source.occurredAt,
+        correlationId: source.correlationId,
+        causationId: source.eventId,
+        actor: { kind: EventActorKind.Integration, id: this.adapter },
+        source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
+        stream,
+        payload: { adapter: this.adapter, sourceEventId: source.eventId },
+      }),
+    ]);
   }
 
   // Conversation reconciliation keeps all entry identity decisions in one ordered command path.
@@ -293,34 +348,6 @@ export class InboundTranslator {
         entry.origin.resourceId === resource.resourceId &&
         entry.origin.messageId === externalId,
     );
-    if (isRetractedComment(event)) {
-      if (priorEntry !== undefined && !priorEntry.deleted)
-        await this.conversations.tombstone(
-          { conversationId, entryId: priorEntry.entryId },
-          commandContext(event),
-        );
-      return;
-    }
-    const echoedEntryId = deliveryMarker(event.payload.body);
-    const echoedEntry = existing?.entries.find(
-      (entry) =>
-        entry.entryId === echoedEntryId && entry.origin.kind === ConversationOriginKind.Agent,
-    );
-    if (
-      echoedEntry !== undefined &&
-      (await this.isConfirmedDeliveryRepresentation(echoedEntry.entryId, externalId))
-    ) {
-      await this.conversations.recordRepresentation(
-        {
-          conversationId,
-          entryId: echoedEntry.entryId,
-          resourceId: resource.resourceId,
-          externalId,
-        },
-        commandContext(event),
-      );
-      return;
-    }
     if (
       existing?.entries.some((entry) =>
         entry.representations.some(
@@ -362,29 +389,6 @@ export class InboundTranslator {
       },
       commandContext(event),
     );
-  }
-
-  private async isConfirmedDeliveryRepresentation(
-    intentEventId: string,
-    externalId: string,
-  ): Promise<boolean> {
-    let events;
-    try {
-      events = await this.journal!.readStream(deliveryStream(eventId(intentEventId)));
-    } catch {
-      return false;
-    }
-    return events.some((event) => {
-      const delivery = selectDeliveryEvent(event);
-      return (
-        delivery !== null &&
-        (delivery.eventType === DeliveryEventType.Confirmed ||
-          (delivery.eventType === DeliveryEventType.Reconciled &&
-            delivery.payload.result === DeliveryResultKind.Confirmed)) &&
-        delivery.payload.intentEventId === intentEventId &&
-        (delivery.payload as { readonly externalId?: string }).externalId === externalId
-      );
-    });
   }
 
   private async failureRecorded(sourceEventId: string): Promise<boolean> {
@@ -998,13 +1002,4 @@ function observedCommentExternalId(
 ): string {
   const id = event.payload.raw.id;
   return typeof id === 'string' || typeof id === 'number' ? String(id) : event.eventId;
-}
-
-function isRetractedComment(
-  event: Extract<
-    GitHubAdapterEvent,
-    { readonly eventType: typeof GitHubEventType.CommentObserved }
-  >,
-): boolean {
-  return event.payload.raw.deleted === true;
 }

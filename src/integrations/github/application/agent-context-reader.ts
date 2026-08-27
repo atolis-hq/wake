@@ -22,10 +22,10 @@ import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import {
   createCommentHistoryReader,
+  deliveryIntentIdForComment,
   sourceMessageIdForComment,
   type CommentHistoryReaderOptions,
 } from './comment-history-reader.js';
-import { deliveryMarker } from './delivery-marker.js';
 
 export function createGitHubAgentContextReader(
   journal: EventJournal,
@@ -78,6 +78,7 @@ async function commentsForWorkItem(
       ...(entry.origin.kind !== ConversationOriginKind.External
         ? {}
         : { sourceMessageId: entry.origin.messageId }),
+      deliveryIntentId: undefined,
     }));
   const representedMessageIds = new Set(
     conversation.entries.flatMap((entry) => [
@@ -85,22 +86,32 @@ async function commentsForWorkItem(
       ...entry.representations.map((representation) => representation.externalId),
     ]),
   );
-  const canonicalAgentEntryIds = new Set(
+  const representedAgentEntryIds = new Set(
     conversation.entries.flatMap((entry) =>
-      entry.origin.kind === ConversationOriginKind.Agent ? [entry.entryId] : [],
+      entry.origin.kind === ConversationOriginKind.Agent && entry.representations.length > 0
+        ? [entry.entryId]
+        : [],
     ),
   );
   const historic = (await commentHistory.forWorkItem(workItemId, options))
-    .map((entry) => ({ ...entry, sourceMessageId: sourceMessageIdForComment(entry) }))
+    .map((entry) => ({
+      ...entry,
+      sourceMessageId: sourceMessageIdForComment(entry),
+      deliveryIntentId: deliveryIntentIdForComment(entry),
+    }))
     .filter(
       (entry) =>
         (entry.sourceMessageId === undefined ||
           !representedMessageIds.has(entry.sourceMessageId)) &&
-        !canonicalAgentEntryIds.has(deliveryMarker(entry.body) ?? ''),
+        (entry.deliveryIntentId === undefined ||
+          !representedAgentEntryIds.has(entry.deliveryIntentId)),
     );
   return [...historic, ...canonical]
     .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
-    .map(({ sourceMessageId: _sourceMessageId, ...entry }) => entry);
+    .map(
+      ({ sourceMessageId: _sourceMessageId, deliveryIntentId: _deliveryIntentId, ...entry }) =>
+        entry,
+    );
 }
 
 function latestEntryRevision(entry: ConversationEntryView): { readonly occurredAt: string } {

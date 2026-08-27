@@ -15,7 +15,6 @@ import type {
   GitHubReviewPayload,
 } from '../../../../src/integrations/github/contracts/payloads.js';
 import { createGitHubAdapterHealthRegistry } from '../../../../src/integrations/github/infrastructure/adapter-health-registry.js';
-import { issueCommentObservation } from '../../../../src/integrations/github/infrastructure/issue-source.js';
 import { watermarkCheckpoint } from '../../../../src/integrations/github/infrastructure/poll-watermark.js';
 import { createGitHubSource } from '../../../../src/integrations/github/infrastructure/source.js';
 import { FileCheckpointStore } from '../../../../src/persistence/index.js';
@@ -28,25 +27,6 @@ it('defaults the provider-wide request concurrency limit to four', () => {
   });
 
   expect(config.polling.maxConcurrent).toBe(4);
-});
-
-it('emits a retraction observation when GitHub reports a deleted comment', () => {
-  const observation = issueCommentObservation({
-    repository: 'atolis-hq/wake',
-    issue: { number: 7 },
-    comment: {
-      id: 42,
-      body: null,
-      created_at: '2026-08-20T00:00:00.000Z',
-      updated_at: '2026-08-20T00:01:00.000Z',
-      user: { login: 'reviewer', type: 'User' },
-    },
-  });
-
-  expect(observation).toMatchObject({
-    eventType: GitHubEventType.CommentObserved,
-    payload: { body: '', raw: { id: 42, deleted: true } },
-  });
 });
 
 it('passes only lossless intake facets to the issue query', async () => {

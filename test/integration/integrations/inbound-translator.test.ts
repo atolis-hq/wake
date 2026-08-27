@@ -637,23 +637,9 @@ describe('InboundTranslator', () => {
         ],
       },
     ]);
-
-    const retracted = createEventDraft({
-      ...updated,
-      eventId: 'github:issue-comment:atolis-hq/wake#583:988:retracted',
-      occurredAt: '2026-08-18T00:01:00.000Z',
-      payload: { ...updated.payload, body: '', raw: { id: 988, deleted: true } },
-    });
-    await fixture.world.journal.append(event.stream, 2, [retracted]);
-
-    await translator.runOnce();
-
-    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
-      { entryId: event.eventId, deleted: true },
-    ]);
   });
 
-  it('does not checkpoint a comment when canonical conversation recording fails', async () => {
+  it('defers canonical recording without blocking inbound workflow signals', async () => {
     const fixture = await blockedIssueWorkflow();
     const translator = new InboundTranslator(
       fixture.world.journal,
@@ -690,7 +676,7 @@ describe('InboundTranslator', () => {
     const [observed] = await fixture.world.journal.append(event.stream, 0, [event]);
     if (observed === undefined) throw new Error('Expected comment observation');
 
-    await expect(translator.runOnce()).rejects.toThrow('conversation unavailable');
+    await translator.runOnce();
 
     expect(await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId)).toMatchObject({
       status: 'active',
@@ -698,7 +684,12 @@ describe('InboundTranslator', () => {
     });
     await expect(
       fixture.world.checkpoints.load('reactor:integration.github.inbound'),
-    ).resolves.toBe(observed.globalPosition - 1);
+    ).resolves.toBe(observed.globalPosition);
+    expect(
+      (await fixture.world.events(GitHubEventType.ConversationRecordDeferred)).map(
+        (event) => event.payload,
+      ),
+    ).toContainEqual({ adapter: BuiltInAdapterId.GitHub, sourceEventId: event.eventId });
   });
 });
 

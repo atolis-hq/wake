@@ -419,6 +419,20 @@ it('does not repeat a delivered canonical agent message from legacy history', as
       actor: { kind: 'system', id: 'test' },
     },
   );
+  await conversations.recordRepresentation(
+    {
+      conversationId: conversationIdForWorkItem(work.workItemId),
+      entryId: 'agent-run-1',
+      resourceId: issue.resourceId,
+      externalId: 'github-comment-agent-run-1',
+    },
+    {
+      commandId: 'represent-agent-entry',
+      correlationId: correlationId('agent-publication-context'),
+      occurredAt: '2026-08-17T00:02:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
   await appendConfirmedAgentRunComment(world, issue.resourceId, {
     intentEventId: 'agent-run-1',
     occurredAt: '2026-08-17T00:02:00.000Z',
