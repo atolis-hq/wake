@@ -270,6 +270,18 @@ export class InboundTranslator {
       },
       commandContext(event),
     );
+    const externalId = observedCommentExternalId(event);
+    const existing = await this.conversations.forWorkItem(correlation.workItemId);
+    if (
+      existing?.entries.some((entry) =>
+        entry.representations.some(
+          (representation) =>
+            representation.resourceId === resource.resourceId &&
+            representation.externalId === externalId,
+        ),
+      )
+    )
+      return;
     await this.conversations.record(
       {
         conversationId,
@@ -281,7 +293,7 @@ export class InboundTranslator {
           actorId: event.payload.actor.id,
           resourceId: resource.resourceId,
           threadId: resource.externalKey.key,
-          messageId: event.eventId,
+          messageId: externalId,
         },
       },
       commandContext(event),
@@ -889,4 +901,14 @@ export class InboundTranslator {
       }
     }
   }
+}
+
+function observedCommentExternalId(
+  event: Extract<
+    GitHubAdapterEvent,
+    { readonly eventType: typeof GitHubEventType.CommentObserved }
+  >,
+): string {
+  const id = event.payload.raw.id;
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : event.eventId;
 }

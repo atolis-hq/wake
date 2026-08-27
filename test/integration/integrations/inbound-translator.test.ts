@@ -5,6 +5,10 @@ import { activityName, ActivityOutcomeKind } from '../../../src/activities/index
 import { RunRepository } from '../../../src/execution/index.js';
 
 import {
+  conversationIdForWorkItem,
+  createConversationService,
+} from '../../../src/conversations/index.js';
+import {
   BuiltInAdapterId,
   createEventDraft,
   GitHubEventType,
@@ -502,6 +506,72 @@ describe('InboundTranslator', () => {
       pendingActivation: { activity: activityName('agent'), ordinal: 2 },
     });
     expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
+  });
+
+  it('reconciles an observed delivery echo with its canonical agent entry', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const conversations = createConversationService(fixture.world.journal);
+    const conversationId = conversationIdForWorkItem(fixture.workflow.workItemId);
+    const context = {
+      commandId: 'conversation-echo',
+      correlationId: 'conversation-echo' as never,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      actor: { kind: 'system' as const, id: 'test' },
+    };
+    await conversations.createForWorkItem(fixture.workflow.workItemId, context);
+    await conversations.record(
+      {
+        conversationId,
+        entryId: 'agent-run-1',
+        body: 'I need the latest commit.',
+        origin: { kind: 'agent', actorId: 'wake', runId: 'run-1', stage: 'refine' },
+      },
+      context,
+    );
+    await conversations.recordRepresentation(
+      {
+        conversationId,
+        entryId: 'agent-run-1',
+        resourceId: `resource-${'0'.repeat(25)}3`,
+        externalId: '987',
+      },
+      context,
+    );
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations,
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:987',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:987',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: 'I need the latest commit.',
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'wake-bot', kind: 'bot' },
+        raw: { id: 987 },
+      },
+    });
+    await fixture.world.journal.append(event.stream, 0, [event]);
+
+    await translator.runOnce();
+
+    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toHaveLength(1);
   });
 });
 

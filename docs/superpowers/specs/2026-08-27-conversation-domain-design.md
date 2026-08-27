@@ -209,6 +209,7 @@ Tests must prove:
 
 ## Deferred
 
+- Direct control-plane message composition and explicit publication policy.
 - Conversations before WorkItems and one conversation creating or relating to
   multiple WorkItems.
 - Slack implementation, multi-surface fan-out, and configurable publication
