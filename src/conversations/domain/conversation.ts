@@ -28,6 +28,8 @@ export function applyConversationEvent(
       return reviseEntry(view, event);
     case ConversationEventType.EntryTombstoned:
       return tombstoneEntry(view, event);
+    case ConversationEventType.EntryRepresentationRecorded:
+      return recordRepresentation(view, event);
   }
 }
 
@@ -51,8 +53,38 @@ function appendEntry(
         origin: event.payload.origin,
         deleted: false,
         revisions: [{ body: event.payload.body, occurredAt: event.occurredAt }],
+        representations: [],
       },
     ],
+  };
+}
+
+function recordRepresentation(
+  view: ConversationView | null,
+  event: Extract<
+    ConversationEvent,
+    { readonly eventType: typeof ConversationEventType.EntryRepresentationRecorded }
+  >,
+): ConversationView | null {
+  if (view === null) return view;
+  return {
+    ...view,
+    entries: view.entries.map((entry) =>
+      entry.entryId !== event.payload.entryId ||
+      entry.representations.some(
+        (representation) =>
+          representation.resourceId === event.payload.resourceId &&
+          representation.externalId === event.payload.externalId,
+      )
+        ? entry
+        : {
+            ...entry,
+            representations: [
+              ...entry.representations,
+              { resourceId: event.payload.resourceId, externalId: event.payload.externalId },
+            ],
+          },
+    ),
   };
 }
 

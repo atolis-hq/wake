@@ -133,6 +133,8 @@ function integrationIntentView(
         payload: {
           kind: DeliveryIntentKind.AgentRunPublish,
           report: integrationIntent.payload.report,
+          conversationId: integrationIntent.payload.conversationId,
+          conversationEntryId: integrationIntent.payload.conversationEntryId,
         },
         state: DeliveryState.Pending,
         attempts: 0,

@@ -49,6 +49,7 @@ describe('ConversationService', () => {
           origin: { kind: 'control-plane', actorId: 'operator-1' },
           deleted: false,
           revisions: [{ body: 'Please investigate the failure.', occurredAt: context.occurredAt }],
+          representations: [],
         },
         {
           entryId: 'entry-2',
@@ -57,6 +58,7 @@ describe('ConversationService', () => {
           origin: { kind: 'agent', actorId: 'wake', runId: 'run-1', stage: 'implement' },
           deleted: false,
           revisions: [{ body: 'I am investigating it.', occurredAt: context.occurredAt }],
+          representations: [],
         },
       ],
       resources: [],

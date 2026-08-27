@@ -1,4 +1,5 @@
 import { ActivityOutcomeKind, activationId } from '../../../activities/index.js';
+import { type ConversationService } from '../../../conversations/index.js';
 import {
   EventActorKind,
   type CheckpointStore,
@@ -12,8 +13,10 @@ import {
   type OrchestrationService,
   type WorkflowInstanceId,
 } from '../../../orchestration/index.js';
+import { IntegrationStreamKind } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
-import { DeliveryResultKind } from '../contracts/vocabulary.js';
+import type { DeliveryIntentView } from '../contracts/views.js';
+import { DeliveryIntentKind, DeliveryResultKind } from '../contracts/vocabulary.js';
 
 const deliveryResultSignalKind = 'delivery-result';
 const pendingNamespace = 'reactor:delivery-outcomes:pending';
@@ -29,6 +32,7 @@ export class DeliveryOutcomeReactor {
     private readonly checkpoints: CheckpointStore,
     private readonly orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>,
     private readonly projections: ProjectionStore,
+    private readonly conversations?: Pick<ConversationService, 'recordRepresentation'>,
   ) {}
 
   async runOnce(): Promise<number> {
@@ -81,6 +85,7 @@ export class DeliveryOutcomeReactor {
           ? { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.payload.code } }
           : null;
     if (outcome === null) return null;
+    await this.recordConversationRepresentation(event, delivery);
     const command = {
       workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),
       activationId: activationId(delivery.payload.activationId),
@@ -97,6 +102,38 @@ export class DeliveryOutcomeReactor {
       },
     );
     return true;
+  }
+
+  private async recordConversationRepresentation(
+    event: EventEnvelope,
+    delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
+  ): Promise<void> {
+    if (this.conversations === undefined || !isConfirmedDelivery(delivery)) return;
+    const intent = await conversationDeliveryIntent(
+      this.projections,
+      delivery.payload.intentEventId,
+    );
+    if (intent === undefined) return;
+    const externalId = (delivery.payload as { readonly externalId?: string }).externalId;
+    if (externalId === undefined) return;
+    const payload = intent.payload as {
+      readonly conversationId: string;
+      readonly conversationEntryId: string;
+    };
+    await this.conversations.recordRepresentation(
+      {
+        conversationId: payload.conversationId as never,
+        entryId: payload.conversationEntryId,
+        resourceId: intent.resourceId,
+        externalId,
+      },
+      {
+        commandId: delivery.eventId,
+        correlationId: event.correlationId,
+        actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
+        occurredAt: event.recordedAt,
+      },
+    );
   }
 
   /**
@@ -132,4 +169,28 @@ export class DeliveryOutcomeReactor {
       value: { events },
     });
   }
+}
+
+function isConfirmedDelivery(
+  delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
+): boolean {
+  return (
+    delivery.eventType === DeliveryEventType.Confirmed ||
+    (delivery.eventType === DeliveryEventType.Reconciled &&
+      delivery.payload.result === DeliveryResultKind.Confirmed)
+  );
+}
+
+async function conversationDeliveryIntent(projections: ProjectionStore, intentEventId: string) {
+  const intent = (await projections.list<DeliveryIntentView>(IntegrationStreamKind.Delivery)).find(
+    (candidate) => candidate.value.intentEventId === intentEventId,
+  )?.value;
+  if (
+    intent?.payload.kind !== DeliveryIntentKind.AgentRunPublish ||
+    !('conversationId' in intent.payload) ||
+    intent.payload.conversationId === undefined ||
+    intent.payload.conversationEntryId === undefined
+  )
+    return undefined;
+  return intent;
 }

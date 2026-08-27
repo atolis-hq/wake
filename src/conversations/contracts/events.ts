@@ -18,6 +18,7 @@ export const ConversationEventType = {
   EntryRecorded: 'conversation.entry-recorded',
   EntryRevised: 'conversation.entry-revised',
   EntryTombstoned: 'conversation.entry-tombstoned',
+  EntryRepresentationRecorded: 'conversation.entry-representation-recorded',
 } as const;
 
 export interface ConversationEventPayloads {
@@ -36,6 +37,11 @@ export interface ConversationEventPayloads {
     readonly body: string;
   };
   readonly [ConversationEventType.EntryTombstoned]: { readonly entryId: string };
+  readonly [ConversationEventType.EntryRepresentationRecorded]: {
+    readonly entryId: string;
+    readonly resourceId: string;
+    readonly externalId: string;
+  };
 }
 
 export type ConversationEvent = EventUnion<ConversationEventPayloads, ConversationStreamRef>;
@@ -78,6 +84,17 @@ const schema = z.discriminatedUnion('eventType', [
     eventType: z.literal(ConversationEventType.Created),
     stream,
     payload: z.object({ workItemId: brandedStringSchema(workItemId) }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ConversationEventType.EntryRepresentationRecorded),
+    stream,
+    payload: z
+      .object({
+        entryId: z.string().min(1),
+        resourceId: z.string().min(1),
+        externalId: z.string().min(1),
+      })
+      .strict(),
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ConversationEventType.ResourceAssociated),

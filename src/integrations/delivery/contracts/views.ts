@@ -33,6 +33,8 @@ export interface DeliveryIntentView {
     | {
         readonly kind: typeof DeliveryIntentKind.AgentRunPublish;
         readonly report: AgentRunPublicationReport;
+        readonly conversationId?: string | undefined;
+        readonly conversationEntryId?: string | undefined;
       };
   readonly state: DeliveryStateValue;
   /** When the delivery last transitioned into a resolved (non-pending) state. */

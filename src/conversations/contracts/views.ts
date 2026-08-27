@@ -26,6 +26,7 @@ export interface ConversationEntryView {
   readonly origin: ConversationEntryOrigin;
   readonly deleted: boolean;
   readonly revisions: readonly { readonly body: string; readonly occurredAt: string }[];
+  readonly representations: readonly { readonly resourceId: string; readonly externalId: string }[];
 }
 
 export interface ConversationResourceView {

@@ -8,6 +8,7 @@ import type {
   AssociateConversationResource,
   CreateConversation,
   RecordConversationEntry,
+  RecordConversationEntryRepresentation,
   ReviseConversationEntry,
   TombstoneConversationEntry,
 } from '../contracts/commands.js';
@@ -37,10 +38,16 @@ export interface ConversationService {
     command: TombstoneConversationEntry,
     context: CommandContext,
   ): Promise<ConversationView>;
+  recordRepresentation(
+    command: RecordConversationEntryRepresentation,
+    context: CommandContext,
+  ): Promise<ConversationView>;
   get(id: ConversationId): Promise<ConversationView | null>;
   forWorkItem(workItemId: CreateConversation['workItemId']): Promise<ConversationView | null>;
 }
 
+// The public service surface deliberately keeps all command handlers adjacent.
+// eslint-disable-next-line max-lines-per-function
 export function createConversationService(journal: EventJournal): ConversationService {
   const repository = new ConversationRepository(journal);
   const change = changeConversation(repository);
@@ -99,6 +106,32 @@ export function createConversationService(journal: EventJournal): ConversationSe
       return change(command.conversationId, context, ConversationEventType.EntryTombstoned, {
         entryId: command.entryId,
       });
+    },
+    async recordRepresentation(command, context) {
+      const existing = await repository.load(command.conversationId);
+      const entry = existing.view?.entries.find(
+        (candidate) => candidate.entryId === command.entryId,
+      );
+      if (entry === undefined)
+        throw new Error(`Conversation entry ${command.entryId} does not exist`);
+      if (
+        entry.representations.some(
+          (representation) =>
+            representation.resourceId === command.resourceId &&
+            representation.externalId === command.externalId,
+        )
+      )
+        return existing.view!;
+      return change(
+        command.conversationId,
+        context,
+        ConversationEventType.EntryRepresentationRecorded,
+        {
+          entryId: command.entryId,
+          resourceId: command.resourceId,
+          externalId: command.externalId,
+        },
+      );
     },
     get: async (id) => (await repository.load(id)).view,
     forWorkItem: async (workItemId) =>

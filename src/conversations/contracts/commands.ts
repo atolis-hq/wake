@@ -30,3 +30,10 @@ export interface TombstoneConversationEntry {
   readonly conversationId: ConversationId;
   readonly entryId: string;
 }
+
+export interface RecordConversationEntryRepresentation {
+  readonly conversationId: ConversationId;
+  readonly entryId: string;
+  readonly resourceId: string;
+  readonly externalId: string;
+}
