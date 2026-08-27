@@ -128,9 +128,10 @@ nothing new to learn, no separate dashboard to babysit.
 A local control-plane UI exists for operators who want to watch runs, inspect
 events, or resume a session directly, but it's a window into the same state -
 not a required part of the workflow. The API and UI require an operator login:
-run `wake ui token` to print the access key, then enter it in the UI. Use
-`wake ui token set <key>` to replace it; replacement signs out existing
-sessions.
+run `wake ui token` to print a single-use pairing link or temporary code, then
+enter it in the UI. Successful logins persist for two years across browser and
+Wake-container restarts. Use `wake ui token set <key>` to replace the durable
+access key; replacement signs out existing sessions.
 
 ## Supported Agent CLIs
 
