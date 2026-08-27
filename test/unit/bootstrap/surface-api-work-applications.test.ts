@@ -11,6 +11,17 @@ import { resId, workId } from '../../support/identities.js';
 
 const id = workId('surface-retry-error');
 
+it('does not expose control-plane message creation when disabled', () => {
+  const applications = createSurfaceWorkApplications(
+    {
+      config: { surfaces: { api: { conversationMessages: { enabled: false } } } },
+    } as unknown as CompositionRoot,
+    () => '2026-08-27T00:00:00.000Z',
+  );
+
+  expect(applications.message).toBeUndefined();
+});
+
 it('maps only a typed operator retry ineligibility to a conflict', async () => {
   const applications = createSurfaceWorkApplications(
     rootThatRejectsRetry(new OperatorRetryIneligibleError('retry eligibility changed')),
@@ -41,6 +52,7 @@ it('rethrows an unexpected operator retry error', async () => {
 it('rejects a control-plane message for a missing WorkItem before creating conversation facts', async () => {
   const applications = createSurfaceWorkApplications(
     {
+      config: { surfaces: { api: { conversationMessages: { enabled: true } } } },
       work: { get: async () => null },
       conversations: {
         createForWorkItem: async () => {
@@ -61,6 +73,7 @@ it('rejects a control-plane message for a missing WorkItem before creating conve
 it('rejects a control-plane message for a deleted WorkItem before resuming a workflow', async () => {
   const applications = createSurfaceWorkApplications(
     {
+      config: { surfaces: { api: { conversationMessages: { enabled: true } } } },
       work: { get: async () => ({ deleted: true }) },
       conversations: {
         createForWorkItem: async () => {

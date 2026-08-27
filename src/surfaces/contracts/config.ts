@@ -7,9 +7,18 @@ export const surfacesConfigSchema = z
         enabled: z.boolean().default(false),
         host: z.string().default('127.0.0.1'),
         port: z.number().int().positive().default(4317),
+        conversationMessages: z
+          .object({ enabled: z.boolean().default(false) })
+          .strict()
+          .default({ enabled: false }),
       })
       .strict()
-      .default({ enabled: false, host: '127.0.0.1', port: 4317 }),
+      .default({
+        enabled: false,
+        host: '127.0.0.1',
+        port: 4317,
+        conversationMessages: { enabled: false },
+      }),
     web: z
       .object({
         enabled: z.boolean().default(false),
@@ -31,7 +40,12 @@ export const surfacesConfigSchema = z
   })
   .strict()
   .default({
-    api: { enabled: false, host: '127.0.0.1', port: 4317 },
+    api: {
+      enabled: false,
+      host: '127.0.0.1',
+      port: 4317,
+      conversationMessages: { enabled: false },
+    },
     web: { enabled: false, auth: { disabled: false } },
   })
   .superRefine((value, context) => {
@@ -47,6 +61,7 @@ export const surfacesConfigSchema = z
       enabled: value.api.enabled ?? false,
       host: value.api.host ?? '127.0.0.1',
       port: value.api.port ?? 4317,
+      conversationMessages: { enabled: value.api.conversationMessages.enabled ?? false },
     },
     web: {
       enabled: value.web.enabled ?? false,

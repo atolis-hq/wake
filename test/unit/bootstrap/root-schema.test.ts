@@ -74,6 +74,16 @@ describe('control-plane concurrency configuration', () => {
 });
 
 describe('web surface configuration', () => {
+  it('disables control-plane conversation messages unless explicitly enabled', () => {
+    expect(parseRootConfig(baseConfig).surfaces.api.conversationMessages.enabled).toBe(false);
+    expect(
+      parseRootConfig({
+        ...baseConfig,
+        surfaces: { api: { conversationMessages: { enabled: true } } },
+      }).surfaces.api.conversationMessages.enabled,
+    ).toBe(true);
+  });
+
   it('accepts an optional HTTPS public URL for GitHub message links', () => {
     expect(
       parseRootConfig({

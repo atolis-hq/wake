@@ -47,6 +47,8 @@ export function createSurfaceWorkApplications(
   root: CompositionRoot,
   now: () => string,
 ): ApiApplications['work'] {
+  const conversationMessagesEnabled =
+    (root as Partial<CompositionRoot>).config?.surfaces.api.conversationMessages.enabled === true;
   return {
     async list(query) {
       const stored = (await root.projections.list<WorkItemView | null>('work')).flatMap((entry) =>
@@ -159,26 +161,30 @@ export function createSurfaceWorkApplications(
       }
       return accepted(command.idempotencyKey, now());
     },
-    async message(key, command) {
-      const id = decodeWorkItemId(key);
-      if (id === undefined) throw new Error('Work item not found');
-      const work = await root.work.get(id);
-      if (work === null) throw new Error('Work item not found');
-      if (work.deleted === true) throw new Error('Work item is deleted');
-      const context = commandContext(command.idempotencyKey, now);
-      await root.conversations.createForWorkItem(id, context);
-      await root.conversations.record(
-        {
-          conversationId: conversationIdForWorkItem(id),
-          entryId: `control-plane:${command.idempotencyKey}`,
-          body: command.body,
-          origin: { kind: ConversationOriginKind.ControlPlane, actorId: context.actor.id },
-        },
-        context,
-      );
-      await resumeAgentStages(root, id, context);
-      return accepted(command.idempotencyKey, now());
-    },
+    ...(conversationMessagesEnabled
+      ? {
+          async message(key, command) {
+            const id = decodeWorkItemId(key);
+            if (id === undefined) throw new Error('Work item not found');
+            const work = await root.work.get(id);
+            if (work === null) throw new Error('Work item not found');
+            if (work.deleted === true) throw new Error('Work item is deleted');
+            const context = commandContext(command.idempotencyKey, now);
+            await root.conversations.createForWorkItem(id, context);
+            await root.conversations.record(
+              {
+                conversationId: conversationIdForWorkItem(id),
+                entryId: `control-plane:${command.idempotencyKey}`,
+                body: command.body,
+                origin: { kind: ConversationOriginKind.ControlPlane, actorId: context.actor.id },
+              },
+              context,
+            );
+            await resumeAgentStages(root, id, context);
+            return accepted(command.idempotencyKey, now());
+          },
+        }
+      : {}),
   };
 }
 
