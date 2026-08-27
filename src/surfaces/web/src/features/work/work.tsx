@@ -665,6 +665,22 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
               </aside>
 
               <section className={styles.overviewMain} aria-labelledby="work-runs">
+                <section aria-labelledby="work-conversation">
+                  <h2 id="work-conversation">Conversation</h2>
+                  {query.data.data.conversation.entries.length === 0 ? (
+                    <EmptyState>No conversation messages</EmptyState>
+                  ) : (
+                    <ol aria-label="Conversation">
+                      {query.data.data.conversation.entries.map((entry) => (
+                        <li key={entry.entryId}>
+                          <strong>{entry.actorId}</strong> <span>via {entry.origin}</span>{' '}
+                          <LocalTime value={entry.occurredAt} />
+                          <pre style={{ whiteSpace: 'pre-wrap' }}>{entry.body}</pre>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
                 {diagramQuery.data?.data.diagrams[0] === undefined ? null : (
                   <WorkflowDiagramView diagram={diagramQuery.data.data.diagrams[0]} />
                 )}
