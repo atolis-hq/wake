@@ -378,7 +378,7 @@ it('merges pre-conversation GitHub history with canonical conversation entries',
   ]);
 });
 
-it('uses the revised canonical entry once for an edited GitHub comment', async () => {
+it('uses the revised canonical entry once when resuming after its initial GitHub observation', async () => {
   const world = new TestWorld();
   const work = await world.createWork({ objective: 'retain only the latest edited feedback' });
   const issue = await world.discoverResource({
@@ -438,6 +438,17 @@ it('uses the revised canonical entry once for an edited GitHub comment', async (
   ).forWorkItem(work.workItemId);
 
   expect(agentContext.comments.map((comment) => comment.body)).toEqual(['Revised feedback.']);
+
+  const resumedAgentContext = await createGitHubAgentContextReader(
+    world.journal,
+    world.resources,
+    {},
+    conversations,
+  ).forWorkItem(work.workItemId, { observedSince: '2026-08-17T00:01:30.000Z' });
+
+  expect(resumedAgentContext.comments.map((comment) => comment.body)).toEqual([
+    'Revised feedback.',
+  ]);
 });
 
 it('does not restore a tombstoned canonical GitHub comment from legacy history', async () => {

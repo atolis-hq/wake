@@ -4,7 +4,11 @@ import {
   type AgentContextPullRequest,
   type AgentContextReader,
 } from '../../../activities/index.js';
-import { ConversationOriginKind, type ConversationService } from '../../../conversations/index.js';
+import {
+  ConversationOriginKind,
+  type ConversationEntryView,
+  type ConversationService,
+} from '../../../conversations/index.js';
 import type { EventJournal } from '../../../kernel/index.js';
 import {
   BuiltInResourceKind,
@@ -59,11 +63,12 @@ async function commentsForWorkItem(
     .filter(
       (entry) =>
         !entry.deleted &&
-        (options?.observedSince === undefined || entry.occurredAt > options.observedSince),
+        (options?.observedSince === undefined ||
+          latestEntryRevision(entry).occurredAt > options.observedSince),
     )
     .map((entry) => ({
       author: entry.origin.actorId,
-      occurredAt: entry.occurredAt,
+      occurredAt: latestEntryRevision(entry).occurredAt,
       body: entry.body,
       ...(entry.origin.kind !== ConversationOriginKind.External ||
       entry.origin.location === undefined
@@ -88,6 +93,10 @@ async function commentsForWorkItem(
   return [...historic, ...canonical]
     .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
     .map(({ sourceMessageId: _sourceMessageId, ...entry }) => entry);
+}
+
+function latestEntryRevision(entry: ConversationEntryView): { readonly occurredAt: string } {
+  return entry.revisions.at(-1) ?? entry;
 }
 
 const maximumAgentContextCommentCharacters = 8_000;
