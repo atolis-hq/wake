@@ -310,7 +310,11 @@ function presentConversation(
         ? { runId: entry.origin.runId, stage: entry.origin.stage }
         : {}),
       ...(entry.origin.kind === ConversationOriginKind.External
-        ? { sourceResourceId: entry.origin.resourceId, sourceThreadId: entry.origin.threadId }
+        ? {
+            sourceAdapter: entry.origin.adapter,
+            sourceResourceId: entry.origin.resourceId,
+            sourceThreadId: entry.origin.threadId,
+          }
         : {}),
     })),
   };

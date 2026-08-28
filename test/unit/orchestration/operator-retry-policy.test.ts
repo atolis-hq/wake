@@ -276,10 +276,10 @@ describe('operator retry policy', () => {
 
   it('resumes the current agent stage when a conversation message arrives during a human wait', () => {
     const { definition, state } = blockedAgentFixture();
+    const { blockReason: _blockReason, ...withoutBlockReason } = state;
     const waitingForApproval = {
-      ...state,
+      ...withoutBlockReason,
       status: WorkflowStatus.Waiting,
-      blockReason: undefined,
       lastOutcome: { kind: ActivityOutcomeKind.Done },
       waitingFor: { signalKind: 'approved' as never, from: [{ kind: 'human' as const }] },
     };

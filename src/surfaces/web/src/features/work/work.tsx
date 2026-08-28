@@ -335,7 +335,7 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                         <article className={styles.conversationEntry}>
                           <header className={styles.conversationEntryHead}>
                             <strong>{entry.actorId}</strong>
-                            <span>via {entry.origin}</span>
+                            <span>via {entry.sourceAdapter ?? entry.origin}</span>
                             <LocalTime value={entry.occurredAt} />
                             {entry.runId !== undefined && (
                               <span>

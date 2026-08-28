@@ -462,6 +462,7 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
                   actorId: string(entry.actorId, child(itemPath, 'actorId')),
                   ...optionalStringProperty(entry, 'runId', itemPath),
                   ...optionalStringProperty(entry, conversationEntryStageField, itemPath),
+                  ...optionalStringProperty(entry, 'sourceAdapter', itemPath),
                   ...optionalStringProperty(entry, 'sourceResourceId', itemPath),
                   ...optionalStringProperty(entry, 'sourceThreadId', itemPath),
                   deleted: boolean(entry.deleted, child(itemPath, 'deleted')),

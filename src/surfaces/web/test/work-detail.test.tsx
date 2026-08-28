@@ -327,6 +327,7 @@ describe('work detail', () => {
               occurredAt: asOf,
               origin: 'external',
               actorId: 'octocat',
+              sourceAdapter: 'github',
               sourceResourceId: 'resource-1',
               sourceThreadId: 'thread-1',
               deleted: false,
@@ -362,7 +363,8 @@ describe('work detail', () => {
     expect(screen.getByText('External feedback')).toBeTruthy();
     expect(screen.getByText('Agent response')).toBeTruthy();
     expect(screen.getAllByText('octocat')).toHaveLength(2);
-    expect(screen.getAllByText('via external')).toHaveLength(2);
+    expect(screen.getByText('via github')).toBeTruthy();
+    expect(screen.getByText('via external')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'run run-1' }).getAttribute('href')).toBe(
       '/runs/run-1',
     );
