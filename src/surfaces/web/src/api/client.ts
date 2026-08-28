@@ -105,6 +105,17 @@ export class WakeApiClient {
         resourceDecoder(decodeWorkTranscript),
         signal,
       ),
+    message: (key: string, body: string, idempotencyKey: string, signal?: AbortSignal) =>
+      this.request(
+        `/work-items/${encodeURIComponent(key)}/commands/message`,
+        resourceDecoder(decodeAcceptedCommand),
+        {
+          method: 'POST',
+          body: JSON.stringify({ idempotencyKey, body }),
+          headers: { 'content-type': 'application/json' },
+          ...(signal === undefined ? {} : { signal }),
+        },
+      ),
     command: (
       key: string,
       name: 'freeze' | 'unfreeze' | 'delete' | 'retry' | 'extend',

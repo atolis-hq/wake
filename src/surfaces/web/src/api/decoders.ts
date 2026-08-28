@@ -445,6 +445,7 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
             ),
           },
     conversation: {
+      canCreateEntries: conversation?.canCreateEntries === true,
       entries:
         conversation === undefined
           ? []

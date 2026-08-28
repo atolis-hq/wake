@@ -29,6 +29,7 @@ function detailClient(
     readonly error?: boolean;
   } = { groups: [], entries: [] },
   lastRunOutcome: string | undefined = 'DONE',
+  canCreateConversationEntries = false,
 ) {
   const work = {
     workItemKey: 'wk_a',
@@ -44,7 +45,8 @@ function detailClient(
     if (
       url.endsWith('/commands/retry') ||
       url.endsWith('/commands/extend') ||
-      url.endsWith('/commands/resolve')
+      url.endsWith('/commands/resolve') ||
+      url.endsWith('/commands/message')
     )
       return (
         commandResponse ??
@@ -154,6 +156,7 @@ function detailClient(
                     checks: 'passing',
                   },
                 },
+                conversation: { entries: [], canCreateEntries: canCreateConversationEntries },
               },
               meta: { asOf },
             }
@@ -296,6 +299,45 @@ describe('work detail', () => {
     expect(screen.getByRole('tabpanel', { name: 'Events' }).id).toBe('work-detail-events-panel');
   });
 
+  it('does not offer a message composer when control-plane messages are disabled', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
+    expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
+  });
+
+  it('records an operator message from the dedicated Conversation tab', async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient(null, undefined, requests, undefined, 'DONE', true)} />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
+    expect(screen.getByRole('tabpanel', { name: 'Conversation' }).id).toBe(
+      'work-detail-conversation-panel',
+    );
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Please continue.');
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() =>
+      expect(requests.filter(({ url }) => url.endsWith('/commands/message'))).toHaveLength(1),
+    );
+    const message = requests.find(({ url }) => url.endsWith('/commands/message'));
+    expect(message?.init?.method).toBe('POST');
+    expect(JSON.parse(String(message?.init?.body))).toMatchObject({ body: 'Please continue.' });
+    expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe(
+      '',
+    );
+  });
+
   it('uses APG keyboard navigation to move and activate work detail tabs', async () => {
     const user = userEvent.setup();
     render(
@@ -304,6 +346,7 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     const overview = await screen.findByRole('tab', { name: 'Overview' });
+    const conversation = screen.getByRole('tab', { name: 'Conversation' });
     const events = screen.getByRole('tab', { name: 'Events' });
     const transcripts = screen.getByRole('tab', { name: 'Transcripts' });
     expect(overview.tabIndex).toBe(0);
@@ -311,8 +354,8 @@ describe('work detail', () => {
 
     overview.focus();
     await user.keyboard('{ArrowRight}');
-    expect(document.activeElement).toBe(events);
-    expect(events.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(conversation);
+    expect(conversation.getAttribute('aria-selected')).toBe('true');
 
     await user.keyboard('{End}');
     expect(document.activeElement).toBe(transcripts);

@@ -35,6 +35,8 @@ export interface WorkDetailResponse {
   };
   readonly activities: { readonly pullRequest?: PullRequestResponse };
   readonly conversation: {
+    /** Whether this authenticated surface may create control-plane entries. */
+    readonly canCreateEntries: boolean;
     readonly entries: readonly {
       readonly entryId: string;
       readonly body: string;

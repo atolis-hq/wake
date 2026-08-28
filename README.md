@@ -129,8 +129,11 @@ Reviewing, approving, and merging happen exactly where they already do today -
 nothing new to learn, no separate dashboard to babysit.
 
 A local control-plane UI exists for operators who want to watch runs, inspect
-events and the work item's conversation timeline, or resume a session directly,
-but it's a window into the same state - not a required part of the workflow.
+events, or use the dedicated Conversation tab on a work item to read its
+canonical timeline. When `surfaces.api.conversationMessages.enabled` is enabled,
+the same tab also lets an operator add a message that Wake records and may use
+to resume an eligible agent stage. The UI is a window into the same state - not
+a required part of the workflow.
 The API and UI require an operator login:
 run `wake ui token` to print a single-use pairing link or temporary code, then
 enter it in the UI. Successful logins persist for two years across browser and

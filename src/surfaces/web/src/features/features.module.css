@@ -285,6 +285,88 @@
   grid-row: 1;
   min-width: 0;
 }
+.conversationPanel {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 58rem;
+}
+.conversationPanel h2 {
+  margin: 0;
+}
+.conversationHint {
+  margin: var(--space-1) 0 0;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+.conversationTimeline {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.conversationEntry {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+}
+.conversationEntryHead,
+.conversationRepresentations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 0.45rem 0.6rem;
+  color: var(--ink-muted);
+  background: var(--surface-panel);
+  font-size: var(--text-xs);
+}
+.conversationRepresentations {
+  border-top: 1px solid var(--border);
+  background: var(--surface-inset);
+}
+.conversationBody {
+  margin: 0;
+  padding: 0.6rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+.conversationComposer {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+}
+.conversationComposer label {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.conversationComposer textarea {
+  resize: vertical;
+  min-height: 6rem;
+  color: var(--ink);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem;
+  font: inherit;
+}
+.conversationComposer textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(45 212 191 / 0.15);
+}
+.conversationComposerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
 .sidebarSectionTitle {
   font-size: var(--text-sm);
 }

@@ -267,7 +267,10 @@ async function workDetail(
       transcriptGroups: await transcriptGroups(root.transcriptStore, id, runs),
     },
     activities: presentPullRequest(pullRequest?.value),
-    conversation: presentConversation(conversation),
+    conversation: presentConversation(
+      conversation,
+      (root as Partial<CompositionRoot>).config?.surfaces.api.conversationMessages.enabled === true,
+    ),
   };
   const [projections, correlationFacts] = await Promise.all([
     contributingProjections(root, id, resources, workflows, runs),
@@ -291,8 +294,10 @@ async function conversationForWorkItem(root: CompositionRoot, id: ReturnType<typ
 
 function presentConversation(
   conversation: Awaited<ReturnType<NonNullable<CompositionRoot['conversations']>['forWorkItem']>>,
+  canCreateEntries: boolean,
 ): WorkDetailResponse[typeof ConversationStreamKind.Conversation] {
   return {
+    canCreateEntries,
     entries: (conversation?.entries ?? []).map((entry) => ({
       entryId: entry.entryId,
       body: entry.deleted ? '' : entry.body,
