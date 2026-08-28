@@ -264,11 +264,16 @@ export class InboundTranslator {
         .filter((event) => event.eventType === GitHubEventType.ConversationRecordRecovered)
         .map((event) => event.payload.sourceEventId),
     );
-    const pending = events.filter(
-      (event) =>
-        event.eventType === GitHubEventType.ConversationRecordDeferred &&
-        !recovered.has(event.payload.sourceEventId),
-    );
+    const pending = events
+      .filter(
+        (
+          event,
+        ): event is Extract<
+          GitHubAdapterEvent,
+          { readonly eventType: typeof GitHubEventType.ConversationRecordDeferred }
+        > => event.eventType === GitHubEventType.ConversationRecordDeferred,
+      )
+      .filter((event) => !recovered.has(event.payload.sourceEventId));
     this.conversationRecordRecoveryPending = pending.length > 0;
     let stillPending = false;
     for (const deferred of pending) {
