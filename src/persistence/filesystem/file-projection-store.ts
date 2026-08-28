@@ -6,7 +6,7 @@ import type { ProjectionStore, StoredProjection } from '../../kernel/index.js';
 export class FileProjectionStore implements ProjectionStore {
   constructor(private readonly root: string) {}
 
-  private readonly listCache = new Map<string, readonly CachedProjectionFile[]>();
+  private readonly listCache = new Map<string, CachedProjectionDirectory>();
 
   async read<Value>(namespace: string, key: string): Promise<StoredProjection<Value> | null> {
     try {
@@ -28,7 +28,7 @@ export class FileProjectionStore implements ProjectionStore {
     await atomicJson(path, projection);
     const cached = this.listCache.get(projection.namespace);
     if (cached === undefined) return;
-    const info = await stat(path);
+    const [info, directoryInfo] = await Promise.all([stat(path), stat(dirname(path))]);
     const file = `${encode(projection.key)}.json`;
     const updatedEntry: CachedProjectionFile = {
       file,
@@ -36,12 +36,12 @@ export class FileProjectionStore implements ProjectionStore {
       mtimeMs: info.mtimeMs,
       value: projection,
     };
-    this.listCache.set(
-      projection.namespace,
-      [...cached.filter((entry) => entry.file !== file), updatedEntry].sort((a, b) =>
+    this.listCache.set(projection.namespace, {
+      files: [...cached.files.filter((entry) => entry.file !== file), updatedEntry].sort((a, b) =>
         a.file < b.file ? -1 : a.file > b.file ? 1 : 0,
       ),
-    );
+      revision: directoryRevision(directoryInfo),
+    });
   }
 
   // Callers (advance-once, orchestration-service, DeliveryService, ...) list()
@@ -53,6 +53,19 @@ export class FileProjectionStore implements ProjectionStore {
   // listing (name:size:mtimeMs) actually changed since the last list().
   async list<Value>(namespace: string): Promise<readonly StoredProjection<Value>[]> {
     const directory = join(this.root, 'projections', encode(namespace));
+    let directoryInfo: Awaited<ReturnType<typeof stat>>;
+    try {
+      directoryInfo = await stat(directory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.listCache.delete(namespace);
+        return [];
+      }
+      throw error;
+    }
+    const cached = this.listCache.get(namespace);
+    if (cached !== undefined && cached.revision === directoryRevision(directoryInfo))
+      return cached.files.map((entry) => entry.value) as StoredProjection<Value>[];
     let files: string[];
     try {
       files = (await readdir(directory)).filter((file) => file.endsWith('.json')).sort();
@@ -69,9 +82,8 @@ export class FileProjectionStore implements ProjectionStore {
         return { file, size: info.size, mtimeMs: info.mtimeMs };
       }),
     );
-    const cached = this.listCache.get(namespace);
-    if (cached !== undefined && sameProjectionFiles(cached, stats))
-      return cached.map((entry) => entry.value) as StoredProjection<Value>[];
+    if (cached !== undefined && sameProjectionFiles(cached.files, stats))
+      return cached.files.map((entry) => entry.value) as StoredProjection<Value>[];
     const entries = await Promise.all(
       stats.map(async ({ file, size, mtimeMs }): Promise<CachedProjectionFile> => ({
         file,
@@ -80,7 +92,7 @@ export class FileProjectionStore implements ProjectionStore {
         value: JSON.parse(await readFile(join(directory, file), 'utf8')) as StoredProjection<Value>,
       })),
     );
-    this.listCache.set(namespace, entries);
+    this.listCache.set(namespace, { files: entries, revision: directoryRevision(directoryInfo) });
     return entries.map((entry) => entry.value) as StoredProjection<Value>[];
   }
 
@@ -105,6 +117,15 @@ interface CachedProjectionFile {
   readonly size: number;
   readonly mtimeMs: number;
   readonly value: StoredProjection<unknown>;
+}
+
+interface CachedProjectionDirectory {
+  readonly files: readonly CachedProjectionFile[];
+  readonly revision: string;
+}
+
+function directoryRevision(info: Awaited<ReturnType<typeof stat>>): string {
+  return `${info.mtimeMs}:${info.ctimeMs}`;
 }
 
 function sameProjectionFiles(

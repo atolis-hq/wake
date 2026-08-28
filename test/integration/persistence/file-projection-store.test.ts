@@ -5,11 +5,12 @@ import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { FileProjectionStore } from '../../../src/persistence/index.js';
 
-const { readFileMock } = vi.hoisted(() => ({ readFileMock: vi.fn() }));
+const { readFileMock, statMock } = vi.hoisted(() => ({ readFileMock: vi.fn(), statMock: vi.fn() }));
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof FsPromises>();
   readFileMock.mockImplementation(actual.readFile);
-  return { ...actual, readFile: readFileMock };
+  statMock.mockImplementation(actual.stat);
+  return { ...actual, readFile: readFileMock, stat: statMock };
 });
 
 it('stores and atomically replaces one projection without touching another namespace', async () => {
@@ -48,12 +49,18 @@ it('does not re-read namespace files on a second list() when nothing changed', a
   await store.write({ namespace: 'work', key: 'work:2', lastGlobalPosition: 1, value: { n: 2 } });
 
   readFileMock.mockClear();
+  statMock.mockClear();
   await store.list('work');
   const firstCallCount = readFileMock.mock.calls.length;
+  const firstStatCallCount = statMock.mock.calls.length;
   expect(firstCallCount).toBeGreaterThan(0);
+  expect(firstStatCallCount).toBeGreaterThan(0);
 
   const second = await store.list('work');
   expect(readFileMock.mock.calls.length).toBe(firstCallCount);
+  // Only the namespace directory is probed for an external atomic write;
+  // the two projection files themselves are not restatted.
+  expect(statMock.mock.calls.length).toBe(firstStatCallCount + 1);
   expect(second).toHaveLength(2);
 
   // A write patches the cache with the in-memory value being written, so the
@@ -63,4 +70,19 @@ it('does not re-read namespace files on a second list() when nothing changed', a
   const third = await store.list('work');
   expect(readFileMock.mock.calls.length).toBe(firstCallCount);
   expect(third).toHaveLength(3);
+});
+
+it('refreshes a cached namespace after another store atomically writes it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-external-write-'));
+  const reader = new FileProjectionStore(root);
+  const writer = new FileProjectionStore(root);
+  await writer.write({ namespace: 'work', key: 'work:1', lastGlobalPosition: 1, value: { n: 1 } });
+
+  expect(await reader.list('work')).toHaveLength(1);
+  await writer.write({ namespace: 'work', key: 'work:2', lastGlobalPosition: 2, value: { n: 2 } });
+
+  expect(await reader.list('work')).toMatchObject([
+    { key: 'work:1', value: { n: 1 } },
+    { key: 'work:2', value: { n: 2 } },
+  ]);
 });

@@ -37,6 +37,12 @@ export class FileEventJournal implements EventJournal {
       }
     | undefined;
 
+  // The manifest is written after every successful local append. Its file
+  // revision is therefore a constant-cost freshness signal for the warm
+  // cache, avoiding a stat of every historical segment on every read while
+  // still detecting an append made by another journal process immediately.
+  private manifestRevision: string | undefined;
+
   // Every read (readStream/readAll/readLatest/latestGlobalPosition) reaches
   // scan(), and the resident host's tick loop calls those many times a
   // second while work is progressing. Without coalescing, calls that land
@@ -106,7 +112,9 @@ export class FileEventJournal implements EventJournal {
           // The manifest is derived data. The event append is authoritative, so
           // an index-write failure must not turn a successfully recorded event
           // into a failed append.
-          await this.persistManifest().catch(() => undefined);
+          await this.persistManifest().catch(() => {
+            this.manifestRevision = undefined;
+          });
           this.changeSignalSource.notify();
         }
         return finalizedEnvelopes;
@@ -122,7 +130,7 @@ export class FileEventJournal implements EventJournal {
   // full parse rather than to incorrect data; scan() then rebuilds it.
   async readStream(stream: EntityRef) {
     const streamKey = key(stream);
-    const entries = await this.readCurrentEntries();
+    const entries = await this.readEntriesForRead();
     if (this.cached !== undefined) {
       if (sameEntries(this.cached.entries, entries))
         return this.cached.eventsByStream.get(streamKey) ?? [];
@@ -149,7 +157,7 @@ export class FileEventJournal implements EventJournal {
   }
 
   async readAll(after: number, limit = Number.POSITIVE_INFINITY) {
-    const entries = await this.readCurrentEntries();
+    const entries = await this.readEntriesForRead();
     if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
       return this.cached.events.filter((event) => event.globalPosition > after).slice(0, limit);
     const manifest = await this.loadManifest();
@@ -174,7 +182,7 @@ export class FileEventJournal implements EventJournal {
   }
 
   async readLatest(beforeGlobalPosition?: number, limit = Number.POSITIVE_INFINITY) {
-    const events = await this.scan();
+    const events = await this.scan(await this.readEntriesForRead());
     const before = beforeGlobalPosition ?? events.length + 1;
     return events
       .slice(0, before - 1)
@@ -183,7 +191,7 @@ export class FileEventJournal implements EventJournal {
   }
 
   async latestGlobalPosition(): Promise<number> {
-    const events = await this.scan();
+    const events = await this.scan(await this.readEntriesForRead());
     return events.at(-1)?.globalPosition ?? 0;
   }
 
@@ -257,6 +265,7 @@ export class FileEventJournal implements EventJournal {
     if (this.cached === undefined) return;
     const manifest: PersistedIndex = { segments: this.cached.segments };
     await writeFile(this.manifestPath(), JSON.stringify(manifest), 'utf8');
+    this.manifestRevision = await this.readManifestRevision();
   }
 
   private async loadManifest(): Promise<PersistedIndex | undefined> {
@@ -297,6 +306,23 @@ export class FileEventJournal implements EventJournal {
         return { file, size: info.size, mtimeMs: info.mtimeMs };
       }),
     );
+  }
+
+  private async readEntriesForRead(): Promise<readonly FileStat[]> {
+    if (this.cached === undefined || this.manifestRevision === undefined)
+      return this.readCurrentEntries();
+    const revision = await this.readManifestRevision();
+    return revision === this.manifestRevision ? this.cached.entries : this.readCurrentEntries();
+  }
+
+  private async readManifestRevision(): Promise<string | undefined> {
+    try {
+      const info = await stat(this.manifestPath());
+      return `${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
   }
 
   // Reads exactly the indexed JSONL records. Byte offsets make tail reads and
@@ -398,6 +424,7 @@ export class FileEventJournal implements EventJournal {
       });
     }
     this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
+    this.manifestRevision = await this.readManifestRevision();
     return events;
   }
 }
