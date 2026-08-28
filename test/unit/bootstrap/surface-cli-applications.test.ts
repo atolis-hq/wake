@@ -44,6 +44,7 @@ it('waits after reported progress that did not change the journal', async () => 
   expect(settled).toBe(false);
   controller.abort();
   await sleeping;
+  expect(settled).toBe(true);
 });
 
 it('immediately drains after progress that appended a journal fact', async () => {
@@ -55,4 +56,5 @@ it('immediately drains after progress that appended a journal fact', async () =>
   changeSignal.notify();
 
   await wait(controller.signal, { consecutiveIdleTicks: 0, consecutiveErrorTicks: 0 });
+  expect(controller.signal.aborted).toBe(false);
 });

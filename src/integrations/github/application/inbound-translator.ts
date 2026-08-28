@@ -332,7 +332,6 @@ export class InboundTranslator {
   }
 
   // Conversation reconciliation keeps all entry identity decisions in one ordered command path.
-  // eslint-disable-next-line max-lines-per-function, complexity
   private async recordConversationEntry(
     event: Extract<
       GitHubAdapterEvent,

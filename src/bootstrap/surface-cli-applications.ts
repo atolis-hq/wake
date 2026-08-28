@@ -70,7 +70,7 @@ export function createSurfaceCliApplications(
 ): WakeCliApplications {
   const runnerTick = new TickHost((options) => root.runnerPipeline.run(options));
   const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
-  const runnerIdleWait = createRunnerIdleWait(root, root.config.controlPlane.resident);
+  const runnerIdleWait = createRunnerIdleWait(root, root.config.controlPlane?.resident);
   const reportResidentError = (label: 'intake' | 'runner') => async (error: unknown) => {
     process.stderr.write(
       `Wake ${label} tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
@@ -97,7 +97,7 @@ export function createSurfaceCliApplications(
     (signal, { consecutiveIdleTicks }) =>
       sleepUntilAbort(
         signal,
-        nextPollBackoffMs(root.config.controlPlane.resident, consecutiveIdleTicks),
+        nextPollBackoffMs(root.config.controlPlane?.resident, consecutiveIdleTicks),
       ),
     reportResidentError('intake'),
   );
