@@ -30,6 +30,7 @@ function detailClient(
   } = { groups: [], entries: [] },
   lastRunOutcome: string | undefined = 'DONE',
   canCreateConversationEntries = false,
+  conversationEntries: readonly Record<string, unknown>[] = [],
 ) {
   const work = {
     workItemKey: 'wk_a',
@@ -156,7 +157,10 @@ function detailClient(
                     checks: 'passing',
                   },
                 },
-                conversation: { entries: [], canCreateEntries: canCreateConversationEntries },
+                conversation: {
+                  entries: conversationEntries,
+                  canCreateEntries: canCreateConversationEntries,
+                },
               },
               meta: { asOf },
             }
@@ -309,6 +313,61 @@ describe('work detail', () => {
 
     await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
     expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
+  });
+
+  it('formats conversation messages with canonical provenance and deleted-state handling', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, [], undefined, 'DONE', false, [
+            {
+              entryId: 'entry-external',
+              body: 'External feedback',
+              occurredAt: asOf,
+              origin: 'external',
+              actorId: 'octocat',
+              sourceResourceId: 'resource-1',
+              sourceThreadId: 'thread-1',
+              deleted: false,
+              representations: [],
+            },
+            {
+              entryId: 'entry-agent',
+              body: 'Agent response',
+              occurredAt: '2026-07-31T10:01:00.000Z',
+              origin: 'agent',
+              actorId: 'agent-runner',
+              runId: 'run-1',
+              stage: 'implement',
+              deleted: false,
+              representations: [{ resourceId: 'resource-1', externalId: 'comment-42' }],
+            },
+            {
+              entryId: 'entry-deleted',
+              body: '',
+              occurredAt: '2026-07-31T10:02:00.000Z',
+              origin: 'external',
+              actorId: 'octocat',
+              deleted: true,
+              representations: [],
+            },
+          ])}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
+    expect(screen.getByRole('list', { name: 'Conversation' })).toBeTruthy();
+    expect(screen.getByText('External feedback')).toBeTruthy();
+    expect(screen.getByText('Agent response')).toBeTruthy();
+    expect(screen.getAllByText('octocat')).toHaveLength(2);
+    expect(screen.getAllByText('via external')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'run run-1' }).getAttribute('href')).toBe(
+      '/runs/run-1',
+    );
+    expect(screen.getByText('Published to unheard-of-kind resource-1')).toBeTruthy();
+    expect(screen.getByText('Message deleted')).toBeTruthy();
   });
 
   it('records an operator message from the dedicated Conversation tab', async () => {
