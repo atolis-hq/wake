@@ -148,6 +148,7 @@ export class InboundTranslator {
   private readonly intake: readonly IntakeRule[];
   private readonly conclusion: WorkConclusion | undefined;
   private readonly conversations: ConversationService | undefined;
+  private conversationRecordRecoveryPending: boolean | undefined;
 
   // Adapter filtering, checkpointing, and typed event dispatch must stay together.
   async runOnce(limit = 100): Promise<number> {
@@ -253,6 +254,7 @@ export class InboundTranslator {
   }
 
   private async retryPendingConversationRecords(): Promise<void> {
+    if (this.conversationRecordRecoveryPending === false) return;
     const stream = integrationStream(this.adapter);
     const events = (await this.journal!.readStream(stream))
       .map(selectGitHubAdapterEvent)
@@ -262,19 +264,28 @@ export class InboundTranslator {
         .filter((event) => event.eventType === GitHubEventType.ConversationRecordRecovered)
         .map((event) => event.payload.sourceEventId),
     );
-    for (const deferred of events.filter(
-      (event) => event.eventType === GitHubEventType.ConversationRecordDeferred,
-    )) {
-      if (recovered.has(deferred.payload.sourceEventId)) continue;
+    const pending = events.filter(
+      (event) =>
+        event.eventType === GitHubEventType.ConversationRecordDeferred &&
+        !recovered.has(event.payload.sourceEventId),
+    );
+    this.conversationRecordRecoveryPending = pending.length > 0;
+    let stillPending = false;
+    for (const deferred of pending) {
       const source = events.find((event) => event.eventId === deferred.payload.sourceEventId);
-      if (source?.eventType !== GitHubEventType.CommentObserved) continue;
+      if (source?.eventType !== GitHubEventType.CommentObserved) {
+        stillPending = true;
+        continue;
+      }
       try {
         await this.recordConversationEntry(source);
       } catch {
+        stillPending = true;
         continue;
       }
       await this.appendConversationRecordFact(GitHubEventType.ConversationRecordRecovered, source);
     }
+    this.conversationRecordRecoveryPending = stillPending;
   }
 
   private async recordConversationDeferred(
@@ -284,6 +295,7 @@ export class InboundTranslator {
     >,
   ): Promise<void> {
     await this.appendConversationRecordFact(GitHubEventType.ConversationRecordDeferred, event);
+    this.conversationRecordRecoveryPending = true;
   }
 
   private async appendConversationRecordFact(

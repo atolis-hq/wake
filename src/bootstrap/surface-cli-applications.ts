@@ -70,6 +70,7 @@ export function createSurfaceCliApplications(
 ): WakeCliApplications {
   const runnerTick = new TickHost((options) => root.runnerPipeline.run(options));
   const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
+  const runnerIdleWait = createRunnerIdleWait(root, root.config.controlPlane.resident);
   const reportResidentError = (label: 'intake' | 'runner') => async (error: unknown) => {
     process.stderr.write(
       `Wake ${label} tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
@@ -88,17 +89,7 @@ export function createSurfaceCliApplications(
   // hammered every cycle instead of given a chance to recover.
   const runnerResident = new ResidentHost(
     runnerTick,
-    (signal, { consecutiveIdleTicks, consecutiveErrorTicks }) => {
-      if (consecutiveErrorTicks > 0)
-        return sleepUntilAbort(
-          signal,
-          nextPollBackoffMs(root.config.controlPlane.resident, consecutiveErrorTicks),
-        );
-      // Genuine idle (no errors): wait for the journal to actually change.
-      return consecutiveIdleTicks === 0
-        ? Promise.resolve()
-        : root.journal.changeSignal.waitForChange(signal, JOURNAL_CHANGE_FALLBACK_MS);
-    },
+    runnerIdleWait,
     reportResidentError('runner'),
   );
   const intakeResident = new ResidentHost(
@@ -237,6 +228,29 @@ export function createSurfaceCliApplications(
     validateState: createValidationApplications(root),
     sandboxRuntime: createSandboxRuntimeApplications(root),
     operational: createOperationalApplications(root),
+  };
+}
+
+export function createRunnerIdleWait(
+  root: Pick<CompositionRoot, 'journal'>,
+  resident: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number } | undefined,
+) {
+  let priorRevision = root.journal.changeSignal.revision();
+  return (
+    signal: AbortSignal,
+    {
+      consecutiveIdleTicks,
+      consecutiveErrorTicks,
+    }: { readonly consecutiveIdleTicks: number; readonly consecutiveErrorTicks: number },
+  ): Promise<void> => {
+    if (consecutiveErrorTicks > 0)
+      return sleepUntilAbort(signal, nextPollBackoffMs(resident, consecutiveErrorTicks));
+    const revision = root.journal.changeSignal.revision();
+    const journalChanged = revision !== priorRevision;
+    priorRevision = revision;
+    return consecutiveIdleTicks === 0 && journalChanged
+      ? Promise.resolve()
+      : root.journal.changeSignal.waitForChange(signal, JOURNAL_CHANGE_FALLBACK_MS);
   };
 }
 

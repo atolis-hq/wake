@@ -692,6 +692,33 @@ describe('InboundTranslator', () => {
     ).toContainEqual({ adapter: BuiltInAdapterId.GitHub, sourceEventId: event.eventId });
   });
 
+  it('does not rescan the adapter stream once no deferred conversation record remains', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations: createConversationService(fixture.world.journal),
+      },
+    );
+    const readStream = vi.spyOn(fixture.world.journal, 'readStream');
+
+    await translator.runOnce();
+    readStream.mockClear();
+    await translator.runOnce();
+
+    expect(
+      readStream.mock.calls.filter(
+        ([stream]) => stream.kind === 'integration' && stream.id === BuiltInAdapterId.GitHub,
+      ),
+    ).toHaveLength(1);
+  });
+
   it('recovers deferred canonical recording without replaying inbound workflow signals', async () => {
     const fixture = await blockedIssueWorkflow();
     const conversations = createConversationService(fixture.world.journal);
