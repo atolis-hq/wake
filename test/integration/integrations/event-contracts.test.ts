@@ -84,6 +84,14 @@ const samples = [
     { adapter: 'github', sourceEventId: 'github:issue:atolis/wake#1:v2' },
   ],
   [
+    GitHubEventType.ConversationRecordDeferred,
+    { adapter: 'github', sourceEventId: 'github:issue:atolis/wake#1:v2' },
+  ],
+  [
+    GitHubEventType.ConversationRecordRecovered,
+    { adapter: 'github', sourceEventId: 'github:issue:atolis/wake#1:v2' },
+  ],
+  [
     GitHubEventType.DeletedWorkObservationSkipped,
     {
       externalKey: 'atolis/wake#1',

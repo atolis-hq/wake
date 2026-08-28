@@ -111,6 +111,19 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
       if (name === 'delete') navigate('/work');
     },
   });
+  const [messageBody, setMessageBody] = useState('');
+  const message = useMutation({
+    mutationFn: (body: string) =>
+      client.work.message(
+        workItemKey,
+        body,
+        `web:conversation-message:${globalThis.crypto.randomUUID()}`,
+      ),
+    onSuccess: async () => {
+      setMessageBody('');
+      await refresh();
+    },
+  });
   const query = useQuery({
     queryKey: queryKeys.work.detail(workItemKey),
     queryFn: ({ signal }) => client.work.detail(workItemKey, signal),
@@ -158,7 +171,9 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     },
     onSuccess: refresh,
   });
-  const [tab, setTab] = useState<'overview' | 'events' | 'transcripts'>('overview');
+  const [tab, setTab] = useState<'overview' | 'conversation' | 'events' | 'transcripts'>(
+    'overview',
+  );
   const [selectedGroupId, setSelectedGroupId] = useState<string>();
   const [thisRunOnly, setThisRunOnly] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string>();
@@ -257,6 +272,19 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
             <button
               type="button"
               role="tab"
+              data-tab="conversation"
+              id="work-detail-conversation-tab"
+              aria-controls="work-detail-conversation-panel"
+              aria-selected={tab === 'conversation'}
+              tabIndex={tab === 'conversation' ? 0 : -1}
+              onKeyDown={navigateTabs}
+              onClick={() => setTab('conversation')}
+            >
+              Conversation
+            </button>
+            <button
+              type="button"
+              role="tab"
               data-tab="events"
               id="work-detail-events-tab"
               aria-controls="work-detail-events-panel"
@@ -281,7 +309,128 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
               Transcripts
             </button>
           </div>
-          {tab === 'transcripts' ? (
+          {tab === 'conversation' ? (
+            <section
+              id="work-detail-conversation-panel"
+              className={styles.conversationPanel}
+              role="tabpanel"
+              aria-labelledby="work-detail-conversation-tab"
+            >
+              <div>
+                <h2 id="work-conversation">Conversation</h2>
+                <p className={styles.conversationHint}>
+                  Messages recorded here become part of this work item's canonical context.
+                </p>
+              </div>
+              {query.data.data.conversation.entries.length === 0 ? (
+                <EmptyState>No conversation messages</EmptyState>
+              ) : (
+                <ol className={styles.conversationTimeline} aria-label="Conversation">
+                  {query.data.data.conversation.entries.map((entry) => {
+                    const source = query.data.data.resources.find(
+                      (resource) => resource.resourceId === entry.sourceResourceId,
+                    );
+                    return (
+                      <li key={entry.entryId}>
+                        <article className={styles.conversationEntry}>
+                          <header className={styles.conversationEntryHead}>
+                            <strong>{entry.actorId}</strong>
+                            <span>via {entry.sourceAdapter ?? entry.origin}</span>
+                            <LocalTime value={entry.occurredAt} />
+                            {entry.runId !== undefined && (
+                              <span>
+                                <Link to={`/runs/${encodeURIComponent(entry.runId)}`}>
+                                  run {entry.runId}
+                                </Link>
+                                {entry.stage === undefined ? '' : ` (${entry.stage})`}
+                              </span>
+                            )}
+                            {source !== undefined && (
+                              <span>
+                                {source.externalUrl === undefined ? (
+                                  source.locatorLabel
+                                ) : (
+                                  <a
+                                    href={source.externalUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    {source.locatorLabel}
+                                  </a>
+                                )}
+                              </span>
+                            )}
+                          </header>
+                          {entry.deleted ? (
+                            <em>Message deleted</em>
+                          ) : (
+                            <pre className={styles.conversationBody}>{entry.body}</pre>
+                          )}
+                          {entry.representations.length > 0 && (
+                            <footer className={styles.conversationRepresentations}>
+                              {entry.representations.map((representation) => {
+                                const resource = query.data.data.resources.find(
+                                  (candidate) => candidate.resourceId === representation.resourceId,
+                                );
+                                const label = resource?.locatorLabel ?? representation.resourceId;
+                                return (
+                                  <span
+                                    key={`${representation.resourceId}:${representation.externalId}`}
+                                  >
+                                    Published to{' '}
+                                    {resource?.externalUrl === undefined ? (
+                                      label
+                                    ) : (
+                                      <a
+                                        href={resource.externalUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      >
+                                        {label}
+                                      </a>
+                                    )}
+                                  </span>
+                                );
+                              })}
+                            </footer>
+                          )}
+                        </article>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+              {query.data.data.conversation.canCreateEntries && (
+                <form
+                  className={styles.conversationComposer}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const body = messageBody.trim();
+                    if (body !== '') message.mutate(body);
+                  }}
+                >
+                  <label htmlFor="work-conversation-message">Message</label>
+                  <textarea
+                    id="work-conversation-message"
+                    value={messageBody}
+                    disabled={message.isPending}
+                    onChange={(event) => setMessageBody(event.target.value)}
+                    placeholder="Add context, answer a question, or direct the current work."
+                    rows={4}
+                  />
+                  <div className={styles.conversationComposerActions}>
+                    <Button type="submit" disabled={message.isPending || messageBody.trim() === ''}>
+                      Send message
+                    </Button>
+                    <MutationFeedback
+                      pending={message.isPending}
+                      {...(message.error === null ? {} : { message: message.error?.message })}
+                    />
+                  </div>
+                </form>
+              )}
+            </section>
+          ) : tab === 'transcripts' ? (
             <section
               id="work-detail-transcripts-panel"
               role="tabpanel"

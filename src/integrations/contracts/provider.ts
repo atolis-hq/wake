@@ -1,4 +1,5 @@
 import type { PullRequestService } from '../../activities/index.js';
+import type { ConversationService } from '../../conversations/index.js';
 import type { RunRepository } from '../../execution/index.js';
 import type { CheckpointStore, Clock, EventJournal, IdGenerator } from '../../kernel/index.js';
 import type {
@@ -39,6 +40,7 @@ export interface ProviderServices {
   /** Stable operator-configured UI address included in provider notifications when present. */
   readonly publicUiUrl?: string | undefined;
   readonly work: WorkService;
+  readonly conversations: ConversationService;
   readonly resources: ResourceService;
   readonly resourceLookup: ResourceLookup;
   readonly orchestration: OrchestrationService;

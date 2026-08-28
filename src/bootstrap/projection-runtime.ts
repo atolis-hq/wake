@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { activityProjectionDefinitions } from '../activities/index.js';
 import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
+import { conversationProjection } from '../conversations/index.js';
 import { executionProjection, runsByWorkflowInstanceProjection } from '../execution/index.js';
 import { deliveryProjectionDefinitions, type DeliveryIntentView } from '../integrations/index.js';
 import type { CheckpointStore, EventJournal, ProjectionStore } from '../kernel/index.js';
@@ -25,6 +26,7 @@ import { analyticsProjection } from './analytics-projection.js';
 import { boardProjection } from './board-projection.js';
 
 export const runtimeProjectionDefinitions = [
+  conversationProjection,
   workProjection,
   resourceProjection,
   resourceCorrelationProjection,

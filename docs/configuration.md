@@ -185,6 +185,9 @@ surfaces:
     enabled: false
     host: 127.0.0.1
     port: 4317
+    conversationMessages:
+      # Disabled until Wake can attribute messages to the authenticated operator.
+      enabled: false
   web:
     enabled: false
     auth:
@@ -531,6 +534,7 @@ fields are for deterministic testing, not normal operation.
 | `surfaces.api.enabled` | boolean; default `false` | Enables the local API surface. |
 | `surfaces.api.host` | string; default `127.0.0.1` | API bind host. |
 | `surfaces.api.port` | positive integer; default `4317` | API bind port. |
+| `surfaces.api.conversationMessages.enabled` | boolean; default `false` | Enables the control-plane message composer in a Work Item's Conversation tab, which records a control-plane entry and applies the workflow-resume bridge. Leave disabled until operator identity is available to Wake; conversation timeline reads remain available. |
 | `surfaces.web.enabled` | boolean; default `false` | Enables the web surface. It requires `surfaces.api.enabled: true`. |
 | `surfaces.web.publicUrl` | HTTPS URL; optional | Stable operator-managed address for the web UI. When set, GitHub agent-run comments link their **Wake** header to this URL. See [Public UI access](public-ui-access.md). |
 | `transcripts.enabled` | boolean; default `false` | Enables filesystem-only raw agent prompt/response capture. |

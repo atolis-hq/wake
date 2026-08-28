@@ -11,6 +11,7 @@ import { DeliveryResultKind } from '../../delivery/contracts/vocabulary.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { formatAgentRunComment } from './agent-run-comment.js';
+import { appendDeliveryMarker, deliveryMarker } from './delivery-marker.js';
 
 export interface CommentHistoryEntry {
   readonly author: string;
@@ -21,6 +22,17 @@ export interface CommentHistoryEntry {
     readonly line: number;
     readonly side: 'LEFT' | 'RIGHT';
   };
+}
+
+const sourceMessageIds = new WeakMap<object, string>();
+const deliveryIntentIds = new WeakMap<object, string>();
+
+export function sourceMessageIdForComment(entry: CommentHistoryEntry): string | undefined {
+  return sourceMessageIds.get(entry);
+}
+
+export function deliveryIntentIdForComment(entry: CommentHistoryEntry): string | undefined {
+  return deliveryIntentIds.get(entry);
 }
 
 export interface CommentHistoryReader {
@@ -119,7 +131,7 @@ function providerComments(
   const observed = new Map<string, ProviderComment>();
   for (const event of events) {
     const comment = providerComment(event, keys);
-    if (comment !== null) observed.set(event.eventId, comment);
+    if (comment !== null) observed.set(comment.messageId, comment);
   }
   return observed;
 }
@@ -154,7 +166,7 @@ function reconcileCommentHistory(
 ): readonly CommentHistoryEntry[] {
   const history = new Map<string, HistoryItem>();
   for (const entry of observed.values())
-    history.set(entry.event.eventId, {
+    history.set(entry.messageId, {
       entry: entry.value,
       occurredAt: entry.event.occurredAt,
       globalPosition: entry.event.globalPosition,
@@ -174,7 +186,7 @@ function reconcileCommentHistory(
       occurredAt: confirmation.event.occurredAt,
       globalPosition: confirmation.event.globalPosition,
     });
-    if (matchingProvider !== undefined) history.delete(matchingProvider.event.eventId);
+    if (matchingProvider !== undefined) history.delete(matchingProvider.messageId);
   }
   return [...history.values()]
     .filter((entry) => observedSince === undefined || entry.occurredAt > observedSince)
@@ -199,6 +211,7 @@ interface Confirmation {
 
 interface ProviderComment {
   readonly event: EventEnvelope;
+  readonly messageId: string;
   readonly resourceKey: string;
   readonly value: CommentHistoryEntry;
 }
@@ -236,16 +249,38 @@ function providerComment(event: EventEnvelope, keys: ReadonlySet<string>): Provi
     return null;
   return {
     event,
+    messageId: observedCommentExternalId(observed),
     resourceKey: `${observed.stream.id}:${observed.payload.externalKey}`,
-    value: {
-      author: observed.payload.actor.id,
-      occurredAt: observed.occurredAt,
-      body: observed.payload.body,
-      ...(observed.payload.reviewKind !== 'issue' || observed.payload.location === undefined
-        ? {}
-        : { location: observed.payload.location }),
-    },
+    value: commentWithSourceMessageId(
+      {
+        author: observed.payload.actor.id,
+        occurredAt: observed.occurredAt,
+        body: observed.payload.body,
+        ...(observed.payload.reviewKind !== 'issue' || observed.payload.location === undefined
+          ? {}
+          : { location: observed.payload.location }),
+      },
+      observedCommentExternalId(observed),
+    ),
   };
+}
+
+function commentWithSourceMessageId(
+  entry: CommentHistoryEntry,
+  messageId: string,
+): CommentHistoryEntry {
+  sourceMessageIds.set(entry, messageId);
+  return entry;
+}
+
+function observedCommentExternalId(
+  event: Extract<
+    NonNullable<ReturnType<typeof selectGitHubAdapterEvent>>,
+    { readonly eventType: typeof GitHubEventType.CommentObserved }
+  >,
+): string {
+  const id = event.payload.raw.id;
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : event.eventId;
 }
 
 function syntheticComment(
@@ -253,18 +288,19 @@ function syntheticComment(
   occurredAt: string,
   publicUiUrl: string | undefined,
 ): CommentHistoryEntry {
-  return {
+  const entry = {
     author: UnknownGitHubIdentity,
     occurredAt,
     body: deliveredCommentBody(intent, publicUiUrl),
   };
+  deliveryIntentIds.set(entry, intent.eventId);
+  return entry;
 }
 
 function deliveredCommentBody(
   intent: ConfirmableCommentIntent,
   publicUiUrl: string | undefined,
 ): string {
-  const marker = `<!-- wake:delivery:${intent.eventId} -->`;
   const body =
     intent.eventType === DeliveryIntentEventType.AgentRunPublishRequested
       ? formatAgentRunComment({
@@ -273,11 +309,7 @@ function deliveredCommentBody(
           publicUiUrl,
         })
       : intent.payload.body;
-  return `${body}\n${marker}`.trim();
-}
-
-function deliveryMarker(body: string): string | undefined {
-  return /<!--\s*wake:delivery:([^\s>]+)\s*-->/.exec(body)?.[1];
+  return appendDeliveryMarker(body, intent.eventId);
 }
 
 function parseAdapterId(value: string) {

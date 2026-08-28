@@ -274,6 +274,40 @@ describe('operator retry policy', () => {
     });
   });
 
+  it('resumes the current agent stage when a conversation message arrives during a human wait', () => {
+    const { definition, state } = blockedAgentFixture();
+    const { blockReason: _blockReason, ...withoutBlockReason } = state;
+    const waitingForApproval = {
+      ...withoutBlockReason,
+      status: WorkflowStatus.Waiting,
+      lastOutcome: { kind: ActivityOutcomeKind.Done },
+      waitingFor: { signalKind: 'approved' as never, from: [{ kind: 'human' as const }] },
+    };
+
+    expect(isChangesResumeEligible(waitingForApproval)).toBe(true);
+    expect(requestChangesResume(definition, waitingForApproval, retryInput)).toMatchObject({
+      kind: 'append',
+      events: [
+        { eventType: OrchestrationEventType.OperatorRetryRequested },
+        {
+          eventType: OrchestrationEventType.ActivityRequested,
+          payload: { activity: activityName('agent') },
+        },
+      ],
+    });
+  });
+
+  it('does not resume a human wait whose current stage is not an agent', () => {
+    const { state } = blockedFailedFixture();
+    const waitingForApproval = {
+      ...state,
+      status: WorkflowStatus.Waiting,
+      waitingFor: { signalKind: 'approved' as never, from: [{ kind: 'human' as const }] },
+    };
+
+    expect(isChangesResumeEligible(waitingForApproval)).toBe(false);
+  });
+
   it('rejects an empty operator retry command id', () => {
     const { definition, state } = blockedFailedFixture();
 

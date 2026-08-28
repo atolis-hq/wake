@@ -1,5 +1,10 @@
 import { pullRequestProjection, type PullRequestView } from '../activities/index.js';
 import {
+  conversationIdForWorkItem,
+  ConversationOriginKind,
+  type ConversationStreamKind,
+} from '../conversations/index.js';
+import {
   executionProjection,
   runsByWorkflowInstanceProjection,
   type RunView,
@@ -42,6 +47,9 @@ export function createSurfaceWorkApplications(
   root: CompositionRoot,
   now: () => string,
 ): ApiApplications['work'] {
+  const conversationMessagesEnabled =
+    (root as Partial<CompositionRoot>).config?.surfaces?.api?.conversationMessages?.enabled ===
+    true;
   return {
     async list(query) {
       const stored = (await root.projections.list<WorkItemView | null>('work')).flatMap((entry) =>
@@ -154,7 +162,48 @@ export function createSurfaceWorkApplications(
       }
       return accepted(command.idempotencyKey, now());
     },
+    ...(conversationMessagesEnabled
+      ? {
+          async message(key, command) {
+            const id = decodeWorkItemId(key);
+            if (id === undefined) throw new Error('Work item not found');
+            const work = await root.work.get(id);
+            if (work === null) throw new Error('Work item not found');
+            if (work.deleted === true) throw new Error('Work item is deleted');
+            const context = commandContext(command.idempotencyKey, now);
+            await root.conversations.createForWorkItem(id, context);
+            await root.conversations.record(
+              {
+                conversationId: conversationIdForWorkItem(id),
+                entryId: `control-plane:${command.idempotencyKey}`,
+                body: command.body,
+                origin: { kind: ConversationOriginKind.ControlPlane, actorId: context.actor.id },
+              },
+              context,
+            );
+            await resumeAgentStages(root, id, context);
+            return accepted(command.idempotencyKey, now());
+          },
+        }
+      : {}),
   };
+}
+
+async function resumeAgentStages(
+  root: CompositionRoot,
+  itemId: ReturnType<typeof workItemId>,
+  context: ReturnType<typeof commandContext>,
+): Promise<void> {
+  const workflows = await root.orchestration.listForWorkItem(itemId);
+  for (const workflow of workflows)
+    try {
+      await root.orchestration.resumeBlockedStageForChanges(workflow.workflowInstanceId, context);
+    } catch (error) {
+      console.error(
+        `Conversation message resume failed for workflow ${workflow.workflowInstanceId}`,
+        error,
+      );
+    }
 }
 
 async function workDetail(
@@ -200,6 +249,9 @@ async function workDetail(
   ).find((entry) => entry !== null && entry.value !== null);
   const primary = workflows.find((value) => value.parentWorkflowInstanceId === undefined) ?? null;
   const externalRef = await primaryExternalRef(root, work.workItemId, correlations, resources);
+  // Narrow test/application seams may provide a partial composition root while
+  // the production root always composes Conversations.
+  const conversation = await conversationForWorkItem(root, id);
   const data: WorkDetailResponse = {
     work: presentDetailWork(work, externalRef, runs),
     resources: resources.map(presentResource(root.resolveResourceLink)),
@@ -215,6 +267,10 @@ async function workDetail(
       transcriptGroups: await transcriptGroups(root.transcriptStore, id, runs),
     },
     activities: presentPullRequest(pullRequest?.value),
+    conversation: presentConversation(
+      conversation,
+      (root as Partial<CompositionRoot>).config?.surfaces.api.conversationMessages.enabled === true,
+    ),
   };
   const [projections, correlationFacts] = await Promise.all([
     contributingProjections(root, id, resources, workflows, runs),
@@ -227,6 +283,40 @@ async function workDetail(
       [...projections, ...correlationFacts, ...(pullRequest == null ? [] : [pullRequest])],
       now(),
     ),
+  };
+}
+
+async function conversationForWorkItem(root: CompositionRoot, id: ReturnType<typeof workItemId>) {
+  // Narrow test/application seams may provide a partial composition root while
+  // the production root always composes Conversations.
+  return (await (root as Partial<CompositionRoot>).conversations?.forWorkItem(id)) ?? null;
+}
+
+function presentConversation(
+  conversation: Awaited<ReturnType<NonNullable<CompositionRoot['conversations']>['forWorkItem']>>,
+  canCreateEntries: boolean,
+): WorkDetailResponse[typeof ConversationStreamKind.Conversation] {
+  return {
+    canCreateEntries,
+    entries: (conversation?.entries ?? []).map((entry) => ({
+      entryId: entry.entryId,
+      body: entry.deleted ? '' : entry.body,
+      occurredAt: entry.occurredAt,
+      origin: entry.origin.kind,
+      actorId: entry.origin.actorId,
+      deleted: entry.deleted,
+      representations: entry.representations,
+      ...(entry.origin.kind === ConversationOriginKind.Agent
+        ? { runId: entry.origin.runId, stage: entry.origin.stage }
+        : {}),
+      ...(entry.origin.kind === ConversationOriginKind.External
+        ? {
+            sourceAdapter: entry.origin.adapter,
+            sourceResourceId: entry.origin.resourceId,
+            sourceThreadId: entry.origin.threadId,
+          }
+        : {}),
+    })),
   };
 }
 

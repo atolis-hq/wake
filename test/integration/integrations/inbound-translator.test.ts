@@ -5,6 +5,10 @@ import { activityName, ActivityOutcomeKind } from '../../../src/activities/index
 import { RunRepository } from '../../../src/execution/index.js';
 
 import {
+  conversationIdForWorkItem,
+  createConversationService,
+} from '../../../src/conversations/index.js';
+import {
   BuiltInAdapterId,
   createEventDraft,
   GitHubEventType,
@@ -501,6 +505,270 @@ describe('InboundTranslator', () => {
       currentStage: 'refine',
       pendingActivation: { activity: activityName('agent'), ordinal: 2 },
     });
+    expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
+  });
+
+  it('records an unverified delivery marker as external feedback rather than agent publication', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const conversations = createConversationService(fixture.world.journal);
+    const conversationId = conversationIdForWorkItem(fixture.workflow.workItemId);
+    const context = {
+      commandId: 'conversation-echo',
+      correlationId: 'conversation-echo' as never,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      actor: { kind: 'system' as const, id: 'test' },
+    };
+    await conversations.createForWorkItem(fixture.workflow.workItemId, context);
+    await conversations.record(
+      {
+        conversationId,
+        entryId: 'agent-run-1',
+        body: 'I need the latest commit.',
+        origin: { kind: 'agent', actorId: 'wake', runId: 'run-1', stage: 'refine' },
+      },
+      context,
+    );
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations,
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:987',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:987',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: 'I need the latest commit.\n<!-- wake:delivery:agent-run-1 -->',
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'wake-bot', kind: 'bot' },
+        raw: { id: 987 },
+      },
+    });
+    await fixture.world.journal.append(event.stream, 0, [event]);
+
+    await translator.runOnce();
+
+    const entries = (await conversations.forWorkItem(fixture.workflow.workItemId))?.entries;
+    expect(entries).toHaveLength(2);
+    expect(entries?.[1]).toMatchObject({
+      body: 'I need the latest commit.\n<!-- wake:delivery:agent-run-1 -->',
+      origin: { kind: 'external', actorId: 'wake-bot', messageId: '987' },
+      representations: [],
+    });
+  });
+
+  it('creates a missing conversation before recording a correlated inbound comment', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const conversations = createConversationService(fixture.world.journal);
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations,
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:988',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:988',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: 'Please continue.',
+        revision: fixture.world.clock.now().toISOString(),
+        location: { path: 'src/current.ts', line: 41, side: 'RIGHT' },
+        actor: { id: 'maintainer', kind: 'human' },
+        raw: { id: 988 },
+      },
+    });
+    await fixture.world.journal.append(event.stream, 0, [event]);
+
+    await translator.runOnce();
+
+    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
+      {
+        entryId: event.eventId,
+        body: 'Please continue.',
+        origin: { location: { path: 'src/current.ts', line: 41, side: 'RIGHT' } },
+      },
+    ]);
+
+    const updated = createEventDraft({
+      ...event,
+      eventId: 'github:issue-comment:atolis-hq/wake#583:988:updated',
+      occurredAt: '2026-08-18T00:00:00.000Z',
+      payload: { ...event.payload, body: 'Please continue with the updated plan.' },
+    });
+    await fixture.world.journal.append(event.stream, 1, [updated]);
+
+    await translator.runOnce();
+
+    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
+      {
+        entryId: event.eventId,
+        body: 'Please continue with the updated plan.',
+        revisions: [
+          { body: 'Please continue.' },
+          { body: 'Please continue with the updated plan.' },
+        ],
+      },
+    ]);
+  });
+
+  it('defers canonical recording without blocking inbound workflow signals', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations: {
+          createForWorkItem: async () => Promise.reject(new Error('conversation unavailable')),
+        } as never,
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:989',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:989',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: 'The missing context is in the latest commit.',
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'maintainer', kind: 'human' },
+        raw: { id: 989 },
+      },
+    });
+    const [observed] = await fixture.world.journal.append(event.stream, 0, [event]);
+    if (observed === undefined) throw new Error('Expected comment observation');
+
+    await translator.runOnce();
+
+    expect(await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId)).toMatchObject({
+      status: 'active',
+      currentStage: 'refine',
+    });
+    await expect(
+      fixture.world.checkpoints.load('reactor:integration.github.inbound'),
+    ).resolves.toBe(observed.globalPosition);
+    expect(
+      (await fixture.world.events(GitHubEventType.ConversationRecordDeferred)).map(
+        (event) => event.payload,
+      ),
+    ).toContainEqual({ adapter: BuiltInAdapterId.GitHub, sourceEventId: event.eventId });
+  });
+
+  it('does not rescan the adapter stream once no deferred conversation record remains', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations: createConversationService(fixture.world.journal),
+      },
+    );
+    const readStream = vi.spyOn(fixture.world.journal, 'readStream');
+
+    await translator.runOnce();
+    readStream.mockClear();
+    await translator.runOnce();
+
+    expect(
+      readStream.mock.calls.filter(
+        ([stream]) => stream.kind === 'integration' && stream.id === BuiltInAdapterId.GitHub,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('recovers deferred canonical recording without replaying inbound workflow signals', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const conversations = createConversationService(fixture.world.journal);
+    const record = vi
+      .spyOn(conversations, 'record')
+      .mockRejectedValueOnce(new Error('conversation temporarily unavailable'));
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations,
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:990',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:990',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: 'Please include the missing migration note.',
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'maintainer', kind: 'human' },
+        raw: { id: 990 },
+      },
+    });
+    await fixture.world.journal.append(event.stream, 0, [event]);
+
+    await translator.runOnce();
+    record.mockRestore();
+    await translator.runOnce();
+
+    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
+      { entryId: event.eventId, body: 'Please include the missing migration note.' },
+    ]);
+    expect(
+      (await fixture.world.events(GitHubEventType.ConversationRecordRecovered)).map(
+        (recovered) => recovered.payload,
+      ),
+    ).toContainEqual({ adapter: BuiltInAdapterId.GitHub, sourceEventId: event.eventId });
     expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
   });
 });

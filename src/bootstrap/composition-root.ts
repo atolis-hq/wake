@@ -11,6 +11,7 @@ import {
   type RunnerPipeline,
   type ScheduleCheckpointStore,
 } from '../control-plane/index.js';
+import { createConversationService } from '../conversations/index.js';
 import {
   ExecutionCancellationReason,
   ExternalExecutionState,
@@ -105,6 +106,7 @@ export interface CompositionRoot {
   readonly checkpoints: CheckpointStore;
   readonly activities: ActivityRegistry;
   readonly work: ReturnType<typeof createWorkService>;
+  readonly conversations: ReturnType<typeof createConversationService>;
   readonly resources: ReturnType<typeof createResourceService>;
   readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
@@ -147,6 +149,7 @@ export async function createCompositionRoot(
   const ids = new UlidIdGenerator();
   const { journal, projections, checkpoints } = composePersistence(paths, clock, options);
   const work = createWorkService(journal);
+  const conversations = createConversationService(journal);
   const lookup = createResourceLookup({ journal, projections });
   const resources = createResourceService(journal, lookup);
   const pullRequests = createPullRequestService(journal, work, resources);
@@ -157,10 +160,15 @@ export async function createCompositionRoot(
       pullRequests,
       resources,
       wakeRoot,
-      createGitHubAgentContextReader(journal, resources, {
-        publicUiUrl: config.surfaces.web.publicUrl,
-        githubAdapters: githubAdapters(config),
-      }),
+      createGitHubAgentContextReader(
+        journal,
+        resources,
+        {
+          publicUiUrl: config.surfaces.web.publicUrl,
+          githubAdapters: githubAdapters(config),
+        },
+        conversations,
+      ),
     );
   const definitions = Object.fromEntries(
     Object.entries(config.orchestration.workflows).map(([name, definition]) => [
@@ -290,6 +298,7 @@ export async function createCompositionRoot(
     isPaused: isRuntimePaused,
     clock,
     work,
+    conversations,
     ids,
     wakeRoot,
     projectionRunSerialiser: createFileProjectionRunSerialiser(paths.dataRoot),
@@ -313,6 +322,7 @@ export async function createCompositionRoot(
     checkpoints,
     activities,
     work,
+    conversations,
     resources,
     lookup,
     orchestration,

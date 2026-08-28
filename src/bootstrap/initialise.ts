@@ -50,8 +50,13 @@ orchestration:
 # configure one — see SETUP.md.
 integrations: {}
 
-# Operator-facing HTTP API / web UI. Disabled by default.
-surfaces: {}
+# Operator-facing HTTP API / web UI. Disabled by default. Control-plane
+# conversation messages stay disabled until Wake can attribute them to the
+# authenticated operator.
+surfaces:
+  api:
+    conversationMessages:
+      enabled: false
 
 # Transcript capture is opt-in. Captured transcripts expire after one day.
 transcripts:

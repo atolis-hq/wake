@@ -4,6 +4,11 @@ import {
   type AgentContextPullRequest,
   type AgentContextReader,
 } from '../../../activities/index.js';
+import {
+  ConversationOriginKind,
+  type ConversationEntryView,
+  type ConversationService,
+} from '../../../conversations/index.js';
 import type { EventJournal } from '../../../kernel/index.js';
 import {
   BuiltInResourceKind,
@@ -17,6 +22,8 @@ import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import {
   createCommentHistoryReader,
+  deliveryIntentIdForComment,
+  sourceMessageIdForComment,
   type CommentHistoryReaderOptions,
 } from './comment-history-reader.js';
 
@@ -24,12 +31,13 @@ export function createGitHubAgentContextReader(
   journal: EventJournal,
   resources: Pick<ResourceService, 'correlationsForWork' | 'get'>,
   options: CommentHistoryReaderOptions = {},
+  conversations?: Pick<ConversationService, 'forWorkItem'>,
 ): AgentContextReader {
   const commentHistory = createCommentHistoryReader(journal, resources, options);
   return {
     async forWorkItem(workItemId, options) {
       const { comments, omittedComments } = boundedAgentContextComments(
-        await commentHistory.forWorkItem(workItemId as WorkItemId, options),
+        await commentsForWorkItem(commentHistory, conversations, workItemId as WorkItemId, options),
       );
       return {
         ...(await currentWorkItemContent(journal, resources, workItemId as WorkItemId)),
@@ -41,6 +49,73 @@ export function createGitHubAgentContextReader(
       };
     },
   };
+}
+
+async function commentsForWorkItem(
+  commentHistory: ReturnType<typeof createCommentHistoryReader>,
+  conversations: Pick<ConversationService, 'forWorkItem'> | undefined,
+  workItemId: WorkItemId,
+  options: Parameters<ReturnType<typeof createCommentHistoryReader>['forWorkItem']>[1],
+): Promise<readonly AgentContextComment[]> {
+  const conversation = await conversations?.forWorkItem(workItemId);
+  if (conversation === null || conversation === undefined)
+    return commentHistory.forWorkItem(workItemId, options);
+  const canonical = conversation.entries
+    .filter(
+      (entry) =>
+        !entry.deleted &&
+        (options?.observedSince === undefined ||
+          latestEntryRevision(entry).occurredAt > options.observedSince),
+    )
+    .map((entry) => ({
+      author: entry.origin.actorId,
+      occurredAt: latestEntryRevision(entry).occurredAt,
+      body: entry.body,
+      ...(entry.origin.kind !== ConversationOriginKind.External ||
+      entry.origin.location === undefined
+        ? {}
+        : { location: entry.origin.location }),
+      ...(entry.origin.kind !== ConversationOriginKind.External
+        ? {}
+        : { sourceMessageId: entry.origin.messageId }),
+      deliveryIntentId: undefined,
+    }));
+  const representedMessageIds = new Set(
+    conversation.entries.flatMap((entry) => [
+      ...(entry.origin.kind !== ConversationOriginKind.External ? [] : [entry.origin.messageId]),
+      ...entry.representations.map((representation) => representation.externalId),
+    ]),
+  );
+  const representedAgentEntryIds = new Set(
+    conversation.entries.flatMap((entry) =>
+      entry.origin.kind === ConversationOriginKind.Agent && entry.representations.length > 0
+        ? [entry.entryId]
+        : [],
+    ),
+  );
+  const historic = (await commentHistory.forWorkItem(workItemId, options))
+    .map((entry) => ({
+      ...entry,
+      sourceMessageId: sourceMessageIdForComment(entry),
+      deliveryIntentId: deliveryIntentIdForComment(entry),
+    }))
+    .filter(
+      (entry) =>
+        (entry.sourceMessageId === undefined ||
+          !representedMessageIds.has(entry.sourceMessageId)) &&
+        (entry.deliveryIntentId === undefined ||
+          !representedAgentEntryIds.has(entry.deliveryIntentId)),
+    );
+  return [...historic, ...canonical]
+    .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
+    .map(
+      ({ sourceMessageId: _sourceMessageId, deliveryIntentId: _deliveryIntentId, ...entry }) =>
+        entry,
+    );
+}
+
+function latestEntryRevision(entry: ConversationEntryView): { readonly occurredAt: string } {
+  return entry.revisions.at(-1) ?? entry;
 }
 
 const maximumAgentContextCommentCharacters = 8_000;

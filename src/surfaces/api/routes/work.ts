@@ -7,4 +7,5 @@ export const workRoutes = [
   '/api/v1/work-items/:workItemKey/commands/delete',
   '/api/v1/work-items/:workItemKey/commands/retry',
   '/api/v1/work-items/:workItemKey/commands/extend',
+  '/api/v1/work-items/:workItemKey/commands/message',
 ] as const;

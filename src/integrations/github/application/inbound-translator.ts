@@ -5,6 +5,11 @@ import {
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
+import {
+  conversationIdForWorkItem,
+  ConversationOriginKind,
+  type ConversationService,
+} from '../../../conversations/index.js';
 import type { RunRepository } from '../../../execution/index.js';
 import {
   correlationId,
@@ -84,6 +89,7 @@ interface InboundTranslatorDependencies {
   readonly routing?: WorkflowRouter;
   readonly intake?: readonly GitHubIntakeRuleConfig[];
   readonly conclusion?: WorkConclusion;
+  readonly conversations?: ConversationService;
 }
 
 export class InboundTranslator {
@@ -129,6 +135,7 @@ export class InboundTranslator {
     this.routing = dependencies.routing;
     this.intake = gitHubIntakeRules(dependencies.intake ?? []);
     this.conclusion = dependencies.conclusion;
+    this.conversations = dependencies.conversations;
   }
 
   private readonly pullRequests: PullRequestService | undefined;
@@ -140,6 +147,8 @@ export class InboundTranslator {
   private readonly routing: WorkflowRouter | undefined;
   private readonly intake: readonly IntakeRule[];
   private readonly conclusion: WorkConclusion | undefined;
+  private readonly conversations: ConversationService | undefined;
+  private conversationRecordRecoveryPending: boolean | undefined;
 
   // Adapter filtering, checkpointing, and typed event dispatch must stay together.
   async runOnce(limit = 100): Promise<number> {
@@ -156,6 +165,7 @@ export class InboundTranslator {
     await this.resources.retryPendingWorkCorrelations();
     await this.applyDeferredExternalOutcomes();
     const checkpoint = `reactor:integration.${this.adapter}.inbound`;
+    await this.retryPendingConversationRecords();
     await this.retryPendingTranslations();
     const position = await this.checkpoints.load(checkpoint);
     const events = await this.journal.readAll(position, limit);
@@ -231,11 +241,170 @@ export class InboundTranslator {
           runs: this.runs,
           orchestration: this.orchestration,
         });
+        try {
+          await this.recordConversationEntry(owned);
+        } catch {
+          await this.recordConversationDeferred(owned);
+        }
       }
       if (await this.retryRecorded(owned.eventId)) await this.recordTranslationRecovery(owned);
     } catch (error) {
       await this.recordTranslationFailure(owned, error);
     }
+  }
+
+  private async retryPendingConversationRecords(): Promise<void> {
+    if (this.conversationRecordRecoveryPending === false) return;
+    const stream = integrationStream(this.adapter);
+    const events = (await this.journal!.readStream(stream))
+      .map(selectGitHubAdapterEvent)
+      .filter((event): event is GitHubAdapterEvent => event !== null);
+    const recovered = new Set(
+      events
+        .filter((event) => event.eventType === GitHubEventType.ConversationRecordRecovered)
+        .map((event) => event.payload.sourceEventId),
+    );
+    const pending = events
+      .filter(
+        (
+          event,
+        ): event is Extract<
+          GitHubAdapterEvent,
+          { readonly eventType: typeof GitHubEventType.ConversationRecordDeferred }
+        > => event.eventType === GitHubEventType.ConversationRecordDeferred,
+      )
+      .filter((event) => !recovered.has(event.payload.sourceEventId));
+    this.conversationRecordRecoveryPending = pending.length > 0;
+    let stillPending = false;
+    for (const deferred of pending) {
+      const source = events.find((event) => event.eventId === deferred.payload.sourceEventId);
+      if (source?.eventType !== GitHubEventType.CommentObserved) {
+        stillPending = true;
+        continue;
+      }
+      try {
+        await this.recordConversationEntry(source);
+      } catch {
+        stillPending = true;
+        continue;
+      }
+      await this.appendConversationRecordFact(GitHubEventType.ConversationRecordRecovered, source);
+    }
+    this.conversationRecordRecoveryPending = stillPending;
+  }
+
+  private async recordConversationDeferred(
+    event: Extract<
+      GitHubAdapterEvent,
+      { readonly eventType: typeof GitHubEventType.CommentObserved }
+    >,
+  ): Promise<void> {
+    await this.appendConversationRecordFact(GitHubEventType.ConversationRecordDeferred, event);
+    this.conversationRecordRecoveryPending = true;
+  }
+
+  private async appendConversationRecordFact(
+    eventType:
+      | typeof GitHubEventType.ConversationRecordDeferred
+      | typeof GitHubEventType.ConversationRecordRecovered,
+    source: Extract<
+      GitHubAdapterEvent,
+      { readonly eventType: typeof GitHubEventType.CommentObserved }
+    >,
+  ): Promise<void> {
+    const stream = integrationStream(this.adapter);
+    const eventId = `github:${eventType}:${this.adapter}:${source.eventId}`;
+    const existing = await this.journal!.readStream(stream);
+    if (existing.some((event) => event.eventId === eventId)) return;
+    await this.journal!.append(stream, existing.length, [
+      createEventDraft({
+        eventId,
+        eventType,
+        occurredAt: source.occurredAt,
+        correlationId: source.correlationId,
+        causationId: source.eventId,
+        actor: { kind: EventActorKind.Integration, id: this.adapter },
+        source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
+        stream,
+        payload: { adapter: this.adapter, sourceEventId: source.eventId },
+      }),
+    ]);
+  }
+
+  // Conversation reconciliation keeps all entry identity decisions in one ordered command path.
+  private async recordConversationEntry(
+    event: Extract<
+      GitHubAdapterEvent,
+      { readonly eventType: typeof GitHubEventType.CommentObserved }
+    >,
+  ): Promise<void> {
+    if (this.conversations === undefined || this.resources === undefined) return;
+    const resource = await this.resources.findByExternalKey({
+      adapter: this.adapter,
+      key: event.payload.externalKey,
+    });
+    if (resource === null) return;
+    const correlation = await this.resources.primaryCorrelation(resource.resourceId);
+    if (correlation === null) return;
+    const conversationId = conversationIdForWorkItem(correlation.workItemId);
+    await this.conversations.createForWorkItem(correlation.workItemId, commandContext(event));
+    await this.conversations.associateResource(
+      {
+        conversationId,
+        resourceId: resource.resourceId,
+        threadId: resource.externalKey.key,
+      },
+      commandContext(event),
+    );
+    const externalId = observedCommentExternalId(event);
+    const existing = await this.conversations.forWorkItem(correlation.workItemId);
+    const priorEntry = existing?.entries.find(
+      (entry) =>
+        entry.origin.kind === ConversationOriginKind.External &&
+        entry.origin.resourceId === resource.resourceId &&
+        entry.origin.messageId === externalId,
+    );
+    if (
+      existing?.entries.some((entry) =>
+        entry.representations.some(
+          (representation) =>
+            representation.resourceId === resource.resourceId &&
+            representation.externalId === externalId,
+        ),
+      )
+    )
+      return;
+    if (priorEntry !== undefined) {
+      if (priorEntry.body !== event.payload.body)
+        await this.conversations.revise(
+          {
+            conversationId,
+            entryId: priorEntry.entryId,
+            body: event.payload.body,
+          },
+          commandContext(event),
+        );
+      return;
+    }
+    await this.conversations.record(
+      {
+        conversationId,
+        entryId: event.eventId,
+        body: event.payload.body,
+        origin: {
+          kind: ConversationOriginKind.External,
+          adapter: this.adapter,
+          actorId: event.payload.actor.id,
+          resourceId: resource.resourceId,
+          threadId: resource.externalKey.key,
+          messageId: externalId,
+          ...(event.payload.reviewKind !== 'issue' || event.payload.location === undefined
+            ? {}
+            : { location: event.payload.location }),
+        },
+      },
+      commandContext(event),
+    );
   }
 
   private async failureRecorded(sourceEventId: string): Promise<boolean> {
@@ -663,6 +832,7 @@ export class InboundTranslator {
       throw new Error('InboundTranslator requires work, resources, orchestration, and routing');
     return {
       work: this.work,
+      ...(this.conversations === undefined ? {} : { conversations: this.conversations }),
       resources: this.resources,
       orchestration: this.orchestration,
       routing: this.routing,
@@ -838,4 +1008,14 @@ export class InboundTranslator {
       }
     }
   }
+}
+
+function observedCommentExternalId(
+  event: Extract<
+    GitHubAdapterEvent,
+    { readonly eventType: typeof GitHubEventType.CommentObserved }
+  >,
+): string {
+  const id = event.payload.raw.id;
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : event.eventId;
 }

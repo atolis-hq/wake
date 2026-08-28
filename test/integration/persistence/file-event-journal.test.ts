@@ -7,11 +7,12 @@ import { createEventDraft, type EntityRef, type EventDraft } from '../../../src/
 import { FileEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
-const { readFileMock } = vi.hoisted(() => ({ readFileMock: vi.fn() }));
+const { readFileMock, statMock } = vi.hoisted(() => ({ readFileMock: vi.fn(), statMock: vi.fn() }));
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof FsPromises>();
   readFileMock.mockImplementation(actual.readFile);
-  return { ...actual, readFile: readFileMock };
+  statMock.mockImplementation(actual.stat);
+  return { ...actual, readFile: readFileMock, stat: statMock };
 });
 
 it('reopens the journal and continues stream sequence and global position', async () => {
@@ -185,6 +186,33 @@ it('does not re-parse prior history from disk after appending new events', async
     String(path).endsWith('.jsonl'),
   );
   expect(journalFileReads).toHaveLength(0);
+});
+
+it('checks only the manifest for an unchanged warm journal', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-warm-cache-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const draft = createEventDraft({
+    eventId: 'event-1',
+    eventType: 'work.item-created',
+    occurredAt: '2026-07-30T12:00:00Z',
+    correlationId: 'corr',
+    causationId: 'event-1',
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    stream,
+    payload: { objective: 'ship' },
+  });
+  const journal = new FileEventJournal(root, new FakeClock());
+  await journal.append(stream, 0, [draft]);
+  await journal.readAll(0);
+
+  statMock.mockClear();
+  await journal.readAll(0);
+
+  expect(statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(0);
+  expect(
+    statMock.mock.calls.filter(([path]) => String(path).endsWith('index-manifest.json')),
+  ).toHaveLength(1);
 });
 
 it('uses the refreshed warm-cache stream index for ordered, isolated stream reads', async () => {

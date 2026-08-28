@@ -1,6 +1,7 @@
 const modules = [
   'kernel',
   'persistence',
+  'conversations',
   'work',
   'resources',
   'activities',
@@ -14,13 +15,22 @@ const modules = [
 const dependencyMap = {
   kernel: [],
   persistence: ['kernel'],
+  conversations: ['kernel', 'work'],
   work: ['kernel'],
   resources: ['kernel', 'work'],
   activities: ['kernel', 'work', 'resources'],
   orchestration: ['kernel', 'work', 'activities', 'execution'],
   execution: ['kernel', 'work', 'resources', 'activities'],
   'control-plane': ['kernel', 'work', 'resources', 'activities', 'orchestration', 'execution'],
-  integrations: ['kernel', 'work', 'resources', 'activities', 'orchestration', 'execution'],
+  integrations: [
+    'kernel',
+    'work',
+    'resources',
+    'activities',
+    'orchestration',
+    'execution',
+    'conversations',
+  ],
   surfaces: [
     'kernel',
     'persistence',
@@ -31,6 +41,7 @@ const dependencyMap = {
     'execution',
     'control-plane',
     'integrations',
+    'conversations',
   ],
   bootstrap: [
     'kernel',
@@ -43,6 +54,7 @@ const dependencyMap = {
     'control-plane',
     'integrations',
     'surfaces',
+    'conversations',
   ],
 };
 // composition-root is the sole production composition point; since the

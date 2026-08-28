@@ -2,6 +2,7 @@
   "name": "bootstrap",
   "kind": "composition",
   "dependencies": [
+    "conversations",
     "kernel",
     "persistence",
     "work",

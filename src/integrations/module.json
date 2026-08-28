@@ -1,7 +1,15 @@
 {
   "name": "integrations",
   "kind": "adapter",
-  "dependencies": ["kernel", "work", "resources", "activities", "orchestration", "execution"],
+  "dependencies": [
+    "kernel",
+    "work",
+    "resources",
+    "activities",
+    "orchestration",
+    "execution",
+    "conversations"
+  ],
   "publicEntry": "./index.ts",
   "namespaces": {
     "events": ["integration.", "delivery.", "status.", "reply.", "agent-run."],

@@ -34,6 +34,32 @@ export interface WorkDetailResponse {
     readonly transcriptGroups: readonly TranscriptGroupResponse[];
   };
   readonly activities: { readonly pullRequest?: PullRequestResponse };
+  readonly conversation: {
+    /** Whether this authenticated surface may create control-plane entries. */
+    readonly canCreateEntries: boolean;
+    readonly entries: readonly {
+      readonly entryId: string;
+      readonly body: string;
+      readonly occurredAt: string;
+      readonly origin: string;
+      readonly actorId: string;
+      readonly runId?: string | undefined;
+      readonly stage?: string | undefined;
+      readonly sourceAdapter?: string | undefined;
+      readonly sourceResourceId?: string | undefined;
+      readonly sourceThreadId?: string | undefined;
+      readonly deleted: boolean;
+      readonly representations: readonly {
+        readonly resourceId: string;
+        readonly externalId: string;
+      }[];
+    }[];
+  };
+}
+
+export interface ConversationMessageRequest {
+  readonly idempotencyKey: string;
+  readonly body: string;
 }
 
 export interface PullRequestResponse {

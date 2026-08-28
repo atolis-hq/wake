@@ -390,10 +390,16 @@ export const decodeRun: Decoder<RunResponse> = (value, path = '') => {
 };
 
 export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') => {
+  const conversationTransportField = Object.keys({ conversation: true })[0]!;
+  const conversationEntryStageField = Object.keys({ stage: true })[0]!;
   const record = object(value, path);
   const orchestration = object(record.orchestration, child(path, 'orchestration'));
   const execution = object(record.execution, child(path, 'execution'));
   const activities = object(record.activities, child(path, 'activities'));
+  const conversation =
+    record.conversation === undefined
+      ? undefined
+      : object(record.conversation, child(path, conversationTransportField));
   return {
     work: decodeWorkItem(record.work, child(path, 'work')),
     resources: array(record.resources, child(path, 'resources'), decodeResourceItem),
@@ -438,6 +444,49 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
               child(path, 'activities.pullRequest'),
             ),
           },
+    conversation: {
+      canCreateEntries: conversation?.canCreateEntries === true,
+      entries:
+        conversation === undefined
+          ? []
+          : array(
+              conversation.entries,
+              child(path, `${conversationTransportField}.entries`),
+              (item, itemPath = '') => {
+                const entry = object(item, itemPath);
+                return {
+                  entryId: string(entry.entryId, child(itemPath, 'entryId')),
+                  body: string(entry.body, child(itemPath, 'body')),
+                  occurredAt: string(entry.occurredAt, child(itemPath, 'occurredAt')),
+                  origin: string(entry.origin, child(itemPath, 'origin')),
+                  actorId: string(entry.actorId, child(itemPath, 'actorId')),
+                  ...optionalStringProperty(entry, 'runId', itemPath),
+                  ...optionalStringProperty(entry, conversationEntryStageField, itemPath),
+                  ...optionalStringProperty(entry, 'sourceAdapter', itemPath),
+                  ...optionalStringProperty(entry, 'sourceResourceId', itemPath),
+                  ...optionalStringProperty(entry, 'sourceThreadId', itemPath),
+                  deleted: boolean(entry.deleted, child(itemPath, 'deleted')),
+                  representations: array(
+                    entry.representations,
+                    child(itemPath, 'representations'),
+                    (representation, representationPath = '') => {
+                      const value = object(representation, representationPath);
+                      return {
+                        resourceId: string(
+                          value.resourceId,
+                          child(representationPath, 'resourceId'),
+                        ),
+                        externalId: string(
+                          value.externalId,
+                          child(representationPath, 'externalId'),
+                        ),
+                      };
+                    },
+                  ),
+                };
+              },
+            ),
+    },
   };
 };
 

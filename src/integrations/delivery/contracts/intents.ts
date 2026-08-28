@@ -49,6 +49,8 @@ interface AgentRunPublishRequestedPayload {
   readonly workflowInstanceId: string;
   readonly activationId: string;
   readonly resourceId: ResourceId;
+  readonly conversationId?: string | undefined;
+  readonly conversationEntryId?: string | undefined;
   readonly report: AgentRunPublicationReport;
 }
 
@@ -97,6 +99,8 @@ const agentSchema = z
     workflowInstanceId: z.string().min(1),
     activationId: z.string().min(1),
     resourceId: brandedStringSchema(resourceId),
+    conversationId: z.string().min(1).optional(),
+    conversationEntryId: z.string().min(1).optional(),
     report: reportSchema,
   })
   .strict();

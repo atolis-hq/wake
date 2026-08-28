@@ -1,4 +1,9 @@
 import { BuiltInActivityName } from '../../activities/index.js';
+import {
+  conversationIdForWorkItem,
+  ConversationOriginKind,
+  type ConversationService,
+} from '../../conversations/index.js';
 import { RunStatus, type RunRepository } from '../../execution/index.js';
 import {
   createEventDraft,
@@ -40,6 +45,7 @@ export class AgentRunPublicationReactor {
       readonly runs: RunRepository;
       readonly resources: Pick<ResourceService, 'correlationsForWork' | 'get'>;
       readonly orchestration: Pick<OrchestrationService, 'listAll'>;
+      readonly conversations?: Pick<ConversationService, 'createForWorkItem' | 'record'>;
       readonly replies?: ReplyPublicationConfig | undefined;
     },
   ) {}
@@ -104,6 +110,14 @@ export class AgentRunPublicationReactor {
     const stage = await this.stageForActivation(workflow.workflowInstanceId, run.activationId);
     const report = projectTerminalAgentRunReport(reportInput(run, stage, workflow, allWorkflows));
     if (report === null) return;
+    await this.recordConversationEntry(
+      workflow.workItemId,
+      run.runId,
+      report.displayBody,
+      stage,
+      occurredAt,
+      correlationId,
+    );
     const replies = this.dependencies.replies ?? defaultReplyPublication;
     const target = selectReplyTarget(
       { stage, outcome: report.outcome },
@@ -130,6 +144,12 @@ export class AgentRunPublicationReactor {
             workflowInstanceId: run.workflowInstanceId,
             activationId: run.activationId,
             resourceId: resource.resourceId,
+            ...(this.dependencies.conversations === undefined
+              ? {}
+              : {
+                  conversationId: conversationIdForWorkItem(workflow.workItemId),
+                  conversationEntryId: `agent-run:${run.runId}`,
+                }),
             report,
           },
         }),
@@ -137,6 +157,39 @@ export class AgentRunPublicationReactor {
     } catch {
       /* idempotency is the deterministic run event id */
     }
+  }
+
+  private async recordConversationEntry(
+    workItemId: WorkflowInstanceView['workItemId'],
+    runId: string,
+    body: string,
+    stage: string | undefined,
+    occurredAt: string,
+    correlationId: string,
+  ) {
+    const conversations = this.dependencies.conversations;
+    if (conversations === undefined) return;
+    const context = {
+      commandId: `conversation:${runId}`,
+      correlationId: correlationId as never,
+      occurredAt,
+      actor: { kind: EventActorKind.Agent, id: 'wake' },
+    };
+    await conversations.createForWorkItem(workItemId, context);
+    await conversations.record(
+      {
+        conversationId: conversationIdForWorkItem(workItemId),
+        entryId: `agent-run:${runId}`,
+        body,
+        origin: {
+          kind: ConversationOriginKind.Agent,
+          actorId: 'wake',
+          runId,
+          ...(stage === undefined ? {} : { stage }),
+        },
+      },
+      { ...context, commandId: `agent-run:${runId}` },
+    );
   }
 
   private async resourceForTarget(

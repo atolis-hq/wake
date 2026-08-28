@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest';
 import { PullRequestCheckState } from '../../../../src/activities/index.js';
+import {
+  conversationIdForWorkItem,
+  createConversationService,
+} from '../../../../src/conversations/index.js';
 import { integrationStream } from '../../../../src/integrations/contracts/streams.js';
 import { createGitHubAgentContextReader } from '../../../../src/integrations/github/application/agent-context-reader.js';
 import { GitHubEventType } from '../../../../src/integrations/github/contracts/events.js';
@@ -318,6 +322,339 @@ it("retains an earlier stage's Wake handoff after a later stage posts its own co
   );
 });
 
+it('merges pre-conversation GitHub history with canonical conversation entries', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'retain historic discussion' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000031' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#10' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-history',
+      correlationId: correlationId('historic-conversation-context'),
+      occurredAt: '2026-08-17T00:00:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendIssueComment(world, 1, 'Historic GitHub discussion.');
+  const conversations = createConversationService(world.journal);
+  await conversations.createForWorkItem(work.workItemId, {
+    commandId: 'create-conversation',
+    correlationId: correlationId('historic-conversation-context'),
+    occurredAt: '2026-08-17T01:00:00.000Z',
+    actor: { kind: 'system', id: 'test' },
+  });
+  await conversations.record(
+    {
+      conversationId: conversationIdForWorkItem(work.workItemId),
+      entryId: 'new-conversation-entry',
+      body: 'New canonical discussion.',
+      origin: { kind: 'control-plane', actorId: 'operator' },
+    },
+    {
+      commandId: 'record-conversation-entry',
+      correlationId: correlationId('historic-conversation-context'),
+      occurredAt: '2026-08-17T02:00:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+
+  const context = await createGitHubAgentContextReader(
+    world.journal,
+    world.resources,
+    {},
+    conversations,
+  ).forWorkItem(work.workItemId);
+
+  expect(context.comments.map((comment) => comment.body)).toEqual([
+    'Historic GitHub discussion.',
+    'New canonical discussion.',
+  ]);
+});
+
+it('does not repeat a delivered canonical agent message from legacy history', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'avoid repeating agent publication' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000034' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#10' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-agent-publication',
+      correlationId: correlationId('agent-publication-context'),
+      occurredAt: '2026-08-17T00:00:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  const conversations = createConversationService(world.journal);
+  await conversations.createForWorkItem(work.workItemId, {
+    commandId: 'create-agent-conversation',
+    correlationId: correlationId('agent-publication-context'),
+    occurredAt: '2026-08-17T00:01:00.000Z',
+    actor: { kind: 'system', id: 'test' },
+  });
+  await conversations.record(
+    {
+      conversationId: conversationIdForWorkItem(work.workItemId),
+      entryId: 'agent-run-1',
+      body: 'Wake completed the requested change.',
+      origin: { kind: 'agent', actorId: 'wake', runId: 'run-1', stage: 'implement' },
+    },
+    {
+      commandId: 'record-agent-entry',
+      correlationId: correlationId('agent-publication-context'),
+      occurredAt: '2026-08-17T00:01:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await conversations.recordRepresentation(
+    {
+      conversationId: conversationIdForWorkItem(work.workItemId),
+      entryId: 'agent-run-1',
+      resourceId: issue.resourceId,
+      externalId: 'github-comment-agent-run-1',
+    },
+    {
+      commandId: 'represent-agent-entry',
+      correlationId: correlationId('agent-publication-context'),
+      occurredAt: '2026-08-17T00:02:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendConfirmedAgentRunComment(world, issue.resourceId, {
+    intentEventId: 'agent-run-1',
+    occurredAt: '2026-08-17T00:02:00.000Z',
+    runId: 'run-1',
+    stage: 'implement',
+    outcome: 'DONE',
+    displayBody: 'Wake completed the requested change.',
+  });
+
+  const context = await createGitHubAgentContextReader(
+    world.journal,
+    world.resources,
+    {},
+    conversations,
+  ).forWorkItem(work.workItemId);
+
+  expect(context.comments.map((comment) => comment.body)).toEqual([
+    'Wake completed the requested change.',
+  ]);
+});
+
+it('uses the revised canonical entry once when resuming after its initial GitHub observation', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'retain only the latest edited feedback' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000032' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#10' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-edited-history',
+      correlationId: correlationId('edited-conversation-context'),
+      occurredAt: '2026-08-17T00:00:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendIssueComment(world, 1, 'Original feedback.');
+  await appendIssueComment(world, 1, 'Revised feedback.', '2026-08-17T00:02:00.000Z');
+  const conversations = createConversationService(world.journal);
+  const conversationId = conversationIdForWorkItem(work.workItemId);
+  const context = {
+    commandId: 'edited-conversation',
+    correlationId: correlationId('edited-conversation-context'),
+    occurredAt: '2026-08-17T00:01:00.000Z',
+    actor: { kind: 'system' as const, id: 'test' },
+  };
+  await conversations.createForWorkItem(work.workItemId, context);
+  await conversations.record(
+    {
+      conversationId,
+      entryId: 'external-comment-1',
+      body: 'Original feedback.',
+      origin: {
+        kind: 'external',
+        adapter: GitHubAdapter,
+        actorId: 'reviewer-1',
+        resourceId: issue.resourceId,
+        threadId: 'atolis-hq/wake#10',
+        messageId: '1',
+      },
+    },
+    context,
+  );
+  await conversations.revise(
+    { conversationId, entryId: 'external-comment-1', body: 'Revised feedback.' },
+    { ...context, commandId: 'revise-external-comment', occurredAt: '2026-08-17T00:02:00.000Z' },
+  );
+
+  const agentContext = await createGitHubAgentContextReader(
+    world.journal,
+    world.resources,
+    {},
+    conversations,
+  ).forWorkItem(work.workItemId);
+
+  expect(agentContext.comments.map((comment) => comment.body)).toEqual(['Revised feedback.']);
+
+  const resumedAgentContext = await createGitHubAgentContextReader(
+    world.journal,
+    world.resources,
+    {},
+    conversations,
+  ).forWorkItem(work.workItemId, { observedSince: '2026-08-17T00:01:30.000Z' });
+
+  expect(resumedAgentContext.comments.map((comment) => comment.body)).toEqual([
+    'Revised feedback.',
+  ]);
+});
+
+it('does not restore a tombstoned canonical GitHub comment from legacy history', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'exclude deleted reviewer feedback' });
+  const issue = await world.discoverResource({
+    resourceId: 'resource-00000000000000000000000033' as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake#10' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(
+    issue.resourceId,
+    work.workItemId,
+    ResourceCorrelationRole.Primary,
+    {
+      commandId: 'correlate-tombstoned-history',
+      correlationId: correlationId('tombstoned-conversation-context'),
+      occurredAt: '2026-08-17T00:00:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+  await appendIssueComment(world, 2, 'Deleted feedback.');
+  const conversations = createConversationService(world.journal);
+  const conversationId = conversationIdForWorkItem(work.workItemId);
+  const context = {
+    commandId: 'tombstoned-conversation',
+    correlationId: correlationId('tombstoned-conversation-context'),
+    occurredAt: '2026-08-17T00:01:00.000Z',
+    actor: { kind: 'system' as const, id: 'test' },
+  };
+  await conversations.createForWorkItem(work.workItemId, context);
+  await conversations.record(
+    {
+      conversationId,
+      entryId: 'external-comment-2',
+      body: 'Deleted feedback.',
+      origin: {
+        kind: 'external',
+        adapter: GitHubAdapter,
+        actorId: 'reviewer-2',
+        resourceId: issue.resourceId,
+        threadId: 'atolis-hq/wake#10',
+        messageId: '2',
+      },
+    },
+    context,
+  );
+  await conversations.tombstone(
+    { conversationId, entryId: 'external-comment-2' },
+    { ...context, commandId: 'tombstone-external-comment', occurredAt: '2026-08-17T00:02:00.000Z' },
+  );
+
+  const agentContext = await createGitHubAgentContextReader(
+    world.journal,
+    world.resources,
+    {},
+    conversations,
+  ).forWorkItem(work.workItemId);
+
+  expect(agentContext.comments).toEqual([]);
+});
+
+it('uses only active conversation entries after the resume cutoff and preserves inline locations', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'resume with current inline feedback' });
+  const conversations = createConversationService(world.journal);
+  const conversationId = conversationIdForWorkItem(work.workItemId);
+  const context = {
+    commandId: 'conversation-context',
+    correlationId: correlationId('conversation-context'),
+    occurredAt: '2026-08-17T00:00:00.000Z',
+    actor: { kind: 'system' as const, id: 'test' },
+  };
+  await conversations.createForWorkItem(work.workItemId, context);
+  await conversations.record(
+    {
+      conversationId,
+      entryId: 'before-cutoff',
+      body: 'Do not include this earlier message.',
+      origin: { kind: 'control-plane', actorId: 'operator' },
+    },
+    context,
+  );
+  await conversations.record(
+    {
+      conversationId,
+      entryId: 'inline-feedback',
+      body: 'Retain this inline feedback.',
+      origin: {
+        kind: 'external',
+        adapter: GitHubAdapter,
+        actorId: 'reviewer',
+        resourceId: 'resource-00000000000000000000000040',
+        threadId: 'atolis-hq/wake#40',
+        messageId: '40',
+        location: { path: 'src/current.ts', line: 41, side: 'RIGHT' },
+      },
+    },
+    { ...context, commandId: 'inline-feedback', occurredAt: '2026-08-17T01:00:00.000Z' },
+  );
+  await conversations.record(
+    {
+      conversationId,
+      entryId: 'deleted-feedback',
+      body: 'Do not include this deleted message.',
+      origin: { kind: 'control-plane', actorId: 'operator' },
+    },
+    { ...context, commandId: 'deleted-feedback', occurredAt: '2026-08-17T01:01:00.000Z' },
+  );
+  await conversations.tombstone(
+    { conversationId, entryId: 'deleted-feedback' },
+    { ...context, commandId: 'delete-feedback', occurredAt: '2026-08-17T01:02:00.000Z' },
+  );
+
+  const reader = createGitHubAgentContextReader(world.journal, world.resources, {}, conversations);
+  const agentContext = await reader.forWorkItem(work.workItemId, {
+    observedSince: '2026-08-17T00:30:00.000Z',
+  });
+
+  expect(agentContext.comments).toEqual([
+    {
+      author: 'reviewer',
+      occurredAt: '2026-08-17T01:00:00.000Z',
+      body: 'Retain this inline feedback.',
+      location: { path: 'src/current.ts', line: 41, side: 'RIGHT' },
+    },
+  ]);
+});
+
 async function appendConfirmedAgentRunComment(
   world: TestWorld,
   resourceId: ResourceId,
@@ -382,7 +719,8 @@ async function appendConfirmedAgentRunComment(
   await world.journal.append(confirmation.stream, 0, [confirmation]);
 }
 
-async function appendIssueComment(world: TestWorld, id: number, body: string) {
+async function appendIssueComment(world: TestWorld, id: number, body: string, updatedAt?: string) {
+  const createdAt = `2026-08-17T00:${String(id).padStart(2, '0')}:00.000Z`;
   const event = issueCommentObservation({
     repository: 'atolis-hq/wake',
     adapter: GitHubAdapter,
@@ -390,8 +728,8 @@ async function appendIssueComment(world: TestWorld, id: number, body: string) {
     comment: {
       id,
       body,
-      created_at: `2026-08-17T00:${String(id).padStart(2, '0')}:00.000Z`,
-      updated_at: `2026-08-17T00:${String(id).padStart(2, '0')}:00.000Z`,
+      created_at: createdAt,
+      updated_at: updatedAt ?? createdAt,
       user: { login: `reviewer-${id}`, type: 'User' },
     },
   });

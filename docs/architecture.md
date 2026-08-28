@@ -35,6 +35,13 @@ or workflow shape.
   artifacts through Wake-owned contracts. Integrations turn durable delivery
   work into provider-specific API calls, so a workflow and agent prompt do not
   need to know a particular issue tracker, chat system, or pull-request API.
+- **Conversation is a durable work context, not a provider thread.** A work
+item has one canonical, append-only conversation. Provider observations and
+agent reports record entries there with their origin. External entries retain
+their source resource/thread and, when supplied by the provider, inline code
+location. Adapters retain control
+  of provider-specific publication and workflow policy retains control of
+  whether an entry resumes work.
 - **Recovery and idempotency are normal paths.** Leases, activation claims,
   durable result facts, checkpoints, and delivery reconciliation make restarts
   and duplicate observations explicit cases to handle rather than exceptional
@@ -55,6 +62,7 @@ or workflow shape.
 | `persistence` | Filesystem and in-memory event journals, checkpoints, projections, and locks. |
 | `work` | Work-item facts, lifecycle controls, and work projections. |
 | `resources` | External-resource facts and their correlation to work items. |
+| `conversations` | Canonical work-item conversation facts, entry origins, and rebuildable conversation views. |
 | `activities` | Activity definitions and pull-request/review activities. |
 | `orchestration` | Compiled workflow definitions, durable workflow instances, activations, waits, watches, and retry policy. |
 | `execution` | Runs, runner adapters, workspaces, leases, cancellation, recovery, and transcripts. |
@@ -85,6 +93,17 @@ Work-item identities are minted by Wake. Resources are separate durable facts
 and are correlated to work items through `resources`; provider locators do not
 become Wake identifiers or filesystem path components.
 
+Each work item also has a deterministic Conversation stream. Its entries are
+immutable facts and carry an origin: an external adapter, a Wake agent run, or
+the control plane. The Conversation module intentionally has no publish-target
+or workflow-transition policy. Integrations record provider observations after
+they correlate them to work; agent completion records its report; adapters and
+orchestration continue to own delivery and reaction rules respectively. The
+current GitHub agent context reader uses this canonical history when it exists,
+and the work-detail API/UI exposes it as a timeline. Operators can record a
+message through the work-item command; it resumes an eligible blocked agent
+stage while non-agent stages remain durable no-ops.
+
 Events serve multiple architectural roles at once: they trigger deterministic
 advancement, form the replayable audit trail, preserve the inputs needed to
 rebuild operational views, and carry integration/delivery work across module
@@ -97,7 +116,8 @@ Activation.
 1. An integration polls an external provider and appends typed observation
    events.
 2. Inbound translation admits work, creates or updates resources, and records
-   correlations and signals.
+   correlations and signals. Correlated GitHub comments are also recorded as
+   canonical Conversation entries.
 3. The control plane performs one bounded `advanceOnce` pass: it applies
    eligibility, quotas, schedules, and coordination claims.
 4. Orchestration interprets the compiled workflow instance and requests an
@@ -106,7 +126,9 @@ Activation.
    and result facts on the appropriate streams.
 6. Orchestration accepts the activity outcome and deterministically advances,
    waits, retries, blocks, or completes the workflow.
-7. Integration reactors translate publication and artifact facts to the
+7. The agent-publication reactor records a terminal agent report in the work
+   item's Conversation before applying its configured publication route.
+8. Integration reactors translate publication and artifact facts to the
    configured external provider. Surface projections expose the same durable
    state to the CLI, API, and UI.
 

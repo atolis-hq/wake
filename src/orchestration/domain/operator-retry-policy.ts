@@ -83,16 +83,19 @@ export function selectOperatorRetryTarget(
 
 export function isChangesResumeEligible(view: WorkflowInstanceView): boolean {
   const pending = view.pendingActivation;
-  return (
-    view.status === WorkflowStatus.Blocked &&
-    view.blockReason === 'unconfigured outcome blocked' &&
+  const completedAgentStage =
     pending !== undefined &&
     pending.activity === BuiltInActivityName.Agent &&
     pending.status === ActivityActivationStatus.Completed &&
     pending.supplemental !== true &&
     pending.followOnIndex === undefined &&
-    view.lastOutcome?.kind === ActivityOutcomeKind.Blocked &&
-    view.acceptedOutcomes.includes(pending.activationId)
+    view.acceptedOutcomes.includes(pending.activationId);
+  if (!completedAgentStage) return false;
+  return (
+    (view.status === WorkflowStatus.Blocked &&
+      view.blockReason === 'unconfigured outcome blocked' &&
+      view.lastOutcome?.kind === ActivityOutcomeKind.Blocked) ||
+    (view.status === WorkflowStatus.Waiting && view.waitingFor !== undefined)
   );
 }
 

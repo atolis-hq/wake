@@ -1,4 +1,5 @@
 import { ResidentHost, TickHost, type AdvanceOnce } from '../control-plane/index.js';
+import type { ConversationService } from '../conversations/index.js';
 import {
   DeliveryOutcomeReactor,
   deliveryProjectionDefinitions,
@@ -23,8 +24,15 @@ export function composeDeliveryOutcomeReactor(
   checkpoints: CheckpointStore,
   orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>,
   projections: ProjectionStore,
+  conversations?: Pick<ConversationService, 'recordRepresentation'>,
 ): DeliveryOutcomeReactor {
-  return new DeliveryOutcomeReactor(journal, checkpoints, orchestration, projections);
+  return new DeliveryOutcomeReactor(
+    journal,
+    checkpoints,
+    orchestration,
+    projections,
+    conversations,
+  );
 }
 
 export interface DeliveryRuntimeDependencies {
@@ -35,6 +43,7 @@ export interface DeliveryRuntimeDependencies {
   readonly adapter: (name: string) => ExternalDeliveryAdapter;
   readonly now: () => string;
   readonly orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>;
+  readonly conversations?: Pick<ConversationService, 'recordRepresentation'>;
 }
 
 export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies) {
@@ -60,6 +69,7 @@ export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies
     dependencies.checkpoints,
     dependencies.orchestration,
     dependencies.projections,
+    dependencies.conversations,
   );
   return {
     async runOnce(signal: AbortSignal) {

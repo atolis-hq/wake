@@ -37,6 +37,7 @@ describe('surface API contracts', () => {
       },
       execution: { runs: [], transcriptGroups: [] },
       activities: {},
+      conversation: { canCreateEntries: false, entries: [] },
     };
 
     expect(workItemPath('work-demo')).toBe('/api/v1/work-items/work-demo');

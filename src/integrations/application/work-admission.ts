@@ -1,3 +1,4 @@
+import type { ConversationService } from '../../conversations/index.js';
 import type { CommandContext } from '../../kernel/index.js';
 import {
   orchestrationGroupId,
@@ -17,6 +18,7 @@ import type { WorkflowRouter } from '../contracts/provider.js';
 
 export interface WorkAdmissionServices {
   readonly work: WorkService;
+  readonly conversations?: ConversationService;
   readonly resources: ResourceService;
   readonly orchestration: OrchestrationService;
   readonly routing: WorkflowRouter;
@@ -60,6 +62,11 @@ export async function admitObservedWork(
     { workItemId: input.workItemId, objective: input.objective, tags: input.tags },
     context,
   );
+  try {
+    await services.conversations?.createForWorkItem(input.workItemId, context);
+  } catch (error) {
+    console.error(`Conversation creation failed for admitted WorkItem ${input.workItemId}`, error);
+  }
   await services.resources.correlate(
     input.resourceId,
     input.workItemId,

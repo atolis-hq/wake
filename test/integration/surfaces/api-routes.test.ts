@@ -227,6 +227,31 @@ describe('API domain routes', () => {
       expect(calls).toEqual([{ name, key: 'work/demo', idempotencyKey: 'operator-42' }]);
     },
   );
+
+  it('records a control-plane conversation message with a stable idempotency key', async () => {
+    const calls: Array<{ key: string; idempotencyKey: string; body: string }> = [];
+    const dispatcher = createApiDispatcher(
+      applications({
+        work: {
+          message: async (key, command) => {
+            calls.push({ key, ...command });
+            return commandResult(command.idempotencyKey);
+          },
+        },
+      }),
+    );
+
+    const response = await dispatcher.dispatch(
+      'POST',
+      '/api/v1/work-items/work%2Fdemo/commands/message',
+      { idempotencyKey: 'operator-message-1', body: 'Please continue.' },
+    );
+
+    expect(response).toMatchObject({ status: 202 });
+    expect(calls).toEqual([
+      { key: 'work/demo', idempotencyKey: 'operator-message-1', body: 'Please continue.' },
+    ]);
+  });
 });
 
 describe('API validation and conflict routes', () => {
@@ -540,6 +565,10 @@ function applications(
       ): Promise<AcceptedCommandResponse>;
       retry(key: string, command: { readonly idempotencyKey: string }): Promise<ApiCommandResult>;
       extend(key: string, command: { readonly idempotencyKey: string }): Promise<ApiCommandResult>;
+      message(
+        key: string,
+        command: { readonly idempotencyKey: string; readonly body: string },
+      ): Promise<ApiCommandResult>;
     }>;
     readonly execution?: Partial<{
       transcript(runId: string): Promise<ApiResourceResult<RunTranscriptResponse>>;
