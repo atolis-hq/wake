@@ -13,7 +13,9 @@ Activation scheduling is either inline or a named, durable `activation-scheduler
 subscription, never both. The subscriber depends on a Control Plane host port;
 Bootstrap adapts Persistence. It treats every journal fact as a reconsideration,
 checkpoints only after a successful pass, and relies on the shared scheduler
-serialiser for global capacity safety.
+serialiser for global capacity safety. Its durable subscriber identity is
+`subscriber:control-plane.activation-scheduler`; the distinct scheduler
+critical-section identity is `control-plane.activation-scheduler-critical-section`.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

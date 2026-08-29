@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
+import { activationSchedulerSubscriptionConsumer } from '../../../src/control-plane/index.js';
 import { createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
 import {
   DurableSubscriptionHost,
@@ -36,7 +37,7 @@ it('excludes the same consumer across hosts for load, handling, and checkpointin
     const second = new DurableSubscriptionHost(journal, secondCheckpoints, secondSerialise);
     const firstRun = first.start([
       {
-        consumer: 'shared',
+        consumer: activationSchedulerSubscriptionConsumer,
         handle: async () => {
           firstHandlerStarted.resolve();
           await releaseFirstHandler.promise;
@@ -46,7 +47,7 @@ it('excludes the same consumer across hosts for load, handling, and checkpointin
     await firstCheckpoints.loadStarted.promise;
     const secondRun = second.start([
       {
-        consumer: 'shared',
+        consumer: activationSchedulerSubscriptionConsumer,
         handle: async () => {
           secondHandled = true;
         },

@@ -2,7 +2,16 @@ import type { EventEnvelope } from '../../kernel/index.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import type { ActivationScheduler } from './activation-scheduler.js';
 
-export const activationSchedulerConsumer = 'activation-scheduler';
+/** Durable subscriber/checkpoint identity; held across event load, handling, and save. */
+export const activationSchedulerSubscriptionConsumer =
+  'subscriber:control-plane.activation-scheduler';
+
+/** Global scheduler critical-section identity; distinct from the subscription checkpoint lock. */
+export const activationSchedulerCriticalSectionConsumer =
+  'control-plane.activation-scheduler-critical-section';
+
+/** @deprecated Use activationSchedulerSubscriptionConsumer. */
+export const activationSchedulerConsumer = activationSchedulerSubscriptionConsumer;
 
 const defaultFallbackMs = 30_000;
 const maximumTimerDelayMs = 2_147_483_647;
@@ -60,13 +69,13 @@ export function createActivationSchedulerSubscriber(
   return {
     start(parentSignal?: AbortSignal) {
       const controller = new AbortController();
-      const abort = () => controller.abort();
-      if (parentSignal?.aborted) abort();
+      const abort = (_event: Event) => controller.abort();
+      if (parentSignal?.aborted) controller.abort();
       else parentSignal?.addEventListener('abort', abort, { once: true });
       const durable = host.start(
         [
           {
-            consumer: activationSchedulerConsumer,
+            consumer: activationSchedulerSubscriptionConsumer,
             // Every fact can affect eligibility, capacity, expiry recovery, or a
             // workflow's next activation; filtering here would create stale work.
             handle: async () => {
@@ -90,7 +99,7 @@ export function createActivationSchedulerSubscriber(
       };
     },
     poke,
-    health: () => host.health(activationSchedulerConsumer),
+    health: () => host.health(activationSchedulerSubscriptionConsumer),
   };
 }
 
