@@ -238,7 +238,7 @@ export function createRunnerIdleWait(
   // Capture the cursor before the first resident pass. Each subsequent
   // cursor is sampled before waiting, so an append between a pass and waiter
   // registration is still visible to the durable wait's recheck.
-  let priorPosition = root.journal.latestGlobalPosition();
+  let priorPosition = sampleRunnerPosition(root);
   return (
     signal: AbortSignal,
     {
@@ -248,9 +248,11 @@ export function createRunnerIdleWait(
   ): Promise<void> => {
     if (consecutiveErrorTicks > 0)
       return sleepUntilAbort(signal, nextPollBackoffMs(resident, consecutiveErrorTicks));
-    return waitForRunnerEvents(root, priorPosition, signal).then((position) => {
-      priorPosition = Promise.resolve(position);
-    });
+    return waitForRunnerEvents(root, priorPosition, signal, resident, _consecutiveIdleTicks).then(
+      (position) => {
+        priorPosition = Promise.resolve(position);
+      },
+    );
   };
 }
 
@@ -259,7 +261,14 @@ export async function runProjectionPump(
   signal: AbortSignal,
 ): Promise<void> {
   while (!signal.aborted) {
-    const afterPosition = await root.journal.latestGlobalPosition();
+    let afterPosition: number;
+    try {
+      afterPosition = await root.journal.latestGlobalPosition();
+    } catch (error) {
+      reportRunnerWaitError(error);
+      await waitAfterRunnerError(root, signal);
+      continue;
+    }
     try {
       await root.projectionRunner.runRegisteredOnce();
     } catch (error) {
@@ -267,7 +276,7 @@ export async function runProjectionPump(
         `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
-    await root.journal.waitForEventsAfter(afterPosition, signal, JOURNAL_CHANGE_FALLBACK_MS);
+    await waitForRunnerEventsAfter(root, afterPosition, signal);
   }
 }
 
@@ -275,11 +284,57 @@ async function waitForRunnerEvents(
   root: Pick<CompositionRoot, 'journal'>,
   priorPosition: Promise<number>,
   signal: AbortSignal,
+  resident: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number } | undefined,
+  consecutiveIdleTicks: number,
 ): Promise<number> {
-  const afterPosition = await priorPosition;
-  const currentPosition = await root.journal.latestGlobalPosition();
-  await root.journal.waitForEventsAfter(afterPosition, signal, JOURNAL_CHANGE_FALLBACK_MS);
+  let currentPosition = 0;
+  try {
+    const afterPosition = await priorPosition;
+    currentPosition = await root.journal.latestGlobalPosition();
+    await root.journal.waitForEventsAfter(afterPosition, signal, JOURNAL_CHANGE_FALLBACK_MS);
+  } catch (error) {
+    reportRunnerWaitError(error);
+    await sleepUntilAbort(signal, nextPollBackoffMs(resident, consecutiveIdleTicks));
+  }
   return currentPosition;
+}
+
+async function waitForRunnerEventsAfter(
+  root: Pick<CompositionRoot, 'journal'>,
+  afterPosition: number,
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    await root.journal.waitForEventsAfter(afterPosition, signal, JOURNAL_CHANGE_FALLBACK_MS);
+  } catch (error) {
+    reportRunnerWaitError(error);
+    await sleepUntilAbort(signal, JOURNAL_CHANGE_FALLBACK_MS);
+  }
+}
+
+function sampleRunnerPosition(root: Pick<CompositionRoot, 'journal'>): Promise<number> {
+  try {
+    return root.journal.latestGlobalPosition().catch((error: unknown) => {
+      reportRunnerWaitError(error);
+      return 0;
+    });
+  } catch (error) {
+    reportRunnerWaitError(error);
+    return Promise.resolve(0);
+  }
+}
+
+async function waitAfterRunnerError(
+  root: Pick<CompositionRoot, 'journal'>,
+  signal: AbortSignal,
+): Promise<void> {
+  await waitForRunnerEventsAfter(root, 0, signal);
+}
+
+function reportRunnerWaitError(error: unknown): void {
+  process.stderr.write(
+    `Wake runner event wait failed: ${error instanceof Error ? error.message : String(error)}\n`,
+  );
 }
 
 function nextPollBackoffMs(

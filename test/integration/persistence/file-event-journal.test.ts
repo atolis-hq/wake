@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { createEventDraft, type EntityRef, type EventDraft } from '../../../src/kernel/index.js';
+import {
+  cachedJournalView,
+  createEventDraft,
+  type EntityRef,
+  type EventDraft,
+} from '../../../src/kernel/index.js';
 import { FileEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -186,6 +191,33 @@ it('does not re-parse prior history from disk after appending new events', async
     String(path).endsWith('.jsonl'),
   );
   expect(journalFileReads).toHaveLength(0);
+});
+
+it('refreshes a cached view when another file-journal instance appends', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-cached-view-cross-instance-'));
+  const stream: EntityRef<'work-item', 'cached-view'> = {
+    kind: 'work-item',
+    id: 'cached-view',
+  };
+  const draft = createEventDraft({
+    eventId: 'cached-view-event',
+    eventType: 'work.item-created',
+    occurredAt: '2026-07-30T12:00:00Z',
+    correlationId: 'corr',
+    causationId: 'cached-view-event',
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    stream,
+    payload: { objective: 'ship' },
+  });
+  const writer = new FileEventJournal(root, new FakeClock());
+  const reader = new FileEventJournal(root, new FakeClock());
+  const view = cachedJournalView(reader, (events) => events.length);
+
+  expect(await view.get()).toBe(0);
+  await writer.append(stream, 0, [draft]);
+
+  expect(await view.get()).toBe(1);
 });
 
 it('checks only the manifest for an unchanged warm journal', async () => {
