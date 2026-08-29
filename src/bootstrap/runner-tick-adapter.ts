@@ -6,7 +6,7 @@ import type {
 
 export interface RunnerTickRuntime {
   readonly runnerPipeline: RunnerPipeline;
-  readonly activationSchedulerSubscriber?: ActivationSchedulerSubscriber;
+  readonly activationSchedulerSubscriber?: Pick<ActivationSchedulerSubscriber, 'poke'>;
 }
 
 /** One-shot ticks produce schedule/reactor facts before reconciling subscriber-owned activation work. */

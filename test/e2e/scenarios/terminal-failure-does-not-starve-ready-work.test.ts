@@ -1,20 +1,26 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
-import { activationId, activityName } from '../../../src/activities/index.js';
+import { activityName } from '../../../src/activities/index.js';
+import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
+import { DeliveryIntentEventType } from '../../../src/integrations/index.js';
 import {
-  createActivationScheduler,
-  createActivationSchedulerSubscriber,
-  createRunnerPipeline,
-  type ActivationScheduler,
-} from '../../../src/control-plane/index.js';
-import { EventActorKind, EventSourceKind, createEventDraft } from '../../../src/kernel/index.js';
-import { workflowName } from '../../../src/orchestration/index.js';
+  EventActorKind,
+  EventSourceKind,
+  correlationId,
+  createEventDraft,
+} from '../../../src/kernel/index.js';
 import {
-  DurableSubscriptionHost,
+  orchestrationGroupId,
+  workflowInstanceId,
+  workflowName,
+} from '../../../src/orchestration/index.js';
+import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
-  createInMemorySubscriptionRunSerialiser,
+  InMemoryProjectionStore,
 } from '../../../src/persistence/index.js';
+import { resourceKind } from '../../../src/resources/index.js';
+import { resId, workId } from '../../support/identities.js';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 
@@ -104,97 +110,115 @@ defineScenario(
 it('E2E-CONTROL-005: a blocked legacy reactor cannot delay unrelated subscriber scheduling', async () => {
   const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
   const journal = new InMemoryEventJournal(clock);
-  const legacyPublicationEntered = deferred<void>();
-  const releaseLegacyPublication = deferred<void>();
+  const deliveryEntered = deferred<void>();
+  const releaseDelivery = deferred<void>();
   const subscriberDispatched = deferred<void>();
   const trace: string[] = [];
-  let pending = false;
-  const scheduler: ActivationScheduler = createActivationScheduler(
-    {
-      reconcileChildCompletions: async () => undefined,
-      listPendingActivations: async () =>
-        pending
-          ? [
-              {
-                workflow: {
-                  workflowInstanceId: 'workflow-ready' as never,
-                  workItemId: 'work-ready' as never,
-                  orchestrationGroupId: 'group-ready' as never,
-                },
-                activation: {
-                  activationId: activationId('activation-ready'),
-                  ordinal: 1,
-                  activity: activityName('ready'),
-                  input: {},
-                  execution: undefined,
-                  status: 'pending',
-                },
+  const runtime = await createCompositionRoot('C:/wake-low-latency', {
+    config: parseRootConfig({
+      schemaVersion: 1,
+      work: {},
+      resources: {},
+      execution: {
+        agentRunners: { fake: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
+      },
+      orchestration: {
+        default: 'ready',
+        workflows: {
+          ready: {
+            stages: {
+              run: {
+                activity: 'agent',
+                with: { prompt: 'ready work' },
+                on: { done: { then: 'done' } },
               },
-            ]
-          : [],
-      listWaiting: async () => [],
-      markActivationStarted: async () => undefined,
-      acceptOutcome: async () => {
-        throw new Error('Ready activation remains in flight');
+            },
+          },
+        },
       },
-    },
-    {
-      async attempt() {
-        trace.push('subscriber-dispatched-ready-activation');
-        subscriberDispatched.resolve();
-        return { runId: 'run-ready', status: 'started' } as never;
-      },
-      list: async () => [],
-    },
-    { correlationsForWork: async () => [], get: async () => null } as never,
+      controlPlane: { activationScheduler: { mode: 'subscriber' } },
+      integrations: { fake: { enabled: true, provider: 'fake' } },
+      surfaces: {},
+    }),
+    journal,
+    projections: new InMemoryProjectionStore(),
+    checkpoints: new InMemoryCheckpointStore(),
     clock,
-    { ids: { next: () => 'command-ready' } as never },
-  );
-  const subscriber = createActivationSchedulerSubscriber(
-    new DurableSubscriptionHost(
-      journal,
-      new InMemoryCheckpointStore(),
-      createInMemorySubscriptionRunSerialiser(),
-    ),
-    scheduler,
-    { fallbackMs: 60_000 },
-  );
-  const pipeline = createRunnerPipeline({
-    catchUpProjections: async () => undefined,
-    runSchedules: async () => undefined,
-    react: async () => undefined,
-    advance: async () => ({ kind: 'no-work' }),
-    inlineActivationScheduling: false,
-    publishAgentRuns: async () => {
-      trace.push('legacy-publication-entered');
-      legacyPublicationEntered.resolve();
-      await releaseLegacyPublication.promise;
+    decorateRunner(runner) {
+      return {
+        async start(request, signal) {
+          trace.push('subscriber-dispatched-ready-activation');
+          subscriberDispatched.resolve();
+          return runner.start(request, signal);
+        },
+      };
     },
-    deliver: async () => undefined,
+    decorateDeliveryAdapter(adapter) {
+      return {
+        async deliver(intent, signal) {
+          trace.push('delivery-entered');
+          deliveryEntered.resolve();
+          await releaseDelivery.promise;
+          return adapter.deliver(intent, signal);
+        },
+        reconcile: adapter.reconcile.bind(adapter),
+      };
+    },
   });
+  const subscriber = runtime.activationSchedulerSubscriber;
+  if (subscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
   const run = subscriber.start();
   try {
-    const legacy = pipeline.run({ maxProgress: 1 });
-    await legacyPublicationEntered.promise;
-    pending = true;
-    await journal.append({ kind: 'test', id: 'ready-activation' }, 0, [
+    const resource = await runtime.resources.discover(
+      {
+        resourceId: resId('slow-delivery'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'fake', key: 'slow-delivery' },
+        capabilities: [],
+      },
+      commandContext(clock, 'slow-delivery-resource'),
+    );
+    await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
       createEventDraft({
-        eventId: 'ready-activation',
-        eventType: 'test.ready-activation',
+        eventId: 'slow-delivery-intent',
+        eventType: DeliveryIntentEventType.StatusPublishRequested,
         occurredAt: clock.now().toISOString(),
-        correlationId: 'ready-activation',
-        causationId: 'ready-activation',
+        correlationId: 'slow-delivery-intent',
+        causationId: 'slow-delivery-intent',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'test', id: 'ready-activation' },
-        payload: {},
+        stream: { kind: 'resource', id: resource.resourceId },
+        payload: {
+          workflowInstanceId: 'workflow-slow-delivery',
+          activationId: 'activation-slow-delivery',
+          resourceId: resource.resourceId,
+          body: 'hold this actual delivery stage',
+        },
       }),
     ]);
+    const legacy = runtime.runnerPipeline.run({ maxProgress: 1 });
+    await deliveryEntered.promise;
+
+    const item = await runtime.work.create(
+      { workItemId: workId('slow-delivery'), objective: 'unrelated ready work' },
+      commandContext(clock, 'ready-work'),
+    );
+    await runtime.orchestration.start(
+      {
+        workflowInstanceId: workflowInstanceId('workflow-ready'),
+        workItemId: item.workItemId,
+        workflowName: workflowName('ready'),
+        orchestrationGroupId: orchestrationGroupId('group-ready'),
+      },
+      commandContext(clock, 'ready-start'),
+    );
 
     await subscriberDispatched.promise;
-    expect(trace).toEqual(['legacy-publication-entered', 'subscriber-dispatched-ready-activation']);
+    expect(trace).toEqual(['delivery-entered', 'subscriber-dispatched-ready-activation']);
 
-    releaseLegacyPublication.resolve();
+    releaseDelivery.resolve();
     await legacy;
   } finally {
     run.abort();
@@ -208,4 +232,13 @@ function deferred<Value>() {
     resolve = next;
   });
   return { promise, resolve };
+}
+
+function commandContext(clock: { now(): Date }, commandId: string) {
+  return {
+    commandId,
+    correlationId: correlationId(commandId),
+    occurredAt: clock.now().toISOString(),
+    actor: { kind: EventActorKind.System, id: 'test' },
+  };
 }

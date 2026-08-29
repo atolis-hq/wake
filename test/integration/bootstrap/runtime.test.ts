@@ -235,28 +235,23 @@ describe('target composition root', () => {
   it('resumes the composed subscriber from its durable checkpoint after restart', async () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
     const root = await fixtureRoot();
-    const journal = new InMemoryEventJournal(clock);
-    const projections = new InMemoryProjectionStore();
-    const checkpoints = new InMemoryCheckpointStore();
     const firstCheckpoint = deferred<void>();
     const secondCheckpoint = deferred<void>();
     const saves: number[] = [];
+    let restarted = false;
     const decorateCheckpoints = (base: CheckpointStore): CheckpointStore => ({
       load: base.load.bind(base),
       async save(consumer, position) {
         await base.save(consumer, position);
         if (consumer !== activationSchedulerSubscriptionConsumer) return;
         saves.push(position);
-        if (position === 1) firstCheckpoint.resolve();
-        if (position === 2) secondCheckpoint.resolve();
+        if (!restarted) firstCheckpoint.resolve();
+        else secondCheckpoint.resolve();
       },
       reset: base.reset.bind(base),
     });
     const first = await createCompositionRoot(root, {
       config: subscriberRestartRootConfig(),
-      journal,
-      projections,
-      checkpoints,
       clock,
       decorateCheckpoints,
     });
@@ -264,29 +259,48 @@ describe('target composition root', () => {
     if (firstSubscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
     const firstRun = firstSubscriber.start();
     try {
-      await appendSchedulerFact(journal, clock, 'first');
+      await startRestartWorkflow(first, clock, 'before-restart');
       await firstCheckpoint.promise;
     } finally {
       firstRun.abort();
       await firstRun.done;
     }
+    const checkpointBeforeRestart = await first.checkpoints.load(
+      activationSchedulerSubscriptionConsumer,
+    );
+    if (checkpointBeforeRestart === undefined || checkpointBeforeRestart < 1)
+      throw new Error('Expected the file-backed subscriber checkpoint before restart');
 
-    const restarted = await createCompositionRoot(root, {
+    await startRestartWorkflow(first, clock, 'after-restart');
+    restarted = true;
+    const secondRunnerStarted = deferred<void>();
+    let restartedRunnerStarts = 0;
+
+    const restartedRoot = await createCompositionRoot(root, {
       config: subscriberRestartRootConfig(),
-      journal,
-      projections,
-      checkpoints,
       clock,
       decorateCheckpoints,
+      decorateRunner(runner) {
+        return {
+          async start(request, signal) {
+            restartedRunnerStarts += 1;
+            secondRunnerStarted.resolve();
+            return runner.start(request, signal);
+          },
+        };
+      },
     });
-    const restartedSubscriber = restarted.activationSchedulerSubscriber;
+    const restartedSubscriber = restartedRoot.activationSchedulerSubscriber;
     if (restartedSubscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
     const restartedRun = restartedSubscriber.start();
     try {
-      await appendSchedulerFact(journal, clock, 'second');
+      await secondRunnerStarted.promise;
       await secondCheckpoint.promise;
-      expect(saves).toEqual([1, 2]);
-      await expect(checkpoints.load(activationSchedulerSubscriptionConsumer)).resolves.toBe(2);
+      expect(restartedRunnerStarts).toBe(1);
+      await expect(
+        restartedRoot.checkpoints.load(activationSchedulerSubscriptionConsumer),
+      ).resolves.toBeGreaterThan(checkpointBeforeRestart);
+      expect(saves.some((position) => position > checkpointBeforeRestart)).toBe(true);
     } finally {
       restartedRun.abort();
       await restartedRun.done;
@@ -1311,7 +1325,20 @@ function subscriberRestartRootConfig() {
       runnerPools: { standard: ['fake'] },
       defaultRunnerPool: 'standard',
     },
-    orchestration: { workflows: {} },
+    orchestration: {
+      default: 'restart',
+      workflows: {
+        restart: {
+          stages: {
+            run: {
+              activity: 'agent',
+              with: { prompt: 'restart from durable checkpoint' },
+              on: { done: { then: 'done' } },
+            },
+          },
+        },
+      },
+    },
     controlPlane: { activationScheduler: { mode: 'subscriber' } },
     integrations: {},
     surfaces: {},
@@ -1421,24 +1448,24 @@ async function startComposedWorkflow(
   );
 }
 
-async function appendSchedulerFact(
-  journal: EventJournal,
+async function startRestartWorkflow(
+  runtime: Awaited<ReturnType<typeof createCompositionRoot>>,
   clock: { now(): Date },
   id: string,
 ): Promise<void> {
-  await journal.append({ kind: 'test', id }, 0, [
-    createEventDraft({
-      eventId: `scheduler-restart-${id}`,
-      eventType: 'test.scheduler-restart',
-      occurredAt: clock.now().toISOString(),
-      correlationId: `scheduler-restart-${id}`,
-      causationId: `scheduler-restart-${id}`,
-      actor: { kind: EventActorKind.System, id: 'test' },
-      source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: { kind: 'test', id },
-      payload: {},
-    }),
-  ]);
+  const item = await runtime.work.create(
+    { workItemId: workId(`restart-${id}`), objective: `restart ${id}` },
+    commandContext(clock, `${id}-work`),
+  );
+  await runtime.orchestration.start(
+    {
+      workflowInstanceId: workflowInstanceId(`workflow-restart-${id}`),
+      workItemId: item.workItemId,
+      workflowName: workflowName('restart'),
+      orchestrationGroupId: orchestrationGroupId(`group-restart-${id}`),
+    },
+    commandContext(clock, `${id}-start`),
+  );
 }
 
 async function waitForJournalEvent(
