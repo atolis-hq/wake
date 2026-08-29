@@ -48,6 +48,7 @@ import { compileWorkflow, createOrchestrationService } from '../orchestration/in
 import {
   DurableSubscriptionHost,
   createFileSubscriptionRunSerialiser,
+  type SubscriptionRunSerialiser,
 } from '../persistence/index.js';
 import {
   createResourceLookup,
@@ -92,6 +93,7 @@ export interface CompositionRootOptions {
   readonly decorateJournal?: (journal: EventJournal) => EventJournal;
   readonly decorateProjections?: (projections: ProjectionStore) => ProjectionStore;
   readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
+  readonly subscriptionRunSerialiser?: SubscriptionRunSerialiser;
   readonly scheduleCheckpoints?: ScheduleCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,

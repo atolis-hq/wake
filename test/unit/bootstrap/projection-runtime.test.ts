@@ -15,9 +15,13 @@ import {
   type ProjectionDefinition,
 } from '../../../src/kernel/index.js';
 import {
+  FileCheckpointStore,
+  FileEventJournal,
+  FileProjectionStore,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
+  createInMemorySubscriptionRunSerialiser,
 } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -80,15 +84,30 @@ it('rebuilds the registered projection when another definition has the same name
   expect(await projections.read<number>(registered.name, 'one')).toMatchObject({ value: 1 });
 });
 
-it('keeps file-backed projection serialization when only one persistence port is injected', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-projection-serialiser-'));
+it('uses an explicitly shared serialiser for fully injected file persistence', async () => {
+  const firstRoot = await mkdtemp(join(tmpdir(), 'wake-projection-serialiser-'));
+  const secondRoot = await mkdtemp(join(tmpdir(), 'wake-projection-serialiser-'));
   const clock = new FakeClock();
-  const paths = resolveWakePaths(root);
-  const first = composePersistence(paths, clock, {
-    journal: new InMemoryEventJournal(clock),
+  const firstPaths = resolveWakePaths(firstRoot);
+  const secondPaths = resolveWakePaths(secondRoot);
+  const serialiseRun = createInMemorySubscriptionRunSerialiser();
+  const first = composePersistence(firstPaths, clock, {
+    journal: new FileEventJournal(firstPaths.dataRoot, clock),
+    projections: new FileProjectionStore(firstPaths.dataRoot),
+    checkpoints: new FileCheckpointStore(firstPaths.dataRoot),
+    decorateJournal: (journal) => journal,
+    decorateProjections: (projections) => projections,
+    decorateCheckpoints: (checkpoints) => checkpoints,
+    subscriptionRunSerialiser: serialiseRun,
   });
-  const second = composePersistence(paths, clock, {
-    journal: new InMemoryEventJournal(clock),
+  const second = composePersistence(secondPaths, clock, {
+    journal: new FileEventJournal(secondPaths.dataRoot, clock),
+    projections: new FileProjectionStore(secondPaths.dataRoot),
+    checkpoints: new FileCheckpointStore(secondPaths.dataRoot),
+    decorateJournal: (journal) => journal,
+    decorateProjections: (projections) => projections,
+    decorateCheckpoints: (checkpoints) => checkpoints,
+    subscriptionRunSerialiser: serialiseRun,
   });
   const firstStarted = deferred<void>();
   const releaseFirst = deferred<void>();
@@ -118,7 +137,10 @@ it('keeps file-backed projection serialization when only one persistence port is
     await Promise.all([firstPass, secondPass]);
     expect(secondStarted).toBe(true);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await Promise.all([
+      rm(firstRoot, { recursive: true, force: true }),
+      rm(secondRoot, { recursive: true, force: true }),
+    ]);
   }
 });
 
