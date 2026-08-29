@@ -117,11 +117,10 @@ Decisions below).
 - IntakePipeline (dependency) — the cycle callback `IntakeHost` runs once
   per call; in production composition this is `IntakePipeline.run`.
 - Bootstrap composition root (dependent) — constructs an intake host and
-  separate one-shot/resident runner `TickHost` adapters. In subscriber mode,
-  the one-shot adapter pokes the durable scheduler and returns its result,
+  separate one-shot/resident runner `TickHost` adapters. The one-shot adapter
+  pokes the required durable scheduler subscriber and returns its result,
   while the resident adapter runs only `root.runnerPipeline.run`; the durable
-  scheduler subscription is started independently. Inline mode remains the
-  runner pipeline's existing advancement path.
+  scheduler subscription is started independently.
 
 ## Decisions, exclusions, and deferred capability
 

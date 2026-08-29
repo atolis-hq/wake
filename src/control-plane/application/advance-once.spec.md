@@ -33,31 +33,31 @@ separate `IntakePipeline`, not owned by this component.
   `maxConcurrentRuns` ceiling, the per-call `maxDispatches` burst cap, or no
   further eligible candidate.
 - **Runner pipeline** — the fixed ordered stage sequence
-  (`catchUpProjections` → `runSchedules` → inline Advancement → `react` →
-  agent-run publication → `catchUpProjections` → optional subscriber
-  scheduling → `deliver` → `catchUpProjections` → `react`) that one call to
-  `RunnerPipeline.run` performs. `poll` and `translateInbound` — the externally
+  (`catchUpProjections` → `runSchedules` → `react` → agent-run publication
+  → `catchUpProjections` → `deliver` → `catchUpProjections` → `react`)
+  that one call to `RunnerPipeline.run` performs. It never advances the
+  activation scheduler. `poll` and `translateInbound` — the externally
   rate-limited half of a tick — run on a separate `IntakePipeline` instead,
   not embedded in this sequence; see control-plane's `tick-host.spec.md`
-  for why the two are split across independently-scheduled hosts.
+  for why the two are split across independently scheduled hosts.
 
 ## Responsibilities and boundaries
 
 Advancement owns the recovery → reconciliation → dispatch-loop
 (selection → dispatch → outcome-acceptance, repeated until capacity or
-candidates are exhausted) sequence for one call, and (as the Runner pipeline) the
-ordering of the IO stages around that one call for the internal half of one
+candidates are exhausted) sequence for one scheduler pass. The Runner pipeline
+owns the ordering of the non-scheduling IO stages for the internal half of one
 tick. It does not define what makes an activation pending or a workflow
-waiting — it reads Orchestration's own readiness reports. It does not
-implement `runSchedules`, `react`, or `deliver` — those stages are supplied
-by the caller (bootstrap composition) and only sequenced here; `poll` and
-`translateInbound` are not sequenced by this component at all, since they run
-on the separate `IntakePipeline`. It does not decide runner eligibility
-itself — it calls an injected `runnerIneligibility` supplier and passes the
-result through to Execution unchanged. It does not decide whether a WorkItem
-is frozen or deleted — it calls an injected `work.get` lookup per candidate
-and excludes one whose WorkItem is currently frozen or deleted, but Work's
-own aggregate remains the source of that state.
+waiting — it reads Orchestration's own readiness reports. The Runner pipeline
+does not implement `runSchedules`, `react`, or `deliver` — those stages are
+supplied by the caller (bootstrap composition) and only sequenced here; `poll`
+and `translateInbound` are not sequenced by this component at all, since they
+run on the separate `IntakePipeline`. Advancement does not decide runner
+eligibility itself — it calls an injected `runnerIneligibility` supplier and
+passes the result through to Execution unchanged. It does not decide whether a
+WorkItem is frozen or deleted — it calls an injected `work.get` lookup per
+candidate and excludes one whose WorkItem is currently frozen or deleted, but
+Work's own aggregate remains the source of that state.
 
 ## Core policies, invariants, and behaviours
 
@@ -147,30 +147,29 @@ own aggregate remains the source of that state.
   not surfaced again by this one.
 - The Runner pipeline MUST run its ordered stages in the fixed order given
   above, awaiting each stage fully before starting the next, exactly once
-  per `run` call, and MUST return the `AdvanceResult` of the embedded
-  Advancement call. `catchUpProjections` runs three times (before
-  `runSchedules`, after Advancement, after `deliver`) so each stage
-  observes projections caught up to the facts the prior stage produced.
-  `react` runs twice: once after Advancement so watch reactors observe state
-  transitions from accepted outcomes, and once for delivery outcomes after
-  `deliver`. A `finally` block runs `catchUpProjections` a fourth
-  time regardless of outcome, including when an earlier stage throws.
+  per `run` call, and MUST return only its operational `no-work` or `paused`
+  status: it never reports scheduler progress. `catchUpProjections` runs three
+  times (before `runSchedules`, before `deliver`, and after `deliver`) so each
+  stage observes projections caught up to the facts the prior stage produced.
+  `react` runs twice: once after schedule facts are produced and once for
+  delivery outcomes after `deliver`. A `finally` block runs
+  `catchUpProjections` a fourth time regardless of outcome, including when an
+  earlier stage throws.
 - `RunnerPipeline.run`'s `signal` parameter defaults to a fresh,
   never-aborted `AbortController`'s signal when the caller omits one.
-- In `inline` migration mode the Runner pipeline owns its embedded
-  Advancement call. In `subscriber` mode it intentionally omits inline
-  scheduling: an independently supervised, checkpointed activation subscriber
-  reconsiders every durable fact, reconciles on startup and bounded fallback,
-  and shares the scheduler serialiser. One-shot ticks still run the pipeline
-  to produce schedule and reactor facts, then its ordered pre-delivery hook
-  pokes that same scheduler before outbound delivery. A later delivery error
-  still rejects the tick, but cannot undo or postpone that completed scheduler
-  pass; resident publication, delivery, or reactor latency cannot hold
-  subscriber dispatch.
+- Bootstrap always composes an independently supervised, checkpointed
+  activation-scheduler subscriber. It reconsiders every durable fact,
+  reconciles on startup and bounded fallback, and shares the scheduler
+  serialiser. One-shot ticks run the non-scheduling pipeline to produce
+  schedule and reactor facts, then its ordered pre-delivery hook pokes that
+  required subscriber before outbound delivery. A later delivery error still
+  rejects the tick, but cannot undo or postpone that completed scheduler pass;
+  resident publication, delivery, or reactor latency cannot hold subscriber
+  dispatch.
 - When the shared pause is already active at the start of a Runner or Intake
   pipeline call, the pipeline MUST catch projections up exactly once before
   returning its paused/no-progress result. It MUST NOT invoke any operational
-  stage (`runSchedules`, Advancement, reactors, publication, delivery, poll,
+  stage (`runSchedules`, reactors, publication, delivery, poll,
   or inbound translation). This makes durable pause/resume facts visible
   without allowing paused operational work to proceed.
 

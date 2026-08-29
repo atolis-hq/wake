@@ -69,5 +69,6 @@ handler's effects idempotent.
   v2 while retaining the legacy file for forward migration and best-effort
   downgrade replay. A legacy collision whose stored consumer does not match
   is treated as absent and is never deleted by that foreign consumer's reset.
-  Binary downgrade after reset is unsupported; this is independent of the
-  runtime's configuration-only inline/subscriber rollback.
+  Binary downgrade after reset is unsupported. Checkpoint-path migration is
+  independent of runtime architecture, and a binary rollback does not discard
+  durable facts.

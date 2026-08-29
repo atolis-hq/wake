@@ -102,12 +102,14 @@ Bootstrap does not own:
   than one fixed sequence: an intake pipeline (catch up projections, poll
   every configured provider, translate polled provider input into facts)
   and a runner pipeline (catch up projections, run configured schedules,
-  advance the control plane by one bounded step in inline mode, react to
-  newly appended facts, publish agent runs, then catch up projections and
-  attempt one outbound delivery). In subscriber mode, the one-shot adapter
-  inserts the shared scheduler after those schedule/reactor facts and before
-  delivery; delivery errors still reject the tick after that scheduler pass
-  has completed. The reaction stage runs Watch first, then resource
+  react to newly appended facts, publish agent runs, then catch up projections
+  and attempt one outbound delivery). The one-shot adapter runs this
+  non-scheduling pipeline and, at its pre-delivery boundary, pokes the required
+  shared activation-scheduler subscriber after schedule and reactor facts have
+  been produced and before delivery. Delivery errors still reject the tick
+  after that scheduler pass has completed. The resident adapter runs the same
+  non-scheduling pipeline while the independently supervised subscriber keeps
+  scheduling. The reaction stage runs Watch first, then resource
   transitions, artifact registration, delivery outcomes, and provider
   maintenance; it runs again after delivery.
   Only the intake pipeline touches an externally rate-limited API, which is
