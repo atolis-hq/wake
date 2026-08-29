@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createInMemorySubscriptionRunSerialiser,
+  createProjectionSubscription,
+  DurableSubscriptionHost,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  ProjectionRunner,
+  ProjectionRebuilder,
 } from '../../../src/persistence/index.js';
 import {
   externalKeyProjectionKey,
@@ -78,8 +81,8 @@ describe('ResourceLookup projections', () => {
     await catchUp(world);
     const before = await world.lookup.correlationsForWork(work);
     await world.projections.clear();
-    await world.runner.rebuild(resourcesByExternalKeyProjection);
-    await world.runner.rebuild(workCorrelationsProjection);
+    await world.rebuilder.rebuild(resourcesByExternalKeyProjection);
+    await world.rebuilder.rebuild(workCorrelationsProjection);
     await expect(world.lookup.correlationsForWork(work)).resolves.toEqual(before);
   });
 });
@@ -88,18 +91,24 @@ function createWorld() {
   const journal = new InMemoryEventJournal(new FakeClock());
   const projections = new InMemoryProjectionStore();
   const checkpoints = new InMemoryCheckpointStore();
+  const serialiseRun = createInMemorySubscriptionRunSerialiser();
   const lookup = createResourceLookup({ journal, projections });
   return {
     resources: createResourceService(journal, lookup),
     lookup,
     projections,
-    runner: new ProjectionRunner(journal, projections, checkpoints),
+    projectionHost: new DurableSubscriptionHost(journal, checkpoints, serialiseRun),
+    rebuilder: new ProjectionRebuilder(journal, projections, checkpoints, serialiseRun),
   };
 }
 
 async function catchUp(world: ReturnType<typeof createWorld>) {
-  await world.runner.runOnce(resourcesByExternalKeyProjection);
-  await world.runner.runOnce(workCorrelationsProjection);
+  await world.projectionHost.runOnce(
+    createProjectionSubscription(resourcesByExternalKeyProjection, world.projections),
+  );
+  await world.projectionHost.runOnce(
+    createProjectionSubscription(workCorrelationsProjection, world.projections),
+  );
 }
 
 function discovery(

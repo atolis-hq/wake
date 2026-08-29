@@ -46,9 +46,9 @@ responsibility.
 ## Dependencies and system role
 
 - Kernel — the `CheckpointStore` port.
-- Projection Runner (depends on Checkpoint Store) — the sole reader and
-  writer in normal operation, advancing a consumer's checkpoint after each
-  event it considers and resetting it before a rebuild.
+- Projection subscriptions and rebuilds (depend on Checkpoint Store) — normal
+  readers and writers, advancing a consumer's checkpoint after a successful
+  batch and resetting it before a rebuild.
 
 ## Decisions, exclusions, and deferred capability
 

@@ -51,9 +51,9 @@ stored value for its key.
 ## Dependencies and system role
 
 - Kernel — the `ProjectionStore` port and the stored-projection shape.
-- Projection Runner (depends on Projection Store) — the sole writer in
-  normal operation, applying a projection definition's fold and stamping
-  `lastGlobalPosition`.
+- Projection subscriptions and rebuilds (depend on Projection Store) — the
+  writers in normal operation, applying a projection definition's fold and
+  stamping `lastGlobalPosition`.
 - Every module's query paths (depend on Projection Store) — read current
   projection values directly, rather than folding events themselves.
 

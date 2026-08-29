@@ -20,8 +20,9 @@ failed checkpoint can replay its batch.
 `applyProjectionBatch` adapt a projection definition to that durable
 subscription contract. `ProjectionRebuilder` holds the same consumer-keyed
 serialisation as a live subscription while it clears, resets, replays bounded
-batches, and checkpoints one projection. Bootstrap still uses the legacy
-`ProjectionRunner`; its migration to subscriptions is separate work.
+batches, and checkpoints one projection. Bootstrap composes every runtime
+projection as an independent durable subscription and uses the same
+consumer-keyed serialisation for live passes and rebuilds.
 ## Configuration
 Owns `persistence`.
 ## Relations and events

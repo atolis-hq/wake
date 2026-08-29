@@ -6,9 +6,7 @@ Policy/process. Projection subscription helpers adapt a projection definition
 to a durable subscription and deterministically apply each bounded handler
 batch. ProjectionRebuilder clears and replays one projection from the Event
 Journal to the Projection Store, recording progress in the Checkpoint Store
-under the same consumer identity as the live subscription. The legacy
-ProjectionRunner remains available for the current Bootstrap path; Bootstrap
-migration is separate work.
+under the same consumer identity as the live subscription.
 
 ## Ubiquitous language
 
@@ -63,8 +61,8 @@ define what a projection fold means or decide when a live subscription runs.
   handler success.
 - SubscriptionRunSerialiser supplies consumer-keyed exclusion for both live
   passes and rebuilds.
-- Bootstrap currently uses the legacy ProjectionRunner path. Moving it to
-  projection subscriptions is explicitly out of scope here.
+- Bootstrap composes runtime definitions into independently durable projection
+  subscriptions and delegates each rebuild to this component.
 
 ## Decisions, exclusions, and deferred capability
 

@@ -10,10 +10,12 @@ import {
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
 import {
+  DurableSubscriptionHost,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  ProjectionRunner,
+  createInMemorySubscriptionRunSerialiser,
+  createProjectionSubscription,
 } from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
@@ -62,7 +64,11 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
 
   expect(translator.translate(payload).map((candidate) => candidate.kind)).toContain('pr.observe');
   await translator.runOnce();
-  await new ProjectionRunner(journal, projectionStore, checkpoints).runOnce(pullRequestProjection);
+  await new DurableSubscriptionHost(
+    journal,
+    checkpoints,
+    createInMemorySubscriptionRunSerialiser(),
+  ).runOnce(createProjectionSubscription(pullRequestProjection, projectionStore));
   const resource = await lookup.resourceIdForExternalKey({
     adapter: 'github',
     key: payload.externalKey,

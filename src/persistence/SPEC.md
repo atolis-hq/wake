@@ -12,9 +12,9 @@ depends on through Kernel, in two parallel forms: a filesystem-backed
 implementation for real Wake homes, and an in-memory implementation that is a
 permanent test harness expressing the same contract. It also owns the
 mechanics that make a shared filesystem safe to treat as the source of
-truth — locking and atomic writes — and the process that advances registered
-projections forward from the journal. Persistence has no knowledge of what an
-event means; it stores and replays whatever envelopes and projection
+truth — locking and atomic writes — and durable subscriptions that advance
+projection definitions forward from the journal. Persistence has no knowledge
+of what an event means; it stores and replays whatever envelopes and projection
 definitions the rest of the system gives it.
 
 ## Responsibilities and boundaries
@@ -55,7 +55,7 @@ Persistence does not own:
 - What an event type means, what shape its payload takes, or which
   projections exist. Domain modules define events and projection
   definitions; persistence treats both as opaque data it is handed.
-- Deciding when a projection run happens, in what order relative to other
+- Deciding when a projection subscription runs, in what order relative to other
   tick work, or how a folded value is used. That is Bootstrap's and the
   owning module's responsibility.
 - Selecting which concrete implementation — filesystem or in-memory — is
@@ -78,11 +78,10 @@ Persistence does not own:
   giving an event's position within its own stream.
 - **Namespace** — a projection's own partition of the projection store,
   conventionally named after the projection definition.
-- **Consumer** — the name a checkpoint is stored under; a registered
-  projection's consumer name is derived from its own definition name.
-- **Registered projection** — a projection definition (name, event selector,
-  initial value, and fold function) that the projection-advancing process
-  knows to run; the definition itself is owned by a domain module.
+- **Projection consumer** — the name a checkpoint is stored under; a
+  projection subscription's consumer name is derived from its definition name.
+- **Projection definition** — a name, event selector, initial value, and fold
+  function owned by a domain module and adapted to a durable subscription.
 
 ## Core policies, invariants, and behaviours
 
@@ -159,12 +158,12 @@ Persistence does not own:
   to implement Kernel's ports; it has no other dependency.
 - Bootstrap (depends on Persistence) — selects the filesystem
   implementations for a real Wake home, wires them into the composition
-  root, and currently schedules the legacy Projection Runner path. Migrating
-  Bootstrap to projection subscriptions is separate work.
+  root, and composes each runtime projection as an independent durable
+  subscription with a consumer-keyed filesystem serialiser.
 - Every domain module (depends on Persistence indirectly, through Kernel's
-  ports) — appends to and reads from the journal, and supplies the
-  projection definitions the Projection Runner advances. Persistence never
-  depends back on a domain module.
+  ports) — appends to and reads from the journal, and supplies projection
+  definitions that Bootstrap adapts to durable subscriptions. Persistence
+  never depends back on a domain module.
 
 ## Decisions, exclusions, and deferred capability
 

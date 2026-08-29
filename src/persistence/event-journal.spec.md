@@ -170,8 +170,8 @@ caller's behalf when a write cannot currently be accepted.
   Journal exists to implement this port.
 - File Lock (depended on by the filesystem implementation only) —
   serializes concurrent writers to the same journal root.
-- Projection Runner (depends on Event Journal) — the primary reader,
-  advancing every registered projection from `readAll`.
+- Projection subscriptions and rebuilds (depend on Event Journal) — bounded
+  readers advancing independently checkpointed projection consumers.
 - Every domain module (depends on Event Journal, through Kernel's port) —
   appends its own stream's events and reads them back; the Event Journal
   never depends back on a domain module.

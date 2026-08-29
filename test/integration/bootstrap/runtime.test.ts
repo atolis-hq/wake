@@ -93,6 +93,29 @@ describe('target composition root', () => {
     expect(runtime.activationSchedulerSubscriber).toBeDefined();
   });
 
+  it('exposes projection subscriptions without a legacy projection runner facade', async () => {
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: parseRootConfig({
+        schemaVersion: 1,
+        execution: {
+          agentRunners: { fake: { kind: 'fake' } },
+          runnerPools: { standard: ['fake'] },
+          defaultRunnerPool: 'standard',
+        },
+        orchestration: { workflows: {} },
+        controlPlane: {},
+        integrations: {},
+        surfaces: {},
+      }),
+      journal: new InMemoryEventJournal({ now: () => new Date('2026-08-29T00:00:00.000Z') }),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+    });
+
+    expect(runtime.projectionSubscriptions).toBeDefined();
+    expect(runtime).not.toHaveProperty('projectionRunner');
+  });
+
   it('starts a production-composed fake runner from a conversation resume through the subscriber', async () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);
@@ -144,9 +167,8 @@ describe('target composition root', () => {
           event.stream.id === workflow,
       );
       trace.push('blocked');
-      // The resident projection pump normally maintains this read model; the
-      // test advances only that pure projection before invoking the API, never
-      // the legacy runner pipeline.
+      // The resident projection subscriptions normally maintain this read
+      // model; this test advances them explicitly before invoking the API.
       await runtime.projectionSubscriptions.catchUpOnce();
 
       const message = (
@@ -262,8 +284,8 @@ describe('target composition root', () => {
       },
     });
     await startComposedWorkflow(restarted, clock, 'paused-after-restart');
-    // Do not run the projection pump: the scheduler must read the durable
-    // control stream because subscriptions do not wait for projection catch-up.
+    // Do not run projection subscriptions: the scheduler reads the durable
+    // control stream without waiting for read-model catch-up.
     await expect(staleProjections.read(ControlStreamKind.Global, 'global')).resolves.toBeNull();
 
     await restarted.activationSchedulerSubscriber.poke();

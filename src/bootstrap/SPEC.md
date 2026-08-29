@@ -135,17 +135,15 @@ Bootstrap does not own:
   execution/recovery, and control-plane setup. Dedicated Bootstrap
   composition components select/decorate persistence, register built-in
   activities, compose integration runtime (providers, reactors, projection
-  runner, delivery, and the two pipelines), and provide transcript retention.
+  subscriptions, delivery, and the two pipelines), and provide transcript retention.
 - Both pipelines MUST check the composed control-plane's pause state before
   operational work; a paused pipeline invocation MUST not poll, schedule,
   react, advance, execute, recover, reconcile, or deliver. Projection
   catch-up remains enabled so read models fold pause and resume facts.
-- The composed projection runner's catch-up MUST be safe to call
-  concurrently from every in-process caller that shares it (the runner
-  pipeline's own catch-up, the API's manual tick, a CLI resident
-  projection pump) — Bootstrap MUST serialize overlapping calls in-process
-  so a slower caller's checkpoint save can never race a faster caller's
-  already-advanced one.
+- Each composed runtime projection has its own durable subscription consumer
+  and checkpoint. One-shot catch-up, resident tails, and rebuilds share
+  consumer-keyed serialisation, so a live pass and rebuild for one projection
+  cannot interleave while sibling projections may progress independently.
 - When composing execution's git workspace provider, resolving a workflow's
   clone locator MUST derive it from the WorkItem's correlated resource
   external key, in the form `<owner>/<repo>#<number>`, into a
@@ -240,7 +238,7 @@ Bootstrap does not own:
 | `activationScheduler` | bounded activation scheduler | The shared serialized scheduler used by subscriber reconciliation and the diagnostic compatibility facade. |
 | `activationSchedulerSubscriber` | durable activation-scheduler host | Always composed; checkpoints every-fact scheduling and supplies startup/fallback reconciliation. |
 | `advanceOnce` | one bounded control-plane advance step | A diagnostic/test compatibility facade over the shared scheduler. |
-| `projectionRunner` | catch-up/rebuild runner over the registered projection set | Shared by both pipelines and the CLI's `validate-state` rebuild command. |
+| `projectionSubscriptions` | independently durable runtime projection subscriptions | Supports targeted or all-definition catch-up, resident tails, health, and per-definition rebuilds. |
 | `providers` | composed provider instances | One per configured/enabled integration; each contributes poll/inbound/delivery behaviour to the intake and runner pipelines. |
 | `providerFailures` | list of provider composition failures | Providers that failed to construct; surfaced by `doctor` without blocking the providers that did construct successfully. |
 | `delivery` | outbound delivery service | Delivers the next eligible delivery intent to its resource's provider on each runner-pipeline pass. |
@@ -259,8 +257,8 @@ Bootstrap does not own:
 | Activation scheduler serialiser | adapter | Adapting Persistence's keyed file lock to Control Plane's complete scheduler-pass port | Given to the shared activation scheduler by the composition root; Control Plane has no filesystem-lock dependency. |
 | [Status-publish built-in activity](status-publish-activity.spec.md) | adapter | The `status.publish` Activity, available to every workflow without operator configuration | Registered into the activity registry the composition root builds; appends to the target resource's own stream. |
 | Capability resource-transition evidence | adapter | Resolving the correlated primary resource's capabilities to an evidence policy | Composed into Orchestration's generic reactor. The built-in policy recognises pull-request evidence for mergeable, reviewable, and approvable resources; missing or ambiguous primary subjects fail closed. |
-| Integration runtime composition | composition | Provider registry, projection runner, intake/runner pipelines, delivery, and ordered reactors | Receives already-composed module services from the root. It composes the resource-transition reactor and installs its full drain before Orchestration accepts any signal. |
-| [Board projection](board-projection.spec.md) | projection | Folding Work, Orchestration, and Execution events into one per-WorkItem operator-board card | Read by the API surface application's board and status responses; registered for production catch-up/rebuild alongside every other module's own projections. |
+| Integration runtime composition | composition | Provider registry, projection subscriptions, intake/runner pipelines, delivery, and ordered reactors | Receives already-composed module services from the root. It composes the resource-transition reactor and installs its full drain before Orchestration accepts any signal. |
+| [Board projection](board-projection.spec.md) | projection | Folding Work, Orchestration, and Execution events into one per-WorkItem operator-board card | Read by the API surface application's board and status responses; subscribed for production catch-up and rebuild alongside every other module's own projections. |
 | [Self-update](self-update.spec.md) | policy/process | The maintenance-lease, drain/cancel, update-verify-rollback sequence this installation's source checkout (and, when sandboxed, Docker container) advances through | Invoked by the CLI surface application's `self-update` command with concrete git/Docker collaborators; its failure log is read directly by the API surface application's `system.health` check. |
 | [API surface application](surface-api-applications.spec.md) | surface application | Translating the composed graph's state into the HTTP API's system, control-plane, board, resources, orchestration, execution, events, and observability responses | The only path the HTTP API and the CLI's own HTTP-hosting commands use to reach the composed graph. |
 | [Work detail and list surface application](surface-api-work-applications.spec.md) | surface application | Aggregating Work, Resources, Orchestration, Execution, and Activities state into one work list/detail response, and issuing Work's freeze/unfreeze/delete commands | Composed alongside the rest of the API surface application; the only component that reads across that many modules for one response. |

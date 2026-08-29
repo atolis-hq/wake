@@ -7,10 +7,12 @@ import {
 } from '../../../src/activities/index.js';
 import { createEventDraft, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
+  createInMemorySubscriptionRunSerialiser,
+  createProjectionSubscription,
+  DurableSubscriptionHost,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  ProjectionRunner,
 } from '../../../src/persistence/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
@@ -75,7 +77,7 @@ describe('pullRequestProjection', () => {
     ).toMatchObject({ checks: 'failing' });
   });
 
-  it('registers activities-pr for named runtime replay', async () => {
+  it('projects activities-pr through a named durable subscription', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const draft = event('pr.discovered', {
       workItemId: workId('1'),
@@ -86,17 +88,16 @@ describe('pullRequestProjection', () => {
     });
     await journal.append(draft.stream, 0, [draft]);
     const store = new InMemoryProjectionStore();
-    const runner = new ProjectionRunner(
+    const host = new DurableSubscriptionHost(
       journal,
-      store,
       new InMemoryCheckpointStore(),
-      activityProjectionDefinitions,
+      createInMemorySubscriptionRunSerialiser(),
     );
 
     expect(activityProjectionDefinitions.map((definition) => definition.name)).toContain(
       'activities-pr',
     );
-    await runner.runRegisteredOnce();
+    await host.runOnce(createProjectionSubscription(pullRequestProjection, store));
     expect(await store.read('activities-pr', resId('1'))).toMatchObject({
       value: { headRevision: 'head-a' },
     });

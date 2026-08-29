@@ -15,10 +15,12 @@ import {
   workflowDefinitionsProjection,
 } from '../../../src/orchestration/index.js';
 import {
+  createInMemorySubscriptionRunSerialiser,
+  createProjectionSubscription,
+  DurableSubscriptionHost,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  ProjectionRunner,
 } from '../../../src/persistence/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
@@ -91,9 +93,11 @@ it('persists instances and accepts outcomes idempotently', async () => {
     ),
   ).toHaveLength(1);
   const projections = new InMemoryProjectionStore();
-  await new ProjectionRunner(journal, projections, new InMemoryCheckpointStore()).runOnce(
-    workflowDefinitionsProjection,
-  );
+  await new DurableSubscriptionHost(
+    journal,
+    new InMemoryCheckpointStore(),
+    createInMemorySubscriptionRunSerialiser(),
+  ).runOnce(createProjectionSubscription(workflowDefinitionsProjection, projections));
   const changedDefinition = compileWorkflow(
     'default',
     {

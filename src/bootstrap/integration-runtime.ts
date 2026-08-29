@@ -64,17 +64,13 @@ import type { createWorkService } from '../work/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import {
-  createProjectionRunnerCompatibility,
   createRuntimeProjectionSubscriptions,
-  type RuntimeProjectionRunnerCompatibility,
   type RuntimeProjectionSubscriptions,
 } from './projection-runtime.js';
 import { createCapabilityResourceTransitionEvidence } from './resource-transition-evidence.js';
 
 export interface IntegrationRuntime {
   readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
-  /** Temporary compatibility facade for direct callers awaiting Task 6 migration. */
-  readonly projectionRunner: RuntimeProjectionRunnerCompatibility;
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
@@ -168,7 +164,6 @@ export async function composeIntegrationRuntime(
     input.checkpoints,
     input.subscriptionRunSerialiser,
   );
-  const projectionRunner = createProjectionRunnerCompatibility(projectionSubscriptions);
   const delivery = new DeliveryService({
     journal: input.journal,
     intents: async () =>
@@ -309,7 +304,6 @@ export async function composeIntegrationRuntime(
   });
   return {
     projectionSubscriptions,
-    projectionRunner,
     providers,
     providerFailures,
     delivery,

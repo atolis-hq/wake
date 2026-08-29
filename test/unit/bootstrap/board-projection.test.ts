@@ -484,7 +484,7 @@ describe('operator board projection', () => {
       boardProjection.initial('global'),
     );
     // A checkpoint written before the `children` field was added round-trips
-    // through storage without it, the same as ProjectionRunner resuming from
+    // through storage without it, the same as a durable subscription resuming from
     // a persisted value rather than calling initial() again.
     const { children: _children, ...legacyView } = seeded;
 

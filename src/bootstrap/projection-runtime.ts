@@ -141,25 +141,4 @@ export function createRuntimeProjectionSubscriptions(
   );
 }
 
-/**
- * Temporary compatibility facade for direct callers awaiting their Task 6
- * migration. It forwards to independently keyed subscriptions and adds no
- * global projection serialization.
- */
-export interface RuntimeProjectionRunnerCompatibility {
-  runRegisteredOnce(signal?: AbortSignal): Promise<number>;
-  runOnce(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
-  rebuild(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
-}
-
-export function createProjectionRunnerCompatibility(
-  subscriptions: RuntimeProjectionSubscriptions,
-): RuntimeProjectionRunnerCompatibility {
-  return {
-    runRegisteredOnce: (signal) => subscriptions.catchUpOnce(signal),
-    runOnce: (definition, signal) => subscriptions.catchUp(definition, signal),
-    rebuild: (definition, signal) => subscriptions.rebuild(definition, signal),
-  };
-}
-
 export type { DeliveryIntentView };

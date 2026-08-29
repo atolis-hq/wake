@@ -12,10 +12,11 @@ Only Bootstrap knows the complete application graph. The durable activation
 scheduler owns scheduling; one-shot CLI and API ticks run the runner pipeline
 to produce schedule/reactor facts, then explicitly poke the subscriber before
 delivery. Scheduler runner eligibility is a position-keyed fold of the durable
-control stream, so scheduling does not wait for the independent projection
-pump. Bootstrap supervises that subscription beside projection and resident
-hosts, composes its filesystem checkpoint lock independently from the global
-scheduler critical-section lock, and stops it with the resident signal.
+control stream, so scheduling does not wait for independently durable
+projection subscriptions. Bootstrap supervises the scheduler and projection
+subscriptions beside resident hosts, composes their filesystem checkpoint locks
+independently from the global scheduler critical-section lock, and stops them
+with the resident signal.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

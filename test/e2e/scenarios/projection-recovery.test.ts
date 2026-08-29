@@ -4,10 +4,13 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { correlationId } from '../../../src/kernel/index.js';
 import {
+  createFileSubscriptionRunSerialiser,
+  createProjectionSubscription,
+  DurableSubscriptionHost,
   FileCheckpointStore,
   FileEventJournal,
   FileProjectionStore,
-  ProjectionRunner,
+  ProjectionRebuilder,
 } from '../../../src/persistence/index.js';
 import { createWorkService, workProjection } from '../../../src/work/index.js';
 import { workId } from '../../support/identities.js';
@@ -30,12 +33,16 @@ it(`${scenario.id} rebuilds projections without changing journal bytes`, async (
   );
   const projections = new FileProjectionStore(root);
   const checkpoints = new FileCheckpointStore(root);
-  const runner = new ProjectionRunner(journal, projections, checkpoints);
-  await runner.runOnce(workProjection);
+  const serialiseRun = createFileSubscriptionRunSerialiser(root);
+  const subscription = createProjectionSubscription(workProjection, projections);
+  const host = new DurableSubscriptionHost(journal, checkpoints, serialiseRun);
+  await host.runOnce(subscription);
   const eventPath = join(root, 'events', '2026-07-30.jsonl');
   const before = await readFile(eventPath, 'utf8');
   await rm(join(root, 'projections'), { recursive: true });
-  await runner.rebuild(workProjection);
+  await new ProjectionRebuilder(journal, projections, checkpoints, serialiseRun).rebuild(
+    workProjection,
+  );
   expect((await projections.read('work', workId('1')))?.value).toMatchObject({ objective: 'ship' });
   expect(await readFile(eventPath, 'utf8')).toBe(before);
   expect(await checkpoints.load('projection:work')).toBe(1);

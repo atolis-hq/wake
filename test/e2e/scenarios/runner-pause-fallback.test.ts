@@ -32,7 +32,7 @@ it('E2E-CONTROL-QUOTA-001: a durable quota pause falls sideways, replays, expire
   const root = await createRoot(clock, journal, projections, checkpoints);
 
   await appendQuotaPause(journal, clock, '2026-07-30T12:30:00.000Z');
-  await root.projectionRunner.runRegisteredOnce();
+  await root.projectionSubscriptions.catchUpOnce();
   expect(await runnerHealth(root, clock)).toContainEqual(
     expect.objectContaining({ runnerId: 'sonnet', status: 'paused', available: false }),
   );
@@ -40,7 +40,7 @@ it('E2E-CONTROL-QUOTA-001: a durable quota pause falls sideways, replays, expire
   expect((await root.execution.list()).at(-1)?.runner?.name).toBe('codex-mini');
 
   const restarted = await createRoot(clock, journal, projections, checkpoints);
-  await restarted.projectionRunner.runRegisteredOnce();
+  await restarted.projectionSubscriptions.catchUpOnce();
   await startAndAdvance(restarted, 'replayed');
   expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('codex-mini');
 
@@ -49,9 +49,9 @@ it('E2E-CONTROL-QUOTA-001: a durable quota pause falls sideways, replays, expire
   expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('sonnet');
 
   await appendQuotaPause(journal, clock, '2026-07-30T13:30:00.000Z');
-  await restarted.projectionRunner.runRegisteredOnce();
+  await restarted.projectionSubscriptions.catchUpOnce();
   await restarted.runnerControls.unpause('sonnet', 'operator-resume-1');
-  await restarted.projectionRunner.runRegisteredOnce();
+  await restarted.projectionSubscriptions.catchUpOnce();
   expect(await runnerHealth(restarted, clock)).toContainEqual(
     expect.objectContaining({ runnerId: 'sonnet', status: 'available', available: true }),
   );

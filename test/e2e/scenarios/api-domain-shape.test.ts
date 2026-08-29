@@ -63,7 +63,7 @@ describe(`${scenario.id} API metadata provenance`, () => {
       commandId: 'surface-retract',
       occurredAt: retractedAt,
     });
-    await root.projectionRunner.runRegisteredOnce();
+    await root.projectionSubscriptions.catchUpOnce();
     const work = (
       await createSurfaceApplications(root, {
         now: () => '2026-07-31T11:00:00.000Z',
@@ -111,7 +111,7 @@ describe(`${scenario.id} API metadata provenance`, () => {
       { workItemId: workId('later'), objective: 'Later work' },
       { ...context, commandId: 'surface-flow-later', occurredAt: laterAt },
     );
-    await root.projectionRunner.runRegisteredOnce();
+    await root.projectionSubscriptions.catchUpOnce();
     const work = (
       await createSurfaceApplications(root, {
         now: () => '2026-07-31T11:00:00.000Z',
@@ -146,7 +146,7 @@ describe(`${scenario.id} API domain shape`, () => {
       context,
     );
     await root.advanceOnce({ maxProgress: 1 });
-    await root.projectionRunner.runRegisteredOnce();
+    await root.projectionSubscriptions.catchUpOnce();
 
     const surface = await createSurfaceApplications(root, {
       now: () => '2026-07-31T11:00:00.000Z',
@@ -175,7 +175,7 @@ describe(`${scenario.id} API domain shape`, () => {
       context,
     );
     await root.advanceOnce({ maxProgress: 1 });
-    await root.projectionRunner.runRegisteredOnce();
+    await root.projectionSubscriptions.catchUpOnce();
 
     const page = await (
       await createSurfaceApplications(root, {
@@ -228,7 +228,7 @@ describe(`${scenario.id} API domain shape`, () => {
       context,
     );
     await root.advanceOnce({ maxProgress: 1 });
-    await root.projectionRunner.runRegisteredOnce();
+    await root.projectionSubscriptions.catchUpOnce();
 
     // When the real Fastify HTTP Surface queries the injected production facade.
     const surface = await createSurfaceApplications(root, {
@@ -374,7 +374,7 @@ describe(`${scenario.id} command idempotency`, () => {
       expect((await root.execution.list()).at(0)?.status).toBe('succeeded');
     });
     await root.advanceOnce({ maxProgress: 1 });
-    await root.projectionRunner.runRegisteredOnce();
+    await root.projectionSubscriptions.catchUpOnce();
 
     const surface = await createSurfaceApplications(root, { now: () => clock.now().toISOString() });
     const page = await surface.api.work.list({ limit: 1 });
@@ -402,7 +402,7 @@ describe(`${scenario.id} command idempotency`, () => {
       },
       context,
     );
-    await root.projectionRunner.runRegisteredOnce();
+    await root.projectionSubscriptions.catchUpOnce();
 
     const surface = await createSurfaceApplications(root, { now: () => clock.now().toISOString() });
     const page = await surface.api.work.list({ limit: 1 });
@@ -478,33 +478,48 @@ describe(`${scenario.id} command idempotency`, () => {
 
 const boardScenario = { id: 'E2E-SURFACE-BOARD-001' } as const;
 
-it(`${boardScenario.id} projects composed Work and Run state into bounded operator board cards`, async () => {
-  const { root, context } = await createWorld();
-  const work = await root.work.create(
-    { workItemId: workId('board-card'), objective: 'Show operator board state' },
-    context,
-  );
-  await root.orchestration.start(
-    {
-      workflowInstanceId: workflowInstanceId('workflow-board-card'),
-      workItemId: work.workItemId,
-      workflowName: workflowName('default'),
-      orchestrationGroupId: orchestrationGroupId('group-board-card'),
-    },
-    context,
-  );
-  await root.advanceOnce({ maxProgress: 1 });
-  await root.projectionRunner.runRegisteredOnce();
+it(`${boardScenario.id} streams composed Work, workflow, and Run state into active operator board cards`, async () => {
+  const { root, clock, context } = await createAmbiguousRunWorld('background-board');
+  const controller = new AbortController();
+  const subscriptions = root.projectionSubscriptions.start(controller.signal);
+  try {
+    const work = await root.work.create(
+      { workItemId: workId('board-card'), objective: 'Show operator board state' },
+      context,
+    );
+    await root.orchestration.start(
+      {
+        workflowInstanceId: workflowInstanceId('workflow-board-card'),
+        workItemId: work.workItemId,
+        workflowName: workflowName('default'),
+        orchestrationGroupId: orchestrationGroupId('group-board-card'),
+      },
+      context,
+    );
+    await root.advanceOnce({ maxProgress: 1 });
 
-  const page = await (
-    await createSurfaceApplications(root, {
-      now: () => '2026-07-31T11:00:00.000Z',
-    })
-  ).api.board!.list({ limit: 10 });
+    await vi.waitFor(async () => {
+      const head = await root.journal.latestGlobalPosition();
+      expect((await root.execution.list()).at(0)).toMatchObject({ status: 'started' });
+      await expect(root.checkpoints.load('projection:operator-board')).resolves.toBe(head);
+      await expect(root.checkpoints.load('projection:execution')).resolves.toBe(head);
+      await expect(root.checkpoints.load('projection:orchestration')).resolves.toBe(head);
+    });
 
-  expect(page.total).toBe(1);
-  expect(page.items[0]).toMatchObject({ workItemKey: expect.stringMatching(/^wk_/) });
-  expect(page.conditionCounts).toEqual(expect.any(Object));
+    const page = await (
+      await createSurfaceApplications(root, { now: () => clock.now().toISOString() })
+    ).api.board!.list({ limit: 10 });
+
+    expect(page.total).toBe(1);
+    expect(page.items[0]).toMatchObject({
+      workItemKey: expect.stringMatching(/^wk_/),
+      condition: 'active',
+      activeRuns: expect.any(Object),
+    });
+  } finally {
+    controller.abort();
+    await subscriptions.done;
+  }
 });
 
 const analyticsScenario = { id: 'E2E-SURFACE-ANALYTICS-001' } as const;
@@ -515,7 +530,7 @@ it(`${analyticsScenario.id} returns an incremental composed analytics window wit
     { workItemId: workId('analytics'), objective: 'Count analytics facts' },
     context,
   );
-  await root.projectionRunner.runRegisteredOnce();
+  await root.projectionSubscriptions.catchUpOnce();
 
   const result = await (
     await createSurfaceApplications(root, {
@@ -757,6 +772,6 @@ async function startAmbiguousRun(
     status: 'ambiguous',
     escalated: true,
   });
-  await world.root.projectionRunner.runRegisteredOnce();
+  await world.root.projectionSubscriptions.catchUpOnce();
   return { runId: run.runId, workflowInstanceId: instanceId };
 }

@@ -64,10 +64,7 @@ import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime } from './integration-runtime.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { composePersistence } from './persistence-composition.js';
-import type {
-  RuntimeProjectionRunnerCompatibility,
-  RuntimeProjectionSubscriptions,
-} from './projection-runtime.js';
+import type { RuntimeProjectionSubscriptions } from './projection-runtime.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import { FileScheduleCheckpointStore } from './schedule-checkpoint-store.js';
@@ -130,8 +127,6 @@ export interface CompositionRoot {
   readonly activationSchedulerSubscriber: ActivationSchedulerSubscriber;
   readonly advanceOnce: ActivationScheduler['runOnce'];
   readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
-  /** Temporary compatibility facade for direct callers awaiting Task 6 migration. */
-  readonly projectionRunner: RuntimeProjectionRunnerCompatibility;
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;

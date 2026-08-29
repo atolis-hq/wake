@@ -42,10 +42,12 @@ import {
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import {
+  createInMemorySubscriptionRunSerialiser,
+  createProjectionSubscription,
+  DurableSubscriptionHost,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  ProjectionRunner,
 } from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
@@ -110,11 +112,16 @@ export class TestWorld {
   );
 
   // resolve() falls back to this projection for historical (non-current) workflow
-  // fingerprints; keep it caught up before any call that may hit that path.
-  private readonly definitionProjections = new ProjectionRunner(
+  // fingerprints; keep its durable subscription caught up before any call that may hit that path.
+  private readonly definitionProjectionHost = new DurableSubscriptionHost(
     this.journal,
-    this.projections,
     this.checkpoints,
+    createInMemorySubscriptionRunSerialiser(),
+  );
+
+  private readonly definitionProjectionSubscription = createProjectionSubscription(
+    workflowDefinitionsProjection,
+    this.projections,
   );
 
   private recovery: RecoveryService | undefined;
@@ -323,7 +330,7 @@ export class TestWorld {
   }
 
   private async syncWorkflowDefinitions(): Promise<void> {
-    await this.definitionProjections.runOnce(workflowDefinitionsProjection);
+    await this.definitionProjectionHost.runOnce(this.definitionProjectionSubscription);
   }
 
   async startWorkflow(input: {
