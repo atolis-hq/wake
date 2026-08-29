@@ -29,6 +29,35 @@ it('advances the resident projection pump', async () => {
   expect(projectionRuns).toBe(1);
 });
 
+it('does not initialize the resident cursor until idle waiting starts', async () => {
+  const latestGlobalPosition = vi.fn(async () => 0);
+  const waitForEventsAfter = vi.fn(async () => undefined);
+  const report = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  try {
+    const wait = createRunnerIdleWait(
+      {
+        journal: {
+          latestGlobalPosition,
+          waitForEventsAfter,
+          changeSignal: new InProcessJournalChangeSignal(),
+        },
+      } as never,
+      { pollBackoffMs: 0 },
+    );
+
+    expect(latestGlobalPosition).not.toHaveBeenCalled();
+    expect(report).not.toHaveBeenCalled();
+
+    await wait(new AbortController().signal, {
+      consecutiveIdleTicks: 0,
+      consecutiveErrorTicks: 0,
+    });
+    expect(latestGlobalPosition).toHaveBeenCalledTimes(1);
+  } finally {
+    report.mockRestore();
+  }
+});
+
 it('waits after reported progress that did not change the journal', async () => {
   const controller = new AbortController();
   let waitStarted!: () => void;

@@ -235,10 +235,10 @@ export function createRunnerIdleWait(
   root: Pick<CompositionRoot, 'journal'>,
   resident: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number } | undefined,
 ) {
-  // Capture the cursor before the first resident pass. Each subsequent
-  // cursor is sampled before waiting, so an append between a pass and waiter
-  // registration is still visible to the durable wait's recheck.
-  let priorPosition = sampleRunnerPosition(root);
+  // Cursor initialization stays inside the resident lifecycle. The first
+  // wait starts at the origin so an append during the first pass remains
+  // visible; each subsequent cursor is sampled before waiting.
+  let priorPosition: Promise<number> | undefined;
   return (
     signal: AbortSignal,
     {
@@ -248,11 +248,18 @@ export function createRunnerIdleWait(
   ): Promise<void> => {
     if (consecutiveErrorTicks > 0)
       return sleepUntilAbort(signal, nextPollBackoffMs(resident, consecutiveErrorTicks));
-    return waitForRunnerEvents(root, priorPosition, signal, resident, _consecutiveIdleTicks).then(
-      (position) => {
-        priorPosition = Promise.resolve(position);
-      },
-    );
+    const initializing = priorPosition === undefined;
+    const cursor = priorPosition ?? Promise.resolve(0);
+    return waitForRunnerEvents(
+      root,
+      cursor,
+      signal,
+      resident,
+      _consecutiveIdleTicks,
+      initializing,
+    ).then((position) => {
+      priorPosition = Promise.resolve(position);
+    });
   };
 }
 
@@ -286,11 +293,14 @@ async function waitForRunnerEvents(
   signal: AbortSignal,
   resident: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number } | undefined,
   consecutiveIdleTicks: number,
+  initializing: boolean,
 ): Promise<number> {
   let currentPosition = 0;
   try {
     const afterPosition = await priorPosition;
-    currentPosition = await root.journal.latestGlobalPosition();
+    currentPosition = initializing
+      ? await sampleRunnerPosition(root)
+      : await root.journal.latestGlobalPosition();
     await root.journal.waitForEventsAfter(afterPosition, signal, JOURNAL_CHANGE_FALLBACK_MS);
   } catch (error) {
     reportRunnerWaitError(error);
