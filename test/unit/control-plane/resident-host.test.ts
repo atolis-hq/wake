@@ -48,6 +48,59 @@ it('propagates lifecycle abort to an in-flight intake cycle', async () => {
   await expect(run).resolves.toMatchObject({ stoppedBecause: 'shutdown' });
 });
 
+it('does not report a tick rejection caused by lifecycle abort', async () => {
+  const controller = new AbortController();
+  let tickStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    tickStarted = resolve;
+  });
+  const abortFailure = new Error('subscription run aborted');
+  const errors: unknown[] = [];
+  const host = new ResidentHost(
+    {
+      async run(_budget, signal) {
+        tickStarted();
+        await new Promise<void>((resolve) => {
+          signal!.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw abortFailure;
+      },
+    },
+    async () => undefined,
+    async (error) => {
+      errors.push(error);
+    },
+  );
+
+  const run = host.run(controller.signal, budget);
+  await started;
+  controller.abort();
+
+  await expect(run).resolves.toMatchObject({ stoppedBecause: 'shutdown' });
+  expect(errors).toEqual([]);
+});
+
+it('reports a tick rejection that occurs before lifecycle abort', async () => {
+  const controller = new AbortController();
+  const failure = new Error('delivery failed');
+  const errors: unknown[] = [];
+  const host = new ResidentHost(
+    { run: async () => Promise.reject(failure) },
+    async (signal) => {
+      expect(signal.aborted).toBe(false);
+      controller.abort();
+    },
+    async (error) => {
+      errors.push(error);
+    },
+  );
+
+  await expect(host.run(controller.signal, budget)).resolves.toMatchObject({
+    stoppedBecause: 'shutdown',
+  });
+  expect(errors).toEqual([failure]);
+});
+
 it('starts another tick after an idle backoff', async () => {
   const controller = new AbortController();
   let calls = 0;

@@ -90,11 +90,13 @@ Decisions below).
   event (resolving immediately if already aborted) and never resolves on a
   timer — so a resident run with no caller-supplied `sleep` performs exactly
   one bounded cycle and then blocks until the signal is aborted externally.
-- `ResidentHost.run` MUST catch any error thrown by the wrapped host's `run`,
-  pass it to the injected `reportError` callback (default: a no-op), and
-  continue the resident loop rather than letting the error propagate and end
-  the resident run. A cycle that throws contributes nothing to the
-  accumulated `advances`/`runs` totals.
+- `ResidentHost.run` MUST catch any error thrown by the wrapped host's `run`
+  before its lifecycle signal aborts, pass it to the injected `reportError`
+  callback (default: a no-op), and continue the resident loop rather than
+  letting the error propagate and end the resident run. A rejection that
+  arrives after the lifecycle signal aborts is expected shutdown: it MUST end
+  the resident loop without reporting or backing off. A pre-abort failure
+  contributes nothing to the accumulated `advances`/`runs` totals.
 - `ResidentHost.run`'s returned `stoppedBecause` MUST always be
   `HostStopReason.Shutdown`, regardless of the last cycle's own stop reason
   — the only way `run` returns is because the signal aborted, so every

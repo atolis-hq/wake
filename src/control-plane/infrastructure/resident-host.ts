@@ -47,6 +47,7 @@ export class ResidentHost {
           stoppedBecause: result.stoppedBecause,
         };
       } catch (error) {
+        if (signal.aborted) break;
         errored = true;
         await this.reportError(error);
       }
