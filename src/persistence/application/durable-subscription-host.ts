@@ -13,6 +13,11 @@ export interface DurableSubscription {
   readonly batchSize?: number;
 }
 
+export interface DurableSubscriptionPass {
+  readonly checkpoint: number;
+  readonly eventCount: number;
+}
+
 export type SubscriptionHealthStatus = 'starting' | 'healthy' | 'degraded' | 'stopped';
 
 export interface SubscriptionHealth {
@@ -71,6 +76,16 @@ export class DurableSubscriptionHost {
     return { abort, done };
   }
 
+  async runOnce(
+    subscription: DurableSubscription,
+    signal?: AbortSignal,
+  ): Promise<DurableSubscriptionPass> {
+    assertSubscription(subscription);
+    return this.serialiseRun(subscription.consumer, signal ?? new AbortController().signal, () =>
+      this.runSubscriptionPass(subscription),
+    );
+  }
+
   health(consumer: string): SubscriptionHealth | undefined {
     return this.snapshots.get(consumer);
   }
@@ -85,23 +100,12 @@ export class DurableSubscriptionHost {
     try {
       while (!signal.aborted) {
         try {
-          const pass = await this.serialiseRun(subscription.consumer, signal, async () => {
-            const loadedCheckpoint = await this.checkpoints.load(subscription.consumer);
-            const events = await this.journal.readAll(
-              loadedCheckpoint,
-              subscription.batchSize ?? defaultBatchSize,
-            );
-            if (events.length === 0) return { checkpoint: loadedCheckpoint, handled: false };
-            await subscription.handle(events);
-            const nextCheckpoint = events.at(-1)!.globalPosition;
-            await this.checkpoints.save(subscription.consumer, nextCheckpoint);
-            return { checkpoint: nextCheckpoint, handled: true };
-          });
+          const pass = await this.runOnce(subscription, signal);
           if (signal.aborted) return;
           checkpoint = pass.checkpoint;
           consecutiveFailures = 0;
           this.updateHealth(subscription.consumer, 'healthy', checkpoint, consecutiveFailures);
-          if (!pass.handled)
+          if (pass.eventCount === 0)
             await this.journal.waitForEventsAfter(checkpoint, signal, this.fallbackMs);
         } catch (error) {
           if (signal.aborted) return;
@@ -119,6 +123,21 @@ export class DurableSubscriptionHost {
     } finally {
       this.updateHealth(subscription.consumer, 'stopped', checkpoint, consecutiveFailures);
     }
+  }
+
+  private async runSubscriptionPass(
+    subscription: DurableSubscription,
+  ): Promise<DurableSubscriptionPass> {
+    const checkpoint = await this.checkpoints.load(subscription.consumer);
+    const events = await this.journal.readAll(
+      checkpoint,
+      subscription.batchSize ?? defaultBatchSize,
+    );
+    if (events.length === 0) return { checkpoint, eventCount: 0 };
+    await subscription.handle(events);
+    const nextCheckpoint = events.at(-1)!.globalPosition;
+    await this.checkpoints.save(subscription.consumer, nextCheckpoint);
+    return { checkpoint: nextCheckpoint, eventCount: events.length };
   }
 
   private updateHealth(
@@ -141,19 +160,20 @@ export class DurableSubscriptionHost {
 function assertDistinctConsumers(subscriptions: readonly DurableSubscription[]): void {
   const consumers = new Set<string>();
   for (const subscription of subscriptions) {
-    if (subscription.consumer.length === 0)
-      throw new Error('Subscription consumer must not be empty');
+    assertSubscription(subscription);
     if (consumers.has(subscription.consumer))
       throw new Error(`Subscription consumer is already registered: ${subscription.consumer}`);
-    if (subscription.batchSize !== undefined)
-      assertPositiveSafeInteger(
-        subscription.batchSize,
-        'Subscription batch size',
-        maximumBatchSize,
-      );
-
     consumers.add(subscription.consumer);
   }
+}
+
+function assertSubscription(subscription: DurableSubscription): void {
+  if (typeof subscription.consumer !== 'string' || subscription.consumer.length === 0)
+    throw new Error('Subscription consumer must not be empty');
+  if (typeof subscription.handle !== 'function')
+    throw new Error('Subscription handler must be a function');
+  if (subscription.batchSize !== undefined)
+    assertPositiveSafeInteger(subscription.batchSize, 'Subscription batch size', maximumBatchSize);
 }
 
 function assertPositiveSafeInteger(value: number, label: string, maximum?: number): void {

@@ -20,6 +20,12 @@ handler's effects idempotent.
   and its serialisation key. A host invocation rejects duplicate consumer
   names. The host is infrastructure-neutral and requires its caller to supply
   a serialiser explicitly; it never creates an unsafe per-host default.
+- `runOnce(subscription, signal?)` validates one subscription, acquires the
+  same consumer serialiser used by the resident loop, and executes exactly one
+  bounded pass. It returns `{ checkpoint, eventCount }`, reporting the loaded
+  checkpoint and zero events when caught up. A provided abort signal is used
+  while waiting for the serialiser; the resident loop reuses this same
+  primitive for each pass.
 - Batch size is a positive safe integer no greater than 10,000. Fallback wait
   duration is a positive safe integer; invalid values are rejected before any
   consumer loop starts. The default retry policy has a nonzero bounded delay;

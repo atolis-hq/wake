@@ -348,6 +348,97 @@ it('reads a backlog in bounded batches and checkpoints only after handling each 
   expect(batches).toEqual([2, 1]);
 });
 
+it('runs one bounded pass and returns its checkpoint and event count', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await appendFacts(journal, 3);
+  const checkpoints = new InMemoryCheckpointStore();
+  await checkpoints.save('bounded-pass', 1);
+  const batches: number[][] = [];
+  const host = new DurableSubscriptionHost(
+    journal,
+    checkpoints,
+    createInMemorySubscriptionRunSerialiser(),
+  );
+
+  const result = await host.runOnce({
+    consumer: 'bounded-pass',
+    batchSize: 1,
+    handle: async (events) => {
+      batches.push(events.map((event) => event.globalPosition));
+    },
+  });
+
+  expect(batches).toEqual([[2]]);
+  expect(result).toEqual({ checkpoint: 2, eventCount: 1 });
+  expect(await checkpoints.load('bounded-pass')).toBe(2);
+});
+
+it('leaves the checkpoint unchanged when a pass handler fails', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await appendFacts(journal, 1);
+  const checkpoints = new InMemoryCheckpointStore();
+  const host = new DurableSubscriptionHost(
+    journal,
+    checkpoints,
+    createInMemorySubscriptionRunSerialiser(),
+  );
+
+  await expect(
+    host.runOnce({
+      consumer: 'failed-pass',
+      handle: async () => {
+        throw new Error('injected handler failure');
+      },
+    }),
+  ).rejects.toThrow('injected handler failure');
+  expect(await checkpoints.load('failed-pass')).toBe(0);
+});
+
+it('serialises a same-consumer pass with the resident loop while another progresses', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await appendFacts(journal, 1);
+  const residentStarted = deferred<void>();
+  const releaseResident = deferred<void>();
+  let samePassEntered = false;
+  let differentPassEntered = false;
+  const host = new DurableSubscriptionHost(
+    journal,
+    new InMemoryCheckpointStore(),
+    createInMemorySubscriptionRunSerialiser(),
+  );
+  const resident = host.start([
+    {
+      consumer: 'same',
+      handle: async () => {
+        residentStarted.resolve();
+        await releaseResident.promise;
+      },
+    },
+  ]);
+
+  await residentStarted.promise;
+  const samePass = host.runOnce({
+    consumer: 'same',
+    handle: async () => {
+      samePassEntered = true;
+    },
+  });
+  const differentPass = await host.runOnce({
+    consumer: 'different',
+    handle: async () => {
+      differentPassEntered = true;
+    },
+  });
+
+  expect(differentPass).toEqual({ checkpoint: 1, eventCount: 1 });
+  expect(differentPassEntered).toBe(true);
+  expect(samePassEntered).toBe(false);
+  releaseResident.resolve();
+  await samePass;
+  resident.abort();
+  await resident.done;
+});
+
 it('recovers degraded health after a successful retry and stops cleanly on abort', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   await appendFacts(journal, 1);
