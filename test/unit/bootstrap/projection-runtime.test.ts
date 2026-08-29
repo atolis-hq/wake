@@ -12,7 +12,9 @@ import { composePersistence } from '../../../src/bootstrap/persistence-compositi
 import {
   createEventDraft,
   type EntityRef,
+  type EventJournal,
   type ProjectionDefinition,
+  type ProjectionStore,
 } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
@@ -21,7 +23,6 @@ import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  createInMemorySubscriptionRunSerialiser,
 } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -84,63 +85,78 @@ it('rebuilds the registered projection when another definition has the same name
   expect(await projections.read<number>(registered.name, 'one')).toMatchObject({ value: 1 });
 });
 
-it('uses an explicitly shared serialiser for fully injected file persistence', async () => {
-  const firstRoot = await mkdtemp(join(tmpdir(), 'wake-projection-serialiser-'));
-  const secondRoot = await mkdtemp(join(tmpdir(), 'wake-projection-serialiser-'));
+it('uses file locking for two fully injected projection runtimes at one data root', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projection-serialiser-'));
   const clock = new FakeClock();
-  const firstPaths = resolveWakePaths(firstRoot);
-  const secondPaths = resolveWakePaths(secondRoot);
-  const serialiseRun = createInMemorySubscriptionRunSerialiser();
-  const first = composePersistence(firstPaths, clock, {
-    journal: new FileEventJournal(firstPaths.dataRoot, clock),
-    projections: new FileProjectionStore(firstPaths.dataRoot),
-    checkpoints: new FileCheckpointStore(firstPaths.dataRoot),
+  const paths = resolveWakePaths(root);
+  const definition = countedProjection('injected-file-projection');
+  const firstWriteStarted = deferred<void>();
+  const releaseFirstWrite = deferred<void>();
+  let secondJournalReadStarted = false;
+  const first = composePersistence(paths, clock, {
+    journal: new FileEventJournal(paths.dataRoot, clock),
+    projections: new FileProjectionStore(paths.dataRoot),
+    checkpoints: new FileCheckpointStore(paths.dataRoot),
     decorateJournal: (journal) => journal,
+    decorateProjections: (projections): ProjectionStore => ({
+      read: projections.read.bind(projections),
+      async write(projection) {
+        firstWriteStarted.resolve();
+        await releaseFirstWrite.promise;
+        await projections.write(projection);
+      },
+      list: projections.list.bind(projections),
+      clear: projections.clear.bind(projections),
+    }),
+    decorateCheckpoints: (checkpoints) => checkpoints,
+  });
+  const second = composePersistence(paths, clock, {
+    journal: new FileEventJournal(paths.dataRoot, clock),
+    projections: new FileProjectionStore(paths.dataRoot),
+    checkpoints: new FileCheckpointStore(paths.dataRoot),
+    decorateJournal: (journal): EventJournal => ({
+      append: journal.append.bind(journal),
+      readStream: journal.readStream.bind(journal),
+      async readAll(afterGlobalPosition, limit) {
+        secondJournalReadStarted = true;
+        return journal.readAll(afterGlobalPosition, limit);
+      },
+      latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
+      waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
+      changeSignal: journal.changeSignal,
+      ...(journal.readLatest === undefined ? {} : { readLatest: journal.readLatest.bind(journal) }),
+    }),
     decorateProjections: (projections) => projections,
     decorateCheckpoints: (checkpoints) => checkpoints,
-    subscriptionRunSerialiser: serialiseRun,
   });
-  const second = composePersistence(secondPaths, clock, {
-    journal: new FileEventJournal(secondPaths.dataRoot, clock),
-    projections: new FileProjectionStore(secondPaths.dataRoot),
-    checkpoints: new FileCheckpointStore(secondPaths.dataRoot),
-    decorateJournal: (journal) => journal,
-    decorateProjections: (projections) => projections,
-    decorateCheckpoints: (checkpoints) => checkpoints,
-    subscriptionRunSerialiser: serialiseRun,
-  });
-  const firstStarted = deferred<void>();
-  const releaseFirst = deferred<void>();
-  let secondStarted = false;
+  const firstRuntime = createRuntimeProjectionSubscriptions(
+    first.journal,
+    first.projections,
+    first.checkpoints,
+    first.subscriptionRunSerialiser,
+    [definition],
+  );
+  const secondRuntime = createRuntimeProjectionSubscriptions(
+    second.journal,
+    second.projections,
+    second.checkpoints,
+    second.subscriptionRunSerialiser,
+    [definition],
+  );
 
   try {
-    const firstPass = first.subscriptionRunSerialiser(
-      'projection:mixed-persistence',
-      new AbortController().signal,
-      async () => {
-        firstStarted.resolve();
-        await releaseFirst.promise;
-      },
-    );
-    await firstStarted.promise;
-    const secondPass = second.subscriptionRunSerialiser(
-      'projection:mixed-persistence',
-      new AbortController().signal,
-      async () => {
-        secondStarted = true;
-      },
-    );
+    await appendCountedEvent(first.journal, 'injected-file-event');
+    const firstPass = firstRuntime.catchUp(definition);
+    await firstWriteStarted.promise;
+    const secondPass = secondRuntime.catchUp(definition);
 
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(secondStarted).toBe(false);
-    releaseFirst.resolve();
+    expect(secondJournalReadStarted).toBe(false);
+    releaseFirstWrite.resolve();
     await Promise.all([firstPass, secondPass]);
-    expect(secondStarted).toBe(true);
+    expect(secondJournalReadStarted).toBe(true);
   } finally {
-    await Promise.all([
-      rm(firstRoot, { recursive: true, force: true }),
-      rm(secondRoot, { recursive: true, force: true }),
-    ]);
+    await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -183,7 +199,7 @@ function countedProjection(name: string): ProjectionDefinition<number> {
   };
 }
 
-async function appendCountedEvent(journal: InMemoryEventJournal, eventId: string): Promise<void> {
+async function appendCountedEvent(journal: EventJournal, eventId: string): Promise<void> {
   const stream: EntityRef<'counter', 'projection-runtime'> = {
     kind: 'counter',
     id: 'projection-runtime',
