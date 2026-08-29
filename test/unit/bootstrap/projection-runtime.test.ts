@@ -23,6 +23,7 @@ import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
+  type SubscriptionRunSerialiser,
 } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -61,6 +62,44 @@ it('catches up only the targeted projection before catching up its sibling', asy
   expect(await checkpoints.load('projection:targeted-sibling')).toBe(0);
   await expect(runtime.catchUpOnce()).resolves.toBe(1);
   expect(await checkpoints.load('projection:targeted-sibling')).toBe(1);
+});
+
+it('skips already-caught-up projection consumers before acquiring their locks', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const serialisedConsumers: string[] = [];
+  const runtime = createRuntimeProjectionSubscriptions(
+    journal,
+    new InMemoryProjectionStore(),
+    new InMemoryCheckpointStore(),
+    recordingSerialiser(serialisedConsumers),
+    [countedProjection('caught-up-primary'), countedProjection('caught-up-sibling')],
+  );
+  await appendCountedEvent(journal, 'caught-up-event');
+  await runtime.catchUpOnce();
+  serialisedConsumers.length = 0;
+
+  await expect(runtime.catchUpOnce()).resolves.toBe(0);
+
+  expect(serialisedConsumers).toEqual([]);
+});
+
+it('drains a one-shot projection barrier through its observed head under one consumer lock', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  const serialisedConsumers: string[] = [];
+  const runtime = createRuntimeProjectionSubscriptions(
+    journal,
+    new InMemoryProjectionStore(),
+    checkpoints,
+    recordingSerialiser(serialisedConsumers),
+    [countedProjection('barrier-projection')],
+  );
+  await appendCountedEvents(journal, 'barrier-event', 101);
+
+  await expect(runtime.catchUpOnce()).resolves.toBe(101);
+
+  expect(await checkpoints.load('projection:barrier-projection')).toBe(101);
+  expect(serialisedConsumers).toEqual(['projection:barrier-projection']);
 });
 
 it('rebuilds the registered projection when another definition has the same name', async () => {
@@ -200,23 +239,42 @@ function countedProjection(name: string): ProjectionDefinition<number> {
 }
 
 async function appendCountedEvent(journal: EventJournal, eventId: string): Promise<void> {
+  await appendCountedEvents(journal, eventId, 1);
+}
+
+async function appendCountedEvents(
+  journal: EventJournal,
+  eventIdPrefix: string,
+  count: number,
+): Promise<void> {
   const stream: EntityRef<'counter', 'projection-runtime'> = {
     kind: 'counter',
     id: 'projection-runtime',
   };
-  await journal.append(stream, 0, [
-    createEventDraft({
-      eventId,
-      eventType: 'counted',
-      occurredAt: '2026-08-29T00:00:00.000Z',
-      correlationId: 'correlation',
-      causationId: 'causation',
-      actor: { kind: 'system', id: 'test' },
-      source: { kind: 'internal', id: 'test' },
-      stream,
-      payload: {},
-    }),
-  ]);
+  await journal.append(
+    stream,
+    0,
+    Array.from({ length: count }, (_, index) =>
+      createEventDraft({
+        eventId: `${eventIdPrefix}-${index}`,
+        eventType: 'counted',
+        occurredAt: '2026-08-29T00:00:00.000Z',
+        correlationId: 'correlation',
+        causationId: 'causation',
+        actor: { kind: 'system', id: 'test' },
+        source: { kind: 'internal', id: 'test' },
+        stream,
+        payload: {},
+      }),
+    ),
+  );
+}
+
+function recordingSerialiser(consumers: string[]): SubscriptionRunSerialiser {
+  return async (consumer, _signal, operation) => {
+    consumers.push(consumer);
+    return operation();
+  };
 }
 
 class BlockingProjectionStore extends InMemoryProjectionStore {

@@ -70,9 +70,9 @@ class RuntimeProjectionSubscriptionRuntime implements RuntimeProjectionSubscript
   private readonly rebuilder: ProjectionRebuilder;
 
   constructor(
-    journal: EventJournal,
+    private readonly journal: EventJournal,
     projections: ProjectionStore,
-    checkpoints: CheckpointStore,
+    private readonly checkpoints: CheckpointStore,
     serialiseRun: SubscriptionRunSerialiser,
     definitions: readonly ProjectionDefinition[],
   ) {
@@ -93,8 +93,19 @@ class RuntimeProjectionSubscriptionRuntime implements RuntimeProjectionSubscript
   }
 
   async catchUpOnce(signal?: AbortSignal): Promise<number> {
+    const targetGlobalPosition = await this.journal.latestGlobalPosition();
+    const pendingSubscriptions = (
+      await Promise.all(
+        this.subscriptions.map(async (subscription) => ({
+          subscription,
+          checkpoint: await this.checkpoints.load(subscription.consumer),
+        })),
+      )
+    ).filter(({ checkpoint }) => checkpoint < targetGlobalPosition);
     const passes = await Promise.all(
-      this.subscriptions.map((subscription) => this.host.runOnce(subscription, signal)),
+      pendingSubscriptions.map(({ subscription }) =>
+        this.host.runThrough(subscription, targetGlobalPosition, signal),
+      ),
     );
     return passes.reduce((eventCount, pass) => eventCount + pass.eventCount, 0);
   }

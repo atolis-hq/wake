@@ -86,6 +86,18 @@ export class DurableSubscriptionHost {
     );
   }
 
+  async runThrough(
+    subscription: DurableSubscription,
+    targetGlobalPosition: number,
+    signal?: AbortSignal,
+  ): Promise<DurableSubscriptionPass> {
+    assertSubscription(subscription);
+    assertNonNegativeSafeInteger(targetGlobalPosition, 'Subscription target global position');
+    return this.serialiseRun(subscription.consumer, signal ?? new AbortController().signal, () =>
+      this.runSubscriptionThrough(subscription, targetGlobalPosition),
+    );
+  }
+
   health(consumer: string): SubscriptionHealth | undefined {
     return this.snapshots.get(consumer);
   }
@@ -140,6 +152,25 @@ export class DurableSubscriptionHost {
     return { checkpoint: nextCheckpoint, eventCount: events.length };
   }
 
+  private async runSubscriptionThrough(
+    subscription: DurableSubscription,
+    targetGlobalPosition: number,
+  ): Promise<DurableSubscriptionPass> {
+    let checkpoint = await this.checkpoints.load(subscription.consumer);
+    let eventCount = 0;
+    while (checkpoint < targetGlobalPosition) {
+      const events = (
+        await this.journal.readAll(checkpoint, subscription.batchSize ?? defaultBatchSize)
+      ).filter((event) => event.globalPosition <= targetGlobalPosition);
+      if (events.length === 0) return { checkpoint, eventCount };
+      await subscription.handle(events);
+      checkpoint = events.at(-1)!.globalPosition;
+      await this.checkpoints.save(subscription.consumer, checkpoint);
+      eventCount += events.length;
+    }
+    return { checkpoint, eventCount };
+  }
+
   private updateHealth(
     consumer: string,
     status: SubscriptionHealthStatus,
@@ -181,6 +212,11 @@ function assertPositiveSafeInteger(value: number, label: string, maximum?: numbe
     throw new Error(
       `${label} must be a positive safe integer${maximum === undefined ? '' : ` no greater than ${maximum}`}`,
     );
+}
+
+function assertNonNegativeSafeInteger(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new Error(`${label} must be a non-negative safe integer`);
 }
 
 function defaultRetryBackoff(consecutiveFailures: number, signal: AbortSignal): Promise<void> {

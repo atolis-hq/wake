@@ -26,6 +26,11 @@ handler's effects idempotent.
   checkpoint and zero events when caught up. A provided abort signal is used
   while waiting for the serialiser; the resident loop reuses this same
   primitive for each pass.
+- `runThrough(subscription, targetGlobalPosition, signal?)` is the one-shot
+  barrier primitive. It acquires that same consumer serialiser once, reloads
+  the checkpoint inside the lock, and drains bounded batches only through the
+  supplied observed journal position. Events appended after the target remain
+  for a later pass; a short non-empty batch never ends the barrier early.
 - Batch size is a positive safe integer no greater than 10,000. Fallback wait
   duration is a positive safe integer; invalid values are rejected before any
   consumer loop starts. The default retry policy has a nonzero bounded delay;

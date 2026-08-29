@@ -368,7 +368,16 @@ async function assertExecutionRecovery(
 
 async function tick(root: CompositionRoot, count = 1): Promise<void> {
   for (let index = 0; index < count; index += 1) {
-    await root.runnerPipeline.run({ maxProgress: 1 });
+    const options = { maxProgress: 1 };
+    await root.projectionSubscriptions.catchUpOnce();
+    try {
+      await root.runnerPipeline.run(options, undefined, async () => {
+        await root.projectionSubscriptions.catchUpOnce();
+        await root.activationSchedulerSubscriber.poke(options);
+      });
+    } finally {
+      await root.projectionSubscriptions.catchUpOnce();
+    }
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
 }

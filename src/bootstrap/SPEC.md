@@ -144,6 +144,11 @@ Bootstrap does not own:
   and checkpoint. One-shot catch-up, resident tails, and rebuilds share
   consumer-keyed serialisation, so a live pass and rebuild for one projection
   cannot interleave while sibling projections may progress independently.
+- An all-projection one-shot catch-up observes one journal head, reads each
+  consumer checkpoint before acquiring its lock, and skips consumers already
+  at that target. A behind consumer drains bounded batches through that fixed
+  target under one consumer lock, so the barrier neither contends when idle
+  nor chases facts appended during its run.
 - When composing execution's git workspace provider, resolving a workflow's
   clone locator MUST derive it from the WorkItem's correlated resource
   external key, in the form `<owner>/<repo>#<number>`, into a
