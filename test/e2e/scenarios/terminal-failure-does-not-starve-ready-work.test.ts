@@ -142,7 +142,7 @@ it('E2E-CONTROL-005: a held delivery cannot delay one-shot subscriber scheduling
           },
         },
       },
-      controlPlane: { activationScheduler: { mode: 'subscriber' } },
+      controlPlane: {},
       integrations: { fake: { enabled: true, provider: 'fake' } },
       surfaces: {},
     }),
@@ -171,8 +171,6 @@ it('E2E-CONTROL-005: a held delivery cannot delay one-shot subscriber scheduling
       };
     },
   });
-  if (runtime.activationSchedulerSubscriber === undefined)
-    throw new Error('Expected subscriber-mode scheduler');
   try {
     const resource = await runtime.resources.discover(
       {

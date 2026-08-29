@@ -61,19 +61,14 @@ describe('workspace prepare configuration', () => {
 });
 
 describe('control-plane concurrency configuration', () => {
-  it('defaults activation scheduling to inline and accepts subscriber mode', () => {
-    expect(parseRootConfig(baseConfig).controlPlane.activationScheduler).toEqual({
-      mode: 'inline',
-    });
-    expect(
+  it('accepts absent scheduler configuration and rejects the removed scheduler mode', () => {
+    expect(parseRootConfig(baseConfig).controlPlane).not.toHaveProperty('activationScheduler');
+    expect(() =>
       parseRootConfig({
         ...baseConfig,
         controlPlane: { activationScheduler: { mode: 'subscriber' } },
-      }).controlPlane.activationScheduler,
-    ).toEqual({ mode: 'subscriber' });
-    expect(() =>
-      parseRootConfig({ ...baseConfig, controlPlane: { activationScheduler: { mode: 'other' } } }),
-    ).toThrow(/mode/);
+      }),
+    ).toThrow(/activationScheduler/);
   });
 
   it('defaults to one concurrent Run and requires a positive integer', () => {

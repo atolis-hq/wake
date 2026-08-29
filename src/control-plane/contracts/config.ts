@@ -9,7 +9,6 @@ export interface ControlPlaneConfig {
   readonly maxDispatches: number;
   readonly maxConcurrentRuns: number;
   readonly schedules: readonly ScheduleConfig[];
-  readonly activationScheduler: { readonly mode: 'inline' | 'subscriber' };
   readonly resident?: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number };
 }
 
@@ -29,10 +28,6 @@ export const controlPlaneConfigSchema = z
     maxDispatches: z.number().int().positive().default(1),
     maxConcurrentRuns: z.number().int().positive().default(1),
     schedules: z.array(scheduleSchema).default([]),
-    activationScheduler: z
-      .object({ mode: z.enum(['inline', 'subscriber']).default('inline') })
-      .strict()
-      .default({ mode: 'inline' }),
     resident: z
       .object({
         // Backoff for the resident loop's own retry cadence when idle or
@@ -44,4 +39,10 @@ export const controlPlaneConfigSchema = z
       .strict()
       .default({ pollBackoffMs: 1000 }),
   })
-  .strict();
+  .strict()
+  .default({
+    maxDispatches: 1,
+    maxConcurrentRuns: 1,
+    schedules: [],
+    resident: { pollBackoffMs: 1000 },
+  });

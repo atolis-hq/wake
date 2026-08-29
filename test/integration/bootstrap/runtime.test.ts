@@ -70,7 +70,7 @@ afterEach(async () => {
 });
 
 describe('target composition root', () => {
-  it('composes the activation scheduler as a durable subscriber only in subscriber mode', async () => {
+  it('always composes the activation scheduler as a durable subscriber', async () => {
     const runtime = await createCompositionRoot('C:/wake-home', {
       config: parseRootConfig({
         schemaVersion: 1,
@@ -80,7 +80,7 @@ describe('target composition root', () => {
           defaultRunnerPool: 'standard',
         },
         orchestration: { workflows: {} },
-        controlPlane: { activationScheduler: { mode: 'subscriber' } },
+        controlPlane: {},
         integrations: {},
         surfaces: {},
       }),
@@ -117,9 +117,7 @@ describe('target composition root', () => {
         };
       },
     });
-    const subscriber = runtime.activationSchedulerSubscriber;
-    if (subscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
-    const run = subscriber.start();
+    const run = runtime.activationSchedulerSubscriber.start();
     const item = await runtime.work.create(
       { workItemId: workId('conversation-latency'), objective: 'resume blocked agent work' },
       commandContext(clock, 'conversation-latency-work'),
@@ -214,9 +212,7 @@ describe('target composition root', () => {
         };
       },
     });
-    const subscriber = runtime.activationSchedulerSubscriber;
-    if (subscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
-    const run = subscriber.start();
+    const run = runtime.activationSchedulerSubscriber.start();
     try {
       await startComposedWorkflow(runtime, clock, 'capacity-first');
       await firstRunnerStarted.promise;
@@ -264,19 +260,16 @@ describe('target composition root', () => {
         };
       },
     });
-    const subscriber = restarted.activationSchedulerSubscriber;
-    if (subscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
-
     await startComposedWorkflow(restarted, clock, 'paused-after-restart');
     // Do not run the projection pump: the scheduler must read the durable
     // control stream because subscriptions do not wait for projection catch-up.
     await expect(staleProjections.read(ControlStreamKind.Global, 'global')).resolves.toBeNull();
 
-    await subscriber.poke();
+    await restarted.activationSchedulerSubscriber.poke();
     expect(runnerStarts).toBe(0);
 
     await restarted.runnerControls.unpause('fake', 'resume-after-restart');
-    await subscriber.poke();
+    await restarted.activationSchedulerSubscriber.poke();
     expect(runnerStarts).toBe(1);
   });
 
@@ -303,9 +296,7 @@ describe('target composition root', () => {
       clock,
       decorateCheckpoints,
     });
-    const firstSubscriber = first.activationSchedulerSubscriber;
-    if (firstSubscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
-    const firstRun = firstSubscriber.start();
+    const firstRun = first.activationSchedulerSubscriber.start();
     try {
       await startRestartWorkflow(first, clock, 'before-restart');
       await firstCheckpoint.promise;
@@ -338,9 +329,7 @@ describe('target composition root', () => {
         };
       },
     });
-    const restartedSubscriber = restartedRoot.activationSchedulerSubscriber;
-    if (restartedSubscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
-    const restartedRun = restartedSubscriber.start();
+    const restartedRun = restartedRoot.activationSchedulerSubscriber.start();
     try {
       await secondRunnerStarted.promise;
       await secondCheckpoint.promise;
@@ -387,7 +376,7 @@ describe('target composition root', () => {
       clock,
     });
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(runtime.execution.list()).resolves.toMatchObject([
       {
@@ -922,7 +911,7 @@ describe('target composition root', () => {
     );
     const eventsBefore = await journal.readAll(0);
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(closedWorkspace.path)).rejects.toThrow();
     await expect(access(openWorkspace.path)).resolves.toBeUndefined();
@@ -935,7 +924,7 @@ describe('target composition root', () => {
     expect(await journal.readAll(0)).toEqual(eventsBefore);
 
     now = new Date('2026-08-13T10:00:00.000Z');
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
   });
 
@@ -976,7 +965,8 @@ describe('target composition root', () => {
       });
     const eventsBefore = await journal.readAll(0);
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.projectionSubscriptions.catchUpOnce();
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(
       readFile(join(runtime.paths.transcriptsRoot, closed, '.cleaned-at'), 'utf8'),
@@ -987,7 +977,7 @@ describe('target composition root', () => {
     expect(await journal.readAll(0)).toEqual(eventsBefore);
 
     now = new Date('2026-08-13T10:00:00.000Z');
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
     await expect(access(join(runtime.paths.transcriptsRoot, open))).resolves.toBeUndefined();
@@ -1021,7 +1011,7 @@ describe('target composition root', () => {
     });
     await ownedWorkspace(runtime.paths.workspacesRoot, 'zero-workspace', closed, 'zero-run');
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
   });
@@ -1067,14 +1057,14 @@ describe('target composition root', () => {
     );
     const eventsBefore = await journal.readAll(0);
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(workspace.markerPath)).resolves.toBeUndefined();
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).resolves.toBeUndefined();
     expect(await journal.readAll(0)).toEqual(eventsBefore);
 
     failRemoval = false;
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(workspace.markerPath)).rejects.toThrow();
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
@@ -1289,13 +1279,7 @@ function scheduledRootConfig() {
 }
 
 function subscriberScheduledRootConfig() {
-  return parseRootConfig({
-    ...scheduledRootConfig(),
-    controlPlane: {
-      ...scheduledRootConfig().controlPlane,
-      activationScheduler: { mode: 'subscriber' },
-    },
-  });
+  return scheduledRootConfig();
 }
 
 function subscriberConversationRootConfig() {
@@ -1322,7 +1306,7 @@ function subscriberConversationRootConfig() {
         },
       },
     },
-    controlPlane: { activationScheduler: { mode: 'subscriber' } },
+    controlPlane: {},
     integrations: {},
     surfaces: { api: { conversationMessages: { enabled: true } } },
   });
@@ -1356,7 +1340,6 @@ function subscriberCapacityRootConfig() {
     controlPlane: {
       maxConcurrentRuns: 1,
       maxDispatches: 1,
-      activationScheduler: { mode: 'subscriber' },
     },
     integrations: {},
     surfaces: {},
@@ -1387,7 +1370,7 @@ function subscriberRestartRootConfig() {
         },
       },
     },
-    controlPlane: { activationScheduler: { mode: 'subscriber' } },
+    controlPlane: {},
     integrations: {},
     surfaces: {},
   });

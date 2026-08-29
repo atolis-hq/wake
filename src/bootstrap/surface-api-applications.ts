@@ -281,7 +281,7 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
     async health() {
       const checkedAt = now();
       const selfUpdateFailure = await createSelfUpdateFailureLog(root.paths.wakeRoot).read();
-      const schedulerSubscription = root.activationSchedulerSubscriber?.health();
+      const schedulerSubscription = root.activationSchedulerSubscriber.health();
       const checks = [
         { name: 'journal', status: 'ok' as const },
         { name: 'projections', status: 'ok' as const },

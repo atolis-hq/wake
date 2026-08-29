@@ -6,17 +6,15 @@ import type {
 
 export interface RunnerTickRuntime {
   readonly runnerPipeline: RunnerPipeline;
-  readonly activationSchedulerSubscriber?: Pick<ActivationSchedulerSubscriber, 'poke'>;
+  readonly activationSchedulerSubscriber: Pick<ActivationSchedulerSubscriber, 'poke'>;
 }
 
 /** One-shot ticks produce schedule/reactor facts before reconciling subscriber-owned activation work. */
 export function createOneShotRunnerAdvance(root: RunnerTickRuntime): AdvanceOnce {
-  const subscriber = root.activationSchedulerSubscriber;
-  if (subscriber === undefined) return (options) => root.runnerPipeline.run(options);
   return async (options) => {
-    let scheduled: Awaited<ReturnType<typeof subscriber.poke>> | undefined;
+    let scheduled: Awaited<ReturnType<typeof root.activationSchedulerSubscriber.poke>> | undefined;
     await root.runnerPipeline.run(options, undefined, async () => {
-      scheduled = await subscriber.poke(options);
+      scheduled = await root.activationSchedulerSubscriber.poke(options);
     });
     if (scheduled === undefined)
       throw new Error('Subscriber scheduler did not run before delivery');

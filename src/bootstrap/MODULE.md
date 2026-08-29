@@ -8,18 +8,14 @@ cross-process scheduler serialisation.
 ## Does not own
 Domain policy, provider payloads, or persistence semantics.
 ## Invariants
-Only Bootstrap knows the complete application graph.
-In subscriber mode, the durable activation scheduler owns resident scheduling;
-one-shot CLI and API ticks run the legacy runner pipeline to produce
-schedule/reactor facts, then explicitly poke it and preserve its advancement
-result. Scheduler runner eligibility is a position-keyed fold of the durable
+Only Bootstrap knows the complete application graph. The durable activation
+scheduler owns scheduling; one-shot CLI and API ticks run the runner pipeline
+to produce schedule/reactor facts, then explicitly poke the subscriber before
+delivery. Scheduler runner eligibility is a position-keyed fold of the durable
 control stream, so scheduling does not wait for the independent projection
 pump. Bootstrap supervises that subscription beside projection and resident
 hosts, composes its filesystem checkpoint lock independently from the global
 scheduler critical-section lock, and stops it with the resident signal.
-Changing `controlPlane.activationScheduler.mode` back to `inline` is a
-configuration-only rollback: durable journal facts and subscriber checkpoints
-remain while the inline pipeline again owns scheduling.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

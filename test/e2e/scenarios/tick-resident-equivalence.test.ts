@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import {
   composeControlPlaneHosts,
@@ -36,17 +39,17 @@ it(`${scenario.id}: TickHost and ResidentHost share bounded advancement`, async 
   expect(calls).toHaveLength(2);
 });
 
-it('E2E-CONTROL-006: parsed inline rollback and subscriber migration share the composed tick and resident lifecycle', async () => {
+it('E2E-CONTROL-006: tick and resident lifecycle use subscription-only scheduling', async () => {
   const budget = { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 };
   const trace: string[] = [];
-
-  for (const mode of ['inline', 'subscriber'] as const) {
-    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
-    const residentStarted = deferred<void>();
-    const controller = new AbortController();
-    let starts = 0;
-    const root = await createCompositionRoot(`C:/wake-${mode}-lifecycle`, {
-      config: schedulerModeConfig(mode),
+  const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+  const residentStarted = deferred<void>();
+  const controller = new AbortController();
+  let starts = 0;
+  const wakeRoot = await mkdtemp(join(tmpdir(), 'wake-subscription-lifecycle-'));
+  try {
+    const root = await createCompositionRoot(wakeRoot, {
+      config: subscriptionConfig(),
       journal: new InMemoryEventJournal(clock),
       projections: new InMemoryProjectionStore(),
       checkpoints: new InMemoryCheckpointStore(),
@@ -55,7 +58,7 @@ it('E2E-CONTROL-006: parsed inline rollback and subscriber migration share the c
         return {
           async start(request, signal) {
             starts += 1;
-            trace.push(`${mode}:runner:${starts}`);
+            trace.push(`runner:${starts}`);
             if (starts === 2) {
               residentStarted.resolve();
               controller.abort();
@@ -69,25 +72,27 @@ it('E2E-CONTROL-006: parsed inline rollback and subscriber migration share the c
       now: () => clock.now().toISOString(),
     });
 
-    await startWorkflow(root, clock, mode, 'tick');
+    await startWorkflow(root, clock, 'tick');
     await applications.cli.tick.run(budget);
-    await startWorkflow(root, clock, mode, 'resident');
-    const resident = applications.cli.start.run(controller.signal, budget);
-    await residentStarted.promise;
-    await resident;
+
+    const subscription = root.activationSchedulerSubscriber.start(controller.signal);
+    try {
+      await startWorkflow(root, clock, 'resident');
+      await residentStarted.promise;
+    } finally {
+      controller.abort();
+      subscription.abort();
+      await subscription.done;
+    }
 
     expect(starts).toBe(2);
+    expect(trace).toEqual(['runner:1', 'runner:2']);
+  } finally {
+    await rm(wakeRoot, { recursive: true, force: true });
   }
-
-  expect(trace).toEqual([
-    'inline:runner:1',
-    'inline:runner:2',
-    'subscriber:runner:1',
-    'subscriber:runner:2',
-  ]);
 });
 
-function schedulerModeConfig(mode: 'inline' | 'subscriber') {
+function subscriptionConfig() {
   return parseRootConfig({
     schemaVersion: 1,
     work: {},
@@ -111,7 +116,7 @@ function schedulerModeConfig(mode: 'inline' | 'subscriber') {
         },
       },
     },
-    controlPlane: { activationScheduler: { mode } },
+    controlPlane: {},
     integrations: {},
     surfaces: {},
   });
@@ -120,10 +125,9 @@ function schedulerModeConfig(mode: 'inline' | 'subscriber') {
 async function startWorkflow(
   root: Awaited<ReturnType<typeof createCompositionRoot>>,
   clock: { now(): Date },
-  mode: string,
   phase: string,
 ) {
-  const id = `${mode}-${phase}`;
+  const id = `subscriber-${phase}`;
   const context = {
     commandId: id,
     correlationId: correlationId(id),

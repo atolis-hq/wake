@@ -127,8 +127,7 @@ export interface CompositionRoot {
   /** Shared operator-or-maintenance pause supplier for every resident runtime loop. */
   readonly isPaused: () => Promise<boolean>;
   readonly activationScheduler: ActivationScheduler;
-  /** Present only when resident scheduling is driven by the durable host. */
-  readonly activationSchedulerSubscriber?: ActivationSchedulerSubscriber;
+  readonly activationSchedulerSubscriber: ActivationSchedulerSubscriber;
   readonly advanceOnce: ActivationScheduler['runOnce'];
   readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
   /** Temporary compatibility facade for direct callers awaiting Task 6 migration. */
@@ -298,17 +297,14 @@ export async function createCompositionRoot(
     },
   );
   const advanceOnce = activationScheduler.runOnce.bind(activationScheduler);
-  const activationSchedulerSubscriber =
-    config.controlPlane.activationScheduler.mode === 'subscriber'
-      ? createActivationSchedulerSubscriber(
-          new DurableSubscriptionHost(
-            journal,
-            checkpoints,
-            createFileSubscriptionRunSerialiser(paths.dataRoot),
-          ),
-          activationScheduler,
-        )
-      : undefined;
+  const activationSchedulerSubscriber = createActivationSchedulerSubscriber(
+    new DurableSubscriptionHost(
+      journal,
+      checkpoints,
+      createFileSubscriptionRunSerialiser(paths.dataRoot),
+    ),
+    activationScheduler,
+  );
   const runtime = await composeIntegrationRuntime({
     config,
     journal,
@@ -320,8 +316,6 @@ export async function createCompositionRoot(
     orchestration,
     execution,
     ...(transcriptStore === undefined ? {} : { transcriptStore }),
-    advanceOnce,
-    inlineActivationScheduling: config.controlPlane.activationScheduler.mode === 'inline',
     controlPlane,
     isPaused: isRuntimePaused,
     clock,
@@ -361,7 +355,7 @@ export async function createCompositionRoot(
     controlPlane,
     isPaused: isRuntimePaused,
     activationScheduler,
-    ...(activationSchedulerSubscriber === undefined ? {} : { activationSchedulerSubscriber }),
+    activationSchedulerSubscriber,
     advanceOnce,
     resolveResourceLink,
     ...runtime,

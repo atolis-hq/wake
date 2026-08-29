@@ -235,9 +235,9 @@ Bootstrap does not own:
 | `runnerControls` | runner pause/unpause command surface | Backs the execution surface application's pause/unpause commands. |
 | `controlPlane` | control-plane service | Backs both pipelines' pause gate and the API surface application's `pause`/`resume` commands. |
 | `maintenance` | durable self-update maintenance lease | Shared pause source and exclusive ownership state for one source update. |
-| `activationScheduler` | bounded activation scheduler | The shared serialized scheduler used by inline advancement and subscriber reconciliation. |
-| `activationSchedulerSubscriber` | optional durable activation-scheduler host | Present only in subscriber mode; checkpoints every-fact scheduling and supplies startup/fallback reconciliation. |
-| `advanceOnce` | one bounded control-plane advance step | The unit of forward progress the runner pipeline's own advance stage performs. |
+| `activationScheduler` | bounded activation scheduler | The shared serialized scheduler used by subscriber reconciliation and the diagnostic compatibility facade. |
+| `activationSchedulerSubscriber` | durable activation-scheduler host | Always composed; checkpoints every-fact scheduling and supplies startup/fallback reconciliation. |
+| `advanceOnce` | one bounded control-plane advance step | A diagnostic/test compatibility facade over the shared scheduler. |
 | `projectionRunner` | catch-up/rebuild runner over the registered projection set | Shared by both pipelines and the CLI's `validate-state` rebuild command. |
 | `providers` | composed provider instances | One per configured/enabled integration; each contributes poll/inbound/delivery behaviour to the intake and runner pipelines. |
 | `providerFailures` | list of provider composition failures | Providers that failed to construct; surfaced by `doctor` without blocking the providers that did construct successfully. |

@@ -34,7 +34,7 @@ it('drains subscriber scheduling progress through a one-shot tick budget while r
     createOneShotRunnerAdvance({
       activationSchedulerSubscriber: scheduler,
       runnerPipeline,
-    } as never),
+    }),
   );
 
   await expect(tick.run({ maxAdvances: 3, maxRuns: 3, maxDurationMs: 1_000 })).resolves.toEqual({
@@ -68,8 +68,6 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
     react: async () => {
       trace.push('react');
     },
-    advance: async () => ({ kind: 'no-work' as const }),
-    inlineActivationScheduling: false,
     deliver: async () => {
       trace.push('deliver');
       throw new Error('delivery rejected');
@@ -90,7 +88,7 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
 
 it('does not let a blocking subscriber poke stall subscriber-mode resident runner work', async () => {
   const controller = new AbortController();
-  const scheduler = { poke: vi.fn(() => new Promise(() => {})) };
+  const scheduler = { poke: vi.fn(async () => ({ kind: 'no-work' as const })) };
   const runnerPipeline = {
     run: vi.fn(async () => {
       controller.abort();
@@ -102,7 +100,7 @@ it('does not let a blocking subscriber poke stall subscriber-mode resident runne
       createResidentRunnerAdvance({
         activationSchedulerSubscriber: scheduler,
         runnerPipeline,
-      } as never),
+      }),
     ),
   );
 

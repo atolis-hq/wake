@@ -1,14 +1,12 @@
-import type { AdvanceOnce } from '../contracts/commands.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
+
+export type RunnerPipelineResult = Extract<AdvanceResult, { readonly kind: 'no-work' | 'paused' }>;
 
 export interface RunnerPipelineStages {
   readonly isPaused?: () => Promise<boolean>;
   readonly catchUpProjections: () => Promise<void>;
   readonly runSchedules: () => Promise<void>;
   readonly react: () => Promise<void>;
-  readonly advance: AdvanceOnce;
-  /** Subscriber mode owns scheduling in a separate durable host. */
-  readonly inlineActivationScheduling?: boolean;
   readonly publishAgentRuns?: () => Promise<void>;
   readonly deliver: (signal: AbortSignal) => Promise<void>;
 }
@@ -22,11 +20,11 @@ export interface RunnerPipeline {
     options: AdvanceOptions,
     signal?: AbortSignal,
     beforeDelivery?: () => Promise<void>,
-  ): Promise<AdvanceResult>;
+  ): Promise<RunnerPipelineResult>;
 }
 
 /**
- * Runs the internal half of a Wake tick: schedules, reactors, Advancement,
+ * Runs the internal half of a Wake tick: schedules, reactors, publication,
  * and delivery. None of this touches a rate-limited external poll, so its
  * host runs on a fast, un-backed-off cadence — see IntakePipeline for the
  * half that does need backoff.
@@ -37,7 +35,7 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
     options: AdvanceOptions,
     signal: AbortSignal,
     beforeDelivery: (() => Promise<void>) | undefined,
-  ): Promise<AdvanceResult> => {
+  ): Promise<RunnerPipelineResult> => {
     if (await isPaused()) {
       await stages.catchUpProjections();
       return { kind: 'paused' };
@@ -47,16 +45,13 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
       if (await isPaused()) return { kind: 'paused' };
       await stages.runSchedules();
       if (await isPaused()) return { kind: 'paused' };
-      const result =
-        stages.inlineActivationScheduling === false
-          ? ({ kind: 'no-work' } as const)
-          : await stages.advance(options);
-      if (await isPaused()) return { kind: 'paused' };
       await stages.react();
       if (await isPaused()) return { kind: 'paused' };
       await stages.publishAgentRuns?.();
       if (await isPaused()) return { kind: 'paused' };
-      return (await runDeliveryPhase(stages, isPaused, signal, beforeDelivery)) ?? result;
+      return (
+        (await runDeliveryPhase(stages, isPaused, signal, beforeDelivery)) ?? { kind: 'no-work' }
+      );
     } finally {
       await stages.catchUpProjections();
     }
@@ -80,7 +75,7 @@ async function runDeliveryPhase(
   isPaused: () => Promise<boolean>,
   signal: AbortSignal,
   beforeDelivery: (() => Promise<void>) | undefined,
-): Promise<AdvanceResult | undefined> {
+): Promise<RunnerPipelineResult | undefined> {
   await stages.catchUpProjections();
   if (await isPaused()) return { kind: 'paused' };
   await beforeDelivery?.();

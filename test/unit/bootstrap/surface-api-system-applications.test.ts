@@ -45,6 +45,7 @@ it('surfaces adapter health checks from provider instances alongside system chec
     {
       paths: { wakeRoot: tmpdir() },
       config: {},
+      activationSchedulerSubscriber: { health: () => undefined },
       providers: [
         {
           adapter: 'github-issues',
@@ -111,6 +112,7 @@ it('stays ok when every adapter health check is ok', async () => {
     {
       paths: { wakeRoot: tmpdir() },
       config: {},
+      activationSchedulerSubscriber: { health: () => undefined },
       providers: [
         {
           adapter: 'github-issues',

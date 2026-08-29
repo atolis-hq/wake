@@ -9,8 +9,8 @@ Signals, eligibility, selection, budgets, dispatch coordination, and hosts.
 Work, workflow, execution, or provider domain policy.
 ## Invariants
 Tick, resident, and schedule hosts use the same bounded advancement capability.
-Activation scheduling is either inline or a named, durable `activation-scheduler`
-subscription, never both. The subscriber depends on a Control Plane host port;
+Activation scheduling is owned by the named, durable `activation-scheduler`
+subscription. The subscriber depends on a Control Plane host port;
 Bootstrap adapts Persistence. It treats every journal fact as a reconsideration,
 checkpoints only after a successful pass, and relies on the shared scheduler
 serialiser for global capacity safety. Its durable subscriber identity is
@@ -23,9 +23,8 @@ serialiser makes that reconsideration safe with ticks and other processes.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration
-Owns `controlPlane`, including `activationScheduler.mode` (`inline` by default
-for rollback safety, or `subscriber` for independently supervised resident
-scheduling).
+Owns `controlPlane` dispatch limits, schedules, and resident-loop backoff.
+Activation scheduling is always performed by the durable subscriber.
 ## Relations and events
 Owns `control.` events; it defines no domain relation semantics.
 ## Failure and recovery

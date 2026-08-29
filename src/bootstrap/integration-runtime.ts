@@ -6,7 +6,6 @@ import {
   createIntakePipeline,
   createRunnerPipeline,
   createWorkCancellationPolicy,
-  type AdvanceOnce,
   type IntakePipeline,
   type RunnerPipeline,
   type ScheduleCheckpointStore,
@@ -94,8 +93,6 @@ export interface IntegrationRuntimeInput {
   readonly conversations: ReturnType<typeof createConversationService>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
-  readonly advanceOnce: AdvanceOnce;
-  readonly inlineActivationScheduling: boolean;
   readonly controlPlane: ReturnType<typeof createControlPlaneService>;
   readonly isPaused: () => Promise<boolean>;
   readonly clock: Clock;
@@ -299,9 +296,6 @@ export async function composeIntegrationRuntime(
         await outcomes.runOnce();
         for (const provider of providers) await provider.maintenance?.runOnce();
       }),
-    advance: (options) =>
-      observeMemory(memoryProfile, 'runner.advance', () => input.advanceOnce(options)),
-    inlineActivationScheduling: input.inlineActivationScheduling,
     publishAgentRuns: () =>
       observeMemory(memoryProfile, 'runner.publish-agent-runs', async () => {
         await agentRunPublications.runOnce();

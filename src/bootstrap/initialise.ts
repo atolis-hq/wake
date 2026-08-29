@@ -36,13 +36,6 @@ execution:
     deep: [fake]
   defaultRunnerPool: standard
 
-# Tick dispatch cap and resident-loop idle backoff; the built-in defaults
-# are fine for a first run. Keep inline for rollback-safe legacy scheduling;
-# set subscriber to schedule activations from durable journal facts independently.
-controlPlane:
-  activationScheduler:
-    mode: inline
-
 orchestration:
   workflowSelectors:
     - match: { tags: [approval] }
