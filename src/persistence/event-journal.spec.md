@@ -25,9 +25,10 @@ The Event Journal owns: assigning `recordedAt`, `sequence`, and
 optimistic concurrency; enforcing event-id idempotency, both within a batch
 and against everything previously recorded; the one true replay order
 across the whole journal; reading backward from the most recent event
-without a full forward scan; and advertising an advisory, in-process
-wake-up when new events land, so a resident consumer can wait instead of
-polling on a fixed schedule.
+without a full forward scan; and advertising an advisory, local
+wake-up when new events land. `waitForEventsAfter` arms the advisory signal,
+re-reads the durable tail, and only then waits, so a resident consumer can
+wait instead of polling on a fixed schedule.
 
 It does not own: interpreting an event's type or payload; deciding stream
 identity — the caller supplies the `(kind, id)` pair; or retrying on its
@@ -83,7 +84,7 @@ caller's behalf when a write cannot currently be accepted.
 - `readLatest` MUST NOT advance or otherwise affect any checkpoint; it is a
   read-only capability alongside `readAll`.
 
-**Change notification**
+**Position-aware change notification**
 
 - Every implementation MUST expose a `changeSignal` whose `waitForChange`
   resolves once a change has been signalled since the call started, once a
@@ -102,10 +103,15 @@ caller's behalf when a write cannot currently be accepted.
   produce exactly one wake-up per waiting caller, not one per occurrence.
   Multiple independent callers waiting concurrently MUST each be woken by
   one notification, independently of one another's checkpoint position.
-- This mechanism is in-process only: it MUST NOT observe an append made by
+- The in-memory mechanism is in-process only: it MUST NOT observe an append made by
   a different OS process against the same journal root. A cross-process
   writer's consumers still catch up correctly, bounded by the fallback
   duration, exactly as any other missed notification.
+- The filesystem implementation additionally maintains a lazy, unref'd,
+  self-healing directory watcher that advances only local advisory state.
+  An append by another process normally wakes local waiters promptly; watcher
+  failure is non-fatal and degrades to the caller's fallback. In all cases,
+  durable `readAll` and the consumer cursor remain authoritative.
 
 **Corruption**
 

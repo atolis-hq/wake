@@ -66,6 +66,11 @@ tick pipeline, operator diagnostics) schedule that.
   entire history from position 0 MUST reproduce a value identical to the
   one produced by folding events as they were originally appended.
 
+- Resident callers retain the durable position sampled by a completed pass
+  and call `waitForEventsAfter` before the next bounded pass. An append in
+  the read-to-wait interval therefore starts another pass without a fixed
+  polling delay; fallback is recovery only.
+
 ## Dependencies and system role
 
 - Kernel — the projection-definition contract (name, selector, initial

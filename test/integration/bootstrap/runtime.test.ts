@@ -14,6 +14,7 @@ import {
   createSurfaceApplications,
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
+import { activationSchedulerSubscriptionConsumer } from '../../../src/control-plane/index.js';
 import {
   ExecutionEventType,
   TranscriptStore,
@@ -36,6 +37,13 @@ import {
   eventId,
 } from '../../../src/kernel/index.js';
 import {
+  OrchestrationEventType,
+  orchestrationGroupId,
+  workflowInstanceId,
+  workflowInstanceStream,
+  workflowName,
+} from '../../../src/orchestration/index.js';
+import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
@@ -45,6 +53,7 @@ import {
   resourceCapability,
   resourceKind,
 } from '../../../src/resources/index.js';
+import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { resId, workId } from '../../support/identities.js';
 
 const roots: string[] = [];
@@ -78,6 +87,210 @@ describe('target composition root', () => {
     });
 
     expect(runtime.activationSchedulerSubscriber).toBeDefined();
+  });
+
+  it('starts a production-composed fake runner from a conversation resume through the subscriber', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    const firstRunnerStarted = deferred<void>();
+    const resumedRunnerStarted = deferred<void>();
+    const trace: string[] = [];
+    let runnerStarts = 0;
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: subscriberConversationRootConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+      decorateRunner(runner) {
+        return {
+          async start(request, signal) {
+            runnerStarts += 1;
+            trace.push(`runner:${runnerStarts}`);
+            if (runnerStarts === 1) firstRunnerStarted.resolve();
+            if (runnerStarts === 2) resumedRunnerStarted.resolve();
+            return runner.start(request, signal);
+          },
+        };
+      },
+    });
+    const subscriber = runtime.activationSchedulerSubscriber;
+    if (subscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
+    const run = subscriber.start();
+    const item = await runtime.work.create(
+      { workItemId: workId('conversation-latency'), objective: 'resume blocked agent work' },
+      commandContext(clock, 'conversation-latency-work'),
+    );
+    const workflow = workflowInstanceId('workflow-conversation-latency');
+    try {
+      await runtime.orchestration.start(
+        {
+          workflowInstanceId: workflow,
+          workItemId: item.workItemId,
+          workflowName: workflowName('conversation-latency'),
+          orchestrationGroupId: orchestrationGroupId('group-conversation-latency'),
+        },
+        commandContext(clock, 'conversation-latency-start'),
+      );
+
+      await firstRunnerStarted.promise;
+      await waitForJournalEvent(
+        journal,
+        0,
+        (event) =>
+          event.eventType === OrchestrationEventType.InstanceBlocked &&
+          event.stream.id === workflow,
+      );
+      trace.push('blocked');
+      // The resident projection pump normally maintains this read model; the
+      // test advances only that pure projection before invoking the API, never
+      // the legacy runner pipeline.
+      await runtime.projectionRunner.runRegisteredOnce();
+
+      const message = (
+        await createSurfaceApplications(runtime, { now: () => clock.now().toISOString() })
+      ).api.work.message;
+      if (message === undefined)
+        throw new Error('Expected enabled conversation message application');
+      await message(toWorkItemKey(item.workItemId), {
+        idempotencyKey: 'conversation-latency-message',
+        body: 'Please continue using this correction.',
+      });
+      trace.push('message-recorded');
+
+      const facts = await journal.readStream(workflowInstanceStream(workflow));
+      expect(facts.map((event) => event.eventType)).toContain(
+        OrchestrationEventType.OperatorRetryRequested,
+      );
+      expect(
+        facts.filter((event) => event.eventType === OrchestrationEventType.ActivityRequested),
+      ).toHaveLength(2);
+      trace.push('retry-and-activity-durable');
+
+      await resumedRunnerStarted.promise;
+      expect(runnerStarts).toBe(2);
+      expect(trace).toEqual([
+        'runner:1',
+        'blocked',
+        'message-recorded',
+        'retry-and-activity-durable',
+        'runner:2',
+      ]);
+    } finally {
+      run.abort();
+      await run.done;
+    }
+  });
+
+  it('reconsiders released capacity through the subscriber and starts the pending activation once', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const firstCompletion = deferred<void>();
+    const firstRunnerStarted = deferred<void>();
+    const secondRunnerStarted = deferred<void>();
+    const trace: string[] = [];
+    let runnerStarts = 0;
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: subscriberCapacityRootConfig(),
+      journal: new InMemoryEventJournal(clock),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+      decorateRunner(runner) {
+        return {
+          async start(request, signal) {
+            const execution = await runner.start(request, signal);
+            runnerStarts += 1;
+            trace.push(`runner:${runnerStarts}`);
+            if (runnerStarts === 1) {
+              firstRunnerStarted.resolve();
+              return { ...execution, result: firstCompletion.promise.then(() => execution.result) };
+            }
+            if (runnerStarts === 2) secondRunnerStarted.resolve();
+            return execution;
+          },
+        };
+      },
+    });
+    const subscriber = runtime.activationSchedulerSubscriber;
+    if (subscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
+    const run = subscriber.start();
+    try {
+      await startComposedWorkflow(runtime, clock, 'capacity-first');
+      await firstRunnerStarted.promise;
+      await startComposedWorkflow(runtime, clock, 'capacity-second');
+      trace.push('pending-work-recorded');
+
+      firstCompletion.resolve();
+      trace.push('capacity-released');
+      await secondRunnerStarted.promise;
+
+      expect(runnerStarts).toBe(2);
+      expect(trace).toEqual(['runner:1', 'pending-work-recorded', 'capacity-released', 'runner:2']);
+    } finally {
+      run.abort();
+      await run.done;
+    }
+  });
+
+  it('resumes the composed subscriber from its durable checkpoint after restart', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const root = await fixtureRoot();
+    const journal = new InMemoryEventJournal(clock);
+    const projections = new InMemoryProjectionStore();
+    const checkpoints = new InMemoryCheckpointStore();
+    const firstCheckpoint = deferred<void>();
+    const secondCheckpoint = deferred<void>();
+    const saves: number[] = [];
+    const decorateCheckpoints = (base: CheckpointStore): CheckpointStore => ({
+      load: base.load.bind(base),
+      async save(consumer, position) {
+        await base.save(consumer, position);
+        if (consumer !== activationSchedulerSubscriptionConsumer) return;
+        saves.push(position);
+        if (position === 1) firstCheckpoint.resolve();
+        if (position === 2) secondCheckpoint.resolve();
+      },
+      reset: base.reset.bind(base),
+    });
+    const first = await createCompositionRoot(root, {
+      config: subscriberRestartRootConfig(),
+      journal,
+      projections,
+      checkpoints,
+      clock,
+      decorateCheckpoints,
+    });
+    const firstSubscriber = first.activationSchedulerSubscriber;
+    if (firstSubscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
+    const firstRun = firstSubscriber.start();
+    try {
+      await appendSchedulerFact(journal, clock, 'first');
+      await firstCheckpoint.promise;
+    } finally {
+      firstRun.abort();
+      await firstRun.done;
+    }
+
+    const restarted = await createCompositionRoot(root, {
+      config: subscriberRestartRootConfig(),
+      journal,
+      projections,
+      checkpoints,
+      clock,
+      decorateCheckpoints,
+    });
+    const restartedSubscriber = restarted.activationSchedulerSubscriber;
+    if (restartedSubscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
+    const restartedRun = restartedSubscriber.start();
+    try {
+      await appendSchedulerFact(journal, clock, 'second');
+      await secondCheckpoint.promise;
+      expect(saves).toEqual([1, 2]);
+      await expect(checkpoints.load(activationSchedulerSubscriptionConsumer)).resolves.toBe(2);
+    } finally {
+      restartedRun.abort();
+      await restartedRun.done;
+    }
   });
 
   it('recovers durable started Runs through the live advance composition', async () => {
@@ -1023,6 +1236,88 @@ function subscriberScheduledRootConfig() {
   });
 }
 
+function subscriberConversationRootConfig() {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: {
+      default: 'conversation-latency',
+      workflows: {
+        'conversation-latency': {
+          stages: {
+            implement: {
+              activity: 'agent',
+              with: { prompt: '[fake:blocked]' },
+              on: { done: { then: 'done' } },
+            },
+          },
+        },
+      },
+    },
+    controlPlane: { activationScheduler: { mode: 'subscriber' } },
+    integrations: {},
+    surfaces: { api: { conversationMessages: { enabled: true } } },
+  });
+}
+
+function subscriberCapacityRootConfig() {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: {
+      default: 'capacity',
+      workflows: {
+        capacity: {
+          stages: {
+            implement: {
+              activity: 'agent',
+              with: { prompt: 'complete this work' },
+              on: { done: { then: 'done' } },
+              requiresApproval: false,
+            },
+          },
+        },
+      },
+    },
+    controlPlane: {
+      maxConcurrentRuns: 1,
+      maxDispatches: 1,
+      activationScheduler: { mode: 'subscriber' },
+    },
+    integrations: {},
+    surfaces: {},
+  });
+}
+
+function subscriberRestartRootConfig() {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: { workflows: {} },
+    controlPlane: { activationScheduler: { mode: 'subscriber' } },
+    integrations: {},
+    surfaces: {},
+  });
+}
+
 function fakeProviderRootConfig() {
   return parseRootConfig({
     schemaVersion: 1,
@@ -1096,4 +1391,67 @@ async function fixtureRoot(): Promise<string> {
   roots.push(root);
   await mkdir(join(root, 'prompts'));
   return root;
+}
+
+function deferred<Value>() {
+  let resolve!: (value: Value) => void;
+  const promise = new Promise<Value>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+async function startComposedWorkflow(
+  runtime: Awaited<ReturnType<typeof createCompositionRoot>>,
+  clock: { now(): Date },
+  id: string,
+): Promise<void> {
+  const item = await runtime.work.create(
+    { workItemId: workId(id), objective: `complete ${id}` },
+    commandContext(clock, `${id}-work`),
+  );
+  await runtime.orchestration.start(
+    {
+      workflowInstanceId: workflowInstanceId(`workflow-${id}`),
+      workItemId: item.workItemId,
+      workflowName: workflowName('capacity'),
+      orchestrationGroupId: orchestrationGroupId(`group-${id}`),
+    },
+    commandContext(clock, `${id}-start`),
+  );
+}
+
+async function appendSchedulerFact(
+  journal: EventJournal,
+  clock: { now(): Date },
+  id: string,
+): Promise<void> {
+  await journal.append({ kind: 'test', id }, 0, [
+    createEventDraft({
+      eventId: `scheduler-restart-${id}`,
+      eventType: 'test.scheduler-restart',
+      occurredAt: clock.now().toISOString(),
+      correlationId: `scheduler-restart-${id}`,
+      causationId: `scheduler-restart-${id}`,
+      actor: { kind: EventActorKind.System, id: 'test' },
+      source: { kind: EventSourceKind.Internal, id: 'test' },
+      stream: { kind: 'test', id },
+      payload: {},
+    }),
+  ]);
+}
+
+async function waitForJournalEvent(
+  journal: EventJournal,
+  after: number,
+  predicate: (event: Awaited<ReturnType<EventJournal['readAll']>>[number]) => boolean,
+): Promise<void> {
+  let position = after;
+  while (true) {
+    const events = await journal.readAll(position);
+    const matched = events.find(predicate);
+    if (matched !== undefined) return;
+    position = events.at(-1)?.globalPosition ?? position;
+    await journal.waitForEventsAfter(position, new AbortController().signal, 30_000);
+  }
 }

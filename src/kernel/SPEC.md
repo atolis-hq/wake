@@ -169,6 +169,12 @@ command handling safe to retry.
   optional result limit — this is what lets a consumer read backward from
   the most recent event without scanning the whole journal forward first.
 
+- `waitForEventsAfter(position, signal, fallbackMs)` MUST arm advisory
+  notification and re-read the durable tail before waiting. It returns when
+  the tail is newer than `position`, a later append is noticed, the positive
+  fallback elapses, or `signal` aborts. Notification is only an accelerator:
+  callers re-read from their durable cursor and never infer facts from it.
+
 **Checkpoints and stored projections**
 
 - A checkpoint is scoped by consumer name; `load` for a consumer that has

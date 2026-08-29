@@ -17,7 +17,9 @@ serialiser for global capacity safety. Its durable subscriber identity is
 `subscriber:control-plane.activation-scheduler`; the distinct scheduler
 critical-section identity is `control-plane.activation-scheduler-critical-section`.
 Startup and fallback reconciliation failures overlay durable-host health until
-a successful scheduler pass clears them.
+a successful scheduler pass clears them. A terminal Run fact releases capacity
+by causing this same subscriber to reconsider pending work; the shared
+serialiser makes that reconsideration safe with ticks and other processes.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

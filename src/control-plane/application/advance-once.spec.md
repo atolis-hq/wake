@@ -157,6 +157,14 @@ own aggregate remains the source of that state.
   time regardless of outcome, including when an earlier stage throws.
 - `RunnerPipeline.run`'s `signal` parameter defaults to a fresh,
   never-aborted `AbortController`'s signal when the caller omits one.
+- In `inline` migration mode the Runner pipeline owns its embedded
+  Advancement call. In `subscriber` mode it intentionally omits inline
+  scheduling: an independently supervised, checkpointed activation subscriber
+  reconsiders every durable fact, reconciles on startup and bounded fallback,
+  and shares the scheduler serialiser. One-shot ticks still run the pipeline
+  to produce schedule and reactor facts, then poke that same scheduler;
+  resident publication, delivery, or reactor latency cannot hold subscriber
+  dispatch.
 - When the shared pause is already active at the start of a Runner or Intake
   pipeline call, the pipeline MUST catch projections up exactly once before
   returning its paused/no-progress result. It MUST NOT invoke any operational
