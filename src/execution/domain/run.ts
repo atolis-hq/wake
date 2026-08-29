@@ -31,7 +31,7 @@ export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
     ...(startedFromPreparation ? {} : { executionStartedAt: creation.payload.startedAt }),
     ...(creation.payload.runner === undefined ? {} : { runner: creation.payload.runner }),
   };
-  for (const event of events) applyRunEvent(state, event);
+  for (const event of events.slice(1)) applyRunEvent(state, event);
   return state;
 }
 
@@ -48,9 +48,11 @@ function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
   }
   switch (event.eventType) {
     case ExecutionEventType.RunPreparationStarted:
-      return;
+      throw invalidRunStream(state.runId, 'RunPreparationStarted must be the first event');
     case ExecutionEventType.RunStarted:
-      if (state.status === RunStatus.Starting) validateRunStart(state, event);
+      if (state.status !== RunStatus.Starting)
+        throw invalidRunStream(state.runId, 'RunStarted is only valid while starting');
+      validateRunStart(state, event);
       Object.assign(state, {
         status: RunStatus.Started,
         executionStartedAt: event.payload.startedAt,

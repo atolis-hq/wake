@@ -245,6 +245,81 @@ it('rejects duplicate run preparation events', () => {
   expect(() => foldRun([preparation, preparation])).toThrow(/Invalid Run stream.*preparation/i);
 });
 
+it('rejects a duplicate run start after preparation', () => {
+  const stream = runStream(runId('run-1'));
+  const preparation = eventEnvelope(
+    ExecutionEventType.RunPreparationStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T11:59:00.000Z',
+    },
+    stream,
+  );
+  const started = eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T12:00:00.000Z',
+    },
+    stream,
+  );
+  const duplicate = eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId('other-activation'),
+      activity: activityName('other-activity'),
+      workflowInstanceId: workflowInstanceId('other-workflow'),
+      orchestrationGroupId: orchestrationGroupId('other-group'),
+      attempt: 2,
+      startedAt: '2026-07-31T12:01:00.000Z',
+      workspace: { mode: WorkspaceMode.Branch, path: 'C:\\other-repo' },
+    },
+    stream,
+  );
+
+  expect(() => foldRun([preparation, started, duplicate])).toThrow(
+    /Invalid Run stream.*RunStarted.*starting/i,
+  );
+});
+
+it('rejects a duplicate run start in a historical stream', () => {
+  const stream = runStream(runId('run-1'));
+  const started = eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T12:00:00.000Z',
+    },
+    stream,
+  );
+  const duplicate = eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T12:01:00.000Z',
+    },
+    stream,
+  );
+
+  expect(() => foldRun([started, duplicate])).toThrow(/Invalid Run stream.*RunStarted.*starting/i);
+});
+
 it('identifies starting and started runs as active', () => {
   expect(RunStatus.Starting).toBe('starting');
   expect(isActiveRunStatus('starting')).toBe(true);
