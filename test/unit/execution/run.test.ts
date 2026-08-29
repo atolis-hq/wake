@@ -2,11 +2,13 @@ import { expect, it } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import {
   ExecutionEventType,
+  ExecutionFailureCode,
   foldRun,
   isActiveRunStatus,
   runId,
   RunStatus,
   runStream,
+  WorkspaceMode,
 } from '../../../src/execution/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
@@ -59,14 +61,17 @@ it('folds preparation, execution start, and failure while preserving preparation
       attempt: 2,
       startedAt: '2026-07-31T12:00:00.000Z',
       runner: { name: 'other-runner' },
-      workspace: { mode: 'branch', path: 'C:\\repo', branch: 'wake/work-1' },
+      workspace: { mode: WorkspaceMode.Branch, path: 'C:\\repo', branch: 'wake/work-1' },
     },
     stream,
   );
   const failed = eventEnvelope(
     ExecutionEventType.RunFailed,
     {
-      failure: { kind: 'unexpected-execution-failure', message: 'workspace preparation failed' },
+      failure: {
+        kind: ExecutionFailureCode.Unexpected,
+        message: 'workspace preparation failed',
+      },
       finishedAt: '2026-07-31T12:01:00.000Z',
     },
     stream,
@@ -130,7 +135,10 @@ it('folds a failure directly after preparation', () => {
   const failed = eventEnvelope(
     ExecutionEventType.RunFailed,
     {
-      failure: { kind: 'unexpected-execution-failure', message: 'workspace preparation failed' },
+      failure: {
+        kind: ExecutionFailureCode.Unexpected,
+        message: 'workspace preparation failed',
+      },
       finishedAt: '2026-07-31T12:00:00.000Z',
     },
     stream,
