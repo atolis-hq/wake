@@ -272,6 +272,10 @@ export function createRunnerIdleWait(
   };
 }
 
+export interface ResidentLifecycleHost {
+  run(signal: AbortSignal, budget: HostBudget): Promise<HostResult>;
+}
+
 export interface ResidentLifecycleInput {
   readonly signal: AbortSignal;
   readonly budget: HostBudget;
@@ -280,8 +284,8 @@ export interface ResidentLifecycleInput {
     CompositionRoot['activationSchedulerSubscriber'],
     'start'
   >;
-  readonly intakeResident: Pick<ResidentHost, 'run'>;
-  readonly runnerResident: Pick<ResidentHost, 'run'>;
+  readonly intakeResident: ResidentLifecycleHost;
+  readonly runnerResident: ResidentLifecycleHost;
   readonly close: () => Promise<void>;
 }
 
