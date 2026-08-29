@@ -114,6 +114,7 @@ it('rejects an inexact decision claim before calling the journal append boundary
     async latestGlobalPosition() {
       return 0;
     },
+    async waitForEventsAfter() {},
     changeSignal: new InProcessJournalChangeSignal(),
   };
   const activation = activationId('activation-1');

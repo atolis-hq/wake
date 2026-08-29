@@ -3,6 +3,12 @@ export interface JournalChangeSignal {
   // avoid probing the journal again when no local append has occurred.
   revision(): number;
 
+  waitForChangeAfter(
+    observedGeneration: number,
+    signal: AbortSignal,
+    fallbackMs: number,
+  ): Promise<void>;
+
   // Resolves as soon as a change has been signalled since this call started,
   // or after fallbackMs elapses, or if the signal aborts — whichever first.
   // Never rejects. Coalesces: any number of notify() calls between

@@ -170,6 +170,7 @@ describe('ExecutionService', () => {
         readStream: base.readStream.bind(base),
         readAll: base.readAll.bind(base),
         latestGlobalPosition: base.latestGlobalPosition.bind(base),
+        waitForEventsAfter: base.waitForEventsAfter.bind(base),
         readLatest: base.readLatest?.bind(base),
         changeSignal: base.changeSignal,
       };
@@ -341,6 +342,7 @@ describe('ExecutionService', () => {
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
       latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
       readLatest: base.readLatest?.bind(base),
       changeSignal: base.changeSignal,
     };
@@ -396,6 +398,7 @@ describe('ExecutionService', () => {
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
       latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
       readLatest: base.readLatest?.bind(base),
       changeSignal: base.changeSignal,
     };

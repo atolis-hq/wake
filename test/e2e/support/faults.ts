@@ -40,6 +40,7 @@ export function faultInjectingJournal(journal: EventJournal, faults: FaultInject
     readStream: journal.readStream.bind(journal),
     readAll: journal.readAll.bind(journal),
     latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
+    waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
     changeSignal: journal.changeSignal,
     ...(journal.readLatest === undefined ? {} : { readLatest: journal.readLatest.bind(journal) }),
   };

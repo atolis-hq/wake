@@ -16,7 +16,15 @@ export class InProcessJournalChangeSignal implements JournalChangeSignal {
   }
 
   waitForChange(signal: AbortSignal, fallbackMs: number): Promise<void> {
-    if (signal.aborted) return Promise.resolve();
+    return this.waitForChangeAfter(this.currentRevision, signal, fallbackMs);
+  }
+
+  waitForChangeAfter(
+    observedGeneration: number,
+    signal: AbortSignal,
+    fallbackMs: number,
+  ): Promise<void> {
+    if (signal.aborted || this.currentRevision !== observedGeneration) return Promise.resolve();
     return new Promise((resolve) => {
       let settled = false;
       const done = () => {

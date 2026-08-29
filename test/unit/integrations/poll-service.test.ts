@@ -33,6 +33,7 @@ it('continues after a persistence failure and withholds the provider cursor', as
     readAll: delegate.readAll.bind(delegate),
     readStream: delegate.readStream.bind(delegate),
     latestGlobalPosition: delegate.latestGlobalPosition.bind(delegate),
+    waitForEventsAfter: delegate.waitForEventsAfter.bind(delegate),
     changeSignal: delegate.changeSignal,
     async append(
       stream: Parameters<typeof delegate.append>[0],

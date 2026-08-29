@@ -17,6 +17,11 @@ export interface EventJournal {
   // without re-reading or re-copying the full event history, so callers can
   // gate an expensive full-collection re-derivation on "did this move" first.
   latestGlobalPosition(): Promise<number>;
+  waitForEventsAfter(
+    afterGlobalPosition: number,
+    signal: AbortSignal,
+    fallbackMs: number,
+  ): Promise<void>;
   // Advisory only; a consumer always re-derives what's new from its own
   // durable checkpoint after waking, never from this signal.
   readonly changeSignal: JournalChangeSignal;

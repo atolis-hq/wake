@@ -39,6 +39,8 @@ function serializeJournalAppends(journal: EventJournal): EventJournal {
     readStream: (stream) => journal.readStream(stream),
     readAll: (afterGlobalPosition, limit) => journal.readAll(afterGlobalPosition, limit),
     latestGlobalPosition: () => journal.latestGlobalPosition(),
+    waitForEventsAfter: (afterGlobalPosition, signal, fallbackMs) =>
+      journal.waitForEventsAfter(afterGlobalPosition, signal, fallbackMs),
     changeSignal: journal.changeSignal,
     ...(journal.readLatest === undefined
       ? {}

@@ -203,4 +203,70 @@ describe('in-memory event journal', () => {
       expect((await journal.readAll(secondCheckpoint)).map((e) => e.eventId)).toEqual(['evt-3']);
     });
   });
+
+  describe('waitForEventsAfter', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('returns immediately when the durable tail is already newer than the supplied position', async () => {
+      const journal = new InMemoryEventJournal(new FixedClock());
+      await journal.append(stream, 0, [event('evt-1')]);
+
+      let resolved = false;
+      const wait = journal.waitForEventsAfter(0, new AbortController().signal, 10_000).then(() => {
+        resolved = true;
+      });
+      await wait;
+      expect(resolved).toBe(true);
+    });
+
+    it('returns when aborted while no newer durable event exists', async () => {
+      const journal = new InMemoryEventJournal(new FixedClock());
+      const controller = new AbortController();
+      const wait = journal.waitForEventsAfter(0, controller.signal, 10_000);
+
+      controller.abort();
+
+      await expect(wait).resolves.toBeUndefined();
+    });
+
+    it('returns after the fallback when no append or abort occurs', async () => {
+      const journal = new InMemoryEventJournal(new FixedClock());
+      let resolved = false;
+      const wait = journal.waitForEventsAfter(0, new AbortController().signal, 1_000).then(() => {
+        resolved = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(999);
+      expect(resolved).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await wait;
+      expect(resolved).toBe(true);
+    });
+
+    it('does not sleep through an append that arrives while a consumer is processing', async () => {
+      const journal = new InMemoryEventJournal(new FixedClock());
+      await journal.append(stream, 0, [event('evt-1')]);
+      const checkpoint = await journal.latestGlobalPosition();
+
+      // The consumer has already read event 1 and is still processing it.
+      await journal.append(stream, 1, [event('evt-2')]);
+
+      let resolved = false;
+      const wait = journal
+        .waitForEventsAfter(checkpoint, new AbortController().signal, 10_000)
+        .then(() => {
+          resolved = true;
+        });
+      await wait;
+      expect(resolved).toBe(true);
+      expect((await journal.readAll(checkpoint)).map((entry) => entry.eventId)).toEqual(['evt-2']);
+    });
+  });
 });

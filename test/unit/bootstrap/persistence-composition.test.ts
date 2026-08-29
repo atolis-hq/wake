@@ -37,6 +37,7 @@ function concurrentAppendRejectingJournal(): EventJournal {
     async latestGlobalPosition() {
       return 0;
     },
+    async waitForEventsAfter() {},
     changeSignal: new InProcessJournalChangeSignal(),
   };
 }

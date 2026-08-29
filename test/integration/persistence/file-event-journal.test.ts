@@ -477,3 +477,96 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
     vi.useRealTimers();
   }
 });
+
+it('wakes a separate file-journal instance promptly after an external append when its watcher is available', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-cross-process-wake-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const draft = (id: string) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.append(stream, 0, [draft('event-1')]);
+  const reader = new FileEventJournal(root, clock);
+  const checkpoint = await reader.latestGlobalPosition();
+
+  let resolved = false;
+  const wait = reader
+    .waitForEventsAfter(checkpoint, new AbortController().signal, 10_000)
+    .then(() => {
+      resolved = true;
+    });
+  await writer.append(stream, 1, [draft('event-2')]);
+
+  await vi.waitFor(() => expect(resolved).toBe(true));
+  await wait;
+  expect((await reader.readAll(checkpoint)).map((entry) => entry.eventId)).toEqual(['event-2']);
+});
+
+it('discovers an external append by fallback when no watcher can be armed yet', async () => {
+  vi.useFakeTimers();
+  try {
+    const root = await mkdtemp(join(tmpdir(), 'wake-journal-fallback-wake-'));
+    const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+    const draft = createEventDraft({
+      eventId: 'event-1',
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'event-1',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+    const reader = new FileEventJournal(root, new FakeClock());
+    const writer = new FileEventJournal(root, new FakeClock());
+    const wait = reader.waitForEventsAfter(0, new AbortController().signal, 1_000);
+
+    await writer.append(stream, 0, [draft]);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(wait).resolves.toBeUndefined();
+    expect((await reader.readAll(0)).map((entry) => entry.eventId)).toEqual(['event-1']);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('wakes every concurrent waiter from one external append', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-many-waiters-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const draft = (id: string) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.append(stream, 0, [draft('event-1')]);
+  const reader = new FileEventJournal(root, clock);
+  const checkpoint = await reader.latestGlobalPosition();
+  const waits = Array.from({ length: 32 }, () =>
+    reader.waitForEventsAfter(checkpoint, new AbortController().signal, 10_000),
+  );
+
+  await writer.append(stream, 1, [draft('event-2')]);
+
+  await expect(Promise.all(waits)).resolves.toHaveLength(32);
+});

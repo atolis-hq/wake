@@ -120,6 +120,7 @@ function interleavingJournal(base: EventJournal) {
       return base.readAll(position, limit);
     },
     latestGlobalPosition: base.latestGlobalPosition.bind(base),
+    waitForEventsAfter: base.waitForEventsAfter.bind(base),
     changeSignal: base.changeSignal,
   };
   return { journal, deniedDecisionReached, globalReads: () => globalReadCount };

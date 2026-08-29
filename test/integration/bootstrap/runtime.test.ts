@@ -114,6 +114,7 @@ describe('target composition root', () => {
       readAll: journal.readAll.bind(journal),
       readLatest: journal.readLatest?.bind(journal),
       latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
+      waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
       changeSignal: journal.changeSignal,
     };
     const decorator = vi.fn((base: EventJournal) => {

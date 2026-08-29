@@ -50,6 +50,25 @@ it('increments its revision for every notification', () => {
   expect(changeSignal.revision()).toBe(2);
 });
 
+it('resolves immediately when a notification lands between generation observation and waiter registration', async () => {
+  const changeSignal = new InProcessJournalChangeSignal();
+  const controller = new AbortController();
+  const observedGeneration = changeSignal.revision();
+
+  changeSignal.notify();
+
+  let resolved = false;
+  const wait = changeSignal
+    .waitForChangeAfter(observedGeneration, controller.signal, 10_000)
+    .then(() => {
+      resolved = true;
+    });
+  await Promise.resolve();
+
+  expect(resolved).toBe(true);
+  await wait;
+});
+
 it('resolves via the fallback timeout when notify() never fires', async () => {
   const changeSignal = new InProcessJournalChangeSignal();
   const controller = new AbortController();

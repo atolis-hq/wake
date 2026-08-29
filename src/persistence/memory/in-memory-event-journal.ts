@@ -99,6 +99,20 @@ export class InMemoryEventJournal implements EventJournal {
     return this.events.length;
   }
 
+  async waitForEventsAfter(
+    afterGlobalPosition: number,
+    signal: AbortSignal,
+    fallbackMs: number,
+  ): Promise<void> {
+    await waitForEventsAfter(
+      () => this.latestGlobalPosition(),
+      this.changeSignalSource,
+      afterGlobalPosition,
+      signal,
+      fallbackMs,
+    );
+  }
+
   private rejectChangedEventIds(
     drafts: readonly EventDraft[],
     existingEvents: readonly (IndexedEvent | undefined)[],
@@ -138,5 +152,27 @@ function validateBatch(stream: EntityRef, drafts: readonly EventDraft[]): void {
       throw new Error(`Event id ${draft.eventId} is repeated in one append`);
     }
     eventIds.set(draft.eventId, draft);
+  }
+}
+
+async function waitForEventsAfter(
+  latestGlobalPosition: () => Promise<number>,
+  changeSignal: JournalChangeSignal,
+  afterGlobalPosition: number,
+  signal: AbortSignal,
+  fallbackMs: number,
+): Promise<void> {
+  if (signal.aborted) return;
+  const observedGeneration = changeSignal.revision();
+  const waiting = new AbortController();
+  const abort = () => waiting.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  try {
+    const wake = changeSignal.waitForChangeAfter(observedGeneration, waiting.signal, fallbackMs);
+    if ((await latestGlobalPosition()) > afterGlobalPosition) return;
+    await wake;
+  } finally {
+    waiting.abort();
+    signal.removeEventListener('abort', abort);
   }
 }

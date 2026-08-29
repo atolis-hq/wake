@@ -1,3 +1,4 @@
+import { watch, type FSWatcher } from 'node:fs';
 import { appendFile, mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -23,6 +24,7 @@ export class FileEventJournal implements EventJournal {
   ) {}
 
   private readonly changeSignalSource = new InProcessJournalChangeSignal();
+  private changeWatcher: FSWatcher | undefined;
 
   get changeSignal(): JournalChangeSignal {
     return this.changeSignalSource;
@@ -193,6 +195,38 @@ export class FileEventJournal implements EventJournal {
   async latestGlobalPosition(): Promise<number> {
     const events = await this.scan(await this.readEntriesForRead());
     return events.at(-1)?.globalPosition ?? 0;
+  }
+
+  async waitForEventsAfter(
+    afterGlobalPosition: number,
+    signal: AbortSignal,
+    fallbackMs: number,
+  ): Promise<void> {
+    this.ensureChangeWatcher();
+    await waitForEventsAfter(
+      () => this.latestGlobalPosition(),
+      this.changeSignalSource,
+      afterGlobalPosition,
+      signal,
+      fallbackMs,
+    );
+  }
+
+  private ensureChangeWatcher(): void {
+    if (this.changeWatcher !== undefined) return;
+    try {
+      const watcher = watch(join(this.root, 'events'), { persistent: false }, () => {
+        this.changeSignalSource.notify();
+      });
+      watcher.unref();
+      watcher.once('error', () => {
+        if (this.changeWatcher === watcher) this.changeWatcher = undefined;
+        watcher.close();
+      });
+      this.changeWatcher = watcher;
+    } catch {
+      // This advisory accelerator is optional; fallback rereads stay correct.
+    }
   }
 
   // Extends the cache in place rather than invalidating it, so a self-caused
@@ -567,4 +601,26 @@ function eventContext(input: unknown): string {
 
 function isDefined<Value>(value: Value | undefined): value is Value {
   return value !== undefined;
+}
+
+async function waitForEventsAfter(
+  latestGlobalPosition: () => Promise<number>,
+  changeSignal: JournalChangeSignal,
+  afterGlobalPosition: number,
+  signal: AbortSignal,
+  fallbackMs: number,
+): Promise<void> {
+  if (signal.aborted) return;
+  const observedGeneration = changeSignal.revision();
+  const waiting = new AbortController();
+  const abort = () => waiting.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  try {
+    const wake = changeSignal.waitForChangeAfter(observedGeneration, waiting.signal, fallbackMs);
+    if ((await latestGlobalPosition()) > afterGlobalPosition) return;
+    await wake;
+  } finally {
+    waiting.abort();
+    signal.removeEventListener('abort', abort);
+  }
 }

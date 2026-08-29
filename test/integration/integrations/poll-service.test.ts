@@ -58,6 +58,7 @@ describe('PollService', () => {
         return delegate.readStream(stream);
       },
       latestGlobalPosition: delegate.latestGlobalPosition.bind(delegate),
+      waitForEventsAfter: delegate.waitForEventsAfter.bind(delegate),
       changeSignal: delegate.changeSignal,
     };
     const draft = (id: string) =>

@@ -70,6 +70,7 @@ it('queries by event id before trusting a genuinely uncertain requested append',
       return world.journal.readStream(stream);
     },
     latestGlobalPosition: () => world.journal.latestGlobalPosition(),
+    waitForEventsAfter: world.journal.waitForEventsAfter.bind(world.journal),
     changeSignal: world.journal.changeSignal,
   };
   const activity = createPullRequestMergeActivity(queryingJournal, world.pullRequests, {
@@ -108,6 +109,7 @@ it('treats exhausted sequence conflicts without the event as a failed append', a
     async latestGlobalPosition() {
       return 0;
     },
+    async waitForEventsAfter() {},
     changeSignal: new InProcessJournalChangeSignal(),
   };
   const intent = mergeDenied(stream, PullRequestDenialCode.MissingResource, {
