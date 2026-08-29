@@ -8,6 +8,7 @@ import {
   FileCheckpointStore,
   InMemoryEventJournal,
   createFileSubscriptionRunSerialiser,
+  type SubscriptionRunSerialiser,
 } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -16,30 +17,33 @@ it('excludes the same consumer across hosts for load, handling, and checkpointin
   try {
     const journal = new InMemoryEventJournal(new FakeClock());
     await appendFact(journal);
-    const firstStarted = deferred<void>();
-    const releaseFirst = deferred<void>();
+    const firstHandlerStarted = deferred<void>();
+    const releaseFirstHandler = deferred<void>();
+    const secondSerialiseStarted = deferred<void>();
     let secondHandled = false;
-    const firstCheckpoints = new NotifyingFileCheckpointStore(root);
+    const firstCheckpoints = new GatedFileCheckpointStore(root);
+    const secondCheckpoints = new ObservingFileCheckpointStore(root);
     const first = new DurableSubscriptionHost(
       journal,
       firstCheckpoints,
       createFileSubscriptionRunSerialiser(root),
     );
-    const second = new DurableSubscriptionHost(
-      journal,
-      new FileCheckpointStore(root),
-      createFileSubscriptionRunSerialiser(root),
-    );
+    const fileSerialise = createFileSubscriptionRunSerialiser(root);
+    const secondSerialise: SubscriptionRunSerialiser = async (consumer, signal, operation) => {
+      secondSerialiseStarted.resolve();
+      return fileSerialise(consumer, signal, operation);
+    };
+    const second = new DurableSubscriptionHost(journal, secondCheckpoints, secondSerialise);
     const firstRun = first.start([
       {
         consumer: 'shared',
         handle: async () => {
-          firstStarted.resolve();
-          await releaseFirst.promise;
+          firstHandlerStarted.resolve();
+          await releaseFirstHandler.promise;
         },
       },
     ]);
-    await firstStarted.promise;
+    await firstCheckpoints.loadStarted.promise;
     const secondRun = second.start([
       {
         consumer: 'shared',
@@ -49,9 +53,17 @@ it('excludes the same consumer across hosts for load, handling, and checkpointin
       },
     ]);
 
-    expect(secondHandled).toBe(false);
-    releaseFirst.resolve();
+    await secondSerialiseStarted.promise;
+    expect(secondCheckpoints.loadCalls).toBe(0);
+    firstCheckpoints.releaseLoad();
+    await firstHandlerStarted.promise;
+    expect(secondCheckpoints.loadCalls).toBe(0);
+    releaseFirstHandler.resolve();
+    await firstCheckpoints.saveStarted.promise;
+    expect(secondCheckpoints.loadCalls).toBe(0);
+    firstCheckpoints.releaseSave();
     await firstCheckpoints.saved;
+    await secondCheckpoints.loadStarted.promise;
     expect(secondHandled).toBe(false);
     firstRun.abort();
     secondRun.abort();
@@ -136,14 +148,56 @@ function deferred<Value>() {
   return { promise, resolve };
 }
 
-class NotifyingFileCheckpointStore extends FileCheckpointStore {
+class GatedFileCheckpointStore extends FileCheckpointStore {
+  private loadRelease!: () => void;
+  private saveRelease!: () => void;
+  private loadCalls = 0;
   private savedResolve!: () => void;
+  readonly loadStarted = deferred<void>();
+  readonly saveStarted = deferred<void>();
+  private readonly loadGate = new Promise<void>((resolve) => {
+    this.loadRelease = resolve;
+  });
+
+  private readonly saveGate = new Promise<void>((resolve) => {
+    this.saveRelease = resolve;
+  });
+
   readonly saved = new Promise<void>((resolve) => {
     this.savedResolve = resolve;
   });
 
+  override async load(consumer: string): Promise<number> {
+    if (this.loadCalls++ === 0) {
+      this.loadStarted.resolve();
+      await this.loadGate;
+    }
+    return super.load(consumer);
+  }
+
   override async save(consumer: string, position: number): Promise<void> {
+    this.saveStarted.resolve();
+    await this.saveGate;
     await super.save(consumer, position);
     this.savedResolve();
+  }
+
+  releaseLoad(): void {
+    this.loadRelease();
+  }
+
+  releaseSave(): void {
+    this.saveRelease();
+  }
+}
+
+class ObservingFileCheckpointStore extends FileCheckpointStore {
+  loadCalls = 0;
+  readonly loadStarted = deferred<void>();
+
+  override async load(consumer: string): Promise<number> {
+    this.loadCalls += 1;
+    this.loadStarted.resolve();
+    return super.load(consumer);
   }
 }

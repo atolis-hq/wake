@@ -32,6 +32,143 @@ it('advances independent named consumers through the same journal facts', async 
   expect(await checkpoints.load('second')).toBe(2);
 });
 
+it("reads only each named consumer's own unread facts", async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await appendFacts(journal, 3);
+  const checkpoints = new InMemoryCheckpointStore();
+  await checkpoints.save('first', 1);
+  await checkpoints.save('second', 2);
+  const firstHandled = deferred<void>();
+  const secondHandled = deferred<void>();
+  const firstBatches: number[][] = [];
+  const secondBatches: number[][] = [];
+  const host = new DurableSubscriptionHost(
+    journal,
+    checkpoints,
+    createInMemorySubscriptionRunSerialiser(),
+  );
+  const run = host.start([
+    {
+      consumer: 'first',
+      handle: async (events) => {
+        firstBatches.push(events.map((event) => event.globalPosition));
+        firstHandled.resolve();
+      },
+    },
+    {
+      consumer: 'second',
+      handle: async (events) => {
+        secondBatches.push(events.map((event) => event.globalPosition));
+        secondHandled.resolve();
+      },
+    },
+  ]);
+
+  await Promise.all([firstHandled.promise, secondHandled.promise]);
+  run.abort();
+  await run.done;
+
+  expect(firstBatches).toEqual([[2, 3]]);
+  expect(secondBatches).toEqual([[3]]);
+  expect(await checkpoints.load('first')).toBe(3);
+  expect(await checkpoints.load('second')).toBe(3);
+});
+
+it('replays an uncheckpointed handler batch after a checkpoint failure', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await appendFacts(journal, 1);
+  const checkpoints = new FailOnceCheckpointStore();
+  const retryObserved = deferred<void>();
+  const releaseRetry = deferred<void>();
+  const replayed = deferred<void>();
+  const durableEffects = new Set<string>();
+  let attempts = 0;
+  const host = new DurableSubscriptionHost(
+    journal,
+    checkpoints,
+    createInMemorySubscriptionRunSerialiser(),
+    {
+      retryBackoff: async () => {
+        retryObserved.resolve();
+        await releaseRetry.promise;
+      },
+    },
+  );
+  const run = host.start([
+    {
+      consumer: 'checkpoint-failure',
+      handle: async (events) => {
+        attempts += 1;
+        for (const event of events) durableEffects.add(event.eventId);
+        if (attempts === 2) replayed.resolve();
+      },
+    },
+  ]);
+
+  await retryObserved.promise;
+  expect(await checkpoints.load('checkpoint-failure')).toBe(0);
+  expect(attempts).toBe(1);
+  expect(durableEffects).toEqual(new Set(['subscription-test-0']));
+  releaseRetry.resolve();
+  await replayed.promise;
+  await checkpoints.saved;
+  run.abort();
+  await run.done;
+
+  expect(attempts).toBe(2);
+  expect(durableEffects).toEqual(new Set(['subscription-test-0']));
+  expect(await checkpoints.load('checkpoint-failure')).toBe(1);
+});
+
+it('serialises equal in-memory consumer keys', async () => {
+  const serialise = createInMemorySubscriptionRunSerialiser();
+  const firstStarted = deferred<void>();
+  const releaseFirst = deferred<void>();
+  const secondStarted = deferred<void>();
+  let secondEntered = false;
+  const signal = new AbortController().signal;
+  const first = serialise('equal', signal, async () => {
+    firstStarted.resolve();
+    await releaseFirst.promise;
+  });
+  await firstStarted.promise;
+  const second = serialise('equal', signal, async () => {
+    secondEntered = true;
+    secondStarted.resolve();
+  });
+
+  await Promise.resolve();
+  expect(secondEntered).toBe(false);
+  releaseFirst.resolve();
+  await secondStarted.promise;
+  await Promise.all([first, second]);
+});
+
+it('allows distinct in-memory consumer keys to progress concurrently', async () => {
+  const serialise = createInMemorySubscriptionRunSerialiser();
+  const firstStarted = deferred<void>();
+  const secondStarted = deferred<void>();
+  const release = deferred<void>();
+  const signal = new AbortController().signal;
+  let firstEntered = false;
+  let secondEntered = false;
+  const first = serialise('first', signal, async () => {
+    firstEntered = true;
+    firstStarted.resolve();
+    await release.promise;
+  });
+  const second = serialise('second', signal, async () => {
+    secondEntered = true;
+    secondStarted.resolve();
+    await release.promise;
+  });
+
+  await Promise.all([firstStarted.promise, secondStarted.promise]);
+  expect([firstEntered, secondEntered]).toEqual([true, true]);
+  release.resolve();
+  await Promise.all([first, second]);
+});
+
 it('does not let a slow or failing consumer stall a healthy sibling', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   await appendFacts(journal, 1);
@@ -179,4 +316,21 @@ function deferred<Value>() {
 
 async function eventually<Value>(read: () => Promise<Value>, expected: Value): Promise<void> {
   while ((await read()) !== expected) await Promise.resolve();
+}
+
+class FailOnceCheckpointStore extends InMemoryCheckpointStore {
+  private failed = false;
+  private savedResolve!: () => void;
+  readonly saved = new Promise<void>((resolve) => {
+    this.savedResolve = resolve;
+  });
+
+  override async save(consumer: string, position: number): Promise<void> {
+    if (!this.failed) {
+      this.failed = true;
+      throw new Error('injected checkpoint failure');
+    }
+    await super.save(consumer, position);
+    this.savedResolve();
+  }
 }
