@@ -31,8 +31,10 @@ positive safe integers; batches are capped at 10,000 facts.
 
 Filesystem checkpoints use a versioned injective UTF-8 base64url filename.
 They read legacy checkpoint filenames when a v2 file is absent, then write
-future progress to the v2 filename; legacy files remain for explicit rollback
-and may cause only idempotent replay in an older binary.
+future progress to the v2 filename. Legacy files remain for forward migration
+and best-effort downgrade replay, but binary downgrade after a checkpoint reset
+is unsupported. This storage migration is separate from configuration-only
+inline/subscriber runtime rollback.
 ## Extension rules
 Adapters implement Kernel ports and Bootstrap selects them.
 ## Scenarios

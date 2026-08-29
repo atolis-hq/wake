@@ -56,3 +56,48 @@ it('reads a legacy checkpoint and writes subsequent progress to its v2 path', as
     readFile(join(checkpointDirectory, 'v2-bGVnYWN5OmNvbnN1bWVy.json'), 'utf8'),
   ).resolves.toContain('"globalPosition":5');
 });
+
+it('treats a foreign legacy collision as absent and resets only its owner record', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-checkpoints-'));
+  const checkpointDirectory = join(root, 'checkpoints');
+  const legacyPath = join(checkpointDirectory, 'a~2Eb.json');
+  await mkdir(checkpointDirectory, { recursive: true });
+  await writeFile(legacyPath, `${JSON.stringify({ consumer: 'a.b', globalPosition: 4 })}\n`);
+  const store = new FileCheckpointStore(root);
+
+  expect(await store.load('a~2Eb')).toBe(0);
+  await store.reset('a~2Eb');
+  await expect(readFile(legacyPath, 'utf8')).resolves.toContain('"consumer":"a.b"');
+  await store.reset('a.b');
+  await expect(readFile(legacyPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('rejects malformed legacy progress for the consumer that owns it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-checkpoints-'));
+  const checkpointDirectory = join(root, 'checkpoints');
+  await mkdir(checkpointDirectory, { recursive: true });
+  await writeFile(
+    join(checkpointDirectory, 'owned~3Aconsumer.json'),
+    `${JSON.stringify({ consumer: 'owned:consumer', globalPosition: -1 })}\n`,
+  );
+  const store = new FileCheckpointStore(root);
+
+  await expect(store.load('owned:consumer')).rejects.toThrow('Invalid checkpoint: owned:consumer');
+});
+
+it.each(['\uD800', '\uD801'])(
+  'rejects an ill-formed UTF-16 consumer identity: %j',
+  async (consumer) => {
+    const store = new FileCheckpointStore(await mkdtemp(join(tmpdir(), 'wake-checkpoints-')));
+
+    await expect(store.save(consumer, 1)).rejects.toThrow(/well-formed UTF-16/i);
+  },
+);
+
+it('preserves ordinary Unicode consumer identities', async () => {
+  const store = new FileCheckpointStore(await mkdtemp(join(tmpdir(), 'wake-checkpoints-')));
+
+  await store.save('consumer-😀', 1);
+
+  expect(await store.load('consumer-😀')).toBe(1);
+});

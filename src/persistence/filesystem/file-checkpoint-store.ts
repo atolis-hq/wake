@@ -2,6 +2,12 @@ import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CheckpointStore } from '../../kernel/index.js';
 import { atomicJson, encode } from './file-projection-store.js';
+import { encodeCheckpointStorageName } from './storage-name.js';
+
+interface CheckpointRecord {
+  readonly consumer: string;
+  readonly globalPosition: number;
+}
 
 export class FileCheckpointStore implements CheckpointStore {
   private readonly mutations = new Map<string, Promise<unknown>>();
@@ -12,12 +18,7 @@ export class FileCheckpointStore implements CheckpointStore {
       return await this.loadPath(consumer, this.path(consumer));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      try {
-        return await this.loadPath(consumer, this.legacyPath(consumer));
-      } catch (legacyError) {
-        if ((legacyError as NodeJS.ErrnoException).code === 'ENOENT') return 0;
-        throw legacyError;
-      }
+      return this.loadLegacy(consumer);
     }
   }
 
@@ -30,12 +31,10 @@ export class FileCheckpointStore implements CheckpointStore {
   }
 
   async reset(consumer: string): Promise<void> {
-    await this.mutate(consumer, () =>
-      Promise.all([
-        rm(this.path(consumer), { force: true }),
-        rm(this.legacyPath(consumer), { force: true }),
-      ]).then(() => undefined),
-    );
+    await this.mutate(consumer, async () => {
+      await rm(this.path(consumer), { force: true });
+      await this.removeLegacyIfOwned(consumer);
+    });
   }
 
   private async mutate<T>(consumer: string, operation: () => Promise<T>): Promise<T> {
@@ -50,7 +49,7 @@ export class FileCheckpointStore implements CheckpointStore {
   }
 
   private path(consumer: string) {
-    return join(this.root, 'checkpoints', `v2-${encodeCheckpointConsumer(consumer)}.json`);
+    return join(this.root, 'checkpoints', `v2-${encodeCheckpointStorageName(consumer)}.json`);
   }
 
   private legacyPath(consumer: string) {
@@ -58,22 +57,52 @@ export class FileCheckpointStore implements CheckpointStore {
   }
 
   private async loadPath(consumer: string, path: string): Promise<number> {
-    const value = JSON.parse(await readFile(path, 'utf8')) as {
-      consumer: string;
-      globalPosition: number;
-    };
+    return checkpointPosition(consumer, await this.readCheckpoint(path));
+  }
+
+  private async loadLegacy(consumer: string): Promise<number> {
+    try {
+      const checkpoint = await this.readCheckpoint(this.legacyPath(consumer));
+      if (checkpoint.consumer !== consumer) return 0;
+      return checkpointPosition(consumer, checkpoint);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+      throw error;
+    }
+  }
+
+  private async removeLegacyIfOwned(consumer: string): Promise<void> {
+    try {
+      const path = this.legacyPath(consumer);
+      const checkpoint = await this.readCheckpoint(path);
+      if (checkpoint.consumer === consumer) await rm(path, { force: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+  }
+
+  private async readCheckpoint(path: string): Promise<CheckpointRecord> {
+    const value = JSON.parse(await readFile(path, 'utf8')) as unknown;
     if (
-      value.consumer !== consumer ||
-      !Number.isSafeInteger(value.globalPosition) ||
-      value.globalPosition < 0
+      typeof value !== 'object' ||
+      value === null ||
+      !('consumer' in value) ||
+      typeof value.consumer !== 'string' ||
+      !('globalPosition' in value) ||
+      typeof value.globalPosition !== 'number'
     )
-      throw new Error(`Invalid checkpoint: ${consumer}`);
-    return value.globalPosition;
+      throw new Error('Invalid checkpoint record');
+    return value as CheckpointRecord;
   }
 }
 
-function encodeCheckpointConsumer(consumer: string): string {
-  if (consumer.length === 0 || /[\\/]/.test(consumer))
-    throw new Error('Storage name must not contain path separators');
-  return Buffer.from(consumer, 'utf8').toString('base64url');
+function checkpointPosition(consumer: string, checkpoint: CheckpointRecord): number {
+  if (
+    checkpoint.consumer !== consumer ||
+    !Number.isSafeInteger(checkpoint.globalPosition) ||
+    checkpoint.globalPosition < 0
+  )
+    throw new Error(`Invalid checkpoint: ${consumer}`);
+  return checkpoint.globalPosition;
 }

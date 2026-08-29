@@ -95,6 +95,19 @@ it.each([0, -1, Number.POSITIVE_INFINITY, 1.5])(
   },
 );
 
+it("accepts Node's maximum timer delay and rejects a larger subscription fallback", () => {
+  const createHost = (fallbackMs: number) =>
+    new DurableSubscriptionHost(
+      new InMemoryEventJournal(new FakeClock()),
+      new InMemoryCheckpointStore(),
+      createInMemorySubscriptionRunSerialiser(),
+      { fallbackMs },
+    );
+
+  expect(() => createHost(2_147_483_647)).not.toThrow();
+  expect(() => createHost(2_147_483_648)).toThrow(/fallback/i);
+});
+
 it('rejects a non-function retry backoff', () => {
   expect(
     () =>

@@ -28,6 +28,11 @@ responsibility.
   stored checkpoint belongs to the requested consumer name and holds a
   non-negative safe integer, treating any other stored shape as corrupt
   rather than silently coercing it.
+- Filesystem checkpoints use injective v2 UTF-8 base64url paths. When no v2
+  checkpoint exists, the store may read the legacy path only when its parsed
+  consumer name matches the requested consumer; a foreign legacy collision is
+  treated as absent and reset never deletes it. Ill-formed UTF-16 consumer
+  identities are rejected before filename encoding.
 
 ## Conceptual schema
 
@@ -50,3 +55,6 @@ responsibility.
 - No support for advancing multiple consumers' checkpoints together as one
   atomic operation; each consumer's checkpoint is independent of every
   other's.
+- Legacy checkpoint paths remain for forward migration and best-effort binary
+  downgrade replay. A binary downgrade after reset is unsupported because the
+  old path may deliberately have been removed.

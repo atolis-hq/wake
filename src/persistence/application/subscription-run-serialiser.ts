@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { acquireFileLock } from '../filesystem/file-lock.js';
+import { assertWellFormedUtf16 } from '../filesystem/storage-name.js';
 
 export type SubscriptionRunSerialiser = <Value>(
   consumer: string,
@@ -53,6 +54,7 @@ export function createFileSubscriptionRunSerialiser(dataRoot: string): Subscript
 }
 
 export function encodeSubscriptionConsumer(consumer: string): string {
+  assertWellFormedUtf16(consumer, 'Subscription consumer');
   return Buffer.from(consumer, 'utf8').toString('base64url');
 }
 

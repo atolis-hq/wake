@@ -4,6 +4,7 @@ import type { SubscriptionRunSerialiser } from './subscription-run-serialiser.js
 const defaultBatchSize = 100;
 const maximumBatchSize = 10_000;
 const defaultFallbackMs = 30_000;
+const maximumTimerDelayMs = 2_147_483_647;
 
 export interface DurableSubscription {
   /** Stable checkpoint and serialisation identity. Handlers must be idempotent. */
@@ -48,7 +49,7 @@ export class DurableSubscriptionHost {
   ) {
     this.fallbackMs = options.fallbackMs ?? defaultFallbackMs;
     this.retryBackoff = options.retryBackoff ?? defaultRetryBackoff;
-    assertPositiveSafeInteger(this.fallbackMs, 'Subscription fallback');
+    assertPositiveSafeInteger(this.fallbackMs, 'Subscription fallback', maximumTimerDelayMs);
     if (typeof this.retryBackoff !== 'function')
       throw new Error('Subscription retry backoff must be a function');
   }

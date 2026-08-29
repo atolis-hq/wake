@@ -123,6 +123,35 @@ it('allows legacy-colliding consumer names to progress concurrently across file-
   }
 });
 
+it.each(['\uD800', '\uD801'])(
+  'rejects an ill-formed UTF-16 file lock consumer identity: %j',
+  async (consumer) => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-subscription-serialiser-'));
+    try {
+      const serialise = createFileSubscriptionRunSerialiser(root);
+
+      await expect(
+        serialise(consumer, new AbortController().signal, async () => undefined),
+      ).rejects.toThrow(/well-formed UTF-16/i);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+it('accepts ordinary Unicode file lock consumer identities', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-subscription-serialiser-'));
+  try {
+    const serialise = createFileSubscriptionRunSerialiser(root);
+
+    await expect(
+      serialise('consumer-😀', new AbortController().signal, async () => 'handled'),
+    ).resolves.toBe('handled');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 async function appendFact(journal: InMemoryEventJournal): Promise<void> {
   const stream: EntityRef<'subscription-test', 'one'> = { kind: 'subscription-test', id: 'one' };
   await journal.append(stream, 0, [

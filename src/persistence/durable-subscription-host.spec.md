@@ -60,5 +60,8 @@ handler's effects idempotent.
   the journal and checkpoints survive restart.
 - File checkpoints use v2 injective UTF-8 base64url paths. When no v2 file
   exists, FileCheckpointStore reads its legacy encoded path; later saves write
-  v2 while retaining the legacy file for rollback. A legacy collision whose
-  stored consumer does not match is rejected rather than silently reused.
+  v2 while retaining the legacy file for forward migration and best-effort
+  downgrade replay. A legacy collision whose stored consumer does not match
+  is treated as absent and is never deleted by that foreign consumer's reset.
+  Binary downgrade after reset is unsupported; this is independent of the
+  runtime's configuration-only inline/subscriber rollback.
