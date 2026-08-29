@@ -253,6 +253,67 @@ it('does not let a blocking subscriber poke stall subscriber-mode resident runne
   expect(scheduler.poke).not.toHaveBeenCalled();
 });
 
+it('aborts an in-flight resident delivery when the lifecycle stops', async () => {
+  const controller = new AbortController();
+  let deliveryStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    deliveryStarted = resolve;
+  });
+  const runnerPipeline = createRunnerPipeline({
+    runSchedules: async () => undefined,
+    react: async () => undefined,
+    deliver: async (signal) => {
+      deliveryStarted();
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) return resolve();
+        signal.addEventListener('abort', () => resolve(), { once: true });
+      });
+    },
+  });
+  const runnerResident = new ResidentHost(
+    new TickHost(
+      createResidentRunnerAdvance({
+        activationSchedulerSubscriber: { poke: async () => ({ kind: 'no-work' as const }) },
+        runnerPipeline,
+      }),
+    ),
+    async () => undefined,
+  );
+  const subscriptionRun = () => {
+    let resolve!: () => void;
+    return {
+      abort: () => resolve(),
+      done: new Promise<void>((next) => {
+        resolve = next;
+      }),
+    };
+  };
+  const projections = subscriptionRun();
+  const scheduler = subscriptionRun();
+
+  const lifecycle = runResidentLifecycle({
+    signal: controller.signal,
+    budget: { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 },
+    projectionSubscriptions: { start: () => projections },
+    activationSchedulerSubscriber: { start: () => scheduler },
+    intakeResident: {
+      run: async (signal: AbortSignal) => {
+        await new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        return { advances: 0, runs: 0, stoppedBecause: 'shutdown' };
+      },
+    },
+    runnerResident,
+    close: async () => undefined,
+  });
+
+  await started;
+  controller.abort();
+
+  await expect(lifecycle).resolves.toMatchObject({ stoppedBecause: 'shutdown' });
+});
+
 it('supervises projection subscriptions before residents and aborts every owned run before awaiting', async () => {
   const controller = new AbortController();
   const trace: string[] = [];

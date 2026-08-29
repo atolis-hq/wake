@@ -45,10 +45,11 @@ Decisions below).
 
 ## Core policies, invariants, and behaviours
 
-- `TickHost.run` MUST call `advance({ maxProgress: 1 })` in a loop while
-  `advances < maxAdvances` and `runs < maxRuns`, checking the wall-clock
-  budget (`Date.now() - started >= maxDurationMs`) at the top of every
-  iteration, including before the first call.
+- `TickHost.run` MUST call `advance({ maxProgress: 1 }, signal)` in a loop
+  while `advances < maxAdvances` and `runs < maxRuns`, forwarding its optional
+  lifecycle signal on every call and checking the wall-clock budget
+  (`Date.now() - started >= maxDurationMs`) at the top of every iteration,
+  including before the first call.
 - Every `advance` result of kind `progressed` MUST increment `advances` by
   one and `runs` by the length of its `dispatched` batch (Advancement's own
   per-call dispatch loop may start more than one Run per `advance` call, up
@@ -70,11 +71,13 @@ Decisions below).
   and `processed: false` to `{ advances: 0, runs: 0, stoppedBecause: Idle }`.
   It never reports a `dispatched` batch, since intake has no honest value for
   one — that is why it does not reuse `AdvanceResult`.
-- `ResidentHost.run` MUST repeat `TickHost.run(budget)` (or `IntakeHost`'s
-  equivalent) while the signal is not aborted, accumulating `advances` and
-  `runs` as a running total across the whole resident lifetime (not per
-  cycle), and MUST call the injected `sleep(signal, cadence)` between cycles
-  only when the signal has not aborted since the last cycle completed.
+- `ResidentHost.run` MUST repeat `TickHost.run(budget, signal)` (or
+  `IntakeHost`'s equivalent) while the signal is not aborted, so each
+  in-flight intake or resident-runner cycle observes lifecycle shutdown. It
+  accumulates `advances` and `runs` as a running total across the whole
+  resident lifetime (not per cycle), and MUST call the injected
+  `sleep(signal, cadence)` between cycles only when the signal has not aborted
+  since the last cycle completed.
 - `cadence.consecutiveIdleTicks` MUST increment on any cycle that does not
   progress (`advances === 0`, whether it returned cleanly or threw) and MUST
   reset to 0 on any cycle that progresses. `cadence.consecutiveErrorTicks`

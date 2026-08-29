@@ -156,6 +156,10 @@ Work's own aggregate remains the source of that state.
   projection.
 - `RunnerPipeline.run`'s `signal` parameter defaults to a fresh,
   never-aborted `AbortController`'s signal when the caller omits one.
+- `AdvanceOnce` accepts the optional lifecycle signal supplied by `TickHost`.
+  Resident runner adapters forward it to `RunnerPipeline.run`, so an in-flight
+  outbound delivery observes resident shutdown; one-shot callers omit it and
+  retain their bounded, standalone behavior.
 - Bootstrap always composes an independently supervised, checkpointed
   activation-scheduler subscriber. It reconsiders every durable fact,
   reconciles on startup and bounded fallback, and shares the scheduler

@@ -69,5 +69,5 @@ export function createOneShotRunnerAdvance(root: OneShotRunnerTickRuntime): Adva
 
 /** Resident scheduling is owned by the durable subscriber, never its tick loop. */
 export function createResidentRunnerAdvance(root: RunnerTickRuntime): AdvanceOnce {
-  return (options) => root.runnerPipeline.run(options);
+  return (options, signal) => root.runnerPipeline.run(options, signal);
 }

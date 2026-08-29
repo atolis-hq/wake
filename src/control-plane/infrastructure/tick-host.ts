@@ -9,14 +9,14 @@ import {
 export class TickHost {
   constructor(private readonly advance: AdvanceOnce) {}
 
-  async run(budget: HostBudget, _signal?: AbortSignal): Promise<HostResult> {
+  async run(budget: HostBudget, signal?: AbortSignal): Promise<HostResult> {
     const started = Date.now();
     let advances = 0;
     let runs = 0;
     while (advances < budget.maxAdvances && runs < budget.maxRuns) {
       if (Date.now() - started >= budget.maxDurationMs)
         return { advances, runs, stoppedBecause: HostStopReason.Budget };
-      const result = await this.advance({ maxProgress: 1 });
+      const result = await this.advance({ maxProgress: 1 }, signal);
       if (result.kind === 'progressed') {
         advances += 1;
         runs += result.dispatched.length;
