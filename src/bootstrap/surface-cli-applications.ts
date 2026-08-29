@@ -58,7 +58,11 @@ import type { CompositionRoot } from './composition-root.js';
 import { loadConfig } from './config/load-config.js';
 import { runtimeProjectionDefinitions } from './projection-runtime.js';
 import { createRunnerRegistry } from './runner-registry.js';
-import { createOneShotRunnerAdvance, createResidentRunnerAdvance } from './runner-tick-adapter.js';
+import {
+  createOneShotRunnerAdvance,
+  createResidentRunnerAdvance,
+  withFinalProjectionCatchUp,
+} from './runner-tick-adapter.js';
 import {
   createSelfUpdateApplication,
   type SelfUpdateQuiescePort,
@@ -115,15 +119,16 @@ export function createSurfaceCliApplications(
   return {
     tick: {
       async run(budget) {
-        try {
-          await root.projectionSubscriptions.catchUpOnce();
-          // Mirrors legacy's combined one-shot `runTick`: intake once, then
-          // let the runner loop drain up to its own budget.
-          await intakeHost.run(budget);
-          return await runnerTick.run(budget);
-        } finally {
-          await root.projectionSubscriptions.catchUpOnce();
-        }
+        return withFinalProjectionCatchUp(
+          async () => {
+            await root.projectionSubscriptions.catchUpOnce();
+            // Mirrors legacy's combined one-shot `runTick`: intake once, then
+            // let the runner loop drain up to its own budget.
+            await intakeHost.run(budget);
+            return await runnerTick.run(budget);
+          },
+          () => root.projectionSubscriptions.catchUpOnce(),
+        );
       },
     },
     start: {
@@ -300,23 +305,56 @@ export async function runResidentLifecycle(input: ResidentLifecycleInput): Promi
   let schedulerRun:
     ReturnType<ResidentLifecycleInput['activationSchedulerSubscriber']['start']> | undefined;
   let intakeRun: Promise<HostResult> | undefined;
+  const failures: unknown[] = [];
+  let result: HostResult | undefined;
   try {
     projectionRun = input.projectionSubscriptions.start(controller.signal);
     schedulerRun = input.activationSchedulerSubscriber.start(controller.signal);
     intakeRun = input.intakeResident.run(controller.signal, input.budget);
-    return await input.runnerResident.run(controller.signal, input.budget);
+    result = await input.runnerResident.run(controller.signal, input.budget);
+  } catch (error) {
+    failures.push(error);
   } finally {
-    controller.abort();
-    projectionRun?.abort();
-    schedulerRun?.abort();
-    await Promise.all([
-      ...(intakeRun === undefined ? [] : [intakeRun]),
-      ...(projectionRun === undefined ? [] : [projectionRun.done]),
-      ...(schedulerRun === undefined ? [] : [schedulerRun.done]),
-    ]);
-    input.signal.removeEventListener('abort', abort);
-    await input.close();
+    captureCleanupFailure(failures, () => controller.abort());
+    captureCleanupFailure(failures, () => projectionRun?.abort());
+    captureCleanupFailure(failures, () => schedulerRun?.abort());
+    await captureAsyncCleanupFailure(failures, async () => {
+      failures.push(
+        ...(await settledRunFailures([intakeRun, projectionRun?.done, schedulerRun?.done])),
+      );
+    });
+    captureCleanupFailure(failures, () => input.signal.removeEventListener('abort', abort));
+    await captureAsyncCleanupFailure(failures, () => input.close());
   }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Resident lifecycle failed');
+  return result!;
+}
+
+function captureCleanupFailure(failures: unknown[], cleanup: () => void): void {
+  try {
+    cleanup();
+  } catch (error) {
+    failures.push(error);
+  }
+}
+
+async function captureAsyncCleanupFailure(
+  failures: unknown[],
+  cleanup: () => Promise<void>,
+): Promise<void> {
+  try {
+    await cleanup();
+  } catch (error) {
+    failures.push(error);
+  }
+}
+
+async function settledRunFailures(
+  runs: readonly (Promise<unknown> | undefined)[],
+): Promise<unknown[]> {
+  const settled = await Promise.allSettled(runs.filter((run) => run !== undefined));
+  return settled.flatMap((run) => (run.status === 'fulfilled' ? [] : [run.reason]));
 }
 
 async function waitForRunnerEvents(

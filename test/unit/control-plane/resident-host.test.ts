@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ResidentHost, type HostBudget } from '../../../src/control-plane/index.js';
+import { IntakeHost, ResidentHost, type HostBudget } from '../../../src/control-plane/index.js';
 
 const budget: HostBudget = { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1000 };
 
@@ -23,6 +23,29 @@ it('reuses TickHost advancement and stops on an abort signal', async () => {
     stoppedBecause: 'shutdown',
   });
   expect(calls).toBe(1);
+});
+
+it('propagates lifecycle abort to an in-flight intake cycle', async () => {
+  const controller = new AbortController();
+  let cycleStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    cycleStarted = resolve;
+  });
+  const intake = new IntakeHost(async (signal) => {
+    cycleStarted();
+    await new Promise<void>((resolve) => {
+      if (signal.aborted) return resolve();
+      signal.addEventListener('abort', () => resolve(), { once: true });
+    });
+    return { processed: false };
+  });
+  const resident = new ResidentHost(intake, async () => undefined);
+
+  const run = resident.run(controller.signal, budget);
+  await started;
+  controller.abort();
+
+  await expect(run).resolves.toMatchObject({ stoppedBecause: 'shutdown' });
 });
 
 it('starts another tick after an idle backoff', async () => {

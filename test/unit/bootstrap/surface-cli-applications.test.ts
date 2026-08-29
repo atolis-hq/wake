@@ -5,6 +5,7 @@ import {
 } from '../../../src/bootstrap/runner-tick-adapter.js';
 import {
   createRunnerIdleWait,
+  createSurfaceCliApplications,
   runResidentLifecycle,
 } from '../../../src/bootstrap/surface-cli-applications.js';
 import { createRunnerPipeline, ResidentHost, TickHost } from '../../../src/control-plane/index.js';
@@ -146,6 +147,67 @@ it('catches projections again while unwinding an initial projection barrier fail
   expect(runnerPipeline.run).not.toHaveBeenCalled();
 });
 
+it('preserves an operational failure when the final one-shot projection barrier also fails', async () => {
+  const operationalFailure = new Error('delivery rejected');
+  const finalBarrierFailure = new Error('final projection catch-up failed');
+  const projectionSubscriptions = {
+    catchUpOnce: vi.fn().mockResolvedValueOnce(0).mockRejectedValueOnce(finalBarrierFailure),
+  };
+
+  const result = createOneShotRunnerAdvance({
+    activationSchedulerSubscriber: { poke: async () => ({ kind: 'no-work' as const }) },
+    projectionSubscriptions,
+    runnerPipeline: { run: async () => Promise.reject(operationalFailure) },
+  })({ maxProgress: 1 }).catch((error: unknown) => error);
+
+  await expect(result).resolves.toBeInstanceOf(AggregateError);
+  expect(((await result) as AggregateError).errors).toEqual([
+    operationalFailure,
+    finalBarrierFailure,
+  ]);
+});
+
+it('preserves an intake failure when the CLI tick final projection barrier also fails', async () => {
+  const intakeFailure = new Error('intake failed');
+  const finalBarrierFailure = new Error('final projection catch-up failed');
+  const projectionSubscriptions = {
+    catchUpOnce: vi.fn().mockResolvedValueOnce(0).mockRejectedValueOnce(finalBarrierFailure),
+  };
+  const applications = createSurfaceCliApplications(
+    {
+      config: {
+        controlPlane: undefined,
+        surfaces: { api: { enabled: false } },
+        host: {
+          development: { mode: 'installed' },
+          sandbox: {
+            image: 'wake:test',
+            containerName: 'wake-test',
+            wakeMountPath: '/wake',
+            containerHomeMountPath: '/home/wake',
+            extraMounts: [],
+            start: { enabled: false },
+          },
+        },
+      },
+      paths: { wakeRoot: 'C:/wake-test' },
+      projectionSubscriptions,
+      intakePipeline: { run: async () => Promise.reject(intakeFailure) },
+      activationSchedulerSubscriber: { poke: async () => ({ kind: 'no-work' as const }) },
+      runnerPipeline: { run: async () => ({ kind: 'no-work' as const }) },
+    } as never,
+    {} as never,
+    () => '2026-08-29T00:00:00.000Z',
+  );
+
+  const result = applications.tick
+    .run({ maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 })
+    .catch((error: unknown) => error);
+
+  await expect(result).resolves.toBeInstanceOf(AggregateError);
+  expect(((await result) as AggregateError).errors).toEqual([intakeFailure, finalBarrierFailure]);
+});
+
 it('returns a paused one-shot pipeline result without poking the subscriber', async () => {
   const scheduler = { poke: vi.fn(async () => ({ kind: 'no-work' as const })) };
   const runnerPipeline = {
@@ -259,6 +321,135 @@ it('supervises projection subscriptions before residents and aborts every owned 
   expect(trace.indexOf('projections:abort')).toBeLessThan(trace.indexOf('projections:done'));
   expect(trace.indexOf('scheduler:abort')).toBeLessThan(trace.indexOf('scheduler:done'));
   expect(trace.indexOf('scheduler:abort')).toBeLessThan(trace.indexOf('projections:done'));
+});
+
+it('settles every owned run and preserves resident and subscription failures before closing', async () => {
+  const trace: string[] = [];
+  const runnerFailure = new Error('runner failed');
+  const projectionFailure = new Error('projection subscription failed');
+  const subscriptionRun = (name: string, failure?: Error) => {
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const done = new Promise<void>((next, fail) => {
+      resolve = next;
+      reject = fail;
+    }).then(
+      () => {
+        trace.push(`${name}:done`);
+      },
+      (error: unknown) => {
+        trace.push(`${name}:done`);
+        throw error;
+      },
+    );
+    return {
+      abort: vi.fn(() => {
+        trace.push(`${name}:abort`);
+        if (failure === undefined) resolve();
+        else reject(failure);
+      }),
+      done,
+    };
+  };
+  const projections = subscriptionRun('projections', projectionFailure);
+  const scheduler = subscriptionRun('scheduler');
+  const close = vi.fn(async () => {
+    trace.push('close');
+  });
+
+  const result = runResidentLifecycle({
+    signal: new AbortController().signal,
+    budget: { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 },
+    projectionSubscriptions: { start: () => projections },
+    activationSchedulerSubscriber: { start: () => scheduler },
+    intakeResident: {
+      run: async (signal: AbortSignal) => {
+        await new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        trace.push('intake:done');
+        return { advances: 0, runs: 0, stoppedBecause: 'shutdown' };
+      },
+    },
+    runnerResident: {
+      run: async () => {
+        throw runnerFailure;
+      },
+    },
+    close,
+  }).catch((error: unknown) => error);
+
+  await expect(result).resolves.toBeInstanceOf(AggregateError);
+  const error = await result;
+  expect((error as AggregateError).errors).toEqual([runnerFailure, projectionFailure]);
+  expect(trace).toContain('intake:done');
+  expect(trace).toContain('scheduler:done');
+  expect(trace.indexOf('close')).toBeGreaterThan(trace.indexOf('intake:done'));
+  expect(trace.indexOf('close')).toBeGreaterThan(trace.indexOf('scheduler:done'));
+  expect(close).toHaveBeenCalledOnce();
+});
+
+it('continues cleanup when an owned subscription abort throws', async () => {
+  const parent = new AbortController();
+  const removeListener = vi.spyOn(parent.signal, 'removeEventListener');
+  const trace: string[] = [];
+  const runnerFailure = new Error('runner failed');
+  const abortFailure = new Error('projection abort failed');
+  const subscriptionRun = (name: string, abortFails = false) => {
+    let resolve!: () => void;
+    const done = new Promise<void>((next) => {
+      resolve = next;
+    }).then(() => {
+      trace.push(`${name}:done`);
+    });
+    return {
+      abort: vi.fn(() => {
+        trace.push(`${name}:abort`);
+        resolve();
+        if (abortFails) throw abortFailure;
+      }),
+      done,
+    };
+  };
+  const projections = subscriptionRun('projections', true);
+  const scheduler = subscriptionRun('scheduler');
+  const close = vi.fn(async () => {
+    trace.push('close');
+  });
+
+  const result = runResidentLifecycle({
+    signal: parent.signal,
+    budget: { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 },
+    projectionSubscriptions: { start: () => projections },
+    activationSchedulerSubscriber: { start: () => scheduler },
+    intakeResident: {
+      run: async (signal: AbortSignal) => {
+        await new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        trace.push('intake:done');
+        return { advances: 0, runs: 0, stoppedBecause: 'shutdown' };
+      },
+    },
+    runnerResident: {
+      run: async () => {
+        throw runnerFailure;
+      },
+    },
+    close,
+  }).catch((error: unknown) => error);
+
+  await expect(result).resolves.toBeInstanceOf(AggregateError);
+  expect(((await result) as AggregateError).errors).toEqual([runnerFailure, abortFailure]);
+  expect(scheduler.abort).toHaveBeenCalledOnce();
+  expect(trace).toContain('projections:done');
+  expect(trace).toContain('scheduler:done');
+  expect(trace).toContain('intake:done');
+  expect(trace.indexOf('close')).toBeGreaterThan(trace.indexOf('projections:done'));
+  expect(trace.indexOf('close')).toBeGreaterThan(trace.indexOf('scheduler:done'));
+  expect(trace.indexOf('close')).toBeGreaterThan(trace.indexOf('intake:done'));
+  expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+  expect(close).toHaveBeenCalledOnce();
 });
 
 it('does not initialize the resident cursor until idle waiting starts', async () => {

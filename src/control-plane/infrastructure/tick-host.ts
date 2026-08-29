@@ -9,7 +9,7 @@ import {
 export class TickHost {
   constructor(private readonly advance: AdvanceOnce) {}
 
-  async run(budget: HostBudget): Promise<HostResult> {
+  async run(budget: HostBudget, _signal?: AbortSignal): Promise<HostResult> {
     const started = Date.now();
     let advances = 0;
     let runs = 0;

@@ -15,9 +15,11 @@ export interface IntakeCycle {
 export class IntakeHost {
   constructor(private readonly cycle: IntakeCycle) {}
 
-  async run(_budget: HostBudget): Promise<HostResult> {
-    const controller = new AbortController();
-    const { processed } = await this.cycle(controller.signal);
+  async run(
+    _budget: HostBudget,
+    signal: AbortSignal = new AbortController().signal,
+  ): Promise<HostResult> {
+    const { processed } = await this.cycle(signal);
     return {
       advances: processed ? 1 : 0,
       runs: 0,
