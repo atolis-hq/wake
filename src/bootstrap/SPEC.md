@@ -158,7 +158,7 @@ Bootstrap does not own:
   when absent; the same applies to `model` and `allowedTools`: each is
   forwarded only when the template declares it.
 - Bootstrap's own read-only diagnostics (health, configuration) MUST NOT
-  mutate any durable fact; only the control-plane `advance` command and the
+  mutate any durable fact; only the public control-plane `tick` command and the
   runner pause/unpause commands exposed through a surface application are
   state-changing.
 - Bootstrap MUST NOT leak a concrete adapter type across a module boundary:
