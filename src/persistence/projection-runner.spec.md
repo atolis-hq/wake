@@ -46,7 +46,8 @@ define what a projection fold means or decide when a live subscription runs.
   pass with that consumer therefore cannot interleave with rebuild. A sibling
   projection consumer can make progress independently.
 - Rebuild reads at most 100 events per journal call, returns the total number
-  of replayed events, and finishes once a batch is shorter than that bound.
+  of replayed events, and finishes only after an empty read confirms the
+  journal head is stable for that rebuild pass.
 - Rebuild only clears and resets the definition it was asked to rebuild.
 
 ## Dependencies and system role

@@ -158,6 +158,38 @@ it('rebuilds bounded batches through the journal head and advances its checkpoin
   expect(await checkpoints.load('projection:head-counts')).toBe(101);
 });
 
+it('rebuilds through an append that lands after a short read snapshot', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const stream: EntityRef<'counter', 'rebuild-race'> = { kind: 'counter', id: 'rebuild-race' };
+  await appendCountedEvent(journal, stream, 0, 'rebuild-race-first');
+  let appendedAfterSnapshot = false;
+  const snapshottingJournal = {
+    async readAll(afterGlobalPosition = 0, limit?: number) {
+      const snapshot = await journal.readAll(afterGlobalPosition, limit);
+      if (!appendedAfterSnapshot && snapshot.length > 0) {
+        appendedAfterSnapshot = true;
+        await appendCountedEvent(journal, stream, 1, 'rebuild-race-second');
+      }
+      return snapshot;
+    },
+  } as never;
+  const projections = new InMemoryProjectionStore();
+  const checkpoints = new InMemoryCheckpointStore();
+  const definition = projectionDefinition('rebuild-race-counts');
+  const rebuilder = new ProjectionRebuilder(
+    snapshottingJournal,
+    projections,
+    checkpoints,
+    createInMemorySubscriptionRunSerialiser(),
+  );
+
+  await expect(rebuilder.rebuild(definition)).resolves.toBe(2);
+  expect((await projections.read<number>('rebuild-race-counts', 'one'))?.value).toBe(2);
+  expect(await checkpoints.load('projection:rebuild-race-counts')).toBe(
+    await journal.latestGlobalPosition(),
+  );
+});
+
 function projectionDefinition(name: string) {
   return {
     name,

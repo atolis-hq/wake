@@ -72,7 +72,6 @@ export class ProjectionRebuilder {
       await applyProjectionBatch(definition, this.projections, events);
       await this.checkpoints.save(consumer, events.at(-1)!.globalPosition);
       total += events.length;
-      if (events.length < projectionBatchSize) return total;
     }
   }
 }
