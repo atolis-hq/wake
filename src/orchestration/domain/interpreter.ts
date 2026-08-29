@@ -42,6 +42,7 @@ export {
   isGroupBudgetExtensionEligible,
   isOperatorRetryEligible,
   requestChangesResume,
+  requestFreshOperatorRetry,
   requestOperatorRetry,
   selectOperatorRetryTarget,
 } from './operator-retry-policy.js';

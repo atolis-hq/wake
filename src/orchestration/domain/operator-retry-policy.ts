@@ -112,6 +112,24 @@ export function requestOperatorRetry(
   state: WorkflowInstanceView,
   input: OperatorRetryRequest,
 ): OrchestrationDecision {
+  return requestRetry(definition, state, input);
+}
+
+/** Re-requests the failed stage while requiring a new runner session. */
+export function requestFreshOperatorRetry(
+  definition: CompiledWorkflow,
+  state: WorkflowInstanceView,
+  input: OperatorRetryRequest,
+): OrchestrationDecision {
+  return requestRetry(definition, state, input, 'fresh');
+}
+
+function requestRetry(
+  definition: CompiledWorkflow,
+  state: WorkflowInstanceView,
+  input: OperatorRetryRequest,
+  sessionPolicy?: 'fresh',
+): OrchestrationDecision {
   if (input.commandId.length === 0)
     return { kind: 'ignored', reason: 'operator retry command id is required' };
   if (!isOperatorRetryEligible(state))
@@ -136,6 +154,7 @@ export function requestOperatorRetry(
       activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
         execution: stage.execution,
         stage: stageName(state.currentStage),
+        ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
       }),
       2,
     ),

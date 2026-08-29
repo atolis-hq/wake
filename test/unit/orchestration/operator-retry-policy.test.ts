@@ -23,6 +23,7 @@ import {
   orchestrationActivityOutcome,
   OrchestrationEventType,
   requestChangesResume,
+  requestFreshOperatorRetry,
   requestOperatorRetry,
   selectOperatorRetryTarget,
   startInstance,
@@ -185,6 +186,22 @@ const retryInput = {
 };
 
 describe('operator retry policy', () => {
+  it('marks a fresh operator retry so execution starts a new runner session', () => {
+    const { definition, state } = blockedFailedFixture();
+
+    const decision = requestFreshOperatorRetry(definition, state, retryInput);
+
+    expect(decision).toMatchObject({
+      kind: 'append',
+      events: [
+        { eventType: OrchestrationEventType.OperatorRetryRequested },
+        {
+          eventType: OrchestrationEventType.ActivityRequested,
+          payload: { sessionPolicy: 'fresh' },
+        },
+      ],
+    });
+  });
   it('selects the retry-eligible watch child only while its exact parent waits on that watch', () => {
     const { state: child } = blockedFailedFixture();
     const parent = {

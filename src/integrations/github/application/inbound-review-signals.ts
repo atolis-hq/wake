@@ -12,6 +12,7 @@ import type { EventJournal, IdGenerator } from '../../../kernel/index.js';
 import {
   ApprovalAuthorityKind,
   isGroupBudgetExtensionEligible,
+  isOperatorRetryEligible,
   selectOperatorRetryTarget,
   type OrchestrationService,
 } from '../../../orchestration/index.js';
@@ -195,6 +196,8 @@ async function applyIssueCommand(input: {
   const { command, resource, resourceId: resourceIdValue } = input;
   if (command === GitHubBuiltInCommand.Retry)
     return applyIssueRetrySignal({ ...input, resourceId: resourceIdValue });
+  if (command === GitHubBuiltInCommand.Restart)
+    return applyIssueRestartSignal({ ...input, resourceId: resourceIdValue });
   if (command === GitHubBuiltInCommand.Extend)
     return applyIssueBudgetExtension({ ...input, resourceId: resourceIdValue });
   if (resource?.kind === BuiltInResourceKind.PullRequest)
@@ -277,6 +280,39 @@ async function applyIssueRetrySignal(input: {
     if (target === undefined) continue;
     await ignoreIneligibleOperatorRetry(() =>
       orchestration.retryBlockedFailedStage(target.workflowInstanceId, commandContext(event)),
+    );
+  }
+}
+
+async function applyIssueRestartSignal(input: {
+  readonly event: CommentObservedEvent;
+  readonly resources: ResourceService;
+  readonly work: WorkService;
+  readonly orchestration: OrchestrationService | undefined;
+  readonly resourceId: ReturnType<typeof resourceId>;
+}): Promise<void> {
+  const { event, resources, work, orchestration, resourceId: resourceIdValue } = input;
+  if (orchestration === undefined) return;
+  if (
+    !isReviewAuthorized({
+      actorId: event.payload.actor.id,
+      actorKind: event.payload.actor.kind,
+      resourceAuthorId: UnknownGitHubIdentity,
+      authorization: event.payload.authorization ?? { source: ReviewerAuthorizationSource.None },
+    })
+  )
+    return;
+  const workItemIds = (await resources.correlations(resourceIdValue))
+    .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
+    .map((correlation) => correlation.workItemId);
+  for (const workItemId of workItemIds) {
+    if (!(await isEligibleWorkItem(work, workItemId))) continue;
+    const primary = (await orchestration.listForWorkItem(workItemId)).find(
+      (workflow) => workflow.parentWorkflowInstanceId === undefined,
+    );
+    if (primary === undefined || !isOperatorRetryEligible(primary)) continue;
+    await ignoreIneligibleOperatorRetry(() =>
+      orchestration.restartBlockedFailedStage(primary.workflowInstanceId, commandContext(event)),
     );
   }
 }

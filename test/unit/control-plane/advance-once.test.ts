@@ -477,7 +477,7 @@ describe('advanceOnce', () => {
     expect(attempts).toBe(1);
   });
 
-  it('uses stage resume only for a primary workflow activation', async () => {
+  it('uses stage resume only for a primary workflow activation unless it requests a fresh session', async () => {
     const activation = {
       activationId: 'activation-00000000000000000000000001',
     } as unknown as ActivityActivationView;
@@ -519,8 +519,10 @@ describe('advanceOnce', () => {
     await advance({ maxProgress: 1 });
     pending = [{ workflow: watch, activation }];
     await advance({ maxProgress: 1 });
+    pending = [{ workflow: primary, activation: { ...activation, sessionPolicy: 'fresh' } }];
+    await advance({ maxProgress: 1 });
 
-    expect(policies).toEqual(['resume-stage', 'fresh']);
+    expect(policies).toEqual(['resume-stage', 'fresh', 'fresh']);
   });
 
   it('does no work when no activation is pending', async () => {

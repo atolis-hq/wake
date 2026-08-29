@@ -157,7 +157,10 @@ export async function runDispatchLoop(
         orchestrationGroupId: selected.workflow.orchestrationGroupId,
         resources: resourceViews,
         sessionPolicy:
-          selected.workflow.parentWorkflowInstanceId === undefined ? 'resume-stage' : 'fresh',
+          selected.activation.sessionPolicy === 'fresh' ||
+          selected.workflow.parentWorkflowInstanceId !== undefined
+            ? 'fresh'
+            : 'resume-stage',
         awaitImmediateCompletion: true,
         ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
       });

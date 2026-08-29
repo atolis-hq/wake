@@ -189,6 +189,12 @@ export class OrchestrationService {
     );
   }
 
+  restartBlockedFailedStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
+    return this.transitionWatchChildren(context, () =>
+      this.advanceWorkflow.restartBlockedFailedStage(workflowInstanceId, context),
+    );
+  }
+
   resumeBlockedStageForChanges(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
     return this.transitionWatchChildren(context, () =>
       this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context),

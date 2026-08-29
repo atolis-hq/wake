@@ -282,6 +282,8 @@ export interface ActivityRequestedPayload {
   readonly stage?: StageName | undefined;
   readonly input: unknown;
   readonly execution?: StageConfig['execution'] | undefined;
+  /** Explicitly bypass a compatible runner session when dispatching this activation. */
+  readonly sessionPolicy?: 'fresh' | undefined;
   readonly followOnIndex?: number | undefined;
   readonly supplemental?: boolean | undefined;
 }

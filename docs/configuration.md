@@ -450,7 +450,7 @@ Use `provider: github` for the built-in GitHub integration.
 | `intake` | list; default `[]` | Admission/tagging rules. With no rules, every observation is admitted with no added tags. |
 | `publication.postStatusComments` | boolean; default `true` | Allows GitHub status-comment publication. |
 | `publication.replies` | object; default `{ rules: [], default: primary }` | Routes agent-run reply comments. Rules are evaluated in order and the first match wins. |
-| `commands` | string list; default `[]` | Additional command syntax advertised on the web UI's Configuration → Commands tab alongside the adapter's built-in commands (`/approved`, `/accepted`, `/changes`, `/retry`). Purely descriptive: Wake does not recognize these itself, so any behavior they imply must be handled by whatever reads the comment. |
+| `commands` | string list; default `[]` | Additional command syntax advertised on the web UI's Configuration → Commands tab alongside the adapter's built-in commands (`/approved`, `/accepted`, `/changes`, `/retry`, `/restart`, `/extend`). Purely descriptive: Wake does not recognize these itself, so any behavior they imply must be handled by whatever reads the comment. |
 
 Each `intake[]` rule has `where`, optional `matchMode` (`any` by default or
 `all`), optional `ignoredLabels` (default `[]`), and `tags` (default `[]`). An
