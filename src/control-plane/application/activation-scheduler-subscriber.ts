@@ -47,7 +47,7 @@ export interface ActivationSchedulerSubscriptionHealth {
 /** Schedules durable activation work independently from slow runner reactors. */
 export interface ActivationSchedulerSubscriber {
   start(signal?: AbortSignal): ActivationSchedulerSubscriberRun;
-  poke(options?: AdvanceOptions): Promise<AdvanceResult>;
+  poke(options?: AdvanceOptions, signal?: AbortSignal): Promise<AdvanceResult>;
   health(): ActivationSchedulerSubscriptionHealth | undefined;
 }
 
@@ -65,9 +65,12 @@ export function createActivationSchedulerSubscriber(
       `Activation scheduler fallback must be a positive safe integer no greater than ${maximumTimerDelayMs}`,
     );
 
-  const poke = async (advance: AdvanceOptions = { maxProgress: 1 }): Promise<AdvanceResult> => {
+  const poke = async (
+    advance: AdvanceOptions = { maxProgress: 1 },
+    signal?: AbortSignal,
+  ): Promise<AdvanceResult> => {
     try {
-      const result = await scheduler.runOnce(advance);
+      const result = await scheduler.runOnce(advance, signal);
       reconciliationFailures = 0;
       reconciliationError = undefined;
       return result;
@@ -90,14 +93,16 @@ export function createActivationSchedulerSubscriber(
             // Every fact can affect eligibility, capacity, expiry recovery, or a
             // workflow's next activation; filtering here would create stale work.
             handle: async () => {
-              await poke();
+              await poke(undefined, controller.signal);
             },
           },
         ],
         controller.signal,
       );
-      const startup = reconcileIgnoringFailure(poke);
-      const fallback = reconcileOnFallback(controller.signal, fallbackMs, waitForFallback, poke);
+      const startup = reconcileIgnoringFailure(() => poke(undefined, controller.signal));
+      const fallback = reconcileOnFallback(controller.signal, fallbackMs, waitForFallback, () =>
+        poke(undefined, controller.signal),
+      );
       const done = Promise.all([durable.done, startup, fallback])
         .then(() => undefined)
         .finally(() => parentSignal?.removeEventListener('abort', abort));

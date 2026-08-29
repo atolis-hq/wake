@@ -14,8 +14,13 @@ export function createOneShotRunnerAdvance(root: RunnerTickRuntime): AdvanceOnce
   const subscriber = root.activationSchedulerSubscriber;
   if (subscriber === undefined) return (options) => root.runnerPipeline.run(options);
   return async (options) => {
-    await root.runnerPipeline.run(options);
-    return subscriber.poke(options);
+    let scheduled: Awaited<ReturnType<typeof subscriber.poke>> | undefined;
+    await root.runnerPipeline.run(options, undefined, async () => {
+      scheduled = await subscriber.poke(options);
+    });
+    if (scheduled === undefined)
+      throw new Error('Subscriber scheduler did not run before delivery');
+    return scheduled;
   };
 }
 

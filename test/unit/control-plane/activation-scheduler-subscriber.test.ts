@@ -152,6 +152,69 @@ describe('ActivationSchedulerSubscriber', () => {
     }
   });
 
+  it('stops a subscriber startup pass waiting for another process scheduler lock', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-scheduler-subscription-'));
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const firstEntered = deferred<void>();
+    const releaseFirst = deferred<void>();
+    const secondAttempted = deferred<void>();
+    const first = createActivationScheduler(
+      schedulerDependencies(async () => {
+        firstEntered.resolve();
+        await releaseFirst.promise;
+      }),
+      emptyExecution(),
+      { correlationsForWork: async () => [] } as never,
+      clock,
+      {
+        ids: { next: () => 'command-one' } as never,
+        schedulerSerialiser: createFileActivationSchedulerSerialiser(root),
+      },
+    );
+    const second = createActivationScheduler(
+      schedulerDependencies(async () => undefined),
+      emptyExecution(),
+      { correlationsForWork: async () => [] } as never,
+      clock,
+      {
+        ids: { next: () => 'command-two' } as never,
+        schedulerSerialiser: createFileActivationSchedulerSerialiser(root),
+      },
+    );
+    const subscriber = createActivationSchedulerSubscriber(
+      {
+        start: (_subscriptions, signal) => {
+          const stopped = deferred<void>();
+          signal?.addEventListener('abort', () => stopped.resolve(), { once: true });
+          return { abort: () => stopped.resolve(), done: stopped.promise };
+        },
+        health: () => undefined,
+      },
+      {
+        runOnce: async (options, signal) => {
+          secondAttempted.resolve();
+          return second.runOnce(options, signal);
+        },
+      },
+      { fallbackMs: 60_000 },
+    );
+    try {
+      const firstRun = first.runOnce({ maxProgress: 1 });
+      await firstEntered.promise;
+
+      const run = subscriber.start();
+      await secondAttempted.promise;
+      run.abort();
+
+      await expect(withTimeout(run.done)).resolves.toBeUndefined();
+      releaseFirst.resolve();
+      await firstRun;
+    } finally {
+      releaseFirst.resolve();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('keeps startup reconciliation in the supervised lifecycle after abort', async () => {
     const startup = deferred<{ readonly kind: 'no-work' }>();
     const durableStopped = deferred<void>();

@@ -102,9 +102,12 @@ Bootstrap does not own:
   than one fixed sequence: an intake pipeline (catch up projections, poll
   every configured provider, translate polled provider input into facts)
   and a runner pipeline (catch up projections, run configured schedules,
-  advance the control plane by one bounded step, react to newly appended
-  facts, publish agent runs, then catch up projections and attempt one
-  outbound delivery). The reaction stage runs Watch first, then resource
+  advance the control plane by one bounded step in inline mode, react to
+  newly appended facts, publish agent runs, then catch up projections and
+  attempt one outbound delivery). In subscriber mode, the one-shot adapter
+  inserts the shared scheduler after those schedule/reactor facts and before
+  delivery; delivery errors still reject the tick after that scheduler pass
+  has completed. The reaction stage runs Watch first, then resource
   transitions, artifact registration, delivery outcomes, and provider
   maintenance; it runs again after delivery.
   Only the intake pipeline touches an externally rate-limited API, which is
@@ -163,6 +166,9 @@ Bootstrap does not own:
   scheduler-serialiser port. The shared key encloses an entire activation
   scheduler pass, protecting recovery, capacity allocation, activation claim,
   workspace acquisition, and durable Run creation across runtime processes.
+  A subscriber pass supplies its own lifecycle signal to this lock acquisition,
+  so stopping a subscriber cancels waiting for another process's lock without
+  interrupting a pass that already entered the scheduler.
 - `wake init` MUST scaffold both a source-mode `docker/Dockerfile` and a
   packaged-mode `docker/Dockerfile.packaged`, regardless of the detected
   `dev.mode`, so `wake sandbox build` can pick the one its configured mode
@@ -229,6 +235,8 @@ Bootstrap does not own:
 | `runnerControls` | runner pause/unpause command surface | Backs the execution surface application's pause/unpause commands. |
 | `controlPlane` | control-plane service | Backs both pipelines' pause gate and the API surface application's `pause`/`resume` commands. |
 | `maintenance` | durable self-update maintenance lease | Shared pause source and exclusive ownership state for one source update. |
+| `activationScheduler` | bounded activation scheduler | The shared serialized scheduler used by inline advancement and subscriber reconciliation. |
+| `activationSchedulerSubscriber` | optional durable activation-scheduler host | Present only in subscriber mode; checkpoints every-fact scheduling and supplies startup/fallback reconciliation. |
 | `advanceOnce` | one bounded control-plane advance step | The unit of forward progress the runner pipeline's own advance stage performs. |
 | `projectionRunner` | catch-up/rebuild runner over the registered projection set | Shared by both pipelines and the CLI's `validate-state` rebuild command. |
 | `providers` | composed provider instances | One per configured/enabled integration; each contributes poll/inbound/delivery behaviour to the intake and runner pipelines. |

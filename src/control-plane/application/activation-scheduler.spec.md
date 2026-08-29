@@ -23,9 +23,14 @@ scheduler; it does not provide a second dispatch implementation.
 - If no serialiser is supplied, one scheduler instance still serializes its own
   callers in process, preserving the former `createAdvanceOnce` behaviour for
   direct callers and deterministic tests.
-- No durable subscription or scheduling-mode configuration is part of this
-  component yet. Tick, resident, and API callers remain compatibility callers
-  of the shared scheduler.
+- `runOnce` accepts an optional lifecycle signal. A serialiser uses it while
+  waiting to enter its critical section; once the scheduler operation has
+  started, that signal does not cancel domain recovery, reconciliation, or
+  dispatch. Direct callers may omit it and use the default live signal.
+- Subscriber scheduling is composed outside this component. Startup, durable
+  event, and fallback passes pass their subscriber lifecycle signal through to
+  this boundary, while Tick, resident, and API callers remain compatibility
+  callers of the shared scheduler.
 
 ## Dependencies and system role
 

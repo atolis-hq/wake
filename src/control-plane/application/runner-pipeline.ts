@@ -14,7 +14,15 @@ export interface RunnerPipelineStages {
 }
 
 export interface RunnerPipeline {
-  run(options: AdvanceOptions, signal?: AbortSignal): Promise<AdvanceResult>;
+  /**
+   * `beforeDelivery` lets the subscriber-mode one-shot adapter schedule the
+   * facts this pipeline has produced before an outbound delivery can block.
+   */
+  run(
+    options: AdvanceOptions,
+    signal?: AbortSignal,
+    beforeDelivery?: () => Promise<void>,
+  ): Promise<AdvanceResult>;
 }
 
 /**
@@ -25,7 +33,11 @@ export interface RunnerPipeline {
  */
 export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeline {
   const isPaused = async () => (await stages.isPaused?.()) ?? false;
-  const runOnce = async (options: AdvanceOptions, signal: AbortSignal): Promise<AdvanceResult> => {
+  const runOnce = async (
+    options: AdvanceOptions,
+    signal: AbortSignal,
+    beforeDelivery: (() => Promise<void>) | undefined,
+  ): Promise<AdvanceResult> => {
     if (await isPaused()) {
       await stages.catchUpProjections();
       return { kind: 'paused' };
@@ -44,14 +56,7 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
       if (await isPaused()) return { kind: 'paused' };
       await stages.publishAgentRuns?.();
       if (await isPaused()) return { kind: 'paused' };
-      await stages.catchUpProjections();
-      if (await isPaused()) return { kind: 'paused' };
-      await stages.deliver(signal);
-      if (await isPaused()) return { kind: 'paused' };
-      await stages.catchUpProjections();
-      if (await isPaused()) return { kind: 'paused' };
-      await stages.react();
-      return result;
+      return (await runDeliveryPhase(stages, isPaused, signal, beforeDelivery)) ?? result;
     } finally {
       await stages.catchUpProjections();
     }
@@ -61,11 +66,29 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
   // claim, checkpoint, and workspace lifecycle within one Wake process.
   let queue: Promise<unknown> = Promise.resolve();
   return {
-    run(options, signal = new AbortController().signal) {
-      const result = queue.then(() => runOnce(options, signal));
+    run(options, signal = new AbortController().signal, beforeDelivery) {
+      const result = queue.then(() => runOnce(options, signal, beforeDelivery));
       // A rejected tick must not prevent the next requested tick from running.
       queue = result.catch(() => {});
       return result;
     },
   };
+}
+
+async function runDeliveryPhase(
+  stages: RunnerPipelineStages,
+  isPaused: () => Promise<boolean>,
+  signal: AbortSignal,
+  beforeDelivery: (() => Promise<void>) | undefined,
+): Promise<AdvanceResult | undefined> {
+  await stages.catchUpProjections();
+  if (await isPaused()) return { kind: 'paused' };
+  await beforeDelivery?.();
+  if (await isPaused()) return { kind: 'paused' };
+  await stages.deliver(signal);
+  if (await isPaused()) return { kind: 'paused' };
+  await stages.catchUpProjections();
+  if (await isPaused()) return { kind: 'paused' };
+  await stages.react();
+  return undefined;
 }

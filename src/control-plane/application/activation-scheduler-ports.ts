@@ -66,6 +66,7 @@ export interface ExecutionPort {
 /** Protects one complete scheduler pass across local or competing processes. */
 export type ActivationSchedulerSerialiser = <Value>(
   operation: () => Promise<Value>,
+  signal?: AbortSignal,
 ) => Promise<Value>;
 
 export interface ActivationSchedulerDependencies {

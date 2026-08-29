@@ -7,7 +7,7 @@ import {
   createRunnerIdleWait,
   runProjectionPump,
 } from '../../../src/bootstrap/surface-cli-applications.js';
-import { ResidentHost, TickHost } from '../../../src/control-plane/index.js';
+import { createRunnerPipeline, ResidentHost, TickHost } from '../../../src/control-plane/index.js';
 import { InProcessJournalChangeSignal } from '../../../src/kernel/index.js';
 
 it('drains subscriber scheduling progress through a one-shot tick budget while running the pipeline', async () => {
@@ -24,7 +24,12 @@ it('drains subscriber scheduling progress through a one-shot tick budget while r
       })
       .mockResolvedValueOnce({ kind: 'no-work' }),
   };
-  const runnerPipeline = { run: vi.fn(async () => ({ kind: 'no-work' as const })) };
+  const runnerPipeline = {
+    run: vi.fn(async (_options, _signal, beforeDelivery: (() => Promise<void>) | undefined) => {
+      await beforeDelivery?.();
+      return { kind: 'no-work' as const };
+    }),
+  };
   const tick = new TickHost(
     createOneShotRunnerAdvance({
       activationSchedulerSubscriber: scheduler,
@@ -40,6 +45,47 @@ it('drains subscriber scheduling progress through a one-shot tick budget while r
 
   expect(scheduler.poke).toHaveBeenCalledTimes(3);
   expect(runnerPipeline.run).toHaveBeenCalledTimes(3);
+});
+
+it('pokes subscriber scheduling after schedule/reactor facts and before a failing delivery', async () => {
+  const trace: string[] = [];
+  const scheduler = {
+    poke: vi.fn(async () => {
+      trace.push('schedule');
+      return {
+        kind: 'progressed' as const,
+        dispatched: [{ activationId: 'activation-one', runId: 'run-one' }],
+      };
+    }),
+  };
+  const runnerPipeline = createRunnerPipeline({
+    catchUpProjections: async () => {
+      trace.push('projections');
+    },
+    runSchedules: async () => {
+      trace.push('run-schedules');
+    },
+    react: async () => {
+      trace.push('react');
+    },
+    advance: async () => ({ kind: 'no-work' as const }),
+    inlineActivationScheduling: false,
+    deliver: async () => {
+      trace.push('deliver');
+      throw new Error('delivery rejected');
+    },
+  });
+
+  await expect(
+    createOneShotRunnerAdvance({ activationSchedulerSubscriber: scheduler, runnerPipeline })({
+      maxProgress: 1,
+    }),
+  ).rejects.toThrow('delivery rejected');
+
+  expect(scheduler.poke).toHaveBeenCalledOnce();
+  expect(trace.indexOf('run-schedules')).toBeLessThan(trace.indexOf('schedule'));
+  expect(trace.indexOf('react')).toBeLessThan(trace.indexOf('schedule'));
+  expect(trace.indexOf('schedule')).toBeLessThan(trace.indexOf('deliver'));
 });
 
 it('does not let a blocking subscriber poke stall subscriber-mode resident runner work', async () => {

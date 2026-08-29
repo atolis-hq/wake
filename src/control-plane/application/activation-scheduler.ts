@@ -24,7 +24,7 @@ import {
 } from './execution-reconciliation.js';
 
 export interface ActivationScheduler {
-  runOnce(options: AdvanceOptions): Promise<AdvanceResult>;
+  runOnce(options: AdvanceOptions, signal?: AbortSignal): Promise<AdvanceResult>;
 }
 
 export function createActivationScheduler(
@@ -177,17 +177,24 @@ export function createActivationScheduler(
     });
   };
   const serialise = dependencies.schedulerSerialiser ?? createInProcessSerialiser();
-  return { runOnce: (options) => serialise(() => run(options)) };
+  return { runOnce: (options, signal) => serialise(() => run(options), signal) };
 }
 
 function createInProcessSerialiser() {
   let prior: Promise<void> = Promise.resolve();
-  return async <Value>(operation: () => Promise<Value>): Promise<Value> => {
-    const current = prior.then(operation);
+  return async <Value>(operation: () => Promise<Value>, signal?: AbortSignal): Promise<Value> => {
+    const current = prior.then(async () => {
+      throwIfAborted(signal);
+      return operation();
+    });
     prior = current.then(
       () => undefined,
       () => undefined,
     );
     return current;
   };
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw signal.reason ?? new Error('Activation scheduler run aborted');
 }

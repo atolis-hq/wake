@@ -1,7 +1,11 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
-import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
+import {
+  createCompositionRoot,
+  createOneShotRunnerAdvance,
+  parseRootConfig,
+} from '../../../src/bootstrap/index.js';
 import { DeliveryIntentEventType } from '../../../src/integrations/index.js';
 import {
   EventActorKind,
@@ -107,7 +111,7 @@ defineScenario(
   },
 );
 
-it('E2E-CONTROL-005: a blocked legacy reactor cannot delay unrelated subscriber scheduling', async () => {
+it('E2E-CONTROL-005: a held delivery cannot delay one-shot subscriber scheduling', async () => {
   const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
   const journal = new InMemoryEventJournal(clock);
   const deliveryEntered = deferred<void>();
@@ -167,9 +171,8 @@ it('E2E-CONTROL-005: a blocked legacy reactor cannot delay unrelated subscriber 
       };
     },
   });
-  const subscriber = runtime.activationSchedulerSubscriber;
-  if (subscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
-  const run = subscriber.start();
+  if (runtime.activationSchedulerSubscriber === undefined)
+    throw new Error('Expected subscriber-mode scheduler');
   try {
     const resource = await runtime.resources.discover(
       {
@@ -198,9 +201,6 @@ it('E2E-CONTROL-005: a blocked legacy reactor cannot delay unrelated subscriber 
         },
       }),
     ]);
-    const legacy = runtime.runnerPipeline.run({ maxProgress: 1 });
-    await deliveryEntered.promise;
-
     const item = await runtime.work.create(
       { workItemId: workId('slow-delivery'), objective: 'unrelated ready work' },
       commandContext(clock, 'ready-work'),
@@ -215,14 +215,15 @@ it('E2E-CONTROL-005: a blocked legacy reactor cannot delay unrelated subscriber 
       commandContext(clock, 'ready-start'),
     );
 
+    const oneShot = createOneShotRunnerAdvance(runtime)({ maxProgress: 1 });
     await subscriberDispatched.promise;
-    expect(trace).toEqual(['delivery-entered', 'subscriber-dispatched-ready-activation']);
+    await deliveryEntered.promise;
+    expect(trace).toEqual(['subscriber-dispatched-ready-activation', 'delivery-entered']);
 
     releaseDelivery.resolve();
-    await legacy;
+    await oneShot;
   } finally {
-    run.abort();
-    await run.done;
+    releaseDelivery.resolve();
   }
 });
 

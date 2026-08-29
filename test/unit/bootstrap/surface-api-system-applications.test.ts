@@ -10,7 +10,12 @@ it('uses the subscriber one-shot scheduler pass without duplicating dispatch thr
       dispatched: [{ activationId: 'activation-one', runId: 'run-one' }],
     })),
   };
-  const runnerPipeline = { run: vi.fn(async () => ({ kind: 'no-work' as const })) };
+  const runnerPipeline = {
+    run: vi.fn(async (_options, _signal, beforeDelivery: (() => Promise<void>) | undefined) => {
+      await beforeDelivery?.();
+      return { kind: 'no-work' as const };
+    }),
+  };
   const applications = createSurfaceApiApplications(
     {
       paths: { wakeRoot: tmpdir() },

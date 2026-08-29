@@ -33,10 +33,10 @@ separate `IntakePipeline`, not owned by this component.
   `maxConcurrentRuns` ceiling, the per-call `maxDispatches` burst cap, or no
   further eligible candidate.
 - **Runner pipeline** — the fixed ordered stage sequence
-  (`catchUpProjections` → `runSchedules` → Advancement → `react` →
-  `catchUpProjections` → `deliver` → `catchUpProjections` → `react`) that
-  one call to `RunnerPipeline.run` performs, wrapping exactly one
-  Advancement call. `poll` and `translateInbound` — the externally
+  (`catchUpProjections` → `runSchedules` → inline Advancement → `react` →
+  agent-run publication → `catchUpProjections` → optional subscriber
+  scheduling → `deliver` → `catchUpProjections` → `react`) that one call to
+  `RunnerPipeline.run` performs. `poll` and `translateInbound` — the externally
   rate-limited half of a tick — run on a separate `IntakePipeline` instead,
   not embedded in this sequence; see control-plane's `tick-host.spec.md`
   for why the two are split across independently-scheduled hosts.
@@ -145,7 +145,7 @@ own aggregate remains the source of that state.
   dispatched yet in this call. A workflow blocked this way is picked up by
   reconciliation or Advancement's `no-work` waiting check on a later call,
   not surfaced again by this one.
-- The Runner pipeline MUST run its eight stages in the fixed order given
+- The Runner pipeline MUST run its ordered stages in the fixed order given
   above, awaiting each stage fully before starting the next, exactly once
   per `run` call, and MUST return the `AdvanceResult` of the embedded
   Advancement call. `catchUpProjections` runs three times (before
@@ -162,9 +162,11 @@ own aggregate remains the source of that state.
   scheduling: an independently supervised, checkpointed activation subscriber
   reconsiders every durable fact, reconciles on startup and bounded fallback,
   and shares the scheduler serialiser. One-shot ticks still run the pipeline
-  to produce schedule and reactor facts, then poke that same scheduler;
-  resident publication, delivery, or reactor latency cannot hold subscriber
-  dispatch.
+  to produce schedule and reactor facts, then its ordered pre-delivery hook
+  pokes that same scheduler before outbound delivery. A later delivery error
+  still rejects the tick, but cannot undo or postpone that completed scheduler
+  pass; resident publication, delivery, or reactor latency cannot hold
+  subscriber dispatch.
 - When the shared pause is already active at the start of a Runner or Intake
   pipeline call, the pipeline MUST catch projections up exactly once before
   returning its paused/no-progress result. It MUST NOT invoke any operational
