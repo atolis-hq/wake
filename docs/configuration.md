@@ -123,6 +123,8 @@ execution:
 controlPlane:
   maxDispatches: 1
   maxConcurrentRuns: 1
+  activationScheduler:
+    mode: inline
   resident:
     pollBackoffMs: 1000
     maxPollBackoffMs: 16000
@@ -339,6 +341,7 @@ execution:
 | --- | --- | --- |
 | `controlPlane.maxDispatches` | positive integer; default `1` | Per-call burst cap: the maximum number of new Runs a single `advanceOnce` call will start, independent of and bounded by `maxConcurrentRuns`. `advanceOnce` fills open capacity within one call up to this cap rather than dispatching a single Run per call. |
 | `controlPlane.maxConcurrentRuns` | positive integer; default `1` | Maximum Runs that may be `started` system-wide. `advanceOnce` stops dispatching, and additional advancement calls return `no-work`, until capacity is available. |
+| `controlPlane.activationScheduler.mode` | `inline` (default) or `subscriber` | `inline` keeps activation scheduling in the runner pipeline. `subscriber` starts the one shared scheduler as an independently checkpointed durable subscription when `wake start` runs, so slow reactor or delivery work cannot delay activation scheduling. It checks every new journal fact, reconciles on startup and bounded fallback, and uses the same global scheduler lock as one-shot ticks. Rollback to `inline` is configuration-only. |
 | `controlPlane.schedules` | list; default `[]` | Scheduled workflow starts. Each entry is described below. |
 | `controlPlane.resident.pollBackoffMs` | positive integer; default `1000` | Exponential backoff base for intake's idle-or-erroring poll cadence and the runner's error-retry cadence — courtesy toward a rate-limited external API. Unrelated to journal consumption, which waits on a change signal instead of polling. |
 | `controlPlane.resident.maxPollBackoffMs` | positive integer; optional | Ceiling for that exponential backoff (default: `pollBackoffMs * 16`). |

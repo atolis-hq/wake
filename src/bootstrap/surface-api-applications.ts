@@ -280,6 +280,7 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
     async health() {
       const checkedAt = now();
       const selfUpdateFailure = await createSelfUpdateFailureLog(root.paths.wakeRoot).read();
+      const schedulerSubscription = root.activationSchedulerSubscriber?.health();
       const checks = [
         { name: 'journal', status: 'ok' as const },
         { name: 'projections', status: 'ok' as const },
@@ -291,6 +292,18 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
               status: 'degraded' as const,
               detail: describeSelfUpdateFailure(selfUpdateFailure),
             },
+        ...(schedulerSubscription === undefined
+          ? []
+          : [
+              {
+                name: 'activation-scheduler',
+                status:
+                  schedulerSubscription.status === 'healthy'
+                    ? ('ok' as const)
+                    : ('degraded' as const),
+                detail: `${schedulerSubscription.status} at checkpoint ${schedulerSubscription.checkpoint} after ${schedulerSubscription.consecutiveFailures} failures`,
+              },
+            ]),
       ];
       const adapters = root.providers.flatMap((instance) =>
         (instance.health?.() ?? []).map((check) => ({
@@ -406,6 +419,7 @@ async function performTick(
   sequence: number,
 ): Promise<ApiTickCommandResult> {
   const acceptedAt = now();
+  await root.activationSchedulerSubscriber?.poke({ maxProgress: 1 });
   await root.runnerPipeline.run({ maxProgress: 1 });
   return {
     commandId: `tick:${acceptedAt}:${sequence}`,

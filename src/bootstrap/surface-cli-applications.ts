@@ -68,7 +68,10 @@ export function createSurfaceCliApplications(
   api: ApiApplications,
   now: () => string,
 ): WakeCliApplications {
-  const runnerTick = new TickHost((options) => root.runnerPipeline.run(options));
+  const runnerTick = new TickHost(async (options) => {
+    await root.activationSchedulerSubscriber?.poke(options);
+    return root.runnerPipeline.run(options);
+  });
   const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
   const runnerIdleWait = createRunnerIdleWait(root, root.config.controlPlane?.resident);
   const reportResidentError = (label: 'intake' | 'runner') => async (error: unknown) => {
@@ -122,10 +125,13 @@ export function createSurfaceCliApplications(
         // pump, projections (e.g. the board's active-run card) never
         // reflect a run in progress — only its state before and after.
         const projectionPump = runProjectionPump(root, signal);
+        const schedulerSubscription = root.activationSchedulerSubscriber?.start(signal);
         const intakeRun = intakeResident.run(signal, budget);
         try {
           return await runnerResident.run(signal, budget);
         } finally {
+          schedulerSubscription?.abort();
+          await schedulerSubscription?.done;
           await intakeRun;
           await projectionPump;
           await closeAll(servers);

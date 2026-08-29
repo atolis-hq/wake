@@ -2,10 +2,13 @@ import { createPullRequestService, type ActivityRegistry } from '../activities/i
 import {
   ControlStreamKind,
   DispatchPolicy,
-  createAdvanceOnce,
+  createActivationScheduler,
+  createActivationSchedulerSubscriber,
   createControlPlaneService,
   createRunnerControlService,
   ineligibleRunners,
+  type ActivationScheduler,
+  type ActivationSchedulerSubscriber,
   type ControlPlaneView,
   type IntakePipeline,
   type RunnerPipeline,
@@ -44,6 +47,10 @@ import {
   type ProjectionStore,
 } from '../kernel/index.js';
 import { compileWorkflow, createOrchestrationService } from '../orchestration/index.js';
+import {
+  DurableSubscriptionHost,
+  createFileSubscriptionRunSerialiser,
+} from '../persistence/index.js';
 import {
   createResourceLookup,
   createResourceService,
@@ -119,7 +126,10 @@ export interface CompositionRoot {
   readonly controlPlane: ReturnType<typeof createControlPlaneService>;
   /** Shared operator-or-maintenance pause supplier for every resident runtime loop. */
   readonly isPaused: () => Promise<boolean>;
-  readonly advanceOnce: ReturnType<typeof createAdvanceOnce>;
+  readonly activationScheduler: ActivationScheduler;
+  /** Present only when resident scheduling is driven by the durable host. */
+  readonly activationSchedulerSubscriber?: ActivationSchedulerSubscriber;
+  readonly advanceOnce: ActivationScheduler['runOnce'];
   readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
@@ -256,7 +266,7 @@ export async function createCompositionRoot(
     ids,
     runners: new Set(Object.values(config.execution.runnerPools).flat()),
   });
-  const advanceOnce = createAdvanceOnce(
+  const activationScheduler = createActivationScheduler(
     orchestration,
     {
       ...execution,
@@ -284,6 +294,18 @@ export async function createCompositionRoot(
       },
     },
   );
+  const advanceOnce = activationScheduler.runOnce.bind(activationScheduler);
+  const activationSchedulerSubscriber =
+    config.controlPlane.activationScheduler.mode === 'subscriber'
+      ? createActivationSchedulerSubscriber(
+          new DurableSubscriptionHost(
+            journal,
+            checkpoints,
+            createFileSubscriptionRunSerialiser(paths.dataRoot),
+          ),
+          activationScheduler,
+        )
+      : undefined;
   const runtime = await composeIntegrationRuntime({
     config,
     journal,
@@ -296,6 +318,7 @@ export async function createCompositionRoot(
     execution,
     ...(transcriptStore === undefined ? {} : { transcriptStore }),
     advanceOnce,
+    inlineActivationScheduling: config.controlPlane.activationScheduler.mode === 'inline',
     controlPlane,
     isPaused: isRuntimePaused,
     clock,
@@ -334,6 +357,8 @@ export async function createCompositionRoot(
     runnerControls,
     controlPlane,
     isPaused: isRuntimePaused,
+    activationScheduler,
+    ...(activationSchedulerSubscriber === undefined ? {} : { activationSchedulerSubscriber }),
     advanceOnce,
     resolveResourceLink,
     ...runtime,

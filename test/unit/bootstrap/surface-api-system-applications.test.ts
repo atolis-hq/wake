@@ -98,6 +98,35 @@ it('stays ok when every adapter health check is ok', async () => {
   expect(response.data.status).toBe('ok');
 });
 
+it('surfaces durable activation scheduler subscription health', async () => {
+  const applications = createSurfaceApiApplications(
+    {
+      paths: { wakeRoot: tmpdir() },
+      config: {},
+      providers: [],
+      activationSchedulerSubscriber: {
+        health: () => ({
+          consumer: 'activation-scheduler',
+          status: 'degraded',
+          checkpoint: 4,
+          consecutiveFailures: 2,
+          lastError: new Error('scheduler failed'),
+        }),
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+
+  const response = await applications.system.health();
+
+  expect(response.data.status).toBe('degraded');
+  expect(response.data.checks).toContainEqual({
+    name: 'activation-scheduler',
+    status: 'degraded',
+    detail: 'degraded at checkpoint 4 after 2 failures',
+  });
+});
+
 it('surfaces commands from provider instances that expose them, skipping those that do not', async () => {
   const applications = createSurfaceApiApplications(
     {

@@ -2,6 +2,24 @@ import { describe, expect, it, vi } from 'vitest';
 import { createRunnerPipeline } from '../../../src/control-plane/application/runner-pipeline.js';
 
 describe('RunnerPipeline', () => {
+  it('can omit inline activation scheduling while keeping legacy reactors running', async () => {
+    const advance = vi.fn(async () => ({ kind: 'no-work' as const }));
+    const react = vi.fn(async () => undefined);
+    const pipeline = createRunnerPipeline({
+      catchUpProjections: async () => undefined,
+      runSchedules: async () => undefined,
+      react,
+      advance,
+      deliver: async () => undefined,
+      inlineActivationScheduling: false,
+    });
+
+    await pipeline.run({ maxProgress: 1 });
+
+    expect(advance).not.toHaveBeenCalled();
+    expect(react).toHaveBeenCalledTimes(2);
+  });
+
   it('catches projections up once without running operational stages while paused', async () => {
     const catchUpProjections = vi.fn(async () => undefined);
     const runSchedules = vi.fn(async () => undefined);

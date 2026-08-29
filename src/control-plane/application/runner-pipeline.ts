@@ -7,6 +7,8 @@ export interface RunnerPipelineStages {
   readonly runSchedules: () => Promise<void>;
   readonly react: () => Promise<void>;
   readonly advance: AdvanceOnce;
+  /** Subscriber mode owns scheduling in a separate durable host. */
+  readonly inlineActivationScheduling?: boolean;
   readonly publishAgentRuns?: () => Promise<void>;
   readonly deliver: (signal: AbortSignal) => Promise<void>;
 }
@@ -33,7 +35,10 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
       if (await isPaused()) return { kind: 'paused' };
       await stages.runSchedules();
       if (await isPaused()) return { kind: 'paused' };
-      const result = await stages.advance(options);
+      const result =
+        stages.inlineActivationScheduling === false
+          ? ({ kind: 'no-work' } as const)
+          : await stages.advance(options);
       if (await isPaused()) return { kind: 'paused' };
       await stages.react();
       if (await isPaused()) return { kind: 'paused' };

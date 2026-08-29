@@ -2,6 +2,8 @@ export * from './application/advance-once.js';
 
 export * from './application/activation-scheduler.js';
 
+export * from './application/activation-scheduler-subscriber.js';
+
 export type * from './application/activation-scheduler-ports.js';
 
 export * from './application/control-plane-projection.js';

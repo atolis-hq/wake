@@ -58,6 +58,28 @@ afterEach(async () => {
 });
 
 describe('target composition root', () => {
+  it('composes the activation scheduler as a durable subscriber only in subscriber mode', async () => {
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: parseRootConfig({
+        schemaVersion: 1,
+        execution: {
+          agentRunners: { fake: { kind: 'fake' } },
+          runnerPools: { standard: ['fake'] },
+          defaultRunnerPool: 'standard',
+        },
+        orchestration: { workflows: {} },
+        controlPlane: { activationScheduler: { mode: 'subscriber' } },
+        integrations: {},
+        surfaces: {},
+      }),
+      journal: new InMemoryEventJournal({ now: () => new Date('2026-08-29T00:00:00.000Z') }),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+    });
+
+    expect(runtime.activationSchedulerSubscriber).toBeDefined();
+  });
+
   it('recovers durable started Runs through the live advance composition', async () => {
     const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);
