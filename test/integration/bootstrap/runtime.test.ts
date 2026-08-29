@@ -10,6 +10,7 @@ import {
   activityWorkflowInstanceId,
 } from '../../../src/activities/index.js';
 import {
+  analyticsProjection,
   createCompositionRoot,
   createSurfaceApplications,
   parseRootConfig,
@@ -683,6 +684,70 @@ describe('target composition root', () => {
     await runtime.delivery.deliverNext(new AbortController().signal);
 
     expect(deliveries).toBe(1);
+  });
+
+  it('delivers from its targeted projection while an unrelated projection is blocked and the scheduler advances', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    const projections = new BlockingNamespaceProjectionStore(analyticsProjection.name);
+    let deliveries = 0;
+    const runtime = await createCompositionRoot('C:/wake-targeted-delivery', {
+      config: fakeProviderRootConfig(),
+      journal,
+      projections,
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+      decorateDeliveryAdapter: (adapter) => ({
+        async deliver(intent, signal) {
+          deliveries += 1;
+          return adapter.deliver(intent, signal);
+        },
+        reconcile: adapter.reconcile.bind(adapter),
+      }),
+    });
+    const resource = await runtime.resources.discover(
+      {
+        resourceId: resId('targeted-delivery'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'fake', key: 'targeted-delivery' },
+        capabilities: [],
+      },
+      commandContext(clock, 'targeted-delivery-resource'),
+    );
+    const blockedProjection = runtime.projectionSubscriptions.catchUp(analyticsProjection);
+    await projections.blockedWriteStarted.promise;
+    const subscriber = runtime.activationSchedulerSubscriber.start();
+    try {
+      await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
+        createEventDraft({
+          eventId: 'targeted-delivery-intent',
+          eventType: DeliveryIntentEventType.StatusPublishRequested,
+          occurredAt: clock.now().toISOString(),
+          correlationId: 'targeted-delivery-intent',
+          causationId: 'targeted-delivery-intent',
+          actor: { kind: EventActorKind.System, id: 'test' },
+          source: { kind: EventSourceKind.Internal, id: 'test' },
+          stream: { kind: 'resource', id: resource.resourceId },
+          payload: {
+            workflowInstanceId: 'workflow-targeted-delivery',
+            activationId: 'activation-targeted-delivery',
+            resourceId: resource.resourceId,
+            body: 'deliver despite unrelated projection latency',
+          },
+        }),
+      ]);
+      await vi.waitFor(async () => {
+        expect(await runtime.checkpoints.load(activationSchedulerSubscriptionConsumer)).toBe(2);
+      });
+
+      await runtime.runnerPipeline.run({ maxProgress: 1 }, new AbortController().signal);
+
+      expect(deliveries).toBe(1);
+    } finally {
+      subscriber.abort();
+      projections.releaseBlockedWrite();
+      await Promise.all([subscriber.done, blockedProjection]);
+    }
   });
 
   it('injects only domain-owned config and central persistence ports', async () => {
@@ -1457,6 +1522,32 @@ function deferred<Value>() {
     resolve = next;
   });
   return { promise, resolve };
+}
+
+class BlockingNamespaceProjectionStore extends InMemoryProjectionStore {
+  readonly blockedWriteStarted = deferred<void>();
+  private readonly release = deferred<void>();
+
+  constructor(private readonly blockedNamespace: string) {
+    super();
+  }
+
+  override async write<Value>(projection: {
+    readonly namespace: string;
+    readonly key: string;
+    readonly lastGlobalPosition: number;
+    readonly value: Value;
+  }): Promise<void> {
+    if (projection.namespace === this.blockedNamespace) {
+      this.blockedWriteStarted.resolve();
+      await this.release.promise;
+    }
+    await super.write(projection);
+  }
+
+  releaseBlockedWrite(): void {
+    this.release.resolve();
+  }
 }
 
 async function startComposedWorkflow(

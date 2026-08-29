@@ -282,6 +282,9 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
       const checkedAt = now();
       const selfUpdateFailure = await createSelfUpdateFailureLog(root.paths.wakeRoot).read();
       const schedulerSubscription = root.activationSchedulerSubscriber.health();
+      const projectionHealth = new Map(
+        root.projectionSubscriptions.health().map((snapshot) => [snapshot.consumer, snapshot]),
+      );
       const checks = [
         { name: 'journal', status: 'ok' as const },
         { name: 'projections', status: 'ok' as const },
@@ -293,18 +296,10 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
               status: 'degraded' as const,
               detail: describeSelfUpdateFailure(selfUpdateFailure),
             },
-        ...(schedulerSubscription === undefined
-          ? []
-          : [
-              {
-                name: 'activation-scheduler',
-                status:
-                  schedulerSubscription.status === 'healthy'
-                    ? ('ok' as const)
-                    : ('degraded' as const),
-                detail: `${schedulerSubscription.status} at checkpoint ${schedulerSubscription.checkpoint} after ${schedulerSubscription.consecutiveFailures} failures`,
-              },
-            ]),
+        subscriptionHealthCheck('activation-scheduler', schedulerSubscription),
+        ...root.projectionSubscriptions.subscriptions.map(({ consumer }) =>
+          subscriptionHealthCheck(consumer, projectionHealth.get(consumer)),
+        ),
       ];
       const adapters = root.providers.flatMap((instance) =>
         (instance.health?.() ?? []).map((check) => ({
@@ -359,6 +354,26 @@ function commandAccepted(command: { readonly idempotencyKey: string }, acceptedA
     idempotencyKey: command.idempotencyKey,
     acceptedAt,
     status: ApiCommandStatus.Accepted,
+  };
+}
+
+function subscriptionHealthCheck(
+  name: string,
+  snapshot:
+    | {
+        readonly status: 'starting' | 'healthy' | 'degraded' | 'stopped';
+        readonly checkpoint: number;
+        readonly consecutiveFailures: number;
+      }
+    | undefined,
+) {
+  const status = snapshot?.status ?? 'starting';
+  const checkpoint = snapshot?.checkpoint ?? 0;
+  const consecutiveFailures = snapshot?.consecutiveFailures ?? 0;
+  return {
+    name,
+    status: status === 'healthy' ? ('ok' as const) : ('degraded' as const),
+    detail: `${status} at checkpoint ${checkpoint} after ${consecutiveFailures} failures`,
   };
 }
 

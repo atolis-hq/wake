@@ -1,6 +1,5 @@
 export interface IntakePipelineStages {
   readonly isPaused?: () => Promise<boolean>;
-  readonly catchUpProjections: () => Promise<void>;
   readonly poll: (signal: AbortSignal) => Promise<number>;
   readonly translateInbound: () => Promise<number>;
 }
@@ -23,20 +22,11 @@ export function createIntakePipeline(stages: IntakePipelineStages): IntakePipeli
   const isPaused = async () => (await stages.isPaused?.()) ?? false;
   return {
     async run(signal) {
-      if (await isPaused()) {
-        await stages.catchUpProjections();
-        return { processed: false };
-      }
-      await stages.catchUpProjections();
-      try {
-        if (await isPaused()) return { processed: false };
-        const polled = await stages.poll(signal);
-        if (await isPaused()) return { processed: false };
-        const translated = await stages.translateInbound();
-        return { processed: polled > 0 || translated > 0 };
-      } finally {
-        await stages.catchUpProjections();
-      }
+      if (await isPaused()) return { processed: false };
+      const polled = await stages.poll(signal);
+      if (await isPaused()) return { processed: false };
+      const translated = await stages.translateInbound();
+      return { processed: polled > 0 || translated > 0 };
     },
   };
 }

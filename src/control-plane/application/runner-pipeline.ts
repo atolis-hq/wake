@@ -4,7 +4,6 @@ export type RunnerPipelineResult = Extract<AdvanceResult, { readonly kind: 'no-w
 
 export interface RunnerPipelineStages {
   readonly isPaused?: () => Promise<boolean>;
-  readonly catchUpProjections: () => Promise<void>;
   readonly runSchedules: () => Promise<void>;
   readonly react: () => Promise<void>;
   readonly publishAgentRuns?: () => Promise<void>;
@@ -36,25 +35,16 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
     signal: AbortSignal,
     beforeDelivery: (() => Promise<void>) | undefined,
   ): Promise<RunnerPipelineResult> => {
-    if (await isPaused()) {
-      await stages.catchUpProjections();
-      return { kind: 'paused' };
-    }
-    await stages.catchUpProjections();
-    try {
-      if (await isPaused()) return { kind: 'paused' };
-      await stages.runSchedules();
-      if (await isPaused()) return { kind: 'paused' };
-      await stages.react();
-      if (await isPaused()) return { kind: 'paused' };
-      await stages.publishAgentRuns?.();
-      if (await isPaused()) return { kind: 'paused' };
-      return (
-        (await runDeliveryPhase(stages, isPaused, signal, beforeDelivery)) ?? { kind: 'no-work' }
-      );
-    } finally {
-      await stages.catchUpProjections();
-    }
+    if (await isPaused()) return { kind: 'paused' };
+    await stages.runSchedules();
+    if (await isPaused()) return { kind: 'paused' };
+    await stages.react();
+    if (await isPaused()) return { kind: 'paused' };
+    await stages.publishAgentRuns?.();
+    if (await isPaused()) return { kind: 'paused' };
+    return (
+      (await runDeliveryPhase(stages, isPaused, signal, beforeDelivery)) ?? { kind: 'no-work' }
+    );
   };
   // The API's manual Tick Now endpoint and the resident tick host share this
   // pipeline. Serializing all callers prevents them from racing the same run
@@ -76,13 +66,10 @@ async function runDeliveryPhase(
   signal: AbortSignal,
   beforeDelivery: (() => Promise<void>) | undefined,
 ): Promise<RunnerPipelineResult | undefined> {
-  await stages.catchUpProjections();
   if (await isPaused()) return { kind: 'paused' };
   await beforeDelivery?.();
   if (await isPaused()) return { kind: 'paused' };
   await stages.deliver(signal);
-  if (await isPaused()) return { kind: 'paused' };
-  await stages.catchUpProjections();
   if (await isPaused()) return { kind: 'paused' };
   await stages.react();
   return undefined;

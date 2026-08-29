@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { promisify } from 'node:util';
 import { BuiltInActivityName, agentActivityDefinition } from '../activities/index.js';
-import { IntakeHost, ResidentHost, TickHost } from '../control-plane/index.js';
+import {
+  IntakeHost,
+  ResidentHost,
+  TickHost,
+  type HostBudget,
+  type HostResult,
+} from '../control-plane/index.js';
 import {
   ExecutionCancellationReason,
   ExecutionFailureCode,
@@ -109,33 +115,30 @@ export function createSurfaceCliApplications(
   return {
     tick: {
       async run(budget) {
-        // Mirrors legacy's combined one-shot `runTick`: intake once, then
-        // let the runner loop drain up to its own budget.
-        await intakeHost.run(budget);
-        return runnerTick.run(budget);
+        try {
+          await root.projectionSubscriptions.catchUpOnce();
+          // Mirrors legacy's combined one-shot `runTick`: intake once, then
+          // let the runner loop drain up to its own budget.
+          await intakeHost.run(budget);
+          return await runnerTick.run(budget);
+        } finally {
+          await root.projectionSubscriptions.catchUpOnce();
+        }
       },
     },
     start: {
       async run(signal, budget) {
         if (root.config.surfaces.web.enabled) await startHttp({}, true);
         else if (root.config.surfaces.api.enabled) await startHttp({}, false);
-        // Runs on its own cadence, independent of both resident loops:
-        // `advance()` blocks for an activity's full duration before the
-        // runner loop's own catchUpProjections runs again, so without this
-        // pump, projections (e.g. the board's active-run card) never
-        // reflect a run in progress — only its state before and after.
-        const projectionPump = runProjectionPump(root, signal);
-        const schedulerSubscription = root.activationSchedulerSubscriber.start(signal);
-        const intakeRun = intakeResident.run(signal, budget);
-        try {
-          return await runnerResident.run(signal, budget);
-        } finally {
-          schedulerSubscription.abort();
-          await schedulerSubscription.done;
-          await intakeRun;
-          await projectionPump;
-          await closeAll(servers);
-        }
+        return runResidentLifecycle({
+          signal,
+          budget,
+          projectionSubscriptions: root.projectionSubscriptions,
+          activationSchedulerSubscriber: root.activationSchedulerSubscriber,
+          intakeResident,
+          runnerResident,
+          close: () => closeAll(servers),
+        });
       },
     },
     stop: {
@@ -269,27 +272,46 @@ export function createRunnerIdleWait(
   };
 }
 
-export async function runProjectionPump(
-  root: Pick<CompositionRoot, 'projectionSubscriptions' | 'journal'>,
-  signal: AbortSignal,
-): Promise<void> {
-  while (!signal.aborted) {
-    let afterPosition: number;
-    try {
-      afterPosition = await root.journal.latestGlobalPosition();
-    } catch (error) {
-      reportRunnerWaitError(error);
-      await waitAfterRunnerError(root, signal);
-      continue;
-    }
-    try {
-      await root.projectionSubscriptions.catchUpOnce(signal);
-    } catch (error) {
-      process.stderr.write(
-        `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
-    }
-    await waitForRunnerEventsAfter(root, afterPosition, signal);
+export interface ResidentLifecycleInput {
+  readonly signal: AbortSignal;
+  readonly budget: HostBudget;
+  readonly projectionSubscriptions: Pick<CompositionRoot['projectionSubscriptions'], 'start'>;
+  readonly activationSchedulerSubscriber: Pick<
+    CompositionRoot['activationSchedulerSubscriber'],
+    'start'
+  >;
+  readonly intakeResident: Pick<ResidentHost, 'run'>;
+  readonly runnerResident: Pick<ResidentHost, 'run'>;
+  readonly close: () => Promise<void>;
+}
+
+/** Starts independently checkpointed subscriptions before their resident consumers. */
+export async function runResidentLifecycle(input: ResidentLifecycleInput): Promise<HostResult> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (input.signal.aborted) abort();
+  else input.signal.addEventListener('abort', abort, { once: true });
+  let projectionRun:
+    ReturnType<ResidentLifecycleInput['projectionSubscriptions']['start']> | undefined;
+  let schedulerRun:
+    ReturnType<ResidentLifecycleInput['activationSchedulerSubscriber']['start']> | undefined;
+  let intakeRun: Promise<HostResult> | undefined;
+  try {
+    projectionRun = input.projectionSubscriptions.start(controller.signal);
+    schedulerRun = input.activationSchedulerSubscriber.start(controller.signal);
+    intakeRun = input.intakeResident.run(controller.signal, input.budget);
+    return await input.runnerResident.run(controller.signal, input.budget);
+  } finally {
+    controller.abort();
+    projectionRun?.abort();
+    schedulerRun?.abort();
+    await Promise.all([
+      ...(intakeRun === undefined ? [] : [intakeRun]),
+      ...(projectionRun === undefined ? [] : [projectionRun.done]),
+      ...(schedulerRun === undefined ? [] : [schedulerRun.done]),
+    ]);
+    input.signal.removeEventListener('abort', abort);
+    await input.close();
   }
 }
 
@@ -315,19 +337,6 @@ async function waitForRunnerEvents(
   return currentPosition;
 }
 
-async function waitForRunnerEventsAfter(
-  root: Pick<CompositionRoot, 'journal'>,
-  afterPosition: number,
-  signal: AbortSignal,
-): Promise<void> {
-  try {
-    await root.journal.waitForEventsAfter(afterPosition, signal, JOURNAL_CHANGE_FALLBACK_MS);
-  } catch (error) {
-    reportRunnerWaitError(error);
-    await sleepUntilAbort(signal, JOURNAL_CHANGE_FALLBACK_MS);
-  }
-}
-
 function sampleRunnerPosition(root: Pick<CompositionRoot, 'journal'>): Promise<number> {
   try {
     return root.journal.latestGlobalPosition().catch((error: unknown) => {
@@ -338,13 +347,6 @@ function sampleRunnerPosition(root: Pick<CompositionRoot, 'journal'>): Promise<n
     reportRunnerWaitError(error);
     return Promise.resolve(0);
   }
-}
-
-async function waitAfterRunnerError(
-  root: Pick<CompositionRoot, 'journal'>,
-  signal: AbortSignal,
-): Promise<void> {
-  await waitForRunnerEventsAfter(root, 0, signal);
 }
 
 function reportRunnerWaitError(error: unknown): void {

@@ -26,6 +26,7 @@ import {
   IntegrationStreamKind,
   PollService,
   ProviderRegistry,
+  deliveryProjectionDefinitions,
   fakeProviderDefinition,
   type DeliveryIntentView,
   type DurableFakeDeliveryProvider,
@@ -245,15 +246,13 @@ export async function composeIntegrationRuntime(
     input.projections,
     input.conversations,
   );
-  const catchUpProjections = async () => {
-    await projectionSubscriptions.catchUpOnce();
-  };
   // Only poll hits a rate-limited external API, so only this half of the
   // Tick needs a backing-off host; see bootstrap/surface-cli-applications.ts.
+  // Inbound translation reads durable provider facts through its own services,
+  // so it has no projection freshness dependency that could hold shutdown or
+  // unrelated resident work behind a blocked projection consumer.
   const intakePipeline = createIntakePipeline({
     isPaused: input.isPaused,
-    catchUpProjections: () =>
-      observeMemory(memoryProfile, 'intake.projections', catchUpProjections),
     poll: async (signal) => {
       return observeMemory(memoryProfile, 'intake.poll', async () => {
         let appended = 0;
@@ -275,8 +274,6 @@ export async function composeIntegrationRuntime(
   });
   const runnerPipeline = createRunnerPipeline({
     isPaused: input.isPaused,
-    catchUpProjections: () =>
-      observeMemory(memoryProfile, 'runner.projections', catchUpProjections),
     runSchedules: () =>
       observeMemory(memoryProfile, 'runner.schedules', async () => {
         for (const schedule of input.config.controlPlane.schedules)
@@ -302,6 +299,11 @@ export async function composeIntegrationRuntime(
       }),
     deliver: (signal) =>
       observeMemory(memoryProfile, 'runner.deliver', async () => {
+        // Delivery reads its outbox from a projection. Projection writes do
+        // not append journal facts, so catch up this one dependency directly
+        // instead of waiting for unrelated resident projection consumers.
+        for (const definition of deliveryProjectionDefinitions)
+          await projectionSubscriptions.catchUp(definition, signal);
         await delivery.deliverNext(signal);
       }),
   });

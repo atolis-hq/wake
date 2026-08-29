@@ -5,7 +5,7 @@ import {
 } from '../../../src/bootstrap/runner-tick-adapter.js';
 import {
   createRunnerIdleWait,
-  runProjectionPump,
+  runResidentLifecycle,
 } from '../../../src/bootstrap/surface-cli-applications.js';
 import { createRunnerPipeline, ResidentHost, TickHost } from '../../../src/control-plane/index.js';
 import { InProcessJournalChangeSignal } from '../../../src/kernel/index.js';
@@ -33,6 +33,7 @@ it('drains subscriber scheduling progress through a one-shot tick budget while r
   const tick = new TickHost(
     createOneShotRunnerAdvance({
       activationSchedulerSubscriber: scheduler,
+      projectionSubscriptions: { catchUpOnce: async () => 0 },
       runnerPipeline,
     }),
   );
@@ -59,9 +60,6 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
     }),
   };
   const runnerPipeline = createRunnerPipeline({
-    catchUpProjections: async () => {
-      trace.push('projections');
-    },
     runSchedules: async () => {
       trace.push('run-schedules');
     },
@@ -75,7 +73,11 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
   });
 
   await expect(
-    createOneShotRunnerAdvance({ activationSchedulerSubscriber: scheduler, runnerPipeline })({
+    createOneShotRunnerAdvance({
+      activationSchedulerSubscriber: scheduler,
+      projectionSubscriptions: { catchUpOnce: async () => 0 },
+      runnerPipeline,
+    })({
       maxProgress: 1,
     }),
   ).rejects.toThrow('delivery rejected');
@@ -86,6 +88,64 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
   expect(trace.indexOf('schedule')).toBeLessThan(trace.indexOf('deliver'));
 });
 
+it('catches projections before pipeline work, before the scheduler poke, and after failure', async () => {
+  const trace: string[] = [];
+  const scheduler = {
+    poke: vi.fn(async () => {
+      trace.push('schedule');
+      return { kind: 'no-work' as const };
+    }),
+  };
+  const root = {
+    activationSchedulerSubscriber: scheduler,
+    projectionSubscriptions: {
+      catchUpOnce: vi.fn(async () => {
+        trace.push('projections');
+        return 0;
+      }),
+    },
+    runnerPipeline: {
+      run: vi.fn(async (_options, _signal, beforeDelivery: (() => Promise<void>) | undefined) => {
+        trace.push('pipeline');
+        await beforeDelivery?.();
+        trace.push('delivery');
+        throw new Error('delivery rejected');
+      }),
+    },
+  };
+
+  await expect(createOneShotRunnerAdvance(root)({ maxProgress: 1 })).rejects.toThrow(
+    'delivery rejected',
+  );
+
+  expect(trace).toEqual([
+    'projections',
+    'pipeline',
+    'projections',
+    'schedule',
+    'delivery',
+    'projections',
+  ]);
+});
+
+it('catches projections again while unwinding an initial projection barrier failure', async () => {
+  const projectionSubscriptions = {
+    catchUpOnce: vi.fn().mockRejectedValueOnce(new Error('projection unavailable')),
+  };
+  const runnerPipeline = { run: vi.fn(async () => ({ kind: 'no-work' as const })) };
+
+  await expect(
+    createOneShotRunnerAdvance({
+      activationSchedulerSubscriber: { poke: async () => ({ kind: 'no-work' as const }) },
+      projectionSubscriptions,
+      runnerPipeline,
+    })({ maxProgress: 1 }),
+  ).rejects.toThrow('projection unavailable');
+
+  expect(projectionSubscriptions.catchUpOnce).toHaveBeenCalledTimes(2);
+  expect(runnerPipeline.run).not.toHaveBeenCalled();
+});
+
 it('returns a paused one-shot pipeline result without poking the subscriber', async () => {
   const scheduler = { poke: vi.fn(async () => ({ kind: 'no-work' as const })) };
   const runnerPipeline = {
@@ -93,7 +153,11 @@ it('returns a paused one-shot pipeline result without poking the subscriber', as
   };
 
   await expect(
-    createOneShotRunnerAdvance({ activationSchedulerSubscriber: scheduler, runnerPipeline })({
+    createOneShotRunnerAdvance({
+      activationSchedulerSubscriber: scheduler,
+      projectionSubscriptions: { catchUpOnce: async () => 0 },
+      runnerPipeline,
+    })({
       maxProgress: 1,
     }),
   ).resolves.toEqual({ kind: 'paused' });
@@ -127,28 +191,74 @@ it('does not let a blocking subscriber poke stall subscriber-mode resident runne
   expect(scheduler.poke).not.toHaveBeenCalled();
 });
 
-it('advances the resident projection pump', async () => {
+it('supervises projection subscriptions before residents and aborts every owned run before awaiting', async () => {
   const controller = new AbortController();
-  let projectionRuns = 0;
-
-  await runProjectionPump(
-    {
-      projectionSubscriptions: {
-        catchUpOnce: async () => {
-          projectionRuns += 1;
-          controller.abort();
-        },
+  const trace: string[] = [];
+  const subscriptionRun = (name: string) => {
+    let resolve!: () => void;
+    const done = new Promise<void>((next) => {
+      resolve = next;
+    }).then(() => {
+      trace.push(`${name}:done`);
+    });
+    return {
+      abort: vi.fn(() => {
+        trace.push(`${name}:abort`);
+        resolve();
+      }),
+      done,
+    };
+  };
+  const projections = subscriptionRun('projections');
+  const scheduler = subscriptionRun('scheduler');
+  let intakeSettled = false;
+  await runResidentLifecycle({
+    signal: controller.signal,
+    budget: { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 },
+    projectionSubscriptions: {
+      start: vi.fn(() => {
+        trace.push('projections:start');
+        return projections;
+      }),
+    },
+    activationSchedulerSubscriber: {
+      start: vi.fn(() => {
+        trace.push('scheduler:start');
+        return scheduler;
+      }),
+    },
+    intakeResident: {
+      run: async (signal: AbortSignal) => {
+        trace.push('intake:start');
+        await new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        intakeSettled = true;
+        return { advances: 0, runs: 0, stoppedBecause: 'shutdown' };
       },
-      journal: {
-        latestGlobalPosition: async () => 0,
-        waitForEventsAfter: async () => undefined,
-        changeSignal: new InProcessJournalChangeSignal(),
+    },
+    runnerResident: {
+      run: async () => {
+        trace.push('runner');
+        controller.abort();
+        return { advances: 0, runs: 0, stoppedBecause: 'shutdown' };
       },
-    } as never,
-    controller.signal,
-  );
+    },
+    close: async () => undefined,
+  });
 
-  expect(projectionRuns).toBe(1);
+  expect(trace.slice(0, 4)).toEqual([
+    'projections:start',
+    'scheduler:start',
+    'intake:start',
+    'runner',
+  ]);
+  expect(projections.abort).toHaveBeenCalledOnce();
+  expect(scheduler.abort).toHaveBeenCalledOnce();
+  expect(intakeSettled).toBe(true);
+  expect(trace.indexOf('projections:abort')).toBeLessThan(trace.indexOf('projections:done'));
+  expect(trace.indexOf('scheduler:abort')).toBeLessThan(trace.indexOf('scheduler:done'));
+  expect(trace.indexOf('scheduler:abort')).toBeLessThan(trace.indexOf('projections:done'));
 });
 
 it('does not initialize the resident cursor until idle waiting starts', async () => {
@@ -281,37 +391,6 @@ it('uses the durable wait when an append lands between runner pass and idle wait
   expect(waitForEventsAfter).toHaveBeenCalledTimes(1);
 });
 
-it('keeps the projection pump alive when cursor sampling fails once', async () => {
-  const controller = new AbortController();
-  let runs = 0;
-  const latestGlobalPosition = vi
-    .fn<() => Promise<number>>()
-    .mockRejectedValueOnce(new Error('cursor unavailable'))
-    .mockResolvedValue(0);
-  const waitForEventsAfter = vi.fn(async () => undefined);
-  await expect(
-    runProjectionPump(
-      {
-        projectionSubscriptions: {
-          catchUpOnce: async () => {
-            runs += 1;
-            controller.abort();
-          },
-        },
-        journal: {
-          latestGlobalPosition,
-          waitForEventsAfter,
-          changeSignal: new InProcessJournalChangeSignal(),
-        },
-      } as never,
-      controller.signal,
-    ),
-  ).resolves.toBeUndefined();
-  expect(runs).toBe(1);
-  expect(latestGlobalPosition).toHaveBeenCalledTimes(2);
-  expect(waitForEventsAfter).toHaveBeenCalledWith(0, expect.any(AbortSignal), expect.any(Number));
-});
-
 it('keeps resident waiting alive when the initial and current cursors fail', async () => {
   const latestGlobalPosition = vi
     .fn<() => Promise<number>>()
@@ -341,48 +420,4 @@ it('keeps resident waiting alive when the initial and current cursors fail', asy
     wait(new AbortController().signal, { consecutiveIdleTicks: 2, consecutiveErrorTicks: 0 }),
   ).resolves.toBeUndefined();
   expect(waitForEventsAfter).toHaveBeenCalledWith(0, expect.any(AbortSignal), expect.any(Number));
-});
-
-it('waits after the pass cursor when an append lands during projection', async () => {
-  const controller = new AbortController();
-  let position = 0;
-  let releasePass!: () => void;
-  let passStarted!: () => void;
-  const passBarrier = new Promise<void>((resolve) => {
-    releasePass = resolve;
-  });
-  const passObserved = new Promise<void>((resolve) => {
-    passStarted = resolve;
-  });
-  const waitForEventsAfter = vi.fn(async (after: number) => {
-    expect(after).toBe(0);
-    controller.abort();
-  });
-  const journal = {
-    readAll: async () => {
-      const snapshot = [{ globalPosition: position }];
-      passStarted();
-      await passBarrier;
-      return snapshot;
-    },
-    latestGlobalPosition: async () => position,
-    waitForEventsAfter,
-    changeSignal: new InProcessJournalChangeSignal(),
-  };
-  const pump = runProjectionPump(
-    {
-      projectionSubscriptions: {
-        catchUpOnce: async () => {
-          await journal.readAll();
-        },
-      },
-      journal,
-    } as never,
-    controller.signal,
-  );
-  await passObserved;
-  position = 1;
-  releasePass();
-  await pump;
-  expect(waitForEventsAfter).toHaveBeenCalledTimes(1);
 });

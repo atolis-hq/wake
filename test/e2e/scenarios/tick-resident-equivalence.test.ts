@@ -75,14 +75,13 @@ it('E2E-CONTROL-006: tick and resident lifecycle use subscription-only schedulin
     await startWorkflow(root, clock, 'tick');
     await applications.cli.tick.run(budget);
 
-    const subscription = root.activationSchedulerSubscriber.start(controller.signal);
+    const residentRun = applications.cli.start.run(controller.signal, budget);
     try {
       await startWorkflow(root, clock, 'resident');
       await residentStarted.promise;
     } finally {
       controller.abort();
-      subscription.abort();
-      await subscription.done;
+      await residentRun;
     }
 
     expect(starts).toBe(2);

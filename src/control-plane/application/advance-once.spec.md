@@ -33,10 +33,9 @@ separate `IntakePipeline`, not owned by this component.
   `maxConcurrentRuns` ceiling, the per-call `maxDispatches` burst cap, or no
   further eligible candidate.
 - **Runner pipeline** — the fixed ordered stage sequence
-  (`catchUpProjections` → `runSchedules` → `react` → agent-run publication
-  → `catchUpProjections` → `deliver` → `catchUpProjections` → `react`)
+  (`runSchedules` → `react` → agent-run publication → `deliver` → `react`)
   that one call to `RunnerPipeline.run` performs. It never advances the
-  activation scheduler. `poll` and `translateInbound` — the externally
+  activation scheduler or catches every projection. `poll` and `translateInbound` — the externally
   rate-limited half of a tick — run on a separate `IntakePipeline` instead,
   not embedded in this sequence; see control-plane's `tick-host.spec.md`
   for why the two are split across independently scheduled hosts.
@@ -148,13 +147,13 @@ Work's own aggregate remains the source of that state.
 - The Runner pipeline MUST run its ordered stages in the fixed order given
   above, awaiting each stage fully before starting the next, exactly once
   per `run` call, and MUST return only its operational `no-work` or `paused`
-  status: it never reports scheduler progress. `catchUpProjections` runs three
-  times (before `runSchedules`, before `deliver`, and after `deliver`) so each
-  stage observes projections caught up to the facts the prior stage produced.
-  `react` runs twice: once after schedule facts are produced and once for
-  delivery outcomes after `deliver`. A `finally` block runs
-  `catchUpProjections` a fourth time regardless of outcome, including when an
-  earlier stage throws.
+  status: it never reports scheduler progress. `react` runs twice: once after
+  schedule facts are produced and once for delivery outcomes after `deliver`.
+  The one-shot adapter owns all-projection barriers before pipeline work,
+  before its scheduler poke/delivery boundary, and while unwinding; the
+  resident runtime uses independently supervised subscriptions. Delivery is
+  the explicit resident freshness barrier because it reads its outbox from a
+  projection.
 - `RunnerPipeline.run`'s `signal` parameter defaults to a fresh,
   never-aborted `AbortController`'s signal when the caller omits one.
 - Bootstrap always composes an independently supervised, checkpointed
@@ -167,8 +166,8 @@ Work's own aggregate remains the source of that state.
   resident publication, delivery, or reactor latency cannot hold subscriber
   dispatch.
 - When the shared pause is already active at the start of a Runner or Intake
-  pipeline call, the pipeline MUST catch projections up exactly once before
-  returning its paused/no-progress result. It MUST NOT invoke any operational
+  pipeline call, the pipeline MUST return its paused/no-progress result
+  without invoking any operational
   stage (`runSchedules`, reactors, publication, delivery, poll,
   or inbound translation). This makes durable pause/resume facts visible
   without allowing paused operational work to proceed.

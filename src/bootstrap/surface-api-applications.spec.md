@@ -67,6 +67,12 @@ for a single WorkItem (see the Work detail component).
   The response's overall `status` MUST be `degraded` when any check is
   degraded, `ok` otherwise, and MUST include this installation's resolved
   version string.
+- `health` MUST report activation-scheduler health and one check for every
+  registered projection consumer. A `healthy` subscription reports `ok`; a
+  `starting`, `degraded`, or `stopped` subscription reports `degraded`. Each
+  check includes its status, checkpoint, and consecutive failure count; an
+  unavailable pre-start snapshot is represented as `starting` at checkpoint
+  zero with zero failures.
 - `configuration` MUST return the composed root configuration with any key
   whose name looks secret-shaped redacted before it is returned; this
   component supplies the full configuration value, and Surfaces' own

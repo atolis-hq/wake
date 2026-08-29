@@ -22,6 +22,7 @@ it('uses the subscriber one-shot scheduler pass without duplicating dispatch thr
       config: {},
       providers: [],
       activationSchedulerSubscriber: scheduler,
+      projectionSubscriptions: { catchUpOnce: async () => 0 },
       runnerPipeline,
       projections: { read: async () => null },
       journal: { readAll: async () => [] },
@@ -46,6 +47,7 @@ it('surfaces adapter health checks from provider instances alongside system chec
       paths: { wakeRoot: tmpdir() },
       config: {},
       activationSchedulerSubscriber: { health: () => undefined },
+      projectionSubscriptions: { subscriptions: [], health: () => [] },
       providers: [
         {
           adapter: 'github-issues',
@@ -112,7 +114,15 @@ it('stays ok when every adapter health check is ok', async () => {
     {
       paths: { wakeRoot: tmpdir() },
       config: {},
-      activationSchedulerSubscriber: { health: () => undefined },
+      activationSchedulerSubscriber: {
+        health: () => ({
+          consumer: 'activation-scheduler',
+          status: 'healthy',
+          checkpoint: 0,
+          consecutiveFailures: 0,
+        }),
+      },
+      projectionSubscriptions: { subscriptions: [], health: () => [] },
       providers: [
         {
           adapter: 'github-issues',
@@ -152,6 +162,7 @@ it('surfaces durable activation scheduler subscription health', async () => {
           lastError: new Error('scheduler failed'),
         }),
       },
+      projectionSubscriptions: { subscriptions: [], health: () => [] },
     } as unknown as CompositionRoot,
     () => '2026-08-17T00:00:00.000Z',
   );
@@ -163,6 +174,48 @@ it('surfaces durable activation scheduler subscription health', async () => {
     name: 'activation-scheduler',
     status: 'degraded',
     detail: 'degraded at checkpoint 4 after 2 failures',
+  });
+});
+
+it('surfaces every registered projection consumer and represents absent snapshots as starting', async () => {
+  const applications = createSurfaceApiApplications(
+    {
+      paths: { wakeRoot: tmpdir() },
+      config: {},
+      providers: [],
+      activationSchedulerSubscriber: { health: () => undefined },
+      projectionSubscriptions: {
+        subscriptions: [{ consumer: 'projection:work' }, { consumer: 'projection:board' }],
+        health: () => [
+          {
+            consumer: 'projection:work',
+            status: 'healthy',
+            checkpoint: 12,
+            consecutiveFailures: 0,
+          },
+        ],
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+
+  const response = await applications.system.health();
+
+  expect(response.data.status).toBe('degraded');
+  expect(response.data.checks).toContainEqual({
+    name: 'activation-scheduler',
+    status: 'degraded',
+    detail: 'starting at checkpoint 0 after 0 failures',
+  });
+  expect(response.data.checks).toContainEqual({
+    name: 'projection:work',
+    status: 'ok',
+    detail: 'healthy at checkpoint 12 after 0 failures',
+  });
+  expect(response.data.checks).toContainEqual({
+    name: 'projection:board',
+    status: 'degraded',
+    detail: 'starting at checkpoint 0 after 0 failures',
   });
 });
 
