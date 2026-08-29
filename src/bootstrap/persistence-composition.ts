@@ -3,6 +3,9 @@ import {
   FileCheckpointStore,
   FileEventJournal,
   FileProjectionStore,
+  createFileSubscriptionRunSerialiser,
+  createInMemorySubscriptionRunSerialiser,
+  type SubscriptionRunSerialiser,
 } from '../persistence/index.js';
 import type { WakePaths } from './paths.js';
 
@@ -19,6 +22,7 @@ export interface PersistenceComposition {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
+  readonly subscriptionRunSerialiser: SubscriptionRunSerialiser;
 }
 
 function identity<T>(value: T): T {
@@ -56,6 +60,12 @@ export function composePersistence(
   clock: Clock,
   options: PersistenceCompositionOptions,
 ): PersistenceComposition {
+  const subscriptionRunSerialiser =
+    options.journal !== undefined &&
+    options.projections !== undefined &&
+    options.checkpoints !== undefined
+      ? createInMemorySubscriptionRunSerialiser()
+      : createFileSubscriptionRunSerialiser(paths.dataRoot);
   return {
     journal: serializeJournalAppends(
       (options.decorateJournal ?? identity)(
@@ -68,5 +78,6 @@ export function composePersistence(
     checkpoints: (options.decorateCheckpoints ?? identity)(
       options.checkpoints ?? new FileCheckpointStore(paths.dataRoot),
     ),
+    subscriptionRunSerialiser,
   };
 }

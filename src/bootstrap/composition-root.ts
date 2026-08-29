@@ -63,9 +63,9 @@ import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime } from './integration-runtime.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { composePersistence } from './persistence-composition.js';
-import {
-  createFileProjectionRunSerialiser,
-  type createRuntimeProjectionRunner,
+import type {
+  RuntimeProjectionRunnerCompatibility,
+  RuntimeProjectionSubscriptions,
 } from './projection-runtime.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 import { createRunnerRegistry } from './runner-registry.js';
@@ -128,7 +128,9 @@ export interface CompositionRoot {
   /** Present only when resident scheduling is driven by the durable host. */
   readonly activationSchedulerSubscriber?: ActivationSchedulerSubscriber;
   readonly advanceOnce: ActivationScheduler['runOnce'];
-  readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
+  readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
+  /** Temporary compatibility facade for direct callers awaiting Task 6 migration. */
+  readonly projectionRunner: RuntimeProjectionRunnerCompatibility;
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
@@ -156,7 +158,11 @@ export async function createCompositionRoot(
   const maintenance = createUpdateMaintenanceLease(paths.wakeRoot);
   const clock = options.clock ?? new SystemClock();
   const ids = new UlidIdGenerator();
-  const { journal, projections, checkpoints } = composePersistence(paths, clock, options);
+  const { journal, projections, checkpoints, subscriptionRunSerialiser } = composePersistence(
+    paths,
+    clock,
+    options,
+  );
   const work = createWorkService(journal);
   const conversations = createConversationService(journal);
   const lookup = createResourceLookup({ journal, projections });
@@ -321,7 +327,7 @@ export async function createCompositionRoot(
     conversations,
     ids,
     wakeRoot,
-    projectionRunSerialiser: createFileProjectionRunSerialiser(paths.dataRoot),
+    subscriptionRunSerialiser,
     scheduleCheckpoints:
       options.scheduleCheckpoints ?? new FileScheduleCheckpointStore(paths.dataRoot),
     ...(options.decorateDeliveryAdapter === undefined

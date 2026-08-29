@@ -1,19 +1,28 @@
-import { join } from 'node:path';
 import { activityProjectionDefinitions } from '../activities/index.js';
 import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
 import { conversationProjection } from '../conversations/index.js';
 import { executionProjection, runsByWorkflowInstanceProjection } from '../execution/index.js';
 import { deliveryProjectionDefinitions, type DeliveryIntentView } from '../integrations/index.js';
-import type { CheckpointStore, EventJournal, ProjectionStore } from '../kernel/index.js';
+import type {
+  CheckpointStore,
+  EventJournal,
+  ProjectionDefinition,
+  ProjectionStore,
+} from '../kernel/index.js';
 import {
   orchestrationProjection,
   workflowDefinitionsProjection,
   workflowsByWorkItemProjection,
 } from '../orchestration/index.js';
 import {
-  acquireFileLock,
-  ProjectionRunner,
-  type ProjectionRunSerialiser,
+  DurableSubscriptionHost,
+  ProjectionRebuilder,
+  createInMemorySubscriptionRunSerialiser,
+  createProjectionSubscription,
+  type DurableSubscription,
+  type DurableSubscriptionHostRun,
+  type SubscriptionHealth,
+  type SubscriptionRunSerialiser,
 } from '../persistence/index.js';
 import {
   resourceCorrelationProjection,
@@ -44,38 +53,112 @@ export const runtimeProjectionDefinitions = [
   analyticsProjection,
 ];
 
-export function createRuntimeProjectionRunner(
+export interface RuntimeProjectionSubscriptions {
+  readonly subscriptions: readonly DurableSubscription[];
+  start(signal: AbortSignal): DurableSubscriptionHostRun;
+  catchUpOnce(signal?: AbortSignal): Promise<number>;
+  catchUp(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
+  rebuild(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
+  health(): readonly SubscriptionHealth[];
+}
+
+class RuntimeProjectionSubscriptionRuntime implements RuntimeProjectionSubscriptions {
+  readonly subscriptions: readonly DurableSubscription[];
+  private readonly subscriptionsByDefinition = new Map<string, DurableSubscription>();
+  private readonly definitionsByName = new Map<string, ProjectionDefinition>();
+  private readonly host: DurableSubscriptionHost;
+  private readonly rebuilder: ProjectionRebuilder;
+
+  constructor(
+    journal: EventJournal,
+    projections: ProjectionStore,
+    checkpoints: CheckpointStore,
+    serialiseRun: SubscriptionRunSerialiser,
+    definitions: readonly ProjectionDefinition[],
+  ) {
+    this.subscriptions = definitions.map((definition) => {
+      const subscription = createProjectionSubscription(definition, projections);
+      if (this.subscriptionsByDefinition.has(definition.name))
+        throw new Error(`Runtime projection definition is already registered: ${definition.name}`);
+      this.subscriptionsByDefinition.set(definition.name, subscription);
+      this.definitionsByName.set(definition.name, definition);
+      return subscription;
+    });
+    this.host = new DurableSubscriptionHost(journal, checkpoints, serialiseRun);
+    this.rebuilder = new ProjectionRebuilder(journal, projections, checkpoints, serialiseRun);
+  }
+
+  start(signal: AbortSignal): DurableSubscriptionHostRun {
+    return this.host.start(this.subscriptions, signal);
+  }
+
+  async catchUpOnce(signal?: AbortSignal): Promise<number> {
+    const passes = await Promise.all(
+      this.subscriptions.map((subscription) => this.host.runOnce(subscription, signal)),
+    );
+    return passes.reduce((eventCount, pass) => eventCount + pass.eventCount, 0);
+  }
+
+  async catchUp(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number> {
+    const subscription = this.subscriptionsByDefinition.get(definition.name);
+    if (subscription === undefined)
+      throw new Error(`Runtime projection definition is not registered: ${definition.name}`);
+    return (await this.host.runOnce(subscription, signal)).eventCount;
+  }
+
+  rebuild(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number> {
+    return this.rebuilder.rebuild(this.registeredDefinition(definition), signal);
+  }
+
+  health(): readonly SubscriptionHealth[] {
+    return this.subscriptions.flatMap((subscription) => {
+      const snapshot = this.host.health(subscription.consumer);
+      return snapshot === undefined ? [] : [snapshot];
+    });
+  }
+
+  private registeredDefinition(definition: ProjectionDefinition): ProjectionDefinition {
+    const registered = this.definitionsByName.get(definition.name);
+    if (registered === undefined)
+      throw new Error(`Runtime projection definition is not registered: ${definition.name}`);
+    return registered;
+  }
+}
+
+export function createRuntimeProjectionSubscriptions(
   journal: EventJournal,
   projections: ProjectionStore,
   checkpoints: CheckpointStore,
-  serialiseRun?: ProjectionRunSerialiser,
-): ProjectionRunner {
-  return new ProjectionRunner(
+  serialiseRun: SubscriptionRunSerialiser = createInMemorySubscriptionRunSerialiser(),
+  definitions: readonly ProjectionDefinition[] = runtimeProjectionDefinitions,
+): RuntimeProjectionSubscriptions {
+  return new RuntimeProjectionSubscriptionRuntime(
     journal,
     projections,
     checkpoints,
-    runtimeProjectionDefinitions,
     serialiseRun,
+    definitions,
   );
 }
 
-export function createFileProjectionRunSerialiser(dataRoot: string): ProjectionRunSerialiser {
-  const path = join(dataRoot, 'locks', 'projection-runner.lock');
-  return async <Value>(operation: () => Promise<Value>): Promise<Value> => {
-    while (true) {
-      const lock = await acquireFileLock(path, {
-        staleAfterMs: 60_000,
-        staleRequiresDeadProcess: true,
-      });
-      if (lock.acquired) {
-        try {
-          return await operation();
-        } finally {
-          await lock.release();
-        }
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+/**
+ * Temporary compatibility facade for direct callers awaiting their Task 6
+ * migration. It forwards to independently keyed subscriptions and adds no
+ * global projection serialization.
+ */
+export interface RuntimeProjectionRunnerCompatibility {
+  runRegisteredOnce(signal?: AbortSignal): Promise<number>;
+  runOnce(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
+  rebuild(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
+}
+
+export function createProjectionRunnerCompatibility(
+  subscriptions: RuntimeProjectionSubscriptions,
+): RuntimeProjectionRunnerCompatibility {
+  return {
+    runRegisteredOnce: (signal) => subscriptions.catchUpOnce(signal),
+    runOnce: (definition, signal) => subscriptions.catchUp(definition, signal),
+    rebuild: (definition, signal) => subscriptions.rebuild(definition, signal),
   };
 }
 

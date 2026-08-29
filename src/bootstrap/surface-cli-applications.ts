@@ -269,7 +269,7 @@ export function createRunnerIdleWait(
 }
 
 export async function runProjectionPump(
-  root: Pick<CompositionRoot, 'projectionRunner' | 'journal'>,
+  root: Pick<CompositionRoot, 'projectionSubscriptions' | 'journal'>,
   signal: AbortSignal,
 ): Promise<void> {
   while (!signal.aborted) {
@@ -282,7 +282,7 @@ export async function runProjectionPump(
       continue;
     }
     try {
-      await root.projectionRunner.runRegisteredOnce();
+      await root.projectionSubscriptions.catchUpOnce(signal);
     } catch (error) {
       process.stderr.write(
         `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
@@ -578,7 +578,7 @@ function createOperationalApplications(root: CompositionRoot) {
           health: async () => projectionHealth(root),
           rebuild: async () => {
             for (const definition of runtimeProjectionDefinitions)
-              await root.projectionRunner.rebuild(definition);
+              await root.projectionSubscriptions.rebuild(definition);
           },
         },
       }),
@@ -935,7 +935,7 @@ function createValidationApplications(root: CompositionRoot) {
     },
     async rebuildProjections() {
       for (const definition of runtimeProjectionDefinitions)
-        await root.projectionRunner.rebuild(definition);
+        await root.projectionSubscriptions.rebuild(definition);
     },
   };
 }

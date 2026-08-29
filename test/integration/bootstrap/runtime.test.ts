@@ -148,7 +148,7 @@ describe('target composition root', () => {
       // The resident projection pump normally maintains this read model; the
       // test advances only that pure projection before invoking the API, never
       // the legacy runner pipeline.
-      await runtime.projectionRunner.runRegisteredOnce();
+      await runtime.projectionSubscriptions.catchUpOnce();
 
       const message = (
         await createSurfaceApplications(runtime, { now: () => clock.now().toISOString() })
@@ -465,7 +465,7 @@ describe('target composition root', () => {
       { workItemId: workId('decorated-projections'), objective: 'prove projection decoration' },
       commandContext(clock, 'decorated-projections'),
     );
-    await runtime.projectionRunner.runRegisteredOnce();
+    await runtime.projectionSubscriptions.catchUpOnce();
 
     expect(writes).toBeGreaterThan(0);
   });
@@ -493,7 +493,7 @@ describe('target composition root', () => {
       { workItemId: workId('decorated-checkpoints'), objective: 'prove checkpoint decoration' },
       commandContext(clock, 'decorated-checkpoints'),
     );
-    await runtime.projectionRunner.runRegisteredOnce();
+    await runtime.projectionSubscriptions.catchUpOnce();
 
     expect(saves).toBeGreaterThan(0);
   });
@@ -689,7 +689,7 @@ describe('target composition root', () => {
         },
       },
     ]);
-    await runtime.projectionRunner.runRegisteredOnce();
+    await runtime.projectionSubscriptions.catchUpOnce();
 
     await runtime.delivery.deliverNext(new AbortController().signal);
 
@@ -722,7 +722,7 @@ describe('target composition root', () => {
 
     expect(runtime.config.execution.defaultRunnerPool).toBe('standard');
     expect(runtime.paths.dataRoot).toContain('.wake');
-    expect(runtime.projectionRunner).toBeDefined();
+    expect(runtime.projectionSubscriptions).toBeDefined();
     expect(runtime.work).toBeDefined();
     expect(runtime.resources).toBeDefined();
     expect(runtime.orchestration).toBeDefined();

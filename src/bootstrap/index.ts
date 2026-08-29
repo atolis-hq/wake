@@ -12,7 +12,7 @@ import {
 import type { CheckpointStore, EventJournal, ProjectionStore } from '../kernel/index.js';
 import type { OrchestrationService } from '../orchestration/index.js';
 import type { CompositionRoot, CompositionRootOptions } from './composition-root.js';
-import { createRuntimeProjectionRunner } from './projection-runtime.js';
+import { createRuntimeProjectionSubscriptions } from './projection-runtime.js';
 import type { SurfaceApplicationOptions } from './surface-applications.js';
 
 export function composeDeliveryService(dependencies: DeliveryServiceDependencies): DeliveryService {
@@ -47,7 +47,7 @@ export interface DeliveryRuntimeDependencies {
 }
 
 export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies) {
-  const projectionRunner = createRuntimeProjectionRunner(
+  const projectionSubscriptions = createRuntimeProjectionSubscriptions(
     dependencies.journal,
     dependencies.projections,
     dependencies.checkpoints,
@@ -73,9 +73,9 @@ export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies
   );
   return {
     async runOnce(signal: AbortSignal) {
-      await projectionRunner.runRegisteredOnce();
+      await projectionSubscriptions.catchUpOnce(signal);
       const delivered = await service.deliverNext(signal);
-      await projectionRunner.runRegisteredOnce();
+      await projectionSubscriptions.catchUpOnce(signal);
       await reactor.runOnce();
       return delivered;
     },

@@ -10,7 +10,7 @@ export interface CachedJournalView<Value> {
 // Memoizes a full-journal derivation — a fold, decode, or index built from
 // every event in history — so a resident loop calling it every tick only
 // pays that cost when the journal has actually moved since the last call.
-// Same gate ProjectionRunner keeps for itself (a last-seen global position),
+// Same durable position boundary used by projection subscriptions,
 // generalized for callers that want a materialized view rather than an
 // incremental batch. Depends only on the EventJournal port, not on any
 // concrete persistence implementation, so it lives in kernel rather than

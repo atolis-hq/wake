@@ -53,7 +53,7 @@ import {
   workflowName,
   type createOrchestrationService,
 } from '../orchestration/index.js';
-import { withFileLock, type ProjectionRunSerialiser } from '../persistence/index.js';
+import { withFileLock, type SubscriptionRunSerialiser } from '../persistence/index.js';
 import {
   BuiltInResourceCapability,
   resourceId,
@@ -63,11 +63,18 @@ import {
 import type { createWorkService } from '../work/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
-import { createRuntimeProjectionRunner } from './projection-runtime.js';
+import {
+  createProjectionRunnerCompatibility,
+  createRuntimeProjectionSubscriptions,
+  type RuntimeProjectionRunnerCompatibility,
+  type RuntimeProjectionSubscriptions,
+} from './projection-runtime.js';
 import { createCapabilityResourceTransitionEvidence } from './resource-transition-evidence.js';
 
 export interface IntegrationRuntime {
-  readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
+  readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
+  /** Temporary compatibility facade for direct callers awaiting Task 6 migration. */
+  readonly projectionRunner: RuntimeProjectionRunnerCompatibility;
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
@@ -94,7 +101,7 @@ export interface IntegrationRuntimeInput {
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
-  readonly projectionRunSerialiser?: ProjectionRunSerialiser;
+  readonly subscriptionRunSerialiser?: SubscriptionRunSerialiser;
   readonly scheduleCheckpoints: ScheduleCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
@@ -102,19 +109,6 @@ export interface IntegrationRuntimeInput {
   ) => ExternalDeliveryAdapter;
   readonly fakeDeliveryProvider?: DurableFakeDeliveryProvider;
   readonly providerDefinitions: readonly ProviderDefinition[];
-}
-
-function serializeRunRegisteredOnce(
-  runner: ReturnType<typeof createRuntimeProjectionRunner>,
-): ReturnType<typeof createRuntimeProjectionRunner> {
-  let queue: Promise<unknown> = Promise.resolve();
-  const runRegisteredOnce = runner.runRegisteredOnce.bind(runner);
-  runner.runRegisteredOnce = (limit?: number) => {
-    const result = queue.then(() => runRegisteredOnce(limit));
-    queue = result.catch(() => {});
-    return result;
-  };
-  return runner;
 }
 
 export async function composeIntegrationRuntime(
@@ -170,21 +164,13 @@ export async function composeIntegrationRuntime(
         delivery: input.decorateDeliveryAdapter!(provider.delivery, provider),
       }))
     : composedProviders;
-  // FileCheckpointStore.save throws on any regression (persistence/filesystem/
-  // file-checkpoint-store.ts), so two concurrent runRegisteredOnce calls that
-  // interleave can race a slower caller's stale checkpoint save against a
-  // faster one that already advanced past it. Every caller (the tick
-  // pipeline's own catchUpProjections, the API's manual tick, and the
-  // resident's standalone projection pump) shares this one instance, so
-  // serializing it here in-process covers all of them without a file lock.
-  const projectionRunner = serializeRunRegisteredOnce(
-    createRuntimeProjectionRunner(
-      input.journal,
-      input.projections,
-      input.checkpoints,
-      input.projectionRunSerialiser,
-    ),
+  const projectionSubscriptions = createRuntimeProjectionSubscriptions(
+    input.journal,
+    input.projections,
+    input.checkpoints,
+    input.subscriptionRunSerialiser,
   );
+  const projectionRunner = createProjectionRunnerCompatibility(projectionSubscriptions);
   const delivery = new DeliveryService({
     journal: input.journal,
     intents: async () =>
@@ -263,7 +249,7 @@ export async function composeIntegrationRuntime(
     input.conversations,
   );
   const catchUpProjections = async () => {
-    await projectionRunner.runRegisteredOnce();
+    await projectionSubscriptions.catchUpOnce();
   };
   // Only poll hits a rate-limited external API, so only this half of the
   // Tick needs a backing-off host; see bootstrap/surface-cli-applications.ts.
@@ -326,6 +312,7 @@ export async function composeIntegrationRuntime(
       }),
   });
   return {
+    projectionSubscriptions,
     projectionRunner,
     providers,
     providerFailures,

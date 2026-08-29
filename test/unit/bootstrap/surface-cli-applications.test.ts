@@ -120,8 +120,8 @@ it('advances the resident projection pump', async () => {
 
   await runProjectionPump(
     {
-      projectionRunner: {
-        runRegisteredOnce: async () => {
+      projectionSubscriptions: {
+        catchUpOnce: async () => {
           projectionRuns += 1;
           controller.abort();
         },
@@ -279,8 +279,8 @@ it('keeps the projection pump alive when cursor sampling fails once', async () =
   await expect(
     runProjectionPump(
       {
-        projectionRunner: {
-          runRegisteredOnce: async () => {
+        projectionSubscriptions: {
+          catchUpOnce: async () => {
             runs += 1;
             controller.abort();
           },
@@ -358,8 +358,8 @@ it('waits after the pass cursor when an append lands during projection', async (
   };
   const pump = runProjectionPump(
     {
-      projectionRunner: {
-        runRegisteredOnce: async () => {
+      projectionSubscriptions: {
+        catchUpOnce: async () => {
           await journal.readAll();
         },
       },
