@@ -5,7 +5,6 @@ import type {
   ProjectionDefinition,
   ProjectionStore,
 } from '../../kernel/index.js';
-import { JOURNAL_CHANGE_FALLBACK_MS } from '../../kernel/index.js';
 
 export type ProjectionRunSerialiser = <Value>(operation: () => Promise<Value>) => Promise<Value>;
 
@@ -15,8 +14,6 @@ async function runImmediately<Value>(operation: () => Promise<Value>): Promise<V
 
 export class ProjectionRunner {
   private caughtUpToGlobalPosition: number | undefined;
-  private caughtUpRevision: number | undefined;
-  private caughtUpAt: number | undefined;
 
   constructor(
     private readonly journal: EventJournal,
@@ -24,7 +21,7 @@ export class ProjectionRunner {
     private readonly checkpoints: CheckpointStore,
     private readonly registered: readonly ProjectionDefinition[] = [],
     private readonly serialiseRun: ProjectionRunSerialiser = runImmediately,
-    private readonly now: () => number = Date.now,
+    _now: () => number = Date.now,
   ) {}
 
   // One shared journal read for every registered definition, not one per
@@ -47,13 +44,10 @@ export class ProjectionRunner {
   }
 
   private async runRegisteredOnceUnlocked(limit: number): Promise<number> {
-    const observedRevision = this.journal.changeSignal.revision();
-    const checkedAt = this.now();
+    const observedPosition = await this.journal.latestGlobalPosition();
     if (
       this.caughtUpToGlobalPosition !== undefined &&
-      this.caughtUpRevision === observedRevision &&
-      this.caughtUpAt !== undefined &&
-      checkedAt - this.caughtUpAt < JOURNAL_CHANGE_FALLBACK_MS
+      observedPosition <= this.caughtUpToGlobalPosition
     )
       return 0;
     const allEvents = await this.journal.readAll(0);
@@ -61,11 +55,8 @@ export class ProjectionRunner {
     if (
       this.caughtUpToGlobalPosition !== undefined &&
       latestGlobalPosition <= this.caughtUpToGlobalPosition
-    ) {
-      this.caughtUpRevision = observedRevision;
-      this.caughtUpAt = this.now();
+    )
       return 0;
-    }
     let failed = false;
     let firstFailure: unknown;
     const counts = await Promise.all(
@@ -84,10 +75,6 @@ export class ProjectionRunner {
     if (failed) throw firstFailure;
     if (counts.every((count) => count < limit)) {
       this.caughtUpToGlobalPosition = latestGlobalPosition;
-      // Keep the revision from before the read so a concurrent append is
-      // never mistaken for content already included in this pass.
-      this.caughtUpRevision = observedRevision;
-      this.caughtUpAt = this.now();
     }
     return counts.reduce((total, count) => total + count, 0);
   }

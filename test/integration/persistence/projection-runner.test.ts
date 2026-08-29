@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import {
   createEventDraft,
+  InProcessJournalChangeSignal,
   JOURNAL_CHANGE_FALLBACK_MS,
   type EntityRef,
 } from '../../../src/kernel/index.js';
@@ -113,7 +114,47 @@ it('reads the journal again after an append notification', async () => {
   expect(readAllSpy).toHaveBeenCalledTimes(1);
 });
 
-it('checks again on the fallback when a notification is missed', async () => {
+it('does not hide an append that lands while the journal pass is reading', async () => {
+  let eventCount = 0;
+  let releaseRead!: () => void;
+  let readStarted!: () => void;
+  const readBarrier = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  const readObserved = new Promise<void>((resolve) => {
+    readStarted = resolve;
+  });
+  const journal = {
+    readAll: async () => {
+      const snapshot = Array.from({ length: eventCount }, (_, index) => ({
+        globalPosition: index + 1,
+        eventType: 'counted',
+        stream: { kind: 'counter', id: 'race' },
+      }));
+      readStarted();
+      await readBarrier;
+      return snapshot;
+    },
+    latestGlobalPosition: async () => eventCount,
+    changeSignal: new InProcessJournalChangeSignal(),
+  } as never;
+  const runner = new ProjectionRunner(
+    journal,
+    new InMemoryProjectionStore(),
+    new InMemoryCheckpointStore(),
+    [projectionDefinition('race-counts')],
+  );
+
+  const firstPass = runner.runRegisteredOnce();
+  await readObserved;
+  eventCount = 1;
+  releaseRead();
+  expect(await firstPass).toBe(0);
+
+  expect(await runner.runRegisteredOnce()).toBe(1);
+});
+
+it('does not reread when the durable position is unchanged', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   let now = 0;
   const runner = new ProjectionRunner(
@@ -131,7 +172,7 @@ it('checks again on the fallback when a notification is missed', async () => {
   now = JOURNAL_CHANGE_FALLBACK_MS;
   await runner.runRegisteredOnce();
 
-  expect(readAllSpy).toHaveBeenCalledTimes(1);
+  expect(readAllSpy).not.toHaveBeenCalled();
 });
 
 it('starts the fallback window after a slow projection pass completes', async () => {

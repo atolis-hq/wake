@@ -235,22 +235,22 @@ export function createRunnerIdleWait(
   root: Pick<CompositionRoot, 'journal'>,
   resident: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number } | undefined,
 ) {
-  let priorRevision = root.journal.changeSignal.revision();
+  // Capture the cursor before the first resident pass. Each subsequent
+  // cursor is sampled before waiting, so an append between a pass and waiter
+  // registration is still visible to the durable wait's recheck.
+  let priorPosition = root.journal.latestGlobalPosition();
   return (
     signal: AbortSignal,
     {
-      consecutiveIdleTicks,
+      consecutiveIdleTicks: _consecutiveIdleTicks,
       consecutiveErrorTicks,
     }: { readonly consecutiveIdleTicks: number; readonly consecutiveErrorTicks: number },
   ): Promise<void> => {
     if (consecutiveErrorTicks > 0)
       return sleepUntilAbort(signal, nextPollBackoffMs(resident, consecutiveErrorTicks));
-    const revision = root.journal.changeSignal.revision();
-    const journalChanged = revision !== priorRevision;
-    priorRevision = revision;
-    return consecutiveIdleTicks === 0 && journalChanged
-      ? Promise.resolve()
-      : root.journal.changeSignal.waitForChange(signal, JOURNAL_CHANGE_FALLBACK_MS);
+    return waitForRunnerEvents(root, priorPosition, signal).then((position) => {
+      priorPosition = Promise.resolve(position);
+    });
   };
 }
 
@@ -259,6 +259,7 @@ export async function runProjectionPump(
   signal: AbortSignal,
 ): Promise<void> {
   while (!signal.aborted) {
+    const afterPosition = await root.journal.latestGlobalPosition();
     try {
       await root.projectionRunner.runRegisteredOnce();
     } catch (error) {
@@ -266,8 +267,19 @@ export async function runProjectionPump(
         `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
-    await root.journal.changeSignal.waitForChange(signal, JOURNAL_CHANGE_FALLBACK_MS);
+    await root.journal.waitForEventsAfter(afterPosition, signal, JOURNAL_CHANGE_FALLBACK_MS);
   }
+}
+
+async function waitForRunnerEvents(
+  root: Pick<CompositionRoot, 'journal'>,
+  priorPosition: Promise<number>,
+  signal: AbortSignal,
+): Promise<number> {
+  const afterPosition = await priorPosition;
+  const currentPosition = await root.journal.latestGlobalPosition();
+  await root.journal.waitForEventsAfter(afterPosition, signal, JOURNAL_CHANGE_FALLBACK_MS);
+  return currentPosition;
 }
 
 function nextPollBackoffMs(
