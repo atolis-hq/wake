@@ -43,6 +43,43 @@ async function world() {
 }
 
 describe('advanceOnce', () => {
+  it('delegates the legacy facade through the shared activation scheduler serialiser', async () => {
+    const trace: string[] = [];
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => {
+          trace.push('child-reconciliation');
+        },
+        listPendingActivations: async () => [],
+        listWaiting: async () => [],
+        acceptOutcome: async () => {
+          throw new Error('No outcome should be accepted');
+        },
+        markActivationStarted: async () => {
+          throw new Error('No activation should start');
+        },
+      },
+      {
+        attempt: async () => {
+          throw new Error('No execution attempt should begin');
+        },
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-29T00:00:00.000Z') },
+      {
+        ids: { next: () => 'command-facade' } as never,
+        schedulerSerialiser: async (operation) => {
+          trace.push('scheduler-serialiser');
+          return operation();
+        },
+      },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
+    expect(trace).toEqual(['scheduler-serialiser', 'child-reconciliation']);
+  });
+
   it('does not reconcile after maintenance acquires during active-Run recovery', async () => {
     let paused = false;
     let reconciled = false;

@@ -1,4 +1,8 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { createFileActivationSchedulerSerialiser } from '../../../src/bootstrap/index.js';
 import {
   createActivationScheduler,
   type ActivationSchedulerSerialiser,
@@ -21,7 +25,7 @@ function candidate(id = 'one') {
 }
 
 describe('ActivationScheduler', () => {
-  it('preserves recovery and terminal reconciliation before dispatch selection', async () => {
+  it('runs the full scheduler sequence in order before dispatching the selected activation', async () => {
     const trace: string[] = [];
     const pending = candidate();
     const scheduler = createActivationScheduler(
@@ -35,11 +39,11 @@ describe('ActivationScheduler', () => {
         },
         listWaiting: async () => [],
         acceptOutcome: async () => {
-          trace.push('terminal-reconciliation');
-          return pending.workflow;
+          throw new Error('No terminal outcome should be accepted');
         },
         markActivationStarted: async () => {
-          throw new Error('terminal reconciliation must precede dispatch');
+          trace.push('activation-claim');
+          return pending.workflow;
         },
       },
       {
@@ -48,24 +52,35 @@ describe('ActivationScheduler', () => {
           return [];
         },
         attempt: async () => {
-          throw new Error('terminal reconciliation must precede dispatch');
+          trace.push('workspace-acquisition');
+          trace.push('run-started');
+          return { runId: 'run-one', status: 'started' } as never;
         },
-        list: async () =>
-          [
-            {
-              runId: 'run-one',
-              status: 'succeeded',
-              activationId: pending.activation.activationId,
-              outcome: { kind: 'done' },
-            },
-          ] as never,
+        list: async (activationId) => {
+          if (activationId !== undefined) {
+            trace.push(
+              trace.includes('capacity-read')
+                ? 'candidate-active-run-check'
+                : 'terminal-reconciliation',
+            );
+            return [];
+          }
+          if (trace.includes('workspace-recovery')) {
+            trace.push('capacity-read');
+            return [];
+          }
+          trace.push('workspace-run-list');
+          return [];
+        },
       },
       { correlationsForWork: async () => [] } as never,
       { now: () => new Date('2026-08-29T00:00:00.000Z') },
       {
         ids: { next: () => 'command-one' } as never,
         isDispatchPaused: async () => {
-          trace.push('pause-gate');
+          trace.push(
+            `pause-gate:${trace.filter((entry) => entry.startsWith('pause-gate')).length + 1}`,
+          );
           return false;
         },
         work: {
@@ -83,8 +98,11 @@ describe('ActivationScheduler', () => {
             trace.push('transcript-cleanup');
             return true;
           },
-          sweep: async () => undefined,
+          sweep: async () => {
+            trace.push('transcript-sweep');
+          },
         },
+        maxDispatches: 1,
       },
     );
 
@@ -92,23 +110,82 @@ describe('ActivationScheduler', () => {
       kind: 'progressed',
       dispatched: [{ activationId: 'activation-one', runId: 'run-one' }],
     });
-    expect(trace).toEqual(
-      expect.arrayContaining([
-        'pause-gate',
-        'workspace-recovery',
-        'transcript-cleanup',
-        'active-recovery',
-        'child-reconciliation',
-        'pending',
-        'terminal-reconciliation',
-      ]),
+    expect(trace).toEqual([
+      'pause-gate:1',
+      'workspace-run-list',
+      'workspace-recovery',
+      'pause-gate:2',
+      'transcript-cleanup',
+      'pause-gate:3',
+      'active-recovery',
+      'pause-gate:4',
+      'pause-gate:5',
+      'transcript-sweep',
+      'pause-gate:6',
+      'child-reconciliation',
+      'pause-gate:7',
+      'pending',
+      'terminal-reconciliation',
+      'capacity-read',
+      'candidate-active-run-check',
+      'pause-gate:8',
+      'activation-claim',
+      'workspace-acquisition',
+      'run-started',
+    ]);
+  });
+
+  it('does not start any scheduler phase after the initial pause gate rejects the pass', async () => {
+    const trace: string[] = [];
+    const scheduler = createActivationScheduler(
+      {
+        reconcileChildCompletions: async () => {
+          trace.push('child-reconciliation');
+        },
+        listPendingActivations: async () => {
+          trace.push('pending');
+          return [];
+        },
+        listWaiting: async () => [],
+        acceptOutcome: async () => {
+          throw new Error('No terminal outcome should be accepted');
+        },
+        markActivationStarted: async () => {
+          throw new Error('No activation should start');
+        },
+      },
+      {
+        recoverActive: async () => {
+          trace.push('active-recovery');
+          return [];
+        },
+        attempt: async () => {
+          throw new Error('No execution attempt should begin');
+        },
+        list: async () => {
+          trace.push('run-list');
+          return [];
+        },
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-29T00:00:00.000Z') },
+      {
+        ids: { next: () => 'command-paused' } as never,
+        isDispatchPaused: async () => {
+          trace.push('pause-gate');
+          return true;
+        },
+        workspaceRecovery: {
+          recover: async () => {
+            trace.push('workspace-recovery');
+            return { reclaimed: 0, failures: [] };
+          },
+        },
+      },
     );
-    expect(trace.indexOf('workspace-recovery')).toBeLessThan(trace.indexOf('active-recovery'));
-    expect(trace.indexOf('transcript-cleanup')).toBeLessThan(trace.indexOf('active-recovery'));
-    expect(trace.indexOf('active-recovery')).toBeLessThan(trace.indexOf('child-reconciliation'));
-    expect(trace.indexOf('child-reconciliation')).toBeLessThan(
-      trace.indexOf('terminal-reconciliation'),
-    );
+
+    await expect(scheduler.runOnce({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
+    expect(trace).toEqual(['pause-gate']);
   });
 
   it('uses the existing fair capacity-aware dispatch after recovery finds no terminal Run', async () => {
@@ -206,6 +283,86 @@ describe('ActivationScheduler', () => {
       'run-started:activation-first',
     ]);
   });
+
+  it('holds the real file-backed serialiser across recovery, capacity, and dispatch', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-activation-scheduler-'));
+    const trace: string[] = [];
+    const firstRecoveryEntered = deferred<void>();
+    const releaseFirstRecovery = deferred<void>();
+    const firstCapacityEntered = deferred<void>();
+    const releaseFirstCapacity = deferred<void>();
+    const serialise = createFileActivationSchedulerSerialiser(root);
+    try {
+      const first = schedulerWithTrace('first', serialise, trace, {
+        recoveryEntered: firstRecoveryEntered,
+        releaseRecovery: releaseFirstRecovery,
+        capacityEntered: firstCapacityEntered,
+        releaseCapacity: releaseFirstCapacity,
+      });
+      const second = schedulerWithTrace('second', serialise, trace);
+
+      const firstRun = first.runOnce({ maxProgress: 1 });
+      await firstRecoveryEntered.promise;
+      const secondRun = second.runOnce({ maxProgress: 1 });
+      expect(trace).toEqual(['first:pause-gate', 'first:workspace-recovery']);
+
+      releaseFirstRecovery.resolve();
+      await firstCapacityEntered.promise;
+      expect(trace).toEqual([
+        'first:pause-gate',
+        'first:workspace-recovery',
+        'first:pause-gate',
+        'first:active-recovery',
+        'first:pause-gate',
+        'first:pause-gate',
+        'first:pause-gate',
+        'first:child-reconciliation',
+        'first:pause-gate',
+        'first:terminal-reconciliation',
+        'first:capacity-read',
+      ]);
+
+      releaseFirstCapacity.resolve();
+      await firstRun;
+      await secondRun;
+      expect(trace).toEqual([
+        'first:pause-gate',
+        'first:workspace-recovery',
+        'first:pause-gate',
+        'first:active-recovery',
+        'first:pause-gate',
+        'first:pause-gate',
+        'first:pause-gate',
+        'first:child-reconciliation',
+        'first:pause-gate',
+        'first:terminal-reconciliation',
+        'first:capacity-read',
+        'first:terminal-reconciliation',
+        'first:pause-gate',
+        'first:activation-claim',
+        'first:workspace-acquisition',
+        'first:run-started',
+        'second:pause-gate',
+        'second:workspace-recovery',
+        'second:pause-gate',
+        'second:active-recovery',
+        'second:pause-gate',
+        'second:pause-gate',
+        'second:pause-gate',
+        'second:child-reconciliation',
+        'second:pause-gate',
+        'second:terminal-reconciliation',
+        'second:capacity-read',
+        'second:terminal-reconciliation',
+        'second:pause-gate',
+        'second:activation-claim',
+        'second:workspace-acquisition',
+        'second:run-started',
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function serialiseInOrder(): ActivationSchedulerSerialiser {
@@ -218,4 +375,85 @@ function serialiseInOrder(): ActivationSchedulerSerialiser {
     );
     return current;
   };
+}
+
+function schedulerWithTrace(
+  name: string,
+  schedulerSerialiser: ActivationSchedulerSerialiser,
+  trace: string[],
+  barriers: {
+    readonly recoveryEntered?: ReturnType<typeof deferred<void>>;
+    readonly releaseRecovery?: ReturnType<typeof deferred<void>>;
+    readonly capacityEntered?: ReturnType<typeof deferred<void>>;
+    readonly releaseCapacity?: ReturnType<typeof deferred<void>>;
+  } = {},
+) {
+  const pending = candidate(name);
+  let listedForRecovery = false;
+  return createActivationScheduler(
+    {
+      reconcileChildCompletions: async () => {
+        trace.push(`${name}:child-reconciliation`);
+      },
+      listPendingActivations: async () => [pending],
+      listWaiting: async () => [],
+      acceptOutcome: async () => pending.workflow,
+      markActivationStarted: async () => {
+        trace.push(`${name}:activation-claim`);
+        return pending.workflow;
+      },
+    },
+    {
+      recoverActive: async () => {
+        trace.push(`${name}:active-recovery`);
+        return [];
+      },
+      attempt: async () => {
+        trace.push(`${name}:workspace-acquisition`);
+        trace.push(`${name}:run-started`);
+        return { runId: `run-${name}`, status: 'started' } as never;
+      },
+      list: async (activationId) => {
+        if (activationId !== undefined) {
+          trace.push(`${name}:terminal-reconciliation`);
+          return [];
+        }
+        if (!listedForRecovery) {
+          listedForRecovery = true;
+          return [];
+        }
+        trace.push(`${name}:capacity-read`);
+        barriers.capacityEntered?.resolve();
+        await barriers.releaseCapacity?.promise;
+        return [];
+      },
+    },
+    { correlationsForWork: async () => [] } as never,
+    { now: () => new Date('2026-08-29T00:00:00.000Z') },
+    {
+      ids: { next: () => `command-${name}` } as never,
+      maxDispatches: 1,
+      schedulerSerialiser,
+      isDispatchPaused: async () => {
+        trace.push(`${name}:pause-gate`);
+        return false;
+      },
+      workspaceRecovery: {
+        recover: async () => {
+          trace.push(`${name}:workspace-recovery`);
+          barriers.recoveryEntered?.resolve();
+          await barriers.releaseRecovery?.promise;
+          return { reclaimed: 0, failures: [] };
+        },
+      },
+    },
+  );
+}
+
+function deferred<Value>() {
+  let resolve!: (value: Value | PromiseLike<Value>) => void;
+  const promise = new Promise<Value>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
