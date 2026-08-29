@@ -17,7 +17,7 @@ import { WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import type { AdvanceResult, DispatchedRun } from '../contracts/views.js';
 import type { DispatchPolicy } from '../domain/dispatch-policy.js';
-import type { ExecutionPort, OrchestrationPort } from './advance-once-ports.js';
+import type { ExecutionPort, OrchestrationPort } from './activation-scheduler-ports.js';
 import { isExecutionFailureTerminal } from './execution-reconciliation.js';
 
 export interface DispatchLoopContext {

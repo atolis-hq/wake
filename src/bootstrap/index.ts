@@ -104,6 +104,8 @@ export * from './resource-transition-evidence.js';
 
 export * from './analytics-projection.js';
 
+export * from './activation-scheduler-serialiser.js';
+
 export * from './board-projection.js';
 
 export * from './config/load-config.js';

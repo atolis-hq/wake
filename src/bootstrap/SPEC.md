@@ -159,6 +159,10 @@ Bootstrap does not own:
 - Bootstrap MUST NOT leak a concrete adapter type across a module boundary:
   every collaborator handed to a module's service constructor is typed to
   that module's own interface, never to the concrete adapter's own type.
+- Bootstrap adapts Persistence's keyed file serialiser to Control Plane's
+  scheduler-serialiser port. The shared key encloses an entire activation
+  scheduler pass, protecting recovery, capacity allocation, activation claim,
+  workspace acquisition, and durable Run creation across runtime processes.
 - `wake init` MUST scaffold both a source-mode `docker/Dockerfile` and a
   packaged-mode `docker/Dockerfile.packaged`, regardless of the detected
   `dev.mode`, so `wake sandbox build` can pick the one its configured mode
@@ -242,6 +246,7 @@ Bootstrap does not own:
 | [Runner registry composition](runner-registry.spec.md) | adapter | Selecting a concrete agent-runner implementation per configured runner | Supplies execution's runner registry; the composition root does not itself know which runner kinds exist. |
 | [Fake scenario resolution](fake-scenarios.spec.md) | adapter | Loading an optional `fake-scenarios.yaml` into the resolver a `fake`-kind runner scripts its responses from | Given to runner registry composition so a fixture can script a specific fake runner by its configured name. |
 | [Runner quota reporter](runner-quota-reporter.spec.md) | adapter | Translating an execution runner's quota-exhaustion signal into a control-plane fact | Given to execution as a callback; execution never appends control-plane facts itself. |
+| Activation scheduler serialiser | adapter | Adapting Persistence's keyed file lock to Control Plane's complete scheduler-pass port | Given to the shared activation scheduler by the composition root; Control Plane has no filesystem-lock dependency. |
 | [Status-publish built-in activity](status-publish-activity.spec.md) | adapter | The `status.publish` Activity, available to every workflow without operator configuration | Registered into the activity registry the composition root builds; appends to the target resource's own stream. |
 | Capability resource-transition evidence | adapter | Resolving the correlated primary resource's capabilities to an evidence policy | Composed into Orchestration's generic reactor. The built-in policy recognises pull-request evidence for mergeable, reviewable, and approvable resources; missing or ambiguous primary subjects fail closed. |
 | Integration runtime composition | composition | Provider registry, projection runner, intake/runner pipelines, delivery, and ordered reactors | Receives already-composed module services from the root. It composes the resource-transition reactor and installs its full drain before Orchestration accepts any signal. |

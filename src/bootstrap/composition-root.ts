@@ -51,6 +51,7 @@ import {
   type ResourceLinkResolver,
 } from '../resources/index.js';
 import { createWorkService } from '../work/index.js';
+import { createFileActivationSchedulerSerialiser } from './activation-scheduler-serialiser.js';
 import { createBuiltInActivityRegistry } from './activity-registry.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
@@ -268,6 +269,7 @@ export async function createCompositionRoot(
       dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
       maxConcurrentRuns: config.controlPlane.maxConcurrentRuns,
       maxDispatches: config.controlPlane.maxDispatches,
+      schedulerSerialiser: createFileActivationSchedulerSerialiser(paths.dataRoot),
       isDispatchPaused: isRuntimePaused,
       workspaceRecovery: workspaces,
       work,

@@ -3,7 +3,8 @@
 ## Purpose
 Configuration loading, dependency composition, and process startup.
 ## Owns
-Root schema composition, paths, concrete adapter selection, and hosts.
+Root schema composition, paths, concrete adapter selection, hosts, and
+cross-process scheduler serialisation.
 ## Does not own
 Domain policy, provider payloads, or persistence semantics.
 ## Invariants

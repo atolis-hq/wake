@@ -84,7 +84,7 @@ Control Plane does not own:
 
 - All of this module's durable facts live on one global stream
   (`control-plane:global`); Control Plane does not own per-WorkItem streams.
-- Within one call, Advancement's dispatch loop MUST dispatch at most
+- Within one scheduler pass, the dispatch loop MUST dispatch at most
   `controlPlane.maxDispatches` new Runs, and MUST NOT dispatch past the
   `controlPlane.maxConcurrentRuns` ceiling — rechecked after every dispatch,
   not computed once and spent — even when more ready work remains. A host
@@ -102,6 +102,10 @@ Control Plane does not own:
   dispatch-pause gate is sampled before and between safe reclaims: a paused
   tick performs no recovery deletion, and recovery never becomes a resident
   or age-based Control Plane service.
+- The scheduler serialisation port encloses the full pass, from the initial
+  pause gate through recovery, capacity checks, activation claim, Execution's
+  workspace acquisition, and durable Run creation. Bootstrap selects the
+  cross-process lock adapter; this module never imports that filesystem detail.
 
 ## Event catalogue
 
@@ -153,7 +157,7 @@ Control Plane does not own:
 
 | Component | Type | Owns | Interaction |
 | --- | --- | --- | --- |
-| [Advancement](application/advance-once.spec.md) | policy/process | Recovery, reconciliation, selection, and dispatch for one bounded unit of progress | Reads Orchestration/Execution/Resources ports directly and reads the Control Plane view for runner eligibility; the only capability the hosts and the API advance command invoke. |
+| [Activation Scheduler](application/activation-scheduler.spec.md) | policy/process | Recovery, reconciliation, selection, and dispatch for one bounded unit of progress | Reads Orchestration/Execution/Resources ports directly and uses an injected serialiser; `advanceOnce` remains the hosts' and API's compatibility facade over this same scheduler. |
 | [Control Plane view](application/control-plane-projection.spec.md) | projection | The current dispatch/runner pause read model and derived runner eligibility | Folds this module's own events; read by Advancement and by the execution runner-status surface. |
 | [Runner Pause and Resume](application/runner-control-service.spec.md) | policy/process | Operator pause/unpause command handling and quota resume-deadline derivation | Appends the `runner-paused`/`runner-resumed` facts the Control Plane view folds; the only composed command path to a manual runner pause. |
 | [Global Dispatch Pause and Resume](application/control-plane-service.spec.md) | policy/process | Operator pause/resume command handling for global dispatch, and the `isPaused` read | Appends the `dispatch-paused`/`dispatch-resumed` facts the Control Plane view also folds (independently); its `isPaused` is Advancement's `isDispatchPaused` gate. |
