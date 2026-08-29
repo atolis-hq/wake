@@ -216,14 +216,14 @@ Work's own aggregate remains the source of that state.
   function, not Work's own service.
 - Kernel — Clock, IdGenerator, and command-context/correlation conventions
   for every downstream command Advancement issues.
-- Tick and Resident Hosts (dependent) — in production composition, wrap the
-  Runner pipeline (not the bare Advancement call) as their repeated unit of
-  work.
-- The API `advance` command (dependent) — invokes the bare Advancement
-  function directly, without the surrounding Runner pipeline stages, so an
-  API-triggered advance performs no schedule reconciliation/react/deliver
-  (and, as with any bare Advancement call, no poll/translate — those never
-  ran here, even before the Runner/Intake split).
+- Tick and Resident Hosts (dependent) — in production composition, use
+  separate runner adapters: the one-shot adapter runs the non-scheduling
+  pipeline and pokes the required scheduler subscriber at its pre-delivery
+  boundary, while the resident adapter runs only the pipeline.
+- The API `tick` command (dependent) — invokes that one-shot adapter, so it
+  runs schedule reconciliation, reactions, publication, and the ordered
+  subscriber poke before delivery. It does not poll or translate inbound;
+  those operations belong to the separate Intake pipeline.
 
 ## Decisions, exclusions, and deferred capability
 

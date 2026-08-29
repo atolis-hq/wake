@@ -114,7 +114,7 @@ Bootstrap does not own:
   maintenance; it runs again after delivery.
   Only the intake pipeline touches an externally rate-limited API, which is
   why it is kept separate: a caller that only needs runner-side progress
-  (the HTTP API's `advance` command, a resident runner loop) never pays for
+  (the HTTP API's `tick` command, a resident runner loop) never pays for
   a poll. Bootstrap decides what each stage does by supplying it a concrete
   implementation; it does not itself decide whether a stage runs.
 - The composed resource-transition reactor tails its evidence triggers with

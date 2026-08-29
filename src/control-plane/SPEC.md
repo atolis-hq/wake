@@ -12,10 +12,12 @@ from Orchestration, dispatching each to Execution with the resources
 Resources resolves, and recording the outcome back into Orchestration, up to
 the open capacity within one call. It also owns the
 signals that make Advancement selective (runner and global dispatch pauses),
-the budgets that bound how many times a host may call it in one cycle, and the
-hosts (`tick`, resident) that repeat it. It coordinates a cross-module Work
-conclusion (close or cancel) cascade and cron-derived schedule slots as
-further bounded applications of the same coordination role.
+the budgets that bound host cycles, and the hosts (`tick`, resident) that
+repeat composed runner and intake callbacks. Production dispatch is owned by
+Bootstrap's durable activation-scheduler subscriber, not by a runner-host
+loop. It coordinates a cross-module Work conclusion (close or cancel) cascade
+and cron-derived schedule slots as further bounded applications of the same
+coordination role.
 
 ## Responsibilities and boundaries
 
@@ -29,7 +31,8 @@ Control Plane owns:
 - Runner-level and global dispatch pause/resume signals, and the read model
   that derives current runner eligibility from them.
 - Host budgets (`HostBudget`) and the two bounded execution surfaces (`tick`,
-  resident) that repeat Advancement under those budgets.
+  resident) that repeat composed runner and intake callbacks under those
+  budgets; production activation dispatch is owned by the durable subscriber.
 - The cross-module cascade a Work conclusion (close or cancel) triggers
   across Orchestration and Execution.
 - Recognising which cron-configured schedule slots have elapsed and turning
@@ -189,7 +192,7 @@ Control Plane does not own:
   Control Plane itself never selects a concrete adapter.
 - CLI/API surfaces (dependents) — invoke the Tick, Intake, and Resident
   Hosts, the runner and global dispatch pause/resume commands, and the
-  control-plane status/advance API command.
+  control-plane status/tick API command.
 
 ## Decisions, exclusions, and deferred capability
 
@@ -228,4 +231,4 @@ Control Plane does not own:
 
 ## Task 27B synchronization (2026-08-02)
 
-`advanceOnce` is the global dispatch choke point: it checks global pause and applies DispatchPolicy selection. The tick is split across two independently-scheduled pipelines: IntakePipeline runs poll and inbound translation (backed off when idle, since it is the only half that hits the rate-limited GitHub API), and RunnerPipeline runs schedule reconciliation, reactions, publication, delivery, and final projection/reaction passes (fast, un-backed-off cadence). The durable activation-scheduler subscriber owns advancement; one-shot ticks poke it after producing schedule and reactor facts and before delivery. Schedule slots first look up their deterministic workflow identity before minting Work, preventing a crash before checkpoint persistence from leaking a second WorkItem. The API operation is `tick` and invokes that same RunnerPipeline. Runner unpause is durable and rejects a runner that is not currently paused.
+The shared activation scheduler is the global dispatch choke point: each pass checks global pause and applies DispatchPolicy selection, while `advanceOnce` remains its test/diagnostic facade. The tick is split across two independently-scheduled pipelines: IntakePipeline runs poll and inbound translation (backed off when idle, since it is the only half that hits the rate-limited GitHub API), and RunnerPipeline runs schedule reconciliation, reactions, publication, delivery, and final projection/reaction passes (fast, un-backed-off cadence). The durable activation-scheduler subscriber owns advancement; one-shot ticks poke it after producing schedule and reactor facts and before delivery. Schedule slots first look up their deterministic workflow identity before minting Work, preventing a crash before checkpoint persistence from leaking a second WorkItem. The API operation is `tick` and invokes the one-shot runner adapter, which runs that pipeline and pokes the subscriber. Runner unpause is durable and rejects a runner that is not currently paused.

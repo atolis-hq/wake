@@ -7,8 +7,9 @@ callback up to one bounded cycle's `HostBudget`. `IntakeHost` runs exactly
 one poll-and-translate cycle per call. `ResidentHost` repeats either host's
 cycles across the lifetime of an `AbortSignal`, sleeping between cycles.
 Together these are the composed entry points CLI `tick` and `start` use to
-repeat Advancement and intake; none of the hosts has any knowledge of what
-its wrapped callback actually does internally.
+repeat the non-scheduling runner pipeline and intake. The independently
+supervised durable activation-scheduler subscriber owns dispatch; none of the
+hosts has any knowledge of what its wrapped callback actually does internally.
 
 ## Ubiquitous language
 
@@ -25,9 +26,12 @@ its wrapped callback actually does internally.
 `TickHost` owns looping its `advance` callback with `maxProgress: 1` per
 call, counting advances/runs, enforcing the budget's wall-clock and count
 caps, and mapping each stopping condition to a `HostStopReason`. It does not
-decide what one `advance` call does — in production composition it is given
-`RunnerPipeline.run`, so each loop iteration performs the internal half of a
-tick (schedules, Advancement, react, deliver, react — no external poll).
+decide what one `advance` call does. In production composition, its one-shot
+adapter runs the non-scheduling `RunnerPipeline` and pokes the durable
+activation-scheduler subscriber at the pipeline's pre-delivery boundary,
+while its resident adapter runs only that pipeline. A runner-pipeline
+iteration performs the internal half of a tick (schedules, reactions,
+agent-run publication, delivery, and final reactions — no external poll).
 `IntakeHost` owns running its cycle callback once per call and mapping
 `processed`/not to `advances`/`stoppedBecause`; it does not loop within a
 budget the way `TickHost` does, since one poll-and-translate pass is already
@@ -112,8 +116,10 @@ Decisions below).
 
 ## Dependencies and system role
 
-- Advancement / RunnerPipeline (dependency) — the `advance` callback
-  `TickHost` repeats; in production composition this is `RunnerPipeline.run`.
+- Runner adapters / RunnerPipeline (dependency) — the `AdvanceOnce`-shaped
+  callback `TickHost` repeats. In production, the one-shot adapter runs the
+  pipeline and pokes the required subscriber; the resident adapter runs only
+  the pipeline.
 - IntakePipeline (dependency) — the cycle callback `IntakeHost` runs once
   per call; in production composition this is `IntakePipeline.run`.
 - Bootstrap composition root (dependent) — constructs an intake host and
