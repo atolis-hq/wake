@@ -70,8 +70,10 @@ Control Plane does not own:
   `control-plane.dispatch-paused` / `control-plane.dispatch-resumed`.
 - **Ineligible runners** — the set of runner names currently excluded from
   selection, derived from recorded runner pauses as of a given instant.
-- **Host** — a bounded execution surface (`tick`, resident) that repeats
-  Advancement under a budget until a stop condition is reached.
+- **Host** — a bounded execution surface (`tick`, resident) that repeats a
+  composed runner or intake callback under a budget until a stop condition is
+  reached. Production runner hosts do non-scheduling pipeline work; the
+  durable subscriber owns advancement.
 - **Budget** — the caps (`maxAdvances`, `maxRuns`, `maxDurationMs`) bounding
   one host cycle.
 - **Schedule** — an operator-configured recurring rule (id, five-field cron
@@ -224,7 +226,8 @@ Control Plane does not own:
   (only intake polls the rate-limited GitHub API); the runner loop waits on
   the journal's change signal when idle (falling back to a fixed,
   non-configurable safety-net interval if nothing signals) and not at all
-  when the prior cycle progressed.
+  when the prior cycle progressed. It runs only non-scheduling pipeline work;
+  the durable subscriber independently owns activation scheduling.
 - Composing Dispatch Policy's fairness ordering and quota-driven pause into
   the live Advancement/host path, and exposing Work conclusion as a direct
   operator command, are deferred capabilities, not rejected ones.

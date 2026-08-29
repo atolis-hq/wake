@@ -13,9 +13,10 @@ export interface RunnerTickRuntime {
 export function createOneShotRunnerAdvance(root: RunnerTickRuntime): AdvanceOnce {
   return async (options) => {
     let scheduled: Awaited<ReturnType<typeof root.activationSchedulerSubscriber.poke>> | undefined;
-    await root.runnerPipeline.run(options, undefined, async () => {
+    const pipeline = await root.runnerPipeline.run(options, undefined, async () => {
       scheduled = await root.activationSchedulerSubscriber.poke(options);
     });
+    if (pipeline.kind === 'paused') return pipeline;
     if (scheduled === undefined)
       throw new Error('Subscriber scheduler did not run before delivery');
     return scheduled;

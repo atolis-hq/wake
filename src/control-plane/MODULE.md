@@ -8,12 +8,13 @@ Signals, eligibility, selection, budgets, dispatch coordination, and hosts.
 ## Does not own
 Work, workflow, execution, or provider domain policy.
 ## Invariants
-Tick, resident, and schedule hosts use the same bounded advancement capability.
-Activation scheduling is owned by the named, durable `activation-scheduler`
-subscription. The subscriber depends on a Control Plane host port;
-Bootstrap adapts Persistence. It treats every journal fact as a reconsideration,
-checkpoints only after a successful pass, and relies on the shared scheduler
-serialiser for global capacity safety. Its durable subscriber identity is
+One-shot ticks run the non-scheduling runner pipeline then poke the durable
+subscriber before delivery; resident runner hosts run only that non-scheduling
+pipeline. Activation scheduling is owned by the named, durable
+`activation-scheduler` subscription. The subscriber depends on a Control Plane
+host port; Bootstrap adapts Persistence. It treats every journal fact as a
+reconsideration, checkpoints only after a successful pass, and relies on the
+shared scheduler serialiser for global capacity safety. Its durable subscriber identity is
 `subscriber:control-plane.activation-scheduler`; the distinct scheduler
 critical-section identity is `control-plane.activation-scheduler-critical-section`.
 Startup and fallback reconciliation failures overlay durable-host health until

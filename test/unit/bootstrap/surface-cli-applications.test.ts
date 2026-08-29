@@ -86,6 +86,21 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
   expect(trace.indexOf('schedule')).toBeLessThan(trace.indexOf('deliver'));
 });
 
+it('returns a paused one-shot pipeline result without poking the subscriber', async () => {
+  const scheduler = { poke: vi.fn(async () => ({ kind: 'no-work' as const })) };
+  const runnerPipeline = {
+    run: vi.fn(async () => ({ kind: 'paused' as const })),
+  };
+
+  await expect(
+    createOneShotRunnerAdvance({ activationSchedulerSubscriber: scheduler, runnerPipeline })({
+      maxProgress: 1,
+    }),
+  ).resolves.toEqual({ kind: 'paused' });
+
+  expect(scheduler.poke).not.toHaveBeenCalled();
+});
+
 it('does not let a blocking subscriber poke stall subscriber-mode resident runner work', async () => {
   const controller = new AbortController();
   const scheduler = { poke: vi.fn(async () => ({ kind: 'no-work' as const })) };
