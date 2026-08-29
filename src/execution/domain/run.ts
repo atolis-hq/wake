@@ -4,26 +4,32 @@ import type { RunView } from '../contracts/views.js';
 import { ExecutionFailureCode, isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
 
 export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
-  const preparation = events.find(
-    (event) => event.eventType === ExecutionEventType.RunPreparationStarted,
-  );
-  const started = events.find((event) => event.eventType === ExecutionEventType.RunStarted);
-  const identity = preparation ?? started;
-  if (identity === undefined) return null;
+  const creation = events[0];
+  if (creation === undefined) return null;
+  if (
+    creation.eventType !== ExecutionEventType.RunPreparationStarted &&
+    creation.eventType !== ExecutionEventType.RunStarted
+  )
+    throw invalidRunStream(creation.stream.id, 'first event must create the run');
+  for (const event of events.slice(1))
+    if (event.eventType === ExecutionEventType.RunPreparationStarted)
+      throw invalidRunStream(creation.stream.id, 'RunPreparationStarted must be the first event');
+
+  const startedFromPreparation = creation.eventType === ExecutionEventType.RunPreparationStarted;
   const state: RunView = {
-    runId: identity.stream.id,
-    activationId: identity.payload.activationId,
-    activity: identity.payload.activity,
-    ...(identity.payload.stage === undefined ? {} : { stage: identity.payload.stage }),
-    workflowInstanceId: identity.payload.workflowInstanceId,
-    orchestrationGroupId: identity.payload.orchestrationGroupId,
-    attempt: identity.payload.attempt,
-    status: preparation === undefined ? RunStatus.Started : RunStatus.Starting,
+    runId: creation.stream.id,
+    activationId: creation.payload.activationId,
+    activity: creation.payload.activity,
+    ...(creation.payload.stage === undefined ? {} : { stage: creation.payload.stage }),
+    workflowInstanceId: creation.payload.workflowInstanceId,
+    orchestrationGroupId: creation.payload.orchestrationGroupId,
+    attempt: creation.payload.attempt,
+    status: startedFromPreparation ? RunStatus.Starting : RunStatus.Started,
     ambiguityAttempts: 0,
     escalated: false,
-    startedAt: identity.payload.startedAt,
-    ...(preparation === undefined ? { executionStartedAt: identity.payload.startedAt } : {}),
-    ...(identity.payload.runner === undefined ? {} : { runner: identity.payload.runner }),
+    startedAt: creation.payload.startedAt,
+    ...(startedFromPreparation ? {} : { executionStartedAt: creation.payload.startedAt }),
+    ...(creation.payload.runner === undefined ? {} : { runner: creation.payload.runner }),
   };
   for (const event of events) applyRunEvent(state, event);
   return state;
@@ -44,6 +50,7 @@ function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
     case ExecutionEventType.RunPreparationStarted:
       return;
     case ExecutionEventType.RunStarted:
+      if (state.status === RunStatus.Starting) validateRunStart(state, event);
       Object.assign(state, {
         status: RunStatus.Started,
         executionStartedAt: event.payload.startedAt,
@@ -57,6 +64,52 @@ function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
     default:
       return applyLivenessEvent(state, event);
   }
+}
+
+function validateRunStart(
+  state: RunView,
+  event: Extract<RunExecutionEvent, { eventType: typeof ExecutionEventType.RunStarted }>,
+): void {
+  const fields: readonly [
+    keyof Pick<
+      RunView,
+      | 'activationId'
+      | 'activity'
+      | 'stage'
+      | 'workflowInstanceId'
+      | 'orchestrationGroupId'
+      | 'attempt'
+    >,
+    unknown,
+  ][] = [
+    ['activationId', event.payload.activationId],
+    ['activity', event.payload.activity],
+    ['stage', event.payload.stage],
+    ['workflowInstanceId', event.payload.workflowInstanceId],
+    ['orchestrationGroupId', event.payload.orchestrationGroupId],
+    ['attempt', event.payload.attempt],
+  ];
+  for (const [field, value] of fields)
+    if (state[field] !== value)
+      throw invalidRunStream(state.runId, `RunStarted contradicts RunPreparationStarted ${field}`);
+  if (!sameRunner(state.runner, event.payload.runner))
+    throw invalidRunStream(state.runId, 'RunStarted contradicts RunPreparationStarted runner');
+}
+
+function sameRunner(
+  left: RunView['runner'],
+  right: Extract<
+    RunExecutionEvent,
+    { eventType: typeof ExecutionEventType.RunStarted }
+  >['payload']['runner'],
+): boolean {
+  return (
+    left?.name === right?.name &&
+    left?.model === right?.model &&
+    left?.effort === right?.effort &&
+    left?.pool === right?.pool &&
+    left?.cli === right?.cli
+  );
 }
 
 function applyTerminalEvent(
@@ -190,4 +243,8 @@ function recoveredState(
 
 function assertNever(value: never): never {
   throw new Error(`Unhandled Execution event: ${JSON.stringify(value)}`);
+}
+
+function invalidRunStream(runId: string, message: string): Error {
+  return new Error(`Invalid Run stream ${runId}: ${message}`);
 }

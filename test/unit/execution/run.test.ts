@@ -35,7 +35,7 @@ it('projects the originating stage from the run start event', () => {
   expect(foldRun([started])).toMatchObject({ stage: 'refine' });
 });
 
-it('folds preparation, execution start, and failure while preserving preparation identity', () => {
+it('rejects a run start that contradicts preparation identity or runner', () => {
   const stream = runStream(runId('run-1'));
   const preparation = eventEnvelope(
     ExecutionEventType.RunPreparationStarted,
@@ -82,18 +82,54 @@ it('folds preparation, execution start, and failure while preserving preparation
     startedAt: '2026-07-31T11:59:00.000Z',
     runner: { name: 'codex', model: 'gpt-5.1' },
   });
-  expect(foldRun([preparation, started, failed])).toMatchObject({
+  expect(() => foldRun([preparation, started, failed])).toThrow(
+    /Invalid Run stream.*activationId/i,
+  );
+});
+
+it('folds a run start that matches preparation identity and runner', () => {
+  const stream = runStream(runId('run-1'));
+  const preparation = eventEnvelope(
+    ExecutionEventType.RunPreparationStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      stage: 'refine',
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T11:59:00.000Z',
+      runner: { name: 'codex', model: 'gpt-5.1', effort: 'high', pool: 'default', cli: 'codex' },
+    },
+    stream,
+  );
+  const started = eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      stage: 'refine',
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T12:00:00.000Z',
+      runner: { name: 'codex', model: 'gpt-5.1', effort: 'high', pool: 'default', cli: 'codex' },
+      workspace: { mode: WorkspaceMode.Branch, path: 'C:\\repo', branch: 'wake/work-1' },
+    },
+    stream,
+  );
+
+  expect(foldRun([preparation, started])).toMatchObject({
     activationId: activationId('activation-1'),
     activity: activityName('implement'),
     workflowInstanceId: workflowInstanceId('workflow-1'),
     orchestrationGroupId: orchestrationGroupId('group-1'),
     attempt: 1,
-    status: RunStatus.Failed,
+    status: RunStatus.Started,
     startedAt: '2026-07-31T11:59:00.000Z',
     executionStartedAt: '2026-07-31T12:00:00.000Z',
-    runner: { name: 'codex', model: 'gpt-5.1' },
+    runner: { name: 'codex', model: 'gpt-5.1', effort: 'high', pool: 'default', cli: 'codex' },
     workspace: { mode: 'branch', path: 'C:\\repo', branch: 'wake/work-1' },
-    finishedAt: '2026-07-31T12:01:00.000Z',
   });
 });
 
@@ -149,6 +185,64 @@ it('folds a failure directly after preparation', () => {
     startedAt: '2026-07-31T11:59:00.000Z',
     finishedAt: '2026-07-31T12:00:00.000Z',
   });
+});
+
+it('rejects a preparation event that occurs after another run event', () => {
+  const stream = runStream(runId('run-1'));
+  const preparation = eventEnvelope(
+    ExecutionEventType.RunPreparationStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T11:59:00.000Z',
+    },
+    stream,
+  );
+  const lease = eventEnvelope(
+    ExecutionEventType.RunLeaseClaimed,
+    {
+      owner: 'resident-a',
+      acquiredAt: '2026-07-31T11:58:00.000Z',
+      expiresAt: '2026-07-31T12:01:00.000Z',
+    },
+    stream,
+  );
+  const started = eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T12:00:00.000Z',
+    },
+    stream,
+  );
+
+  expect(() => foldRun([lease, preparation])).toThrow(/Invalid Run stream.*first/i);
+  expect(() => foldRun([started, preparation])).toThrow(/Invalid Run stream.*preparation/i);
+});
+
+it('rejects duplicate run preparation events', () => {
+  const stream = runStream(runId('run-1'));
+  const preparation = eventEnvelope(
+    ExecutionEventType.RunPreparationStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T11:59:00.000Z',
+    },
+    stream,
+  );
+
+  expect(() => foldRun([preparation, preparation])).toThrow(/Invalid Run stream.*preparation/i);
 });
 
 it('identifies starting and started runs as active', () => {
