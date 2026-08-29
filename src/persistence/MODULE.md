@@ -15,6 +15,13 @@ Depends only on Kernel; projections never reconstruct events.
 bounded journal batches and must make effects idempotent from stable event
 identities: a successful handler is checkpointed afterwards, so a crash or
 failed checkpoint can replay its batch.
+
+`projectionConsumer`, `createProjectionSubscription`, and
+`applyProjectionBatch` adapt a projection definition to that durable
+subscription contract. `ProjectionRebuilder` holds the same consumer-keyed
+serialisation as a live subscription while it clears, resets, replays bounded
+batches, and checkpoints one projection. Bootstrap still uses the legacy
+`ProjectionRunner`; its migration to subscriptions is separate work.
 ## Configuration
 Owns `persistence`.
 ## Relations and events

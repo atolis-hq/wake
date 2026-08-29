@@ -32,14 +32,18 @@ Persistence owns:
   journal writers on a real filesystem. Callers may additionally require a
   stale lock's recorded local PID to be dead before reclaiming it, for a
   long-lived exclusive operational attempt such as self-update.
-- The process that reads each registered projection from its own checkpoint,
-  applies newly available events, and can rebuild a projection from scratch.
+- Projection subscription helpers that apply a durable handler batch and a
+  rebuilder that clears, resets, replays, and checkpoints one projection.
 - Supervised durable subscriptions that replay bounded journal batches for
   independently named consumers, advance checkpoints only after a successful
   handler, and report volatile per-consumer health.
 - Keyed run serialisation for a consumer's full checkpoint-load, handle, and
   checkpoint-save interval. The filesystem implementation holds a
   consumer-specific lock across that interval.
+- Projection rebuilds take that same consumer lock before clearing their
+  namespace and retain it through reset, bounded replay, projection writes,
+  and checkpoint saves, so a live pass cannot interleave with a rebuild of
+  the same projection.
 - Versioned, injectively encoded filesystem checkpoint paths, with a
   read-compatible legacy fallback so changing the path scheme does not discard
   existing projection checkpoints.
@@ -140,11 +144,11 @@ Persistence does not own:
 
 | Component | Type | Owns | Interaction |
 | --- | --- | --- | --- |
-| [Event Journal](event-journal.spec.md) | adapter | Append, per-stream and journal-wide ordering, idempotent replay of event envelopes | The durable record every other component and module ultimately reads from; the Projection Runner's event source. |
-| [Projection Store](projection-store.spec.md) | adapter | Keyed storage of current projection values, stamped with the position they reflect | Written by the Projection Runner; read by every module's query paths and by diagnostics. |
-| [Checkpoint Store](checkpoint-store.spec.md) | adapter | Per-consumer durable read cursor into the journal | Read and advanced by the Projection Runner to avoid rescanning the journal; reset to force a full rebuild. |
+| [Event Journal](event-journal.spec.md) | adapter | Append, per-stream and journal-wide ordering, idempotent replay of event envelopes | The durable record every other component and module ultimately reads from; projection subscription and rebuild source. |
+| [Projection Store](projection-store.spec.md) | adapter | Keyed storage of current projection values, stamped with the position they reflect | Written by projection subscriptions and rebuilds; read by every module's query paths and diagnostics. |
+| [Checkpoint Store](checkpoint-store.spec.md) | adapter | Per-consumer durable read cursor into the journal | Advanced by the durable host after projection batch handling and reset/saved by rebuilds. |
 | [File Lock](file-lock.spec.md) | adapter | Mutual exclusion over a filesystem path, with optional PID-liveness-protected stale reclamation | Used by the filesystem Event Journal to serialize concurrent writers and by Bootstrap safe self-update for exclusive full attempts; exported for reuse. |
-| [Projection Runner](projection-runner.spec.md) | policy/process | Advancing every registered projection from the journal; rebuilding one from scratch | The only component that coordinates the Event Journal, Projection Store, and Checkpoint Store together. |
+| [Projection Subscription and Rebuilder](projection-runner.spec.md) | policy/process | Applying durable projection batches and rebuilding one projection under the same consumer lock | The durable host supplies batches and checkpoints them after handling; the rebuilder holds the same lock across clear/reset/replay. |
 | [Durable Subscription Host](durable-subscription-host.spec.md) | policy/process | Independent checkpointed consumer loops, retry, health, cancellation, and keyed serialisation | Tails the journal for named consumers without interpreting their events. |
 
 ## Dependencies and system role
@@ -155,8 +159,8 @@ Persistence does not own:
   to implement Kernel's ports; it has no other dependency.
 - Bootstrap (depends on Persistence) — selects the filesystem
   implementations for a real Wake home, wires them into the composition
-  root, and schedules the Projection Runner as part of the tick pipeline
-  and operator-facing diagnostics.
+  root, and currently schedules the legacy Projection Runner path. Migrating
+  Bootstrap to projection subscriptions is separate work.
 - Every domain module (depends on Persistence indirectly, through Kernel's
   ports) — appends to and reads from the journal, and supplies the
   projection definitions the Projection Runner advances. Persistence never

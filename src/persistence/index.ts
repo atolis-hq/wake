@@ -1,5 +1,7 @@
 export * from './application/projection-runner.js';
 
+export * from './application/projection-subscription.js';
+
 export * from './application/durable-subscription-host.js';
 
 export * from './application/subscription-run-serialiser.js';
