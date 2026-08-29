@@ -65,9 +65,13 @@ export class FileEventJournal implements EventJournal {
   // concurrently each independently decide the cache is stale and each
   // re-read and re-parse the entire on-disk journal — under I/O pressure
   // (e.g. a concurrently running build/test process competing for disk),
-  // enough of these can overlap at once to exhaust the heap. Sharing one
-  // in-flight decode among concurrent callers makes that impossible.
-  private inFlightScan: Promise<EventEnvelope[]> | undefined;
+  // enough of these can overlap at once to exhaust the heap. Sharing a decode
+  // only for the same segment fingerprints keeps that protection without
+  // letting an append reuse a scan from before another process wrote.
+  private inFlightScan:
+    { readonly entries: readonly FileStat[]; readonly run: Promise<EventEnvelope[]> } | undefined;
+
+  private scanGeneration = 0;
 
   async append(
     stream: EntityRef,
@@ -341,12 +345,15 @@ export class FileEventJournal implements EventJournal {
     }
   }
 
-  private scan(precomputedEntries?: readonly FileStat[]): Promise<EventEnvelope[]> {
-    if (this.inFlightScan !== undefined) return this.inFlightScan;
-    const run = this.scanUncoalesced(precomputedEntries).finally(() => {
-      if (this.inFlightScan === run) this.inFlightScan = undefined;
+  private async scan(precomputedEntries?: readonly FileStat[]): Promise<EventEnvelope[]> {
+    const entries = precomputedEntries ?? (await this.readCurrentEntries());
+    const inFlight = this.inFlightScan;
+    if (inFlight !== undefined && sameEntries(inFlight.entries, entries)) return inFlight.run;
+    const generation = ++this.scanGeneration;
+    const run = this.scanUncoalesced(entries, generation).finally(() => {
+      if (this.inFlightScan?.run === run) this.inFlightScan = undefined;
     });
-    this.inFlightScan = run;
+    this.inFlightScan = { entries, run };
     return run;
   }
 
@@ -429,10 +436,10 @@ export class FileEventJournal implements EventJournal {
   }
 
   private async scanUncoalesced(
-    precomputedEntries?: readonly FileStat[],
+    entries: readonly FileStat[],
+    generation: number,
   ): Promise<EventEnvelope[]> {
     const directory = join(this.root, 'events');
-    const entries = precomputedEntries ?? (await this.readCurrentEntries());
     if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
       return this.cached.events;
     const events: EventEnvelope[] = [];
@@ -474,7 +481,8 @@ export class FileEventJournal implements EventJournal {
         events: indexedEvents,
       });
     }
-    this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
+    if (generation === this.scanGeneration)
+      this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
     return events;
   }
 }

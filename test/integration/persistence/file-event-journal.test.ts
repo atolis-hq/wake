@@ -403,6 +403,82 @@ it('coalesces concurrent reads on a cold cache into a single on-disk decode', as
   expect(journalFileReads).toHaveLength(1);
 });
 
+it('revalidates an in-flight local scan after an external append before assigning positions', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-stale-scan-'));
+  const clock = new FakeClock();
+  const primary: EntityRef<'work-item', 'primary'> = { kind: 'work-item', id: 'primary' };
+  const external: EntityRef<'work-item', 'external'> = { kind: 'work-item', id: 'external' };
+  const local: EntityRef<'work-item', 'local'> = { kind: 'work-item', id: 'local' };
+  const draft = (stream: EntityRef, id: string) =>
+    createEventDraft({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: id },
+    });
+  const remoteWriter = new FileEventJournal(root, clock);
+  await remoteWriter.append(primary, 0, [draft(primary, 'event-1')]);
+
+  const segmentPath = join(root, 'events', '2026-07-30.jsonl');
+  const journalLockPath = join(root, 'locks', 'event-journal.lock');
+  const snapshotRead = deferred<void>();
+  const releaseSnapshot = deferred<void>();
+  const originalReadFile = readFileMock.getMockImplementation();
+  if (originalReadFile === undefined)
+    throw new Error('Expected the filesystem read mock implementation');
+  let heldSnapshot = false;
+  readFileMock.mockImplementation(async (...args) => {
+    if (!heldSnapshot && String(args[0]) === segmentPath) {
+      heldSnapshot = true;
+      const contents = await originalReadFile(...args);
+      snapshotRead.resolve();
+      await releaseSnapshot.promise;
+      return contents;
+    }
+    return originalReadFile(...args);
+  });
+
+  try {
+    const localReader = new FileEventJournal(root, clock);
+    const staleRead = localReader.latestGlobalPosition();
+    await snapshotRead.promise;
+    await remoteWriter.append(external, 0, [draft(external, 'event-2')]);
+    const localAppend = localReader.append(local, 0, [draft(local, 'event-3')]);
+    let localAppendSettled = false;
+    void localAppend.then(
+      () => {
+        localAppendSettled = true;
+      },
+      () => {
+        localAppendSettled = true;
+      },
+    );
+    await vi.waitFor(async () => {
+      if (localAppendSettled) return;
+      expect(await readFile(journalLockPath, 'utf8')).toContain('compatibilityOwner');
+    });
+    releaseSnapshot.resolve();
+
+    await expect(staleRead).resolves.toBe(1);
+    await expect(localAppend).resolves.toEqual([
+      expect.objectContaining({ eventId: 'event-3', globalPosition: 3 }),
+    ]);
+    await expect(new FileEventJournal(root, clock).readAll(0)).resolves.toEqual([
+      expect.objectContaining({ eventId: 'event-1', globalPosition: 1 }),
+      expect.objectContaining({ eventId: 'event-2', globalPosition: 2 }),
+      expect.objectContaining({ eventId: 'event-3', globalPosition: 3 }),
+    ]);
+  } finally {
+    releaseSnapshot.resolve();
+    readFileMock.mockImplementation(originalReadFile);
+  }
+});
+
 it('readStream on a cold cache parses only the segment files that can hold that stream', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-cold-stream-'));
   const streamA: EntityRef<'work-item', 'work-a'> = { kind: 'work-item', id: 'work-a' };
@@ -688,6 +764,14 @@ function controlledWatcherFactory(failure?: Error) {
       errors.shift()?.();
     },
   };
+}
+
+function deferred<Value>() {
+  let resolve!: (value: Value | PromiseLike<Value>) => void;
+  const promise = new Promise<Value>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 it('wakes every concurrent waiter from one external append', async () => {
