@@ -23,6 +23,7 @@ import {
 } from './board-projection.js';
 import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
+import { createOneShotRunnerAdvance } from './runner-tick-adapter.js';
 import {
   createSelfUpdateFailureLog,
   describeSelfUpdateFailure,
@@ -419,8 +420,7 @@ async function performTick(
   sequence: number,
 ): Promise<ApiTickCommandResult> {
   const acceptedAt = now();
-  await root.activationSchedulerSubscriber?.poke({ maxProgress: 1 });
-  await root.runnerPipeline.run({ maxProgress: 1 });
+  await createOneShotRunnerAdvance(root)({ maxProgress: 1 });
   return {
     commandId: `tick:${acceptedAt}:${sequence}`,
     idempotencyKey: command.idempotencyKey,

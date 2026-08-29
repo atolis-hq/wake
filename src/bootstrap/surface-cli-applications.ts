@@ -52,6 +52,7 @@ import type { CompositionRoot } from './composition-root.js';
 import { loadConfig } from './config/load-config.js';
 import { runtimeProjectionDefinitions } from './projection-runtime.js';
 import { createRunnerRegistry } from './runner-registry.js';
+import { createOneShotRunnerAdvance, createResidentRunnerAdvance } from './runner-tick-adapter.js';
 import {
   createSelfUpdateApplication,
   type SelfUpdateQuiescePort,
@@ -68,10 +69,8 @@ export function createSurfaceCliApplications(
   api: ApiApplications,
   now: () => string,
 ): WakeCliApplications {
-  const runnerTick = new TickHost(async (options) => {
-    await root.activationSchedulerSubscriber?.poke(options);
-    return root.runnerPipeline.run(options);
-  });
+  const runnerTick = new TickHost(createOneShotRunnerAdvance(root));
+  const runnerResidentTick = new TickHost(createResidentRunnerAdvance(root));
   const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
   const runnerIdleWait = createRunnerIdleWait(root, root.config.controlPlane?.resident);
   const reportResidentError = (label: 'intake' | 'runner') => async (error: unknown) => {
@@ -91,7 +90,7 @@ export function createSurfaceCliApplications(
   // idling — still backs off exponentially, or a live rate-limit window gets
   // hammered every cycle instead of given a chance to recover.
   const runnerResident = new ResidentHost(
-    runnerTick,
+    runnerResidentTick,
     runnerIdleWait,
     reportResidentError('runner'),
   );

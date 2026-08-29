@@ -1,9 +1,72 @@
 import { expect, it, vi } from 'vitest';
 import {
+  createOneShotRunnerAdvance,
+  createResidentRunnerAdvance,
+} from '../../../src/bootstrap/runner-tick-adapter.js';
+import {
   createRunnerIdleWait,
   runProjectionPump,
 } from '../../../src/bootstrap/surface-cli-applications.js';
+import { ResidentHost, TickHost } from '../../../src/control-plane/index.js';
 import { InProcessJournalChangeSignal } from '../../../src/kernel/index.js';
+
+it('drains subscriber scheduling progress through a one-shot tick budget while running the pipeline', async () => {
+  const scheduler = {
+    poke: vi
+      .fn()
+      .mockResolvedValueOnce({
+        kind: 'progressed',
+        dispatched: [{ activationId: 'activation-one', runId: 'run-one' }],
+      })
+      .mockResolvedValueOnce({
+        kind: 'progressed',
+        dispatched: [{ activationId: 'activation-two', runId: 'run-two' }],
+      })
+      .mockResolvedValueOnce({ kind: 'no-work' }),
+  };
+  const runnerPipeline = { run: vi.fn(async () => ({ kind: 'no-work' as const })) };
+  const tick = new TickHost(
+    createOneShotRunnerAdvance({
+      activationSchedulerSubscriber: scheduler,
+      runnerPipeline,
+    } as never),
+  );
+
+  await expect(tick.run({ maxAdvances: 3, maxRuns: 3, maxDurationMs: 1_000 })).resolves.toEqual({
+    advances: 2,
+    runs: 2,
+    stoppedBecause: 'idle',
+  });
+
+  expect(scheduler.poke).toHaveBeenCalledTimes(3);
+  expect(runnerPipeline.run).toHaveBeenCalledTimes(3);
+});
+
+it('does not let a blocking subscriber poke stall subscriber-mode resident runner work', async () => {
+  const controller = new AbortController();
+  const scheduler = { poke: vi.fn(() => new Promise(() => {})) };
+  const runnerPipeline = {
+    run: vi.fn(async () => {
+      controller.abort();
+      return { kind: 'no-work' as const };
+    }),
+  };
+  const resident = new ResidentHost(
+    new TickHost(
+      createResidentRunnerAdvance({
+        activationSchedulerSubscriber: scheduler,
+        runnerPipeline,
+      } as never),
+    ),
+  );
+
+  await expect(
+    resident.run(controller.signal, { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 }),
+  ).resolves.toMatchObject({ stoppedBecause: 'shutdown' });
+
+  expect(runnerPipeline.run).toHaveBeenCalledOnce();
+  expect(scheduler.poke).not.toHaveBeenCalled();
+});
 
 it('advances the resident projection pump', async () => {
   const controller = new AbortController();

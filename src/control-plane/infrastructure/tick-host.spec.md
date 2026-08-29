@@ -116,12 +116,12 @@ Decisions below).
   `TickHost` repeats; in production composition this is `RunnerPipeline.run`.
 - IntakePipeline (dependency) — the cycle callback `IntakeHost` runs once
   per call; in production composition this is `IntakePipeline.run`.
-- Bootstrap composition root (dependent) — constructs one `TickHost` (wrapping
-  `root.runnerPipeline.run`) and one `IntakeHost` (wrapping
-  `root.intakePipeline.run`), each wrapped in its own `ResidentHost`, exposed
-  together as the CLI `start` command; the one-shot CLI `tick` command runs
-  an intake cycle once and then drains the runner `TickHost` up to budget,
-  mirroring the former combined `runTick` loop.
+- Bootstrap composition root (dependent) — constructs an intake host and
+  separate one-shot/resident runner `TickHost` adapters. In subscriber mode,
+  the one-shot adapter pokes the durable scheduler and returns its result,
+  while the resident adapter runs only `root.runnerPipeline.run`; the durable
+  scheduler subscription is started independently. Inline mode remains the
+  runner pipeline's existing advancement path.
 
 ## Decisions, exclusions, and deferred capability
 

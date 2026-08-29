@@ -120,6 +120,8 @@ export * from './paths.js';
 
 export * from './projection-runtime.js';
 
+export * from './runner-tick-adapter.js';
+
 export type { SurfaceApplicationOptions, SurfaceApplications } from './surface-applications.js';
 
 export async function createSurfaceApplications(

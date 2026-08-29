@@ -44,6 +44,7 @@ export interface ActivationSchedulerSubscriptionHealth {
   readonly status: 'starting' | 'healthy' | 'degraded' | 'stopped';
   readonly checkpoint: number;
   readonly consecutiveFailures: number;
+  readonly lastError?: unknown;
 }
 
 /** Schedules durable activation work independently from slow runner reactors. */
@@ -60,12 +61,25 @@ export function createActivationSchedulerSubscriber(
 ): ActivationSchedulerSubscriber {
   const fallbackMs = options.fallbackMs ?? defaultFallbackMs;
   const waitForFallback = options.waitForFallback ?? waitUntilAbort;
+  let reconciliationFailures = 0;
+  let reconciliationError: unknown;
   if (!Number.isSafeInteger(fallbackMs) || fallbackMs <= 0 || fallbackMs > maximumTimerDelayMs)
     throw new Error(
       `Activation scheduler fallback must be a positive safe integer no greater than ${maximumTimerDelayMs}`,
     );
 
-  const poke = (advance: AdvanceOptions = { maxProgress: 1 }) => scheduler.runOnce(advance);
+  const poke = async (advance: AdvanceOptions = { maxProgress: 1 }): Promise<AdvanceResult> => {
+    try {
+      const result = await scheduler.runOnce(advance);
+      reconciliationFailures = 0;
+      reconciliationError = undefined;
+      return result;
+    } catch (error) {
+      reconciliationFailures += 1;
+      reconciliationError = error;
+      throw error;
+    }
+  };
   return {
     start(parentSignal?: AbortSignal) {
       const controller = new AbortController();
@@ -99,7 +113,17 @@ export function createActivationSchedulerSubscriber(
       };
     },
     poke,
-    health: () => host.health(activationSchedulerSubscriptionConsumer),
+    health: () => {
+      const durable = host.health(activationSchedulerSubscriptionConsumer);
+      if (reconciliationFailures === 0) return durable;
+      return {
+        consumer: activationSchedulerSubscriptionConsumer,
+        status: 'degraded',
+        checkpoint: durable?.checkpoint ?? 0,
+        consecutiveFailures: reconciliationFailures,
+        lastError: reconciliationError,
+      };
+    },
   };
 }
 

@@ -192,6 +192,112 @@ describe('ActivationSchedulerSubscriber', () => {
     await run.done;
   });
 
+  it('reports startup reconciliation failure even when an empty durable host is healthy', async () => {
+    const journal = new InMemoryEventJournal({ now: () => new Date('2026-08-29T00:00:00.000Z') });
+    const schedulerFailure = new Error('startup scheduler failed');
+    const scheduler: ActivationScheduler = {
+      runOnce: vi.fn(async () => {
+        throw schedulerFailure;
+      }),
+    };
+    const subscriber = createActivationSchedulerSubscriber(
+      new DurableSubscriptionHost(
+        journal,
+        new InMemoryCheckpointStore(),
+        createInMemorySubscriptionRunSerialiser(),
+      ),
+      scheduler,
+      { fallbackMs: 60_000 },
+    );
+    const controller = new AbortController();
+    const run = subscriber.start(controller.signal);
+
+    await vi.waitFor(() =>
+      expect(subscriber.health()).toMatchObject({
+        consumer: activationSchedulerSubscriptionConsumer,
+        status: 'degraded',
+        checkpoint: 0,
+        consecutiveFailures: 1,
+        lastError: schedulerFailure,
+      }),
+    );
+
+    controller.abort();
+    await run.done;
+  });
+
+  it('counts repeated fallback reconciliation failures and clears them after recovery', async () => {
+    const firstFailure = new Error('first fallback failed');
+    const secondFailure = new Error('second fallback failed');
+    const fallbackGates: (() => void)[] = [];
+    const durableStopped = deferred<void>();
+    const scheduler: ActivationScheduler = {
+      runOnce: vi
+        .fn<ActivationScheduler['runOnce']>()
+        .mockResolvedValueOnce({ kind: 'no-work' })
+        .mockRejectedValueOnce(firstFailure)
+        .mockRejectedValueOnce(secondFailure)
+        .mockResolvedValueOnce({ kind: 'no-work' }),
+    };
+    const subscriber = createActivationSchedulerSubscriber(
+      {
+        start: (_subscriptions, signal) => {
+          signal?.addEventListener('abort', () => durableStopped.resolve(), { once: true });
+          return { abort: () => durableStopped.resolve(), done: durableStopped.promise };
+        },
+        health: () => ({
+          consumer: activationSchedulerSubscriptionConsumer,
+          status: 'healthy',
+          checkpoint: 0,
+          consecutiveFailures: 0,
+        }),
+      },
+      scheduler,
+      {
+        fallbackMs: 1,
+        waitForFallback: (signal) =>
+          new Promise<void>((resolve) => {
+            if (signal.aborted) return resolve();
+            const done = () => {
+              signal.removeEventListener('abort', done);
+              resolve();
+            };
+            fallbackGates.push(done);
+            signal.addEventListener('abort', done, { once: true });
+          }),
+      },
+    );
+    const controller = new AbortController();
+    const run = subscriber.start(controller.signal);
+
+    await vi.waitFor(() => expect(fallbackGates).toHaveLength(1));
+    fallbackGates.shift()!();
+    await vi.waitFor(() =>
+      expect(subscriber.health()).toMatchObject({
+        status: 'degraded',
+        consecutiveFailures: 1,
+        lastError: firstFailure,
+      }),
+    );
+    await vi.waitFor(() => expect(fallbackGates).toHaveLength(1));
+    fallbackGates.shift()!();
+    await vi.waitFor(() =>
+      expect(subscriber.health()).toMatchObject({
+        status: 'degraded',
+        consecutiveFailures: 2,
+        lastError: secondFailure,
+      }),
+    );
+    await vi.waitFor(() => expect(fallbackGates).toHaveLength(1));
+    fallbackGates.shift()!();
+    await vi.waitFor(() =>
+      expect(subscriber.health()).toMatchObject({ status: 'healthy', consecutiveFailures: 0 }),
+    );
+
+    controller.abort();
+    await run.done;
+  });
+
   it('schedules at startup and after every new journal fact, then checkpoints only after success', async () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);

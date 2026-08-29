@@ -9,6 +9,9 @@ cross-process scheduler serialisation.
 Domain policy, provider payloads, or persistence semantics.
 ## Invariants
 Only Bootstrap knows the complete application graph.
+In subscriber mode, the durable activation scheduler owns resident scheduling;
+one-shot CLI and API ticks explicitly poke it and preserve its advancement
+result while also running the legacy runner pipeline.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

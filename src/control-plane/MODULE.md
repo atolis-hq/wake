@@ -16,6 +16,8 @@ checkpoints only after a successful pass, and relies on the shared scheduler
 serialiser for global capacity safety. Its durable subscriber identity is
 `subscriber:control-plane.activation-scheduler`; the distinct scheduler
 critical-section identity is `control-plane.activation-scheduler-critical-section`.
+Startup and fallback reconciliation failures overlay durable-host health until
+a successful scheduler pass clears them.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration
