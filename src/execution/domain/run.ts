@@ -1,32 +1,36 @@
 import { EventActorKind } from '../../kernel/index.js';
 import { ExecutionEventType, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
-import { ExecutionFailureCode, RunStatus } from '../contracts/vocabulary.js';
+import { ExecutionFailureCode, isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
 
 export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
+  const preparation = events.find(
+    (event) => event.eventType === ExecutionEventType.RunPreparationStarted,
+  );
   const started = events.find((event) => event.eventType === ExecutionEventType.RunStarted);
-  if (started === undefined) return null;
+  const identity = preparation ?? started;
+  if (identity === undefined) return null;
   const state: RunView = {
-    runId: started.stream.id,
-    activationId: started.payload.activationId,
-    activity: started.payload.activity,
-    ...(started.payload.stage === undefined ? {} : { stage: started.payload.stage }),
-    workflowInstanceId: started.payload.workflowInstanceId,
-    orchestrationGroupId: started.payload.orchestrationGroupId,
-    attempt: started.payload.attempt,
-    status: RunStatus.Started,
+    runId: identity.stream.id,
+    activationId: identity.payload.activationId,
+    activity: identity.payload.activity,
+    ...(identity.payload.stage === undefined ? {} : { stage: identity.payload.stage }),
+    workflowInstanceId: identity.payload.workflowInstanceId,
+    orchestrationGroupId: identity.payload.orchestrationGroupId,
+    attempt: identity.payload.attempt,
+    status: preparation === undefined ? RunStatus.Started : RunStatus.Starting,
     ambiguityAttempts: 0,
     escalated: false,
-    startedAt: started.payload.startedAt,
-    ...(started.payload.runner === undefined ? {} : { runner: started.payload.runner }),
-    ...(started.payload.workspace === undefined ? {} : { workspace: started.payload.workspace }),
+    startedAt: identity.payload.startedAt,
+    ...(preparation === undefined ? { executionStartedAt: identity.payload.startedAt } : {}),
+    ...(identity.payload.runner === undefined ? {} : { runner: identity.payload.runner }),
   };
   for (const event of events) applyRunEvent(state, event);
   return state;
 }
 
 function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
-  if (state.status !== RunStatus.Started) {
+  if (!isActiveRunStatus(state.status)) {
     if (
       state.status === RunStatus.Ambiguous &&
       event.actor.kind === EventActorKind.Operator &&
@@ -37,7 +41,14 @@ function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
     return;
   }
   switch (event.eventType) {
+    case ExecutionEventType.RunPreparationStarted:
+      return;
     case ExecutionEventType.RunStarted:
+      Object.assign(state, {
+        status: RunStatus.Started,
+        executionStartedAt: event.payload.startedAt,
+        ...(event.payload.workspace === undefined ? {} : { workspace: event.payload.workspace }),
+      });
       return;
     case ExecutionEventType.RunSucceeded:
     case ExecutionEventType.RunFailed:
@@ -88,6 +99,7 @@ function applyLivenessEvent(
     RunExecutionEvent,
     {
       eventType:
+        | typeof ExecutionEventType.RunPreparationStarted
         | typeof ExecutionEventType.RunStarted
         | typeof ExecutionEventType.RunSucceeded
         | typeof ExecutionEventType.RunFailed

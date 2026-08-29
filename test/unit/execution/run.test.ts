@@ -1,6 +1,13 @@
 import { expect, it } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
-import { ExecutionEventType, foldRun, runId, runStream } from '../../../src/execution/index.js';
+import {
+  ExecutionEventType,
+  foldRun,
+  isActiveRunStatus,
+  runId,
+  RunStatus,
+  runStream,
+} from '../../../src/execution/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
 
@@ -24,4 +31,121 @@ it('projects the originating stage from the run start event', () => {
   );
 
   expect(foldRun([started])).toMatchObject({ stage: 'refine' });
+});
+
+it('folds preparation, execution start, and failure while preserving preparation identity', () => {
+  const stream = runStream(runId('run-1'));
+  const preparation = eventEnvelope(
+    ExecutionEventType.RunPreparationStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      stage: 'refine',
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T11:59:00.000Z',
+      runner: { name: 'codex', model: 'gpt-5.1' },
+    },
+    stream,
+  );
+  const started = eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId('other-activation'),
+      activity: activityName('other-activity'),
+      workflowInstanceId: workflowInstanceId('other-workflow'),
+      orchestrationGroupId: orchestrationGroupId('other-group'),
+      attempt: 2,
+      startedAt: '2026-07-31T12:00:00.000Z',
+      runner: { name: 'other-runner' },
+      workspace: { mode: 'branch', path: 'C:\\repo', branch: 'wake/work-1' },
+    },
+    stream,
+  );
+  const failed = eventEnvelope(
+    ExecutionEventType.RunFailed,
+    {
+      failure: { kind: 'unexpected-execution-failure', message: 'workspace preparation failed' },
+      finishedAt: '2026-07-31T12:01:00.000Z',
+    },
+    stream,
+  );
+
+  expect(foldRun([preparation])).toMatchObject({
+    status: RunStatus.Starting,
+    startedAt: '2026-07-31T11:59:00.000Z',
+    runner: { name: 'codex', model: 'gpt-5.1' },
+  });
+  expect(foldRun([preparation, started, failed])).toMatchObject({
+    activationId: activationId('activation-1'),
+    activity: activityName('implement'),
+    workflowInstanceId: workflowInstanceId('workflow-1'),
+    orchestrationGroupId: orchestrationGroupId('group-1'),
+    attempt: 1,
+    status: RunStatus.Failed,
+    startedAt: '2026-07-31T11:59:00.000Z',
+    executionStartedAt: '2026-07-31T12:00:00.000Z',
+    runner: { name: 'codex', model: 'gpt-5.1' },
+    workspace: { mode: 'branch', path: 'C:\\repo', branch: 'wake/work-1' },
+    finishedAt: '2026-07-31T12:01:00.000Z',
+  });
+});
+
+it('sets both start times for historical run-started streams', () => {
+  const started = eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T12:00:00.000Z',
+    },
+    runStream(runId('run-1')),
+  );
+
+  expect(foldRun([started])).toMatchObject({
+    status: RunStatus.Started,
+    startedAt: '2026-07-31T12:00:00.000Z',
+    executionStartedAt: '2026-07-31T12:00:00.000Z',
+  });
+});
+
+it('folds a failure directly after preparation', () => {
+  const stream = runStream(runId('run-1'));
+  const preparation = eventEnvelope(
+    ExecutionEventType.RunPreparationStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T11:59:00.000Z',
+    },
+    stream,
+  );
+  const failed = eventEnvelope(
+    ExecutionEventType.RunFailed,
+    {
+      failure: { kind: 'unexpected-execution-failure', message: 'workspace preparation failed' },
+      finishedAt: '2026-07-31T12:00:00.000Z',
+    },
+    stream,
+  );
+
+  expect(foldRun([preparation, failed])).toMatchObject({
+    status: RunStatus.Failed,
+    startedAt: '2026-07-31T11:59:00.000Z',
+    finishedAt: '2026-07-31T12:00:00.000Z',
+  });
+});
+
+it('identifies starting and started runs as active', () => {
+  expect(RunStatus.Starting).toBe('starting');
+  expect(isActiveRunStatus('starting')).toBe(true);
+  expect(isActiveRunStatus(RunStatus.Started)).toBe(true);
+  expect(isActiveRunStatus(RunStatus.Failed)).toBe(false);
 });

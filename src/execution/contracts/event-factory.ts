@@ -34,6 +34,8 @@ export function createRunExecutionEventDraft(
   input: RunExecutionEventDraftInput,
 ): RunExecutionEventDraft {
   switch (input.eventType) {
+    case ExecutionEventType.RunPreparationStarted:
+      return createEventDraft(input);
     case ExecutionEventType.RunStarted:
       return createEventDraft(input);
     case ExecutionEventType.RunSucceeded:

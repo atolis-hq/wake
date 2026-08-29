@@ -60,6 +60,28 @@ export const runStartedPayloadSchema = z
   })
   .strict();
 
+export const runPreparationStartedPayloadSchema = z
+  .object({
+    activationId: brandedStringSchema(activationId),
+    activity: brandedStringSchema(activityName),
+    stage: z.string().min(1).optional(),
+    workflowInstanceId: brandedStringSchema(activityWorkflowInstanceId),
+    orchestrationGroupId: brandedStringSchema(activityOrchestrationGroupId),
+    attempt: z.number().int().positive(),
+    startedAt: offsetIsoTimestampSchema,
+    runner: z
+      .object({
+        name: z.string().min(1),
+        model: z.string().min(1).optional(),
+        effort: z.string().min(1).optional(),
+        pool: z.string().min(1).optional(),
+        cli: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 export const leasePayloadSchema = z
   .object({
     owner: z.string().min(1),
@@ -103,6 +125,7 @@ export const runnerResultPayloadSchema = z
   .strict();
 
 export const ExecutionEventType = {
+  RunPreparationStarted: 'execution.run-preparation-started',
   RunStarted: 'execution.run-started',
   RunSucceeded: 'execution.run-succeeded',
   RunFailed: 'execution.run-failed',
@@ -149,7 +172,27 @@ export interface RunStartedPayload {
     | undefined;
 }
 
+export interface RunPreparationStartedPayload {
+  readonly activationId: ActivationId;
+  readonly activity: ActivityName;
+  readonly stage?: string | undefined;
+  readonly workflowInstanceId: ActivityWorkflowInstanceId;
+  readonly orchestrationGroupId: ActivityOrchestrationGroupId;
+  readonly attempt: number;
+  readonly startedAt: string;
+  readonly runner?:
+    | {
+        readonly name: string;
+        readonly model?: string | undefined;
+        readonly effort?: string | undefined;
+        readonly pool?: string | undefined;
+        readonly cli?: string | undefined;
+      }
+    | undefined;
+}
+
 export interface RunExecutionEventPayloads {
+  readonly [ExecutionEventType.RunPreparationStarted]: RunPreparationStartedPayload;
   readonly [ExecutionEventType.RunStarted]: RunStartedPayload;
   readonly [ExecutionEventType.RunSucceeded]: {
     readonly outcome: ActivityOutcome;
@@ -224,6 +267,11 @@ const activationStreamSchema = z
   .strict();
 
 const runEventSchema: z.ZodType<RunExecutionEvent> = z.discriminatedUnion('eventType', [
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunPreparationStarted),
+    stream: runStreamSchema,
+    payload: runPreparationStartedPayloadSchema,
+  }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunStarted),
     stream: runStreamSchema,
