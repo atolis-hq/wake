@@ -73,7 +73,7 @@ it('excludes the same consumer across hosts for load, handling, and checkpointin
   }
 });
 
-it('allows distinct consumers to progress concurrently across file-backed hosts', async () => {
+it('allows legacy-colliding consumer names to progress concurrently across file-backed hosts', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-subscription-serialiser-'));
   try {
     const journal = new InMemoryEventJournal(new FakeClock());
@@ -93,7 +93,7 @@ it('allows distinct consumers to progress concurrently across file-backed hosts'
     );
     const firstRun = first.start([
       {
-        consumer: 'first',
+        consumer: 'a.b',
         handle: async () => {
           firstStarted.resolve();
           await release.promise;
@@ -102,7 +102,7 @@ it('allows distinct consumers to progress concurrently across file-backed hosts'
     ]);
     const secondRun = second.start([
       {
-        consumer: 'second',
+        consumer: 'a~2Eb',
         handle: async () => {
           secondStarted.resolve();
           await release.promise;
@@ -116,8 +116,8 @@ it('allows distinct consumers to progress concurrently across file-backed hosts'
     secondRun.abort();
     await Promise.all([firstRun.done, secondRun.done]);
 
-    expect(first.health('first')?.status).toBe('stopped');
-    expect(second.health('second')?.status).toBe('stopped');
+    expect(first.health('a.b')?.status).toBe('stopped');
+    expect(second.health('a~2Eb')?.status).toBe('stopped');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

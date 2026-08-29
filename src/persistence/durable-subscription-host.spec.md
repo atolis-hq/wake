@@ -18,7 +18,12 @@ handler's effects idempotent.
 
 - A subscription's consumer name is stable and identifies both its checkpoint
   and its serialisation key. A host invocation rejects duplicate consumer
-  names.
+  names. The host is infrastructure-neutral and requires its caller to supply
+  a serialiser explicitly; it never creates an unsafe per-host default.
+- Batch size is a positive safe integer no greater than 10,000. Fallback wait
+  duration is a positive safe integer; invalid values are rejected before any
+  consumer loop starts. The default retry policy has a nonzero bounded delay;
+  a supplied retry policy must be a function.
 - Each pass loads the current checkpoint, reads no more than the requested
   batch size, calls the handler in journal order, then saves the final event's
   global position. A failed handler or checkpoint save leaves the batch
@@ -33,9 +38,10 @@ handler's effects idempotent.
   only while caught up. A notification is an accelerator; the durable
   checkpoint and journal position remain authoritative.
 - The in-memory serialiser queues only equal consumer keys. The filesystem
-  serialiser holds `subscription-<encoded-consumer>.lock` across a complete
-  load, handler, and checkpoint-save interval, while different consumers may
-  proceed concurrently.
+  serialiser holds a base64url-encoded `subscription-<encoded-consumer>.lock`
+  across a complete load, handler, and checkpoint-save interval, while
+  different consumers may proceed concurrently. This encoding is injective,
+  including for names that collide under the legacy checkpoint encoder.
 - Aborting a host run stops every owned consumer and resolves its completion
   after each loop has stopped.
 
@@ -52,3 +58,7 @@ handler's effects idempotent.
   failure ledger. Consumers select and react to events themselves.
 - Backoff, health, and journal notifications are deliberately volatile. Only
   the journal and checkpoints survive restart.
+- File checkpoints use v2 injective UTF-8 base64url paths. When no v2 file
+  exists, FileCheckpointStore reads its legacy encoded path; later saves write
+  v2 while retaining the legacy file for rollback. A legacy collision whose
+  stored consumer does not match is rejected rather than silently reused.

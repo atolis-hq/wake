@@ -40,6 +40,9 @@ Persistence owns:
 - Keyed run serialisation for a consumer's full checkpoint-load, handle, and
   checkpoint-save interval. The filesystem implementation holds a
   consumer-specific lock across that interval.
+- Versioned, injectively encoded filesystem checkpoint paths, with a
+  read-compatible legacy fallback so changing the path scheme does not discard
+  existing projection checkpoints.
 - Basic operational diagnostics: confirming the journal, projections, and
   checkpoints are reachable.
 

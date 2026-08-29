@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 import { acquireFileLock } from '../filesystem/file-lock.js';
-import { encode } from '../filesystem/file-projection-store.js';
 
 export type SubscriptionRunSerialiser = <Value>(
   consumer: string,
@@ -29,7 +28,11 @@ export function createInMemorySubscriptionRunSerialiser(): SubscriptionRunSerial
 
 export function createFileSubscriptionRunSerialiser(dataRoot: string): SubscriptionRunSerialiser {
   return async <Value>(consumer: string, signal: AbortSignal, operation: () => Promise<Value>) => {
-    const path = join(dataRoot, 'locks', `subscription-${encode(consumer)}.lock`);
+    const path = join(
+      dataRoot,
+      'locks',
+      `subscription-${encodeSubscriptionConsumer(consumer)}.lock`,
+    );
     while (true) {
       throwIfAborted(signal);
       const lock = await acquireFileLock(path, {
@@ -47,6 +50,10 @@ export function createFileSubscriptionRunSerialiser(dataRoot: string): Subscript
       await waitForRetry(signal, 10);
     }
   };
+}
+
+export function encodeSubscriptionConsumer(consumer: string): string {
+  return Buffer.from(consumer, 'utf8').toString('base64url');
 }
 
 function throwIfAborted(signal: AbortSignal): void {

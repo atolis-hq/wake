@@ -9,20 +9,15 @@ export class FileCheckpointStore implements CheckpointStore {
   constructor(private readonly root: string) {}
   async load(consumer: string): Promise<number> {
     try {
-      const value = JSON.parse(await readFile(this.path(consumer), 'utf8')) as {
-        consumer: string;
-        globalPosition: number;
-      };
-      if (
-        value.consumer !== consumer ||
-        !Number.isSafeInteger(value.globalPosition) ||
-        value.globalPosition < 0
-      )
-        throw new Error(`Invalid checkpoint: ${consumer}`);
-      return value.globalPosition;
+      return await this.loadPath(consumer, this.path(consumer));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
-      throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      try {
+        return await this.loadPath(consumer, this.legacyPath(consumer));
+      } catch (legacyError) {
+        if ((legacyError as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+        throw legacyError;
+      }
     }
   }
 
@@ -35,7 +30,12 @@ export class FileCheckpointStore implements CheckpointStore {
   }
 
   async reset(consumer: string): Promise<void> {
-    await this.mutate(consumer, () => rm(this.path(consumer), { force: true }));
+    await this.mutate(consumer, () =>
+      Promise.all([
+        rm(this.path(consumer), { force: true }),
+        rm(this.legacyPath(consumer), { force: true }),
+      ]).then(() => undefined),
+    );
   }
 
   private async mutate<T>(consumer: string, operation: () => Promise<T>): Promise<T> {
@@ -50,6 +50,30 @@ export class FileCheckpointStore implements CheckpointStore {
   }
 
   private path(consumer: string) {
+    return join(this.root, 'checkpoints', `v2-${encodeCheckpointConsumer(consumer)}.json`);
+  }
+
+  private legacyPath(consumer: string) {
     return join(this.root, 'checkpoints', `${encode(consumer)}.json`);
   }
+
+  private async loadPath(consumer: string, path: string): Promise<number> {
+    const value = JSON.parse(await readFile(path, 'utf8')) as {
+      consumer: string;
+      globalPosition: number;
+    };
+    if (
+      value.consumer !== consumer ||
+      !Number.isSafeInteger(value.globalPosition) ||
+      value.globalPosition < 0
+    )
+      throw new Error(`Invalid checkpoint: ${consumer}`);
+    return value.globalPosition;
+  }
+}
+
+function encodeCheckpointConsumer(consumer: string): string {
+  if (consumer.length === 0 || /[\\/]/.test(consumer))
+    throw new Error('Storage name must not contain path separators');
+  return Buffer.from(consumer, 'utf8').toString('base64url');
 }

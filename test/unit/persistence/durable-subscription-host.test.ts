@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
 import {
   DurableSubscriptionHost,
@@ -30,6 +30,81 @@ it('advances independent named consumers through the same journal facts', async 
 
   expect(await checkpoints.load('first')).toBe(2);
   expect(await checkpoints.load('second')).toBe(2);
+});
+
+it('does not start a subscription already aborted by its parent signal', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await appendFacts(journal, 1);
+  const checkpoints = new InMemoryCheckpointStore();
+  const waitForEventsAfter = vi.spyOn(journal, 'waitForEventsAfter');
+  const parent = new AbortController();
+  parent.abort();
+  let handled = false;
+  const host = new DurableSubscriptionHost(
+    journal,
+    checkpoints,
+    createInMemorySubscriptionRunSerialiser(),
+  );
+
+  const run = host.start(
+    [
+      {
+        consumer: 'pre-aborted',
+        handle: async () => {
+          handled = true;
+        },
+      },
+    ],
+    parent.signal,
+  );
+  await run.done;
+
+  expect(handled).toBe(false);
+  expect(waitForEventsAfter).not.toHaveBeenCalled();
+  expect(await checkpoints.load('pre-aborted')).toBe(0);
+  expect(host.health('pre-aborted')?.status).toBe('stopped');
+});
+
+it.each([0, -1, Number.POSITIVE_INFINITY, 1.5, 10_001])(
+  'rejects an invalid subscription batch size: %s',
+  (batchSize) => {
+    const host = new DurableSubscriptionHost(
+      new InMemoryEventJournal(new FakeClock()),
+      new InMemoryCheckpointStore(),
+      createInMemorySubscriptionRunSerialiser(),
+    );
+
+    expect(() =>
+      host.start([{ consumer: 'invalid-batch', batchSize, handle: async () => {} }]),
+    ).toThrow(/batch size/i);
+  },
+);
+
+it.each([0, -1, Number.POSITIVE_INFINITY, 1.5])(
+  'rejects an invalid subscription fallback: %s',
+  (fallbackMs) => {
+    expect(
+      () =>
+        new DurableSubscriptionHost(
+          new InMemoryEventJournal(new FakeClock()),
+          new InMemoryCheckpointStore(),
+          createInMemorySubscriptionRunSerialiser(),
+          { fallbackMs },
+        ),
+    ).toThrow(/fallback/i);
+  },
+);
+
+it('rejects a non-function retry backoff', () => {
+  expect(
+    () =>
+      new DurableSubscriptionHost(
+        new InMemoryEventJournal(new FakeClock()),
+        new InMemoryCheckpointStore(),
+        createInMemorySubscriptionRunSerialiser(),
+        { retryBackoff: 0 as never },
+      ),
+  ).toThrow(/retry backoff/i);
 });
 
 it("reads only each named consumer's own unread facts", async () => {

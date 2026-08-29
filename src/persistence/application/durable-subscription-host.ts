@@ -1,10 +1,8 @@
 import type { CheckpointStore, EventEnvelope, EventJournal } from '../../kernel/index.js';
-import {
-  createInMemorySubscriptionRunSerialiser,
-  type SubscriptionRunSerialiser,
-} from './subscription-run-serialiser.js';
+import type { SubscriptionRunSerialiser } from './subscription-run-serialiser.js';
 
 const defaultBatchSize = 100;
+const maximumBatchSize = 10_000;
 const defaultFallbackMs = 30_000;
 
 export interface DurableSubscription {
@@ -45,11 +43,14 @@ export class DurableSubscriptionHost {
   constructor(
     private readonly journal: EventJournal,
     private readonly checkpoints: CheckpointStore,
-    private readonly serialiseRun: SubscriptionRunSerialiser = createInMemorySubscriptionRunSerialiser(),
+    private readonly serialiseRun: SubscriptionRunSerialiser,
     options: DurableSubscriptionHostOptions = {},
   ) {
     this.fallbackMs = options.fallbackMs ?? defaultFallbackMs;
     this.retryBackoff = options.retryBackoff ?? defaultRetryBackoff;
+    assertPositiveSafeInteger(this.fallbackMs, 'Subscription fallback');
+    if (typeof this.retryBackoff !== 'function')
+      throw new Error('Subscription retry backoff must be a function');
   }
 
   start(
@@ -59,7 +60,8 @@ export class DurableSubscriptionHost {
     assertDistinctConsumers(subscriptions);
     const controller = new AbortController();
     const abort = () => controller.abort();
-    parentSignal?.addEventListener('abort', abort, { once: true });
+    if (parentSignal?.aborted) abort();
+    else parentSignal?.addEventListener('abort', abort, { once: true });
     const done = Promise.all(
       subscriptions.map((subscription) => this.runSubscription(subscription, controller.signal)),
     )
@@ -142,9 +144,22 @@ function assertDistinctConsumers(subscriptions: readonly DurableSubscription[]):
       throw new Error('Subscription consumer must not be empty');
     if (consumers.has(subscription.consumer))
       throw new Error(`Subscription consumer is already registered: ${subscription.consumer}`);
+    if (subscription.batchSize !== undefined)
+      assertPositiveSafeInteger(
+        subscription.batchSize,
+        'Subscription batch size',
+        maximumBatchSize,
+      );
 
     consumers.add(subscription.consumer);
   }
+}
+
+function assertPositiveSafeInteger(value: number, label: string, maximum?: number): void {
+  if (!Number.isSafeInteger(value) || value <= 0 || (maximum !== undefined && value > maximum))
+    throw new Error(
+      `${label} must be a positive safe integer${maximum === undefined ? '' : ` no greater than ${maximum}`}`,
+    );
 }
 
 function defaultRetryBackoff(consecutiveFailures: number, signal: AbortSignal): Promise<void> {
