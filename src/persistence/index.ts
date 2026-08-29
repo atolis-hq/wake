@@ -1,5 +1,9 @@
 export * from './application/projection-runner.js';
 
+export * from './application/durable-subscription-host.js';
+
+export * from './application/subscription-run-serialiser.js';
+
 export * from './filesystem/file-checkpoint-store.js';
 
 export * from './filesystem/file-event-journal.js';

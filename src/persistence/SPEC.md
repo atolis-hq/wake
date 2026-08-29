@@ -34,6 +34,12 @@ Persistence owns:
   long-lived exclusive operational attempt such as self-update.
 - The process that reads each registered projection from its own checkpoint,
   applies newly available events, and can rebuild a projection from scratch.
+- Supervised durable subscriptions that replay bounded journal batches for
+  independently named consumers, advance checkpoints only after a successful
+  handler, and report volatile per-consumer health.
+- Keyed run serialisation for a consumer's full checkpoint-load, handle, and
+  checkpoint-save interval. The filesystem implementation holds a
+  consumer-specific lock across that interval.
 - Basic operational diagnostics: confirming the journal, projections, and
   checkpoints are reachable.
 
@@ -136,6 +142,7 @@ Persistence does not own:
 | [Checkpoint Store](checkpoint-store.spec.md) | adapter | Per-consumer durable read cursor into the journal | Read and advanced by the Projection Runner to avoid rescanning the journal; reset to force a full rebuild. |
 | [File Lock](file-lock.spec.md) | adapter | Mutual exclusion over a filesystem path, with optional PID-liveness-protected stale reclamation | Used by the filesystem Event Journal to serialize concurrent writers and by Bootstrap safe self-update for exclusive full attempts; exported for reuse. |
 | [Projection Runner](projection-runner.spec.md) | policy/process | Advancing every registered projection from the journal; rebuilding one from scratch | The only component that coordinates the Event Journal, Projection Store, and Checkpoint Store together. |
+| [Durable Subscription Host](durable-subscription-host.spec.md) | policy/process | Independent checkpointed consumer loops, retry, health, cancellation, and keyed serialisation | Tails the journal for named consumers without interpreting their events. |
 
 ## Dependencies and system role
 

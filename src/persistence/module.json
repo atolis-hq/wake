@@ -3,5 +3,10 @@
   "kind": "supporting",
   "dependencies": ["kernel"],
   "publicEntry": "./index.ts",
-  "namespaces": { "events": [], "config": ["persistence"], "relations": [], "streams": [] }
+  "namespaces": {
+    "events": [],
+    "config": ["persistence"],
+    "relations": [],
+    "streams": []
+  }
 }
