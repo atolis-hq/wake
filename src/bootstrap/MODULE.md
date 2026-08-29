@@ -10,8 +10,9 @@ Domain policy, provider payloads, or persistence semantics.
 ## Invariants
 Only Bootstrap knows the complete application graph.
 In subscriber mode, the durable activation scheduler owns resident scheduling;
-one-shot CLI and API ticks explicitly poke it and preserve its advancement
-result while also running the legacy runner pipeline.
+one-shot CLI and API ticks run the legacy runner pipeline to produce
+schedule/reactor facts, then explicitly poke it and preserve its advancement
+result.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

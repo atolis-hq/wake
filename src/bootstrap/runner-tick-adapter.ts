@@ -9,16 +9,13 @@ export interface RunnerTickRuntime {
   readonly activationSchedulerSubscriber?: ActivationSchedulerSubscriber;
 }
 
-/** One-shot ticks explicitly reconcile subscriber-owned activation work. */
+/** One-shot ticks produce schedule/reactor facts before reconciling subscriber-owned activation work. */
 export function createOneShotRunnerAdvance(root: RunnerTickRuntime): AdvanceOnce {
-  if (root.activationSchedulerSubscriber === undefined)
-    return (options) => root.runnerPipeline.run(options);
+  const subscriber = root.activationSchedulerSubscriber;
+  if (subscriber === undefined) return (options) => root.runnerPipeline.run(options);
   return async (options) => {
-    const [schedulerResult] = await Promise.all([
-      root.activationSchedulerSubscriber!.poke(options),
-      root.runnerPipeline.run(options),
-    ]);
-    return schedulerResult;
+    await root.runnerPipeline.run(options);
+    return subscriber.poke(options);
   };
 }
 

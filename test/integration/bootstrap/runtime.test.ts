@@ -247,6 +247,48 @@ describe('target composition root', () => {
     expect(saves).toEqual(['2026-08-10T00:01:00.000Z']);
   });
 
+  it.each([
+    [
+      'CLI',
+      async (runtime: Awaited<ReturnType<typeof createCompositionRoot>>) => {
+        const applications = await createSurfaceApplications(runtime);
+        await applications.cli.tick.run({ maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 });
+      },
+    ],
+    [
+      'API',
+      async (runtime: Awaited<ReturnType<typeof createCompositionRoot>>) => {
+        const applications = await createSurfaceApplications(runtime);
+        await applications.api.controlPlane.tick?.({ idempotencyKey: 'due-schedule-api-tick' });
+      },
+    ],
+  ])(
+    'creates and dispatches a due schedule through a subscriber-mode one-shot %s tick',
+    async (_surface, tick) => {
+      const clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };
+      let checkpoint = '2026-08-10T00:00:00.000Z';
+      const runtime = await createCompositionRoot('C:/wake-home', {
+        config: subscriberScheduledRootConfig(),
+        journal: new InMemoryEventJournal(clock),
+        projections: new InMemoryProjectionStore(),
+        checkpoints: new InMemoryCheckpointStore(),
+        scheduleCheckpoints: {
+          async load() {
+            return checkpoint;
+          },
+          async save(_scheduleId, slot) {
+            checkpoint = slot;
+          },
+        },
+        clock,
+      });
+
+      await tick(runtime);
+
+      expect(await runtime.execution.list()).toHaveLength(1);
+    },
+  );
+
   it('pauses the composed runner pipeline for maintenance and resumes it after a healthy update clears the lease', async () => {
     const clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };
     const saves: string[] = [];
@@ -968,6 +1010,16 @@ function scheduledRootConfig() {
     },
     integrations: {},
     surfaces: {},
+  });
+}
+
+function subscriberScheduledRootConfig() {
+  return parseRootConfig({
+    ...scheduledRootConfig(),
+    controlPlane: {
+      ...scheduledRootConfig().controlPlane,
+      activationScheduler: { mode: 'subscriber' },
+    },
   });
 }
 
