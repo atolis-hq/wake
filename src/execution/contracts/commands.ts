@@ -20,6 +20,8 @@ export interface ExecutionActivation {
         readonly runnerPool?: string | undefined;
       }
     | undefined;
+  /** A durable operator request to start this activation without session resume. */
+  readonly sessionPolicy?: 'fresh' | undefined;
 }
 
 export interface ExecutionAttemptContext {

@@ -37,6 +37,7 @@ export function activation(
   input: unknown,
   options: {
     readonly execution: ActivityRequestedPayload['execution'];
+    readonly sessionPolicy?: ActivityRequestedPayload['sessionPolicy'];
     readonly stage?: StageName;
     readonly followOnIndex?: number;
     readonly supplemental?: boolean;
@@ -49,6 +50,7 @@ export function activation(
     ...(options.stage === undefined ? {} : { stage: options.stage }),
     input,
     execution: options.execution,
+    ...(options.sessionPolicy === undefined ? {} : { sessionPolicy: options.sessionPolicy }),
     ...(options.followOnIndex === undefined ? {} : { followOnIndex: options.followOnIndex }),
     ...(options.supplemental === true ? { supplemental: true } : {}),
   };

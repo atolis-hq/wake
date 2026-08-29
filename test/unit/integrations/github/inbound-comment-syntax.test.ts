@@ -17,6 +17,8 @@ describe('recognizedCommand', () => {
     ['/approved\n\nthanks!', GitHubBuiltInCommand.Approved],
     ['/retry', GitHubBuiltInCommand.Retry],
     ['/retry\n\nplease', GitHubBuiltInCommand.Retry],
+    ['/restart', GitHubBuiltInCommand.Restart],
+    ['/restart\n\nstart a new session', GitHubBuiltInCommand.Restart],
   ])('recognizes %j as %s', (body, expected) => {
     expect(recognizedCommand(body)).toBe(expected);
   });

@@ -22,6 +22,7 @@ export interface ActivityActivationView {
   readonly stage?: StageName;
   readonly input: unknown;
   readonly execution: StageConfig['execution'];
+  readonly sessionPolicy?: 'fresh';
   readonly status: ActivityActivationStatus;
   readonly followOnIndex?: number;
   readonly supplemental?: boolean;

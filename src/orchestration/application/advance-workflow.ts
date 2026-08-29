@@ -13,6 +13,7 @@ import { workflowInstanceStream } from '../contracts/streams.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
 import {
   requestChangesResume as decideChangesResume,
+  requestFreshOperatorRetry as decideFreshOperatorRetry,
   requestOperatorRetry as decideOperatorRetry,
   requestSupplementalActivity as decideSupplementalActivity,
   requestRunnerQuotaRetry,
@@ -190,6 +191,18 @@ export class AdvanceWorkflow {
   }
 
   async retryBlockedFailedStage(id: WorkflowInstanceId, context: CommandContext) {
+    return this.retryBlockedFailedStageWith(id, context, decideOperatorRetry);
+  }
+
+  async restartBlockedFailedStage(id: WorkflowInstanceId, context: CommandContext) {
+    return this.retryBlockedFailedStageWith(id, context, decideFreshOperatorRetry);
+  }
+
+  private async retryBlockedFailedStageWith(
+    id: WorkflowInstanceId,
+    context: CommandContext,
+    decide: typeof decideOperatorRetry,
+  ) {
     const loaded = await this.repository.load(id);
     if (loaded.view === null)
       throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');
@@ -200,7 +213,7 @@ export class AdvanceWorkflow {
       context,
     );
     if (definition === null) return (await this.repository.loadRequired(id)).view;
-    const decision = decideOperatorRetry(definition, loaded.view, {
+    const decision = decide(definition, loaded.view, {
       commandId: context.commandId,
       occurredAt: context.occurredAt,
       causationId: context.commandId,

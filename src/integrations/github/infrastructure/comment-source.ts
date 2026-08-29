@@ -133,7 +133,9 @@ async function retryAuthorization(
   context: RepositoryPollContext,
   comment: GitHubIssueCommentPayload,
 ): Promise<ReviewerAuthorizationEvidence | undefined> {
-  if (comment.body?.trim().toLowerCase() !== GitHubBuiltInCommand.Retry) return undefined;
+  const command = comment.body?.trim().toLowerCase();
+  if (command !== GitHubBuiltInCommand.Retry && command !== GitHubBuiltInCommand.Restart)
+    return undefined;
   const login = comment.user?.login;
   if (login === undefined || context.client.collaboratorPermission === undefined)
     return { source: ReviewerAuthorizationSource.None };

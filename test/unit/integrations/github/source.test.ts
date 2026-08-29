@@ -268,6 +268,36 @@ it('attaches collaborator permission evidence to a /retry comment', async () => 
   );
 });
 
+it('attaches collaborator permission evidence to a /restart comment', async () => {
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    fakeClient({
+      issues: [issue(5, 'A plain issue')],
+      issueComments: { 5: [comment(1, '/restart')] },
+      collaboratorPermission: ProviderPermission.Write,
+    }),
+  );
+
+  const drafts = await source.poll(new AbortController().signal);
+
+  expect(drafts).toContainEqual(
+    expect.objectContaining({
+      eventType: GitHubEventType.CommentObserved,
+      payload: expect.objectContaining({
+        body: '/restart',
+        authorization: {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+      }),
+    }),
+  );
+});
+
 it('keeps issue observations when pull-request review enrichment fails', async () => {
   const source = createGitHubSource(
     gitHubConfigSchema.parse({

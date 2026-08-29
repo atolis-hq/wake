@@ -169,6 +169,73 @@ it('retries an open primary workflow only for a provider-authorized /retry comme
   ]);
 });
 
+it('restarts an open primary workflow in a fresh session for an authorized /restart comment', async () => {
+  const restarted: unknown[] = [];
+  const event = issueCommentEvent('/restart\n\nstart a new session');
+  await applyReviewSignal({
+    event: {
+      ...event,
+      payload: {
+        ...event.payload,
+        authorization: {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+      },
+    } as never,
+    journal: {} as never,
+    resources: {
+      async correlations() {
+        return [{ role: 'primary', workItemId: 'work-7' }];
+      },
+      async get() {
+        return { kind: resourceKind('issue') };
+      },
+    } as never,
+    work: {
+      async get() {
+        return { state: 'open', frozen: false, deleted: false };
+      },
+    } as never,
+    lookup: {
+      async resourceIdForExternalKey() {
+        return 'resource-7';
+      },
+    } as never,
+    pullRequests: undefined,
+    ids: {} as never,
+    adapter: GitHubAdapter,
+    orchestration: {
+      async listForWorkItem() {
+        return [
+          {
+            workflowInstanceId: 'workflow-7',
+            workItemId: 'work-7',
+            status: 'blocked',
+            blockReason: 'unconfigured outcome failed',
+            pendingActivation: {
+              activationId: 'workflow-7:activity:1',
+              status: 'completed',
+              supplemental: false,
+            },
+            lastOutcome: { kind: 'failed' },
+            acceptedOutcomes: ['workflow-7:activity:1'],
+          },
+        ];
+      },
+      async restartBlockedFailedStage(...input: unknown[]) {
+        restarted.push(input);
+      },
+    } as never,
+  });
+
+  expect(restarted).toHaveLength(1);
+  expect(restarted[0]).toMatchObject([
+    'workflow-7',
+    { commandId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z:inbound' },
+  ]);
+});
+
 it('retries the eligible child for the exact waiting watch on an authorized /retry comment', async () => {
   const retried: unknown[] = [];
   await applyReviewSignal({

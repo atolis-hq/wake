@@ -302,6 +302,7 @@ function applyActivityRequested(
     ...(payload.stage === undefined ? {} : { stage: payload.stage }),
     input: payload.input,
     execution: payload.execution,
+    ...(payload.sessionPolicy === undefined ? {} : { sessionPolicy: payload.sessionPolicy }),
     status: ActivityActivationStatus.Pending,
     ...(payload.followOnIndex === undefined ? {} : { followOnIndex: payload.followOnIndex }),
     ...(payload.supplemental === true ? { supplemental: true } : {}),
