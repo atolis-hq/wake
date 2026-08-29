@@ -1,15 +1,13 @@
 import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
 import {
-  ControlStreamKind,
   DispatchPolicy,
   createActivationScheduler,
   createActivationSchedulerSubscriber,
   createControlPlaneService,
+  createDurableRunnerIneligibility,
   createRunnerControlService,
-  ineligibleRunners,
   type ActivationScheduler,
   type ActivationSchedulerSubscriber,
-  type ControlPlaneView,
   type IntakePipeline,
   type RunnerPipeline,
   type ScheduleCheckpointStore,
@@ -286,12 +284,9 @@ export async function createCompositionRoot(
       ...(transcriptStore === undefined
         ? {}
         : createTranscriptRetention(transcriptStore, projections, config, clock)),
-      runnerIneligibility: async () => {
-        const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
-        return stored === null
-          ? new Set()
-          : ineligibleRunners(stored.value, clock.now().toISOString());
-      },
+      runnerIneligibility: createDurableRunnerIneligibility(journal, () =>
+        clock.now().toISOString(),
+      ),
     },
   );
   const advanceOnce = activationScheduler.runOnce.bind(activationScheduler);

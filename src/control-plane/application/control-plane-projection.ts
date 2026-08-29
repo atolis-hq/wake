@@ -1,6 +1,6 @@
-import type { EventEnvelope, ProjectionDefinition } from '../../kernel/index.js';
+import type { EventEnvelope, EventJournal, ProjectionDefinition } from '../../kernel/index.js';
 import { ControlEventType, selectControlEvent, type ControlEvent } from '../contracts/events.js';
-import { ControlStreamKind } from '../contracts/streams.js';
+import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
 
 export interface ControlPlaneView {
   readonly pausedUntil: string | null;
@@ -27,6 +27,28 @@ export function ineligibleRunners(view: ControlPlaneView, now: string): Readonly
       .filter(([, pause]) => pause.resumeAt === undefined || Date.parse(pause.resumeAt) > current)
       .map(([runnerName]) => runnerName),
   );
+}
+
+/**
+ * Reads pause eligibility from the authoritative control stream for scheduling.
+ * The folded view is cached only while the durable journal position is unchanged.
+ */
+export function createDurableRunnerIneligibility(
+  journal: Pick<EventJournal, 'latestGlobalPosition' | 'readStream'>,
+  now: () => string,
+): () => Promise<ReadonlySet<string>> {
+  let cached: { readonly position: number; readonly view: ControlPlaneView } | undefined;
+  return async () => {
+    const position = await journal.latestGlobalPosition();
+    if (cached === undefined || cached.position !== position) {
+      const view = (await journal.readStream(controlPlaneStream())).reduce(
+        (previous, event) => controlPlaneProjection.project(previous, event),
+        controlPlaneProjection.initial('global'),
+      );
+      cached = { position, view };
+    }
+    return ineligibleRunners(cached.view, now());
+  };
 }
 
 export const controlPlaneProjection: ProjectionDefinition<ControlPlaneView> = {

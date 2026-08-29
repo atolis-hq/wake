@@ -14,7 +14,10 @@ import {
   createSurfaceApplications,
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
-import { activationSchedulerSubscriptionConsumer } from '../../../src/control-plane/index.js';
+import {
+  ControlStreamKind,
+  activationSchedulerSubscriptionConsumer,
+} from '../../../src/control-plane/index.js';
 import {
   ExecutionEventType,
   TranscriptStore,
@@ -230,6 +233,51 @@ describe('target composition root', () => {
       run.abort();
       await run.done;
     }
+  });
+
+  it('reads a pre-restart runner pause from durable facts before stale projections can schedule it', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    const firstRuntime = await createCompositionRoot('C:/wake-home', {
+      config: subscriberCapacityRootConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    await firstRuntime.runnerControls.pause('fake', 'pause-before-restart');
+
+    const staleProjections = new InMemoryProjectionStore();
+    let runnerStarts = 0;
+    const restarted = await createCompositionRoot('C:/wake-home', {
+      config: subscriberCapacityRootConfig(),
+      journal,
+      projections: staleProjections,
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+      decorateRunner(runner) {
+        return {
+          async start(request, signal) {
+            runnerStarts += 1;
+            return runner.start(request, signal);
+          },
+        };
+      },
+    });
+    const subscriber = restarted.activationSchedulerSubscriber;
+    if (subscriber === undefined) throw new Error('Expected subscriber-mode scheduler');
+
+    await startComposedWorkflow(restarted, clock, 'paused-after-restart');
+    // Do not run the projection pump: the scheduler must read the durable
+    // control stream because subscriptions do not wait for projection catch-up.
+    await expect(staleProjections.read(ControlStreamKind.Global, 'global')).resolves.toBeNull();
+
+    await subscriber.poke();
+    expect(runnerStarts).toBe(0);
+
+    await restarted.runnerControls.unpause('fake', 'resume-after-restart');
+    await subscriber.poke();
+    expect(runnerStarts).toBe(1);
   });
 
   it('resumes the composed subscriber from its durable checkpoint after restart', async () => {
