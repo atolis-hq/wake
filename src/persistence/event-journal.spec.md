@@ -131,6 +131,12 @@ caller's behalf when a write cannot currently be accepted.
   file per UTC calendar day of `recordedAt`, and MUST only ever be appended
   to — an existing file is never rewritten in place.
 
+- The persisted segment manifest is a derived read optimisation, never a
+  source of truth. Before a warmed reader reuses decoded data it MUST validate
+  the current segment fingerprints; a missing, stale, or corrupt manifest
+  falls back to JSONL parsing. A partial trailing JSONL line is not an
+  accepted event and MUST fail the read rather than being silently ignored.
+
 **In-memory divergence**
 
 - The in-memory implementation provides the identical append, read, and

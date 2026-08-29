@@ -1,5 +1,5 @@
 import type * as FsPromises from 'node:fs/promises';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
@@ -129,6 +129,16 @@ it('rejects malformed JSON with file and 1-based line context', async () => {
   );
 });
 
+it('rejects a partial trailing JSONL line', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-partial-tail-'));
+  await mkdir(join(root, 'events'));
+  await writeFile(join(root, 'events', '2026-07-31.jsonl'), '{"eventId":"partial"}', 'utf8');
+
+  await expect(new FileEventJournal(root, new FakeClock()).readAll(0)).rejects.toThrow(
+    'Incomplete trailing line in 2026-07-31.jsonl',
+  );
+});
+
 it('rejects a malformed common envelope with file, line, and event context', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-corrupt-envelope-'));
   await mkdir(join(root, 'events'));
@@ -220,7 +230,7 @@ it('refreshes a cached view when another file-journal instance appends', async (
   expect(await view.get()).toBe(1);
 });
 
-it('checks only the manifest for an unchanged warm journal', async () => {
+it('checks segment fingerprints without parsing an unchanged warm journal', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-warm-cache-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = createEventDraft({
@@ -241,10 +251,61 @@ it('checks only the manifest for an unchanged warm journal', async () => {
   statMock.mockClear();
   await journal.readAll(0);
 
-  expect(statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(0);
+  expect(statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(1);
   expect(
     statMock.mock.calls.filter(([path]) => String(path).endsWith('index-manifest.json')),
-  ).toHaveLength(1);
+  ).toHaveLength(0);
+});
+
+it('recovers a warmed reader after a JSONL append crashes before manifest update', async () => {
+  vi.useFakeTimers();
+  try {
+    const root = await mkdtemp(join(tmpdir(), 'wake-journal-manifest-crash-'));
+    const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+    const draft = createEventDraft({
+      eventId: 'event-1',
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'event-1',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+    const writer = new FileEventJournal(root, new FakeClock());
+    await writer.append(stream, 0, [draft]);
+
+    const watcher = controlledWatcherFactory();
+    const reader = new FileEventJournal(root, new FakeClock(), { watcherFactory: watcher.factory });
+    expect(await reader.latestGlobalPosition()).toBe(1);
+
+    const segmentPath = join(root, 'events', '2026-07-30.jsonl');
+    const firstEvent = JSON.parse(await readFile(segmentPath, 'utf8')) as Record<string, unknown>;
+    // Simulate the exact crash window: the authoritative append reached JSONL,
+    // but the derived manifest was never updated.
+    await appendFile(
+      segmentPath,
+      `${JSON.stringify({
+        ...firstEvent,
+        eventId: 'event-2',
+        causationId: 'event-2',
+        sequence: 2,
+        globalPosition: 2,
+      })}\n`,
+      'utf8',
+    );
+
+    const wait = reader.waitForEventsAfter(1, new AbortController().signal, 1_000);
+    await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(wait).resolves.toBeUndefined();
+
+    expect(await reader.latestGlobalPosition()).toBe(2);
+    expect((await reader.readAll(1)).map((event) => event.eventId)).toEqual(['event-2']);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('uses the refreshed warm-cache stream index for ordered, isolated stream reads', async () => {

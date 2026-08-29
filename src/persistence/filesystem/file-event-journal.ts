@@ -59,12 +59,6 @@ export class FileEventJournal implements EventJournal {
       }
     | undefined;
 
-  // The manifest is written after every successful local append. Its file
-  // revision is therefore a constant-cost freshness signal for the warm
-  // cache, avoiding a stat of every historical segment on every read while
-  // still detecting an append made by another journal process immediately.
-  private manifestRevision: string | undefined;
-
   // Every read (readStream/readAll/readLatest/latestGlobalPosition) reaches
   // scan(), and the resident host's tick loop calls those many times a
   // second while work is progressing. Without coalescing, calls that land
@@ -134,9 +128,7 @@ export class FileEventJournal implements EventJournal {
           // The manifest is derived data. The event append is authoritative, so
           // an index-write failure must not turn a successfully recorded event
           // into a failed append.
-          await this.persistManifest().catch(() => {
-            this.manifestRevision = undefined;
-          });
+          await this.persistManifest().catch(() => undefined);
           this.changeSignalSource.notify();
         }
         return finalizedEnvelopes;
@@ -149,7 +141,8 @@ export class FileEventJournal implements EventJournal {
   // cold (fresh process, or an on-disk change this instance didn't make),
   // parsing only the segment files that can hold matching events instead of
   // the entire history. A missing or stale manifest degrades to scan()'s
-  // full parse rather than to incorrect data; scan() then rebuilds it.
+  // full parse rather than to incorrect data. The next successful append
+  // rebuilds the derived manifest.
   async readStream(stream: EntityRef) {
     const streamKey = key(stream);
     const entries = await this.readEntriesForRead();
@@ -334,7 +327,6 @@ export class FileEventJournal implements EventJournal {
     if (this.cached === undefined) return;
     const manifest: PersistedIndex = { segments: this.cached.segments };
     await writeFile(this.manifestPath(), JSON.stringify(manifest), 'utf8');
-    this.manifestRevision = await this.readManifestRevision();
   }
 
   private async loadManifest(): Promise<PersistedIndex | undefined> {
@@ -378,20 +370,10 @@ export class FileEventJournal implements EventJournal {
   }
 
   private async readEntriesForRead(): Promise<readonly FileStat[]> {
-    if (this.cached === undefined || this.manifestRevision === undefined)
-      return this.readCurrentEntries();
-    const revision = await this.readManifestRevision();
-    return revision === this.manifestRevision ? this.cached.entries : this.readCurrentEntries();
-  }
-
-  private async readManifestRevision(): Promise<string | undefined> {
-    try {
-      const info = await stat(this.manifestPath());
-      return `${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-      throw error;
-    }
+    // The JSONL segments are authoritative. A manifest can remain unchanged
+    // if a process crashes after appendFile() and before writing it, so every
+    // warm read validates segment fingerprints before reusing decoded data.
+    return this.readCurrentEntries();
   }
 
   // Reads exactly the indexed JSONL records. Byte offsets make tail reads and
@@ -493,7 +475,6 @@ export class FileEventJournal implements EventJournal {
       });
     }
     this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
-    this.manifestRevision = await this.readManifestRevision();
     return events;
   }
 }
