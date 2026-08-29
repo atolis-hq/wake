@@ -1,4 +1,4 @@
-import { watch, type FSWatcher } from 'node:fs';
+import { watch } from 'node:fs';
 import { appendFile, mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -17,14 +17,34 @@ import {
 } from '../../kernel/index.js';
 import { withFileLock } from './file-lock.js';
 
+export interface FileEventJournalWatcher {
+  unref(): void;
+  close(): void;
+  once(event: 'error', listener: () => void): unknown;
+}
+
+export type FileEventJournalWatcherFactory = (
+  directory: string,
+  notify: () => void,
+) => Promise<FileEventJournalWatcher>;
+
+export interface FileEventJournalOptions {
+  readonly watcherFactory?: FileEventJournalWatcherFactory;
+}
+
+const createFileSystemWatcher: FileEventJournalWatcherFactory = async (directory, notify) =>
+  watch(directory, { persistent: false }, notify);
+
 export class FileEventJournal implements EventJournal {
   constructor(
     private readonly root: string,
     private readonly clock: Clock,
+    private readonly options: FileEventJournalOptions = {},
   ) {}
 
   private readonly changeSignalSource = new InProcessJournalChangeSignal();
-  private changeWatcher: FSWatcher | undefined;
+  private changeWatcher: FileEventJournalWatcher | undefined;
+  private startingChangeWatcher: Promise<void> | undefined;
 
   get changeSignal(): JournalChangeSignal {
     return this.changeSignalSource;
@@ -202,7 +222,7 @@ export class FileEventJournal implements EventJournal {
     signal: AbortSignal,
     fallbackMs: number,
   ): Promise<void> {
-    this.ensureChangeWatcher();
+    await this.ensureChangeWatcher();
     await waitForEventsAfter(
       () => this.latestGlobalPosition(),
       this.changeSignalSource,
@@ -212,16 +232,31 @@ export class FileEventJournal implements EventJournal {
     );
   }
 
-  private ensureChangeWatcher(): void {
-    if (this.changeWatcher !== undefined) return;
+  private ensureChangeWatcher(): Promise<void> {
+    if (this.changeWatcher !== undefined) return Promise.resolve();
+    if (this.startingChangeWatcher !== undefined) return this.startingChangeWatcher;
+    const starting = this.startChangeWatcher().finally(() => {
+      if (this.startingChangeWatcher === starting) this.startingChangeWatcher = undefined;
+    });
+    this.startingChangeWatcher = starting;
+    return starting;
+  }
+
+  private async startChangeWatcher(): Promise<void> {
+    const directory = join(this.root, 'events');
     try {
-      const watcher = watch(join(this.root, 'events'), { persistent: false }, () => {
-        this.changeSignalSource.notify();
-      });
+      await mkdir(directory, { recursive: true });
+      const watcher = await (this.options.watcherFactory ?? createFileSystemWatcher)(
+        directory,
+        () => {
+          this.changeSignalSource.notify();
+        },
+      );
       watcher.unref();
       watcher.once('error', () => {
         if (this.changeWatcher === watcher) this.changeWatcher = undefined;
         watcher.close();
+        void this.ensureChangeWatcher();
       });
       this.changeWatcher = watcher;
     } catch {

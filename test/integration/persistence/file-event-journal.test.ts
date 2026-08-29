@@ -478,8 +478,8 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
   }
 });
 
-it('wakes a separate file-journal instance promptly after an external append when its watcher is available', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-cross-process-wake-'));
+it('arms a watcher on a fresh root and wakes promptly after the first external append', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-fresh-root-wake-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
     createEventDraft({
@@ -495,24 +495,30 @@ it('wakes a separate file-journal instance promptly after an external append whe
     });
   const clock = new FakeClock();
   const writer = new FileEventJournal(root, clock);
-  await writer.append(stream, 0, [draft('event-1')]);
-  const reader = new FileEventJournal(root, clock);
-  const checkpoint = await reader.latestGlobalPosition();
+  const watcher = controlledWatcherFactory();
+  const reader = new FileEventJournal(root, clock, { watcherFactory: watcher.factory });
+  const controller = new AbortController();
 
-  let resolved = false;
-  const wait = reader
-    .waitForEventsAfter(checkpoint, new AbortController().signal, 10_000)
-    .then(() => {
-      resolved = true;
-    });
-  await writer.append(stream, 1, [draft('event-2')]);
+  const wait = reader.waitForEventsAfter(0, controller.signal, 10_000);
+  let watcherArmed = false;
+  try {
+    await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
+    watcherArmed = true;
+    await writer.append(stream, 0, [draft('event-1')]);
+    watcher.notify();
+    await wait;
+  } finally {
+    if (!watcherArmed) {
+      controller.abort();
+      await wait;
+    }
+  }
 
-  await vi.waitFor(() => expect(resolved).toBe(true));
-  await wait;
-  expect((await reader.readAll(checkpoint)).map((entry) => entry.eventId)).toEqual(['event-2']);
+  expect(watcher.unref).toHaveBeenCalledOnce();
+  expect((await reader.readAll(0)).map((entry) => entry.eventId)).toEqual(['event-1']);
 });
 
-it('discovers an external append by fallback when no watcher can be armed yet', async () => {
+it('discovers an external append by fallback when watcher setup fails', async () => {
   vi.useFakeTimers();
   try {
     const root = await mkdtemp(join(tmpdir(), 'wake-journal-fallback-wake-'));
@@ -528,10 +534,12 @@ it('discovers an external append by fallback when no watcher can be armed yet', 
       stream,
       payload: { objective: 'ship' },
     });
-    const reader = new FileEventJournal(root, new FakeClock());
+    const watcher = controlledWatcherFactory(new Error('watch unavailable'));
+    const reader = new FileEventJournal(root, new FakeClock(), { watcherFactory: watcher.factory });
     const writer = new FileEventJournal(root, new FakeClock());
     const wait = reader.waitForEventsAfter(0, new AbortController().signal, 1_000);
 
+    await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
     await writer.append(stream, 0, [draft]);
     await vi.advanceTimersByTimeAsync(1_000);
 
@@ -541,6 +549,53 @@ it('discovers an external append by fallback when no watcher can be armed yet', 
     vi.useRealTimers();
   }
 });
+
+it('rearms the advisory watcher after a watcher failure', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-watcher-rearm-'));
+  const watcher = controlledWatcherFactory();
+  const journal = new FileEventJournal(root, new FakeClock(), { watcherFactory: watcher.factory });
+  const controller = new AbortController();
+  const wait = journal.waitForEventsAfter(0, controller.signal, 10_000);
+
+  try {
+    await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
+    watcher.fail();
+    await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledTimes(2));
+  } finally {
+    controller.abort();
+    await wait;
+  }
+
+  expect(watcher.close).toHaveBeenCalledOnce();
+});
+
+function controlledWatcherFactory(failure?: Error) {
+  let onChange: (() => void) | undefined;
+  const errors: Array<() => void> = [];
+  const unref = vi.fn();
+  const close = vi.fn();
+  return {
+    factory: vi.fn(async (_directory: string, notify: () => void) => {
+      if (failure !== undefined) throw failure;
+      onChange = notify;
+      return {
+        unref,
+        close,
+        once(event: 'error', listener: () => void) {
+          if (event === 'error') errors.push(listener);
+        },
+      };
+    }),
+    unref,
+    close,
+    notify() {
+      onChange?.();
+    },
+    fail() {
+      errors.shift()?.();
+    },
+  };
+}
 
 it('wakes every concurrent waiter from one external append', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-many-waiters-'));
