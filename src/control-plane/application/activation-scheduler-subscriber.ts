@@ -10,9 +10,6 @@ export const activationSchedulerSubscriptionConsumer =
 export const activationSchedulerCriticalSectionConsumer =
   'control-plane.activation-scheduler-critical-section';
 
-/** @deprecated Use activationSchedulerSubscriptionConsumer. */
-export const activationSchedulerConsumer = activationSchedulerSubscriptionConsumer;
-
 const defaultFallbackMs = 30_000;
 const maximumTimerDelayMs = 2_147_483_647;
 

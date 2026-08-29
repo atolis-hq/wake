@@ -8,6 +8,15 @@ import {
 } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
+it('requires an explicit run serialiser at construction', () => {
+  expect(DurableSubscriptionHost).toBeTypeOf('function');
+  // @ts-expect-error DurableSubscriptionHost requires an explicit serialiser.
+  void new DurableSubscriptionHost(
+    new InMemoryEventJournal(new FakeClock()),
+    new InMemoryCheckpointStore(),
+  );
+});
+
 it('advances independent named consumers through the same journal facts', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   await appendFacts(journal, 2);
