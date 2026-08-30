@@ -15,7 +15,7 @@ on the activation-claim stream keyed by `ActivationId`, and the check of
 whether the stream's most recent claim is still unexpired. It does not
 decide whether a new attempt is warranted — the Execution service only
 reaches this component after it has already established, from the Run
-projection, that no `started`, `succeeded`, or `ambiguous` Run exists for
+projection, that no `starting`, `started`, `succeeded`, or `ambiguous` Run exists for
 the Activation. It does not itself track or renew a claim's expiry once
 recorded; expiry is fixed at claim time.
 
@@ -70,12 +70,12 @@ a full fold)
 - Kernel — event envelope conventions and the optimistic-concurrency check
   on `journal.append` that resolves a true claim race to one winner.
 - Execution service (depends on) — the only caller: claims immediately
-  before minting a new Run and appending `RunStarted`, and releases
+  before minting a new Run and appending `RunPreparationStarted`, and releases
   unconditionally in a `finally` block once that attempt concludes, whatever
   its outcome.
 - Recovery (indirectly relied upon) — because a crashed owner never reaches
   the Execution service's release, a stale claim is only ever cleared by its
-  own expiry; Recovery moving that owner's Run out of `started` is what lets
+  own expiry; Recovery moving that owner's active (`starting` or `started`) Run out of its active state is what lets
   the Execution service's existing-Run check reach this component again for
   a fresh attempt.
 
@@ -90,5 +90,5 @@ a full fold)
   the whole attempt, but its activation claim is set once and left to
   expire). This is inconsequential in practice because the Execution
   service's existing-Run check intercepts any further `attempt` call for an
-  Activation that still has a `started` Run, so this component is not
+  Activation that still has an active (`starting` or `started`) Run, so this component is not
   consulted again until that Run reaches a terminal status.

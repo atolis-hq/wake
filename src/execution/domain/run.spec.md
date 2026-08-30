@@ -11,12 +11,12 @@ recovery facts that sibling components record onto the same stream.
 ## Ubiquitous language
 
 See the module specification for Run, Attempt, and Transport status. This
-component additionally treats **terminal** as any status other than
-`started` (`succeeded`, `failed`, `cancelled`, `ambiguous`).
+component additionally treats **active** as `starting` or `started`, and
+**terminal** as `succeeded`, `failed`, `cancelled`, or `ambiguous`.
 
 ## Responsibilities and boundaries
 
-Run owns the `RunStarted`, `RunSucceeded`, and `RunFailed` facts and the
+Run owns the `RunPreparationStarted`, `RunStarted`, `RunSucceeded`, and `RunFailed` facts and the
 fold that turns the whole Run stream into a `RunView`. It does not decide
 *whether* a new attempt is warranted, resolve a runner or workspace, or
 manage the activation-claim single-flight guard — that is the Execution
@@ -27,19 +27,24 @@ recovery facts, but its fold applies them, since they share its stream.
 
 **Creation**
 
-- Starting a Run MUST append `RunStarted` as the first event on a fresh
-  `RunId`'s stream (at sequence 0). The event records the Activation,
+- Starting a Run MUST append `RunPreparationStarted` as the first event on a
+  fresh `RunId`'s stream (at sequence 0). The event records the Activation,
   activity, optional originating Stage provenance, workflow correlation ids,
-  a positive attempt number, the start time, and optionally a runner
-  descriptor and workspace reference.
+  a positive attempt number, whole-attempt `startedAt`, and optionally a
+  selected runner descriptor. Its fold is `starting`.
+- `RunStarted` is the later runner-execution boundary. It is valid only for a
+  `starting` Run, carries `executionStartedAt` and an optional acquired
+  workspace reference, and moves that same Run to `started`. Historical
+  streams whose first fact is `RunStarted` remain valid and fold as started
+  attempts with their `startedAt` also serving as `executionStartedAt`.
 - Starting a Run MUST also claim its lease for the starting owner as part of
   the same operation (see the liveness component); a Run is never left
   without an owner between creation and its first lease fact.
 
 **Fold**
 
-- The fold MUST return `null` when no `RunStarted` fact is present for the
-  stream.
+- The fold MUST return `null` when neither `RunPreparationStarted` nor a
+  historical first `RunStarted` fact is present for the stream.
 - The fold MUST derive every field from the stream's events in append
   order; it MUST NOT accept out-of-order or partial event sets as a
   substitute for replaying the full stream.
@@ -59,7 +64,8 @@ recovery facts, but its fold applies them, since they share its stream.
 - Recording failure MUST be a silent no-op when the Run is already
   terminal.
 - Recording failure MUST NOT append an event against a Run identity that
-  has no prior `RunStarted` fact; in that case the triggering error MUST
+  has no prior `RunPreparationStarted` (or historical first `RunStarted`)
+  fact; in that case the triggering error MUST
   propagate to the caller unchanged instead.
 - Every recorded failure's `kind` MUST be the single closed value
   `unexpected-execution-failure`; the underlying cause is preserved
@@ -72,7 +78,8 @@ recovery facts, but its fold applies them, since they share its stream.
 
 | Event | Recorded when | Meaning |
 | --- | --- | --- |
-| `execution.run-started` | This aggregate starts a new attempt | This `RunId` now denotes a real, `started` attempt at the named Activation. |
+| `execution.run-preparation-started` | This aggregate starts a new attempt | This `RunId` now denotes a real, active `starting` attempt at the named Activation. |
+| `execution.run-started` | Workspace preparation finishes and the runner begins | The same Run is now `started`, with its runner-execution boundary recorded. |
 | `execution.run-succeeded` | This aggregate records a successful attempt | The attempt finished; its Activity outcome is now attached. |
 | `execution.run-failed` | This aggregate records a failed attempt, or Recovery cannot establish success | The attempt did not complete; an `ExecutionFailure` explains why. |
 | `execution.run-lease-claimed` / `execution.run-lease-renewed` | Recorded by the liveness component or Recovery | Folded into `lease`; see the liveness and recovery specifications. |
@@ -92,11 +99,12 @@ aggregate itself is authoritative for:
 | Field | Type | Description |
 | --- | --- | --- |
 | `runId` | Run identity | The stream's identity; every fact in the stream belongs to it. |
-| `activationId`, `activity`, `stage`, `workflowInstanceId`, `orchestrationGroupId`, `attempt` | see module schema | Set once, by `RunStarted`; `stage` is optional; none are revised. |
-| `status` | closed vocabulary: `started` / `succeeded` / `failed` / `cancelled` / `ambiguous` | Starts `started`; moves to a terminal value at most once. |
-| `startedAt` / `finishedAt` | timestamp | Set by `RunStarted` and by whichever terminal fact is recorded. |
-| `runner` | Runner descriptor | Set by `RunStarted` when the Activity is agent-kind; omitted otherwise. |
-| `workspace` | Workspace reference | Set by `RunStarted` when a workspace was acquired for this attempt. |
+| `activationId`, `activity`, `stage`, `workflowInstanceId`, `orchestrationGroupId`, `attempt` | see module schema | Set once, by `RunPreparationStarted` or a historical first `RunStarted`; `stage` is optional; none are revised. |
+| `status` | closed vocabulary: `starting` / `started` / `succeeded` / `failed` / `cancelled` / `ambiguous` | Starts `starting`; `RunStarted` moves it to `started`; then it moves to a terminal value at most once. |
+| `startedAt` / `executionStartedAt` / `finishedAt` | timestamp | Whole-attempt start, runner start, and terminal time respectively. Historical first-`RunStarted` streams use their start time for both start fields. |
+| `duration` | derived milliseconds | `finishedAt - startedAt`, covering preparation and runner execution end to end. |
+| `runner` | Runner descriptor | Set by preparation when an agent runner is selected; a later start must not contradict it. |
+| `workspace` | Workspace reference | Set by `RunStarted` after a workspace was acquired for this attempt. |
 | `outcome` | Activity outcome | Set by `RunSucceeded`. |
 | `failure` | Execution failure | Set by `RunFailed`, and by Recovery's failed/ambiguous outcomes. |
 

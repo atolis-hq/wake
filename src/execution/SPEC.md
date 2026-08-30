@@ -18,7 +18,7 @@ returns a transport-level result: it does not decide what to run next.
 Execution owns:
 
 - Minting and running a `Run`: a single numbered attempt at one Activation,
-  from its `RunStarted` fact through to a terminal transport status.
+  from its `RunPreparationStarted` fact through to a terminal transport status.
 - The lease and cancellation protocol that keeps a Run's ownership current
   and lets an operator or a cascading Work cancellation stop it.
 - Resolving a runner from a configured runner pool and invoking it, bounded
@@ -52,8 +52,8 @@ Execution does not own:
 - **Attempt** — the 1-based ordinal of a Run among all Runs recorded for the
   same Activation. A new attempt is only created when no completed,
   ambiguous, or currently-leased Run already exists for that Activation.
-- **Transport status** — `started` / `succeeded` / `failed` / `cancelled` /
-  `ambiguous`: what happened to the attempt at the execution-mechanics
+- **Transport status** — `starting` / `started` / `succeeded` / `failed` /
+  `cancelled` / `ambiguous`: what happened to the attempt at the execution-mechanics
   level. This is distinct from an Activity's own outcome (done, blocked,
   rejected, failed), which is opaque data Execution carries but does not
   interpret.
@@ -118,6 +118,10 @@ Execution does not own:
 - A further attempt at an Activation whose most recent Run is `started` and
   currently held under an unexpired lease owned by a different owner MUST
   be rejected.
+- A `starting` Run has the same active, capacity-consuming, cancellation,
+  quiescence, and lease semantics as a `started` Run. A recovery pass whose
+  lease finds a `starting` Run expired records its failure without inspecting
+  an external execution, because no runner has started yet.
 - A failure while releasing an acquired workspace after an attempt has
   already concluded MUST NOT alter the Run's already-recorded terminal
   outcome; it MUST be recorded as a `RunWorkspaceCleanupFailed` diagnostic
@@ -125,10 +129,11 @@ Execution does not own:
 - Before a Git workspace is cloned, its adapter MUST persist a managed
   ownership marker containing the Run ID, WorkItem ID, repository Resource
   ID, workspace mode, workspace ID, and absolute path. This bridges the
-  crash window before `execution.run-started` becomes durable.
+  crash window before a workspace is acquired; the Run is already durable as
+  `starting` during that work.
 - During the existing pre-dispatch recovery pass, a workspace adapter may
   reclaim only a valid marker-owned path below its managed workspace root
-  when its owner Run is terminal or absent (never started). Started and
+  when its owner Run is terminal or absent. Starting, Started, and
   ambiguous owners, unmarked directories, malformed markers, and paths that
   are outside or resolve outside that root MUST be retained for inspection.
 - Workspace crash recovery is pause-aware: the existing dispatch pause stops
@@ -151,7 +156,8 @@ Execution does not own:
 
 | Event | Occurs when | Business meaning |
 | --- | --- | --- |
-| `execution.run-started` | A new attempt begins | A fresh Run now exists for this Activation, at this attempt number, optionally bound to a runner and workspace. |
+| `execution.run-preparation-started` | A new attempt begins | A fresh Run now exists in `starting` status, with its whole-attempt start time and selected runner identity, before workspace preparation. |
+| `execution.run-started` | Workspace preparation completes and runner invocation begins | The same Run crosses to `started`, records `executionStartedAt`, and may add its acquired workspace reference. |
 | `execution.run-succeeded` | The Activity handler returns without throwing | The attempt finished; its Activity outcome is now attached to the Run. |
 | `execution.run-failed` | The attempt throws, or recovery cannot establish a successful outcome | The attempt did not complete; an `ExecutionFailure` describes why. |
 | `execution.run-lease-claimed` | An owner first claims a Run | That owner is now responsible for driving this Run to completion. |
@@ -180,9 +186,11 @@ Execution does not own:
 | `workflowInstanceId` | Workflow instance identity (owned by Orchestration) | Correlates the Run back to its workflow, opaque to Execution. |
 | `orchestrationGroupId` | Orchestration group identity (owned by Orchestration) | Correlation id used on every event this Run produces. |
 | `attempt` | positive integer | This Run's 1-based ordinal among Runs for the same Activation. |
-| `status` | closed vocabulary: `started` / `succeeded` / `failed` / `cancelled` / `ambiguous` | Transport status; terminal once anything but `started`. |
-| `startedAt` | timestamp | When this attempt began. |
+| `status` | closed vocabulary: `starting` / `started` / `succeeded` / `failed` / `cancelled` / `ambiguous` | Transport status; terminal once it is neither `starting` nor `started`. |
+| `startedAt` | timestamp | When this whole attempt, including workspace preparation, began. |
+| `executionStartedAt` | timestamp, optional | When the runner invocation began; absent while `starting` and on a preparation failure. |
 | `finishedAt` | timestamp | Set once the Run reaches a terminal status. |
+| `duration` | derived milliseconds | `finishedAt - startedAt`, so it covers workspace preparation and execution end to end. |
 | `runner` | Runner descriptor | Which runner (and model/effort/pool/cli) this Run is bound to, if the Activity is agent-kind. |
 | `workspace` | Workspace reference | The acquired workspace's mode and path, if one was requested. |
 | `outcome` | Activity outcome (owned by Activities) | Carried opaquely on `succeeded`; Execution does not interpret it. |

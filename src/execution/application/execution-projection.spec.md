@@ -26,8 +26,11 @@ discarding and rebuilding it from the event journal.
   fold over the accumulated event list, not a separate derivation — the
   projection and the aggregate's `load` path MUST agree on `RunView` for
   the same event history.
-- Before the first `RunStarted` fact for a Run is folded, the projection's
-  value MUST report a `null` view.
+- Before the first `RunPreparationStarted` fact (or a historical first
+  `RunStarted` fact) for a Run is folded, the projection's value MUST report
+  a `null` view. A preparation fact alone projects an active `starting` view;
+  its later `RunStarted` updates that same key to `started` rather than
+  creating another view.
 - Rebuilding the projection from an empty checkpoint against the full event
   journal MUST reproduce the same `RunView` per `RunId` as folding each
   Run's stream directly.
@@ -37,7 +40,7 @@ discarding and rebuilding it from the event journal.
 | Field | Type | Description |
 | --- | --- | --- |
 | `events` | list of Run execution event | The accumulated, decoded event history folded so far for this key. |
-| `view` | RunView or null | The current derived view; `null` until `RunStarted` has been folded. See the module specification's RunView table for its fields. |
+| `view` | RunView or null | The current derived view; `null` until creation has been folded. A preparation-created view has no `executionStartedAt` or workspace. See the module specification's RunView table for its fields. |
 
 ## Dependencies and system role
 

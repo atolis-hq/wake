@@ -150,6 +150,13 @@ for a single WorkItem (see the Work detail component).
   originating `stage`; it MUST NOT derive a historic stage from current
   workflow state, and MUST leave the run unenriched when the instance is
   not known (e.g. it has since been superseded away).
+- Execution reads MUST expose a preparation-created Run as `status: starting`
+  and `active: true`, with `startedAt` set but neither `executionStartedAt`
+  nor `finishedAt`. Once its later `RunStarted` is projected, the same Run ID
+  is `started`/active with `executionStartedAt`; board reads expose that same
+  Run in `activeRuns` as phase `starting` then `running` and remove it when
+  terminal. `startedAt` and displayed active duration cover the whole attempt,
+  including workspace preparation.
 - `runners` MUST synthesize availability purely from the configured runner
   pools crossed with the currently ineligible runner set computed from the
   control-plane projection at call time. A runner absent from every

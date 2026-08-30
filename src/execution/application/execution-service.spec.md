@@ -67,18 +67,24 @@ workspace mechanics itself — it only resolves and invokes them.
 
 **Existing-attempt semantics**
 
+- `starting` and `started` are both active Run states. Existing-attempt
+  checks, capacity, cancellation, quiescence, and Run leases apply to both;
+  recovery fails an expired `starting` Run without inspecting an external
+  execution because the runner has not started yet.
+
 - An attempt for an Activation that already has a `succeeded` Run MUST
   return that Run unchanged; the same applies to an `ambiguous` Run. Neither
   case creates a new Run or touches the activation claim.
-- An attempt for an Activation whose most recently listed Run is `started`
+- An attempt for an Activation whose most recently listed Run is active
+  (`starting` or `started`)
   MUST reject with an error when that Run's lease is unexpired and held by
-  a different owner. When the `started` Run's lease is unexpired and held
+  a different owner. When the active Run's lease is unexpired and held
   by the same owner, or is absent, or has expired, the attempt MUST return
-  that same `started` Run unchanged rather than create a new one — a new
-  attempt is never created while any Run for the Activation is `started`,
-  regardless of that Run's lease state. Moving a stale `started` Run out of
+  that same active Run unchanged rather than create a new one — a new
+  attempt is never created while any Run for the Activation is active,
+  regardless of that Run's lease state. Moving a stale active Run out of
   that status (via Recovery) is a precondition for a genuinely new attempt.
-- Only when no `succeeded`, `ambiguous`, or `started` Run exists for the
+- Only when no `succeeded`, `ambiguous`, `starting`, or `started` Run exists for the
   Activation does an attempt proceed to claim the Activation and create a
   fresh Run, with attempt number one greater than the count of Runs already
   recorded for it.
@@ -97,6 +103,9 @@ workspace mechanics itself — it only resolves and invokes them.
 - Claiming the Activation for the fresh `RunId` happens before any Run
   event is appended; if the claim is rejected (a concurrent attempt won the
   race), the attempt MUST fail with no Run stream created at all.
+- After a successful claim, `RunPreparationStarted` and the Run lease are
+  appended before workspace acquisition. That creates the durable `starting`
+  Run and its whole-attempt `startedAt` before any workspace operation.
 - Once claimed, a workspace MUST be acquired when the Activation requests
   `read-only` or `branch` mode, and MUST NOT be acquired for `none`
   (including when no mode is specified). Acquiring for a non-`none` mode
@@ -107,17 +116,19 @@ workspace mechanics itself — it only resolves and invokes them.
   clone source instead. Acquiring for a non-`none` mode with none of the
   three kinds present among the attempt's resources MUST reject the
   attempt.
-- `RunStarted` MUST be appended before the Activity handler is invoked, and
-  the Run's own lease MUST be claimed for the requesting owner (defaulting
-  to `"execution"` when none is supplied) as part of the same creation step.
+- `RunStarted` MUST be appended after workspace preparation and immediately
+  before the Activity handler is invoked. It updates the preparation-created
+  Run with `executionStartedAt` and any acquired workspace; it does not mint
+  another Run or lease.
 
 **Execution and reporting**
 
 - Invoking the Activity handler MUST track an `AbortController` for the
   Run's id for the duration of the call, so a cancellation request against
   this Run can signal it while it is still running in this process.
-- While that local handler is running, Execution MUST renew the Run lease and
-  local recovery MUST exclude the tracked Run. A fresh process has no tracked
+- From `RunPreparationStarted` until terminal cleanup, Execution MUST renew the
+  Run lease and exclude the tracked Run from local recovery. The same rule
+  continues while the local handler is running; a fresh process has no tracked
   worker and therefore remains responsible for reconciling an expired durable
   Run after restart.
 - The handler's reported external-execution identity and final runner
@@ -143,11 +154,10 @@ workspace mechanics itself — it only resolves and invokes them.
   via `RunSucceeded` regardless of what outcome kind it reports — Execution
   does not distinguish a `done` outcome from a `failed` or `blocked` one at
   the transport level.
-- When the Activity handler throws, the thrown error MUST be recorded via
-  `RunFailed` when the Run's `RunStarted` fact was already appended;
-  MUST propagate unchanged to the attempt's caller when it was not (an
-  error before Run creation is a hard failure of the attempt, not a
-  recorded Run failure).
+- When workspace preparation or the Activity handler throws after
+  `RunPreparationStarted` was appended, the error MUST be recorded via
+  `RunFailed`. Only validation, claim, or another error before preparation
+  creates the Run propagates unchanged to the caller.
 - Whether the attempt succeeds, fails, or the Run was already moved to a
   terminal status by a concurrent cancellation, the Activation claim MUST
   be released, the tracked `AbortController` MUST be removed, and any
@@ -159,7 +169,7 @@ workspace mechanics itself — it only resolves and invokes them.
   recording it is swallowed rather than raised.
 - `attempt` only rejects (propagates an error to its caller) for upfront
   validation failures, an unexpired different-owner lease, a lost
-  activation-claim race, or an error before `RunStarted` was appended. Every
+  activation-claim race, or an error before `RunPreparationStarted` was appended. Every
   other failure during execution surfaces as a `RunView` with status
   `failed`, returned normally.
 
