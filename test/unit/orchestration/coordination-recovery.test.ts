@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
 import { createAdvanceOnce } from '../../../src/control-plane/index.js';
+import { EventProcessorHost } from '../../../src/eventing/index.js';
 import { createExecutionService } from '../../../src/execution/index.js';
 import {
   correlationId,
@@ -24,7 +25,11 @@ import {
   isWorkflowInstanceStream,
   type OrchestrationService,
 } from '../../../src/orchestration/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '../../../src/persistence/index.js';
 import { createWorkService, type WorkItemId } from '../../../src/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
@@ -171,7 +176,6 @@ it('retries the same durable child claim after a crash before checkpointing the 
     kind: 'test',
     id: 'watch-trigger',
   };
-  const before = (await journal.readAll(0)).length;
   const [trigger] = await journal.append(stream, 0, [
     createEventDraft({
       eventId: 'review-trigger-1',
@@ -192,14 +196,24 @@ it('retries the same durable child claim after a crash before checkpointing the 
     work,
     definitions,
   );
-  const first = createWatchReactor(crashingService, journal, checkpoints);
-  await expect(first.runOnce()).rejects.toThrow('injected start crash');
-  expect(await checkpoints.load('reactor:orchestration.watch')).toBe(before);
+  const first = createWatchReactor(crashingService, () => crashingService.watchEventTypes());
+  const firstHost = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+  );
+  await expect(firstHost.runOnce(first.processor)).rejects.toThrow('injected start crash');
+  expect(await checkpoints.load('reactor:orchestration.watch')).toBe(0);
   expect(await service.get(workflowInstanceId(childId))).toBeNull();
 
   const restartedService = createOrchestrationService(journal, work, definitions);
-  const restarted = createWatchReactor(restartedService, journal, checkpoints);
-  await restarted.runOnce();
+  const restarted = createWatchReactor(restartedService, () => restartedService.watchEventTypes());
+  const restartedHost = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+  );
+  await restartedHost.runOnce(restarted.processor);
   expect(await checkpoints.load('reactor:orchestration.watch')).toBeGreaterThanOrEqual(
     trigger!.globalPosition,
   );

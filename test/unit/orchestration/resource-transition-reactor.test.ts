@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { ActivityEventType } from '../../../src/activities/index.js';
+import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   createEventDraft,
   eventId,
@@ -16,10 +17,72 @@ import {
   type CompiledResourceTransition,
   type ResourceTransitionEvidence,
 } from '../../../src/orchestration/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '../../../src/persistence/index.js';
 import { workItemId } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
+
+it('exposes the stable resource-transition processor', () => {
+  const reactor = createResourceTransitionReactor(
+    {
+      async listResourceTransitionMatches() {
+        return [];
+      },
+      async applyResourceTransition() {},
+    },
+    evidence(async () => null),
+  );
+
+  expect(reactor).toMatchObject({
+    processor: {
+      consumer: 'reactor:orchestration.resource-transition',
+      name: 'resource-transition',
+      owner: 'orchestration',
+    },
+  });
+  expect(typeof reactor.react).toBe('function');
+});
+
+it('ignores unrelated facts through its processor selector', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  await journal.append(stream, 0, [
+    createEventDraft({
+      eventId: 'unrelated-fact',
+      eventType: 'work.created',
+      occurredAt: '2026-08-15T12:00:00.000Z',
+      correlationId: 'correlation-1',
+      causationId: 'cause-1',
+      actor: { kind: 'integration', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: {},
+    }),
+  ]);
+  let matched = 0;
+  const reactor = createResourceTransitionReactor(
+    {
+      async listResourceTransitionMatches() {
+        matched += 1;
+        return [];
+      },
+      async applyResourceTransition() {},
+    },
+    evidence(async () => null),
+  );
+  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({
+    eventCount: 1,
+    handledCount: 0,
+  });
+  expect(matched).toBe(0);
+  expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(1);
+});
 
 const stream: EntityRef<'test', 'resource-transition-reactor'> = {
   kind: 'test',
@@ -167,7 +230,7 @@ it('passes a live fact to the evidence policy', async () => {
   expect(receivedFact).toBe(fact);
 });
 
-it('moves its checkpoint once after each event in journal order', async () => {
+it('delegates bounded checkpoint progress to the event processor host', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
   await journal.append(stream, 0, [
@@ -211,17 +274,20 @@ it('moves its checkpoint once after each event in journal order', async () => {
       async applyResourceTransition() {},
     },
     evidence(async () => null),
+  );
+  const host = new EventProcessorHost(
     journal,
     trackingCheckpoints,
+    createInMemoryProcessorRunSerialiser(),
   );
 
-  await expect(reactor.runOnce()).resolves.toBe(2);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 2 });
 
-  expect(saves).toEqual([1, 2]);
+  expect(saves).toEqual([2]);
   expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(2);
 });
 
-it('drains more than one batch and advances its checkpoint through the final event', async () => {
+it('catches up more than one batch through the eventing barrier', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
   await journal.append(
@@ -249,16 +315,15 @@ it('drains more than one batch and advances its checkpoint through the final eve
       async applyResourceTransition() {},
     },
     evidence(async () => null),
-    journal,
-    checkpoints,
   );
+  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
 
-  await expect(reactor.drain()).resolves.toBe(101);
+  await expect(host.runThrough(reactor.processor, 101)).resolves.toMatchObject({ eventCount: 101 });
   expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(101);
-  await expect(reactor.runOnce()).resolves.toBe(0);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 0 });
 });
 
-it('serializes an overlapping runner batch and barrier drain through checkpoint advancement', async () => {
+it('serializes an overlapping processor pass and catch-up barrier through checkpoint advancement', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const durable = new InMemoryCheckpointStore();
   await journal.append(stream, 0, [
@@ -319,17 +384,16 @@ it('serializes an overlapping runner batch and barrier drain through checkpoint 
     evidence(async ({ fact }) =>
       fact === undefined ? null : { transition, evidenceId: fact.eventId },
     ),
-    journal,
-    checkpoints,
   );
+  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
 
-  const runnerBatch = reactor.runOnce(1);
+  const runnerBatch = host.runOnce(reactor.processor);
   await firstSave;
-  const barrierDrain = reactor.drain();
+  const barrierCatchUp = host.runThrough(reactor.processor, 2);
   releaseFirstSave();
 
-  await expect(runnerBatch).resolves.toBe(1);
-  await expect(barrierDrain).resolves.toBe(1);
+  await expect(runnerBatch).resolves.toMatchObject({ eventCount: 2 });
+  await expect(barrierCatchUp).resolves.toMatchObject({ eventCount: 0 });
   expect(applied).toEqual(['event-1', 'event-2']);
   expect(await durable.load('reactor:orchestration.resource-transition')).toBe(2);
 });
@@ -366,13 +430,12 @@ it('does not advance after a failed reaction and reuses its command context on r
       },
     },
     evidence(async () => ({ transition, evidenceId: 'evidence-1' })),
-    journal,
-    checkpoints,
   );
+  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
 
-  await expect(reactor.runOnce()).rejects.toThrow('injected transition failure');
+  await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected transition failure');
   expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(0);
-  await expect(reactor.runOnce()).resolves.toBe(1);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 1 });
 
   expect(commandIds).toEqual([
     'event-fail-react:resource-transition',
@@ -420,13 +483,12 @@ it('does not advance after a checkpoint failure and reuses its command context o
       },
     },
     evidence(async () => ({ transition, evidenceId: 'evidence-1' })),
-    journal,
-    checkpoints,
   );
+  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
 
-  await expect(reactor.runOnce()).rejects.toThrow('injected checkpoint failure');
+  await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected checkpoint failure');
   expect(await durable.load('reactor:orchestration.resource-transition')).toBe(0);
-  await expect(reactor.runOnce()).resolves.toBe(1);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 1 });
 
   expect(commandIds).toEqual([
     'event-fail-checkpoint:resource-transition',

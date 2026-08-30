@@ -1,5 +1,10 @@
 import { type RunRepository } from '../../execution/index.js';
 import {
+  defineEventProcessor,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+} from '../../eventing/index.js';
+import {
   correlationId,
   EventActorKind,
   type CheckpointStore,
@@ -59,26 +64,47 @@ interface WatchOrchestrationPort {
 
 const checkpoint = 'reactor:orchestration.watch';
 const reconciliationCheckpoint = 'reconciler:orchestration.watch';
+const noWatchEventTypes = (): readonly string[] => [];
 
 export function createWatchReactor(
   orchestration: WatchOrchestrationPort,
-  journal?: EventJournal,
-  checkpoints?: CheckpointStore,
+  watchEventTypes: () => readonly string[] = noWatchEventTypes,
+  runs?: Pick<RunRepository, 'load'>,
+) {
+  const react = async (event: PersistedEvent, context: CommandContext): Promise<void> => {
+    await dispatch(
+      orchestration,
+      runs,
+      event,
+      context,
+      await orchestration.listWatchMatches(event, context),
+    );
+  };
+  return {
+    react,
+    processor: defineEventProcessor({
+      consumer: checkpoint,
+      name: ApprovalAuthorityKind.Watch,
+      owner: 'orchestration',
+      category: EventProcessorCategory.Reactor,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select(event) {
+        selectOrchestrationEvent(event);
+        return watchEventTypes().includes(event.eventType) ? event : null;
+      },
+      handle: async (event) => react(event, commandContext(event)),
+    }),
+  };
+}
+
+export function createWatchReconciler(
+  orchestration: WatchOrchestrationPort,
+  journal: EventJournal,
+  checkpoints: CheckpointStore,
   runs?: Pick<RunRepository, 'load'>,
 ) {
   return {
-    async react(event: PersistedEvent, context: CommandContext): Promise<void> {
-      await dispatch(
-        orchestration,
-        runs,
-        event,
-        context,
-        await orchestration.listWatchMatches(event, context),
-      );
-    },
     async reconcileOnce(limit = 100): Promise<number> {
-      if (journal === undefined || checkpoints === undefined)
-        throw new Error('WatchReactor journal and checkpoints are required to reconcile');
       if (orchestration.listWaiting === undefined)
         throw new Error('WatchReactor listWaiting is required to reconcile');
       const events = await journal.readAll(await checkpoints.load(reconciliationCheckpoint), limit);
@@ -115,16 +141,6 @@ export function createWatchReactor(
         await checkpoints.save(reconciliationCheckpoint, event.globalPosition);
       }
       return reconciled;
-    },
-    async runOnce(limit = 100): Promise<number> {
-      if (journal === undefined || checkpoints === undefined)
-        throw new Error('WatchReactor journal and checkpoints are required to run');
-      const events = await journal.readAll(await checkpoints.load(checkpoint), limit);
-      for (const event of events) {
-        await this.react(event, commandContext(event));
-        await checkpoints.save(checkpoint, event.globalPosition);
-      }
-      return events.length;
     },
   };
 }

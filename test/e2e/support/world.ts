@@ -34,6 +34,7 @@ import {
   createPullRequestTransitionEvidence,
   createResourceTransitionReactor,
   createWatchReactor,
+  createWatchReconciler,
   orchestrationGroupId,
   workflowInstanceId as parseWorkflowInstanceId,
   workflowDefinitionsProjection,
@@ -149,6 +150,12 @@ export class TestWorld {
 
   private readonly watchReactor = createWatchReactor(
     this.orchestration,
+    () => this.orchestration.watchEventTypes(),
+    new RunRepository(this.journal),
+  );
+
+  private readonly watchReconciler = createWatchReconciler(
+    this.orchestration,
     this.journal,
     this.checkpoints,
     new RunRepository(this.journal),
@@ -169,8 +176,12 @@ export class TestWorld {
         },
       ],
     }),
+  );
+
+  private readonly reactorHost = new EventProcessorHost(
     this.journal,
     this.checkpoints,
+    createInMemoryProcessorRunSerialiser(),
   );
 
   constructor() {
@@ -182,7 +193,10 @@ export class TestWorld {
         ),
     });
     this.orchestration.setAcceptSignalOperationCoordinator(async (operation) => {
-      await this.resourceTransitionReactor.drain();
+      await this.reactorHost.runThrough(
+        this.resourceTransitionReactor.processor,
+        await this.journal.latestGlobalPosition(),
+      );
       return operation();
     });
   }
@@ -428,9 +442,9 @@ export class TestWorld {
       ...(workItemId === undefined ? {} : { workItemId }),
       maxProgress: 1,
     });
-    await this.watchReactor.runOnce();
-    await this.watchReactor.reconcileOnce();
-    await this.resourceTransitionReactor.runOnce();
+    await this.reactorHost.runOnce(this.watchReactor.processor);
+    await this.watchReconciler.reconcileOnce();
+    await this.reactorHost.runOnce(this.resourceTransitionReactor.processor);
     return result;
   }
 
@@ -469,7 +483,7 @@ export class TestWorld {
     ]);
     if (event === undefined) throw new Error('Watch trigger was not appended');
     await this.syncWorkflowDefinitions();
-    await this.watchReactor.runOnce();
+    await this.reactorHost.runOnce(this.watchReactor.processor);
   }
 
   async events(type?: string): Promise<readonly EventEnvelope[]> {

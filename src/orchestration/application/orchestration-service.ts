@@ -269,6 +269,16 @@ export class OrchestrationService {
     return this.definitions.currentDefinitions();
   }
 
+  watchEventTypes(): readonly string[] {
+    return [
+      ...new Set(
+        this.definitions
+          .currentDefinitions()
+          .flatMap(({ definition }) => definition.watches.flatMap((watch) => watch.on?.events ?? [])),
+      ),
+    ];
+  }
+
   definitionFor(view: {
     readonly workflowName: WorkflowInstanceView['workflowName'];
     readonly workflowDefinitionFingerprint?: string;

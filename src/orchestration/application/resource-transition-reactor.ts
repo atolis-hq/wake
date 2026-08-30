@@ -1,10 +1,13 @@
 import {
   correlationId,
   EventActorKind,
-  type CheckpointStore,
   type CommandContext,
-  type EventJournal,
 } from '../../kernel/index.js';
+import {
+  defineEventProcessor,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+} from '../../eventing/index.js';
 import type { TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';
@@ -30,10 +33,7 @@ const batchSize = 100;
 export function createResourceTransitionReactor(
   orchestration: ResourceTransitionOrchestrationPort,
   evidence: ResourceTransitionEvidence,
-  journal?: EventJournal,
-  checkpoints?: CheckpointStore,
 ) {
-  let queue: Promise<unknown> = Promise.resolve();
   const react = async (event: PersistedEvent, context: CommandContext): Promise<void> => {
     const orchestrationEvent = selectOrchestrationEvent(event);
     const isWaitStart = orchestrationEvent?.eventType === OrchestrationEventType.SignalWaitStarted;
@@ -54,37 +54,24 @@ export function createResourceTransitionReactor(
       );
     }
   };
-  const runBatch = async (limit = batchSize): Promise<number> => {
-    if (journal === undefined || checkpoints === undefined)
-      throw new Error('ResourceTransitionReactor journal and checkpoints are required to run');
-    const events = await journal.readAll(await checkpoints.load(checkpoint), limit);
-    for (const event of events) {
-      await react(event, commandContext(event));
-      await checkpoints.save(checkpoint, event.globalPosition);
-    }
-    return events.length;
-  };
-  const serialize = <Result>(operation: () => Promise<Result>): Promise<Result> => {
-    const result = queue.then(operation);
-    queue = result.catch(() => {});
-    return result;
-  };
   return {
     react,
-    runOnce(limit = batchSize): Promise<number> {
-      return serialize(() => runBatch(limit));
-    },
-    drain(): Promise<number> {
-      return serialize(async () => {
-        let total = 0;
-        let processed: number;
-        do {
-          processed = await runBatch();
-          total += processed;
-        } while (processed === batchSize);
-        return total;
-      });
-    },
+    processor: defineEventProcessor({
+      consumer: checkpoint,
+      name: 'resource-transition',
+      owner: 'orchestration',
+      category: EventProcessorCategory.Reactor,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      batchSize,
+      select(event) {
+        const orchestrationEvent = selectOrchestrationEvent(event);
+        return orchestrationEvent?.eventType === OrchestrationEventType.SignalWaitStarted ||
+          evidence.triggers.includes(event.eventType)
+          ? event
+          : null;
+      },
+      handle: async (event) => react(event, commandContext(event)),
+    }),
   };
 }
 

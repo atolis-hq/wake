@@ -12,7 +12,7 @@ import {
   type createControlPlaneService,
 } from '../control-plane/index.js';
 import type { createConversationService } from '../conversations/index.js';
-import { type ProcessorRunSerialiser } from '../eventing/index.js';
+import { EventProcessorHost, type ProcessorRunSerialiser } from '../eventing/index.js';
 import {
   RunRepository,
   createRuntimeMemoryProfile,
@@ -50,11 +50,12 @@ import {
   createPullRequestTransitionEvidence,
   createResourceTransitionReactor,
   createWatchReactor,
+  createWatchReconciler,
   selectWorkflow,
   workflowName,
   type createOrchestrationService,
 } from '../orchestration/index.js';
-import { withFileLock } from '../persistence/index.js';
+import { createInMemoryProcessorRunSerialiser, withFileLock } from '../persistence/index.js';
 import {
   BuiltInResourceCapability,
   resourceId,
@@ -211,7 +212,18 @@ export async function composeIntegrationRuntime(
     conversations: input.conversations,
     ...(replies === undefined ? {} : { replies }),
   });
-  const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints, runs);
+  const reactorHost = new EventProcessorHost(
+    input.journal,
+    input.checkpoints,
+    input.subscriptionRunSerialiser ?? createInMemoryProcessorRunSerialiser(),
+  );
+  const watch = createWatchReactor(input.orchestration, () => input.orchestration.watchEventTypes(), runs);
+  const watchReconciler = createWatchReconciler(
+    input.orchestration,
+    input.journal,
+    input.checkpoints,
+    runs,
+  );
   const resourceTransitionEvidence = createCapabilityResourceTransitionEvidence({
     resources: input.resources,
     policies: [
@@ -228,11 +240,12 @@ export async function composeIntegrationRuntime(
   const resourceTransitions = createResourceTransitionReactor(
     input.orchestration,
     resourceTransitionEvidence,
-    input.journal,
-    input.checkpoints,
   );
   input.orchestration.setAcceptSignalOperationCoordinator(async (operation) => {
-    await resourceTransitions.drain();
+    await reactorHost.runThrough(
+      resourceTransitions.processor,
+      await input.journal.latestGlobalPosition(),
+    );
     return operation();
   });
   const outcomes = new DeliveryOutcomeReactor(
@@ -282,9 +295,9 @@ export async function composeIntegrationRuntime(
       }),
     react: () =>
       observeMemory(memoryProfile, 'runner.react', async () => {
-        await watch.runOnce();
-        await watch.reconcileOnce();
-        await resourceTransitions.runOnce();
+        await reactorHost.runOnce(watch.processor);
+        await watchReconciler.reconcileOnce();
+        await reactorHost.runOnce(resourceTransitions.processor);
         await artifacts.runOnce();
         await outcomes.runOnce();
         for (const provider of providers) await provider.maintenance?.runOnce();

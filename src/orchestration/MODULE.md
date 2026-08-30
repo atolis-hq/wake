@@ -40,6 +40,10 @@ Owns `orchestration.` events and `workflow.` relations.
 ## Failure and recovery
 
 Accepted outcomes are current, typed, and replayable.
+Watch and resource-transition reactions expose typed Eventing processor
+definitions with stable reactor consumers. Their normal handlers do not own
+checkpoints; watch recovery remains a separate reconciler with its own durable
+checkpoint.
 
 ## Extension rules
 
