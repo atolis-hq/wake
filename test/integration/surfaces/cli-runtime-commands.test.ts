@@ -84,6 +84,10 @@ describe('Wake target CLI runtime commands', () => {
           },
         },
       ),
+      processorRuntime: {
+        processors: [],
+        catchUp: async () => 0,
+      },
     } as unknown as CompositionRoot;
     const applications = (
       await createSurfaceApplications(root, {

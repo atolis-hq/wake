@@ -7,7 +7,7 @@ import {
   createProjectionProcessor,
   projectionConsumer,
 } from '../../../src/eventing/index.js';
-import { createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
+import { createEventDraft, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -260,7 +260,7 @@ class FailOnceCheckpointStore extends InMemoryCheckpointStore {
 
 async function applyProcessorBatch(
   processor: ReturnType<typeof createProjectionProcessor>,
-  events: readonly import('../../../src/kernel/index.js').EventEnvelope[],
+  events: readonly EventEnvelope[],
 ): Promise<void> {
   if (processor.mode === 'batch') throw new Error('Expected event projection processor');
   for (const event of events) {

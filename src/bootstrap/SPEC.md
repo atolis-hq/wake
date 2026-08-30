@@ -21,10 +21,10 @@ Persistence semantics, or processor handlers.
 
 The composition root creates one `EventProcessorRuntime` with the journal,
 checkpoints, and injected Persistence serialiser. It registers every resident
-processor exactly once: projections, activation scheduling, orchestration
-reactions, artifact registration, delivery outcomes, agent publication, and
-provider inbound translation. The runtime starts one Eventing host over that
-explicit registry and provides unified health and lag reporting.
+processor exactly once: provider translation, domain and integration reactors,
+agent publication, projections, and activation scheduling. The runtime starts
+one Eventing host over that explicit registry and provides unified health and
+lag reporting.
 
 The runtime's one-shot catch-up and through-position barriers are explicit
 freshness boundaries. Projection rebuilds use the same consumer serialiser as
@@ -33,11 +33,12 @@ subscription configuration.
 
 ## Pipeline and reconciliation lanes
 
-The intake pipeline polls providers and translates inbound evidence; it is the
-only rate-limited external polling lane and backs off when idle. The runner
-pipeline performs schedule evaluation, reactions, publication, delivery, and
-explicit projection catch-up. One-shot ticks run the configured pipelines and
-poke the activation-scheduler processor at the documented boundary.
+The intake pipeline polls providers; it is the only rate-limited external
+polling lane and backs off when idle. Eventing processors translate provider
+evidence and run reactors and publication. The runner pipeline performs
+schedule evaluation, reconciliation, and outbound delivery. One-shot ticks
+run the configured pipelines and poke the activation-scheduler processor at
+the documented boundary.
 
 Watch, resource-transition, provider, and delivery reconciliation remain
 separate bounded recovery lanes. Schedule and provider poll watermarks are

@@ -89,18 +89,12 @@ export function createSurfaceCliApplications(
       `Wake ${label} tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
     );
   };
-  // Only intake unconditionally polls a rate-limited external API (GitHub),
-  // so only its resident loop backs off exponentially when idle. The
-  // runner loop (schedules, reactors, publication, delivery, GitHub label
-  // maintenance) stays on a fast, fixed cadence when it simply has nothing
-  // to do locally. The independent durable subscriber owns activation
-  // scheduling — mirroring legacy src/core/control-plane.ts's
-  // `runIntakeTick`/`runRunnerTick` split (idleBackoff: true vs false), just
-  // as two ResidentHosts instead of two hand-rolled loops. But some runner
-  // stages (deliver, label maintenance) DO call that same external API, so a
-  // run of consecutive *errors* — as opposed to ordinary "no local work"
-  // idling — still backs off exponentially, or a live rate-limit window gets
-  // hammered every cycle instead of given a chance to recover.
+  // Intake owns provider polling, so only its resident loop backs off
+  // exponentially when idle. The runner loop owns schedules, reconciliation,
+  // and delivery; it stays on a fast cadence when there is no local work.
+  // The independent durable subscriber owns activation scheduling. Delivery
+  // can still hit an external API, so consecutive errors back off
+  // independently of ordinary idle ticks.
   const runnerResident = new ResidentHost(
     runnerResidentTick,
     runnerIdleWait,

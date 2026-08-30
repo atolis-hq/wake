@@ -10,7 +10,7 @@ import {
   createBatchEventProcessor,
   type ProcessorRunSerialiser,
 } from '../../../src/eventing/index.js';
-import { createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
+import { createEventDraft, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
   InMemoryEventJournal,
@@ -286,9 +286,7 @@ class BatchProcessorHost {
 
 interface BatchSubscription {
   readonly consumer: string;
-  readonly handle: (
-    events: readonly import('../../../src/kernel/index.js').EventEnvelope[],
-  ) => Promise<void>;
+  readonly handle: (events: readonly EventEnvelope[]) => Promise<void>;
 }
 
 function batchProcessor(subscription: BatchSubscription) {
