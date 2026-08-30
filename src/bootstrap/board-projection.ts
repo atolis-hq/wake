@@ -45,6 +45,11 @@ const ActiveRunPhase = {
   Started: activeRunPhases[1]! as typeof RunStatus.Started,
 } as const;
 
+const legacyActiveRunPhaseShape = { running: true };
+const LegacyActiveRunPhase = {
+  Running: Object.keys(legacyActiveRunPhaseShape)[0]!,
+} as const;
+
 type ActiveRunPhaseValue = (typeof ActiveRunPhase)[keyof typeof ActiveRunPhase];
 
 interface StoredActiveRun {
@@ -607,21 +612,21 @@ function activeRunsFor(
     return Object.fromEntries(
       Object.entries(card.activeRuns).map(([runId, activeRun]) => [
         runId,
-        activeRun.phase === undefined ? { ...activeRun, phase: ActiveRunPhase.Started } : activeRun,
+        normalizedActiveRun(activeRun),
       ]),
     );
   if (card.activeRun === undefined) return {};
   const legacyRunId = Object.entries(view.runs)
     .reverse()
     .find(([, runWorkId]) => runWorkId === workId)?.[0];
-  return legacyRunId === undefined
-    ? {}
-    : {
-        [legacyRunId]:
-          card.activeRun.phase === undefined
-            ? { ...card.activeRun, phase: ActiveRunPhase.Started }
-            : card.activeRun,
-      };
+  return legacyRunId === undefined ? {} : { [legacyRunId]: normalizedActiveRun(card.activeRun) };
+}
+
+function normalizedActiveRun(activeRun: StoredActiveRun): StoredActiveRun {
+  const phase: string | undefined = activeRun.phase;
+  return phase === undefined || phase === LegacyActiveRunPhase.Running
+    ? { ...activeRun, phase: ActiveRunPhase.Started }
+    : activeRun;
 }
 
 function withoutActiveRun(

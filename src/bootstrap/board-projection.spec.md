@@ -108,7 +108,7 @@ own.
 | `workflowName` / `stage` | string, optional | The primary instance's workflow and current stage. |
 | `dwellSince` | timestamp | When the card entered its current stage (or was created, before any stage). |
 | `runCount` | number | Total runs started under this WorkItem's workflow instances, including child instances. |
-| `activeRuns` | object, keyed by Run ID | Every in-flight Run's action label, optional runner name, whole-attempt start time, and `starting` or `running` phase; empty when nothing is active. |
+| `activeRuns` | object, keyed by Run ID | Every in-flight Run's action label, optional runner name, whole-attempt start time, and machine phase `starting` or `started`; empty when nothing is active. Surfaces present `started` as “Running”. |
 | `lastRunAt` / `lastRunOutcome` | timestamp / string, optional | The most recently started run's start time, and the most recently finished run's outcome. |
 | `totalTokens` / `totalCostUsd` / `totalDurationMs` | number | Cumulative totals across every run recorded for this WorkItem. |
 

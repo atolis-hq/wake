@@ -944,6 +944,55 @@ describe('operator board projection', () => {
     expect(finished.cards[item]!.totalDurationMs).toBe(21_660);
   });
 
+  it('normalizes a retired running phase in keyed and single active-run checkpoints', () => {
+    const item = workId('board-legacy-running-phase');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-legacy-running-phase');
+    const seeded = boardProjection.project(
+      seedPrimaryBoard(item, workflowId),
+      runStartedEvent(run, workflowId, item, 3),
+    );
+    const card = seeded.cards[item]!;
+    const legacyPhase = 'running' as const;
+    const keyedLegacyView = {
+      ...seeded,
+      cards: {
+        ...seeded.cards,
+        [item]: {
+          ...card,
+          activeRuns: {
+            ...card.activeRuns,
+            [run]: { ...card.activeRuns[run]!, phase: legacyPhase },
+          },
+        },
+      },
+    } as unknown as typeof seeded;
+    const { activeRuns, ...withoutActiveRuns } = card;
+    const singleLegacyView = {
+      ...seeded,
+      cards: {
+        ...seeded.cards,
+        [item]: { ...withoutActiveRuns, activeRun: { ...activeRuns[run]!, phase: legacyPhase } },
+      },
+    } as unknown as typeof seeded;
+
+    const keyedRecovered = boardProjection.project(
+      keyedLegacyView,
+      runPreparationEvent(runId('run-after-keyed-legacy-phase'), workflowId, item, 4),
+    );
+    const singleRecovered = boardProjection.project(
+      singleLegacyView,
+      runPreparationEvent(runId('run-after-single-legacy-phase'), workflowId, item, 4),
+    );
+
+    expect(keyedRecovered.cards[item]!.activeRuns[run]).toMatchObject({
+      phase: RunStatus.Started,
+    });
+    expect(singleRecovered.cards[item]!.activeRuns[run]).toMatchObject({
+      phase: RunStatus.Started,
+    });
+  });
+
   it('shows an active run, accumulates token/cost totals, and clears the run on completion', () => {
     const item = workId('board-run');
     const workflowId = workflowInstanceId(`primary:${item}`);
