@@ -143,19 +143,32 @@ function requestRetry(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.OperatorRetryRequested,
-      { activationId: state.pendingActivation!.activationId, commandId: input.commandId },
+      {
+        eventType: OrchestrationEventType.OperatorRetryRequested,
+        payload: {
+          activationId: state.pendingActivation!.activationId,
+          commandId: input.commandId,
+        },
+      },
       1,
     ),
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-        stage: stageName(state.currentStage),
-        ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          stage.activity,
+          stage.with,
+          {
+            execution: stage.execution,
+            stage: stageName(state.currentStage),
+            ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
+          },
+        ),
+      },
       2,
     ),
   ];
@@ -182,18 +195,31 @@ export function requestChangesResume(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.OperatorRetryRequested,
-        { activationId: state.pendingActivation!.activationId, commandId: input.commandId },
+        {
+          eventType: OrchestrationEventType.OperatorRetryRequested,
+          payload: {
+            activationId: state.pendingActivation!.activationId,
+            commandId: input.commandId,
+          },
+        },
         1,
       ),
       stateDraft(
         state,
         input,
-        OrchestrationEventType.ActivityRequested,
-        activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-          execution: stage.execution,
-          stage: stageName(state.currentStage),
-        }),
+        {
+          eventType: OrchestrationEventType.ActivityRequested,
+          payload: activation(
+            state.workflowInstanceId,
+            nextOrdinal(state),
+            stage.activity,
+            stage.with,
+            {
+              execution: stage.execution,
+              stage: stageName(state.currentStage),
+            },
+          ),
+        },
         2,
       ),
     ],

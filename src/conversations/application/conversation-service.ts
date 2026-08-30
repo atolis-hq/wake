@@ -54,10 +54,9 @@ export function createConversationService(journal: EventJournal): ConversationSe
         throw new Error(`Conversation ${command.conversationId} does not exist`);
       if (existing.view.entries.some((entry) => entry.entryId === command.entryId))
         return existing.view;
-      return change(command.conversationId, context, ConversationEventType.EntryRecorded, {
-        entryId: command.entryId,
-        body: command.body,
-        origin: command.origin,
+      return change(command.conversationId, context, {
+        eventType: ConversationEventType.EntryRecorded,
+        payload: { entryId: command.entryId, body: command.body, origin: command.origin },
       });
     },
     async associateResource(command, context) {
@@ -71,9 +70,12 @@ export function createConversationService(journal: EventJournal): ConversationSe
         )
       )
         return existing.view;
-      return change(command.conversationId, context, ConversationEventType.ResourceAssociated, {
-        resourceId: command.resourceId,
-        ...(command.threadId === undefined ? {} : { threadId: command.threadId }),
+      return change(command.conversationId, context, {
+        eventType: ConversationEventType.ResourceAssociated,
+        payload: {
+          resourceId: command.resourceId,
+          ...(command.threadId === undefined ? {} : { threadId: command.threadId }),
+        },
       });
     },
     async revise(command, context) {
@@ -83,9 +85,9 @@ export function createConversationService(journal: EventJournal): ConversationSe
         !existing.view.entries.some((entry) => entry.entryId === command.entryId)
       )
         throw new Error(`Conversation entry ${command.entryId} does not exist`);
-      return change(command.conversationId, context, ConversationEventType.EntryRevised, {
-        entryId: command.entryId,
-        body: command.body,
+      return change(command.conversationId, context, {
+        eventType: ConversationEventType.EntryRevised,
+        payload: { entryId: command.entryId, body: command.body },
       });
     },
     async tombstone(command, context) {
@@ -95,8 +97,9 @@ export function createConversationService(journal: EventJournal): ConversationSe
         !existing.view.entries.some((entry) => entry.entryId === command.entryId)
       )
         throw new Error(`Conversation entry ${command.entryId} does not exist`);
-      return change(command.conversationId, context, ConversationEventType.EntryTombstoned, {
-        entryId: command.entryId,
+      return change(command.conversationId, context, {
+        eventType: ConversationEventType.EntryTombstoned,
+        payload: { entryId: command.entryId },
       });
     },
     async recordRepresentation(command, context) {
@@ -114,16 +117,14 @@ export function createConversationService(journal: EventJournal): ConversationSe
         )
       )
         return existing.view!;
-      return change(
-        command.conversationId,
-        context,
-        ConversationEventType.EntryRepresentationRecorded,
-        {
+      return change(command.conversationId, context, {
+        eventType: ConversationEventType.EntryRepresentationRecorded,
+        payload: {
           entryId: command.entryId,
           resourceId: command.resourceId,
           externalId: command.externalId,
         },
-      );
+      });
     },
     get: async (id) => (await repository.load(id)).view,
     forWorkItem: async (workItemId) =>
@@ -131,23 +132,24 @@ export function createConversationService(journal: EventJournal): ConversationSe
   };
 }
 
+type ConversationChangeInput = {
+  [Type in keyof ConversationEventPayloads]: {
+    readonly eventType: Type;
+    readonly payload: ConversationEventPayloads[Type];
+  };
+}[keyof ConversationEventPayloads];
+
 function changeConversation(repository: ConversationRepository) {
-  return async <Type extends keyof ConversationEventPayloads>(
-    id: ConversationId,
-    context: CommandContext,
-    eventType: Type,
-    payload: ConversationEventPayloads[Type],
-  ) => {
+  return async (id: ConversationId, context: CommandContext, input: ConversationChangeInput) => {
     const loaded = await repository.load(id);
     const draft = createConversationEventData({
-      eventId: `${context.commandId}:${eventType}`,
-      eventType,
+      eventId: `${context.commandId}:${input.eventType}`,
       occurredAt: context.occurredAt,
       correlationId: context.correlationId,
       causationId: context.commandId,
       actor: context.actor,
       source: { kind: EventSourceKind.Internal, id: 'conversation-service' },
-      payload,
+      ...input,
     });
     const [recorded] = await repository.append(id, loaded.sequence, [draft]);
     const next = recorded === undefined ? null : applyConversationEvent(loaded.view, recorded);
@@ -164,8 +166,9 @@ function createConversation(
     const existing = await repository.load(command.conversationId);
     return (
       existing.view ??
-      change(command.conversationId, context, ConversationEventType.Created, {
-        workItemId: command.workItemId,
+      change(command.conversationId, context, {
+        eventType: ConversationEventType.Created,
+        payload: { workItemId: command.workItemId },
       })
     );
   };

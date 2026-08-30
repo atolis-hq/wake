@@ -9,6 +9,7 @@ import {
   ConversationEventType,
   createConversationEventData,
 } from '../../src/conversations/index.js';
+import * as Execution from '../../src/execution/index.js';
 import { createExecutionEventData, ExecutionEventType, runId } from '../../src/execution/index.js';
 import { createGitHubEventData, GitHubEventType } from '../../src/integrations/github/index.js';
 import {
@@ -63,6 +64,215 @@ void (() => {
     eventType: ControlEventType.DispatchPaused,
     // @ts-expect-error Control Plane factories reject Activity payloads.
     payload: { checks: 'passing' as const },
+  });
+
+  void ((
+    eventType:
+      typeof ConversationEventType.EntryRevised | typeof ConversationEventType.EntryTombstoned,
+  ) => {
+    // @ts-expect-error Conversation factories preserve union discriminator/payload correlation.
+    createConversationEventData({
+      ...metadata,
+      eventType,
+      payload: { entryId: 'entry-1' },
+    });
+  });
+  createConversationEventData({
+    ...metadata,
+    // @ts-expect-error Conversation factories reject foreign event types.
+    eventType: ControlEventType.DispatchPaused,
+    // @ts-expect-error Foreign event types do not supply Conversation payloads.
+    payload: {},
+  });
+  createConversationEventData({
+    ...metadata,
+    eventType: ConversationEventType.EntryTombstoned,
+    // @ts-expect-error Conversation factories reject payloads for another Conversation event.
+    payload: { objective: 'wrong owner payload' },
+  });
+
+  void ((
+    eventType:
+      typeof ExecutionEventType.RunCancellationConfirmed | typeof ExecutionEventType.RunCancelled,
+  ) => {
+    // @ts-expect-error Execution factories preserve union discriminator/payload correlation.
+    createExecutionEventData({
+      ...metadata,
+      eventType,
+      payload: { confirmedAt: metadata.occurredAt },
+    });
+  });
+  void ((
+    eventType:
+      typeof ExecutionEventType.RunCancellationConfirmed | typeof ExecutionEventType.RunCancelled,
+  ) => {
+    // @ts-expect-error Execution exposes no secondary factory that loses union discrimination.
+    Execution.createRunExecutionEventData({
+      ...metadata,
+      eventType,
+      payload: { confirmedAt: metadata.occurredAt },
+    });
+  });
+  createExecutionEventData({
+    ...metadata,
+    // @ts-expect-error Execution factories reject foreign event types.
+    eventType: ControlEventType.DispatchPaused,
+    // @ts-expect-error Foreign event types do not supply Execution payloads.
+    payload: {},
+  });
+  createExecutionEventData({
+    ...metadata,
+    eventType: ExecutionEventType.ActivationReleased,
+    // @ts-expect-error Execution factories reject payloads for another Execution event.
+    payload: { confirmedAt: metadata.occurredAt },
+  });
+
+  void ((
+    eventType:
+      | typeof GitHubEventType.InboundTranslationRecovered
+      | typeof GitHubEventType.InboundTranslationRetried,
+  ) => {
+    // @ts-expect-error GitHub factories preserve union discriminator/payload correlation.
+    createGitHubEventData({
+      ...metadata,
+      eventType,
+      payload: { adapter: 'github', sourceEventId: 'source-1' },
+    });
+  });
+  createGitHubEventData({
+    ...metadata,
+    // @ts-expect-error GitHub factories reject foreign event types.
+    eventType: ControlEventType.DispatchPaused,
+    // @ts-expect-error Foreign event types do not supply GitHub payloads.
+    payload: {},
+  });
+  createGitHubEventData({
+    ...metadata,
+    eventType: GitHubEventType.DeliveryObserved,
+    // @ts-expect-error GitHub factories reject payloads for another GitHub event.
+    payload: { adapter: 'github', sourceEventId: 'source-1' },
+  });
+
+  void ((
+    eventType:
+      | typeof OrchestrationEventType.InstanceCompleted
+      | typeof OrchestrationEventType.InstanceBlocked,
+  ) => {
+    // @ts-expect-error Orchestration factories preserve union discriminator/payload correlation.
+    createOrchestrationEventData({
+      ...metadata,
+      eventType,
+      payload: {},
+    });
+  });
+  createOrchestrationEventData({
+    ...metadata,
+    // @ts-expect-error Orchestration factories reject foreign event types.
+    eventType: ControlEventType.DispatchPaused,
+    payload: {},
+  });
+  createOrchestrationEventData({
+    ...metadata,
+    eventType: OrchestrationEventType.InstanceBlocked,
+    // @ts-expect-error Orchestration factories reject payloads for another Orchestration event.
+    payload: { stage: 'wrong-payload' },
+  });
+
+  void ((
+    eventType:
+      | typeof ResourceEventType.ResourceRevisionObserved
+      | typeof ResourceEventType.WorkCorrelationRetracted,
+  ) => {
+    // @ts-expect-error Resource factories preserve union discriminator/payload correlation.
+    createResourceEventData({
+      ...metadata,
+      eventType,
+      payload: { revision: 'abc' },
+    });
+  });
+  createResourceEventData({
+    ...metadata,
+    // @ts-expect-error Resource factories reject foreign event types.
+    eventType: ControlEventType.DispatchPaused,
+    // @ts-expect-error Foreign event types do not supply Resource payloads.
+    payload: {},
+  });
+  createResourceEventData({
+    ...metadata,
+    eventType: ResourceEventType.ResourceRevisionObserved,
+    // @ts-expect-error Resource factories reject payloads for another Resource event.
+    payload: { sourceObservationId: 'source-1' },
+  });
+
+  void ((eventType: typeof WorkEventType.ObjectiveRevised | typeof WorkEventType.ItemClosed) => {
+    // @ts-expect-error Work factories preserve union discriminator/payload correlation.
+    createWorkEventData({
+      ...metadata,
+      eventType,
+      payload: { objective: 'Improve event construction' },
+    });
+  });
+  createWorkEventData({
+    ...metadata,
+    // @ts-expect-error Work factories reject foreign event types.
+    eventType: ControlEventType.DispatchPaused,
+    payload: {},
+  });
+  createWorkEventData({
+    ...metadata,
+    eventType: WorkEventType.ObjectiveRevised,
+    // @ts-expect-error Work factories reject payloads for another Work event.
+    payload: { reason: 'wrong payload' },
+  });
+
+  createArtifactEventData({
+    ...metadata,
+    // @ts-expect-error Artifact factories reject foreign event types.
+    eventType: ControlEventType.DispatchPaused,
+    // @ts-expect-error Foreign event types do not supply Artifact payloads.
+    payload: {},
+  });
+  createArtifactEventData({
+    ...metadata,
+    eventType: ArtifactEventType.VerificationUnresolved,
+    // @ts-expect-error Artifact factories reject literal payloads for another owner.
+    payload: { reason: 'wrong payload' },
+  });
+
+  void ((
+    eventType: typeof DeliveryEventType.AttemptStarted | typeof DeliveryEventType.Confirmed,
+  ) => {
+    // @ts-expect-error Delivery factories preserve union discriminator/payload correlation.
+    createDeliveryEventData({
+      ...metadata,
+      eventType,
+      payload: {
+        intentEventId: eventId('intent-1'),
+        intentGlobalPosition: 1,
+        workflowInstanceId: 'workflow-1',
+        activationId: 'activation-1',
+        occurrenceOrdinal: 1,
+      },
+    });
+  });
+  createDeliveryEventData({
+    ...metadata,
+    // @ts-expect-error Delivery factories reject foreign event types.
+    eventType: ControlEventType.DispatchPaused,
+    // @ts-expect-error Foreign event types do not supply Delivery payloads.
+    payload: {},
+  });
+  // @ts-expect-error Delivery factories reject payloads for another Delivery event.
+  createDeliveryEventData({
+    ...metadata,
+    eventType: DeliveryEventType.Confirmed,
+    payload: {
+      intentEventId: eventId('intent-1'),
+      intentGlobalPosition: 1,
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      occurrenceOrdinal: 1,
+    },
   });
 })();
 
@@ -166,4 +376,5 @@ it('keeps stream routing separate from Work event data', () => {
   });
   // @ts-expect-error EventData does not carry a stream reference.
   void event.stream;
+  expect(event.eventType).toBe(WorkEventType.ItemDeleted);
 });

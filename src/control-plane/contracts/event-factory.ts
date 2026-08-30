@@ -17,7 +17,3 @@ export function createControlPlaneEventData(input: ControlPlaneEventDataInput): 
       return createEventData(input);
   }
 }
-
-export function createControlEventData(input: ControlPlaneEventDataInput): ControlEventData {
-  return createControlPlaneEventData(input);
-}

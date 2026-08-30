@@ -45,7 +45,7 @@ export function issueObservation(input: {
     labels: withoutWakeMarkers(labels),
     assignees: [...assignees].sort(),
   });
-  return createGitHubEventData({
+  const event = createGitHubEventData({
     eventId: `github:issue:${key}:${fingerprint}`,
     eventType: GitHubEventType.WorkObserved,
     occurredAt: input.issue.updated_at,
@@ -67,6 +67,9 @@ export function issueObservation(input: {
       raw: { number: input.issue.number },
     },
   });
+  if (event.eventType !== GitHubEventType.WorkObserved)
+    throw new Error(`Expected GitHub WorkObserved event data, received ${event.eventType}`);
+  return event;
 }
 
 function issueOutcome(issue: GitHubIssuePayload): ExternalWorkOutcome | undefined {
@@ -97,7 +100,7 @@ export function issueCommentObservation(input: {
     number: input.issue.number,
   });
   const location = commentLocation(input.comment);
-  return createGitHubEventData({
+  const event = createGitHubEventData({
     eventId: `github:issue-comment:${key}:${input.comment.id}:${input.comment.updated_at}`,
     eventType: GitHubEventType.CommentObserved,
     occurredAt: input.comment.updated_at,
@@ -119,6 +122,9 @@ export function issueCommentObservation(input: {
       raw: { id: input.comment.id },
     },
   });
+  if (event.eventType !== GitHubEventType.CommentObserved)
+    throw new Error(`Expected GitHub CommentObserved event data, received ${event.eventType}`);
+  return event;
 }
 
 function commentLocation(comment: GitHubIssueCommentPayload) {

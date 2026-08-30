@@ -88,12 +88,6 @@ export function decodeArtifactEvent(event: EventEnvelope): ArtifactEvent {
   return result.data;
 }
 
-export function artifactVerificationUnresolvedDraft(
-  input: Omit<ArtifactEventData, 'schemaVersion'>,
-): ArtifactEventData {
-  return { ...input, schemaVersion: 1 };
-}
-
 export function artifactIntegrationStream(adapter: AdapterId): IntegrationStreamRef {
   return integrationStream(adapter);
 }

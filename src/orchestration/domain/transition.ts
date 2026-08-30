@@ -41,22 +41,24 @@ export function finishRoute(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.SignalWaitStarted,
         {
-          signalKind: gate === undefined ? ResourceTransitionSignal : WatchGateVerdictSignal,
-          ...(gate === undefined
-            ? {}
-            : {
-                from: Object.freeze([
-                  { kind: ApprovalAuthorityKind.Watch, watch: gate.watch },
-                  { kind: ApprovalAuthorityKind.Human },
-                ]),
-              }),
-          resume: route.target,
-          ...(gate === undefined ? {} : { onRejectResume: gate.onRejectTarget }),
-          ...(route.resourceTransitions === undefined
-            ? {}
-            : { resourceTransitions: route.resourceTransitions }),
+          eventType: OrchestrationEventType.SignalWaitStarted,
+          payload: {
+            signalKind: gate === undefined ? ResourceTransitionSignal : WatchGateVerdictSignal,
+            ...(gate === undefined
+              ? {}
+              : {
+                  from: Object.freeze([
+                    { kind: ApprovalAuthorityKind.Watch, watch: gate.watch },
+                    { kind: ApprovalAuthorityKind.Human },
+                  ]),
+                }),
+            resume: route.target,
+            ...(gate === undefined ? {} : { onRejectResume: gate.onRejectTarget }),
+            ...(route.resourceTransitions === undefined
+              ? {}
+              : { resourceTransitions: route.resourceTransitions }),
+          },
         },
         events.length + 1,
       ),
@@ -68,12 +70,14 @@ export function finishRoute(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.SignalWaitStarted,
         {
-          signalKind: route.await.signal,
-          from: route.await.from,
-          resume: route.await.resume,
-          onRejectResume: route.reentryTarget,
+          eventType: OrchestrationEventType.SignalWaitStarted,
+          payload: {
+            signalKind: route.await.signal,
+            from: route.await.from,
+            resume: route.await.resume,
+            onRejectResume: route.reentryTarget,
+          },
         },
         events.length + 1,
       ),
@@ -91,8 +95,10 @@ export function finishRoute(
         stateDraft(
           state,
           input,
-          OrchestrationEventType.InstanceBlocked,
-          { reason: `repeat.max exceeded for ${route.id}` },
+          {
+            eventType: OrchestrationEventType.InstanceBlocked,
+            payload: { reason: `repeat.max exceeded for ${route.id}` },
+          },
           events.length + 1,
         ),
       );
@@ -102,8 +108,10 @@ export function finishRoute(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.RepeatCounted,
-        { routeId: route.id, count },
+        {
+          eventType: OrchestrationEventType.RepeatCounted,
+          payload: { routeId: route.id, count },
+        },
         events.length + 1,
       ),
     );
@@ -123,18 +131,25 @@ function pushStageEntry(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.StageEntered,
-      { stage: stageName },
+      { eventType: OrchestrationEventType.StageEntered, payload: { stage: stageName } },
       events.length + 1,
     ),
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-        stage: stageName,
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          stage.activity,
+          stage.with,
+          {
+            execution: stage.execution,
+            stage: stageName,
+          },
+        ),
+      },
       events.length + 2,
     ),
   );
@@ -151,7 +166,12 @@ export function resumeToTarget(
 ): void {
   if (target.kind === TransitionTargetKind.Complete) {
     events.push(
-      stateDraft(state, input, OrchestrationEventType.InstanceCompleted, {}, events.length + 1),
+      stateDraft(
+        state,
+        input,
+        { eventType: OrchestrationEventType.InstanceCompleted, payload: {} },
+        events.length + 1,
+      ),
     );
     return;
   }
@@ -160,8 +180,10 @@ export function resumeToTarget(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.SignalWaitStarted,
-        { signalKind: target.signal },
+        {
+          eventType: OrchestrationEventType.SignalWaitStarted,
+          payload: { signalKind: target.signal },
+        },
         events.length + 1,
       ),
     );

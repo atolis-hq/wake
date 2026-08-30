@@ -9,9 +9,6 @@ export type GitHubEventDataInput = {
   [Type in keyof GitHubEventPayloads]: EventDataInput<Type, GitHubEventPayloads[Type]>;
 }[keyof GitHubEventPayloads];
 
-export function createGitHubEventData<Type extends keyof GitHubEventPayloads>(
-  input: EventDataInput<Type, GitHubEventPayloads[Type]>,
-): Extract<GitHubAdapterEventData, { readonly eventType: Type }>;
 export function createGitHubEventData(input: GitHubEventDataInput): GitHubAdapterEventData {
   switch (input.eventType) {
     case GitHubEventType.WorkObserved:

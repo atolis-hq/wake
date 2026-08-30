@@ -5,9 +5,8 @@ export type ResourceEventDataInput = {
   [Type in keyof ResourceEventPayloads]: EventDataInput<Type, ResourceEventPayloads[Type]>;
 }[keyof ResourceEventPayloads];
 
-export function createResourceEventData<Type extends keyof ResourceEventPayloads>(
-  input: EventDataInput<Type, ResourceEventPayloads[Type]>,
-): Extract<ResourceEventData, { readonly eventType: Type }>;
+// Exhaustive dispatch preserves the closed event-to-payload mapping.
+// eslint-disable-next-line complexity
 export function createResourceEventData(input: ResourceEventDataInput): ResourceEventData {
   switch (input.eventType) {
     case ResourceEventType.ResourceDiscovered:

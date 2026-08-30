@@ -34,9 +34,12 @@ export function createWorkService(journal: EventJournal): WorkService {
   return {
     async create(command, context) {
       const loaded = await repository.load(command.workItemId);
-      const draft = workDraft(context, WorkEventType.ItemCreated, {
-        objective: command.objective,
-        ...(command.tags === undefined ? {} : { tags: command.tags }),
+      const draft = workDraft(context, {
+        eventType: WorkEventType.ItemCreated,
+        payload: {
+          objective: command.objective,
+          ...(command.tags === undefined ? {} : { tags: command.tags }),
+        },
       });
       if (loaded.view !== null) return change(command.workItemId, context, draft, true);
       return change(command.workItemId, context, draft, true);
@@ -45,8 +48,9 @@ export function createWorkService(journal: EventJournal): WorkService {
       return change(
         command.workItemId,
         context,
-        workDraft(context, WorkEventType.ObjectiveRevised, {
-          objective: command.objective,
+        workDraft(context, {
+          eventType: WorkEventType.ObjectiveRevised,
+          payload: { objective: command.objective },
         }),
       );
     },
@@ -54,20 +58,24 @@ export function createWorkService(journal: EventJournal): WorkService {
       return change(
         command.from,
         context,
-        workDraft(context, WorkEventType.ItemLinked, {
-          to: command.to,
-          relation: command.relation,
+        workDraft(context, {
+          eventType: WorkEventType.ItemLinked,
+          payload: { to: command.to, relation: command.relation },
         }),
       );
     },
     close(workItemId, reason, context) {
-      return change(workItemId, context, workDraft(context, WorkEventType.ItemClosed, { reason }));
+      return change(
+        workItemId,
+        context,
+        workDraft(context, { eventType: WorkEventType.ItemClosed, payload: { reason } }),
+      );
     },
     cancel(workItemId, reason, context) {
       return change(
         workItemId,
         context,
-        workDraft(context, WorkEventType.ItemCancelled, { reason }),
+        workDraft(context, { eventType: WorkEventType.ItemCancelled, payload: { reason } }),
       );
     },
     grantAutoApproval(workItemId, context) {
@@ -130,24 +138,28 @@ async function setAutoApproval(
   const current = (await repository.load(workItemId)).view;
   if (current === null) throw new Error(`WorkItem ${workItemId} does not exist`);
   if (current.autoApprovalGranted === granted) return current;
-  const eventType = granted ? WorkEventType.AutoApprovalGranted : WorkEventType.AutoApprovalRevoked;
-  return change(workItemId, context, workDraft(context, eventType, {}));
+  const input = granted
+    ? { eventType: WorkEventType.AutoApprovalGranted, payload: {} }
+    : { eventType: WorkEventType.AutoApprovalRevoked, payload: {} };
+  return change(workItemId, context, workDraft(context, input));
 }
 
-function workDraft<Type extends keyof WorkEventPayloads>(
-  context: CommandContext,
-  eventType: Type,
-  payload: WorkEventPayloads[Type],
-) {
+type WorkDraftInput = {
+  [Type in keyof WorkEventPayloads]: {
+    readonly eventType: Type;
+    readonly payload: WorkEventPayloads[Type];
+  };
+}[keyof WorkEventPayloads];
+
+function workDraft(context: CommandContext, input: WorkDraftInput): WorkEventData {
   return createWorkEventData({
-    eventId: `${context.commandId}:${eventType}`,
-    eventType,
+    eventId: `${context.commandId}:${input.eventType}`,
     occurredAt: context.occurredAt,
     correlationId: context.correlationId,
     causationId: context.commandId,
     actor: context.actor,
     source: { kind: EventSourceKind.Internal, id: 'work-service' },
-    payload,
+    ...input,
   });
 }
 
@@ -166,11 +178,10 @@ async function setFrozen(
   if (current === null) throw new Error(`WorkItem ${workItemId} does not exist`);
   if (current.deleted) throw new Error(`WorkItem ${workItemId} is deleted`);
   if (current.frozen === frozen) return current;
-  return change(
-    workItemId,
-    context,
-    workDraft(context, frozen ? WorkEventType.ItemFrozen : WorkEventType.ItemUnfrozen, {}),
-  );
+  const input = frozen
+    ? { eventType: WorkEventType.ItemFrozen, payload: {} }
+    : { eventType: WorkEventType.ItemUnfrozen, payload: {} };
+  return change(workItemId, context, workDraft(context, input));
 }
 
 async function setDeleted(
@@ -194,7 +205,7 @@ async function setDeleted(
   return change(
     workItemId,
     context,
-    workDraft(context, WorkEventType.ItemDeleted, {}),
+    workDraft(context, { eventType: WorkEventType.ItemDeleted, payload: {} }),
     false,
     false,
   );

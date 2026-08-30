@@ -45,35 +45,39 @@ export function requestRunnerQuotaRetry(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRetriedForRunnerQuota,
       {
-        activationId: toActivationId(input.activationId),
-        runId: input.runId,
-        runnerName: input.runnerName,
-        message: input.message,
+        eventType: OrchestrationEventType.ActivityRetriedForRunnerQuota,
+        payload: {
+          activationId: toActivationId(input.activationId),
+          runId: input.runId,
+          runnerName: input.runnerName,
+          message: input.message,
+        },
       },
       1,
     ),
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(
-        state.workflowInstanceId,
-        nextOrdinal(state),
-        interrupted.activity,
-        interrupted.input,
-        {
-          execution: interrupted.execution,
-          ...(interrupted.stage === undefined ? {} : { stage: interrupted.stage }),
-          ...(interrupted.followOnIndex === undefined
-            ? {}
-            : { followOnIndex: interrupted.followOnIndex }),
-          ...(interrupted.supplemental === undefined
-            ? {}
-            : { supplemental: interrupted.supplemental }),
-        },
-      ),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          interrupted.activity,
+          interrupted.input,
+          {
+            execution: interrupted.execution,
+            ...(interrupted.stage === undefined ? {} : { stage: interrupted.stage }),
+            ...(interrupted.followOnIndex === undefined
+              ? {}
+              : { followOnIndex: interrupted.followOnIndex }),
+            ...(interrupted.supplemental === undefined
+              ? {}
+              : { supplemental: interrupted.supplemental }),
+          },
+        ),
+      },
       2,
     ),
   ];

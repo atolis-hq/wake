@@ -26,8 +26,8 @@ export function githubReviewObservation(input: {
     ...parseRepository(input.repository),
     number: input.pullRequest.number,
   });
-  const draft = (eventId: string, content: string) =>
-    createGitHubEventData({
+  const draft = (eventId: string, content: string) => {
+    const event = createGitHubEventData({
       eventId,
       eventType: GitHubEventType.CommentObserved,
       occurredAt: input.review.submitted_at,
@@ -49,6 +49,10 @@ export function githubReviewObservation(input: {
         raw: { reviewId: input.review.id, state: input.review.state },
       },
     });
+    if (event.eventType !== GitHubEventType.CommentObserved)
+      throw new Error(`Expected GitHub CommentObserved event data, received ${event.eventType}`);
+    return event;
+  };
   return [
     ...(body === undefined || body.length === 0
       ? []

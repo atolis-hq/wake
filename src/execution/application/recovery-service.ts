@@ -4,8 +4,15 @@ import type { Clock, CommandContext, EventJournal } from '../../kernel/index.js'
 import { correlationId, EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import type { RecoveryCoordinator } from '../contracts/control-plane.js';
-import { createRunExecutionEventData } from '../contracts/event-factory.js';
-import { ExecutionEventType, type RunExecutionEventData } from '../contracts/events.js';
+import {
+  createExecutionEventData,
+  type RunExecutionEventDataInput,
+} from '../contracts/event-factory.js';
+import {
+  ExecutionEventType,
+  type ExecutionEventData,
+  type RunExecutionEventData,
+} from '../contracts/events.js';
 import { runId, type RunId } from '../contracts/identifiers.js';
 import type { AgentRunnerResult } from '../contracts/runner.js';
 import { runStream } from '../contracts/streams.js';
@@ -113,12 +120,12 @@ export class RecoveryService {
         : undefined;
     const draft =
       resolution.kind === RunStatus.Succeeded
-        ? createRunExecutionEventData({
+        ? runEventData({
             ...resolutionMetadata(currentRunId, loaded.view, context),
             eventType: ExecutionEventType.RunSucceeded,
             payload: { outcome: outcome!, finishedAt: context.occurredAt },
           })
-        : createRunExecutionEventData({
+        : runEventData({
             ...resolutionMetadata(currentRunId, loaded.view, context),
             eventType: ExecutionEventType.RunFailed,
             payload: { failure: resolution.failure, finishedAt: context.occurredAt },
@@ -229,7 +236,7 @@ function leaseRenewedDraft(
   payload: { readonly owner: string; readonly acquiredAt: string; readonly expiresAt: string },
   occurredAt: string,
 ): RunExecutionEventData {
-  return createRunExecutionEventData({
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunLeaseRenewed,
     payload,
@@ -246,7 +253,7 @@ function recoveredDraft(
   },
   occurredAt: string,
 ): RunExecutionEventData {
-  return createRunExecutionEventData({
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunRecovered,
     payload,
@@ -265,7 +272,7 @@ function failedDraft(
   },
   occurredAt: string,
 ): RunExecutionEventData {
-  return createRunExecutionEventData({
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunFailed,
     payload,
@@ -278,7 +285,7 @@ function ambiguityObservedDraft(
   payload: { readonly reason: string; readonly attempt: number },
   occurredAt: string,
 ): RunExecutionEventData {
-  return createRunExecutionEventData({
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventId: `${id}:recovery-ambiguity:${payload.attempt}:${occurredAt}`,
     eventType: ExecutionEventType.RunAmbiguityObserved,
@@ -292,7 +299,7 @@ function ambiguousDraft(
   payload: { readonly reason: string; readonly finishedAt: string },
   occurredAt: string,
 ): RunExecutionEventData {
-  return createRunExecutionEventData({
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunAmbiguous,
     payload,
@@ -333,6 +340,21 @@ function eventMetadata(
     source: { kind: EventSourceKind.Internal, id: 'execution-recovery' },
     stream: runStream(id),
   };
+}
+
+function runEventData(input: RunExecutionEventDataInput): RunExecutionEventData {
+  const event = createExecutionEventData(input);
+  return requireRunEventData(event);
+}
+
+function requireRunEventData(event: ExecutionEventData): RunExecutionEventData {
+  switch (event.eventType) {
+    case ExecutionEventType.ActivationClaimed:
+    case ExecutionEventType.ActivationReleased:
+      throw new Error(`Expected Run event data, received ${event.eventType}`);
+    default:
+      return event;
+  }
 }
 
 function recoveredOutcome(

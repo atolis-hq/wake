@@ -9,9 +9,6 @@ export type ConversationEventDataInput = {
   [Type in keyof ConversationEventPayloads]: EventDataInput<Type, ConversationEventPayloads[Type]>;
 }[keyof ConversationEventPayloads];
 
-export function createConversationEventData<Type extends keyof ConversationEventPayloads>(
-  input: EventDataInput<Type, ConversationEventPayloads[Type]>,
-): Extract<ConversationEventData, { readonly eventType: Type }>;
 export function createConversationEventData(
   input: ConversationEventDataInput,
 ): ConversationEventData {

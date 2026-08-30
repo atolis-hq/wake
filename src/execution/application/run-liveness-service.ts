@@ -5,8 +5,13 @@ import {
   type Clock,
 } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { createRunExecutionEventData } from '../contracts/event-factory.js';
-import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
+import { createExecutionEventData } from '../contracts/event-factory.js';
+import {
+  ExecutionEventType,
+  type ExecutionEventData,
+  type RunExecutionEventData,
+  type RunExecutionEventPayloads,
+} from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
 import type { RunView } from '../contracts/views.js';
 import { isActiveRunStatus } from '../contracts/vocabulary.js';
@@ -39,7 +44,12 @@ export async function claimRun(
     throw new Error(`Run ${currentRunId} has an unexpired lease`);
   const lease = newRunLease(clock, config, owner);
   await repository.append(currentRunId, loaded.sequence, [
-    livenessEvent(currentRunId, run, ExecutionEventType.RunLeaseClaimed, lease, now.toISOString()),
+    livenessEvent(
+      currentRunId,
+      run,
+      { eventType: ExecutionEventType.RunLeaseClaimed, payload: lease },
+      now.toISOString(),
+    ),
   ]);
   return (await repository.load(currentRunId)).view!;
 }
@@ -67,7 +77,12 @@ export async function renewLease(
     ).toISOString(),
   };
   await repository.append(currentRunId, loaded.sequence, [
-    livenessEvent(currentRunId, run, ExecutionEventType.RunLeaseRenewed, lease, now.toISOString()),
+    livenessEvent(
+      currentRunId,
+      run,
+      { eventType: ExecutionEventType.RunLeaseRenewed, payload: lease },
+      now.toISOString(),
+    ),
   ]);
   return (await repository.load(currentRunId)).view!;
 }
@@ -95,8 +110,10 @@ export async function requestCancellation(
         livenessEvent(
           currentRunId,
           run,
-          ExecutionEventType.RunCancellationRequested,
-          { requestedAt, reason },
+          {
+            eventType: ExecutionEventType.RunCancellationRequested,
+            payload: { requestedAt, reason },
+          },
           requestedAt,
         ),
       ]);
@@ -132,15 +149,16 @@ export async function confirmCancellation(
         livenessEvent(
           currentRunId,
           loaded.view,
-          ExecutionEventType.RunCancellationConfirmed,
-          { confirmedAt },
+          {
+            eventType: ExecutionEventType.RunCancellationConfirmed,
+            payload: { confirmedAt },
+          },
           confirmedAt,
         ),
         livenessEvent(
           currentRunId,
           loaded.view,
-          ExecutionEventType.RunCancelled,
-          { finishedAt: confirmedAt },
+          { eventType: ExecutionEventType.RunCancelled, payload: { finishedAt: confirmedAt } },
           confirmedAt,
         ),
       ]);
@@ -157,28 +175,44 @@ function requireActiveRun(run: RunView | null): RunView {
   return run;
 }
 
-function livenessEvent<
-  Type extends Exclude<
-    keyof RunExecutionEventPayloads,
-    | typeof ExecutionEventType.RunStarted
-    | typeof ExecutionEventType.RunSucceeded
-    | typeof ExecutionEventType.RunFailed
-  >,
->(
+type LivenessEventType = Exclude<
+  keyof RunExecutionEventPayloads,
+  | typeof ExecutionEventType.RunStarted
+  | typeof ExecutionEventType.RunSucceeded
+  | typeof ExecutionEventType.RunFailed
+>;
+
+type LivenessEventInput = {
+  [Type in LivenessEventType]: {
+    readonly eventType: Type;
+    readonly payload: RunExecutionEventPayloads[Type];
+  };
+}[LivenessEventType];
+
+function livenessEvent(
   currentRunId: ReturnType<typeof runId>,
   run: RunView,
-  eventType: Type,
-  payload: RunExecutionEventPayloads[Type],
+  input: LivenessEventInput,
   occurredAt: string,
-) {
-  return createRunExecutionEventData({
-    eventId: `${currentRunId}:${eventType}:${occurredAt}`,
-    eventType,
+): RunExecutionEventData {
+  const event = createExecutionEventData({
+    eventId: `${currentRunId}:${input.eventType}:${occurredAt}`,
     occurredAt,
     correlationId: run.orchestrationGroupId,
     causationId: run.activationId,
     actor: { kind: EventActorKind.System, id: 'execution' },
     source: { kind: EventSourceKind.Internal, id: 'execution' },
-    payload,
+    ...input,
   });
+  return requireRunEventData(event);
+}
+
+function requireRunEventData(event: ExecutionEventData): RunExecutionEventData {
+  switch (event.eventType) {
+    case ExecutionEventType.ActivationClaimed:
+    case ExecutionEventType.ActivationReleased:
+      throw new Error(`Expected Run event data, received ${event.eventType}`);
+    default:
+      return event;
+  }
 }

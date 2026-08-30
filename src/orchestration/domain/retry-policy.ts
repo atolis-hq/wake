@@ -30,18 +30,25 @@ export function requestRetry(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.RetryCounted,
-      { retryKey, count },
+      { eventType: OrchestrationEventType.RetryCounted, payload: { retryKey, count } },
       events.length + 1,
     ),
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-        stage: stageName(state.currentStage),
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          stage.activity,
+          stage.with,
+          {
+            execution: stage.execution,
+            stage: stageName(state.currentStage),
+          },
+        ),
+      },
       events.length + 2,
     ),
   );

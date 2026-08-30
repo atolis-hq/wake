@@ -5,6 +5,8 @@ export type ActivityEventDataInput = {
   [Type in keyof ActivityEventPayloads]: EventDataInput<Type, ActivityEventPayloads[Type]>;
 }[keyof ActivityEventPayloads];
 
+// Exhaustive dispatch preserves the closed event-to-payload mapping.
+// eslint-disable-next-line complexity
 export function createActivityEventData(input: ActivityEventDataInput): ActivityEventData {
   switch (input.eventType) {
     case ActivityEventType.IssueCompleteRequested:
@@ -40,10 +42,4 @@ export function createActivityEventData(input: ActivityEventDataInput): Activity
     case ActivityEventType.PrMergeDecisionClaimed:
       return createEventData(input);
   }
-}
-
-export function createActivityEventDataForHelper<Type extends keyof ActivityEventPayloads, Payload>(
-  input: EventDataInput<Type, Payload>,
-) {
-  return createEventData(input);
 }

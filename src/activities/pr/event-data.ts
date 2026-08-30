@@ -1,5 +1,8 @@
 import { EventSourceKind, type CommandContext } from '../../kernel/index.js';
-import { createActivityEventDataForHelper } from '../contracts/event-factory.js';
+import {
+  createActivityEventData,
+  type ActivityEventDataInput,
+} from '../contracts/event-factory.js';
 import {
   ActivityEventType,
   type ActivityEventData,
@@ -21,57 +24,58 @@ type DeliveryIntentType =
   typeof ActivityEventType.PrApproveRequested | typeof ActivityEventType.PrMergeRequested;
 
 export const discovered = (
-  { resourceId, ...command }: ObservePullRequest,
+  { resourceId: _resourceId, ...command }: ObservePullRequest,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrDiscovered> =>
-  fact(resourceId, ActivityEventType.PrDiscovered, command, context);
+  fact({ ...metadata(ActivityEventType.PrDiscovered, context), payload: command });
 
 export const revisionChanged = (
   command: ObservePullRequest,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrRevisionChanged> =>
-  fact(
-    command.resourceId,
-    ActivityEventType.PrRevisionChanged,
-    {
+  fact({
+    ...metadata(ActivityEventType.PrRevisionChanged, context),
+    payload: {
       headRevision: command.headRevision,
       baseRevision: command.baseRevision,
       ...(command.changedFiles === undefined ? {} : { changedFiles: command.changedFiles }),
     },
-    context,
-  );
+  });
 
 export const stateChanged = (
   command: ObservePullRequest,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrStateChanged> =>
-  fact(command.resourceId, ActivityEventType.PrStateChanged, { state: command.state }, context);
+  fact({
+    ...metadata(ActivityEventType.PrStateChanged, context),
+    payload: { state: command.state },
+  });
 
 export const checksChanged = (
   command: ObservePullRequest,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrChecksChanged> =>
-  fact(command.resourceId, ActivityEventType.PrChecksChanged, { checks: command.checks }, context);
+  fact({
+    ...metadata(ActivityEventType.PrChecksChanged, context),
+    payload: { checks: command.checks },
+  });
 
 export const reviewAccepted = (
   command: AcceptReviewSignal,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrReviewAccepted> =>
-  fact(
-    command.resourceId,
-    ActivityEventType.PrReviewAccepted,
-    { revision: command.revision, actorId: command.actorId },
-    context,
-  );
+  fact({
+    ...metadata(ActivityEventType.PrReviewAccepted, context),
+    payload: { revision: command.revision, actorId: command.actorId },
+  });
 
 export const reviewAcceptanceSignalRecorded = (
   command: AcceptReviewSignal,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.ReviewAcceptanceSignalRecorded> =>
-  fact(
-    command.resourceId,
-    ActivityEventType.ReviewAcceptanceSignalRecorded,
-    {
+  fact({
+    ...metadata(ActivityEventType.ReviewAcceptanceSignalRecorded, context),
+    payload: {
       revision: command.revision,
       actorId: command.actorId,
       actorKind: command.actorKind,
@@ -79,33 +83,30 @@ export const reviewAcceptanceSignalRecorded = (
       providerEventId: command.acceptedEventId,
       trusted: isReviewAuthorized(command),
     },
-    context,
-  );
+  });
 
 export const reviewChangesRequested = (
   command: RequestChangesSignal,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrReviewChangesRequested> =>
-  fact(
-    command.resourceId,
-    ActivityEventType.PrReviewChangesRequested,
-    { revision: command.revision, actorId: command.actorId },
-    context,
-  );
+  fact({
+    ...metadata(ActivityEventType.PrReviewChangesRequested, context),
+    payload: { revision: command.revision, actorId: command.actorId },
+  });
 
 export const reviewRejected = (
   resourceId: ObservePullRequest['resourceId'],
   reason: ActivityEventPayloads[typeof ActivityEventType.PrReviewRejected]['reason'],
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrReviewRejected> =>
-  fact(resourceId, ActivityEventType.PrReviewRejected, { reason }, context);
+  fact({ ...metadata(ActivityEventType.PrReviewRejected, context), payload: { reason } });
 
 export const mergeDenied = (
   reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityEventDataOf<typeof ActivityEventType.PrMergeDenied> =>
-  createActivityEventDataForHelper({
+  fact({
     ...metadata(ActivityEventType.PrMergeDenied, context),
     payload: denialPayload(ActivityEventType.PrMergeDenied, reason, context, audit),
   });
@@ -115,7 +116,7 @@ export const approveDenied = (
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityEventDataOf<typeof ActivityEventType.PrApproveDenied> =>
-  createActivityEventDataForHelper({
+  fact({
     ...metadata(ActivityEventType.PrApproveDenied, context),
     payload: denialPayload(ActivityEventType.PrApproveDenied, reason, context, audit),
   });
@@ -124,7 +125,7 @@ export const mergeAuthorized = (
   revision: string,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrMergeAuthorized> =>
-  createActivityEventDataForHelper({
+  fact({
     ...metadata(ActivityEventType.PrMergeAuthorized, context),
     payload: { revision },
   });
@@ -138,12 +139,14 @@ export function deliveryIntentRequested(
   >,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrApproveRequested>;
+
 export function deliveryIntentRequested(
   resourceId: ObservePullRequest['resourceId'],
   type: typeof ActivityEventType.PrMergeRequested,
   payload: Omit<ActivityEventPayloads[typeof ActivityEventType.PrMergeRequested], 'idempotencyKey'>,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrMergeRequested>;
+
 export function deliveryIntentRequested(
   resourceId: ObservePullRequest['resourceId'],
   type: DeliveryIntentType,
@@ -155,28 +158,82 @@ export function deliveryIntentRequested(
   void resourceId;
   if (type === ActivityEventType.PrApproveRequested) {
     if (!('body' in payload)) throw new Error('Approve intents require a body');
-    return createActivityEventDataForHelper({
+    return fact({
       ...metadata(ActivityEventType.PrApproveRequested, context),
       payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
     });
   }
   if ('body' in payload) throw new Error('Merge intents must not carry a body');
-  return createActivityEventDataForHelper({
+  return fact({
     ...metadata(ActivityEventType.PrMergeRequested, context),
     payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
   });
 }
 
-function fact<Type extends ActivityEventData['eventType']>(
-  resourceId: ObservePullRequest['resourceId'],
-  eventType: Type,
-  payload: ActivityEventPayloads[Type],
-  context: CommandContext,
-) {
-  return createActivityEventDataForHelper({
-    ...metadata(eventType, context),
-    payload,
-  });
+type PullRequestFactType = Exclude<
+  ActivityEventData['eventType'],
+  | typeof ActivityEventType.IssueCompleteRequested
+  | typeof ActivityEventType.PrApproveDecisionClaimed
+  | typeof ActivityEventType.PrMergeDecisionClaimed
+>;
+
+type PullRequestFactInput<Type extends PullRequestFactType> = Extract<
+  ActivityEventDataInput,
+  { readonly eventType: Type }
+>;
+
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrDiscovered>,
+): ActivityEventDataOf<typeof ActivityEventType.PrDiscovered>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrRevisionChanged>,
+): ActivityEventDataOf<typeof ActivityEventType.PrRevisionChanged>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrStateChanged>,
+): ActivityEventDataOf<typeof ActivityEventType.PrStateChanged>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrChecksChanged>,
+): ActivityEventDataOf<typeof ActivityEventType.PrChecksChanged>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrReviewAccepted>,
+): ActivityEventDataOf<typeof ActivityEventType.PrReviewAccepted>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.ReviewAcceptanceSignalRecorded>,
+): ActivityEventDataOf<typeof ActivityEventType.ReviewAcceptanceSignalRecorded>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrReviewChangesRequested>,
+): ActivityEventDataOf<typeof ActivityEventType.PrReviewChangesRequested>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrReviewRejected>,
+): ActivityEventDataOf<typeof ActivityEventType.PrReviewRejected>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrMergeDenied>,
+): ActivityEventDataOf<typeof ActivityEventType.PrMergeDenied>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrApproveDenied>,
+): ActivityEventDataOf<typeof ActivityEventType.PrApproveDenied>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrMergeAuthorized>,
+): ActivityEventDataOf<typeof ActivityEventType.PrMergeAuthorized>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrApproveRequested>,
+): ActivityEventDataOf<typeof ActivityEventType.PrApproveRequested>;
+function fact(
+  input: PullRequestFactInput<typeof ActivityEventType.PrMergeRequested>,
+): ActivityEventDataOf<typeof ActivityEventType.PrMergeRequested>;
+
+function fact(
+  input: Extract<ActivityEventDataInput, { readonly eventType: PullRequestFactType }>,
+): Extract<ActivityEventData, { readonly eventType: PullRequestFactType }> {
+  const event = createActivityEventData(input);
+  switch (event.eventType) {
+    case ActivityEventType.IssueCompleteRequested:
+    case ActivityEventType.PrApproveDecisionClaimed:
+    case ActivityEventType.PrMergeDecisionClaimed:
+      throw new Error(`Unexpected non-PR-fact event ${event.eventType}`);
+    default:
+      return event;
+  }
 }
 
 function denialPayload(

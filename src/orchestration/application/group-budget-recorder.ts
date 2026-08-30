@@ -50,15 +50,16 @@ export class GroupBudgetRecorder {
               correlationId: parent.orchestrationGroupId,
               causationId: context.commandId,
             },
-            OrchestrationEventType.GroupBudgetExhausted,
-            payload,
+            { eventType: OrchestrationEventType.GroupBudgetExhausted, payload },
             1,
           ),
           stateDraft(
             parent,
             { occurredAt: context.occurredAt, causationId: context.commandId },
-            OrchestrationEventType.InstanceBlocked,
-            { reason: `watch group budget exhausted for ${metadata.watchId}` },
+            {
+              eventType: OrchestrationEventType.InstanceBlocked,
+              payload: { reason: `watch group budget exhausted for ${metadata.watchId}` },
+            },
             2,
           ),
         ]);

@@ -1,8 +1,6 @@
 import { createEventData, type EventDataInput } from '../../kernel/index.js';
 import {
   OrchestrationEventType,
-  type ChildCoordinationEventData,
-  type ChildCoordinationEventPayloads,
   type OrchestrationEventData,
   type OrchestrationEventPayloads,
 } from './events.js';
@@ -14,12 +12,6 @@ export type OrchestrationEventDataInput = {
   >;
 }[keyof OrchestrationEventPayloads];
 
-export function createOrchestrationEventData<Type extends keyof OrchestrationEventPayloads>(
-  input: EventDataInput<Type, OrchestrationEventPayloads[Type]>,
-): Extract<OrchestrationEventData, { readonly eventType: Type }>;
-export function createOrchestrationEventData<Type extends keyof ChildCoordinationEventPayloads>(
-  input: EventDataInput<Type, ChildCoordinationEventPayloads[Type]>,
-): Extract<ChildCoordinationEventData, { readonly eventType: Type }>;
 // Exhaustive dispatch preserves the closed event-to-payload mapping.
 // eslint-disable-next-line complexity
 export function createOrchestrationEventData(

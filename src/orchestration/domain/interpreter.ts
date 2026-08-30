@@ -82,8 +82,10 @@ export function acceptActivityOutcome(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.InstanceBlocked,
-        { reason: `unconfigured outcome ${input.outcome.kind}` },
+        {
+          eventType: OrchestrationEventType.InstanceBlocked,
+          payload: { reason: `unconfigured outcome ${input.outcome.kind}` },
+        },
         events.length + 1,
       ),
     );

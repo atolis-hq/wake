@@ -82,15 +82,16 @@ export class RequestChild {
       this.coordinationEvent(
         loaded.view,
         context,
-        OrchestrationEventType.CausalActivationRejected,
-        metadata,
+        { eventType: OrchestrationEventType.CausalActivationRejected, payload: metadata },
         1,
       ),
       stateDraft(
         loaded.view,
         { occurredAt: context.occurredAt, causationId: context.commandId },
-        OrchestrationEventType.InstanceBlocked,
-        { reason: 'causal activation rejected' },
+        {
+          eventType: OrchestrationEventType.InstanceBlocked,
+          payload: { reason: 'causal activation rejected' },
+        },
         2,
       ),
     ]);
@@ -133,8 +134,7 @@ export class RequestChild {
         stateDraft(
           loaded.view,
           { occurredAt: context.occurredAt, causationId: context.commandId },
-          OrchestrationEventType.InstanceSuperseded,
-          {},
+          { eventType: OrchestrationEventType.InstanceSuperseded, payload: {} },
           1,
         ),
       ]);
@@ -156,8 +156,7 @@ export class RequestChild {
         stateDraft(
           child.view,
           { occurredAt: context.occurredAt, causationId: context.commandId },
-          OrchestrationEventType.InstanceSuperseded,
-          {},
+          { eventType: OrchestrationEventType.InstanceSuperseded, payload: {} },
           1,
         ),
       ]);
@@ -191,7 +190,12 @@ export class RequestChild {
     const childLoaded = await this.repository.loadRequired(child.workflowInstanceId);
     if (!childLoaded.view.childCompletionRecorded)
       await this.repository.append(child.workflowInstanceId, childLoaded.sequence, [
-        this.coordinationEvent(child, context, OrchestrationEventType.ChildCompleted, metadata, 1),
+        this.coordinationEvent(
+          child,
+          context,
+          { eventType: OrchestrationEventType.ChildCompleted, payload: metadata },
+          1,
+        ),
       ]);
     const parent = await this.repository.loadRequired(metadata.parentWorkflowInstanceId);
     if (parent.view.acceptedChildCompletionIds.includes(child.workflowInstanceId)) return;
@@ -221,18 +225,21 @@ export class RequestChild {
       this.coordinationEvent(
         parent.view,
         context,
-        OrchestrationEventType.ChildCompletionConsumed,
-        metadata,
+        { eventType: OrchestrationEventType.ChildCompletionConsumed, payload: metadata },
         2,
       ),
     ]);
   }
 
-  private coordinationEvent<Type extends keyof ChildCoordinationEventPayloads>(
+  private coordinationEvent(
     state: WorkflowInstanceView,
     context: CommandContext,
-    eventType: Type,
-    payload: ChildCoordinationEventPayloads[Type],
+    event: {
+      [Type in keyof ChildCoordinationEventPayloads]: {
+        readonly eventType: Type;
+        readonly payload: ChildCoordinationEventPayloads[Type];
+      };
+    }[keyof ChildCoordinationEventPayloads],
     ordinal: number,
   ) {
     return coordinationDraft(
@@ -243,8 +250,7 @@ export class RequestChild {
         correlationId: state.orchestrationGroupId,
         causationId: context.commandId,
       },
-      eventType,
-      payload,
+      event,
       ordinal,
     );
   }

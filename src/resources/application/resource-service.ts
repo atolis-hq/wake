@@ -108,8 +108,9 @@ export function createResourceService(
       await appendResourceEvent(
         repository,
         resourceId,
-        resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationRetracted, {
-          workItemId,
+        resourceDraft(context, {
+          eventType: ResourceEventType.WorkCorrelationRetracted,
+          payload: { workItemId },
         }),
       );
     },
@@ -123,16 +124,18 @@ export function createResourceService(
       appendResourceEvent(
         repository,
         resourceId,
-        resourceDraft(resourceId, context, ResourceEventType.ExternalOutcomeConsumed, {
-          sourceObservationId,
+        resourceDraft(context, {
+          eventType: ResourceEventType.ExternalOutcomeConsumed,
+          payload: { sourceObservationId },
         }),
       ),
     async consumeIssueCompletion(resourceId, intentEventId, context) {
       await appendResourceEvent(
         repository,
         resourceId,
-        resourceDraft(resourceId, context, ResourceEventType.IssueCompletionObservationConsumed, {
-          intentEventId,
+        resourceDraft(context, {
+          eventType: ResourceEventType.IssueCompletionObservationConsumed,
+          payload: { intentEventId },
         }),
       );
     },
@@ -140,8 +143,9 @@ export function createResourceService(
       await appendResourceEvent(
         repository,
         resourceId,
-        resourceDraft(resourceId, context, ResourceEventType.IssueCompletionObservationSuperseded, {
-          intentEventId,
+        resourceDraft(context, {
+          eventType: ResourceEventType.IssueCompletionObservationSuperseded,
+          payload: { intentEventId },
         }),
       );
     },
@@ -159,8 +163,9 @@ async function discoverResource(
       await appendResourceEvent(
         repository,
         command.resourceId,
-        resourceDraft(command.resourceId, context, ResourceEventType.ResourceRevisionObserved, {
-          revision: command.revision,
+        resourceDraft(context, {
+          eventType: ResourceEventType.ResourceRevisionObserved,
+          payload: { revision: command.revision },
         }),
       );
     return (await repository.load(command.resourceId)).resource!.view;
@@ -168,12 +173,15 @@ async function discoverResource(
   await appendResourceEvent(
     repository,
     command.resourceId,
-    resourceDraft(command.resourceId, context, ResourceEventType.ResourceDiscovered, {
-      kind: command.kind,
-      externalKey: command.externalKey,
-      capabilities: command.capabilities,
-      ...(command.revision === undefined ? {} : { revision: command.revision }),
-      ...(command.title === undefined ? {} : { title: command.title }),
+    resourceDraft(context, {
+      eventType: ResourceEventType.ResourceDiscovered,
+      payload: {
+        kind: command.kind,
+        externalKey: command.externalKey,
+        capabilities: command.capabilities,
+        ...(command.revision === undefined ? {} : { revision: command.revision }),
+        ...(command.title === undefined ? {} : { title: command.title }),
+      },
     }),
   );
   const resource = (await repository.load(command.resourceId)).resource;
@@ -203,9 +211,9 @@ async function correlateResource(
     await appendResourceEvent(
       repository,
       resourceId,
-      resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationConflicted, {
-        workItemId,
-        existingWorkItemId: primary.workItemId,
+      resourceDraft(context, {
+        eventType: ResourceEventType.WorkCorrelationConflicted,
+        payload: { workItemId, existingWorkItemId: primary.workItemId },
       }),
     );
     throw new Error(`Resource ${resourceId} already has a primary WorkItem correlation`);
@@ -213,10 +221,9 @@ async function correlateResource(
   await appendResourceEvent(
     repository,
     resourceId,
-    resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationEstablished, {
-      workItemId,
-      role,
-      provenance,
+    resourceDraft(context, {
+      eventType: ResourceEventType.WorkCorrelationEstablished,
+      payload: { workItemId, role, provenance },
     }),
   );
   const correlation = (await repository.load(resourceId)).resource?.correlations.find(
@@ -235,20 +242,21 @@ async function appendResourceEvent(
   await repository.append(resourceId, loaded.sequence, [draft]);
 }
 
-function resourceDraft<Type extends keyof ResourceEventPayloads>(
-  resourceId: ResourceId,
-  context: CommandContext,
-  eventType: Type,
-  payload: ResourceEventPayloads[Type],
-) {
+type ResourceDraftInput = {
+  [Type in keyof ResourceEventPayloads]: {
+    readonly eventType: Type;
+    readonly payload: ResourceEventPayloads[Type];
+  };
+}[keyof ResourceEventPayloads];
+
+function resourceDraft(context: CommandContext, input: ResourceDraftInput): ResourceEventData {
   return createResourceEventData({
-    eventId: `${context.commandId}:${eventType}`,
-    eventType,
+    eventId: `${context.commandId}:${input.eventType}`,
     occurredAt: context.occurredAt,
     correlationId: context.correlationId,
     causationId: context.commandId,
     actor: context.actor,
     source: { kind: EventSourceKind.Internal, id: 'resource-service' },
-    payload,
+    ...input,
   });
 }

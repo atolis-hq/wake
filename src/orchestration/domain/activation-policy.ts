@@ -82,32 +82,38 @@ export function startInstance(input: StartInstanceInput): OrchestrationDecision 
       ...childEvents,
       startDraft(
         input,
-        OrchestrationEventType.InstanceStarted,
         {
-          workItemId: input.workItemId,
-          workflowName: input.definition.name,
-          orchestrationGroupId: input.orchestrationGroupId,
-          entry: input.definition.entry,
-          ...(input.workflowDefinitionFingerprint === undefined
-            ? {}
-            : { workflowDefinitionFingerprint: input.workflowDefinitionFingerprint }),
-          ...child,
+          eventType: OrchestrationEventType.InstanceStarted,
+          payload: {
+            workItemId: input.workItemId,
+            workflowName: input.definition.name,
+            orchestrationGroupId: input.orchestrationGroupId,
+            entry: input.definition.entry,
+            ...(input.workflowDefinitionFingerprint === undefined
+              ? {}
+              : { workflowDefinitionFingerprint: input.workflowDefinitionFingerprint }),
+            ...child,
+          },
         },
         childEvents.length + 1,
       ),
       startDraft(
         input,
-        OrchestrationEventType.StageEntered,
-        { stage: input.definition.entry },
+        {
+          eventType: OrchestrationEventType.StageEntered,
+          payload: { stage: input.definition.entry },
+        },
         childEvents.length + 2,
       ),
       startDraft(
         input,
-        OrchestrationEventType.ActivityRequested,
-        activation(input.workflowInstanceId, 1, stage.activity, stage.with, {
-          execution: stage.execution,
-          stage: input.definition.entry,
-        }),
+        {
+          eventType: OrchestrationEventType.ActivityRequested,
+          payload: activation(input.workflowInstanceId, 1, stage.activity, stage.with, {
+            execution: stage.execution,
+            stage: input.definition.entry,
+          }),
+        },
         childEvents.length + 3,
       ),
     ],
@@ -132,8 +138,10 @@ export function acceptOutcomeDraft(
   return stateDraft(
     state,
     input,
-    OrchestrationEventType.ActivityOutcomeAccepted,
-    { activationId: input.activationId, outcome: input.outcome },
+    {
+      eventType: OrchestrationEventType.ActivityOutcomeAccepted,
+      payload: { activationId: input.activationId, outcome: input.outcome },
+    },
     1,
   );
 }
@@ -152,11 +160,13 @@ export function requestFollowOn(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, pending.ordinal + 1, next.use, next.with, {
-        execution: undefined,
-        followOnIndex: nextFollowOnIndex,
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(state.workflowInstanceId, pending.ordinal + 1, next.use, next.with, {
+          execution: undefined,
+          followOnIndex: nextFollowOnIndex,
+        }),
+      },
       events.length + 1,
     ),
   );

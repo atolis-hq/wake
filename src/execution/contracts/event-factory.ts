@@ -1,10 +1,8 @@
 import { createEventData, type EventDataInput } from '../../kernel/index.js';
 import {
   ExecutionEventType,
-  type ActivationExecutionEventData,
   type ActivationExecutionEventPayloads,
   type ExecutionEventData,
-  type RunExecutionEventData,
   type RunExecutionEventPayloads,
 } from './events.js';
 
@@ -22,15 +20,9 @@ export type ActivationExecutionEventDataInput = {
 export type ExecutionEventDataInput =
   RunExecutionEventDataInput | ActivationExecutionEventDataInput;
 
-export function createRunExecutionEventData<Type extends keyof RunExecutionEventPayloads>(
-  input: EventDataInput<Type, RunExecutionEventPayloads[Type]>,
-): Extract<RunExecutionEventData, { readonly eventType: Type }>;
-
 // Exhaustive dispatch preserves the closed event-to-payload mapping.
 // eslint-disable-next-line complexity
-export function createRunExecutionEventData(
-  input: RunExecutionEventDataInput,
-): RunExecutionEventData {
+export function createExecutionEventData(input: ExecutionEventDataInput): ExecutionEventData {
   switch (input.eventType) {
     case ExecutionEventType.RunPreparationStarted:
       return createEventData(input);
@@ -62,32 +54,9 @@ export function createRunExecutionEventData(
       return createEventData(input);
     case ExecutionEventType.RunAmbiguous:
       return createEventData(input);
-  }
-}
-
-export function createActivationExecutionEventData(
-  input: ActivationExecutionEventDataInput,
-): ActivationExecutionEventData {
-  switch (input.eventType) {
     case ExecutionEventType.ActivationClaimed:
       return createEventData(input);
     case ExecutionEventType.ActivationReleased:
       return createEventData(input);
-  }
-}
-
-export function createExecutionEventData(input: RunExecutionEventDataInput): RunExecutionEventData;
-
-export function createExecutionEventData(
-  input: ActivationExecutionEventDataInput,
-): ActivationExecutionEventData;
-
-export function createExecutionEventData(input: ExecutionEventDataInput): ExecutionEventData {
-  switch (input.eventType) {
-    case ExecutionEventType.ActivationClaimed:
-    case ExecutionEventType.ActivationReleased:
-      return createActivationExecutionEventData(input);
-    default:
-      return createRunExecutionEventData(input);
   }
 }

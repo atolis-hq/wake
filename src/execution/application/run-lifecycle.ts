@@ -7,9 +7,11 @@ import {
 } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { createRunExecutionEventData } from '../contracts/event-factory.js';
+import { createExecutionEventData } from '../contracts/event-factory.js';
 import {
   ExecutionEventType,
+  type ExecutionEventData,
+  type RunExecutionEventData,
   type RunExecutionEventPayloads,
   type RunPreparationStartedPayload,
 } from '../contracts/events.js';
@@ -239,23 +241,39 @@ export async function recordRunFailure(input: {
   }
 }
 
-export function createRunEvent<Type extends keyof RunExecutionEventPayloads>(input: {
-  runId: ReturnType<typeof runId>;
-  eventId: string;
-  eventType: Type;
-  occurredAt: string;
-  correlationId: string;
-  causationId: string;
-  payload: RunExecutionEventPayloads[Type];
-}) {
-  return createRunExecutionEventData({
-    eventId: input.eventId,
-    eventType: input.eventType,
-    occurredAt: input.occurredAt,
-    correlationId: input.correlationId,
-    causationId: input.causationId,
-    actor: { kind: EventActorKind.System, id: 'execution' },
-    source: { kind: EventSourceKind.Internal, id: 'execution' },
-    payload: input.payload,
-  });
+interface RunEventMetadata {
+  readonly runId: ReturnType<typeof runId>;
+  readonly eventId: string;
+  readonly occurredAt: string;
+  readonly correlationId: string;
+  readonly causationId: string;
+}
+
+type RunEventInput = {
+  [Type in keyof RunExecutionEventPayloads]: RunEventMetadata & {
+    readonly eventType: Type;
+    readonly payload: RunExecutionEventPayloads[Type];
+  };
+}[keyof RunExecutionEventPayloads];
+
+export function createRunEvent(input: RunEventInput): RunExecutionEventData {
+  const { runId: currentRunId, ...event } = input;
+  void currentRunId;
+  return requireRunEventData(
+    createExecutionEventData({
+      ...event,
+      actor: { kind: EventActorKind.System, id: 'execution' },
+      source: { kind: EventSourceKind.Internal, id: 'execution' },
+    }),
+  );
+}
+
+function requireRunEventData(event: ExecutionEventData): RunExecutionEventData {
+  switch (event.eventType) {
+    case ExecutionEventType.ActivationClaimed:
+    case ExecutionEventType.ActivationReleased:
+      throw new Error(`Expected Run event data, received ${event.eventType}`);
+    default:
+      return event;
+  }
 }

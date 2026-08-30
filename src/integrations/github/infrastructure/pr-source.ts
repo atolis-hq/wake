@@ -130,7 +130,7 @@ function pullRequestObservation(input: {
     },
   };
   const fingerprint = evidenceFingerprint(payload, input.evidence);
-  return createGitHubEventData({
+  const event = createGitHubEventData({
     eventId: `github:pr:${key}:${fingerprint}`,
     eventType: GitHubEventType.WorkObserved,
     occurredAt: pullRequest.updated_at,
@@ -140,6 +140,9 @@ function pullRequestObservation(input: {
     source: { kind: EventSourceKind.Adapter, id: input.adapter ?? GitHubAdapter },
     payload,
   });
+  if (event.eventType !== GitHubEventType.WorkObserved)
+    throw new Error(`Expected GitHub WorkObserved event data, received ${event.eventType}`);
+  return event;
 }
 
 function normalizeCheckEvidence(

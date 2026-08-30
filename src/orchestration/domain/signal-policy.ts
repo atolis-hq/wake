@@ -42,7 +42,14 @@ export function waitForSignal(
     return { kind: 'ignored', reason: 'signal kind must not be empty' };
   return {
     kind: 'append',
-    events: [stateDraft(state, input, OrchestrationEventType.SignalWaitStarted, expectation, 1)],
+    events: [
+      stateDraft(
+        state,
+        input,
+        { eventType: OrchestrationEventType.SignalWaitStarted, payload: expectation },
+        1,
+      ),
+    ],
   };
 }
 
@@ -58,7 +65,15 @@ export function acceptSignal(
   const expected = state.waitingFor!;
   const authority = signal.authority ?? { kind: ApprovalAuthorityKind.Human };
   const events: WorkflowOrchestrationEventData[] = [
-    stateDraft(state, input, OrchestrationEventType.SignalAccepted, { ...signal, authority }, 1),
+    stateDraft(
+      state,
+      input,
+      {
+        eventType: OrchestrationEventType.SignalAccepted,
+        payload: { ...signal, authority },
+      },
+      1,
+    ),
   ];
   const target =
     signal.outcome === ActivityOutcomeKind.Rejected ? expected.onRejectResume : expected.resume;
@@ -78,11 +93,19 @@ function requestLegacyReentry(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-        stage: stageName(state.currentStage),
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          stage.activity,
+          stage.with,
+          {
+            execution: stage.execution,
+            stage: stageName(state.currentStage),
+          },
+        ),
+      },
       events.length + 1,
     ),
   );
@@ -178,8 +201,10 @@ export function acceptWaitingOutcome(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityWaiting,
-      { activationId: input.activationId, outcome: waiting },
+      {
+        eventType: OrchestrationEventType.ActivityWaiting,
+        payload: { activationId: input.activationId, outcome: waiting },
+      },
       1,
     ),
   ];

@@ -31,8 +31,9 @@ export async function observeExternalOutcome(
     await appendResourceEvent(
       repository,
       resourceId,
-      resourceDraft(resourceId, context, ResourceEventType.ExternalOutcomeReopened, {
-        revision: observation.revision,
+      resourceDraft(context, {
+        eventType: ResourceEventType.ExternalOutcomeReopened,
+        payload: { revision: observation.revision },
       }),
     );
     return;
@@ -40,10 +41,13 @@ export async function observeExternalOutcome(
   await appendResourceEvent(
     repository,
     resourceId,
-    resourceDraft(resourceId, context, ResourceEventType.ExternalOutcomeObserved, {
-      sourceObservationId: observation.sourceObservationId,
-      outcome: observation.outcome,
-      revision: observation.revision,
+    resourceDraft(context, {
+      eventType: ResourceEventType.ExternalOutcomeObserved,
+      payload: {
+        sourceObservationId: observation.sourceObservationId,
+        outcome: observation.outcome,
+        revision: observation.revision,
+      },
     }),
   );
 }
@@ -79,9 +83,9 @@ export async function noteMissingPrimaryCorrelation(
   if (loaded.resource.view.correlationStatus === 'unresolvable') return;
   if (retryAttempts(loaded.resource.events) > 0) return;
   await repository.append(resourceId, loaded.sequence, [
-    resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationRetryPending, {
-      attemptCount: 1,
-      lastFailureReason: reason,
+    resourceDraft(context, {
+      eventType: ResourceEventType.WorkCorrelationRetryPending,
+      payload: { attemptCount: 1, lastFailureReason: reason },
     }),
   ]);
 }
@@ -109,17 +113,21 @@ export async function retryPendingWorkCorrelations(
       occurredAt: new Date().toISOString(),
       actor: { kind: EventActorKind.System, id: 'resource-service' },
     };
-    const draft =
+    const input: ResourceDraftInput =
       attemptCount >= 4
-        ? resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationUnresolvable, {
-            externalKey: loaded.resource.view.externalKey,
-            attemptCount,
-            lastFailureReason: reason,
-          })
-        : resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationRetryPending, {
-            attemptCount,
-            lastFailureReason: reason,
-          });
+        ? {
+            eventType: ResourceEventType.WorkCorrelationUnresolvable,
+            payload: {
+              externalKey: loaded.resource.view.externalKey,
+              attemptCount,
+              lastFailureReason: reason,
+            },
+          }
+        : {
+            eventType: ResourceEventType.WorkCorrelationRetryPending,
+            payload: { attemptCount, lastFailureReason: reason },
+          };
+    const draft = resourceDraft(context, input);
     await repository.append(resourceId, loaded.sequence, [draft]);
     processed += 1;
   }
@@ -163,20 +171,21 @@ async function appendResourceEvent(
   await repository.append(resourceId, loaded.sequence, [draft]);
 }
 
-function resourceDraft<Type extends keyof ResourceEventPayloads>(
-  resourceId: ResourceId,
-  context: CommandContext,
-  eventType: Type,
-  payload: ResourceEventPayloads[Type],
-) {
+type ResourceDraftInput = {
+  [Type in keyof ResourceEventPayloads]: {
+    readonly eventType: Type;
+    readonly payload: ResourceEventPayloads[Type];
+  };
+}[keyof ResourceEventPayloads];
+
+function resourceDraft(context: CommandContext, input: ResourceDraftInput): ResourceEventData {
   return createResourceEventData({
-    eventId: `${context.commandId}:${eventType}`,
-    eventType,
+    eventId: `${context.commandId}:${input.eventType}`,
     occurredAt: context.occurredAt,
     correlationId: context.correlationId,
     causationId: context.commandId,
     actor: context.actor,
     source: { kind: EventSourceKind.Internal, id: 'resource-service' },
-    payload,
+    ...input,
   });
 }

@@ -5,9 +5,6 @@ export type WorkEventDataInput = {
   [Type in keyof WorkEventPayloads]: EventDataInput<Type, WorkEventPayloads[Type]>;
 }[keyof WorkEventPayloads];
 
-export function createWorkEventData<Type extends keyof WorkEventPayloads>(
-  input: EventDataInput<Type, WorkEventPayloads[Type]>,
-): Extract<WorkEventData, { readonly eventType: Type }>;
 export function createWorkEventData(input: WorkEventDataInput): WorkEventData {
   switch (input.eventType) {
     case WorkEventType.ItemCreated:

@@ -168,7 +168,7 @@ function runnerResultReporter(
       correlationId: context.orchestrationGroupId,
       causationId: activation.activationId,
       payload: { transport: result.transport, agent: parseAgentRunnerResponse(result) },
-    }) as RunExecutionEventData;
+    });
     await appendIdempotently(runtime.repository, currentRunId, loaded.sequence, event);
     if (
       result.failure?.kind === ProviderQuotaExceededFailureKind &&

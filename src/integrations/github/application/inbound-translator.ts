@@ -55,6 +55,7 @@ import type {
   ExternalWorkObservedPayload,
   GitHubAdapterEvent,
   GitHubAdapterEventOf,
+  GitHubEventPayloads,
 } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
@@ -67,6 +68,17 @@ import { observePullRequest } from './pull-request-translation.js';
 type TranslatableEvent =
   | GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved>
   | GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>;
+
+type TranslationDiagnosticEventType =
+  | typeof GitHubEventType.InboundTranslationRetried
+  | typeof GitHubEventType.InboundTranslationFailed;
+
+type TranslationDiagnosticInput = {
+  [Type in TranslationDiagnosticEventType]: {
+    readonly eventType: Type;
+    readonly payload: GitHubEventPayloads[Type];
+  };
+}[TranslationDiagnosticEventType];
 
 type InboundCommandCandidate =
   | {
@@ -443,27 +455,26 @@ export class InboundTranslator {
     const eventId = terminal
       ? `github:inbound-translation-failed:${this.adapter}:${event.event.eventId}`
       : `github:inbound-translation-retried:${this.adapter}:${event.event.eventId}:${attempt}`;
-    const payload = terminal
+    const diagnostic: TranslationDiagnosticInput = terminal
       ? {
-          adapter: this.adapter,
-          sourceEventId: event.event.eventId,
-          attempt,
-          message,
-          globalPosition: event.globalPosition,
-          eventType: event.event.eventType,
-          correlationId: event.event.correlationId,
-          causationId: event.event.causationId,
-          failedAt: event.event.occurredAt,
+          eventType: GitHubEventType.InboundTranslationFailed,
+          payload: {
+            adapter: this.adapter,
+            sourceEventId: event.event.eventId,
+            attempt,
+            message,
+            globalPosition: event.globalPosition,
+            eventType: event.event.eventType,
+            correlationId: event.event.correlationId,
+            causationId: event.event.causationId,
+            failedAt: event.event.occurredAt,
+          },
         }
-      : { adapter: this.adapter, sourceEventId: event.event.eventId, attempt, message };
-    await this.appendTranslationDiagnostic(
-      eventId,
-      terminal
-        ? GitHubEventType.InboundTranslationFailed
-        : GitHubEventType.InboundTranslationRetried,
-      event,
-      payload,
-    );
+      : {
+          eventType: GitHubEventType.InboundTranslationRetried,
+          payload: { adapter: this.adapter, sourceEventId: event.event.eventId, attempt, message },
+        };
+    await this.appendTranslationDiagnostic(eventId, event, diagnostic);
     console.error(
       `Inbound translation failed for ${event.event.eventId} (attempt ${attempt})`,
       error,
@@ -472,28 +483,8 @@ export class InboundTranslator {
 
   private async appendTranslationDiagnostic(
     eventId: string,
-    eventType:
-      | typeof GitHubEventType.InboundTranslationRetried
-      | typeof GitHubEventType.InboundTranslationFailed,
     source: GitHubAdapterEvent,
-    payload:
-      | {
-          readonly adapter: string;
-          readonly sourceEventId: string;
-          readonly attempt: number;
-          readonly message: string;
-        }
-      | {
-          readonly adapter: string;
-          readonly sourceEventId: string;
-          readonly attempt: number;
-          readonly message: string;
-          readonly globalPosition: number;
-          readonly eventType: string;
-          readonly correlationId: string;
-          readonly causationId: string;
-          readonly failedAt: string;
-        },
+    diagnostic: TranslationDiagnosticInput,
   ): Promise<void> {
     const stream = integrationStream(this.adapter);
     for (let contentionAttempts = 0; contentionAttempts < 3; contentionAttempts += 1) {
@@ -503,13 +494,12 @@ export class InboundTranslator {
         await this.journal!.appendToStream(stream, existing.length, [
           createGitHubEventData({
             eventId,
-            eventType,
             occurredAt: source.event.occurredAt,
             correlationId: source.event.correlationId,
             causationId: source.event.eventId,
             actor: { kind: EventActorKind.Integration, id: this.adapter },
             source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
-            payload,
+            ...diagnostic,
           }),
         ]);
         return;
