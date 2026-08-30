@@ -9,7 +9,7 @@ import {
   createActivationSchedulerSubscriber,
   type ActivationScheduler,
 } from '../../../src/control-plane/index.js';
-import { EventProcessorHost } from '../../../src/eventing/index.js';
+import { EventProcessorHost, type EventProcessor } from '../../../src/eventing/index.js';
 import { EventActorKind, EventSourceKind, createEventDraft } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
@@ -20,6 +20,31 @@ import {
 } from '../../../src/persistence/index.js';
 
 describe('ActivationSchedulerSubscriber', () => {
+  it('pokes once for a durable processor batch rather than once per event', async () => {
+    let processor: EventProcessor | undefined;
+    const scheduler: ActivationScheduler = {
+      runOnce: vi.fn(async () => ({ dispatched: 0, recovered: 0, advanced: 0 }) as never),
+    };
+    const subscriber = createActivationSchedulerSubscriber(
+      {
+        start(processors) {
+          [processor] = processors;
+          return { abort() {}, done: new Promise<void>(() => {}) };
+        },
+        health: () => undefined,
+      },
+      scheduler,
+    );
+    const run = subscriber.start();
+
+    await vi.waitFor(() => expect(processor?.mode).toBe('batch'));
+    if (processor?.mode !== 'batch') throw new Error('Expected batch processor');
+    await processor.handle([{} as never, {} as never], new AbortController().signal);
+
+    await vi.waitFor(() => expect(scheduler.runOnce).toHaveBeenCalledTimes(2));
+    run.abort();
+  });
+
   it('dispatches a durable fact through distinct file-backed subscriber and scheduler locks', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-scheduler-subscription-'));
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };

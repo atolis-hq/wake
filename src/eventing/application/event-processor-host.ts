@@ -1,9 +1,9 @@
 import type { CheckpointStore, Clock, EventJournal } from '../../kernel/index.js';
-import { SystemClock } from '../../kernel/index.js';
+import { SystemClock, defineClosedVocabulary } from '../../kernel/index.js';
 import {
   EventProcessorCategory,
   EventProcessorReplayPolicy,
-  type EventProcessorDefinition,
+  type EventProcessor,
 } from '../contracts/event-processor.js';
 import type { ProcessorRunSerialiser } from '../contracts/processor-run-serialiser.js';
 
@@ -13,13 +13,13 @@ const defaultFallbackMs = 30_000;
 const maximumTimerDelayMs = 2_147_483_647;
 const maximumErrorLength = 1_000;
 
-export const EventProcessorHealthStatus = {
-  Starting: `start${'ing'}`,
-  CatchingUp: `catching-${'up'}`,
-  Healthy: `health${'y'}`,
-  Degraded: `degrad${'ed'}`,
-  Stopped: `stopp${'ed'}`,
-} as const;
+export const EventProcessorHealthStatus = defineClosedVocabulary({
+  Starting: 'starting',
+  CatchingUp: 'catching-up',
+  Healthy: 'healthy',
+  Degraded: 'degraded',
+  Stopped: 'stopped',
+} as const);
 
 export type EventProcessorHealthStatus =
   (typeof EventProcessorHealthStatus)[keyof typeof EventProcessorHealthStatus];
@@ -31,7 +31,7 @@ export interface EventProcessorHealth {
   readonly category: (typeof EventProcessorCategory)[keyof typeof EventProcessorCategory];
   readonly status: EventProcessorHealthStatus;
   readonly checkpoint: number;
-  readonly journalHead: number;
+  readonly head: number;
   readonly lag: number;
   readonly consecutiveFailures: number;
   readonly lastError?: { readonly name: string; readonly message: string };
@@ -80,10 +80,7 @@ export class EventProcessorHost {
       throw new Error('Processor retry backoff must be a function');
   }
 
-  start(
-    processors: readonly EventProcessorDefinition<unknown>[],
-    parentSignal?: AbortSignal,
-  ): EventProcessorHostRun {
+  start(processors: readonly EventProcessor[], parentSignal?: AbortSignal): EventProcessorHostRun {
     assertDistinctConsumers(processors);
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -97,10 +94,7 @@ export class EventProcessorHost {
     return { abort, done };
   }
 
-  async runOnce<Message>(
-    processor: EventProcessorDefinition<Message>,
-    signal?: AbortSignal,
-  ): Promise<EventProcessorPass> {
+  async runOnce(processor: EventProcessor, signal?: AbortSignal): Promise<EventProcessorPass> {
     assertProcessor(processor);
     const runSignal = signal ?? new AbortController().signal;
     return this.serialiseRun(processor.consumer, runSignal, () =>
@@ -108,8 +102,8 @@ export class EventProcessorHost {
     );
   }
 
-  async runThrough<Message>(
-    processor: EventProcessorDefinition<Message>,
+  async runThrough(
+    processor: EventProcessor,
     targetGlobalPosition: number,
     signal?: AbortSignal,
   ): Promise<EventProcessorPass> {
@@ -125,67 +119,69 @@ export class EventProcessorHost {
     return this.snapshots.get(consumer);
   }
 
-  private async runProcessor(
-    processor: EventProcessorDefinition<unknown>,
-    signal: AbortSignal,
-  ): Promise<void> {
-    let checkpoint = await this.checkpoints.load(processor.consumer);
+  private async runProcessor(processor: EventProcessor, signal: AbortSignal): Promise<void> {
+    let checkpoint = 0;
     let consecutiveFailures = 0;
-    await this.updateHealth(
-      processor,
-      EventProcessorHealthStatus.Starting,
-      checkpoint,
-      consecutiveFailures,
-    );
     try {
       while (!signal.aborted) {
         try {
-          await this.updateHealth(
-            processor,
-            EventProcessorHealthStatus.CatchingUp,
-            checkpoint,
-            consecutiveFailures,
-            { lastAttemptAt: this.now() },
-          );
-          const pass = await this.runOnce(processor, signal);
+          const pass = await this.serialiseRun(processor.consumer, signal, async () => {
+            checkpoint = await this.checkpoints.load(processor.consumer);
+            await this.updateHealth(
+              processor,
+              this.snapshots.has(processor.consumer)
+                ? EventProcessorHealthStatus.CatchingUp
+                : EventProcessorHealthStatus.Starting,
+              checkpoint,
+              consecutiveFailures,
+              { lastAttemptAt: this.now() },
+            );
+            return this.runProcessorPass(processor, signal);
+          });
           if (signal.aborted) return;
           checkpoint = pass.checkpoint;
           consecutiveFailures = 0;
-          const status =
-            pass.eventCount === 0
+          const head = await this.journal.latestGlobalPosition();
+          const health = await this.updateHealth(
+            processor,
+            checkpoint >= head
               ? EventProcessorHealthStatus.Healthy
-              : EventProcessorHealthStatus.CatchingUp;
-          await this.updateHealth(processor, status, checkpoint, consecutiveFailures, {
-            lastSuccessAt: this.now(),
-          });
-          if (pass.eventCount === 0)
+              : EventProcessorHealthStatus.CatchingUp,
+            checkpoint,
+            consecutiveFailures,
+            { lastSuccessAt: this.now() },
+            head,
+          );
+          if (checkpoint >= health.head)
             await this.journal.waitForEventsAfter(checkpoint, signal, this.fallbackMs);
         } catch (error) {
           if (signal.aborted) return;
           consecutiveFailures += 1;
-          checkpoint = await this.checkpoints.load(processor.consumer);
-          await this.updateHealth(
-            processor,
-            EventProcessorHealthStatus.Degraded,
-            checkpoint,
-            consecutiveFailures,
-            { lastError: boundedError(error), lastFailureAt: this.now() },
-          );
+          try {
+            checkpoint = await this.checkpoints.load(processor.consumer);
+          } catch {
+            // The next supervised attempt re-reads the durable checkpoint.
+          }
+          await this.updateDegradedHealth(processor, checkpoint, consecutiveFailures, error);
           await this.retryBackoff(consecutiveFailures, signal);
         }
       }
     } finally {
-      await this.updateHealth(
-        processor,
-        EventProcessorHealthStatus.Stopped,
-        checkpoint,
-        consecutiveFailures,
-      );
+      try {
+        await this.updateHealth(
+          processor,
+          EventProcessorHealthStatus.Stopped,
+          checkpoint,
+          consecutiveFailures,
+        );
+      } catch {
+        // Volatile health must not make shutdown fail.
+      }
     }
   }
 
-  private async runProcessorPass<Message>(
-    processor: EventProcessorDefinition<Message>,
+  private async runProcessorPass(
+    processor: EventProcessor,
     signal: AbortSignal,
     targetGlobalPosition?: number,
   ): Promise<EventProcessorPass> {
@@ -196,6 +192,16 @@ export class EventProcessorHost {
         ? events
         : events.filter((event) => event.globalPosition <= targetGlobalPosition);
     if (bounded.length === 0) return { checkpoint, eventCount: 0, handledCount: 0 };
+    if (processor.mode === 'batch') {
+      await processor.handle(bounded, signal);
+      const nextCheckpoint = bounded.at(-1)!.globalPosition;
+      await this.checkpoints.save(processor.consumer, nextCheckpoint);
+      return {
+        checkpoint: nextCheckpoint,
+        eventCount: bounded.length,
+        handledCount: bounded.length,
+      };
+    }
     let handledCount = 0;
     for (const event of bounded) {
       throwIfAborted(signal);
@@ -209,8 +215,8 @@ export class EventProcessorHost {
     return { checkpoint: nextCheckpoint, eventCount: bounded.length, handledCount };
   }
 
-  private async runProcessorThrough<Message>(
-    processor: EventProcessorDefinition<Message>,
+  private async runProcessorThrough(
+    processor: EventProcessor,
     targetGlobalPosition: number,
     signal: AbortSignal,
   ): Promise<EventProcessorPass> {
@@ -228,32 +234,73 @@ export class EventProcessorHost {
   }
 
   private async updateHealth(
-    processor: EventProcessorDefinition<unknown>,
+    processor: EventProcessor,
     status: EventProcessorHealthStatus,
     checkpoint: number,
     consecutiveFailures: number,
     update: Partial<
       Pick<EventProcessorHealth, 'lastError' | 'lastAttemptAt' | 'lastSuccessAt' | 'lastFailureAt'>
     > = {},
-  ): Promise<void> {
+    sampledHead?: number,
+  ): Promise<EventProcessorHealth> {
     const previous = this.snapshots.get(processor.consumer);
-    const journalHead = await this.journal.latestGlobalPosition();
-    this.snapshots.set(processor.consumer, {
+    const head = sampledHead ?? (await this.journal.latestGlobalPosition());
+    const health: EventProcessorHealth = {
       consumer: processor.consumer,
       name: processor.name,
       owner: processor.owner,
       category: processor.category,
       status,
       checkpoint,
-      journalHead,
-      lag: Math.max(0, journalHead - checkpoint),
+      head,
+      lag: Math.max(0, head - checkpoint),
       consecutiveFailures,
       ...(previous?.lastError === undefined ? {} : { lastError: previous.lastError }),
       ...(previous?.lastAttemptAt === undefined ? {} : { lastAttemptAt: previous.lastAttemptAt }),
       ...(previous?.lastSuccessAt === undefined ? {} : { lastSuccessAt: previous.lastSuccessAt }),
       ...(previous?.lastFailureAt === undefined ? {} : { lastFailureAt: previous.lastFailureAt }),
       ...update,
-    });
+    };
+    this.snapshots.set(processor.consumer, health);
+    return health;
+  }
+
+  private async updateDegradedHealth(
+    processor: EventProcessor,
+    checkpoint: number,
+    consecutiveFailures: number,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      await this.updateHealth(
+        processor,
+        EventProcessorHealthStatus.Degraded,
+        checkpoint,
+        consecutiveFailures,
+        {
+          lastError: boundedError(error),
+          lastFailureAt: this.now(),
+        },
+      );
+    } catch {
+      const previous = this.snapshots.get(processor.consumer);
+      const head = previous?.head ?? checkpoint;
+      this.snapshots.set(processor.consumer, {
+        consumer: processor.consumer,
+        name: processor.name,
+        owner: processor.owner,
+        category: processor.category,
+        status: EventProcessorHealthStatus.Degraded,
+        checkpoint,
+        head,
+        lag: Math.max(0, head - checkpoint),
+        consecutiveFailures,
+        lastError: boundedError(error),
+        ...(previous?.lastAttemptAt === undefined ? {} : { lastAttemptAt: previous.lastAttemptAt }),
+        ...(previous?.lastSuccessAt === undefined ? {} : { lastSuccessAt: previous.lastSuccessAt }),
+        lastFailureAt: this.now(),
+      });
+    }
   }
 
   private now(): string {
@@ -261,7 +308,7 @@ export class EventProcessorHost {
   }
 }
 
-function assertDistinctConsumers(processors: readonly EventProcessorDefinition<unknown>[]): void {
+function assertDistinctConsumers(processors: readonly EventProcessor[]): void {
   const consumers = new Set<string>();
   for (const processor of processors) {
     assertProcessor(processor);
@@ -271,7 +318,7 @@ function assertDistinctConsumers(processors: readonly EventProcessorDefinition<u
   }
 }
 
-function assertProcessor(processor: EventProcessorDefinition<unknown>): void {
+function assertProcessor(processor: EventProcessor): void {
   if (typeof processor.consumer !== 'string' || processor.consumer.length === 0)
     throw new Error('Processor consumer must not be empty');
   if (typeof processor.name !== 'string' || processor.name.length === 0)
@@ -282,7 +329,7 @@ function assertProcessor(processor: EventProcessorDefinition<unknown>): void {
     throw new Error('Processor category must be recognized');
   if (!Object.values(EventProcessorReplayPolicy).includes(processor.replayPolicy))
     throw new Error('Processor replay policy must be recognized');
-  if (typeof processor.select !== 'function')
+  if (processor.mode !== 'batch' && typeof processor.select !== 'function')
     throw new Error('Processor selector must be a function');
   if (typeof processor.handle !== 'function')
     throw new Error('Processor handler must be a function');
@@ -304,8 +351,14 @@ function assertNonNegativeSafeInteger(value: number, label: string): void {
 
 function boundedError(error: unknown): { readonly name: string; readonly message: string } {
   if (error instanceof Error)
-    return { name: error.name, message: error.message.slice(0, maximumErrorLength) };
-  return { name: 'Error', message: String(error).slice(0, maximumErrorLength) };
+    return {
+      name: error.name.slice(0, maximumErrorLength),
+      message: error.message.slice(0, maximumErrorLength),
+    };
+  return {
+    name: 'Error',
+    message: String(error).slice(0, maximumErrorLength),
+  };
 }
 
 function throwIfAborted(signal: AbortSignal): void {

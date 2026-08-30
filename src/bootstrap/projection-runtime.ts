@@ -5,7 +5,7 @@ import {
   EventProcessorHost,
   ProjectionRebuilder,
   createProjectionProcessor,
-  type EventProcessorDefinition,
+  type EventProcessor,
   type EventProcessorHealth,
   type EventProcessorHostRun,
   type ProcessorRunSerialiser,
@@ -54,7 +54,7 @@ export const runtimeProjectionDefinitions = [
 ];
 
 export interface RuntimeProjectionSubscriptions {
-  readonly subscriptions: readonly EventProcessorDefinition<unknown>[];
+  readonly subscriptions: readonly EventProcessor[];
   start(signal: AbortSignal): EventProcessorHostRun;
   catchUpOnce(signal?: AbortSignal): Promise<number>;
   catchUp(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
@@ -63,8 +63,8 @@ export interface RuntimeProjectionSubscriptions {
 }
 
 class RuntimeProjectionSubscriptionRuntime implements RuntimeProjectionSubscriptions {
-  readonly subscriptions: readonly EventProcessorDefinition<unknown>[];
-  private readonly subscriptionsByDefinition = new Map<string, EventProcessorDefinition<unknown>>();
+  readonly subscriptions: readonly EventProcessor[];
+  private readonly subscriptionsByDefinition = new Map<string, EventProcessor>();
   private readonly definitionsByName = new Map<string, ProjectionDefinition>();
   private readonly host: EventProcessorHost;
   private readonly rebuilder: ProjectionRebuilder;

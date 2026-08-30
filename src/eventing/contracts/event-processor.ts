@@ -26,6 +26,46 @@ export interface EventProcessorDefinition<Message> {
   readonly category: EventProcessorCategory;
   readonly replayPolicy: EventProcessorReplayPolicy;
   readonly batchSize?: number;
-  select(event: EventEnvelope): Message | null;
-  handle(message: Message, event: EventEnvelope, signal: AbortSignal): Promise<void>;
+  readonly mode?: 'event';
+  readonly select: (event: EventEnvelope) => Message | null;
+  readonly handle: (message: Message, event: EventEnvelope, signal: AbortSignal) => Promise<void>;
+}
+
+export interface BatchEventProcessorDefinition {
+  readonly consumer: string;
+  readonly name: string;
+  readonly owner: string;
+  readonly category: EventProcessorCategory;
+  readonly replayPolicy: EventProcessorReplayPolicy;
+  readonly batchSize?: number;
+  readonly mode: 'batch';
+  readonly handle: (events: readonly EventEnvelope[], signal: AbortSignal) => Promise<void>;
+}
+
+// The runtime carries heterogeneous processors; typed construction remains at the boundary.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+declare const registeredEventProcessor: unique symbol;
+
+/** An opaque runtime registration; obtain it only through the factories below. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RegisteredEventProcessor = EventProcessorDefinition<any> & {
+  readonly [registeredEventProcessor]: true;
+};
+
+type RegisteredBatchEventProcessor = BatchEventProcessorDefinition & {
+  readonly [registeredEventProcessor]: true;
+};
+
+export type EventProcessor = RegisteredEventProcessor | RegisteredBatchEventProcessor;
+
+export function defineEventProcessor<Message>(
+  definition: EventProcessorDefinition<Message>,
+): EventProcessor {
+  return definition as unknown as EventProcessor;
+}
+
+export function createBatchEventProcessor(
+  definition: Omit<BatchEventProcessorDefinition, 'mode'>,
+): EventProcessor {
+  return { ...definition, mode: 'batch' } as unknown as EventProcessor;
 }

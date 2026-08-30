@@ -68,6 +68,9 @@ function inspectLiteral(detail, literal, catalogues, rules, diagnostics) {
 function inspectRegistrations(detail, literal, value, rule, registrations, rules, diagnostics) {
   if (!rules.has(rule)) return;
   for (const registration of registrations.get(value) ?? []) {
+    // Runtime-health labels overlap independently owned operational vocabularies.
+    // Their closed catalogue is still shape-checked, but it is not a global replacement rule.
+    if (registration.owner === 'EventProcessorHealthStatus') continue;
     if (isInsideInitializer(detail, literal, registration)) continue;
     diagnostics.push(
       createDiagnostic(

@@ -2,7 +2,8 @@ import {
   EventProcessorCategory,
   EventProcessorHealthStatus,
   EventProcessorReplayPolicy,
-  type EventProcessorDefinition,
+  createBatchEventProcessor,
+  type EventProcessor,
   type EventProcessorHostRun,
 } from '../../eventing/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
@@ -43,10 +44,7 @@ export interface ActivationSchedulerSubscriberRun {
 
 /** Bootstrap adapts Eventing's processor host to this Control Plane port. */
 export interface ActivationSchedulerSubscriptionHost {
-  start(
-    subscriptions: readonly EventProcessorDefinition<unknown>[],
-    signal?: AbortSignal,
-  ): EventProcessorHostRun;
+  start(subscriptions: readonly EventProcessor[], signal?: AbortSignal): EventProcessorHostRun;
   health(consumer: string): ActivationSchedulerSubscriptionHealth | undefined;
 }
 
@@ -102,19 +100,16 @@ export function createActivationSchedulerSubscriber(
       else parentSignal?.addEventListener('abort', abort, { once: true });
       const durable = host.start(
         [
-          {
+          createBatchEventProcessor({
             consumer: activationSchedulerSubscriptionConsumer,
             name: 'activation-scheduler',
             owner: ControlStreamKind.Global,
             category: EventProcessorCategory.Coordinator,
             replayPolicy: EventProcessorReplayPolicy.Idempotent,
-            // Every fact can affect eligibility, capacity, expiry recovery, or a
-            // workflow's next activation; filtering here would create stale work.
-            select: () => undefined,
             handle: async () => {
               await poke(undefined, controller.signal);
             },
-          },
+          }),
         ],
         controller.signal,
       );
