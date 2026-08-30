@@ -238,6 +238,105 @@ describe('ExecutionService', () => {
     }
   });
 
+  it('confirms cancellation that arrives while failed preparation waits for lease renewal', async () => {
+    vi.useFakeTimers();
+    try {
+      const clock = new FakeClock();
+      const base = new InMemoryEventJournal(clock);
+      let releaseRenewal!: () => void;
+      const renewalBlocked = new Promise<void>((resolve) => {
+        releaseRenewal = resolve;
+      });
+      let renewalEntered!: () => void;
+      const renewalStarted = new Promise<void>((resolve) => {
+        renewalEntered = resolve;
+      });
+      let recoveryLoaded!: () => void;
+      const recoveryLoad = new Promise<void>((resolve) => {
+        recoveryLoaded = resolve;
+      });
+      let runLoads = 0;
+      const journal: EventJournal = {
+        async append(stream, expectedSequence, events) {
+          if (events.some((event) => event.eventType === ExecutionEventType.RunLeaseRenewed)) {
+            renewalEntered();
+            await renewalBlocked;
+          }
+          return base.append(stream, expectedSequence, events);
+        },
+        async readStream(stream) {
+          const events = await base.readStream(stream);
+          if (stream.id === 'run-1' && ++runLoads === 2) recoveryLoaded();
+          return events;
+        },
+        readAll: base.readAll.bind(base),
+        latestGlobalPosition: base.latestGlobalPosition.bind(base),
+        waitForEventsAfter: base.waitForEventsAfter.bind(base),
+        readLatest: base.readLatest?.bind(base),
+        changeSignal: base.changeSignal,
+      };
+      let rejectAcquire!: () => void;
+      const acquireRejected = new Promise<void>((resolve) => {
+        rejectAcquire = resolve;
+      });
+      let acquireEntered!: () => void;
+      const acquired = new Promise<void>((resolve) => {
+        acquireEntered = resolve;
+      });
+      const fixture = setup(
+        {
+          async acquire() {
+            acquireEntered();
+            await acquireRejected;
+            throw new Error('workspace unavailable');
+          },
+        },
+        journal,
+        clock,
+      );
+      const workspaceActivation = { ...activation, execution: { workspace: 'read-only' as const } };
+      const workspaceContext = { ...context, resources: [repositoryResource()] };
+
+      const attempt = fixture.service.attempt(workspaceActivation, workspaceContext);
+      await acquired;
+      clock.advance(30_000);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await renewalStarted;
+      rejectAcquire();
+      await recoveryLoad;
+      await Promise.resolve();
+      await fixture.service.requestCancellation('run-1', 'operator');
+      releaseRenewal();
+
+      await expect(attempt).resolves.toMatchObject({ status: RunStatus.Cancelled });
+      const eventTypes = (await base.readAll(0)).map((event) => event.eventType);
+      expect(eventTypes).toEqual(
+        expect.arrayContaining([
+          ExecutionEventType.RunCancellationRequested,
+          ExecutionEventType.RunCancellationConfirmed,
+          ExecutionEventType.RunCancelled,
+        ]),
+      );
+      expect(
+        eventTypes.filter(
+          (eventType) =>
+            eventType === ExecutionEventType.RunCancellationRequested ||
+            eventType === ExecutionEventType.RunCancellationConfirmed ||
+            eventType === ExecutionEventType.RunCancelled,
+        ),
+      ).toEqual([
+        ExecutionEventType.RunCancellationRequested,
+        ExecutionEventType.RunCancellationConfirmed,
+        ExecutionEventType.RunCancelled,
+      ]);
+      expect(eventTypes).not.toContain(ExecutionEventType.RunFailed);
+      expect(eventTypes).not.toContain(ExecutionEventType.RunStarted);
+      expect(fixture.service.isLocallyActive('run-1')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('creates one Run and records a validated outcome separately', async () => {
     const fixture = setup();
     const started = await fixture.service.attempt(activation, context);

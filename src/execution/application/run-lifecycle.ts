@@ -15,6 +15,7 @@ import {
 } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
 import { runStream } from '../contracts/streams.js';
+import type { RunView } from '../contracts/views.js';
 import { isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
 import type { WorkspaceLease } from '../contracts/workspace.js';
 import { failureFrom } from '../domain/run-result.js';
@@ -208,13 +209,14 @@ export async function recordRunFailure(input: {
   readonly activation: ExecutionActivation;
   readonly context: ExecutionAttemptContext;
   readonly error: unknown;
-}): Promise<void> {
+}): Promise<RunView | null | undefined> {
   const { dependencies, runId: currentRunId, activation, context, error } = input;
   let retriedAfterSequence: number | undefined;
   while (true) {
     const loaded = await dependencies.repository.load(currentRunId);
     if (loaded.sequence === 0) throw error;
     if (loaded.view === null || !isActiveRunStatus(loaded.view.status)) return;
+    if (loaded.view.cancellation !== undefined) return loaded.view;
     if (retriedAfterSequence !== undefined && loaded.sequence <= retriedAfterSequence)
       throw new Error(`Run ${currentRunId} did not advance after a failure append conflict`);
     const finishedAt = dependencies.clock.now().toISOString();
@@ -230,7 +232,7 @@ export async function recordRunFailure(input: {
           payload: { failure: failureFrom(error), finishedAt },
         }),
       ]);
-      return;
+      return (await dependencies.repository.load(currentRunId)).view;
     } catch (appendError) {
       if (!(appendError instanceof WrongExpectedSequenceError)) throw appendError;
       retriedAfterSequence = loaded.sequence;

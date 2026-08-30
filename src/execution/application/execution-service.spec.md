@@ -161,8 +161,10 @@ workspace mechanics itself — it only resolves and invokes them.
   the transport level.
 - When workspace preparation or the Activity handler throws after
   `RunPreparationStarted` was appended, the error MUST be recorded via
-  `RunFailed`. Only validation, claim, or another error before preparation
-  creates the Run propagates unchanged to the caller.
+  `RunFailed` unless a concurrent durable cancellation request is observed
+  first; in that case Execution confirms and terminalizes the cancellation
+  instead. Only validation, claim, or another error before preparation creates
+  the Run propagates unchanged to the caller.
 - Whether the attempt succeeds, fails, or the Run was already moved to a
   terminal status by a concurrent cancellation, the Activation claim MUST
   be released, the tracked `AbortController` and local-attempt marker MUST be removed, and any

@@ -187,17 +187,7 @@ async function recoverFailedAttempt(
   if (persisted.view !== null && isActiveRunStatus(persisted.view.status)) {
     try {
       await renewal?.stop();
-      if (persisted.view.cancellation !== undefined) {
-        await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
-        return (await runtime.repository.load(currentRunId)).view!;
-      }
-      await recordRunFailure({
-        dependencies: runLifecycleDependencies(runtime),
-        runId: currentRunId,
-        activation,
-        context,
-        error,
-      });
+      await settleRunFailure(runtime, currentRunId, activation, context, error);
     } finally {
       await cleanupRun(runtime, currentRunId, activation, context, lease);
     }
@@ -262,13 +252,7 @@ async function completeRun(
   } catch (error) {
     try {
       await stopRenewal();
-      await recordRunFailure({
-        dependencies: runLifecycleDependencies(runtime),
-        runId: currentRunId,
-        activation,
-        context,
-        error,
-      });
+      await settleRunFailure(runtime, currentRunId, activation, context, error);
     } catch {
       // The caller already has a durable started Run; cleanup must still run.
     }
@@ -277,6 +261,29 @@ async function completeRun(
     await stopRenewal();
     await cleanupRun(runtime, currentRunId, activation, context, lease);
   }
+}
+
+async function settleRunFailure(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
+  error: unknown,
+): Promise<void> {
+  const run = await recordRunFailure({
+    dependencies: runLifecycleDependencies(runtime),
+    runId: currentRunId,
+    activation,
+    context,
+    error,
+  });
+  if (
+    run !== null &&
+    run !== undefined &&
+    isActiveRunStatus(run.status) &&
+    run.cancellation !== undefined
+  )
+    await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
 }
 
 function renewWhileActive(
