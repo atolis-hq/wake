@@ -173,12 +173,12 @@ describe('ExecutionService', () => {
         renewalEntered = resolve;
       });
       const journal: EventJournal = {
-        async append(stream, expectedSequence, events) {
+        async appendToStream(stream, expectedSequence, events) {
           if (events.some((event) => event.eventType === ExecutionEventType.RunLeaseRenewed)) {
             renewalEntered();
             await renewalBlocked;
           }
-          return base.append(stream, expectedSequence, events);
+          return base.appendToStream(stream, expectedSequence, events);
         },
         readStream: base.readStream.bind(base),
         readAll: base.readAll.bind(base),
@@ -257,12 +257,12 @@ describe('ExecutionService', () => {
       });
       let runLoads = 0;
       const journal: EventJournal = {
-        async append(stream, expectedSequence, events) {
+        async appendToStream(stream, expectedSequence, events) {
           if (events.some((event) => event.eventType === ExecutionEventType.RunLeaseRenewed)) {
             renewalEntered();
             await renewalBlocked;
           }
-          return base.append(stream, expectedSequence, events);
+          return base.appendToStream(stream, expectedSequence, events);
         },
         async readStream(stream) {
           const events = await base.readStream(stream);
@@ -376,9 +376,9 @@ describe('ExecutionService', () => {
       readonly eventTypes: readonly string[];
     }[] = [];
     const journal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         appendCalls.push({ expectedSequence, eventTypes: events.map((event) => event.eventType) });
-        return base.append(stream, expectedSequence, events);
+        return base.appendToStream(stream, expectedSequence, events);
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
@@ -489,7 +489,7 @@ describe('ExecutionService', () => {
     const serviceRef: { value?: ReturnType<typeof createExecutionService> } = {};
     let injectedRenewals = 0;
     const journal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         if (
           injectedRenewals === 0 &&
           events.some((event) => event.eventType === ExecutionEventType.RunFailed)
@@ -500,7 +500,7 @@ describe('ExecutionService', () => {
             injectedRenewals += 1;
           }
         }
-        return base.append(stream, expectedSequence, events);
+        return base.appendToStream(stream, expectedSequence, events);
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
@@ -650,10 +650,10 @@ describe('ExecutionService', () => {
     const serviceRef: { value?: ReturnType<typeof createExecutionService> } = {};
     let activeWhenActivationReleased: boolean | undefined;
     const journal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         if (events.some((event) => event.eventType === ExecutionEventType.ActivationReleased))
           activeWhenActivationReleased = serviceRef.value!.isLocallyActive('run-1');
-        return base.append(stream, expectedSequence, events);
+        return base.appendToStream(stream, expectedSequence, events);
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
@@ -733,7 +733,7 @@ describe('ExecutionService', () => {
     const serviceRef: { value?: ReturnType<typeof createExecutionService> } = {};
     let renewBeforeStart = true;
     const journal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         if (
           renewBeforeStart &&
           events.some((event) => event.eventType === ExecutionEventType.RunStarted)
@@ -741,7 +741,7 @@ describe('ExecutionService', () => {
           renewBeforeStart = false;
           await serviceRef.value!.renewLease('run-1', 'execution');
         }
-        return base.append(stream, expectedSequence, events);
+        return base.appendToStream(stream, expectedSequence, events);
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
@@ -796,10 +796,10 @@ describe('ExecutionService', () => {
   it('returns the failed Run when activation cleanup cannot be persisted', async () => {
     const base = new InMemoryEventJournal(new FakeClock());
     const journal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         if (events.some((event) => event.eventType === ExecutionEventType.ActivationReleased))
           throw new Error('activation cleanup interrupted');
-        return base.append(stream, expectedSequence, events);
+        return base.appendToStream(stream, expectedSequence, events);
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
@@ -900,7 +900,7 @@ describe('ExecutionService', () => {
     const base = new InMemoryEventJournal(new FakeClock());
     let failReleaseOnce = true;
     const releaseInterruptedJournal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         if (
           failReleaseOnce &&
           events.some((event) => event.eventType === 'execution.activation-released')
@@ -908,7 +908,7 @@ describe('ExecutionService', () => {
           failReleaseOnce = false;
           throw new Error('activation release append interrupted');
         }
-        return base.append(stream, expectedSequence, events);
+        return base.appendToStream(stream, expectedSequence, events);
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),
@@ -959,12 +959,12 @@ describe('ExecutionService', () => {
     const base = new InMemoryEventJournal(new FakeClock());
     let failStartOnce = true;
     const interruptedJournal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         if (failStartOnce && events.some((event) => event.eventType === 'execution.run-started')) {
           failStartOnce = false;
           throw new Error('run start append interrupted');
         }
-        return base.append(stream, expectedSequence, events);
+        return base.appendToStream(stream, expectedSequence, events);
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),

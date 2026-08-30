@@ -85,7 +85,7 @@ describe('pullRequestProjection', () => {
       baseRevision: 'base-a',
       checks: 'passing',
     });
-    await journal.append(draft.stream, 0, [draft]);
+    await journal.appendToStream(draft.stream, 0, [draft]);
     const store = new InMemoryProjectionStore();
     const host = new EventProcessorHost(
       journal,

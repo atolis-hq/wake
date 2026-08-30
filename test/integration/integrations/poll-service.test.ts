@@ -51,7 +51,7 @@ describe('PollService', () => {
     const delegate = new InMemoryEventJournal(new FakeClock());
     let reads = 0;
     const journal = {
-      append: delegate.append.bind(delegate),
+      appendToStream: delegate.appendToStream.bind(delegate),
       readAll: delegate.readAll.bind(delegate),
       readStream: async (stream: Parameters<typeof delegate.readStream>[0]) => {
         reads += 1;

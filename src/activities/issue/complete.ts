@@ -121,7 +121,7 @@ async function execute(
   const stream = resourceStream(target.resourceId);
   const existing = await journal.readStream(stream);
   if (!existing.some((event) => event.eventId === eventId)) {
-    await journal.append(stream, existing.length, [
+    await journal.appendToStream(stream, existing.length, [
       createEventData({
         eventId,
         eventType: ActivityEventType.IssueCompleteRequested,

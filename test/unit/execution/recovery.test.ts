@@ -54,7 +54,7 @@ it('lists Run views from one journal snapshot without per-Run stream reads', asy
   let readAllCalls = 0;
   let readStreamCalls = 0;
   const recording: EventJournal = {
-    append: backing.append.bind(backing),
+    appendToStream: backing.appendToStream.bind(backing),
     async readAll(after, limit) {
       readAllCalls += 1;
       return backing.readAll(after, limit);

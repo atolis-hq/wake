@@ -86,7 +86,7 @@ async function append(
           context,
         );
   try {
-    await input.journal.append(stream, events.length, [event]);
+    await input.journal.appendToStream(stream, events.length, [event]);
   } catch (error) {
     if (!(error instanceof WrongExpectedSequenceError)) throw error;
     const latest = await input.journal.readStream(stream);

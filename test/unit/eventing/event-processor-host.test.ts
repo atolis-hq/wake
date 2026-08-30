@@ -545,7 +545,7 @@ it('retries a health head read failure without stopping its sibling', async () =
   await appendFacts(source, 1);
   let failHead = true;
   const journal = {
-    append: source.append.bind(source),
+    appendToStream: source.appendToStream.bind(source),
     readStream: source.readStream.bind(source),
     readAll: source.readAll.bind(source),
     waitForEventsAfter: source.waitForEventsAfter.bind(source),
@@ -583,7 +583,7 @@ it('does not invoke a batch handler or checkpoint after cancellation during a ga
   const readStarted = deferred<void>();
   const releaseRead = deferred<void>();
   const journal = {
-    append: source.append.bind(source),
+    appendToStream: source.appendToStream.bind(source),
     readStream: source.readStream.bind(source),
     latestGlobalPosition: source.latestGlobalPosition.bind(source),
     waitForEventsAfter: source.waitForEventsAfter.bind(source),
@@ -619,7 +619,7 @@ it('does not invoke a batch handler or checkpoint after cancellation during a ga
 async function appendFacts(journal: InMemoryEventJournal, count: number): Promise<void> {
   const stream: EntityRef<'subscription-test', 'one'> = { kind: 'subscription-test', id: 'one' };
   for (let index = 0; index < count; index += 1) {
-    await journal.append(stream, index, [
+    await journal.appendToStream(stream, index, [
       createEventData({
         eventId: `subscription-test-${index}`,
         eventType: 'subscription-test.recorded',

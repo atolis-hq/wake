@@ -86,7 +86,7 @@ export async function claimDecision<Action extends PullRequestAction>(
   decodeActivityEventData(claim);
 
   try {
-    await journal.append(stream, 0, [claim]);
+    await journal.appendToStream(stream, 0, [claim]);
     return proposal;
   } catch (error) {
     const winner = await readDecisionClaim(journal, activationId, action);

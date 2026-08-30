@@ -202,7 +202,7 @@ it('does not re-fire a second sequential apply once the instance has left Waitin
 // acceptedSignalIds guard cannot see the other call — it only protects a
 // reload after a prior apply has already landed (see the sequential test
 // above). Same command context: acceptResourceTransition derives the same
-// causationId/eventId for both, and the journal's append() recognises the
+// causationId/eventId for both, and the journal's appendToStream() recognises the
 // second draft as already-recorded instead of re-checking the expected
 // sequence. Different command contexts (below) derive different eventIds,
 // so the second append genuinely conflicts on sequence — that's what

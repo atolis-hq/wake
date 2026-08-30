@@ -9,7 +9,7 @@ import { FakeClock } from '../../e2e/support/world.js';
 
 async function seedRun(journal: InMemoryEventJournal, id: string, activation: string) {
   const stream = runStream(runId(id));
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,

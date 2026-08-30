@@ -12,8 +12,8 @@ it('serializes appends shared by resident runtime loops', async () => {
 
   await expect(
     Promise.all([
-      persistence.journal.append({} as never, 0, []),
-      persistence.journal.append({} as never, 0, []),
+      persistence.journal.appendToStream({} as never, 0, []),
+      persistence.journal.appendToStream({} as never, 0, []),
     ]),
   ).resolves.toEqual([[], []]);
 });
@@ -21,7 +21,7 @@ it('serializes appends shared by resident runtime loops', async () => {
 function concurrentAppendRejectingJournal(): EventJournal {
   let appendInFlight = false;
   return {
-    async append() {
+    async appendToStream() {
       if (appendInFlight) throw new Error('concurrent append');
       appendInFlight = true;
       await new Promise<void>((resolve) => setTimeout(resolve, 0));

@@ -32,8 +32,10 @@ function identity<T>(value: T): T {
 function serializeJournalAppends(journal: EventJournal): EventJournal {
   let appendTail: Promise<void> = Promise.resolve();
   return {
-    append(stream, expectedSequence, events) {
-      const appended = appendTail.then(() => journal.append(stream, expectedSequence, events));
+    appendToStream(stream, expectedSequence, events) {
+      const appended = appendTail.then(() =>
+        journal.appendToStream(stream, expectedSequence, events),
+      );
       appendTail = appended.then(
         () => undefined,
         () => undefined,

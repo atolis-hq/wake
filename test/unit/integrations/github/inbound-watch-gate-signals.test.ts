@@ -167,7 +167,7 @@ async function waitingWatchGate() {
 
 async function appendNonterminalChildRun(fixture: Awaited<ReturnType<typeof waitingWatchGate>>) {
   const id = runId('run-active-watch-child');
-  await fixture.world.journal.append(runStream(id), 0, [
+  await fixture.world.journal.appendToStream(runStream(id), 0, [
     createEventData({
       eventId: 'execution:run-active-watch-child:started',
       eventType: ExecutionEventType.RunStarted,

@@ -507,7 +507,7 @@ async function appendConfirmedDelivery(
 
 async function appendEvent(world: TestWorld, event: EventData) {
   const events = await world.journal.readStream(event.stream);
-  const [appended] = await world.journal.append(event.stream, events.length, [event]);
+  const [appended] = await world.journal.appendToStream(event.stream, events.length, [event]);
   if (appended === undefined) throw new Error('Expected the journal to append an event');
   return appended;
 }
@@ -544,5 +544,5 @@ async function appendIssueComment(
   });
   if (event === null) throw new Error('Test comment observation was unexpectedly empty');
   const events = await world.journal.readStream(event.stream);
-  await world.journal.append(event.stream, events.length, [event]);
+  await world.journal.appendToStream(event.stream, events.length, [event]);
 }

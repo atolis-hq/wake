@@ -6,6 +6,7 @@ import { expect, it, vi } from 'vitest';
 import {
   cachedJournalView,
   createEventData,
+  WrongExpectedSequenceError,
   type EntityRef,
   type EventData,
 } from '../../../src/kernel/index.js';
@@ -18,6 +19,39 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   readFileMock.mockImplementation(actual.readFile);
   statMock.mockImplementation(actual.stat);
   return { ...actual, readFile: readFileMock, stat: statMock };
+});
+
+it('requires events, appends batches in sequence, and leaves the tail unchanged on rejected appends', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-append-to-stream-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const draft = (id: string) =>
+    createEventData({
+      eventId: id,
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: id,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: { objective: 'ship' },
+    });
+  const journal = new FileEventJournal(root, new FakeClock());
+
+  await expect(journal.appendToStream(stream, 0, [])).rejects.toMatchObject({
+    message: 'appendToStream requires at least one event',
+  });
+  expect(await journal.latestGlobalPosition()).toBe(0);
+
+  const appended = await journal.appendToStream(stream, 0, [draft('event-1'), draft('event-2')]);
+
+  expect(appended.map(({ sequence }) => sequence)).toEqual([1, 2]);
+  expect(await journal.latestGlobalPosition()).toBe(2);
+
+  await expect(journal.appendToStream(stream, 0, [draft('event-3')])).rejects.toBeInstanceOf(
+    WrongExpectedSequenceError,
+  );
+  expect(await journal.latestGlobalPosition()).toBe(2);
 });
 
 it('reopens the journal and continues stream sequence and global position', async () => {
@@ -35,9 +69,9 @@ it('reopens the journal and continues stream sequence and global position', asyn
       stream,
       payload: { objective: 'ship' },
     });
-  await new FileEventJournal(root, new FakeClock()).append(stream, 0, [draft('event-1')]);
+  await new FileEventJournal(root, new FakeClock()).appendToStream(stream, 0, [draft('event-1')]);
   const reopened = new FileEventJournal(root, new FakeClock());
-  const appended = await reopened.append(stream, 1, [draft('event-2')]);
+  const appended = await reopened.appendToStream(stream, 1, [draft('event-2')]);
   expect(appended[0]).toMatchObject({ sequence: 2, globalPosition: 2 });
   expect((await reopened.readAll(0)).length).toBe(2);
 });
@@ -58,8 +92,8 @@ it('returns an existing idempotent event while appending only new events in a mi
       payload: { id },
     });
   const journal = new FileEventJournal(root, new FakeClock());
-  await journal.append(stream, 0, [draft('event-1')]);
-  const result = await journal.append(stream, 1, [draft('event-1'), draft('event-2')]);
+  await journal.appendToStream(stream, 0, [draft('event-1')]);
+  const result = await journal.appendToStream(stream, 1, [draft('event-1'), draft('event-2')]);
   expect(result.map((event) => event.globalPosition)).toEqual([1, 2]);
   expect((await journal.readAll(0)).map((event) => event.eventId)).toEqual(['event-1', 'event-2']);
 });
@@ -86,7 +120,7 @@ it('round-trips every strict offset-ISO timestamp accepted by draft construction
     }),
   );
 
-  await new FileEventJournal(root, new FakeClock()).append(stream, 0, drafts);
+  await new FileEventJournal(root, new FakeClock()).appendToStream(stream, 0, drafts);
 
   await expect(new FileEventJournal(root, new FakeClock()).readAll(0)).resolves.toEqual(
     expect.arrayContaining(
@@ -112,7 +146,7 @@ it('validates a finalized envelope before filesystem serialization', async () =>
   } as unknown as EventData;
 
   await expect(
-    new FileEventJournal(root, new FakeClock()).append(stream, 0, [invalidDraft]),
+    new FileEventJournal(root, new FakeClock()).appendToStream(stream, 0, [invalidDraft]),
   ).rejects.toThrow();
   await expect(readFile(join(root, 'events', '2026-07-30.jsonl'), 'utf8')).rejects.toMatchObject({
     code: 'ENOENT',
@@ -183,18 +217,18 @@ it('does not re-parse prior history from disk after appending new events', async
       payload: { objective: `event ${sequence}` },
     });
   const journal = new FileEventJournal(root, new FakeClock());
-  await journal.append(stream, 0, [draft('event-1', 1)]);
-  await journal.append(stream, 1, [draft('event-2', 2)]);
+  await journal.appendToStream(stream, 0, [draft('event-1', 1)]);
+  await journal.appendToStream(stream, 1, [draft('event-2', 2)]);
   expect(await journal.readAll(0)).toHaveLength(2);
 
   readFileMock.mockClear();
   // A write patches the cache with the events already held in memory from
-  // this same append(), so the following reads need no readFile calls
+  // this same appendToStream(), so the following reads need no readFile calls
   // against the on-disk .jsonl history — not even for the newly appended
-  // event — rather than re-parsing the whole journal. (append() still reads
+  // event — rather than re-parsing the whole journal. (appendToStream() still reads
   // its own lock file as part of acquiring the file lock, unrelated to
   // journal content.)
-  await journal.append(stream, 2, [draft('event-3', 3)]);
+  await journal.appendToStream(stream, 2, [draft('event-3', 3)]);
   expect(await journal.readAll(0)).toHaveLength(3);
   expect(await journal.latestGlobalPosition()).toBe(3);
   const journalFileReads = readFileMock.mock.calls.filter(([path]) =>
@@ -225,7 +259,7 @@ it('refreshes a cached view when another file-journal instance appends', async (
   const view = cachedJournalView(reader, (events) => events.length);
 
   expect(await view.get()).toBe(0);
-  await writer.append(stream, 0, [draft]);
+  await writer.appendToStream(stream, 0, [draft]);
 
   expect(await view.get()).toBe(1);
 });
@@ -245,7 +279,7 @@ it('checks segment fingerprints without parsing an unchanged warm journal', asyn
     payload: { objective: 'ship' },
   });
   const journal = new FileEventJournal(root, new FakeClock());
-  await journal.append(stream, 0, [draft]);
+  await journal.appendToStream(stream, 0, [draft]);
   await journal.readAll(0);
 
   statMock.mockClear();
@@ -274,7 +308,7 @@ it('recovers a warmed reader after a JSONL append crashes before manifest update
       payload: { objective: 'ship' },
     });
     const writer = new FileEventJournal(root, new FakeClock());
-    await writer.append(stream, 0, [draft]);
+    await writer.appendToStream(stream, 0, [draft]);
 
     const watcher = controlledWatcherFactory();
     const reader = new FileEventJournal(root, new FakeClock(), { watcherFactory: watcher.factory });
@@ -330,9 +364,9 @@ it('uses the refreshed warm-cache stream index for ordered, isolated stream read
     });
   const clock = new FakeClock();
   const writer = new FileEventJournal(root, clock);
-  await writer.append(workStream, 0, [draft(workStream, 'work-1')]);
-  await writer.append(runStream, 0, [draft(runStream, 'run-1')]);
-  await writer.append(workStream, 1, [draft(workStream, 'work-2')]);
+  await writer.appendToStream(workStream, 0, [draft(workStream, 'work-1')]);
+  await writer.appendToStream(runStream, 0, [draft(runStream, 'run-1')]);
+  await writer.appendToStream(workStream, 1, [draft(workStream, 'work-2')]);
 
   const reader = new FileEventJournal(root, clock);
   // A full read, unlike the cold manifest path, populates the in-memory
@@ -347,7 +381,7 @@ it('uses the refreshed warm-cache stream index for ordered, isolated stream read
 
   // A different journal instance changes the segment after this reader has
   // warmed its cache, so the next read must rebuild both cache and index.
-  await writer.append(runStream, 1, [draft(runStream, 'run-2')]);
+  await writer.appendToStream(runStream, 1, [draft(runStream, 'run-2')]);
   expect((await reader.readStream(runStream)).map((event) => event.eventId)).toEqual([
     'run-1',
     'run-2',
@@ -378,7 +412,7 @@ it('coalesces concurrent reads on a cold cache into a single on-disk decode', as
       stream,
       payload: { objective: `event ${sequence}` },
     });
-  await new FileEventJournal(root, new FakeClock()).append(stream, 0, [
+  await new FileEventJournal(root, new FakeClock()).appendToStream(stream, 0, [
     draft('event-1', 1),
     draft('event-2', 2),
   ]);
@@ -422,7 +456,7 @@ it('revalidates an in-flight local scan after an external append before assignin
       payload: { objective: id },
     });
   const remoteWriter = new FileEventJournal(root, clock);
-  await remoteWriter.append(primary, 0, [draft(primary, 'event-1')]);
+  await remoteWriter.appendToStream(primary, 0, [draft(primary, 'event-1')]);
 
   const segmentPath = join(root, 'events', '2026-07-30.jsonl');
   const journalLockPath = join(root, 'locks', 'event-journal.lock');
@@ -447,8 +481,8 @@ it('revalidates an in-flight local scan after an external append before assignin
     const localReader = new FileEventJournal(root, clock);
     const staleRead = localReader.latestGlobalPosition();
     await snapshotRead.promise;
-    await remoteWriter.append(external, 0, [draft(external, 'event-2')]);
-    const localAppend = localReader.append(local, 0, [draft(local, 'event-3')]);
+    await remoteWriter.appendToStream(external, 0, [draft(external, 'event-2')]);
+    const localAppend = localReader.appendToStream(local, 0, [draft(local, 'event-3')]);
     let localAppendSettled = false;
     void localAppend.then(
       () => {
@@ -497,9 +531,9 @@ it('readStream on a cold cache parses only the segment files that can hold that 
     });
   const clock = new FakeClock();
   const writer = new FileEventJournal(root, clock);
-  await writer.append(streamA, 0, [draft(streamA, 'event-a1')]);
+  await writer.appendToStream(streamA, 0, [draft(streamA, 'event-a1')]);
   clock.advance(24 * 60 * 60 * 1000);
-  await writer.append(streamB, 0, [draft(streamB, 'event-b1')]);
+  await writer.appendToStream(streamB, 0, [draft(streamB, 'event-b1')]);
 
   // A fresh instance has no in-memory cache, so this exercises the persisted
   // manifest built by the appends above rather than the in-process cache.
@@ -530,9 +564,9 @@ it('readAll(after) on a cold cache skips segments entirely at or before the give
     });
   const clock = new FakeClock();
   const writer = new FileEventJournal(root, clock);
-  await writer.append(stream, 0, [draft('event-1')]);
+  await writer.appendToStream(stream, 0, [draft('event-1')]);
   clock.advance(24 * 60 * 60 * 1000);
-  const appended = await writer.append(stream, 1, [draft('event-2')]);
+  const appended = await writer.appendToStream(stream, 1, [draft('event-2')]);
   expect(appended[0]!.globalPosition).toBe(2);
 
   readFileMock.mockClear();
@@ -561,7 +595,7 @@ it('falls back to a full scan and still returns correct data when the persisted 
       payload: { objective: 'ship' },
     });
   const writer = new FileEventJournal(root, new FakeClock());
-  await writer.append(stream, 0, [draft('event-1'), draft('event-2')]);
+  await writer.appendToStream(stream, 0, [draft('event-1'), draft('event-2')]);
   await writeFile(join(root, 'events', 'index-manifest.json'), '{not json', 'utf8');
 
   const reader = new FileEventJournal(root, new FakeClock());
@@ -588,7 +622,7 @@ it('falls back to a full scan when a valid-shaped persisted index points at the 
       payload: { objective: 'ship' },
     });
   const writer = new FileEventJournal(root, new FakeClock());
-  await writer.append(stream, 0, [draft('event-1'), draft('event-2')]);
+  await writer.appendToStream(stream, 0, [draft('event-1'), draft('event-2')]);
   const manifest = JSON.parse(
     await readFile(join(root, 'events', 'index-manifest.json'), 'utf8'),
   ) as { segments: Array<{ events: Array<{ offset: number }> }> };
@@ -617,14 +651,27 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
         payload: { objective: `event ${sequence}` },
       });
     const journal = new FileEventJournal(root, new FakeClock());
-    await journal.append(stream, 0, [draft('event-1', 1)]);
+    const initialRevision = journal.changeSignal.revision();
+
+    await expect(journal.appendToStream(stream, 0, [])).rejects.toMatchObject({
+      message: 'appendToStream requires at least one event',
+    });
+    expect(journal.changeSignal.revision()).toBe(initialRevision);
+
+    await journal.appendToStream(stream, 0, [draft('event-1', 1)]);
+    expect(journal.changeSignal.revision()).toBe(initialRevision + 1);
+
+    await expect(journal.appendToStream(stream, 0, [draft('event-2', 2)])).rejects.toBeInstanceOf(
+      WrongExpectedSequenceError,
+    );
+    expect(journal.changeSignal.revision()).toBe(initialRevision + 1);
 
     const firstController = new AbortController();
     const secondController = new AbortController();
     const firstWait = journal.changeSignal.waitForChange(firstController.signal, 1_000);
     const secondWait = journal.changeSignal.waitForChange(secondController.signal, 1_000);
 
-    await journal.append(stream, 1, [draft('event-2', 2)]);
+    await journal.appendToStream(stream, 1, [draft('event-2', 2)]);
     await Promise.all([firstWait, secondWait]);
 
     // Idempotently resubmitting the same already-recorded draft is a no-op
@@ -635,7 +682,7 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
       .then(() => {
         wokeOnReplay = true;
       });
-    await journal.append(stream, 1, [draft('event-2', 2)]);
+    await journal.appendToStream(stream, 1, [draft('event-2', 2)]);
     await vi.advanceTimersByTimeAsync(1);
     expect(wokeOnReplay).toBe(false);
 
@@ -673,7 +720,7 @@ it('arms a watcher on a fresh root and wakes promptly after the first external a
   try {
     await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
     watcherArmed = true;
-    await writer.append(stream, 0, [draft('event-1')]);
+    await writer.appendToStream(stream, 0, [draft('event-1')]);
     watcher.notify();
     await wait;
   } finally {
@@ -709,7 +756,7 @@ it('discovers an external append by fallback when watcher setup fails', async ()
     const wait = reader.waitForEventsAfter(0, new AbortController().signal, 1_000);
 
     await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
-    await writer.append(stream, 0, [draft]);
+    await writer.appendToStream(stream, 0, [draft]);
     await vi.advanceTimersByTimeAsync(1_000);
 
     await expect(wait).resolves.toBeUndefined();
@@ -791,14 +838,14 @@ it('wakes every concurrent waiter from one external append', async () => {
     });
   const clock = new FakeClock();
   const writer = new FileEventJournal(root, clock);
-  await writer.append(stream, 0, [draft('event-1')]);
+  await writer.appendToStream(stream, 0, [draft('event-1')]);
   const reader = new FileEventJournal(root, clock);
   const checkpoint = await reader.latestGlobalPosition();
   const waits = Array.from({ length: 32 }, () =>
     reader.waitForEventsAfter(checkpoint, new AbortController().signal, 10_000),
   );
 
-  await writer.append(stream, 1, [draft('event-2')]);
+  await writer.appendToStream(stream, 1, [draft('event-2')]);
 
   await expect(Promise.all(waits)).resolves.toHaveLength(32);
 });

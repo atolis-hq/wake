@@ -75,7 +75,7 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
   expect(outbound.body).toContain(`"runId": "${run}"`);
   expect(outbound.body).toContain('"outcome": "DONE"');
 
-  await fixture.world.journal.append(integrationStream(BuiltInAdapterId.GitHub), 0, [
+  await fixture.world.journal.appendToStream(integrationStream(BuiltInAdapterId.GitHub), 0, [
     createEventData({
       eventId: 'github:comment:watch-gate-verdict',
       eventType: 'integration.github.comment-observed',
@@ -156,7 +156,7 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
     signalKind: 'orchestration.watch-gate-verdict',
   });
 
-  await fixture.world.journal.append(integrationStream(BuiltInAdapterId.GitHub), 0, [
+  await fixture.world.journal.appendToStream(integrationStream(BuiltInAdapterId.GitHub), 0, [
     createEventData({
       eventId: 'github:comment:watch-gate-extend',
       eventType: 'integration.github.comment-observed',
@@ -249,7 +249,7 @@ it('supersedes a recovered child whose parent has already left its gate before d
   const fixture = await waitingWatchGate();
   const stream = workflowInstanceStream(fixture.parent.workflowInstanceId);
   const events = await fixture.world.journal.readStream(stream);
-  await fixture.world.journal.append(stream, events.length, [
+  await fixture.world.journal.appendToStream(stream, events.length, [
     createEventData({
       eventId: 'recovered-parent-signal',
       eventType: OrchestrationEventType.SignalAccepted,
@@ -347,7 +347,7 @@ async function appendTerminalAgentRun(
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
-  await world.journal.append(stream, 0, [
+  await world.journal.appendToStream(stream, 0, [
     createEventData({
       eventId: `execution:${id}:started`,
       eventType: ExecutionEventType.RunStarted,
@@ -402,7 +402,7 @@ async function appendStartedRun(
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
-  await world.journal.append(stream, 0, [
+  await world.journal.appendToStream(stream, 0, [
     createEventData({
       eventId: `execution:${id}:started`,
       eventType: ExecutionEventType.RunStarted,

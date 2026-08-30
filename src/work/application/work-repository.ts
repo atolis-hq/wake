@@ -29,7 +29,11 @@ export class WorkRepository {
     expectedSequence: number,
     drafts: readonly WorkEventData[],
   ): Promise<readonly WorkEvent[]> {
-    const events = await this.journal.append(workItemStream(workItemId), expectedSequence, drafts);
+    const events = await this.journal.appendToStream(
+      workItemStream(workItemId),
+      expectedSequence,
+      drafts,
+    );
     return events.map(decodeWorkEvent);
   }
 }

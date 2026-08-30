@@ -35,14 +35,14 @@ it('continues after a persistence failure and withholds the provider cursor', as
     latestGlobalPosition: delegate.latestGlobalPosition.bind(delegate),
     waitForEventsAfter: delegate.waitForEventsAfter.bind(delegate),
     changeSignal: delegate.changeSignal,
-    async append(
-      stream: Parameters<typeof delegate.append>[0],
+    async appendToStream(
+      stream: Parameters<typeof delegate.appendToStream>[0],
       sequence: number,
-      events: Parameters<typeof delegate.append>[2],
+      events: Parameters<typeof delegate.appendToStream>[2],
     ) {
       if (events[0]?.eventId === 'github:issue:owner/repo#1:revision')
         throw new Error('disk unavailable');
-      return delegate.append(stream, sequence, events);
+      return delegate.appendToStream(stream, sequence, events);
     },
   };
   const service = new PollService(

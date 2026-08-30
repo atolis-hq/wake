@@ -124,7 +124,7 @@ function processor(consumer: string, name: string, handle: () => Promise<void>) 
 
 async function appendFact(journal: InMemoryEventJournal): Promise<void> {
   const stream: EntityRef<'test', 'one'> = { kind: 'test', id: 'one' };
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'test-event-one',
       eventType: 'test.recorded',

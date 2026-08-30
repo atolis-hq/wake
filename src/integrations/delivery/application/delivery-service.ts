@@ -143,7 +143,7 @@ export class DeliveryService {
 
   private async append(draft: DeliveryEventDataInput): Promise<void> {
     const sequence = (await this.dependencies.journal.readStream(draft.stream)).length;
-    await this.dependencies.journal.append(draft.stream, sequence, [
+    await this.dependencies.journal.appendToStream(draft.stream, sequence, [
       createDeliveryEventData(draft),
     ]);
   }

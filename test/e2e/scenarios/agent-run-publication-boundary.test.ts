@@ -147,7 +147,7 @@ async function appendTerminalAgentRun(
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
-  await world.journal.append(stream, 0, [
+  await world.journal.appendToStream(stream, 0, [
     createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
@@ -202,7 +202,7 @@ async function appendFailedAgentRun(
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
-  await world.journal.append(stream, 0, [
+  await world.journal.appendToStream(stream, 0, [
     createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,

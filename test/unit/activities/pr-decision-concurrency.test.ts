@@ -104,13 +104,13 @@ function interleavingJournal(base: EventJournal) {
     releaseDenied = resolve;
   });
   const journal: EventJournal = {
-    async append(stream, sequence, events) {
+    async appendToStream(stream, sequence, events) {
       const kind = decisionKind(events[0]);
       if (kind === 'denied') {
         signalDenied();
         await requestedDecisionWritten;
       }
-      const appended = await base.append(stream, sequence, events);
+      const appended = await base.appendToStream(stream, sequence, events);
       if (kind === 'requested') releaseDenied();
       return appended;
     },

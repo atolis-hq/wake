@@ -27,7 +27,7 @@ function draft(eventId: string) {
 
 it('derives once and reuses the cached value across repeat calls when nothing new landed', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  await journal.append(stream, 0, [draft('event-1')]);
+  await journal.appendToStream(stream, 0, [draft('event-1')]);
   const derive = vi.fn((events: readonly unknown[]) => events.length);
   const view = cachedJournalView(journal, derive);
 
@@ -40,12 +40,12 @@ it('derives once and reuses the cached value across repeat calls when nothing ne
 
 it('re-derives once new events land, then caches again at the new position', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  await journal.append(stream, 0, [draft('event-1')]);
+  await journal.appendToStream(stream, 0, [draft('event-1')]);
   const derive = vi.fn((events: readonly unknown[]) => events.length);
   const view = cachedJournalView(journal, derive);
 
   expect(await view.get()).toBe(1);
-  await journal.append(stream, 1, [draft('event-2')]);
+  await journal.appendToStream(stream, 1, [draft('event-2')]);
   expect(await view.get()).toBe(2);
   expect(await view.get()).toBe(2);
 
@@ -54,7 +54,7 @@ it('re-derives once new events land, then caches again at the new position', asy
 
 it('does not call readAll at all when the cache is still valid', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  await journal.append(stream, 0, [draft('event-1')]);
+  await journal.appendToStream(stream, 0, [draft('event-1')]);
   const readAllSpy = vi.spyOn(journal, 'readAll');
   const view = cachedJournalView(journal, (events) => events.length);
 
@@ -83,7 +83,7 @@ it('refreshes after an in-process append notification', async () => {
   const view = cachedJournalView(journal, derive);
 
   expect(await view.get()).toBe(0);
-  await journal.append(stream, 0, [draft('event-1')]);
+  await journal.appendToStream(stream, 0, [draft('event-1')]);
   expect(await view.get()).toBe(1);
   expect(derive).toHaveBeenCalledTimes(2);
 });
@@ -123,7 +123,7 @@ it('refreshes on the fallback when an in-process notification is missed', async 
   );
 
   expect(await view.get()).toBe(0);
-  await journal.append(stream, 0, [draft('missed-notification')]);
+  await journal.appendToStream(stream, 0, [draft('missed-notification')]);
   now = JOURNAL_CHANGE_FALLBACK_MS;
   expect(await view.get()).toBe(1);
   expect(derive).toHaveBeenCalledTimes(2);

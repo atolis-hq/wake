@@ -147,7 +147,7 @@ async function deliveryBoundaries(): Promise<void> {
       },
       context(point),
     );
-    await fixture.root.journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
+    await fixture.root.journal.appendToStream({ kind: 'resource', id: resource.resourceId }, 1, [
       {
         eventId: `${point}-intent` as never,
         eventType: DeliveryIntentEventType.StatusPublishRequested,
@@ -227,7 +227,7 @@ async function childCompletionBoundaries(): Promise<void> {
       },
       context(point),
     );
-    await fixture.root.journal.append({ kind: 'test', id: point }, 0, [
+    await fixture.root.journal.appendToStream({ kind: 'test', id: point }, 0, [
       {
         eventId: `${point}-trigger` as never,
         eventType: 'fault.child.requested',

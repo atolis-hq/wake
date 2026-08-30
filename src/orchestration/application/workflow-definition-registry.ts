@@ -105,7 +105,7 @@ export class WorkflowDefinitionRegistry {
     for (;;) {
       const sequence = (await this.journal.readStream(stream)).length;
       try {
-        await this.journal.append(stream, sequence, [draft]);
+        await this.journal.appendToStream(stream, sequence, [draft]);
         this.knownRegistered.add(workflowDefinitionKey(name, fingerprint));
         return;
       } catch (error) {

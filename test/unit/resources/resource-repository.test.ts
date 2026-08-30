@@ -30,7 +30,7 @@ it('refreshes the resource materialized view after an append and skips reads whi
 
 async function discover(journal: InMemoryEventJournal, id: typeof first, sequence: number) {
   const stream = resourceStream(id);
-  await journal.append(stream, sequence, [
+  await journal.appendToStream(stream, sequence, [
     createEventData({
       eventId: `${id}:discovered`,
       eventType: ResourceEventType.ResourceDiscovered,

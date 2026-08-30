@@ -181,7 +181,11 @@ class JournalPullRequestService implements PullRequestService {
     event: ActivityFactDraft | readonly ActivityFactDraft[],
   ): Promise<void> {
     const events = Array.isArray(event) ? event : [event];
-    await this.journal.append(stream, (await this.journal.readStream(stream)).length, events);
+    await this.journal.appendToStream(
+      stream,
+      (await this.journal.readStream(stream)).length,
+      events,
+    );
   }
 
   private async priorMergeDecision(commandId: string): Promise<boolean | null> {

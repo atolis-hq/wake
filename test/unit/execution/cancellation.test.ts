@@ -124,10 +124,10 @@ describe('Run cancellation', () => {
     const clock = new FakeClock();
     const base = new InMemoryEventJournal(clock);
     const journal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         if (events.some((event) => event.eventType === ExecutionEventType.RunCancellationRequested))
           throw new WrongExpectedSequenceError('unchanged sequence');
-        return base.append(stream, expectedSequence, events);
+        return base.appendToStream(stream, expectedSequence, events);
       },
       readStream: base.readStream.bind(base),
       readAll: base.readAll.bind(base),

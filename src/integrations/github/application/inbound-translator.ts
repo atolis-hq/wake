@@ -289,7 +289,7 @@ export class InboundTranslator {
     const eventId = `github:${eventType}:${this.adapter}:${source.eventId}`;
     const existing = await this.journal!.readStream(stream);
     if (existing.some((event) => event.eventId === eventId)) return;
-    await this.journal!.append(stream, existing.length, [
+    await this.journal!.appendToStream(stream, existing.length, [
       createEventData({
         eventId,
         eventType,
@@ -405,7 +405,7 @@ export class InboundTranslator {
     const eventId = `github:inbound-translation-recovered:${this.adapter}:${event.eventId}`;
     const existing = await this.journal!.readStream(stream);
     if (existing.some((candidate) => candidate.eventId === eventId)) return;
-    await this.journal!.append(stream, existing.length, [
+    await this.journal!.appendToStream(stream, existing.length, [
       createEventData({
         eventId,
         eventType: GitHubEventType.InboundTranslationRecovered,
@@ -493,7 +493,7 @@ export class InboundTranslator {
       const existing = await this.journal!.readStream(stream);
       if (existing.some((event) => event.eventId === eventId)) return;
       try {
-        await this.journal!.append(stream, existing.length, [
+        await this.journal!.appendToStream(stream, existing.length, [
           createEventData({
             eventId,
             eventType,
@@ -868,7 +868,7 @@ export class InboundTranslator {
     const eventId = `github:admission-started:${this.adapter}:${source.eventId}`;
     const existing = await this.journal!.readStream(stream);
     if (existing.some((event) => event.eventId === eventId)) return;
-    await this.journal!.append(stream, existing.length, [
+    await this.journal!.appendToStream(stream, existing.length, [
       createEventData({
         eventId,
         eventType: GitHubEventType.AdmissionStarted,
@@ -962,7 +962,7 @@ export class InboundTranslator {
         return;
       }
       try {
-        await this.journal!.append(stream, existing.length, [
+        await this.journal!.appendToStream(stream, existing.length, [
           createEventData({
             eventId,
             eventType: GitHubEventType.DeletedWorkObservationSkipped,

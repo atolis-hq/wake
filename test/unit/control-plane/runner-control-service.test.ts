@@ -77,7 +77,7 @@ it('deduplicates an unpause after recreating the service from the same journal',
 it('rejects unpause after a quota pause has elapsed', async () => {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(controlPlaneStream(), 0, [
+  await journal.appendToStream(controlPlaneStream(), 0, [
     createControlEventData(
       ControlEventType.RunnerPaused,
       {

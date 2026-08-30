@@ -153,7 +153,7 @@ it('accepts ordinary Unicode file lock consumer identities', async () => {
     const serialise = createFileProcessorRunSerialiser(root);
 
     await expect(
-      serialise('consumer-😀', new AbortController().signal, async () => 'handled'),
+      serialise('consumer-ðŸ˜€', new AbortController().signal, async () => 'handled'),
     ).resolves.toBe('handled');
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -187,7 +187,7 @@ it('uses the established subscription lock basename for cross-version exclusion'
 
 async function appendFact(journal: InMemoryEventJournal): Promise<void> {
   const stream: EntityRef<'subscription-test', 'one'> = { kind: 'subscription-test', id: 'one' };
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'subscription-test',
       eventType: 'subscription-test.recorded',

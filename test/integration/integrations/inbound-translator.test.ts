@@ -54,7 +54,7 @@ describe('InboundTranslator', () => {
       stream: { kind: 'delivery', id: 'fake' } as never,
       payload: { key: 'ignored', title: 'Ignored' },
     });
-    await journal.append(foreign.stream, 0, [foreign]);
+    await journal.appendToStream(foreign.stream, 0, [foreign]);
 
     await expect(processInbound(translator, journal, checkpoints)).resolves.toMatchObject({
       handledCount: 0,
@@ -84,7 +84,7 @@ describe('InboundTranslator', () => {
       stream: integrationStream('other' as never),
       payload: observation(),
     });
-    await journal.append(foreign.stream, 0, [foreign]);
+    await journal.appendToStream(foreign.stream, 0, [foreign]);
 
     const host = new EventProcessorHost(
       journal,
@@ -135,7 +135,7 @@ describe('InboundTranslator', () => {
       stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: observation(),
     });
-    await journal.append(event.stream, 0, [event]);
+    await journal.appendToStream(event.stream, 0, [event]);
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
     const translator = new InboundTranslator(journal, work, resources, {
       lookup,
@@ -166,7 +166,7 @@ describe('InboundTranslator', () => {
     const checkpoints = new InMemoryCheckpointStore();
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
     const stream = integrationStream(BuiltInAdapterId.GitHub);
-    await journal.append(stream, 0, [
+    await journal.appendToStream(stream, 0, [
       createEventData({
         eventId: 'github:issue:owner/repo#partial:v1',
         eventType: GitHubEventType.WorkObserved,
@@ -229,7 +229,7 @@ describe('InboundTranslator', () => {
       stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: { ...observation(), labels: ['security'] },
     });
-    await journal.append(event.stream, 0, [event]);
+    await journal.appendToStream(event.stream, 0, [event]);
     const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
@@ -264,7 +264,7 @@ describe('InboundTranslator', () => {
       return resourceIdForExternalKey(externalKey);
     });
     const stream = integrationStream(BuiltInAdapterId.GitHub);
-    const [poison, later] = await journal.append(stream, 0, [
+    const [poison, later] = await journal.appendToStream(stream, 0, [
       createEventData({
         eventId: 'github:issue:owner/repo#poison:v1',
         eventType: GitHubEventType.WorkObserved,
@@ -346,7 +346,7 @@ describe('InboundTranslator', () => {
       stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: observation(),
     });
-    await journal.append(initial.stream, 0, [initial]);
+    await journal.appendToStream(initial.stream, 0, [initial]);
     await processInbound(translator, journal, checkpoints);
     const staleResource = await lookup.resourceIdForExternalKey({
       adapter: 'github',
@@ -367,7 +367,7 @@ describe('InboundTranslator', () => {
       routing,
     });
 
-    const [ignored, admitted] = await journal.append(
+    const [ignored, admitted] = await journal.appendToStream(
       initial.stream,
       (await journal.readStream(initial.stream)).length,
       [
@@ -452,7 +452,7 @@ describe('InboundTranslator', () => {
       stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: { ...observation(), kind: 'pull-request', externalKey: 'owner/repo#11' },
     });
-    await journal.append(event.stream, 0, [event]);
+    await journal.appendToStream(event.stream, 0, [event]);
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
     const translator = new InboundTranslator(journal, work, resources, {
       lookup,
@@ -488,7 +488,7 @@ describe('InboundTranslator', () => {
       stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: observation(),
     });
-    await journal.append(event.stream, 0, [event]);
+    await journal.appendToStream(event.stream, 0, [event]);
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
     const translator = new InboundTranslator(journal, work, resources, {
       lookup,
@@ -534,7 +534,7 @@ describe('InboundTranslator', () => {
         raw: { id: 1 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(event.stream, 0, [event]);
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
@@ -573,7 +573,7 @@ describe('InboundTranslator', () => {
         raw: { id: 1 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(event.stream, 0, [event]);
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
@@ -634,7 +634,7 @@ describe('InboundTranslator', () => {
         raw: { id: 987 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(event.stream, 0, [event]);
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
@@ -680,7 +680,7 @@ describe('InboundTranslator', () => {
         raw: { id: 988 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(event.stream, 0, [event]);
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
@@ -698,7 +698,7 @@ describe('InboundTranslator', () => {
       occurredAt: '2026-08-18T00:00:00.000Z',
       payload: { ...event.payload, body: 'Please continue with the updated plan.' },
     });
-    await fixture.world.journal.append(event.stream, 1, [updated]);
+    await fixture.world.journal.appendToStream(event.stream, 1, [updated]);
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
@@ -747,7 +747,7 @@ describe('InboundTranslator', () => {
         raw: { id: 989 },
       },
     });
-    const [observed] = await fixture.world.journal.append(event.stream, 0, [event]);
+    const [observed] = await fixture.world.journal.appendToStream(event.stream, 0, [event]);
     if (observed === undefined) throw new Error('Expected comment observation');
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
@@ -831,7 +831,7 @@ describe('InboundTranslator', () => {
         raw: { id: 990 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(event.stream, 0, [event]);
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
     record.mockRestore();
@@ -886,7 +886,7 @@ describe('InboundTranslator conclusion', () => {
       stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: { ...observation(), externalKey: 'owner/repo#9', revision: 'v1' },
     });
-    await journal.append(open.stream, 0, [open]);
+    await journal.appendToStream(open.stream, 0, [open]);
     await processInbound(translator, journal, checkpoints);
 
     const closed = createEventData({
@@ -906,7 +906,9 @@ describe('InboundTranslator conclusion', () => {
         outcome: 'completed',
       },
     });
-    await journal.append(closed.stream, (await journal.readStream(closed.stream)).length, [closed]);
+    await journal.appendToStream(closed.stream, (await journal.readStream(closed.stream)).length, [
+      closed,
+    ]);
     await processInbound(translator, journal, checkpoints);
 
     expect(calls).toEqual([
@@ -950,7 +952,7 @@ describe('InboundTranslator conclusion', () => {
       stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: { ...observation(), externalKey: 'owner/repo#10', revision: 'v1' },
     });
-    await journal.append(open.stream, 0, [open]);
+    await journal.appendToStream(open.stream, 0, [open]);
     await processInbound(translator, journal, checkpoints);
 
     const closed = createEventData({
@@ -970,7 +972,9 @@ describe('InboundTranslator conclusion', () => {
         outcome: 'cancelled',
       },
     });
-    await journal.append(closed.stream, (await journal.readStream(closed.stream)).length, [closed]);
+    await journal.appendToStream(closed.stream, (await journal.readStream(closed.stream)).length, [
+      closed,
+    ]);
     await processInbound(translator, journal, checkpoints);
 
     expect(calls).toEqual([

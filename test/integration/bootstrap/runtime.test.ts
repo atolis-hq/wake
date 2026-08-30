@@ -404,7 +404,7 @@ describe('target composition root', () => {
     const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);
     const id = runId('run-restart-recovery');
-    await journal.append(runStream(id), 0, [
+    await journal.appendToStream(runStream(id), 0, [
       createEventData({
         eventId: 'run-restart-recovery:started',
         eventType: ExecutionEventType.RunStarted,
@@ -448,9 +448,9 @@ describe('target composition root', () => {
     const journal = new InMemoryEventJournal(clock);
     const writes: string[] = [];
     const decoratedJournal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         writes.push(`${stream.kind}:${stream.id}`);
-        return journal.append(stream, expectedSequence, events);
+        return journal.appendToStream(stream, expectedSequence, events);
       },
       readStream: journal.readStream.bind(journal),
       readAll: journal.readAll.bind(journal),
@@ -715,7 +715,7 @@ describe('target composition root', () => {
       },
       commandContext(clock, 'decorated-delivery'),
     );
-    await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
+    await journal.appendToStream({ kind: 'resource', id: resource.resourceId }, 1, [
       {
         eventId: eventId('decorated-delivery-intent'),
         eventType: DeliveryIntentEventType.StatusPublishRequested,
@@ -773,7 +773,7 @@ describe('target composition root', () => {
     await projections.blockedWriteStarted.promise;
     const subscriber = startProcessorRuntime(runtime);
     try {
-      await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
+      await journal.appendToStream({ kind: 'resource', id: resource.resourceId }, 1, [
         createEventData({
           eventId: 'targeted-delivery-intent',
           eventType: DeliveryIntentEventType.StatusPublishRequested,
@@ -1241,7 +1241,7 @@ describe('target composition root', () => {
         user: { login: 'author', type: 'User' },
       },
     });
-    await journal.append(issue.stream, 0, [issue]);
+    await journal.appendToStream(issue.stream, 0, [issue]);
     const comment = issueCommentObservation({
       repository: 'atolis-hq/wake',
       issue: { number: 7 },
@@ -1254,7 +1254,7 @@ describe('target composition root', () => {
       },
     });
     if (comment === null) throw new Error('Test comment observation was unexpectedly empty');
-    await journal.append(comment.stream, 1, [comment]);
+    await journal.appendToStream(comment.stream, 1, [comment]);
     let prompt = '';
 
     await runtime.activities.execute(

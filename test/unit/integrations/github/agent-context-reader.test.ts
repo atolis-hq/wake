@@ -130,7 +130,10 @@ it('includes the latest correlated pull request check evidence without reading c
       },
     },
   });
-  await world.journal.append(olderObservation.stream, 0, [olderObservation, latestObservation]);
+  await world.journal.appendToStream(olderObservation.stream, 0, [
+    olderObservation,
+    latestObservation,
+  ]);
 
   const agentContext = await createGitHubAgentContextReader(
     world.journal,
@@ -180,14 +183,14 @@ it('includes every eligible comment, human and Wake alike, within the character 
   const reviewFeedback = [
     '<!-- wake:agent -->',
     '<!-- wake:delivery:review-verdict -->',
-    '**Outcome:** 🔴 Changes Requested',
+    '**Outcome:** ðŸ”´ Changes Requested',
     'The current plan must retain the latest delivery cursor.',
   ].join('\n\n');
   await appendIssueComment(world, 16, reviewFeedback);
   const blockedHandoff = [
     '<!-- wake:agent -->',
     '<!-- wake:delivery:blocked-handoff -->',
-    '**Outcome:** 🟠 Blocked',
+    '**Outcome:** ðŸŸ  Blocked',
     'The operator must provide the missing deployment credential.',
   ].join('\n\n');
   await appendIssueComment(world, 17, blockedHandoff);
@@ -692,7 +695,7 @@ async function appendConfirmedAgentRunComment(
     },
   });
   const stream = resourceStream(resourceId);
-  const [published] = await world.journal.append(
+  const [published] = await world.journal.appendToStream(
     stream,
     (await world.journal.readStream(stream)).length,
     [intent],
@@ -716,7 +719,7 @@ async function appendConfirmedAgentRunComment(
       externalId: `github-comment-${input.intentEventId}`,
     },
   });
-  await world.journal.append(confirmation.stream, 0, [confirmation]);
+  await world.journal.appendToStream(confirmation.stream, 0, [confirmation]);
 }
 
 async function appendIssueComment(world: TestWorld, id: number, body: string, updatedAt?: string) {
@@ -735,5 +738,5 @@ async function appendIssueComment(world: TestWorld, id: number, body: string, up
   });
   if (event === null) throw new Error('Expected issue comment observation');
   const events = await world.journal.readStream(event.stream);
-  await world.journal.append(event.stream, events.length, [event]);
+  await world.journal.appendToStream(event.stream, events.length, [event]);
 }

@@ -102,7 +102,7 @@ function reconciledConfirmedEvent() {
 
 it('resolves an activation that is genuinely waiting on this delivery', async () => {
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(deliveryStream(eventId('intent-1')), 0, [
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
@@ -135,7 +135,7 @@ it('resolves an activation that is genuinely waiting on this delivery', async ()
 
 it('catches up a matching confirmation that was checkpointed before its delivery wait', async () => {
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(deliveryStream(eventId('intent-1')), 0, [
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
@@ -174,7 +174,7 @@ it('catches up a matching confirmation that was checkpointed before its delivery
 
 it('catches up a confirmation when its delivery wait appears during reconciliation', async () => {
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(deliveryStream(eventId('intent-1')), 0, [
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
@@ -209,7 +209,7 @@ it('catches up a confirmation when its delivery wait appears during reconciliati
 
 it('catches up a matching failure that was checkpointed before its delivery wait', async () => {
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(deliveryStream(eventId('intent-1')), 0, [failedEvent()]);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [failedEvent()]);
   const accepted: unknown[] = [];
   let isWaiting = false;
   const reactor = new DeliveryOutcomeReactor(
@@ -242,7 +242,9 @@ it('catches up a matching failure that was checkpointed before its delivery wait
 
 it('resolves a confirmed reconciliation for its matching delivery wait', async () => {
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(deliveryStream(eventId('intent-1')), 0, [reconciledConfirmedEvent()]);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    reconciledConfirmedEvent(),
+  ]);
   const accepted: unknown[] = [];
   const reactor = new DeliveryOutcomeReactor(
     journal,
@@ -268,7 +270,7 @@ it('resolves a confirmed reconciliation for its matching delivery wait', async (
 
 it('does not resolve a merely-still-open activation that never asked to wait on delivery', async () => {
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(deliveryStream(eventId('intent-1')), 0, [
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
@@ -299,7 +301,7 @@ it('does not resolve a merely-still-open activation that never asked to wait on 
 
 it('does not resolve a different activation even if it is waiting on an unrelated delivery', async () => {
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(deliveryStream(eventId('intent-1')), 0, [
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
@@ -328,7 +330,7 @@ it('does not resolve a different activation even if it is waiting on an unrelate
 
 it('continues delivery reconciliation when recording conversation provenance fails', async () => {
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(deliveryStream(eventId('intent-1')), 0, [
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];

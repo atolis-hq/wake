@@ -110,7 +110,7 @@ async function appendQuotaPause(
 ): Promise<void> {
   const stream = controlPlaneStream();
   const occurredAt = clock.now().toISOString();
-  await journal.append(stream, (await journal.readStream(stream)).length, [
+  await journal.appendToStream(stream, (await journal.readStream(stream)).length, [
     createControlEventData(
       ControlEventType.RunnerPaused,
       {

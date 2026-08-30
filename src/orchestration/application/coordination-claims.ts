@@ -35,7 +35,7 @@ export class CoordinationClaims {
         throw new Error(`WorkItem already has an active primary workflow owned by ${owner}`);
       },
       append: async (sequence) => {
-        await this.journal.append(stream, sequence, [
+        await this.journal.appendToStream(stream, sequence, [
           createEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.PrimaryClaimed}:${workItemId}`,
             eventType: OrchestrationEventType.PrimaryClaimed,
@@ -72,7 +72,7 @@ export class CoordinationClaims {
       canAppend: (_rawEvents, events) =>
         claimedRequestIds(events).size < request.maxPerGroup + budgetGrants(events),
       append: async (sequence) => {
-        await this.journal.append(stream, sequence, [
+        await this.journal.appendToStream(stream, sequence, [
           createEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupClaimed}:${request.requestId}`,
             eventType: OrchestrationEventType.GroupClaimed,
@@ -111,7 +111,7 @@ export class CoordinationClaims {
             event.payload.commandId === context.commandId,
         ),
       append: async (sequence) => {
-        await this.journal.append(stream, sequence, [
+        await this.journal.appendToStream(stream, sequence, [
           createEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupBudgetGranted}:${requestId}`,
             eventType: OrchestrationEventType.GroupBudgetGranted,

@@ -73,11 +73,12 @@ export class FileEventJournal implements EventJournal {
 
   private scanGeneration = 0;
 
-  async append(
+  async appendToStream(
     stream: EntityRef,
     expectedSequence: number,
     drafts: readonly EventData[],
   ): Promise<readonly EventEnvelope[]> {
+    if (drafts.length === 0) throw new Error('appendToStream requires at least one event');
     return withFileLock(
       join(this.root, 'locks', 'event-journal.lock'),
       async () => {
@@ -325,7 +326,7 @@ export class FileEventJournal implements EventJournal {
 
   // Persisted alongside the segments, so any reader of the same on-disk
   // journal — not just this instance — can skip straight to the segments
-  // that can hold what it's looking for on a cold cache. append() extends its
+  // that can hold what it's looking for on a cold cache. appendToStream() extends its
   // contents from the concrete envelopes it has just written while locked.
   private async persistManifest(): Promise<void> {
     if (this.cached === undefined) return;

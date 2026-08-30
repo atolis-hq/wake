@@ -157,7 +157,7 @@ it('uses file locking for two fully injected projection runtimes at one data roo
     projections: new FileProjectionStore(paths.dataRoot),
     checkpoints: new FileCheckpointStore(paths.dataRoot),
     decorateJournal: (journal): EventJournal => ({
-      append: journal.append.bind(journal),
+      appendToStream: journal.appendToStream.bind(journal),
       readStream: journal.readStream.bind(journal),
       async readAll(afterGlobalPosition, limit) {
         secondJournalReadStarted = true;
@@ -254,7 +254,7 @@ async function appendCountedEvents(
     kind: 'counter',
     id: 'projection-runtime',
   };
-  await journal.append(
+  await journal.appendToStream(
     stream,
     0,
     Array.from({ length: count }, (_, index) =>

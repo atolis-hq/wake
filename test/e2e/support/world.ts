@@ -216,7 +216,7 @@ export class TestWorld {
     cause: string,
   ): Promise<EventEnvelope<Type, Payload>> {
     const currentEvents = await this.journal.readStream(this.stream);
-    const [appended] = await this.journal.append(this.stream, currentEvents.length, [
+    const [appended] = await this.journal.appendToStream(this.stream, currentEvents.length, [
       createEventData({
         eventId: this.ids.next('event'),
         eventType,
@@ -472,7 +472,7 @@ export class TestWorld {
     stream: EntityRef = this.stream,
   ): Promise<void> {
     const events = await this.journal.readStream(stream);
-    const [event] = await this.journal.append(stream, events.length, [
+    const [event] = await this.journal.appendToStream(stream, events.length, [
       createEventData({
         eventId,
         eventType,

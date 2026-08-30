@@ -198,7 +198,7 @@ async function appendRun(
   }
   const currentRunId = runId(id);
   const occurredAt = '2026-08-11T00:00:00.000Z';
-  await root.journal.append(runStream(currentRunId), 0, [
+  await root.journal.appendToStream(runStream(currentRunId), 0, [
     createEventData({
       eventId: `${id}:${eventType}`,
       eventType,
@@ -226,7 +226,7 @@ async function appendAmbiguous(
 ): Promise<void> {
   const currentRunId = runId(id);
   const occurredAt = '2026-08-11T00:00:00.000Z';
-  await root.journal.append(runStream(currentRunId), 1, [
+  await root.journal.appendToStream(runStream(currentRunId), 1, [
     createEventData({
       eventId: `${id}:${ExecutionEventType.RunAmbiguous}`,
       eventType: ExecutionEventType.RunAmbiguous,

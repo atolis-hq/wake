@@ -433,7 +433,7 @@ async function appendStaleStartedRun(
     source: { kind: EventSourceKind.Internal, id: 'test' } as const,
     stream: runStream(currentRunId),
   };
-  await root.journal.append(runStream(currentRunId), 0, [
+  await root.journal.appendToStream(runStream(currentRunId), 0, [
     createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
@@ -449,7 +449,7 @@ async function appendStaleStartedRun(
       },
     }),
   ]);
-  await root.journal.append(runStream(currentRunId), 1, [
+  await root.journal.appendToStream(runStream(currentRunId), 1, [
     createEventData({
       eventId: `${id}:lease-claimed`,
       eventType: ExecutionEventType.RunLeaseClaimed,
@@ -458,7 +458,7 @@ async function appendStaleStartedRun(
       payload: { owner: 'gone', acquiredAt: startedAt, expiresAt: startedAt },
     }),
   ]);
-  await root.journal.append(runStream(currentRunId), 2, [
+  await root.journal.appendToStream(runStream(currentRunId), 2, [
     createEventData({
       eventId: `${id}:external`,
       eventType: ExecutionEventType.RunExternalExecutionReported,
@@ -482,7 +482,7 @@ async function appendAmbiguousRun(
     source: { kind: EventSourceKind.Internal, id: 'test' } as const,
     stream: runStream(currentRunId),
   };
-  await root.journal.append(runStream(currentRunId), 0, [
+  await root.journal.appendToStream(runStream(currentRunId), 0, [
     createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
@@ -499,7 +499,7 @@ async function appendAmbiguousRun(
     }),
   ]);
   const finishedAt = '2026-08-16T08:52:20.525Z';
-  await root.journal.append(runStream(currentRunId), 1, [
+  await root.journal.appendToStream(runStream(currentRunId), 1, [
     createEventData({
       eventId: `${id}:ambiguous`,
       eventType: ExecutionEventType.RunAmbiguous,

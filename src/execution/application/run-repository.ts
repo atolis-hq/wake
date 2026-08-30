@@ -38,7 +38,7 @@ export class RunRepository {
     sequence: number,
     drafts: readonly RunExecutionEventData[],
   ): Promise<readonly RunExecutionEvent[]> {
-    const events = await this.journal.append(runStream(runId), sequence, drafts);
+    const events = await this.journal.appendToStream(runStream(runId), sequence, drafts);
     return events.map(decodeRunExecutionEvent);
   }
 

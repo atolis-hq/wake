@@ -33,7 +33,7 @@ export function createStatusPublishActivity(
         const resource = invocation.resources[0];
         if (resource === undefined) throw new Error('status.publish requires an intake resource');
         const sequence = (await journal.readStream(resourceStream(resource.resourceId))).length;
-        await journal.append(resourceStream(resource.resourceId), sequence, [
+        await journal.appendToStream(resourceStream(resource.resourceId), sequence, [
           createEventData({
             eventId: `${invocation.activationId}:status.publish`,
             eventType: DeliveryIntentEventType.StatusPublishRequested,

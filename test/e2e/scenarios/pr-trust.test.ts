@@ -91,9 +91,11 @@ async function appendAcceptance(
   });
   const event = events.find((candidate) => candidate.payload.body === '/accepted');
   if (event === undefined) throw new Error('Approved GitHub review was not translated');
-  await world.journal.append(event.stream, (await world.journal.readStream(event.stream)).length, [
-    event,
-  ]);
+  await world.journal.appendToStream(
+    event.stream,
+    (await world.journal.readStream(event.stream)).length,
+    [event],
+  );
 }
 
 async function appendIntegrationEvent(
@@ -103,7 +105,7 @@ async function appendIntegrationEvent(
   payload: Record<string, unknown>,
 ): Promise<void> {
   const stream = integrationStream(BuiltInAdapterId.GitHub);
-  await world.journal.append(stream, (await world.journal.readStream(stream)).length, [
+  await world.journal.appendToStream(stream, (await world.journal.readStream(stream)).length, [
     createEventData({
       eventId,
       eventType,

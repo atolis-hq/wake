@@ -5,7 +5,7 @@ import type { JournalChangeSignal } from './journal-change-signal.js';
 export class WrongExpectedSequenceError extends Error {}
 
 export interface EventJournal {
-  append(
+  appendToStream(
     stream: EntityRef,
     expectedSequence: number,
     events: readonly EventData[],

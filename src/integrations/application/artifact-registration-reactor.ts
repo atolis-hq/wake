@@ -210,7 +210,7 @@ export class ArtifactRegistrationReactor {
     const ambiguous = result === ArtifactVerificationResult.Ambiguous;
     const escalated =
       ambiguous && attempt >= (this.dependencies.maxAmbiguityReconciliationAttempts ?? 3);
-    await this.dependencies.journal.append(stream, sequence, [
+    await this.dependencies.journal.appendToStream(stream, sequence, [
       createEventData({
         eventId: `${record.causationId}:artifact:${record.artifact.externalKey.key}:unresolved:${attempt}`,
         eventType: ArtifactEventType.VerificationUnresolved,

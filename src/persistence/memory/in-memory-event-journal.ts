@@ -26,11 +26,12 @@ export class InMemoryEventJournal implements EventJournal {
     return this.changeSignalSource;
   }
 
-  async append(
+  async appendToStream(
     stream: EntityRef,
     expectedSequence: number,
     events: readonly EventData[],
   ): Promise<readonly EventEnvelope[]> {
+    if (events.length === 0) throw new Error('appendToStream requires at least one event');
     validateBatch(stream, events);
     const existingEvents = events.map((draft) => this.eventIds.get(draft.eventId));
     this.rejectChangedEventIds(events, existingEvents);

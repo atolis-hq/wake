@@ -16,7 +16,7 @@ import { FakeClock } from '../e2e/support/world.js';
 // real implementation can. This is that verification: appending or writing
 // must never force the *next* read to re-derive history the process itself
 // already produced. (The August 2026 concurrent-runs OOM crash traced back
-// to exactly this gap: FileEventJournal.append() and
+// to exactly this gap: FileEventJournal.appendToStream() and
 // FileProjectionStore.write() each invalidated their whole cache on every
 // self-caused write, so any active tick re-parsed the entire on-disk
 // history on its very next read.)
@@ -28,7 +28,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 describe('persistence write-path cache incrementality', () => {
-  it('FileEventJournal.append() does not force the next read to re-parse prior history', async () => {
+  it('FileEventJournal.appendToStream() does not force the next read to re-parse prior history', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-architecture-journal-'));
     const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
     const draft = (id: string, sequence: number) =>
@@ -45,12 +45,12 @@ describe('persistence write-path cache incrementality', () => {
       });
     const journal = new FileEventJournal(root, new FakeClock());
     for (let sequence = 1; sequence <= 5; sequence += 1) {
-      await journal.append(stream, sequence - 1, [draft(`event-${sequence}`, sequence)]);
+      await journal.appendToStream(stream, sequence - 1, [draft(`event-${sequence}`, sequence)]);
     }
     await journal.readAll(0);
 
     readFileMock.mockClear();
-    await journal.append(stream, 5, [draft('event-6', 6)]);
+    await journal.appendToStream(stream, 5, [draft('event-6', 6)]);
     await journal.readAll(0);
     await journal.latestGlobalPosition();
     const journalFileReads = readFileMock.mock.calls.filter(([path]) =>

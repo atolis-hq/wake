@@ -223,7 +223,7 @@ async function appendCountedEvent(
   expectedSequence: number,
   eventId: string,
 ): Promise<void> {
-  await journal.append(stream, expectedSequence, [
+  await journal.appendToStream(stream, expectedSequence, [
     createEventData({
       eventId,
       eventType: 'counted',

@@ -63,7 +63,8 @@ it('queries by event id before trusting a genuinely uncertain requested append',
   await setupApprovedPullRequest(world, work.workItemId);
   let reconciliationReads = 0;
   const queryingJournal: EventJournal = {
-    append: (stream, sequence, events) => world.journal.append(stream, sequence, events),
+    appendToStream: (stream, sequence, events) =>
+      world.journal.appendToStream(stream, sequence, events),
     readAll: (position, limit) => world.journal.readAll(position, limit),
     readStream(stream) {
       reconciliationReads += 1;
@@ -76,7 +77,7 @@ it('queries by event id before trusting a genuinely uncertain requested append',
   const activity = createPullRequestMergeActivity(queryingJournal, world.pullRequests, {
     async append(stream, intent) {
       const events = await world.journal.readStream(stream);
-      await world.journal.append(stream, events.length, [intent]);
+      await world.journal.appendToStream(stream, events.length, [intent]);
       return 'ambiguous';
     },
   });
@@ -96,7 +97,7 @@ it('treats exhausted sequence conflicts without the event as a failed append', a
   const stream = workItemStream(workId('1'));
   let attempts = 0;
   const journal: EventJournal = {
-    async append() {
+    async appendToStream() {
       attempts += 1;
       throw new WrongExpectedSequenceError('conflict');
     },

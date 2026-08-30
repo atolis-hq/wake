@@ -154,7 +154,7 @@ export class AgentRunPublicationReactor {
     const stream = resourceStream(resource.resourceId);
     const sequence = (await this.dependencies.journal.readStream(stream)).length;
     try {
-      await this.dependencies.journal.append(stream, sequence, [
+      await this.dependencies.journal.appendToStream(stream, sequence, [
         createEventData({
           eventId: `agent-run:${run.runId}`,
           eventType: DeliveryIntentEventType.AgentRunPublishRequested,

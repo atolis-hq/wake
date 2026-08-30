@@ -176,7 +176,7 @@ it('retries the same durable child claim after a crash before checkpointing the 
     kind: 'test',
     id: 'watch-trigger',
   };
-  const [trigger] = await journal.append(stream, 0, [
+  const [trigger] = await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'review-trigger-1',
       eventType: 'review.requested',
@@ -374,10 +374,10 @@ function failWorkflowStartOnce(journal: EventJournal, id: string): EventJournal 
 
 function failAllParentSignals(journal: EventJournal): EventJournal {
   return {
-    async append(stream, sequence, events) {
+    async appendToStream(stream, sequence, events) {
       if (events.some((event) => event.eventType === 'orchestration.signal-accepted'))
         throw new Error('injected handoff crash');
-      return journal.append(stream, sequence, events);
+      return journal.appendToStream(stream, sequence, events);
     },
     readStream: (stream) => journal.readStream(stream),
     readAll: (position, limit) => journal.readAll(position, limit),
@@ -389,19 +389,23 @@ function failAllParentSignals(journal: EventJournal): EventJournal {
 
 function failAppendOnce(
   journal: EventJournal,
-  shouldFail: Parameters<EventJournal['append']> extends [infer Stream, number, infer Events]
+  shouldFail: Parameters<EventJournal['appendToStream']> extends [
+    infer Stream,
+    number,
+    infer Events,
+  ]
     ? (stream: Stream, events: Events) => boolean
     : never,
   message: string,
 ): EventJournal {
   let armed = true;
   return {
-    async append(stream, sequence, events) {
+    async appendToStream(stream, sequence, events) {
       if (armed && shouldFail(stream, events)) {
         armed = false;
         throw new Error(message);
       }
-      return journal.append(stream, sequence, events);
+      return journal.appendToStream(stream, sequence, events);
     },
     readStream: (stream) => journal.readStream(stream),
     readAll: (position, limit) => journal.readAll(position, limit),

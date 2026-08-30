@@ -49,7 +49,7 @@ export class OrchestrationRepository {
     sequence: number,
     drafts: readonly WorkflowOrchestrationEventData[],
   ): Promise<readonly WorkflowOrchestrationEvent[]> {
-    const events = await this.journal.append(
+    const events = await this.journal.appendToStream(
       workflowInstanceStream(workflowInstanceId(id)),
       sequence,
       drafts,

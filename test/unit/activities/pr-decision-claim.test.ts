@@ -101,7 +101,7 @@ it('rejects a malformed outcome/fact pair through the event data decoder context
 it('rejects an inexact decision claim before calling the journal append boundary', async () => {
   let appends = 0;
   const journal: EventJournal = {
-    async append() {
+    async appendToStream() {
       appends += 1;
       return [];
     },

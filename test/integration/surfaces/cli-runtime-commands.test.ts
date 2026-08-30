@@ -31,7 +31,7 @@ describe('Wake target CLI runtime commands', () => {
   it('reads audit facts from the composed canonical journal and formats target records', async () => {
     const clock = { now: () => new Date('2026-08-11T12:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);
-    await journal.append({ kind: 'work-item', id: 'work-demo' }, 0, [
+    await journal.appendToStream({ kind: 'work-item', id: 'work-demo' }, 0, [
       {
         eventId: eventId('audit-event'),
         eventType: 'work.created',
@@ -45,7 +45,7 @@ describe('Wake target CLI runtime commands', () => {
         payload: { objective: 'Audit the canonical journal' },
       },
     ]);
-    await journal.append({ kind: 'resource', id: 'work-demo' }, 0, [
+    await journal.appendToStream({ kind: 'resource', id: 'work-demo' }, 0, [
       {
         eventId: eventId('same-id-non-work-event'),
         eventType: 'resource.registered',

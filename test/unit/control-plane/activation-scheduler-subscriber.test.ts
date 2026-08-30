@@ -450,7 +450,7 @@ describe('ActivationSchedulerSubscriber', () => {
 
     const run = subscriber.start(controller.signal);
     await vi.waitFor(() => expect(scheduler.runOnce).toHaveBeenCalledOnce());
-    await journal.append({ kind: 'test', id: 'one' }, 0, [
+    await journal.appendToStream({ kind: 'test', id: 'one' }, 0, [
       createEventData({
         eventId: 'event-one',
         eventType: 'test.fact',
@@ -479,7 +479,7 @@ describe('ActivationSchedulerSubscriber', () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);
     const checkpoints = new InMemoryCheckpointStore();
-    await journal.append({ kind: 'test', id: 'one' }, 0, [
+    await journal.appendToStream({ kind: 'test', id: 'one' }, 0, [
       createEventData({
         eventId: 'event-one',
         eventType: 'test.fact',
@@ -521,7 +521,7 @@ function deferred<Value>() {
 }
 
 async function appendFact(journal: InMemoryEventJournal, clock: { now(): Date }): Promise<void> {
-  await journal.append({ kind: 'test', id: 'one' }, 0, [
+  await journal.appendToStream({ kind: 'test', id: 'one' }, 0, [
     createEventData({
       eventId: 'event-one',
       eventType: 'test.fact',

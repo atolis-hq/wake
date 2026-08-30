@@ -50,7 +50,7 @@ it('exposes the stable watch processor while retaining react as the business han
 it('ignores facts outside the configured watch event types through its processor selector', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
-  await journal.append(watchStream, 0, [
+  await journal.appendToStream(watchStream, 0, [
     createEventData({
       eventId: 'unrelated-watch-fact',
       eventType: 'work.created',
@@ -278,7 +278,7 @@ it('keeps its checkpoint unchanged until every watch request succeeds', async ()
     kind: 'test',
     id: 'watch-reactor',
   };
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'event-1',
       eventType: 'review.requested',
@@ -382,7 +382,7 @@ it('replays the identical child request after checkpoint persistence fails', asy
     kind: 'test',
     id: 'checkpoint-replay',
   };
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'event-replay-1',
       eventType: 'review.requested',
@@ -447,7 +447,7 @@ it('replays the identical child request after checkpoint persistence fails', asy
 
 it('reconciles a durable watch trigger orphaned after its checkpoint advanced', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  await journal.append(watchStream, 0, [
+  await journal.appendToStream(watchStream, 0, [
     createEventData({
       eventId: 'orphaned-trigger',
       eventType: 'review.requested',

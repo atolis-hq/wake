@@ -253,7 +253,7 @@ async function appendConfirmedAgentRunComment(
     },
   });
   const stream = resourceStream(resourceId);
-  const [published] = await world.journal.append(
+  const [published] = await world.journal.appendToStream(
     stream,
     (await world.journal.readStream(stream)).length,
     [intent],
@@ -277,5 +277,5 @@ async function appendConfirmedAgentRunComment(
       externalId: 'github-comment-rejection',
     },
   });
-  await world.journal.append(confirmation.stream, 0, [confirmation]);
+  await world.journal.appendToStream(confirmation.stream, 0, [confirmation]);
 }

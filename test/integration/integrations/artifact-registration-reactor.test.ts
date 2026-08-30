@@ -42,7 +42,7 @@ describe('ArtifactRegistrationReactor', () => {
       checkpoints,
       createInMemoryProcessorRunSerialiser(),
     );
-    await journal.append({ kind: 'test', id: 'unrelated' }, 0, [
+    await journal.appendToStream({ kind: 'test', id: 'unrelated' }, 0, [
       createEventData({
         eventId: 'unrelated-artifact-fact',
         eventType: 'work.created',
@@ -74,7 +74,7 @@ describe('ArtifactRegistrationReactor', () => {
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact');
     const activation = activationId('activation-artifact');
-    await journal.append(workflowInstanceStream(workflow), 0, [
+    await journal.appendToStream(workflowInstanceStream(workflow), 0, [
       draft(
         'orchestration.instance-started',
         {
@@ -181,7 +181,7 @@ DONE`;
         async reportExternalExecution() {},
       },
     );
-    await journal.append(workflowInstanceStream(workflow), 0, [
+    await journal.appendToStream(workflowInstanceStream(workflow), 0, [
       draft(
         'orchestration.instance-started',
         {
@@ -246,7 +246,7 @@ DONE`;
     );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact-missing');
-    await journal.append(workflowInstanceStream(workflow), 0, [
+    await journal.appendToStream(workflowInstanceStream(workflow), 0, [
       draft(
         'orchestration.instance-started',
         {
@@ -320,7 +320,7 @@ DONE`;
     );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact-ambiguous');
-    await journal.append(workflowInstanceStream(workflow), 0, [
+    await journal.appendToStream(workflowInstanceStream(workflow), 0, [
       draft(
         'orchestration.instance-started',
         {

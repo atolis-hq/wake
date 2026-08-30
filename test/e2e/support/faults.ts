@@ -29,12 +29,12 @@ export interface DeliveryEvidence {
 
 export function faultInjectingJournal(journal: EventJournal, faults: FaultInjector): EventJournal {
   return {
-    async append(stream, expectedSequence, events) {
-      faults.check('journal.append.before');
+    async appendToStream(stream, expectedSequence, events) {
+      faults.check('journal.appendToStream.before');
       checkEventFaults(faults, events, 'before');
-      const appended = await journal.append(stream, expectedSequence, events);
+      const appended = await journal.appendToStream(stream, expectedSequence, events);
       checkEventFaults(faults, events, 'after');
-      faults.check('journal.append.after');
+      faults.check('journal.appendToStream.after');
       return appended;
     },
     readStream: journal.readStream.bind(journal),

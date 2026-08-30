@@ -87,5 +87,5 @@ async function change(
           { resumedAt: occurredAt },
           context,
         );
-  await input.journal.append(stream, events.length, [event]);
+  await input.journal.appendToStream(stream, events.length, [event]);
 }

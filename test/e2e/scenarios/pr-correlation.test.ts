@@ -50,7 +50,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
     stream: integrationStream(BuiltInAdapterId.GitHub),
     payload,
   });
-  await journal.append(evidence.stream, 0, [evidence]);
+  await journal.appendToStream(evidence.stream, 0, [evidence]);
   const translator = new InboundTranslator(journal, work, resources, {
     pullRequests,
     lookup,
@@ -194,7 +194,7 @@ async function appendObservation(
   eventId: string,
 ) {
   const stream = integrationStream(BuiltInAdapterId.GitHub);
-  await journal.append(stream, (await journal.readStream(stream)).length, [
+  await journal.appendToStream(stream, (await journal.readStream(stream)).length, [
     createEventData({
       eventId,
       eventType: 'integration.github.work-observed',
@@ -235,5 +235,5 @@ async function appendComment(
     },
   });
   const stream = integrationStream(BuiltInAdapterId.GitHub);
-  await journal.append(stream, (await journal.readStream(stream)).length, [event]);
+  await journal.appendToStream(stream, (await journal.readStream(stream)).length, [event]);
 }

@@ -37,7 +37,11 @@ export class ResourceRepository {
     expectedSequence: number,
     drafts: readonly ResourceEventData[],
   ): Promise<readonly ResourceEvent[]> {
-    const events = await this.journal.append(resourceStream(resourceId), expectedSequence, drafts);
+    const events = await this.journal.appendToStream(
+      resourceStream(resourceId),
+      expectedSequence,
+      drafts,
+    );
     return events.map(decodeResourceEvent);
   }
 

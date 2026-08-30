@@ -37,7 +37,7 @@ export async function appendIntentOnce(
     const events = await journal.readStream(stream);
     if (events.some((event) => event.eventId === intent.eventId)) return IntentAppendStatus.Known;
     try {
-      await journal.append(stream, events.length, [intent]);
+      await journal.appendToStream(stream, events.length, [intent]);
       return IntentAppendStatus.Appended;
     } catch (error) {
       const observed = await journal.readStream(stream);

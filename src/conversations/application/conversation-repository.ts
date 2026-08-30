@@ -27,7 +27,7 @@ export class ConversationRepository {
   }
 
   async append(id: ConversationId, expected: number, drafts: readonly ConversationEventData[]) {
-    return (await this.journal.append(conversationStream(id), expected, drafts)).map(
+    return (await this.journal.appendToStream(conversationStream(id), expected, drafts)).map(
       decodeConversationEvent,
     );
   }

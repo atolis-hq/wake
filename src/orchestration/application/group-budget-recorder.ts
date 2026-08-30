@@ -41,7 +41,7 @@ export class GroupBudgetRecorder {
       )
         return;
       try {
-        await this.journal.append(stream, events.length, [
+        await this.journal.appendToStream(stream, events.length, [
           coordinationDraft(
             {
               workflowInstanceId: parent.workflowInstanceId,

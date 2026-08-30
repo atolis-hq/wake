@@ -50,7 +50,7 @@ it('exposes the stable resource-transition processor', () => {
 it('ignores unrelated facts through its processor selector', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'unrelated-fact',
       eventType: 'work.created',
@@ -233,7 +233,7 @@ it('passes a live fact to the evidence policy', async () => {
 it('delegates bounded checkpoint progress to the event processor host', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'event-1',
       eventType: ActivityEventType.PrStateChanged,
@@ -290,7 +290,7 @@ it('delegates bounded checkpoint progress to the event processor host', async ()
 it('catches up more than one batch through the eventing barrier', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
-  await journal.append(
+  await journal.appendToStream(
     stream,
     0,
     Array.from({ length: 101 }, (_, index) =>
@@ -326,7 +326,7 @@ it('catches up more than one batch through the eventing barrier', async () => {
 it('serializes an overlapping processor pass and catch-up barrier through checkpoint advancement', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const durable = new InMemoryCheckpointStore();
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'event-1',
       eventType: ActivityEventType.PrStateChanged,
@@ -401,7 +401,7 @@ it('serializes an overlapping processor pass and catch-up barrier through checkp
 it('does not advance after a failed reaction and reuses its command context on replay', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'event-fail-react',
       eventType: ActivityEventType.PrStateChanged,
@@ -447,7 +447,7 @@ it('does not advance after a failed reaction and reuses its command context on r
 it('does not advance after a checkpoint failure and reuses its command context on replay', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const durable = new InMemoryCheckpointStore();
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: 'event-fail-checkpoint',
       eventType: ActivityEventType.PrStateChanged,

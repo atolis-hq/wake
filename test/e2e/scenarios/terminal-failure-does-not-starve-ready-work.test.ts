@@ -181,7 +181,7 @@ it('E2E-CONTROL-005: a held delivery cannot delay one-shot subscriber scheduling
       },
       commandContext(clock, 'slow-delivery-resource'),
     );
-    await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
+    await journal.appendToStream({ kind: 'resource', id: resource.resourceId }, 1, [
       createEventData({
         eventId: 'slow-delivery-intent',
         eventType: DeliveryIntentEventType.StatusPublishRequested,

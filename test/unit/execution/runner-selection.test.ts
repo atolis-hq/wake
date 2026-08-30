@@ -598,7 +598,7 @@ async function seedPriorRun(
   const clock = new FakeClock();
   const stream = runStream(runId(id));
   const { testStatus: status = 'failed', runnerName = 'standard', ...metadata } = usage ?? {};
-  await journal.append(stream, 0, [
+  await journal.appendToStream(stream, 0, [
     createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,

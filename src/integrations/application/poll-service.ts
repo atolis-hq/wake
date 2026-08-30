@@ -26,7 +26,7 @@ export class PollService {
         const stream = integrationStream(adapter);
         const existing = await this.journal.readStream(stream);
         if (existing.some((event) => event.eventId === draft.eventId)) continue;
-        await this.journal.append(stream, existing.length, [{ ...draft, stream }]);
+        await this.journal.appendToStream(stream, existing.length, [{ ...draft, stream }]);
         appended += 1;
       } catch (error) {
         failed += 1;
