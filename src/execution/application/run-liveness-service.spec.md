@@ -27,6 +27,10 @@ lease-renewal event to record a takeover.
 
 ## Core policies, invariants, and behaviours
 
+- `starting` and `started` Runs are lease-active. The first lease is appended
+  atomically with `RunPreparationStarted`; renewal and cancellation writes use
+  bounded optimistic-concurrency retries and stop when another writer terminalizes the Run.
+
 **Lease claim and renewal**
 
 - Claiming or renewing a lease MUST operate only on a Run whose current

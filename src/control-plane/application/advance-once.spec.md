@@ -26,7 +26,7 @@ separate `IntakePipeline`, not owned by this component.
 - **Selection** — choosing which pending activation to dispatch next when no
   reconciliation candidate exists.
 - **Dispatch loop** — the per-call iteration that repeats selection and
-  dispatch, rechecking `maxConcurrentRuns` against the current `started` Run
+  dispatch, rechecking `maxConcurrentRuns` against the current active (`starting` or `started`) Run
   count after every dispatch (never spending a capacity count computed once
   up front), excluding activations already dispatched earlier in the same
   call from later selection, and stopping at the first of: the

@@ -28,6 +28,10 @@ the Execution service's concern once the Run is out of `started`.
 
 ## Core policies, invariants, and behaviours
 
+- Recovery skips a locally owned `starting` or `started` Run even after its
+  durable lease expires; only the process that created that attempt supplies
+  this local marker, and cleanup removes it before another process may recover.
+
 - Recovering a Run that does not exist MUST fail with an error. Recovering a
   Run that exists but is not currently `started` MUST be a no-op that
   returns its current view unchanged.

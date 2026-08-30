@@ -39,6 +39,10 @@ a CLI command.
 
 ## Core policies, invariants, and behaviours
 
+- Quiescence treats both `starting` workspace preparation and `started` runner
+  execution as active; request-only maintenance cancellation is confirmed by
+  the local preparation owner before it releases the activation.
+
 - `update(tag)` MUST first recover any update left pending by a prior
   invocation that did not complete: check the source back out to the last
   known-healthy tag and confirm it is healthy again before proceeding; a

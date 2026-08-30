@@ -32,6 +32,7 @@ export interface ExecutionRuntime {
   readonly dependencies: ExecutionDependencies;
   readonly repository: RunRepository;
   readonly active: Map<string, AbortController>;
+  readonly localAttempts: Set<string>;
   readonly journal: EventJournal;
 }
 

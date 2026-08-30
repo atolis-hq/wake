@@ -16,6 +16,7 @@ import {
   ExecutionEventType,
   ExecutionFailureCode,
   foldRun,
+  RecoveryService,
   RunStatus,
   type ExecutionActivation,
   type ExecutionAttemptContext,
@@ -301,6 +302,25 @@ describe('ExecutionService', () => {
     await acquired;
 
     const events = await fixture.journal.readAll(0);
+    expect(fixture.service.isLocallyActive('run-1')).toBe(true);
+    const recovery = new RecoveryService(
+      fixture.journal,
+      clock,
+      {
+        async inspect() {
+          throw new Error('locally active preparation must not recover');
+        },
+      },
+      {
+        validateOutcome() {
+          return { kind: 'done' };
+        },
+      },
+    );
+    clock.advance(60_001);
+    await expect(
+      recovery.recoverActive('resident', fixture.service.isLocallyActive),
+    ).resolves.toEqual([]);
     expect(events.map((event) => event.eventType)).toEqual(
       expect.arrayContaining([
         ExecutionEventType.RunPreparationStarted,
@@ -326,6 +346,7 @@ describe('ExecutionService', () => {
     expect(new Date(started.executionStartedAt!).getTime()).toBeGreaterThan(
       new Date(started.startedAt).getTime(),
     );
+    await vi.waitFor(() => expect(fixture.service.isLocallyActive(started.runId)).toBe(false));
   });
 
   it('does not start a cancelled Run after deferred workspace acquisition completes', async () => {

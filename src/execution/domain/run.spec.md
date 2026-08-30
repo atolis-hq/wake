@@ -37,8 +37,8 @@ recovery facts, but its fold applies them, since they share its stream.
   workspace reference, and moves that same Run to `started`. Historical
   streams whose first fact is `RunStarted` remain valid and fold as started
   attempts with their `startedAt` also serving as `executionStartedAt`.
-- Starting a Run MUST also claim its lease for the starting owner as part of
-  the same operation (see the liveness component); a Run is never left
+- Starting a Run MUST also append its initial lease claim for the starting owner
+  in the same sequence-0 batch (see the liveness component); a Run is never left
   without an owner between creation and its first lease fact.
 
 **Fold**
@@ -60,7 +60,7 @@ recovery facts, but its fold applies them, since they share its stream.
 - Recording success MUST be a silent no-op — no event appended, no error
   raised — when the Run is already terminal.
 - Recording failure MUST append `RunFailed`, carrying an `ExecutionFailure`
-  and a finish time, only when the Run's current status is `started`.
+  and a finish time, when the Run's current status is `starting` or `started`.
 - Recording failure MUST be a silent no-op when the Run is already
   terminal.
 - Recording failure MUST NOT append an event against a Run identity that

@@ -103,8 +103,8 @@ workspace mechanics itself — it only resolves and invokes them.
 - Claiming the Activation for the fresh `RunId` happens before any Run
   event is appended; if the claim is rejected (a concurrent attempt won the
   race), the attempt MUST fail with no Run stream created at all.
-- After a successful claim, `RunPreparationStarted` and the Run lease are
-  appended before workspace acquisition. That creates the durable `starting`
+- After a successful claim, `RunPreparationStarted` and the initial Run lease are
+  appended atomically in one sequence-0 batch before workspace acquisition. That creates the durable `starting`
   Run and its whole-attempt `startedAt` before any workspace operation.
 - Once claimed, a workspace MUST be acquired when the Activation requests
   `read-only` or `branch` mode, and MUST NOT be acquired for `none`
@@ -127,7 +127,8 @@ workspace mechanics itself — it only resolves and invokes them.
   Run's id for the duration of the call, so a cancellation request against
   this Run can signal it while it is still running in this process.
 - From `RunPreparationStarted` until terminal cleanup, Execution MUST renew the
-  Run lease and exclude the tracked Run from local recovery. The same rule
+  Run lease and keep a process-local attempt ownership marker that excludes the
+  Run from local recovery, including while workspace preparation is blocked. The same rule
   continues while the local handler is running; a fresh process has no tracked
   worker and therefore remains responsible for reconciling an expired durable
   Run after restart.

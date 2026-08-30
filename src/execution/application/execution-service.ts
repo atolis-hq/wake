@@ -47,15 +47,16 @@ export function createExecutionService(
 ) {
   const repository = new RunRepository(journal);
   const active = new Map<string, AbortController>();
+  const localAttempts = new Set<string>();
   return {
     attempt: (activation: ExecutionActivation, context: ExecutionAttemptContext) =>
       attemptExecution(
-        { activities, config, dependencies, repository, active, journal },
+        { activities, config, dependencies, repository, active, localAttempts, journal },
         activation,
         context,
       ),
     list: (activationId?: ExecutionActivation['activationId']) => repository.list(activationId),
-    isLocallyActive: (id: string) => active.has(runId(id)),
+    isLocallyActive: (id: string) => localAttempts.has(runId(id)),
     claim: (id: string, owner: string) =>
       claimRun(repository, dependencies.clock, config, runId(id), owner),
     renewLease: (id: string, owner: string) =>
@@ -115,6 +116,7 @@ async function attemptExecution(
       startedAt,
       runner,
     });
+    runtime.localAttempts.add(currentRunId);
     renewal = renewWhileActive(runtime, currentRunId, owner);
     lease = await acquireAttemptWorkspace(runtime, activation, context, currentRunId);
     const executionStartedAt = await startRun({
@@ -127,6 +129,7 @@ async function attemptExecution(
       lease,
     });
     if (executionStartedAt === undefined) {
+      await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
       await renewal.stop();
       await cleanupRun(runtime, currentRunId, activation, context, lease);
       return (await runtime.repository.load(currentRunId)).view!;
@@ -328,6 +331,7 @@ async function cleanupRun(
     // An activation release can be retried after its claim expires; it must not mask the Run result.
   } finally {
     runtime.active.delete(currentRunId);
+    runtime.localAttempts.delete(currentRunId);
     try {
       await lease?.release();
     } catch (error) {
@@ -353,6 +357,7 @@ async function releasePreStartResources(
   lease: WorkspaceLease | undefined,
   claimed: boolean,
 ): Promise<void> {
+  runtime.localAttempts.delete(currentRunId);
   if (claimed) {
     try {
       await releaseActivation({

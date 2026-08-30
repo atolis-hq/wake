@@ -15,6 +15,17 @@ import type { RunRepository } from './run-repository.js';
 
 const defaultLeaseDurationMs = 60_000;
 
+export function newRunLease(clock: Clock, config: ExecutionConfig, owner: string) {
+  const now = clock.now();
+  return {
+    owner,
+    acquiredAt: now.toISOString(),
+    expiresAt: new Date(
+      now.getTime() + (config.leaseDurationMs ?? defaultLeaseDurationMs),
+    ).toISOString(),
+  };
+}
+
 export async function claimRun(
   repository: RunRepository,
   clock: Clock,
@@ -27,13 +38,7 @@ export async function claimRun(
   const now = clock.now();
   if (run.lease !== undefined && new Date(run.lease.expiresAt) > now && run.lease.owner !== owner)
     throw new Error(`Run ${currentRunId} has an unexpired lease`);
-  const lease = {
-    owner,
-    acquiredAt: now.toISOString(),
-    expiresAt: new Date(
-      now.getTime() + (config.leaseDurationMs ?? defaultLeaseDurationMs),
-    ).toISOString(),
-  };
+  const lease = newRunLease(clock, config, owner);
   await repository.append(currentRunId, loaded.sequence, [
     livenessEvent(currentRunId, run, ExecutionEventType.RunLeaseClaimed, lease, now.toISOString()),
   ]);
@@ -107,28 +112,40 @@ export async function confirmCancellation(
   clock: Clock,
   currentRunId: ReturnType<typeof runId>,
 ) {
-  const loaded = await repository.load(currentRunId);
-  const run = requireActiveRun(loaded.view);
-  if (run.cancellation === undefined)
-    throw new Error(`Run ${currentRunId} has no cancellation request`);
-  const confirmedAt = clock.now().toISOString();
-  await repository.append(currentRunId, loaded.sequence, [
-    livenessEvent(
-      currentRunId,
-      run,
-      ExecutionEventType.RunCancellationConfirmed,
-      { confirmedAt },
-      confirmedAt,
-    ),
-    livenessEvent(
-      currentRunId,
-      run,
-      ExecutionEventType.RunCancelled,
-      { finishedAt: confirmedAt },
-      confirmedAt,
-    ),
-  ]);
-  return (await repository.load(currentRunId)).view!;
+  let retriedAfterSequence: number | undefined;
+  for (let retries = 0; retries < 3; retries += 1) {
+    const loaded = await repository.load(currentRunId);
+    if (loaded.view === null) throw new Error('Run is not active');
+    if (!isActiveRunStatus(loaded.view.status)) return loaded.view;
+    if (loaded.view.cancellation === undefined)
+      throw new Error(`Run ${currentRunId} has no cancellation request`);
+    if (retriedAfterSequence !== undefined && loaded.sequence <= retriedAfterSequence)
+      throw new Error(`Run ${currentRunId} did not advance after a cancellation conflict`);
+    const confirmedAt = clock.now().toISOString();
+    try {
+      await repository.append(currentRunId, loaded.sequence, [
+        livenessEvent(
+          currentRunId,
+          loaded.view,
+          ExecutionEventType.RunCancellationConfirmed,
+          { confirmedAt },
+          confirmedAt,
+        ),
+        livenessEvent(
+          currentRunId,
+          loaded.view,
+          ExecutionEventType.RunCancelled,
+          { finishedAt: confirmedAt },
+          confirmedAt,
+        ),
+      ]);
+      return (await repository.load(currentRunId)).view!;
+    } catch (error) {
+      if (!(error instanceof WrongExpectedSequenceError) || retries === 2) throw error;
+      retriedAfterSequence = loaded.sequence;
+    }
+  }
+  throw new Error(`Run ${currentRunId} was not cancelled`);
 }
 
 function requireActiveRun(run: RunView | null): RunView {
