@@ -55,9 +55,12 @@ it(`${scenario.id} replays or exposes every composed durable boundary without du
 }, 30_000);
 
 async function journalAppendBoundaries(): Promise<void> {
-  for (const point of ['journal.append.before', 'journal.append.after'] as const) {
+  for (const [index, point] of [
+    'journal.appendToStream.before',
+    'journal.appendToStream.after',
+  ].entries()) {
     const fixture = await composed();
-    const id = workId(point);
+    const id = workId(`journal-append-${index}`);
     fixture.faults.failOnce(point);
     const create = () =>
       fixture.root.work.create({ workItemId: id, objective: point }, context(point));

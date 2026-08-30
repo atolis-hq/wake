@@ -37,15 +37,15 @@ describe('event-model support', () => {
 
   it('routes TestWorld journal appends through before and after fault boundaries', async () => {
     const world = new TestWorld();
-    world.faults.failOnce('journal.append.before');
+    world.faults.failOnce('journal.appendToStream.before');
 
     await expect(world.createWork({ objective: 'before fault' })).rejects.toMatchObject({
-      faultName: 'journal.append.before',
+      faultName: 'journal.appendToStream.before',
     });
 
-    world.faults.failOnce('journal.append.after');
+    world.faults.failOnce('journal.appendToStream.after');
     await expect(world.createWork({ objective: 'after fault' })).rejects.toMatchObject({
-      faultName: 'journal.append.after',
+      faultName: 'journal.appendToStream.after',
     });
     expect((await world.events('work.item-created')).length).toBe(1);
   });
