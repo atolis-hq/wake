@@ -7,7 +7,10 @@ import { EventProcessorCategory, type EventProcessor } from '../eventing/index.j
 
 export interface RunnerTickRuntime {
   readonly runnerPipeline: RunnerPipeline;
-  readonly activationSchedulerSubscriber: Pick<ActivationSchedulerSubscriber, 'poke' | 'processor'>;
+  readonly activationSchedulerSubscriber: Pick<
+    ActivationSchedulerSubscriber,
+    'lastResult' | 'poke' | 'processor'
+  >;
   readonly processorRuntime: {
     readonly processors: readonly EventProcessor[];
     catchUp(
@@ -64,10 +67,13 @@ export function createOneShotRunnerAdvance(root: OneShotRunnerTickRuntime): Adva
       await catchUpFacts();
       const pipeline = await root.runnerPipeline.run(options, undefined, async () => {
         await catchUpFacts();
-        await root.processorRuntime.catchUp('activation scheduling', [
+        const scheduledFacts = await root.processorRuntime.catchUp('activation scheduling', [
           root.activationSchedulerSubscriber.processor,
         ]);
-        scheduled = await root.activationSchedulerSubscriber.poke(options);
+        scheduled =
+          scheduledFacts > 0
+            ? root.activationSchedulerSubscriber.lastResult()
+            : await root.activationSchedulerSubscriber.poke(options);
       });
       if (pipeline.kind === 'paused') return pipeline;
       if (scheduled === undefined)

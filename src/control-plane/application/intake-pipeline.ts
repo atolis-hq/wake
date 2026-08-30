@@ -24,6 +24,7 @@ export function createIntakePipeline(stages: IntakePipelineStages): IntakePipeli
     async run(signal) {
       if (await isPaused()) return { processed: false };
       const polled = await stages.poll(signal);
+      if (await isPaused()) return { processed: false };
       return { processed: polled > 0 };
     },
   };

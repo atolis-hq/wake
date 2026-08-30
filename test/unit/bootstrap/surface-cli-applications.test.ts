@@ -113,6 +113,7 @@ it('runs one-shot scheduling after each fact barrier instead of reusing a cached
     activationSchedulerSubscriber: {
       ...scheduler,
       processor: {} as never,
+      lastResult: () => undefined,
     },
     processorRuntime: testProcessorRuntime,
     runnerPipeline: {
@@ -126,6 +127,33 @@ it('runs one-shot scheduling after each fact barrier instead of reusing a cached
   await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });
   await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'no-work' });
   expect(scheduler.poke).toHaveBeenCalledTimes(2);
+});
+
+it('uses the processor-owned scheduler result without a second budgeted scheduler pass', async () => {
+  const processorResult = {
+    kind: 'progressed' as const,
+    dispatched: [{ activationId: 'activation-one', runId: 'run-one' }],
+  };
+  const scheduler = {
+    poke: vi.fn(async () => processorResult),
+    lastResult: () => processorResult,
+  };
+  const advance = createOneShotRunnerAdvance({
+    activationSchedulerSubscriber: { ...scheduler, processor: {} as never },
+    processorRuntime: {
+      processors: [],
+      catchUp: vi.fn(async (name: string) => (name === 'activation scheduling' ? 1 : 0)),
+    },
+    runnerPipeline: {
+      run: async (_options, _signal, beforeDelivery: (() => Promise<void>) | undefined) => {
+        await beforeDelivery?.();
+        return { kind: 'no-work' as const };
+      },
+    },
+  });
+
+  await expect(advance({ maxProgress: 3 })).resolves.toEqual(processorResult);
+  expect(scheduler.poke).not.toHaveBeenCalled();
 });
 
 it('catches projections before pipeline work, before the scheduler poke, and after failure', async () => {

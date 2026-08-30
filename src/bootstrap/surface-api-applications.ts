@@ -308,9 +308,7 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
       const processorHealth = new Map(
         (await root.processorRuntime.health()).map((snapshot) => [snapshot.consumer, snapshot]),
       );
-      const schedulerSubscription =
-        root.activationSchedulerSubscriber.health() ??
-        processorHealth.get('subscriber:control-plane.activation-scheduler');
+      const schedulerOverlay = root.activationSchedulerSubscriber.health();
       const checks = [
         { name: 'journal', status: 'ok' as const },
         { name: 'projections', status: 'ok' as const },
@@ -322,10 +320,19 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
               status: 'degraded' as const,
               detail: describeSelfUpdateFailure(selfUpdateFailure),
             },
-        subscriptionHealthCheck('activation-scheduler', schedulerSubscription),
-        ...root.processorRuntime.processors.map(({ consumer }) =>
-          subscriptionHealthCheck(consumer, processorHealth.get(consumer)),
-        ),
+        ...root.processorRuntime.processors.map(({ consumer }) => {
+          const snapshot = processorHealth.get(consumer);
+          return subscriptionHealthCheck(
+            consumer === 'subscriber:control-plane.activation-scheduler'
+              ? 'activation-scheduler'
+              : consumer,
+            consumer === 'subscriber:control-plane.activation-scheduler' &&
+              schedulerOverlay !== undefined &&
+              snapshot !== undefined
+              ? { ...snapshot, ...schedulerOverlay, checkpoint: snapshot.checkpoint }
+              : snapshot,
+          );
+        }),
       ];
       const adapters = root.providers.flatMap((instance) =>
         (instance.health?.() ?? []).map((check) => ({
