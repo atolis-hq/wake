@@ -3,5 +3,5 @@ export interface EventProcessorArchitectureDiagnostic {
 }
 
 export function checkEventProcessorArchitecture(
-  root: string,
+  root?: string,
 ): Promise<readonly EventProcessorArchitectureDiagnostic[]>;
