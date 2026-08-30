@@ -47,7 +47,7 @@ it('surfaces adapter health checks from provider instances alongside system chec
       paths: { wakeRoot: tmpdir() },
       config: {},
       activationSchedulerSubscriber: { health: () => undefined },
-      projectionSubscriptions: { subscriptions: [], health: () => [] },
+      projectionSubscriptions: { processors: [], health: () => [] },
       providers: [
         {
           adapter: 'github-issues',
@@ -122,7 +122,7 @@ it('stays ok when every adapter health check is ok', async () => {
           consecutiveFailures: 0,
         }),
       },
-      projectionSubscriptions: { subscriptions: [], health: () => [] },
+      projectionSubscriptions: { processors: [], health: () => [] },
       providers: [
         {
           adapter: 'github-issues',
@@ -162,7 +162,7 @@ it('surfaces durable activation scheduler subscription health', async () => {
           lastError: new Error('scheduler failed'),
         }),
       },
-      projectionSubscriptions: { subscriptions: [], health: () => [] },
+      projectionSubscriptions: { processors: [], health: () => [] },
     } as unknown as CompositionRoot,
     () => '2026-08-17T00:00:00.000Z',
   );
@@ -185,7 +185,7 @@ it('surfaces every registered projection consumer and represents absent snapshot
       providers: [],
       activationSchedulerSubscriber: { health: () => undefined },
       projectionSubscriptions: {
-        subscriptions: [{ consumer: 'projection:work' }, { consumer: 'projection:board' }],
+        processors: [{ consumer: 'projection:work' }, { consumer: 'projection:board' }],
         health: () => [
           {
             consumer: 'projection:work',
