@@ -90,7 +90,7 @@ export async function startRun(input: {
 }): Promise<string | undefined> {
   const { dependencies, runId: currentRunId, activation, context, attempt, runner, lease } = input;
   let retriedAfterSequence: number | undefined;
-  for (let retries = 0; retries < 3; retries += 1) {
+  while (true) {
     const loaded = await dependencies.repository.load(currentRunId);
     if (loaded.view?.status !== RunStatus.Starting || loaded.view.cancellation !== undefined)
       return undefined;
@@ -123,11 +123,10 @@ export async function startRun(input: {
       ]);
       return startedAt;
     } catch (error) {
-      if (!(error instanceof WrongExpectedSequenceError) || retries === 2) throw error;
+      if (!(error instanceof WrongExpectedSequenceError)) throw error;
       retriedAfterSequence = loaded.sequence;
     }
   }
-  throw new Error(`Run ${currentRunId} did not start`);
 }
 
 function runPreparationPayload(
@@ -212,7 +211,7 @@ export async function recordRunFailure(input: {
 }): Promise<void> {
   const { dependencies, runId: currentRunId, activation, context, error } = input;
   let retriedAfterSequence: number | undefined;
-  for (let retries = 0; retries < 3; retries += 1) {
+  while (true) {
     const loaded = await dependencies.repository.load(currentRunId);
     if (loaded.sequence === 0) throw error;
     if (loaded.view === null || !isActiveRunStatus(loaded.view.status)) return;
@@ -233,7 +232,7 @@ export async function recordRunFailure(input: {
       ]);
       return;
     } catch (appendError) {
-      if (!(appendError instanceof WrongExpectedSequenceError) || retries === 2) throw appendError;
+      if (!(appendError instanceof WrongExpectedSequenceError)) throw appendError;
       retriedAfterSequence = loaded.sequence;
     }
   }

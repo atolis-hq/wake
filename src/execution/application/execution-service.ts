@@ -187,6 +187,10 @@ async function recoverFailedAttempt(
   if (persisted.view !== null && isActiveRunStatus(persisted.view.status)) {
     try {
       await renewal?.stop();
+      if (persisted.view.cancellation !== undefined) {
+        await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
+        return (await runtime.repository.load(currentRunId)).view!;
+      }
       await recordRunFailure({
         dependencies: runLifecycleDependencies(runtime),
         runId: currentRunId,

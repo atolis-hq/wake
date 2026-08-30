@@ -113,7 +113,7 @@ export async function confirmCancellation(
   currentRunId: ReturnType<typeof runId>,
 ) {
   let retriedAfterSequence: number | undefined;
-  for (let retries = 0; retries < 3; retries += 1) {
+  while (true) {
     const loaded = await repository.load(currentRunId);
     if (loaded.view === null) throw new Error('Run is not active');
     if (!isActiveRunStatus(loaded.view.status)) return loaded.view;
@@ -141,11 +141,10 @@ export async function confirmCancellation(
       ]);
       return (await repository.load(currentRunId)).view!;
     } catch (error) {
-      if (!(error instanceof WrongExpectedSequenceError) || retries === 2) throw error;
+      if (!(error instanceof WrongExpectedSequenceError)) throw error;
       retriedAfterSequence = loaded.sequence;
     }
   }
-  throw new Error(`Run ${currentRunId} was not cancelled`);
 }
 
 function requireActiveRun(run: RunView | null): RunView {
