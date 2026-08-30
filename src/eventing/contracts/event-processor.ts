@@ -43,7 +43,6 @@ export interface BatchEventProcessorDefinition {
 }
 
 // The runtime carries heterogeneous processors; typed construction remains at the boundary.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const registeredEventProcessor: unique symbol;
 
 /** An opaque runtime registration; obtain it only through the factories below. */
