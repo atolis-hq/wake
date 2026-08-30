@@ -252,11 +252,12 @@ Integrations does not own:
   `WorkConclusion` cascade from control-plane's own conclusion policy.
 - Bootstrap (depends on Integrations) instantiates `ProviderInstance`s from
   configuration, tolerating a construction failure per provider, and registers
-  each provider inbound processor in the shared Eventing runtime. The intake
-  and runner pipelines drive polling, translation, delivery, publication, and
-  provider maintenance; delivery and provider reconciliation remain explicit
-  bounded lanes. No domain module other than Bootstrap depends on Integrations
-  directly.
+  each provider processor in the shared Eventing runtime. Processors handle
+  inbound translation and publication (including delivery-outcome reaction);
+  the intake pipeline polls providers and admits their observations; and the
+  runner pipeline schedules work and performs maintenance and delivery. These
+  remain explicit bounded lanes. No domain module other than Bootstrap depends
+  on Integrations directly.
 
 ## Decisions, exclusions, and deferred capability
 
