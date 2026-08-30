@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import {} from '../../support/identities.js';
 
 import { createPullRequestService } from '../../../src/activities/index.js';
+import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   InboundTranslator,
   PollService,
@@ -13,6 +14,7 @@ import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
@@ -267,13 +269,13 @@ it('emits changed check evidence when GitHub checks change without PR metadata c
     statuses: async () => [{ state: 'success' }],
   });
   const runtime = sourceRuntime(client);
-  const { journal, lookup, translator, poll, pullRequests } = runtime;
+  const { journal, checkpoints, lookup, translator, poll, pullRequests } = runtime;
   await admitPullRequest(runtime, 'checks-changed', 'owner/repo#7');
 
   await poll.pollOnce(new AbortController().signal);
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
   await poll.pollOnce(new AbortController().signal);
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
 
   const resource = await lookup.resourceIdForExternalKey({
     adapter: 'github',
@@ -304,12 +306,12 @@ it('distinguishes pending to passing to a new pending run and deduplicates ident
     statuses: async () => [{ id: 1, context: 'legacy', state: 'success' }],
   });
   const runtime = sourceRuntime(client);
-  const { journal, lookup, translator, poll, pullRequests } = runtime;
+  const { journal, checkpoints, lookup, translator, poll, pullRequests } = runtime;
   await admitPullRequest(runtime, 'pending-passing-pending', 'owner/repo#7');
 
   for (let index = 0; index < 4; index += 1) {
     await poll.pollOnce(new AbortController().signal);
-    await translator.runOnce();
+    await processInbound(translator, journal, checkpoints);
   }
 
   expect(
@@ -518,17 +520,30 @@ function sourceRuntime(client: GitHubPullRequestSourceClient) {
   );
   return {
     journal,
+    checkpoints,
     lookup,
     resources,
     work,
     clock,
     pullRequests,
     poll,
-    translator: new InboundTranslator(journal, checkpoints, work, resources, {
+    translator: new InboundTranslator(journal, work, resources, {
       pullRequests,
       lookup,
     }),
   };
+}
+
+async function processInbound(
+  translator: InboundTranslator,
+  journal: InMemoryEventJournal,
+  checkpoints: InMemoryCheckpointStore,
+) {
+  return new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+  ).runOnce(translator.processor);
 }
 
 // These tests prove check-evidence translation, not admission, so the WorkItem/Resource are

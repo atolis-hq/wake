@@ -34,6 +34,18 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
       maxConcurrent: config.polling.maxConcurrent,
     });
     const health = createGitHubAdapterHealthRegistry(config.repositories);
+    const inbound = new InboundTranslator(services.journal, services.work, services.resources, {
+      pullRequests: services.pullRequests,
+      ids: services.ids,
+      lookup: services.resourceLookup,
+      adapter,
+      orchestration: services.orchestration,
+      runs: services.runs,
+      routing: services.routing,
+      intake: config.intake,
+      conclusion: services.conclusion,
+      conversations: services.conversations,
+    });
     return {
       adapter,
       eventTypes: Object.values(GitHubEventType),
@@ -157,24 +169,8 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
           return ArtifactVerificationResult.Ambiguous;
         }
       },
-      inbound: new InboundTranslator(
-        services.journal,
-        services.checkpoints,
-        services.work,
-        services.resources,
-        {
-          pullRequests: services.pullRequests,
-          ids: services.ids,
-          lookup: services.resourceLookup,
-          adapter,
-          orchestration: services.orchestration,
-          runs: services.runs,
-          routing: services.routing,
-          intake: config.intake,
-          conclusion: services.conclusion,
-          conversations: services.conversations,
-        },
-      ),
+      inbound,
+      reconciler: inbound.reconciler,
       checkConnectivity: async () => {
         await client.authenticatedLogin();
       },

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { createPullRequestService } from '../../../src/activities/index.js';
+import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   GitHubEventType,
   InboundTranslator,
@@ -14,6 +15,7 @@ import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
@@ -271,10 +273,15 @@ it('flows a tracked PR review from GitHub source polling through Activities acce
     inbound: {} as never,
     verifyArtifact: async () => 'not-found' as const,
   }).pollOnce(new AbortController().signal);
-  await new InboundTranslator(journal, checkpoints, work, resources, {
+  const translator = new InboundTranslator(journal, work, resources, {
     pullRequests,
     lookup,
-  }).runOnce();
+  });
+  await new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+  ).runOnce(translator.processor);
 
   expect((await journal.readAll(0)).map((event) => event.eventType)).toContain(
     'pr.review-accepted',

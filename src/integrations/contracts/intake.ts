@@ -1,3 +1,4 @@
+import type { EventProcessor } from '../../eventing/index.js';
 import type { EventDraft } from '../../kernel/index.js';
 import type { IntegrationStreamRef } from './streams.js';
 
@@ -10,6 +11,11 @@ export interface ExternalEventSource {
 }
 
 export interface InboundTranslation {
-  /** Resolves to the count of inbound events processed this pass, so callers can tell activity from a quiet checkpoint. */
-  runOnce(limit?: number): Promise<number>;
+  /** Stable adapter-specific definition hosted by the shared Eventing runtime. */
+  readonly processor: EventProcessor;
+}
+
+export interface ProviderReconciler {
+  /** Provider recovery stays in the maintenance lane, outside incremental event handling. */
+  reconcileOnce(): Promise<void>;
 }

@@ -5,6 +5,7 @@ import {
   ReviewActorKind,
   activityName,
 } from '../../../src/activities/index.js';
+import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   ExecutionEventType,
   RunRepository,
@@ -27,6 +28,7 @@ import {
   workflowInstanceStream,
   workflowName,
 } from '../../../src/orchestration/index.js';
+import { createInMemoryProcessorRunSerialiser } from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
 import { TestWorld } from '../support/world.js';
@@ -94,9 +96,8 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
     }),
   ]);
 
-  await new InboundTranslator(
+  const translator = new InboundTranslator(
     fixture.world.journal,
-    fixture.world.checkpoints,
     fixture.world.work,
     fixture.world.resources,
     {
@@ -104,7 +105,8 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
       runs: new RunRepository(fixture.world.journal),
       lookup: fixture.world.resourceLookup,
     },
-  ).runOnce();
+  );
+  await processInbound(translator, fixture.world);
 
   expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
     'completed',
@@ -179,9 +181,8 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
     }),
   ]);
 
-  await new InboundTranslator(
+  const translator = new InboundTranslator(
     fixture.world.journal,
-    fixture.world.checkpoints,
     fixture.world.work,
     fixture.world.resources,
     {
@@ -189,7 +190,8 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
       runs: new RunRepository(fixture.world.journal),
       lookup: fixture.world.resourceLookup,
     },
-  ).runOnce();
+  );
+  await processInbound(translator, fixture.world);
 
   expect(await fixture.world.events('integration.github.inbound-translation-retried')).toHaveLength(
     0,
@@ -327,6 +329,14 @@ async function waitingWatchGate() {
   );
   if (child === undefined) throw new Error('Expected a watch child workflow');
   return { world, parent, child, workItemId: work.workItemId };
+}
+
+function processInbound(translator: InboundTranslator, world: TestWorld) {
+  return new EventProcessorHost(
+    world.journal,
+    world.checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+  ).runOnce(translator.processor);
 }
 
 async function appendTerminalAgentRun(

@@ -10,6 +10,12 @@ import {
   ConversationOriginKind,
   type ConversationService,
 } from '../../../conversations/index.js';
+import {
+  defineEventProcessor,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  type EventProcessor,
+} from '../../../eventing/index.js';
 import type { RunRepository } from '../../../execution/index.js';
 import {
   correlationId,
@@ -18,7 +24,6 @@ import {
   EventSourceKind,
   UlidIdGenerator,
   WrongExpectedSequenceError,
-  type CheckpointStore,
   type EventJournal,
   type IdGenerator,
 } from '../../../kernel/index.js';
@@ -39,6 +44,7 @@ import { admitObservedWork, type WorkAdmissionServices } from '../../application
 import { concludeObservedWork } from '../../application/work-conclusion.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rules.js';
+import type { ProviderReconciler } from '../../contracts/intake.js';
 import type { WorkConclusion, WorkflowRouter } from '../../contracts/provider.js';
 import { deliveryStream, integrationStream } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
@@ -94,6 +100,8 @@ interface InboundTranslatorDependencies {
 
 export class InboundTranslator {
   private readonly minted = new Map<string, { resourceId: ResourceId; workItemId: WorkItemId }>();
+  readonly processor: EventProcessor;
+  readonly reconciler: ProviderReconciler;
 
   translate(payload: ExternalWorkObservedPayload): readonly InboundCommandCandidate[] {
     const { resourceId: resourceIdValue, workItemId: workItemIdValue } = this.newIdentity({
@@ -121,7 +129,6 @@ export class InboundTranslator {
 
   constructor(
     private readonly journal?: EventJournal,
-    private readonly checkpoints?: CheckpointStore,
     private readonly work?: WorkService,
     private readonly resources?: ResourceService,
     dependencies: InboundTranslatorDependencies = {},
@@ -136,6 +143,16 @@ export class InboundTranslator {
     this.intake = gitHubIntakeRules(dependencies.intake ?? []);
     this.conclusion = dependencies.conclusion;
     this.conversations = dependencies.conversations;
+    this.processor = defineEventProcessor({
+      consumer: `reactor:integration.${this.adapter}.inbound`,
+      name: `integration.${this.adapter}.inbound`,
+      owner: 'integrations',
+      category: EventProcessorCategory.Translator,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select: (event) => this.selectInboundEvent(event),
+      handle: async (event) => this.translateEvent(event),
+    });
+    this.reconciler = { reconcileOnce: () => this.reconcileOnce() };
   }
 
   private readonly pullRequests: PullRequestService | undefined;
@@ -150,61 +167,20 @@ export class InboundTranslator {
   private readonly conversations: ConversationService | undefined;
   private conversationRecordRecoveryPending: boolean | undefined;
 
-  // Adapter filtering, checkpointing, and typed event dispatch must stay together.
-  async runOnce(limit = 100): Promise<number> {
-    if (
-      this.journal === undefined ||
-      this.checkpoints === undefined ||
-      this.work === undefined ||
-      this.resources === undefined
-    ) {
+  private async reconcileOnce(): Promise<void> {
+    if (this.journal === undefined || this.work === undefined || this.resources === undefined) {
       throw new Error('InboundTranslator services are required to run evidence translation');
     }
-    // Retry state is resource-scoped, so it progresses even when the provider
-    // has no further observations for the broken resource.
     await this.resources.retryPendingWorkCorrelations();
     await this.applyDeferredExternalOutcomes();
-    const checkpoint = `reactor:integration.${this.adapter}.inbound`;
     await this.retryPendingConversationRecords();
-    await this.retryPendingTranslations();
-    const position = await this.checkpoints.load(checkpoint);
-    const events = await this.journal.readAll(position, limit);
-    for (const event of events) {
-      await this.translateEvent(event);
-      await this.checkpoints.save(checkpoint, event.globalPosition);
-    }
-    return events.length;
   }
 
-  private async retryPendingTranslations(): Promise<void> {
-    const events = await this.journal!.readStream(integrationStream(this.adapter));
-    const owned = events
-      .map(selectGitHubAdapterEvent)
-      .filter((event): event is GitHubAdapterEvent => event !== null);
-    const failures = new Set(
-      owned
-        .filter((event) => event.eventType === GitHubEventType.InboundTranslationFailed)
-        .map((event) => event.payload.sourceEventId),
-    );
-    const pending = new Set(
-      owned
-        .filter((event) => event.eventType === GitHubEventType.InboundTranslationRetried)
-        .map((event) => event.payload.sourceEventId),
-    );
-    const recovered = new Set(
-      owned
-        .filter((event) => event.eventType === GitHubEventType.InboundTranslationRecovered)
-        .map((event) => event.payload.sourceEventId),
-    );
-    for (const event of owned) {
-      if (
-        pending.has(event.eventId) &&
-        !failures.has(event.eventId) &&
-        !recovered.has(event.eventId) &&
-        this.isTranslatable(event)
-      )
-        await this.translateEvent(event);
-    }
+  private selectInboundEvent(
+    event: Parameters<typeof selectGitHubAdapterEvent>[0],
+  ): GitHubAdapterEvent | null {
+    const owned = selectGitHubAdapterEvent(event);
+    return owned === null || !this.isTranslatable(owned) ? null : owned;
   }
 
   private isTranslatable(event: GitHubAdapterEvent): boolean {
@@ -215,11 +191,7 @@ export class InboundTranslator {
     );
   }
 
-  private async translateEvent(
-    event: Parameters<typeof selectGitHubAdapterEvent>[0],
-  ): Promise<void> {
-    const owned = selectGitHubAdapterEvent(event);
-    if (owned === null || !this.isTranslatable(owned)) return;
+  private async translateEvent(owned: GitHubAdapterEvent): Promise<void> {
     if (await this.failureRecorded(owned.eventId)) return;
     try {
       if (owned.eventType === GitHubEventType.WorkObserved) await this.apply(owned);
@@ -250,6 +222,7 @@ export class InboundTranslator {
       if (await this.retryRecorded(owned.eventId)) await this.recordTranslationRecovery(owned);
     } catch (error) {
       await this.recordTranslationFailure(owned, error);
+      throw error;
     }
   }
 

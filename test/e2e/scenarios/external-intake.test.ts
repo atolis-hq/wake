@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   BuiltInAdapterId,
   createEventDraft,
@@ -7,7 +8,11 @@ import {
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
@@ -51,15 +56,23 @@ describe(`${scenario.id} ${scenario.title}`, () => {
     });
     await journal.append(evidence.stream, 0, [evidence]);
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
     });
 
-    await translator.runOnce();
+    await new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+    ).runOnce(translator.processor);
     await checkpoints.reset('reactor:integration.github.inbound');
-    await translator.runOnce();
+    await new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+    ).runOnce(translator.processor);
 
     const resourceIdValue = await lookup.resourceIdForExternalKey({
       adapter: 'github',

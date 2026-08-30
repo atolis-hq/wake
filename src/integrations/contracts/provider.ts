@@ -19,7 +19,7 @@ import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
 import type { ArtifactVerificationResult } from './artifact-vocabulary.js';
 import type { IntegrationsConfig } from './config.js';
 import { adapterId, type AdapterId } from './identifiers.js';
-import type { ExternalEventSource, InboundTranslation } from './intake.js';
+import type { ExternalEventSource, InboundTranslation, ProviderReconciler } from './intake.js';
 import type { ReplyPublicationConfig } from './reply-routing.js';
 
 // Configuration decides routing; providers supply facts. An adapter can ask which
@@ -88,6 +88,8 @@ export interface ProviderInstance {
   readonly source: ExternalEventSource;
   readonly delivery: ExternalDeliveryAdapter;
   readonly inbound: InboundTranslation;
+  /** Provider-owned recovery, called in the maintenance lane. */
+  readonly reconciler?: ProviderReconciler;
   readonly eventTypes: readonly string[];
   /** Provider-owned periodic reconciliation, invoked in the tick react phase. */
   readonly maintenance?: { readonly runOnce: () => Promise<void> };

@@ -51,7 +51,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
     payload,
   });
   await journal.append(evidence.stream, 0, [evidence]);
-  const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+  const translator = new InboundTranslator(journal, work, resources, {
     pullRequests,
     lookup,
   });
@@ -62,7 +62,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
   await preAdmit({ work, resources, clock, prResource, payload, workItem });
 
   expect(translator.translate(payload).map((candidate) => candidate.kind)).toContain('pr.observe');
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
   await new EventProcessorHost(
     journal,
     checkpoints,
@@ -83,7 +83,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
     { role: 'primary' },
   ]);
   await appendObservation(journal, clock, observation('head-b'), 'github:pr-2');
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
   expect((await journal.readAll(0)).map((event) => event.eventType)).toContain(
     'pr.revision-changed',
   );
@@ -93,7 +93,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
   ).toHaveLength(0);
 
   await appendComment(journal, clock, 'owner/repo#unlinked', 'head-a', 'github:review-unlinked');
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
   expect(
     (await journal.readAll(0)).filter((event) => event.eventType === 'pr.review-rejected'),
   ).toEqual([expect.objectContaining({ payload: { reason: 'missing-resource' } })]);
@@ -111,7 +111,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
     }),
   ).rejects.toThrow('primary');
   await appendComment(journal, clock, payload.externalKey, 'head-b', 'github:review-conflicted');
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
   expect(
     (await journal.readAll(0)).filter((event) => event.eventType === 'pr.review-rejected'),
   ).toEqual([
@@ -160,6 +160,18 @@ async function preAdmit(input: {
     ResourceCorrelationRole.Primary,
     admissionContext,
   );
+}
+
+function processInbound(
+  translator: InboundTranslator,
+  journal: InMemoryEventJournal,
+  checkpoints: InMemoryCheckpointStore,
+) {
+  return new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+  ).runOnce(translator.processor);
 }
 
 function observation(revision: string): ExternalWorkObservedPayload {

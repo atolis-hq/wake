@@ -277,7 +277,8 @@ export async function composeIntegrationRuntime(
     translateInbound: async () => {
       return observeMemory(memoryProfile, 'intake.translate', async () => {
         let translated = 0;
-        for (const provider of providers) translated += await provider.inbound.runOnce();
+        for (const provider of providers)
+          translated += (await reactorHost.runOnce(provider.inbound.processor)).handledCount;
         return translated;
       });
     },
@@ -303,7 +304,10 @@ export async function composeIntegrationRuntime(
         await artifacts.reconcileOnce();
         await reactorHost.runOnce(outcomes.processor);
         await outcomes.reconcileOnce();
-        for (const provider of providers) await provider.maintenance?.runOnce();
+        for (const provider of providers) {
+          await provider.reconciler?.reconcileOnce();
+          await provider.maintenance?.runOnce();
+        }
       }),
     publishAgentRuns: () =>
       observeMemory(memoryProfile, 'runner.publish-agent-runs', async () => {

@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { EventProcessorHost } from '../../../src/eventing/index.js';
 import { workId } from '../../support/identities.js';
 import { configureIntakeRouting } from '../support/intake-routing.js';
 
@@ -10,6 +11,7 @@ import {
   integrationStream,
 } from '../../../src/integrations/github/index.js';
 import type { WorkflowRouter } from '../../../src/integrations/index.js';
+import { createInMemoryProcessorRunSerialiser } from '../../../src/persistence/index.js';
 import {} from '../../../src/work/index.js';
 import { TestWorld } from '../support/world.js';
 
@@ -18,7 +20,7 @@ it('allows current-revision human acceptance through real merge authority', asyn
   const translator = translatorFor(world);
   await appendObservation(world);
   await appendAcceptance(world, 'reviewer', ['reviewer']);
-  await translator.runOnce();
+  await processInbound(translator, world);
 
   expect(await world.pullRequests.authorizeMerge(workId('2'), context(world))).toBe(true);
   expect(await world.events('pr.review-accepted')).toHaveLength(1);
@@ -29,20 +31,28 @@ it('accepts a GitHub approval without replicating repository permissions', async
   const translator = translatorFor(world);
   await appendObservation(world);
   await appendAcceptance(world, 'outsider', []);
-  await translator.runOnce();
+  await processInbound(translator, world);
 
   expect(await world.events('pr.review-accepted')).toHaveLength(1);
   expect(await world.events('pr.review-rejected')).toHaveLength(0);
 });
 
 function translatorFor(world: TestWorld, routing: WorkflowRouter = configureIntakeRouting(world)) {
-  return new InboundTranslator(world.journal, world.checkpoints, world.work, world.resources, {
+  return new InboundTranslator(world.journal, world.work, world.resources, {
     pullRequests: world.pullRequests,
     ids: world.ids,
     lookup: world.resourceLookup,
     orchestration: world.orchestration,
     routing,
   });
+}
+
+function processInbound(translator: InboundTranslator, world: TestWorld) {
+  return new EventProcessorHost(
+    world.journal,
+    world.checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+  ).runOnce(translator.processor);
 }
 
 async function appendObservation(world: TestWorld): Promise<void> {
