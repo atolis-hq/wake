@@ -9,7 +9,7 @@ import {
   type ResourceService,
 } from '../../resources/index.js';
 import type { ActivityDefinition, ActivityInvocation } from '../contracts/activity.js';
-import { createActivityEventData } from '../contracts/event-factory.js';
+import { createActivityEventDataForHelper } from '../contracts/event-factory.js';
 import { ActivityEventType } from '../contracts/events.js';
 import {
   ActivityExecutionKind,
@@ -118,7 +118,7 @@ async function execute(
   const existing = await journal.readStream(stream);
   if (!existing.some((event) => event.event.eventId === eventId)) {
     await journal.appendToStream(stream, existing.length, [
-      createActivityEventData({
+      createActivityEventDataForHelper({
         eventId,
         eventType: ActivityEventType.IssueCompleteRequested,
         occurredAt,

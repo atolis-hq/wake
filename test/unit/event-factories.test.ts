@@ -41,6 +41,30 @@ const metadata = {
   source: { kind: 'internal' as const, id: 'test' },
 };
 
+// Factories accept only their owned closed event-to-payload mappings.
+void (() => {
+  // @ts-expect-error Activity factories reject Control Plane event types.
+  createActivityEventData({ ...metadata, eventType: ControlEventType.DispatchPaused, payload: {} });
+  // @ts-expect-error Activity factories reject Control Plane payloads.
+  createActivityEventData({
+    ...metadata,
+    eventType: ActivityEventType.PrReviewRejected,
+    payload: { checks: 'passing' as const },
+  });
+  // @ts-expect-error Control Plane factories reject Activity event types.
+  createControlPlaneEventData({
+    ...metadata,
+    eventType: ActivityEventType.PrChecksChanged,
+    payload: {},
+  });
+  // @ts-expect-error Control Plane factories reject Activity payloads.
+  createControlPlaneEventData({
+    ...metadata,
+    eventType: ControlEventType.DispatchPaused,
+    payload: { checks: 'passing' as const },
+  });
+})();
+
 it('constructs representative bounded event data through public owner factories', () => {
   expect(
     createActivityEventData({
@@ -131,4 +155,14 @@ it('constructs representative bounded event data through public owner factories'
       payload: { objective: 'Improve event construction' },
     }).eventType,
   ).toBe(WorkEventType.ObjectiveRevised);
+});
+
+it('keeps stream routing separate from Work event data', () => {
+  const event = createWorkEventData({
+    ...metadata,
+    eventType: WorkEventType.ItemDeleted,
+    payload: {},
+  });
+  // @ts-expect-error EventData does not carry a stream reference.
+  void event.stream;
 });

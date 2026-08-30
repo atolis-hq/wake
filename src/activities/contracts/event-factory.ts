@@ -5,12 +5,6 @@ export type ActivityEventDataInput = {
   [Type in keyof ActivityEventPayloads]: EventDataInput<Type, ActivityEventPayloads[Type]>;
 }[keyof ActivityEventPayloads];
 
-export function createActivityEventData<Type extends keyof ActivityEventPayloads>(
-  input: EventDataInput<Type, ActivityEventPayloads[Type]>,
-): Extract<ActivityEventData, { readonly eventType: Type }>;
-export function createActivityEventData<Type extends keyof ActivityEventPayloads, Payload>(
-  input: EventDataInput<Type, Payload>,
-): ActivityEventData;
 export function createActivityEventData(input: ActivityEventDataInput): ActivityEventData {
   switch (input.eventType) {
     case ActivityEventType.IssueCompleteRequested:
@@ -46,4 +40,10 @@ export function createActivityEventData(input: ActivityEventDataInput): Activity
     case ActivityEventType.PrMergeDecisionClaimed:
       return createEventData(input);
   }
+}
+
+export function createActivityEventDataForHelper<Type extends keyof ActivityEventPayloads, Payload>(
+  input: EventDataInput<Type, Payload>,
+) {
+  return createEventData(input);
 }

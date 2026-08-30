@@ -1,5 +1,5 @@
 import { EventSourceKind, type CommandContext } from '../../kernel/index.js';
-import { createActivityEventData } from '../contracts/event-factory.js';
+import { createActivityEventDataForHelper } from '../contracts/event-factory.js';
 import {
   ActivityEventType,
   type ActivityEventData,
@@ -105,7 +105,7 @@ export const mergeDenied = (
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityEventDataOf<typeof ActivityEventType.PrMergeDenied> =>
-  createActivityEventData({
+  createActivityEventDataForHelper({
     ...metadata(ActivityEventType.PrMergeDenied, context),
     payload: denialPayload(ActivityEventType.PrMergeDenied, reason, context, audit),
   });
@@ -115,7 +115,7 @@ export const approveDenied = (
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityEventDataOf<typeof ActivityEventType.PrApproveDenied> =>
-  createActivityEventData({
+  createActivityEventDataForHelper({
     ...metadata(ActivityEventType.PrApproveDenied, context),
     payload: denialPayload(ActivityEventType.PrApproveDenied, reason, context, audit),
   });
@@ -124,7 +124,7 @@ export const mergeAuthorized = (
   revision: string,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrMergeAuthorized> =>
-  createActivityEventData({
+  createActivityEventDataForHelper({
     ...metadata(ActivityEventType.PrMergeAuthorized, context),
     payload: { revision },
   });
@@ -153,8 +153,16 @@ export function deliveryIntentRequested(
   context: CommandContext,
 ): ActivityEventData {
   void resourceId;
-  return createActivityEventData({
-    ...metadata(type, context),
+  if (type === ActivityEventType.PrApproveRequested) {
+    if (!('body' in payload)) throw new Error('Approve intents require a body');
+    return createActivityEventDataForHelper({
+      ...metadata(ActivityEventType.PrApproveRequested, context),
+      payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
+    });
+  }
+  if ('body' in payload) throw new Error('Merge intents must not carry a body');
+  return createActivityEventDataForHelper({
+    ...metadata(ActivityEventType.PrMergeRequested, context),
     payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
   });
 }
@@ -165,7 +173,7 @@ function fact<Type extends ActivityEventData['eventType']>(
   payload: ActivityEventPayloads[Type],
   context: CommandContext,
 ) {
-  return createActivityEventData({
+  return createActivityEventDataForHelper({
     ...metadata(eventType, context),
     payload,
   });

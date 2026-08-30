@@ -11,9 +11,6 @@ export type ControlPlaneEventDataInput = {
   [Type in keyof ControlEventPayloads]: EventDataInput<Type, ControlEventPayloads[Type]>;
 }[keyof ControlEventPayloads];
 
-export function createControlPlaneEventData<Type extends keyof ControlEventPayloads, Payload>(
-  input: EventDataInput<Type, Payload>,
-): ControlEventData;
 export function createControlPlaneEventData(input: ControlPlaneEventDataInput): ControlEventData {
   switch (input.eventType) {
     case ControlEventType.DispatchPaused:
@@ -31,8 +28,8 @@ export function createControlEventData<Type extends keyof ControlEventPayloads>(
   eventType: Type,
   payload: ControlEventPayloads[Type],
   context: CommandContext,
-): ControlEventData {
-  return createControlPlaneEventData({
+) {
+  return createEventData({
     eventId: `${context.commandId}:${eventType}`,
     eventType,
     occurredAt: context.occurredAt,

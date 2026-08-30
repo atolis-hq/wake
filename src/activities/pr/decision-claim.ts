@@ -1,5 +1,5 @@
 import { EventSourceKind, type EventEnvelope, type EventJournal } from '../../kernel/index.js';
-import { createActivityEventData } from '../contracts/event-factory.js';
+import { createActivityEventDataForHelper } from '../contracts/event-factory.js';
 import {
   ActivityEventType,
   decodeActivityEvent,
@@ -64,7 +64,7 @@ export async function claimDecision<Action extends PullRequestAction>(
   if (existing !== null) return existing;
 
   const stream = activityDecisionStream(activationId, action);
-  const claim = createActivityEventData({
+  const claim = createActivityEventDataForHelper({
     eventId: decisionClaimId(activationId, action),
     eventType: decisionEventType(action),
     occurredAt: proposal.fact.occurredAt,
