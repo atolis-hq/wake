@@ -1,6 +1,15 @@
 import { activityProjectionDefinitions } from '../activities/index.js';
 import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
 import { conversationProjection } from '../conversations/index.js';
+import {
+  EventProcessorHost,
+  ProjectionRebuilder,
+  createProjectionProcessor,
+  type EventProcessorDefinition,
+  type EventProcessorHealth,
+  type EventProcessorHostRun,
+  type ProcessorRunSerialiser,
+} from '../eventing/index.js';
 import { executionProjection, runsByWorkflowInstanceProjection } from '../execution/index.js';
 import { deliveryProjectionDefinitions, type DeliveryIntentView } from '../integrations/index.js';
 import type {
@@ -14,16 +23,7 @@ import {
   workflowDefinitionsProjection,
   workflowsByWorkItemProjection,
 } from '../orchestration/index.js';
-import {
-  DurableSubscriptionHost,
-  ProjectionRebuilder,
-  createInMemorySubscriptionRunSerialiser,
-  createProjectionSubscription,
-  type DurableSubscription,
-  type DurableSubscriptionHostRun,
-  type SubscriptionHealth,
-  type SubscriptionRunSerialiser,
-} from '../persistence/index.js';
+import { createInMemoryProcessorRunSerialiser } from '../persistence/index.js';
 import {
   resourceCorrelationProjection,
   resourceProjection,
@@ -54,41 +54,41 @@ export const runtimeProjectionDefinitions = [
 ];
 
 export interface RuntimeProjectionSubscriptions {
-  readonly subscriptions: readonly DurableSubscription[];
-  start(signal: AbortSignal): DurableSubscriptionHostRun;
+  readonly subscriptions: readonly EventProcessorDefinition<unknown>[];
+  start(signal: AbortSignal): EventProcessorHostRun;
   catchUpOnce(signal?: AbortSignal): Promise<number>;
   catchUp(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
   rebuild(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
-  health(): readonly SubscriptionHealth[];
+  health(): readonly EventProcessorHealth[];
 }
 
 class RuntimeProjectionSubscriptionRuntime implements RuntimeProjectionSubscriptions {
-  readonly subscriptions: readonly DurableSubscription[];
-  private readonly subscriptionsByDefinition = new Map<string, DurableSubscription>();
+  readonly subscriptions: readonly EventProcessorDefinition<unknown>[];
+  private readonly subscriptionsByDefinition = new Map<string, EventProcessorDefinition<unknown>>();
   private readonly definitionsByName = new Map<string, ProjectionDefinition>();
-  private readonly host: DurableSubscriptionHost;
+  private readonly host: EventProcessorHost;
   private readonly rebuilder: ProjectionRebuilder;
 
   constructor(
     private readonly journal: EventJournal,
     projections: ProjectionStore,
     private readonly checkpoints: CheckpointStore,
-    serialiseRun: SubscriptionRunSerialiser,
+    serialiseRun: ProcessorRunSerialiser,
     definitions: readonly ProjectionDefinition[],
   ) {
     this.subscriptions = definitions.map((definition) => {
-      const subscription = createProjectionSubscription(definition, projections);
+      const subscription = createProjectionProcessor(definition, projections);
       if (this.subscriptionsByDefinition.has(definition.name))
         throw new Error(`Runtime projection definition is already registered: ${definition.name}`);
       this.subscriptionsByDefinition.set(definition.name, subscription);
       this.definitionsByName.set(definition.name, definition);
       return subscription;
     });
-    this.host = new DurableSubscriptionHost(journal, checkpoints, serialiseRun);
+    this.host = new EventProcessorHost(journal, checkpoints, serialiseRun);
     this.rebuilder = new ProjectionRebuilder(journal, projections, checkpoints, serialiseRun);
   }
 
-  start(signal: AbortSignal): DurableSubscriptionHostRun {
+  start(signal: AbortSignal): EventProcessorHostRun {
     return this.host.start(this.subscriptions, signal);
   }
 
@@ -121,7 +121,7 @@ class RuntimeProjectionSubscriptionRuntime implements RuntimeProjectionSubscript
     return this.rebuilder.rebuild(this.registeredDefinition(definition), signal);
   }
 
-  health(): readonly SubscriptionHealth[] {
+  health(): readonly EventProcessorHealth[] {
     return this.subscriptions.flatMap((subscription) => {
       const snapshot = this.host.health(subscription.consumer);
       return snapshot === undefined ? [] : [snapshot];
@@ -140,7 +140,7 @@ export function createRuntimeProjectionSubscriptions(
   journal: EventJournal,
   projections: ProjectionStore,
   checkpoints: CheckpointStore,
-  serialiseRun: SubscriptionRunSerialiser = createInMemorySubscriptionRunSerialiser(),
+  serialiseRun: ProcessorRunSerialiser = createInMemoryProcessorRunSerialiser(),
   definitions: readonly ProjectionDefinition[] = runtimeProjectionDefinitions,
 ): RuntimeProjectionSubscriptions {
   return new RuntimeProjectionSubscriptionRuntime(

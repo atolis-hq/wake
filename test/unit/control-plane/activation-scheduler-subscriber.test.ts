@@ -9,14 +9,14 @@ import {
   createActivationSchedulerSubscriber,
   type ActivationScheduler,
 } from '../../../src/control-plane/index.js';
+import { EventProcessorHost } from '../../../src/eventing/index.js';
 import { EventActorKind, EventSourceKind, createEventDraft } from '../../../src/kernel/index.js';
 import {
-  DurableSubscriptionHost,
   FileCheckpointStore,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
-  createFileSubscriptionRunSerialiser,
-  createInMemorySubscriptionRunSerialiser,
+  createFileProcessorRunSerialiser,
+  createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
 
 describe('ActivationSchedulerSubscriber', () => {
@@ -68,7 +68,7 @@ describe('ActivationSchedulerSubscriber', () => {
       },
     };
     const subscriber = createActivationSchedulerSubscriber(
-      new DurableSubscriptionHost(journal, checkpoint, createFileSubscriptionRunSerialiser(root)),
+      new EventProcessorHost(journal, checkpoint, createFileProcessorRunSerialiser(root)),
       scheduler,
       { fallbackMs: 60_000 },
     );
@@ -264,10 +264,10 @@ describe('ActivationSchedulerSubscriber', () => {
       }),
     };
     const subscriber = createActivationSchedulerSubscriber(
-      new DurableSubscriptionHost(
+      new EventProcessorHost(
         journal,
         new InMemoryCheckpointStore(),
-        createInMemorySubscriptionRunSerialiser(),
+        createInMemoryProcessorRunSerialiser(),
       ),
       scheduler,
       { fallbackMs: 60_000 },
@@ -369,7 +369,7 @@ describe('ActivationSchedulerSubscriber', () => {
       runOnce: vi.fn(async () => ({ kind: 'no-work' as const })),
     };
     const subscriber = createActivationSchedulerSubscriber(
-      new DurableSubscriptionHost(journal, checkpoints, createInMemorySubscriptionRunSerialiser()),
+      new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser()),
       scheduler,
       { fallbackMs: 60_000 },
     );
@@ -425,7 +425,7 @@ describe('ActivationSchedulerSubscriber', () => {
       }),
     };
     const subscriber = createActivationSchedulerSubscriber(
-      new DurableSubscriptionHost(journal, checkpoints, createInMemorySubscriptionRunSerialiser()),
+      new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser()),
       scheduler,
       { fallbackMs: 60_000 },
     );

@@ -2,7 +2,7 @@ import {
   activationSchedulerCriticalSectionConsumer,
   type ActivationSchedulerSerialiser,
 } from '../control-plane/index.js';
-import { createFileSubscriptionRunSerialiser } from '../persistence/index.js';
+import { createFileProcessorRunSerialiser } from '../persistence/index.js';
 
 const defaultSignal = new AbortController().signal;
 
@@ -10,7 +10,7 @@ const defaultSignal = new AbortController().signal;
 export function createFileActivationSchedulerSerialiser(
   dataRoot: string,
 ): ActivationSchedulerSerialiser {
-  const serialise = createFileSubscriptionRunSerialiser(dataRoot);
+  const serialise = createFileProcessorRunSerialiser(dataRoot);
   return (operation, signal = defaultSignal) =>
     serialise(activationSchedulerCriticalSectionConsumer, signal, operation);
 }

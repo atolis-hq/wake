@@ -10,6 +10,7 @@ import {
   createWorkCancellationPolicy,
   type AdvanceResult,
 } from '../../../src/control-plane/index.js';
+import { createProjectionProcessor, EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   createExecutionService,
   createRecoveryCoordinator,
@@ -42,9 +43,7 @@ import {
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import {
-  createInMemorySubscriptionRunSerialiser,
-  createProjectionSubscription,
-  DurableSubscriptionHost,
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
@@ -113,13 +112,13 @@ export class TestWorld {
 
   // resolve() falls back to this projection for historical (non-current) workflow
   // fingerprints; keep its durable subscription caught up before any call that may hit that path.
-  private readonly definitionProjectionHost = new DurableSubscriptionHost(
+  private readonly definitionProjectionHost = new EventProcessorHost(
     this.journal,
     this.checkpoints,
-    createInMemorySubscriptionRunSerialiser(),
+    createInMemoryProcessorRunSerialiser(),
   );
 
-  private readonly definitionProjectionSubscription = createProjectionSubscription(
+  private readonly definitionProjectionSubscription = createProjectionProcessor(
     workflowDefinitionsProjection,
     this.projections,
   );

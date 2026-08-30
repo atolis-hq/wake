@@ -4,6 +4,7 @@
   "dependencies": [
     "conversations",
     "kernel",
+    "eventing",
     "persistence",
     "work",
     "resources",

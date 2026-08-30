@@ -1,14 +1,9 @@
 import { join } from 'node:path';
+import type { ProcessorRunSerialiser } from '../../eventing/index.js';
 import { acquireFileLock } from '../filesystem/file-lock.js';
 import { assertWellFormedUtf16 } from '../filesystem/storage-name.js';
 
-export type SubscriptionRunSerialiser = <Value>(
-  consumer: string,
-  signal: AbortSignal,
-  operation: () => Promise<Value>,
-) => Promise<Value>;
-
-export function createInMemorySubscriptionRunSerialiser(): SubscriptionRunSerialiser {
+export function createInMemoryProcessorRunSerialiser(): ProcessorRunSerialiser {
   const tails = new Map<string, Promise<unknown>>();
   return async <Value>(consumer: string, signal: AbortSignal, operation: () => Promise<Value>) => {
     const prior = tails.get(consumer) ?? Promise.resolve();
@@ -27,13 +22,9 @@ export function createInMemorySubscriptionRunSerialiser(): SubscriptionRunSerial
   };
 }
 
-export function createFileSubscriptionRunSerialiser(dataRoot: string): SubscriptionRunSerialiser {
+export function createFileProcessorRunSerialiser(dataRoot: string): ProcessorRunSerialiser {
   return async <Value>(consumer: string, signal: AbortSignal, operation: () => Promise<Value>) => {
-    const path = join(
-      dataRoot,
-      'locks',
-      `subscription-${encodeSubscriptionConsumer(consumer)}.lock`,
-    );
+    const path = join(dataRoot, 'locks', `processor-${encodeProcessorConsumer(consumer)}.lock`);
     while (true) {
       throwIfAborted(signal);
       const lock = await acquireFileLock(path, {
@@ -53,13 +44,13 @@ export function createFileSubscriptionRunSerialiser(dataRoot: string): Subscript
   };
 }
 
-export function encodeSubscriptionConsumer(consumer: string): string {
-  assertWellFormedUtf16(consumer, 'Subscription consumer');
+export function encodeProcessorConsumer(consumer: string): string {
+  assertWellFormedUtf16(consumer, 'Processor consumer');
   return Buffer.from(consumer, 'utf8').toString('base64url');
 }
 
 function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new SubscriptionRunAbortedError();
+  if (signal.aborted) throw new ProcessorRunAbortedError();
 }
 
 function waitForRetry(signal: AbortSignal, milliseconds: number): Promise<void> {
@@ -75,8 +66,8 @@ function waitForRetry(signal: AbortSignal, milliseconds: number): Promise<void> 
   });
 }
 
-export class SubscriptionRunAbortedError extends Error {
+export class ProcessorRunAbortedError extends Error {
   constructor() {
-    super('Subscription run aborted');
+    super('Processor run aborted');
   }
 }

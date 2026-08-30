@@ -1,5 +1,6 @@
 const modules = [
   'kernel',
+  'eventing',
   'persistence',
   'conversations',
   'work',
@@ -14,14 +15,23 @@ const modules = [
 ];
 const dependencyMap = {
   kernel: [],
-  persistence: ['kernel'],
+  eventing: ['kernel'],
+  persistence: ['kernel', 'eventing'],
   conversations: ['kernel', 'work'],
   work: ['kernel'],
   resources: ['kernel', 'work'],
   activities: ['kernel', 'work', 'resources'],
   orchestration: ['kernel', 'work', 'activities', 'execution'],
   execution: ['kernel', 'work', 'resources', 'activities'],
-  'control-plane': ['kernel', 'work', 'resources', 'activities', 'orchestration', 'execution'],
+  'control-plane': [
+    'kernel',
+    'eventing',
+    'work',
+    'resources',
+    'activities',
+    'orchestration',
+    'execution',
+  ],
   integrations: [
     'kernel',
     'work',
@@ -33,6 +43,7 @@ const dependencyMap = {
   ],
   surfaces: [
     'kernel',
+    'eventing',
     'persistence',
     'work',
     'resources',
@@ -45,6 +56,7 @@ const dependencyMap = {
   ],
   bootstrap: [
     'kernel',
+    'eventing',
     'persistence',
     'work',
     'resources',

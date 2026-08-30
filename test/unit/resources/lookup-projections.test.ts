@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createInMemorySubscriptionRunSerialiser,
-  createProjectionSubscription,
-  DurableSubscriptionHost,
+  createProjectionProcessor,
+  EventProcessorHost,
+  ProjectionRebuilder,
+} from '../../../src/eventing/index.js';
+import {
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  ProjectionRebuilder,
 } from '../../../src/persistence/index.js';
 import {
   externalKeyProjectionKey,
@@ -91,23 +93,23 @@ function createWorld() {
   const journal = new InMemoryEventJournal(new FakeClock());
   const projections = new InMemoryProjectionStore();
   const checkpoints = new InMemoryCheckpointStore();
-  const serialiseRun = createInMemorySubscriptionRunSerialiser();
+  const serialiseRun = createInMemoryProcessorRunSerialiser();
   const lookup = createResourceLookup({ journal, projections });
   return {
     resources: createResourceService(journal, lookup),
     lookup,
     projections,
-    projectionHost: new DurableSubscriptionHost(journal, checkpoints, serialiseRun),
+    projectionHost: new EventProcessorHost(journal, checkpoints, serialiseRun),
     rebuilder: new ProjectionRebuilder(journal, projections, checkpoints, serialiseRun),
   };
 }
 
 async function catchUp(world: ReturnType<typeof createWorld>) {
   await world.projectionHost.runOnce(
-    createProjectionSubscription(resourcesByExternalKeyProjection, world.projections),
+    createProjectionProcessor(resourcesByExternalKeyProjection, world.projections),
   );
   await world.projectionHost.runOnce(
-    createProjectionSubscription(workCorrelationsProjection, world.projections),
+    createProjectionProcessor(workCorrelationsProjection, world.projections),
   );
 }
 

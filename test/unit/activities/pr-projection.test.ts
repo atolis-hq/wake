@@ -5,11 +5,10 @@ import {
   activityProjectionDefinitions,
   pullRequestProjection,
 } from '../../../src/activities/index.js';
+import { createProjectionProcessor, EventProcessorHost } from '../../../src/eventing/index.js';
 import { createEventDraft, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
-  createInMemorySubscriptionRunSerialiser,
-  createProjectionSubscription,
-  DurableSubscriptionHost,
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
@@ -88,16 +87,16 @@ describe('pullRequestProjection', () => {
     });
     await journal.append(draft.stream, 0, [draft]);
     const store = new InMemoryProjectionStore();
-    const host = new DurableSubscriptionHost(
+    const host = new EventProcessorHost(
       journal,
       new InMemoryCheckpointStore(),
-      createInMemorySubscriptionRunSerialiser(),
+      createInMemoryProcessorRunSerialiser(),
     );
 
     expect(activityProjectionDefinitions.map((definition) => definition.name)).toContain(
       'activities-pr',
     );
-    await host.runOnce(createProjectionSubscription(pullRequestProjection, store));
+    await host.runOnce(createProjectionProcessor(pullRequestProjection, store));
     expect(await store.read('activities-pr', resId('1'))).toMatchObject({
       value: { headRevision: 'head-a' },
     });

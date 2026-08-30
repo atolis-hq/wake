@@ -12,6 +12,7 @@ import {
   type createControlPlaneService,
 } from '../control-plane/index.js';
 import type { createConversationService } from '../conversations/index.js';
+import { type ProcessorRunSerialiser } from '../eventing/index.js';
 import {
   RunRepository,
   createRuntimeMemoryProfile,
@@ -53,7 +54,7 @@ import {
   workflowName,
   type createOrchestrationService,
 } from '../orchestration/index.js';
-import { withFileLock, type SubscriptionRunSerialiser } from '../persistence/index.js';
+import { withFileLock } from '../persistence/index.js';
 import {
   BuiltInResourceCapability,
   resourceId,
@@ -95,7 +96,7 @@ export interface IntegrationRuntimeInput {
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
-  readonly subscriptionRunSerialiser?: SubscriptionRunSerialiser;
+  readonly subscriptionRunSerialiser?: ProcessorRunSerialiser;
   readonly scheduleCheckpoints: ScheduleCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,

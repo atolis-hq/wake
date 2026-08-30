@@ -1,10 +1,10 @@
+import type { ProcessorRunSerialiser } from '../eventing/index.js';
 import type { CheckpointStore, Clock, EventJournal, ProjectionStore } from '../kernel/index.js';
 import {
   FileCheckpointStore,
   FileEventJournal,
   FileProjectionStore,
-  createFileSubscriptionRunSerialiser,
-  type SubscriptionRunSerialiser,
+  createFileProcessorRunSerialiser,
 } from '../persistence/index.js';
 import type { WakePaths } from './paths.js';
 
@@ -15,14 +15,14 @@ export interface PersistenceCompositionOptions {
   readonly decorateJournal?: (journal: EventJournal) => EventJournal;
   readonly decorateProjections?: (projections: ProjectionStore) => ProjectionStore;
   readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
-  readonly subscriptionRunSerialiser?: SubscriptionRunSerialiser;
+  readonly subscriptionRunSerialiser?: ProcessorRunSerialiser;
 }
 
 export interface PersistenceComposition {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
-  readonly subscriptionRunSerialiser: SubscriptionRunSerialiser;
+  readonly subscriptionRunSerialiser: ProcessorRunSerialiser;
 }
 
 function identity<T>(value: T): T {
@@ -61,7 +61,7 @@ export function composePersistence(
   options: PersistenceCompositionOptions,
 ): PersistenceComposition {
   const subscriptionRunSerialiser =
-    options.subscriptionRunSerialiser ?? createFileSubscriptionRunSerialiser(paths.dataRoot);
+    options.subscriptionRunSerialiser ?? createFileProcessorRunSerialiser(paths.dataRoot);
   return {
     journal: serializeJournalAppends(
       (options.decorateJournal ?? identity)(

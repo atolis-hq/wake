@@ -1,7 +1,7 @@
 {
   "name": "persistence",
   "kind": "supporting",
-  "dependencies": ["kernel"],
+  "dependencies": ["kernel", "eventing"],
   "publicEntry": "./index.ts",
   "namespaces": {
     "events": [],

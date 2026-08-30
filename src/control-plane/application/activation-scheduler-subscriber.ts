@@ -1,4 +1,11 @@
-import type { EventEnvelope } from '../../kernel/index.js';
+import {
+  EventProcessorCategory,
+  EventProcessorHealthStatus,
+  EventProcessorReplayPolicy,
+  type EventProcessorDefinition,
+  type EventProcessorHostRun,
+} from '../../eventing/index.js';
+import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import type { ActivationScheduler } from './activation-scheduler.js';
 
@@ -12,26 +19,17 @@ export const activationSchedulerCriticalSectionConsumer =
 
 const defaultFallbackMs = 30_000;
 const maximumTimerDelayMs = 2_147_483_647;
-const activationSchedulerSubscriptionStatusShape = {
-  starting: true,
-  healthy: true,
-  degraded: true,
-  stopped: true,
-};
-const activationSchedulerSubscriptionStatuses = Object.keys(
-  activationSchedulerSubscriptionStatusShape,
-);
 
 export const ActivationSchedulerSubscriptionStatus = {
-  Starting: activationSchedulerSubscriptionStatuses[0]!,
-  Healthy: activationSchedulerSubscriptionStatuses[1]!,
-  Degraded: activationSchedulerSubscriptionStatuses[2]!,
-  Stopped: activationSchedulerSubscriptionStatuses[3]!,
+  Starting: EventProcessorHealthStatus.Starting,
+  CatchingUp: EventProcessorHealthStatus.CatchingUp,
+  Healthy: EventProcessorHealthStatus.Healthy,
+  Degraded: EventProcessorHealthStatus.Degraded,
+  Stopped: EventProcessorHealthStatus.Stopped,
 } as const;
 
 export type ActivationSchedulerSubscriptionHealthStatus =
   (typeof ActivationSchedulerSubscriptionStatus)[keyof typeof ActivationSchedulerSubscriptionStatus];
-
 export interface ActivationSchedulerSubscriberOptions {
   readonly fallbackMs?: number;
   /** Test seam for deterministic reconciliation barriers. */
@@ -43,15 +41,12 @@ export interface ActivationSchedulerSubscriberRun {
   readonly done: Promise<void>;
 }
 
-/** Bootstrap adapts Persistence's durable host to this Control Plane port. */
+/** Bootstrap adapts Eventing's processor host to this Control Plane port. */
 export interface ActivationSchedulerSubscriptionHost {
   start(
-    subscriptions: readonly {
-      readonly consumer: string;
-      readonly handle: (events: readonly EventEnvelope[]) => Promise<void>;
-    }[],
+    subscriptions: readonly EventProcessorDefinition<unknown>[],
     signal?: AbortSignal,
-  ): ActivationSchedulerSubscriberRun;
+  ): EventProcessorHostRun;
   health(consumer: string): ActivationSchedulerSubscriptionHealth | undefined;
 }
 
@@ -109,8 +104,13 @@ export function createActivationSchedulerSubscriber(
         [
           {
             consumer: activationSchedulerSubscriptionConsumer,
+            name: 'activation-scheduler',
+            owner: ControlStreamKind.Global,
+            category: EventProcessorCategory.Coordinator,
+            replayPolicy: EventProcessorReplayPolicy.Idempotent,
             // Every fact can affect eligibility, capacity, expiry recovery, or a
             // workflow's next activation; filtering here would create stale work.
+            select: () => undefined,
             handle: async () => {
               await poke(undefined, controller.signal);
             },
@@ -142,7 +142,7 @@ export function createActivationSchedulerSubscriber(
         status: ActivationSchedulerSubscriptionStatus.Degraded,
         checkpoint: durable?.checkpoint ?? 0,
         consecutiveFailures: reconciliationFailures,
-        lastError: reconciliationError,
+        ...(reconciliationError === undefined ? {} : { lastError: reconciliationError }),
       };
     },
   };

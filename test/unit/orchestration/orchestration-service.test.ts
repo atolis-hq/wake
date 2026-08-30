@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
+import { createProjectionProcessor, EventProcessorHost } from '../../../src/eventing/index.js';
 import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
@@ -15,9 +16,7 @@ import {
   workflowDefinitionsProjection,
 } from '../../../src/orchestration/index.js';
 import {
-  createInMemorySubscriptionRunSerialiser,
-  createProjectionSubscription,
-  DurableSubscriptionHost,
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
@@ -93,11 +92,11 @@ it('persists instances and accepts outcomes idempotently', async () => {
     ),
   ).toHaveLength(1);
   const projections = new InMemoryProjectionStore();
-  await new DurableSubscriptionHost(
+  await new EventProcessorHost(
     journal,
     new InMemoryCheckpointStore(),
-    createInMemorySubscriptionRunSerialiser(),
-  ).runOnce(createProjectionSubscription(workflowDefinitionsProjection, projections));
+    createInMemoryProcessorRunSerialiser(),
+  ).runOnce(createProjectionProcessor(workflowDefinitionsProjection, projections));
   const changedDefinition = compileWorkflow(
     'default',
     {

@@ -9,6 +9,7 @@ import {
 } from '../../../src/bootstrap/index.js';
 import { resolveWakePaths } from '../../../src/bootstrap/paths.js';
 import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
+import type { ProcessorRunSerialiser } from '../../../src/eventing/index.js';
 import {
   createEventDraft,
   type EntityRef,
@@ -23,7 +24,6 @@ import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  type SubscriptionRunSerialiser,
 } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -270,7 +270,7 @@ async function appendCountedEvents(
   );
 }
 
-function recordingSerialiser(consumers: string[]): SubscriptionRunSerialiser {
+function recordingSerialiser(consumers: string[]): ProcessorRunSerialiser {
   return async (consumer, _signal, operation) => {
     consumers.push(consumer);
     return operation();

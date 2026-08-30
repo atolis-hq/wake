@@ -1,0 +1,7 @@
+{
+  "name": "eventing",
+  "kind": "supporting",
+  "dependencies": ["kernel"],
+  "publicEntry": "./index.ts",
+  "namespaces": { "events": [], "config": [], "relations": [], "streams": [] }
+}

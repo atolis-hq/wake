@@ -13,6 +13,7 @@ import {
   type ScheduleCheckpointStore,
 } from '../control-plane/index.js';
 import { createConversationService } from '../conversations/index.js';
+import { EventProcessorHost, type ProcessorRunSerialiser } from '../eventing/index.js';
 import {
   ExecutionCancellationReason,
   ExternalExecutionState,
@@ -45,11 +46,7 @@ import {
   type ProjectionStore,
 } from '../kernel/index.js';
 import { compileWorkflow, createOrchestrationService } from '../orchestration/index.js';
-import {
-  DurableSubscriptionHost,
-  createFileSubscriptionRunSerialiser,
-  type SubscriptionRunSerialiser,
-} from '../persistence/index.js';
+import { createFileProcessorRunSerialiser } from '../persistence/index.js';
 import {
   createResourceLookup,
   createResourceService,
@@ -90,7 +87,7 @@ export interface CompositionRootOptions {
   readonly decorateJournal?: (journal: EventJournal) => EventJournal;
   readonly decorateProjections?: (projections: ProjectionStore) => ProjectionStore;
   readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
-  readonly subscriptionRunSerialiser?: SubscriptionRunSerialiser;
+  readonly subscriptionRunSerialiser?: ProcessorRunSerialiser;
   readonly scheduleCheckpoints?: ScheduleCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
@@ -293,11 +290,7 @@ export async function createCompositionRoot(
   );
   const advanceOnce = activationScheduler.runOnce.bind(activationScheduler);
   const activationSchedulerSubscriber = createActivationSchedulerSubscriber(
-    new DurableSubscriptionHost(
-      journal,
-      checkpoints,
-      createFileSubscriptionRunSerialiser(paths.dataRoot),
-    ),
+    new EventProcessorHost(journal, checkpoints, createFileProcessorRunSerialiser(paths.dataRoot)),
     activationScheduler,
   );
   const runtime = await composeIntegrationRuntime({
