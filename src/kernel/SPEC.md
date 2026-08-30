@@ -7,7 +7,7 @@ asOf: e8707c45
 ## Purpose and scope
 
 Kernel defines the universal, domain-free primitives every other Wake module
-builds its own behaviour on top of: the shape of a durable event (draft and
+builds its own behaviour on top of: the shape of a durable event (event data and
 envelope), the ports through which events and read models are stored and
 read, identifier branding and identity-minting conventions, the
 closed-vocabulary pattern for declaring bounded value sets, and the relation
@@ -18,8 +18,8 @@ behaviour, no event types of its own, and no workflow or lifecycle state.
 
 Kernel owns:
 
-- The event draft and event envelope shape, and the rules for constructing a
-  valid draft.
+- The event data and event envelope shape, and the rules for constructing a
+  valid event data.
 - The storage and time ports every other module programs against:
   `EventJournal` (append/readStream/readAll, plus an optional `readLatest`
   for backward reads, and a `changeSignal` advisory wake-up for a resident
@@ -56,10 +56,10 @@ Kernel does not own:
 
 ## Ubiquitous language
 
-- **Event draft** — an event not yet appended to a stream: `eventId`,
+- **Event data** — an event not yet appended to a stream: `eventId`,
   `eventType`, `schemaVersion` (fixed at `1`), `occurredAt`, `correlationId`,
   `causationId`, `actor`, `source`, `stream`, and `payload`.
-- **Event envelope** — an event draft that has been accepted and appended,
+- **Event envelope** — an event data that has been accepted and appended,
   with `recordedAt`, `sequence`, and `globalPosition` added by the journal.
 - **Stream** — the strictly ordered sequence of event envelopes belonging to
   one `EntityRef`.
@@ -91,21 +91,21 @@ Kernel does not own:
   the `globalPosition` it was last folded up to.
 - **Command context** — the shared shape (`commandId`, `correlationId`,
   `actor`, `occurredAt`) a module's surface application passes to its own
-  aggregate when translating an accepted command into event drafts.
+  aggregate when translating an accepted command into event data.
 
 ## Core policies, invariants, and behaviours
 
-**Event draft construction**
+**Event data construction**
 
-- Constructing an event draft MUST reject an empty `eventType`.
-- Constructing an event draft MUST reject an `occurredAt` that is not a
+- Constructing an event data MUST reject an empty `eventType`.
+- Constructing an event data MUST reject an `occurredAt` that is not a
   valid offset ISO-8601 timestamp.
-- Constructing an event draft MUST reject an empty `actor.id` or
+- Constructing an event data MUST reject an empty `actor.id` or
   `source.id`.
-- Constructing an event draft MUST brand `eventId`, `correlationId`, and
+- Constructing an event data MUST brand `eventId`, `correlationId`, and
   `causationId` through their identifier constructors, which MUST reject an
   empty string.
-- Every event draft and envelope carries `schemaVersion: 1`; kernel defines
+- Every event data and envelope carries `schemaVersion: 1`; kernel defines
   no migration or version-negotiation behaviour on top of it (see
   Decisions).
 
@@ -132,11 +132,11 @@ This is the guarantee every module's aggregate relies on to make its own
 command handling safe to retry.
 
 - Each event submitted to `append` is identified by its own `eventId`.
-  Resubmitting a draft whose `eventId` is already recorded, with content
+  Resubmitting event data whose `eventId` is already recorded, with content
   identical to what was previously recorded, MUST NOT create a duplicate
   event and MUST return the previously recorded envelope for that
   `eventId`.
-- Resubmitting a draft whose `eventId` is already recorded but whose
+- Resubmitting event data whose `eventId` is already recorded but whose
   content differs from what was previously recorded MUST be rejected: an
   `eventId`, once used, MUST NOT be reused for a different event.
 - When every event submitted in one `append` call is already recorded under
@@ -328,7 +328,7 @@ pieces above are best read as a map, not a component table:
 
 | Primitive or port | Role |
 | --- | --- |
-| Event draft / envelope | The universal shape every module's own event types instantiate. |
+| Event data / envelope | The universal shape every module's own event types instantiate. |
 | `EventJournal` | The append/read port a module's aggregate and projections are built against. |
 | `ProjectionStore` | The read-model storage port a module's projection writes to and reads from. |
 | `CheckpointStore` | The replay-cursor port a projection or process uses to resume forward-only. |
@@ -339,7 +339,7 @@ pieces above are best read as a map, not a component table:
 
 ## Dependencies and system role
 
-- `zod` — validates event envelope/draft shape and timestamp format at the
+- `zod` — validates event envelope/event data shape and timestamp format at the
   schema boundary (`event-schema.ts`, `schema.ts`).
 - `ulid` — generates the random, sortable component of a minted identity in
   `UlidIdGenerator`.

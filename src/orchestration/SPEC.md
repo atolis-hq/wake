@@ -147,7 +147,7 @@ Orchestration does not own:
   before they enter the WorkflowInstance fold or any group claim read;
   malformed events are rejected, not silently coerced.
 - Domain decision functions consume typed state and typed input and return
-  event drafts to append (or a reason the input was ignored); they perform
+  event data to append (or a reason the input was ignored); they perform
   no IO and import no journal, clock, or adapter.
 - Every consumer that needs to know whether a wait renders as "awaiting
   approval" externally, or how an `orchestration.*` event changes a

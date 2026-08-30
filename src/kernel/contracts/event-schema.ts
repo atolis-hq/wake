@@ -33,7 +33,7 @@ export const entityRefSchema = z
   })
   .strict();
 
-export const eventDraftSchema = z
+export const eventDataSchema = z
   .object({
     eventId: nonEmptyString.pipe(brandedStringSchema(eventId)),
     eventType: nonEmptyString,
@@ -48,7 +48,7 @@ export const eventDraftSchema = z
   })
   .strict();
 
-export const eventEnvelopeSchema = eventDraftSchema
+export const eventEnvelopeSchema = eventDataSchema
   .extend({
     recordedAt: offsetIsoTimestampSchema,
     sequence: z.number().int().positive(),

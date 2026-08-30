@@ -12,7 +12,7 @@ the rest to the retry, signal, and supplemental policies.
 
 ## Responsibilities and boundaries
 
-This component owns composing the ordered event drafts for starting an
+This component owns composing the ordered event data for starting an
 instance, deciding whether an incoming outcome is for the current pending
 Activation at all, and — once accepted — the dispatch order between retry,
 supplemental continuation, follow-on Activities, and Stage/completion/wait
@@ -24,7 +24,7 @@ It does not itself decide whether a non-`done` outcome may retry (retry
 policy), whether a Signal is a valid match with acceptable authority (signal
 policy), or whether a supplemental command may be queued and how its
 completion is judged (supplemental policy) — it calls into each and folds
-their event drafts into the same append. It does not claim a WorkItem's
+their event data into the same append. It does not claim a WorkItem's
 primary ownership or a Watch's child budget itself; a primary start requires
 that claim to already have succeeded before this component is invoked, and a
 child start requires complete provenance to already be validated.
@@ -129,7 +129,7 @@ returns; not itself a durable entity.
 | Field | Type | Description |
 | --- | --- | --- |
 | `kind` | closed vocabulary: `append` / `ignored` | Whether the input produced new facts to append. |
-| `events` | list of event draft | Present only when `kind` is `append`; the facts to append, in order. |
+| `events` | list of event data | Present only when `kind` is `append`; the facts to append, in order. |
 | `reason` | string | Present only when `kind` is `ignored`; why the input was not accepted or was a duplicate. |
 
 ## Dependencies and system role
@@ -145,7 +145,7 @@ returns; not itself a durable entity.
 - Supplemental policy — receives dispatch outright when the pending
   Activation is itself supplemental, and is consulted again when a `done`
   outcome finds a non-empty supplemental queue.
-- Child workflow policy — supplies the child-start event drafts
+- Child workflow policy — supplies the child-start event data
   (`ChildRequested`/`ChildStarted`) this component prepends when starting
   with parent provenance.
 - Activities — the outcome-kind vocabulary (`done` and friends) this

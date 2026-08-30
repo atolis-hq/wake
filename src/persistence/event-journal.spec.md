@@ -10,9 +10,9 @@ sequencing, journal-wide ordering, and append idempotency.
 
 ## Ubiquitous language
 
-- **Append batch** — the set of event drafts passed to one append call;
+- **Append batch** — the set of event data passed to one append call;
   accepted or rejected as a whole with respect to stream sequencing, though
-  individual drafts within it may already have been recorded by an earlier
+  individual event data within it may already have been recorded by an earlier
   call.
 - **Expected sequence** — the caller's belief of how many events already
   exist in the target stream, supplied with every append as an optimistic
@@ -21,7 +21,7 @@ sequencing, journal-wide ordering, and append idempotency.
 ## Responsibilities and boundaries
 
 The Event Journal owns: assigning `recordedAt`, `sequence`, and
-`globalPosition` to each newly accepted draft; enforcing stream-level
+`globalPosition` to each newly accepted event data; enforcing stream-level
 optimistic concurrency; enforcing event-id idempotency, both within a batch
 and against everything previously recorded; the one true replay order
 across the whole journal; reading backward from the most recent event
@@ -60,17 +60,17 @@ caller's behalf when a write cannot currently be accepted.
   length.
 - An append batch containing the same `eventId` twice with different
   content MUST be rejected.
-- An append batch every one of whose drafts has already been recorded,
+- An append batch every one of whose event data has already been recorded,
   under the same `eventId` with identical content, MUST be accepted as a
   no-op: it MUST return the previously recorded envelopes and MUST NOT
   perform the expected-sequence check or record anything again. This is
   what makes a batch safe to resubmit after a caller-side failure that left
   the outcome of the first attempt unknown.
-- A batch mixing previously recorded drafts with new ones MUST still
+- A batch mixing previously recorded event data with new ones MUST still
   satisfy the expected-sequence check against the stream's current actual
-  length, and MUST append only the drafts not already recorded.
-- Every draft in one append call MUST target the same stream as the call
-  itself; a draft naming a different stream MUST cause the whole append to
+  length, and MUST append only the event data not already recorded.
+- Every event data in one append call MUST target the same stream as the call
+  itself; event data naming a different stream MUST cause the whole append to
   be rejected.
 
 **Backward reads**
@@ -91,7 +91,7 @@ caller's behalf when a write cannot currently be accepted.
   caller-supplied fallback duration elapses, or once the caller's abort
   signal fires — whichever happens first — and MUST never reject.
 - `changeSignal` MUST fire only after a call to `append` durably records at
-  least one genuinely new event; an idempotent no-op append (every draft
+  least one genuinely new event; an idempotent no-op append (every event data
   already recorded) MUST NOT fire it.
 - Notification is advisory only and carries no payload identifying what
   changed: a caller MUST always re-derive what's new from its own durable
@@ -151,7 +151,7 @@ caller's behalf when a write cannot currently be accepted.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `eventId` | identity | Caller-assigned identity for the draft; the basis for idempotent append. |
+| `eventId` | identity | Caller-assigned identity for the event data; the basis for idempotent append. |
 | `eventType` | string | Domain-defined event type name; opaque to the journal. |
 | `schemaVersion` | integer literal `1` | Kernel envelope schema version; validated, not interpreted. |
 | `occurredAt` | offset ISO timestamp | Caller-supplied business time the event represents; the journal never sets or alters it. |
@@ -165,7 +165,7 @@ caller's behalf when a write cannot currently be accepted.
 
 ## Dependencies and system role
 
-- Kernel — the `EventJournal` port, the event draft/envelope shapes,
+- Kernel — the `EventJournal` port, the event data/envelope shapes,
   envelope schema decoding, and the stream-identity convention; the Event
   Journal exists to implement this port.
 - File Lock (depended on by the filesystem implementation only) —

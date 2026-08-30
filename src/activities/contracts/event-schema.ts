@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { brandedStringSchema, eventDraftSchema, eventEnvelopeSchema } from '../../kernel/index.js';
+import { brandedStringSchema, eventDataSchema, eventEnvelopeSchema } from '../../kernel/index.js';
 import { ResourceStreamKind, resourceId } from '../../resources/index.js';
 import { WorkStreamKind, workItemId } from '../../work/index.js';
 import {
@@ -225,7 +225,7 @@ function resourceFactDraft<Type extends string, Payload extends z.ZodType>(
   eventType: Type,
   payload: Payload,
 ) {
-  return eventDraftSchema
+  return eventDataSchema
     .extend({
       eventType: z.literal(eventType),
       stream: resourceStreamSchema,
@@ -243,7 +243,7 @@ function resourceFactDraft<Type extends string, Payload extends z.ZodType>(
 }
 
 function denialFactDraft<Type extends string>(eventType: Type) {
-  return eventDraftSchema
+  return eventDataSchema
     .extend({
       eventType: z.literal(eventType),
       stream: denialStreamSchema,
@@ -352,10 +352,10 @@ function createDecisionClaimSchemas(
   const mergeEnvelope = eventEnvelopeSchema
     .extend(mergeClaimContract)
     .superRefine(decisionClaimIdentity);
-  const approveDraft = eventDraftSchema
+  const approveDraft = eventDataSchema
     .extend(approveClaimContract)
     .superRefine(decisionClaimIdentity);
-  const mergeDraft = eventDraftSchema.extend(mergeClaimContract).superRefine(decisionClaimIdentity);
+  const mergeDraft = eventDataSchema.extend(mergeClaimContract).superRefine(decisionClaimIdentity);
   return { approveEnvelope, mergeEnvelope, approveDraft, mergeDraft };
 }
 

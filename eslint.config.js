@@ -124,7 +124,7 @@ export default tseslint.config(
           patterns: [
             {
               group: ['**/kernel/index.js', '**/kernel/contracts/*.js'],
-              importNames: ['EventDraft', 'EventEnvelope', 'entityRef'],
+              importNames: ['EventData', 'EventEnvelope', 'entityRef'],
               message: 'Use the owning domain event union and stream constructor.',
             },
           ],

@@ -148,8 +148,8 @@ persisted independently of the `SignalAccepted` fact it produces.
   is reconciled to its parent by constructing a signal and passing it
   through this same `acceptSignal` decision, so a completed child is
   accepted exactly like any other external Signal.
-- Kernel — event/actor/source conventions for the facts this component
-  drafts.
+- Kernel — event/actor/source conventions for the event data this component
+  creates.
 
 ## Decisions, exclusions, and deferred capability
 

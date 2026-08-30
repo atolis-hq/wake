@@ -99,7 +99,7 @@ request for something outside this module to act on.
 | `activationId` | Activation identity | The activation this decision was claimed for. |
 | `decisionKind` | closed vocabulary: `requested` / `denied` | What the claim resolved to. |
 | `outcome` | PullRequestActivityOutcome | The outcome to report for this activation (subject to being overridden to `failed` if the fact write is not confirmed). |
-| `fact` | event draft | The denial or delivery-intent fact this claim commits to writing, and to where. |
+| `fact` | event data | The denial or delivery-intent fact this claim commits to writing, and to where. |
 
 **Delivery intent fact** (written to the resolved Resource's stream)
 

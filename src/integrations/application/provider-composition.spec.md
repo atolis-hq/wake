@@ -39,10 +39,10 @@ module's intake-rule vocabulary, applied by each provider's own translator.
   it: that entry's failure MUST be collected, by adapter name, provider
   name, and the thrown error's own message, and composing every other
   entry MUST still proceed to completion.
-- Ingesting an evidence draft whose event type is not among the composed
+- Ingesting evidence event data whose event type is not among the composed
   instance's own declared `eventTypes` MUST be rejected.
-- An evidence draft MUST be appended to its adapter's `integration` stream
-  only when no event with that draft's event id already exists on that
+- Evidence event data MUST be appended to its adapter's `integration` stream
+  only when no event with that event data's event id already exists on that
   stream; a provider re-reporting the same evidence MUST NOT duplicate it.
 
 ## Conceptual schema
@@ -52,7 +52,7 @@ module's intake-rule vocabulary, applied by each provider's own translator.
 | Field | Type | Description |
 | --- | --- | --- |
 | `adapter` | Adapter identity | This instance's own configured name. |
-| `source` | ExternalEventSource | Polled for new evidence drafts each cycle. |
+| `source` | ExternalEventSource | Polled for new evidence event data each cycle. |
 | `delivery` | ExternalDeliveryAdapter | Performs and reconciles this adapter's outbound effects. |
 | `inbound` | InboundTranslation | Turns this adapter's evidence into commands. |
 | `eventTypes` | list of event type | The closed set of event types this instance may emit; anything else is rejected. |
