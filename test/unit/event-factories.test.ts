@@ -45,22 +45,23 @@ const metadata = {
 void (() => {
   // @ts-expect-error Activity factories reject Control Plane event types.
   createActivityEventData({ ...metadata, eventType: ControlEventType.DispatchPaused, payload: {} });
-  // @ts-expect-error Activity factories reject Control Plane payloads.
   createActivityEventData({
     ...metadata,
     eventType: ActivityEventType.PrReviewRejected,
+    // @ts-expect-error Activity factories reject Control Plane payloads.
     payload: { checks: 'passing' as const },
   });
-  // @ts-expect-error Control Plane factories reject Activity event types.
   createControlPlaneEventData({
     ...metadata,
+    // @ts-expect-error Control Plane factories reject Activity event types.
     eventType: ActivityEventType.PrChecksChanged,
+    // @ts-expect-error Foreign event types do not supply Control Plane payloads.
     payload: {},
   });
-  // @ts-expect-error Control Plane factories reject Activity payloads.
   createControlPlaneEventData({
     ...metadata,
     eventType: ControlEventType.DispatchPaused,
+    // @ts-expect-error Control Plane factories reject Activity payloads.
     payload: { checks: 'passing' as const },
   });
 })();

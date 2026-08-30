@@ -12,7 +12,7 @@ export * from './contracts/config.js';
 
 export * from './contracts/events.js';
 
-export * from './contracts/event-factory.js';
+export { createActivityEventData, type ActivityEventDataInput } from './contracts/event-factory.js';
 
 export * from './contracts/identifiers.js';
 

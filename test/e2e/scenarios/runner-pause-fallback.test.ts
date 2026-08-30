@@ -8,7 +8,7 @@ import {
 import {
   ControlEventType,
   controlPlaneStream,
-  createControlEventData,
+  createControlPlaneEventData,
 } from '../../../src/control-plane/index.js';
 import { correlationId } from '../../../src/kernel/index.js';
 import {
@@ -111,21 +111,21 @@ async function appendQuotaPause(
   const stream = controlPlaneStream();
   const occurredAt = clock.now().toISOString();
   await journal.appendToStream(stream, (await journal.readStream(stream)).length, [
-    createControlEventData(
-      ControlEventType.RunnerPaused,
-      {
+    createControlPlaneEventData({
+      eventId: `quota-${occurredAt}:control-plane.runner-paused`,
+      eventType: ControlEventType.RunnerPaused,
+      occurredAt,
+      correlationId: correlationId(`quota-${occurredAt}`),
+      causationId: `quota-${occurredAt}`,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {
         runnerName: 'sonnet',
         cause: 'quota',
         reason: 'provider quota exhausted',
         resumeAt,
       },
-      {
-        commandId: `quota-${occurredAt}`,
-        correlationId: correlationId(`quota-${occurredAt}`),
-        occurredAt,
-        actor: { kind: 'system', id: 'test' },
-      },
-    ),
+    }),
   ]);
 }
 

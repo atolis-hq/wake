@@ -2,7 +2,7 @@ import {
   ControlEventType,
   ControlStreamKind,
   controlPlaneStream,
-  createControlEventData,
+  createControlPlaneEventData,
   resolveRunnerQuotaResumeAt,
 } from '../control-plane/index.js';
 import {
@@ -24,21 +24,21 @@ export function createRunnerQuotaReporter(journal: EventJournal, clock: Clock, i
     const stream = controlPlaneStream();
     const occurredAt = clock.now().toISOString();
     await journal.appendToStream(stream, (await journal.readStream(stream)).length, [
-      createControlEventData(
-        ControlEventType.RunnerPaused,
-        {
+      createControlPlaneEventData({
+        eventId: `${ids.next('command')}:${ControlEventType.RunnerPaused}`,
+        eventType: ControlEventType.RunnerPaused,
+        occurredAt,
+        correlationId: correlationId(`runner-quota:${runnerName}`),
+        causationId: `runner-quota:${runnerName}`,
+        actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
+        source: { kind: 'internal', id: ControlStreamKind.Global },
+        payload: {
           runnerName,
           cause: 'quota',
           reason: message,
           resumeAt: resolveRunnerQuotaResumeAt(message, occurredAt),
         },
-        {
-          commandId: ids.next('command'),
-          correlationId: correlationId(`runner-quota:${runnerName}`),
-          occurredAt,
-          actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
-        },
-      ),
+      }),
     ]);
   };
 }

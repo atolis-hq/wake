@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import {
   ControlEventType,
   controlPlaneStream,
-  createControlEventData,
+  createControlPlaneEventData,
   createRunnerControlService,
 } from '../../../src/control-plane/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
@@ -78,21 +78,21 @@ it('rejects unpause after a quota pause has elapsed', async () => {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
   await journal.appendToStream(controlPlaneStream(), 0, [
-    createControlEventData(
-      ControlEventType.RunnerPaused,
-      {
+    createControlPlaneEventData({
+      eventId: 'quota:control-plane.runner-paused',
+      eventType: ControlEventType.RunnerPaused,
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'quota',
+      causationId: 'quota',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {
         runnerName: 'sonnet',
         cause: 'quota',
         reason: 'quota',
         resumeAt: new Date(clock.now().getTime() + 1_000).toISOString(),
       },
-      {
-        commandId: 'quota',
-        correlationId: 'quota' as never,
-        occurredAt: clock.now().toISOString(),
-        actor: { kind: 'system', id: 'test' },
-      },
-    ),
+    }),
   ]);
   clock.advance(1_000);
   const service = createRunnerControlService({

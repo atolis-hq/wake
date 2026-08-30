@@ -1,11 +1,5 @@
-import {
-  createEventData,
-  EventSourceKind,
-  type CommandContext,
-  type EventDataInput,
-} from '../../kernel/index.js';
+import { createEventData, type EventDataInput } from '../../kernel/index.js';
 import { ControlEventType, type ControlEventData, type ControlEventPayloads } from './events.js';
-import { ControlStreamKind } from './streams.js';
 
 export type ControlPlaneEventDataInput = {
   [Type in keyof ControlEventPayloads]: EventDataInput<Type, ControlEventPayloads[Type]>;
@@ -24,19 +18,6 @@ export function createControlPlaneEventData(input: ControlPlaneEventDataInput): 
   }
 }
 
-export function createControlEventData<Type extends keyof ControlEventPayloads>(
-  eventType: Type,
-  payload: ControlEventPayloads[Type],
-  context: CommandContext,
-) {
-  return createEventData({
-    eventId: `${context.commandId}:${eventType}`,
-    eventType,
-    occurredAt: context.occurredAt,
-    correlationId: context.correlationId,
-    causationId: context.commandId,
-    actor: context.actor,
-    source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
-    payload,
-  });
+export function createControlEventData(input: ControlPlaneEventDataInput): ControlEventData {
+  return createControlPlaneEventData(input);
 }
