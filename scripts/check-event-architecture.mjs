@@ -112,42 +112,127 @@ export async function checkEventArchitecture(root = 'src') {
 
 function collectBindings(program, typeChecker) {
   const assignments = new Map();
+  const bindings = { assignments };
 
   function visit(node) {
     if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
-      if (ts.isIdentifier(node.name)) {
-        const symbol = typeChecker.getSymbolAtLocation(node.name);
-        if (symbol !== undefined) assignments.set(symbol, { expression: node.initializer });
-      } else if (ts.isObjectBindingPattern(node.name)) {
-        for (const element of node.name.elements) {
-          if (!ts.isIdentifier(element.name)) continue;
-          const name = bindingPropertyName(element);
-          const symbol = typeChecker.getSymbolAtLocation(element.name);
-          if (name !== undefined && symbol !== undefined)
-            assignments.set(symbol, { expression: node.initializer, propertyName: name });
-        }
-      }
+      collectBindingAssignments(
+        node.name,
+        node.initializer,
+        [],
+        bindings,
+        typeChecker,
+        assignments,
+      );
     }
-    if (
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isIdentifier(node.left)
-    ) {
-      const symbol = typeChecker.getSymbolAtLocation(node.left);
-      if (symbol !== undefined) assignments.set(symbol, { expression: node.right });
-    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+      collectAssignmentTarget(node.left, node.right, [], bindings, typeChecker, assignments);
     ts.forEachChild(node, visit);
   }
 
   for (const sourceFile of program.getSourceFiles())
     if (!sourceFile.isDeclarationFile || normalizePath(sourceFile.fileName).includes('/src/'))
       visit(sourceFile);
-  return { assignments };
+  return bindings;
 }
 
-function bindingPropertyName(element) {
+function collectBindingAssignments(
+  pattern,
+  expression,
+  accessPath,
+  bindings,
+  typeChecker,
+  assignments,
+) {
+  if (ts.isIdentifier(pattern)) {
+    const symbol = typeChecker.getSymbolAtLocation(pattern);
+    if (symbol !== undefined) assignments.set(symbol, { expression, accessPath });
+    return;
+  }
+  if (ts.isObjectBindingPattern(pattern)) {
+    for (const element of pattern.elements) {
+      if (element.dotDotDotToken !== undefined) continue;
+      const name = bindingPropertyName(element, bindings, typeChecker);
+      if (name === undefined) continue;
+      collectBindingAssignments(
+        element.name,
+        expression,
+        [...accessPath, { kind: 'property', name }],
+        bindings,
+        typeChecker,
+        assignments,
+      );
+    }
+    return;
+  }
+  if (ts.isArrayBindingPattern(pattern))
+    for (const [index, element] of pattern.elements.entries()) {
+      if (!ts.isBindingElement(element) || element.dotDotDotToken !== undefined) continue;
+      collectBindingAssignments(
+        element.name,
+        expression,
+        [...accessPath, { kind: 'index', index }],
+        bindings,
+        typeChecker,
+        assignments,
+      );
+    }
+}
+
+function collectAssignmentTarget(
+  target,
+  expression,
+  accessPath,
+  bindings,
+  typeChecker,
+  assignments,
+) {
+  const unwrapped = unwrapExpression(target);
+  if (ts.isIdentifier(unwrapped)) {
+    const symbol = typeChecker.getSymbolAtLocation(unwrapped);
+    if (symbol !== undefined) assignments.set(symbol, { expression, accessPath });
+    return;
+  }
+  if (ts.isArrayLiteralExpression(unwrapped)) {
+    for (const [index, element] of unwrapped.elements.entries()) {
+      if (ts.isOmittedExpression(element) || ts.isSpreadElement(element)) continue;
+      collectAssignmentTarget(
+        element,
+        expression,
+        [...accessPath, { kind: 'index', index }],
+        bindings,
+        typeChecker,
+        assignments,
+      );
+    }
+    return;
+  }
+  if (!ts.isObjectLiteralExpression(unwrapped)) return;
+  for (const property of unwrapped.properties) {
+    if (ts.isSpreadAssignment(property)) continue;
+    const name = propertyName(property.name, bindings, typeChecker);
+    if (name === undefined) continue;
+    const propertyTarget = ts.isShorthandPropertyAssignment(property)
+      ? property.name
+      : ts.isPropertyAssignment(property)
+        ? property.initializer
+        : undefined;
+    if (propertyTarget !== undefined)
+      collectAssignmentTarget(
+        propertyTarget,
+        expression,
+        [...accessPath, { kind: 'property', name }],
+        bindings,
+        typeChecker,
+        assignments,
+      );
+  }
+}
+
+function bindingPropertyName(element, bindings, typeChecker) {
   if (element.propertyName === undefined && ts.isIdentifier(element.name)) return element.name.text;
-  if (element.propertyName !== undefined) return literalPropertyName(element.propertyName);
+  if (element.propertyName !== undefined)
+    return propertyName(element.propertyName, bindings, typeChecker);
   return undefined;
 }
 
@@ -274,7 +359,7 @@ function inspectLinkedHandlerProperties(
   if (ts.isIdentifier(expression)) {
     const symbol = typeChecker.getSymbolAtLocation(expression);
     const assignment = symbol === undefined ? undefined : bindings.assignments.get(symbol);
-    if (assignment !== undefined && assignment.propertyName === undefined)
+    if (assignment !== undefined && assignment.accessPath.length === 0)
       inspectLinkedHandlerProperties(
         assignment.expression,
         bindings,
@@ -434,25 +519,90 @@ function inspectPublishingOwnership(context) {
 }
 
 function inspectBoundedEventImports(context) {
-  const { sourceFile, typeChecker, sourceRoot, moduleName, relativePath, manifests, diagnostics } =
-    context;
+  const { sourceFile, typeChecker, moduleName } = context;
   if (!['eventing', 'persistence'].includes(moduleName)) return;
   for (const statement of sourceFile.statements) {
-    if (!ts.isImportDeclaration(statement) || statement.importClause === undefined) continue;
-    const bindings = importBindings(statement.importClause);
-    for (const binding of bindings) {
-      const symbol = typeChecker.getSymbolAtLocation(binding);
-      if (!isBoundedEventContractSymbol(symbol, typeChecker, sourceRoot, manifests)) continue;
-      addDiagnostic(
-        sourceFile,
-        binding,
-        relativePath,
-        'bounded-event-import-owner',
-        'Persistence and Eventing may not import bounded event contracts',
-        diagnostics,
-      );
-    }
+    if (ts.isImportDeclaration(statement) && statement.importClause !== undefined)
+      for (const binding of importBindings(statement.importClause))
+        addBoundedEventReferenceDiagnostic(binding, binding, context);
+    if (ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined)
+      inspectBoundedEventExport(statement, context);
   }
+  function visit(node) {
+    if (ts.isImportTypeNode(node)) {
+      const target =
+        node.qualifier ??
+        (ts.isLiteralTypeNode(node.argument) ? node.argument.literal : node.argument);
+      addBoundedEventReferenceDiagnostic(target, importTypeSymbol(node, typeChecker), context);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+}
+
+function inspectBoundedEventExport(node, context) {
+  const { typeChecker } = context;
+  if (node.exportClause === undefined) {
+    addBoundedEventReferenceDiagnostic(
+      node,
+      typeChecker.getSymbolAtLocation(node.moduleSpecifier),
+      context,
+    );
+    return;
+  }
+  if (ts.isNamespaceExport(node.exportClause)) {
+    addBoundedEventReferenceDiagnostic(
+      node.exportClause.name,
+      typeChecker.getSymbolAtLocation(node.moduleSpecifier),
+      context,
+    );
+    return;
+  }
+  for (const element of node.exportClause.elements) {
+    const importedName = element.propertyName?.text ?? element.name.text;
+    const symbol =
+      typeChecker.getSymbolAtLocation(element.name) ??
+      moduleExportSymbol(node.moduleSpecifier, importedName, typeChecker);
+    addBoundedEventReferenceDiagnostic(element.name, symbol, context);
+  }
+}
+
+function importTypeSymbol(node, typeChecker) {
+  if (node.qualifier !== undefined) {
+    const symbol = typeChecker.getSymbolAtLocation(rightmostEntityName(node.qualifier));
+    if (symbol !== undefined) return symbol;
+  }
+  if (!ts.isLiteralTypeNode(node.argument)) return undefined;
+  const moduleSpecifier = node.argument.literal;
+  if (node.qualifier === undefined) return typeChecker.getSymbolAtLocation(moduleSpecifier);
+  return moduleExportSymbol(moduleSpecifier, rightmostEntityName(node.qualifier).text, typeChecker);
+}
+
+function rightmostEntityName(name) {
+  return ts.isIdentifier(name) ? name : rightmostEntityName(name.right);
+}
+
+function moduleExportSymbol(moduleSpecifier, name, typeChecker) {
+  const moduleSymbol = resolveSymbol(typeChecker.getSymbolAtLocation(moduleSpecifier), typeChecker);
+  if (moduleSymbol === undefined || (moduleSymbol.flags & ts.SymbolFlags.Module) === 0)
+    return undefined;
+  return typeChecker.getExportsOfModule(moduleSymbol).find((symbol) => symbol.name === name);
+}
+
+function addBoundedEventReferenceDiagnostic(node, symbolOrNode, context) {
+  const { sourceFile, typeChecker, sourceRoot, relativePath, manifests, diagnostics } = context;
+  if (symbolOrNode === undefined) return;
+  const symbol =
+    'kind' in symbolOrNode ? typeChecker.getSymbolAtLocation(symbolOrNode) : symbolOrNode;
+  if (!isBoundedEventContractSymbol(symbol, typeChecker, sourceRoot, manifests)) return;
+  addDiagnostic(
+    sourceFile,
+    node,
+    relativePath,
+    'bounded-event-import-owner',
+    'Persistence and Eventing may not import or re-export bounded event contracts',
+    diagnostics,
+  );
 }
 
 function importBindings(importClause) {
@@ -676,31 +826,81 @@ function resolveProtectedKind(expression, bindings, typeChecker, sourceRoot, see
   const kind = protectedSymbolKind(resolved, sourceRoot);
   if (kind !== undefined) return kind;
   const assignment = bindings.assignments.get(symbol) ?? bindings.assignments.get(resolved);
-  if (assignment === undefined) return undefined;
-  if (assignment.propertyName !== undefined)
-    return resolvePropertyKind(
-      assignment.expression,
-      assignment.propertyName,
-      bindings,
-      typeChecker,
-      sourceRoot,
-      seen,
-    );
-  return resolveProtectedKind(assignment.expression, bindings, typeChecker, sourceRoot, seen);
+  return assignment === undefined
+    ? undefined
+    : resolveAccessPathKind(
+        assignment.expression,
+        assignment.accessPath,
+        bindings,
+        typeChecker,
+        sourceRoot,
+        seen,
+      );
 }
 
-function resolvePropertyKind(receiver, propertyName, bindings, typeChecker, sourceRoot, seen) {
-  const type = typeChecker.getTypeAtLocation(receiver);
-  const symbol = type.getProperty(propertyName);
+function resolveAccessPathKind(expression, accessPath, bindings, typeChecker, sourceRoot, seen) {
+  if (accessPath.length === 0)
+    return resolveProtectedKind(expression, bindings, typeChecker, sourceRoot, seen);
+  const unwrapped = unwrapExpression(expression);
+  if (ts.isIdentifier(unwrapped)) {
+    const sourceSymbol = typeChecker.getSymbolAtLocation(unwrapped);
+    const resolvedSource = resolveSymbol(sourceSymbol, typeChecker);
+    const assignment =
+      bindings.assignments.get(sourceSymbol) ?? bindings.assignments.get(resolvedSource);
+    if (sourceSymbol !== undefined && assignment !== undefined && !seen.has(sourceSymbol)) {
+      seen.add(sourceSymbol);
+      return resolveAccessPathKind(
+        assignment.expression,
+        [...assignment.accessPath, ...accessPath],
+        bindings,
+        typeChecker,
+        sourceRoot,
+        seen,
+      );
+    }
+  }
+  const [head, ...tail] = accessPath;
+  const selected = selectedLiteralExpression(unwrapped, head, bindings, typeChecker);
+  if (selected !== undefined)
+    return resolveAccessPathKind(selected, tail, bindings, typeChecker, sourceRoot, seen);
+  const name = head.kind === 'property' ? head.name : String(head.index);
+  const symbol = typeChecker.getTypeAtLocation(unwrapped).getProperty(name);
   if (symbol === undefined || seen.has(symbol)) return undefined;
   seen.add(symbol);
   const resolved = resolveSymbol(symbol, typeChecker);
   const kind = protectedSymbolKind(resolved, sourceRoot);
-  if (kind !== undefined) return kind;
+  if (tail.length === 0 && kind !== undefined) return kind;
   const assignment = bindings.assignments.get(symbol) ?? bindings.assignments.get(resolved);
   return assignment === undefined
     ? undefined
-    : resolveProtectedKind(assignment.expression, bindings, typeChecker, sourceRoot, seen);
+    : resolveAccessPathKind(
+        assignment.expression,
+        [...assignment.accessPath, ...tail],
+        bindings,
+        typeChecker,
+        sourceRoot,
+        seen,
+      );
+}
+
+function selectedLiteralExpression(expression, selector, bindings, typeChecker) {
+  if (selector.kind === 'index') {
+    if (!ts.isArrayLiteralExpression(expression)) return undefined;
+    const selected = expression.elements[selector.index];
+    return selected === undefined ||
+      ts.isOmittedExpression(selected) ||
+      ts.isSpreadElement(selected)
+      ? undefined
+      : selected;
+  }
+  if (!ts.isObjectLiteralExpression(expression)) return undefined;
+  for (const property of [...expression.properties].reverse()) {
+    if (ts.isSpreadAssignment(property)) continue;
+    if (propertyName(property.name, bindings, typeChecker) !== selector.name) continue;
+    if (ts.isPropertyAssignment(property)) return property.initializer;
+    if (ts.isShorthandPropertyAssignment(property)) return property.name;
+  }
+  return undefined;
 }
 
 function expressionSymbol(expression, bindings, typeChecker) {
@@ -823,9 +1023,39 @@ function staticString(node, bindings, typeChecker, seen = new Set()) {
   if (symbol === undefined || seen.has(symbol)) return undefined;
   seen.add(symbol);
   const assignment = bindings.assignments.get(symbol);
-  return assignment?.propertyName === undefined
-    ? staticString(assignment?.expression, bindings, typeChecker, seen)
-    : undefined;
+  if (assignment === undefined) return undefined;
+  const selected = selectAssignedExpression(
+    assignment.expression,
+    assignment.accessPath,
+    bindings,
+    typeChecker,
+    seen,
+  );
+  return selected === undefined ? undefined : staticString(selected, bindings, typeChecker, seen);
+}
+
+function selectAssignedExpression(expression, accessPath, bindings, typeChecker, seen) {
+  if (accessPath.length === 0) return expression;
+  const unwrapped = unwrapExpression(expression);
+  if (ts.isIdentifier(unwrapped)) {
+    const symbol = typeChecker.getSymbolAtLocation(unwrapped);
+    const assignment = symbol === undefined ? undefined : bindings.assignments.get(symbol);
+    if (symbol !== undefined && assignment !== undefined && !seen.has(symbol)) {
+      seen.add(symbol);
+      return selectAssignedExpression(
+        assignment.expression,
+        [...assignment.accessPath, ...accessPath],
+        bindings,
+        typeChecker,
+        seen,
+      );
+    }
+  }
+  const [head, ...tail] = accessPath;
+  const selected = selectedLiteralExpression(unwrapped, head, bindings, typeChecker);
+  return selected === undefined
+    ? undefined
+    : selectAssignedExpression(selected, tail, bindings, typeChecker, seen);
 }
 
 function addPersistenceDiagnostic(sourceFile, node, relativePath, diagnostics, reported) {

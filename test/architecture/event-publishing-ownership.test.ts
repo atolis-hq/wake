@@ -154,6 +154,7 @@ describe('event publishing ownership', () => {
       'src/eventing/type-reference.ts': [
         "import type { EventEnvelope } from '../kernel/index.js';",
         'export type ProcessorInput = EventEnvelope;',
+        "export type ImportedProcessorInput = import('../kernel/index.js').EventEnvelope;",
       ].join('\n'),
       'src/persistence/filesystem/file-event-journal.ts': [
         "import type { EventEnvelope } from '../../kernel/index.js';",
@@ -196,6 +197,37 @@ describe('event publishing ownership', () => {
     ).toHaveLength(5);
   });
 
+  it('rejects declaration and assignment destructuring aliases of the Kernel factory', async () => {
+    const root = await fixture({
+      'src/bootstrap/illegal-destructuring.ts': [
+        "import { createEventData } from '../kernel/index.js';",
+        "import * as Kernel from '../kernel/index.js';",
+        'const [fromArray] = [createEventData];',
+        'const { createEventData: fromObject } = Kernel;',
+        'let fromArrayAssignment = (value: unknown) => value;',
+        '[fromArrayAssignment] = [createEventData];',
+        'let fromObjectAssignment = (value: unknown) => value;',
+        '({ createEventData: fromObjectAssignment } = Kernel);',
+        'const { nested: { factory: fromNested } } = { nested: { factory: createEventData } };',
+        'const [[fromNestedArray]] = [[createEventData]];',
+        "const property = 'createEventData';",
+        'const { [property]: fromComputed } = Kernel;',
+        `export const array = fromArray(${eventInput()});`,
+        `export const object = fromObject(${eventInput()});`,
+        `export const arrayAssignment = fromArrayAssignment(${eventInput()});`,
+        `export const objectAssignment = fromObjectAssignment(${eventInput()});`,
+        `export const nested = fromNested(${eventInput()});`,
+        `export const nestedArray = fromNestedArray(${eventInput()});`,
+        `export const computed = fromComputed(${eventInput()});`,
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[event-data-factory-owner]')),
+    ).toHaveLength(7);
+  });
+
   it('does not reject same-name local symbols or dynamic computed properties', async () => {
     const root = await fixture({
       'src/bootstrap/foreign-symbols.ts': [
@@ -209,6 +241,30 @@ describe('event publishing ownership', () => {
         'export const envelope: EventEnvelope = { sequence: 1 };',
         'journal.append(local);',
         `export const dynamic = Kernel[property](${eventInput()});`,
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
+  it('does not reject destructuring aliases of unrelated local functions', async () => {
+    const root = await fixture({
+      'src/bootstrap/local-destructuring.ts': [
+        'const createEventData = (value: unknown) => value;',
+        'const [fromArray] = [createEventData];',
+        'const { createEventData: fromObject } = { createEventData };',
+        'let fromAssignment = (value: unknown) => value;',
+        '({ createEventData: fromAssignment } = { createEventData });',
+        'const { nested: { factory: fromNested } } = { nested: { factory: createEventData } };',
+        "const property = 'createEventData';",
+        'const { [property]: fromComputed } = { createEventData };',
+        'export const values = [',
+        '  fromArray({ sequence: 1 }),',
+        '  fromObject({ sequence: 2 }),',
+        '  fromAssignment({ sequence: 3 }),',
+        '  fromNested({ sequence: 4 }),',
+        '  fromComputed({ sequence: 5 }),',
+        '];',
       ].join('\n'),
     });
 
@@ -253,8 +309,38 @@ describe('event publishing ownership', () => {
     });
 
     const diagnostics = await checker.checkEventArchitecture(root);
-    expect(messages(diagnostics)).toContain('[legacy-event-journal-append]');
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[legacy-event-journal-append]')),
+    ).toHaveLength(2);
     expect(messages(diagnostics)).toContain('[legacy-event-draft-symbol]');
+  });
+
+  it('reports only statically resolved EventJournal append calls', async () => {
+    const root = await fixture({
+      'src/bootstrap/legacy-append-calls.ts': [
+        "import type { EventJournal } from '../kernel/index.js';",
+        'declare const journal: EventJournal;',
+        'journal.append([]);',
+        "const property = 'append';",
+        'journal[property]([]);',
+        'const unrelated = { append: (value: unknown) => value };',
+        'unrelated.append([]);',
+        'const values = Object.assign([], { append: (value: unknown) => value });',
+        'values.append([]);',
+        "const dynamic: string = 'append';",
+        'values[dynamic]?.([]);',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    const appendDiagnostics = diagnostics.filter(({ message }) =>
+      message.includes('[legacy-event-journal-append]'),
+    );
+    expect(appendDiagnostics).toHaveLength(2);
+    expect(appendDiagnostics.map(({ message }) => message.split(' ')[0])).toEqual([
+      'bootstrap/legacy-append-calls.ts:3:1',
+      'bootstrap/legacy-append-calls.ts:5:1',
+    ]);
   });
 
   it('rejects a property-style legacy append declaration on EventJournal', async () => {
@@ -269,7 +355,13 @@ describe('event publishing ownership', () => {
     });
 
     const diagnostics = await checker.checkEventArchitecture(root);
-    expect(messages(diagnostics)).toContain('[legacy-event-journal-append]');
+    const appendDiagnostics = diagnostics.filter(({ message }) =>
+      message.includes('[legacy-event-journal-append]'),
+    );
+    expect(appendDiagnostics).toHaveLength(1);
+    expect(appendDiagnostics[0]?.message).toContain(
+      'kernel/contracts/event-journal.ts:3:3 [legacy-event-journal-append]',
+    );
   });
 
   it('rejects bounded event contract imports in Persistence and Eventing but permits them in Bootstrap', async () => {
@@ -286,6 +378,23 @@ describe('event publishing ownership', () => {
     expect(
       diagnostics.filter(({ message }) => message.includes('[bounded-event-import-owner]')),
     ).toHaveLength(2);
+  });
+
+  it('rejects bounded import types and re-exports in Persistence and Eventing', async () => {
+    const root = await fixture({
+      'src/persistence/illegal-import-type.ts':
+        "export type Illegal = import('../work/index.js').WorkEventData;",
+      'src/eventing/illegal-import-type.ts':
+        "export type Illegal = import('../work/index.js').WorkEventData;",
+      'src/persistence/illegal-re-export.ts':
+        "export type { WorkEventData } from '../work/index.js';",
+      'src/eventing/illegal-re-export.ts': "export { WorkEventType } from '../work/index.js';",
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[bounded-event-import-owner]')),
+    ).toHaveLength(4);
   });
 
   it('rejects direct bounded EventData construction in Bootstrap, Persistence, and Eventing', async () => {
