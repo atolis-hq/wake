@@ -25,7 +25,7 @@ import {
   completeDecisionClaim,
   readDecisionClaim,
 } from './decision-claim.js';
-import { approveDenied, deliveryIntentRequested } from './event-drafts.js';
+import { approveDenied, deliveryIntentRequested } from './event-data.js';
 import {
   activityCommandContext,
   createJournalIntentAppender,

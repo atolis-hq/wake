@@ -215,16 +215,17 @@ const authorizationSchema = z.discriminatedUnion('source', [
     .strict(),
   z.object({ source: z.literal(ReviewerAuthorizationSource.None) }).strict(),
 ]);
-const eventSchema = z.union([
-  githubEventSchema(
+
+const githubEventSchemas = {
+  [GitHubEventType.ConversationRecordDeferred]: githubEventSchema(
     GitHubEventType.ConversationRecordDeferred,
     z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
   ),
-  githubEventSchema(
+  [GitHubEventType.ConversationRecordRecovered]: githubEventSchema(
     GitHubEventType.ConversationRecordRecovered,
     z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
   ),
-  githubEventSchema(
+  [GitHubEventType.WorkObserved]: githubEventSchema(
     GitHubEventType.WorkObserved,
     z
       .object({
@@ -253,7 +254,7 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  githubEventSchema(
+  [GitHubEventType.AdmissionStarted]: githubEventSchema(
     GitHubEventType.AdmissionStarted,
     z
       .object({
@@ -263,7 +264,7 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  githubEventSchema(
+  [GitHubEventType.CommentObserved]: githubEventSchema(
     GitHubEventType.CommentObserved,
     z.discriminatedUnion('reviewKind', [
       z
@@ -299,11 +300,11 @@ const eventSchema = z.union([
         .strict(),
     ]),
   ),
-  githubEventSchema(
+  [GitHubEventType.DeliveryObserved]: githubEventSchema(
     GitHubEventType.DeliveryObserved,
     z.object({ deliveryId: z.string(), raw: rawSchema }).strict(),
   ),
-  githubEventSchema(
+  [GitHubEventType.DeletedWorkObservationSkipped]: githubEventSchema(
     GitHubEventType.DeletedWorkObservationSkipped,
     z
       .object({
@@ -315,7 +316,7 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  githubEventSchema(
+  [GitHubEventType.InboundTranslationRetried]: githubEventSchema(
     GitHubEventType.InboundTranslationRetried,
     z
       .object({
@@ -326,11 +327,11 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  githubEventSchema(
+  [GitHubEventType.InboundTranslationRecovered]: githubEventSchema(
     GitHubEventType.InboundTranslationRecovered,
     z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
   ),
-  githubEventSchema(
+  [GitHubEventType.InboundTranslationFailed]: githubEventSchema(
     GitHubEventType.InboundTranslationFailed,
     z
       .object({
@@ -346,7 +347,17 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-]);
+} as const;
+
+const githubEventTypes = new Set<string>(Object.values(GitHubEventType));
+
+function githubEventSchemaFor(eventType: string) {
+  return isGitHubEventType(eventType) ? githubEventSchemas[eventType] : null;
+}
+
+function isGitHubEventType(eventType: string): eventType is keyof typeof githubEventSchemas {
+  return githubEventTypes.has(eventType);
+}
 
 function githubEventSchema<Type extends string, Payload extends z.ZodType>(
   eventType: Type,
@@ -359,7 +370,15 @@ function githubEventSchema<Type extends string, Payload extends z.ZodType>(
 }
 
 export function decodeGitHubAdapterEvent(event: EventEnvelope): GitHubAdapterEvent {
-  const result = eventSchema.safeParse(event);
+  const header = eventEnvelopeSchema.safeParse(event);
+  if (!header.success) throw invalidGitHubEvent(event, header.error);
+  const schema = githubEventSchemaFor(header.data.event.eventType);
+  if (schema === null) {
+    const unsupported = z.never().safeParse(header.data.event.eventType);
+    if (unsupported.success) throw new Error('Expected unsupported event type validation to fail');
+    throw invalidGitHubEvent(event, unsupported.error);
+  }
+  const result = schema.safeParse(event);
   if (!result.success) throw invalidGitHubEvent(event, result.error);
   return result.data;
 }

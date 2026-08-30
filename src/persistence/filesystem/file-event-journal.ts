@@ -12,6 +12,7 @@ import type {
 } from '../../kernel/index.js';
 import {
   decodeEventEnvelope,
+  EventIdConflictError,
   InProcessJournalChangeSignal,
   WrongExpectedSequenceError,
 } from '../../kernel/index.js';
@@ -93,8 +94,8 @@ export class FileEventJournal implements EventJournal {
         }
         const existing = drafts.map((draft) => byId.get(draft.eventId));
         for (const [index, event] of existing.entries())
-          if (event !== undefined && !sameDraft(event, drafts[index]!))
-            throw new Error(
+          if (event !== undefined && !sameDraft(event, drafts[index]!, stream))
+            throw new EventIdConflictError(
               `Event id ${event.event.eventId} has already been used with different content`,
             );
         if (drafts.length > 0 && existing.every(isDefined)) return existing.filter(isDefined);
@@ -599,7 +600,8 @@ function indexEventsByStream(
   return indexed;
 }
 
-const sameDraft = (event: EventEnvelope, draft: EventData) => isDeepStrictEqual(event.event, draft);
+const sameDraft = (event: EventEnvelope, draft: EventData, stream: EntityRef) =>
+  key(event.stream) === key(stream) && isDeepStrictEqual(event.event, draft);
 
 function validateEnvelope(event: EventEnvelope, expectedPosition: number): void {
   if (event.globalPosition !== expectedPosition) throw new Error('Invalid event envelope position');

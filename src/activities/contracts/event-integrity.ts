@@ -48,7 +48,7 @@ export function decisionClaimIdentity(
       path: ['event', 'payload', 'activationId'],
       message: 'Activity decision activation and action must identify its stream',
     });
-  decisionClaimDataIdentity(envelope.event, context);
+  decisionClaimDataIdentity(envelope.event, context, ['event']);
 }
 
 type DecisionClaimPayload =
@@ -78,11 +78,12 @@ type DecisionClaimPayload =
 export function decisionClaimDataIdentity(
   event: { readonly payload: DecisionClaimPayload },
   context: z.RefinementCtx,
+  path: readonly PropertyKey[] = [],
 ): void {
   if (event.payload.fact.payload.activationId !== event.payload.activationId)
     context.addIssue({
       code: 'custom',
-      path: ['payload', 'fact', 'payload', 'activationId'],
+      path: [...path, 'payload', 'fact', 'payload', 'activationId'],
       message: 'Activity decision fact activation must match its claim',
     });
   if (
@@ -91,7 +92,7 @@ export function decisionClaimDataIdentity(
   )
     context.addIssue({
       code: 'custom',
-      path: ['payload', 'outcome', 'data', 'intentEventId'],
+      path: [...path, 'payload', 'outcome', 'data', 'intentEventId'],
       message: 'Requested decision intent event id must match its fact',
     });
   if (
@@ -100,12 +101,12 @@ export function decisionClaimDataIdentity(
   )
     context.addIssue({
       code: 'custom',
-      path: ['payload', 'outcome', 'data', 'reason'],
+      path: [...path, 'payload', 'outcome', 'data', 'reason'],
       message: 'Denied decision reason must match its fact',
     });
   resourcePayloadIdentity(
     { stream: event.payload.factStream, payload: event.payload.fact.payload },
     context,
-    ['payload', 'fact'],
+    [...path, 'payload', 'fact'],
   );
 }

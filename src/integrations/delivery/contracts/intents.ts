@@ -133,7 +133,7 @@ const intentEventSchema: z.ZodType<DeliveryIntentEvent> = z
     if (event.stream.id !== event.event.payload.resourceId)
       ctx.addIssue({
         code: 'custom',
-        path: ['payload', 'resourceId'],
+        path: ['event', 'payload', 'resourceId'],
         message: 'Delivery intent resource id must identify its stream',
       });
   });

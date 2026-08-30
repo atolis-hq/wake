@@ -29,10 +29,6 @@ export class PollService {
     if (drafts.length === 0) return;
     const stream = integrationStream(GitHubAdapter);
     const existing = await this.journal.readStream(stream);
-    await this.journal.appendToStream(
-      stream,
-      existing.length,
-      drafts.map((draft) => ({ ...draft, stream })),
-    );
+    await this.journal.appendToStream(stream, existing.length, drafts);
   }
 }

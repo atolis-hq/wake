@@ -300,6 +300,27 @@ describe('Orchestration event contract', () => {
     ).toThrow();
   });
 
+  it('dispatches a known event type directly to its specific payload schema', () => {
+    const cause = decodingCause(() =>
+      decodeOrchestrationEvent(
+        eventEnvelope(
+          OrchestrationEventType.ActivityRequested,
+          { ...activation, ordinal: 0 },
+          workflow,
+        ),
+      ),
+    );
+
+    expect(cause).toMatchObject({
+      issues: expect.arrayContaining([
+        expect.objectContaining({ path: ['event', 'payload', 'ordinal'] }),
+      ]),
+    });
+    expect(cause).not.toMatchObject({
+      issues: expect.arrayContaining([expect.objectContaining({ code: 'invalid_union' })]),
+    });
+  });
+
   it('folds a block reason and operator retry command identifiers', () => {
     const started = selectWorkflowOrchestrationEvent(samples[0]);
     if (started?.event.eventType !== OrchestrationEventType.InstanceStarted)
@@ -430,3 +451,13 @@ describe('Orchestration event contract', () => {
     expect(decoded.event.payload.outcome).toBe('rejected');
   });
 });
+
+function decodingCause(decode: () => unknown): unknown {
+  try {
+    decode();
+  } catch (error) {
+    if (error instanceof Error) return error.cause;
+    throw error;
+  }
+  throw new Error('Expected event decoding to fail');
+}

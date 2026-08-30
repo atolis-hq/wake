@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { activationId, ActivityOutcomeKind } from '../../../activities/index.js';
 import { type ConversationService } from '../../../conversations/index.js';
 import {
@@ -7,7 +8,12 @@ import {
   type EventProcessor,
 } from '../../../eventing/index.js';
 import {
+  decodeEventEnvelope,
+  entityRefSchema,
   EventActorKind,
+  eventDataSchema,
+  eventEnvelopeSchema,
+  offsetIsoTimestampSchema,
   type EventEnvelope,
   type EventJournal,
   type ProjectionStore,
@@ -30,6 +36,18 @@ const pendingKey = 'pending-confirmations';
 interface PendingConfirmations {
   readonly events: readonly EventEnvelope[];
 }
+
+const pendingConfirmationsSchema = z.object({ events: z.array(z.unknown()) }).strict();
+const legacyPendingEnvelopeSchema = eventDataSchema
+  .omit({ payload: true })
+  .extend({
+    stream: entityRefSchema,
+    payload: z.unknown(),
+    recordedAt: offsetIsoTimestampSchema,
+    sequence: z.number().int().positive(),
+    globalPosition: z.number().int().positive(),
+  })
+  .strict();
 
 export class DeliveryOutcomeReactor {
   readonly processor: EventProcessor;
@@ -153,8 +171,9 @@ export class DeliveryOutcomeReactor {
   }
 
   private async loadPending(): Promise<readonly EventEnvelope[]> {
-    const stored = await this.projections.read<PendingConfirmations>(pendingNamespace, pendingKey);
-    return stored?.value.events ?? [];
+    const stored = await this.projections.read<unknown>(pendingNamespace, pendingKey);
+    if (stored === null) return [];
+    return pendingConfirmationsSchema.parse(stored.value).events.map(decodePendingEnvelope);
   }
 
   private async savePending(events: readonly EventEnvelope[]): Promise<void> {
@@ -173,6 +192,29 @@ export class DeliveryOutcomeReactor {
     pending.set(event.event.eventId, event);
     await this.savePending([...pending.values()]);
   }
+}
+
+function decodePendingEnvelope(value: unknown): EventEnvelope {
+  const nested = eventEnvelopeSchema.safeParse(value);
+  if (nested.success) return nested.data;
+  const legacy = legacyPendingEnvelopeSchema.parse(value);
+  return decodeEventEnvelope({
+    event: {
+      eventId: legacy.eventId,
+      eventType: legacy.eventType,
+      schemaVersion: legacy.schemaVersion,
+      occurredAt: legacy.occurredAt,
+      correlationId: legacy.correlationId,
+      causationId: legacy.causationId,
+      actor: legacy.actor,
+      source: legacy.source,
+      payload: legacy.payload,
+    },
+    stream: legacy.stream,
+    recordedAt: legacy.recordedAt,
+    sequence: legacy.sequence,
+    globalPosition: legacy.globalPosition,
+  });
 }
 
 function isResolvedDelivery(

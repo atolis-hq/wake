@@ -1,9 +1,17 @@
+import { copyFile, mkdir, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
-import { createEventData, eventId } from '../../../src/kernel/index.js';
-import { InMemoryEventJournal, InMemoryProjectionStore } from '../../../src/persistence/index.js';
+import { createEventData, eventId, type EventEnvelope } from '../../../src/kernel/index.js';
+import {
+  encode,
+  FileProjectionStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '../../../src/persistence/index.js';
 
 const clock = { now: () => new Date('2026-08-09T00:00:00.000Z') };
 
@@ -27,6 +35,47 @@ it('skips facts outside the delivery namespace', () => {
       event: { eventType: 'work.created' },
     }),
   ).toBeNull();
+});
+
+it('normalizes a legacy flat pending projection when reconciliation leaves it pending', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-legacy-pending-delivery-'));
+  const namespace = 'reactor:delivery-outcomes:pending';
+  const key = 'pending-confirmations';
+  const directory = join(root, 'projections', encode(namespace));
+  await mkdir(directory, { recursive: true });
+  await copyFile(
+    join(process.cwd(), 'test', 'fixtures', 'projections', 'legacy-flat-pending-delivery.json'),
+    join(directory, `${encode(key)}.json`),
+  );
+  const projections = new FileProjectionStore(root);
+  const reactor = new DeliveryOutcomeReactor(
+    new InMemoryEventJournal(clock),
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+        } as never;
+      },
+      async acceptOutcome() {
+        throw new Error('An active activation must leave the delivery pending');
+      },
+    },
+    projections,
+  );
+
+  await reactor.reconcileOnce();
+
+  const stored = await projections.read<{ readonly events: readonly EventEnvelope[] }>(
+    namespace,
+    key,
+  );
+  expect(stored?.value.events).toEqual([
+    expect.objectContaining({
+      event: expect.objectContaining({ eventId: 'intent-1:confirmed' }),
+      stream: { kind: 'delivery', id: 'intent-1' },
+    }),
+  ]);
+  expect(stored?.value.events[0]).not.toHaveProperty('eventId');
 });
 
 function confirmedEvent(overrides: {

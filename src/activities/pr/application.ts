@@ -34,7 +34,7 @@ import {
   reviewRejected,
   revisionChanged,
   stateChanged,
-} from './event-drafts.js';
+} from './event-data.js';
 import { decidePullRequestAuthority } from './policy.js';
 import { acceptedReviewSignalProjection, pullRequestProjection } from './projection.js';
 import { PullRequestDenialCode } from './vocabulary.js';

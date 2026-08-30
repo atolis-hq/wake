@@ -6,6 +6,7 @@ import { expect, it, vi } from 'vitest';
 import {
   cachedJournalView,
   createEventData,
+  EventIdConflictError,
   WrongExpectedSequenceError,
   type EntityRef,
   type EventData,
@@ -150,6 +151,32 @@ it('returns an existing idempotent event while appending only new events in a mi
     'event-1',
     'event-2',
   ]);
+});
+
+it('rejects an otherwise identical event id replayed to another stream without notifying', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-cross-stream-replay-'));
+  const streamA: EntityRef<'test', 'a'> = { kind: 'test', id: 'a' };
+  const streamB: EntityRef<'test', 'b'> = { kind: 'test', id: 'b' };
+  const draft = createEventData({
+    eventId: 'event-1',
+    eventType: 'test.changed',
+    occurredAt: '2026-07-30T12:00:00Z',
+    correlationId: 'corr',
+    causationId: 'event-1',
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    payload: { value: 1 },
+  });
+  const journal = new FileEventJournal(root, new FakeClock());
+  await journal.appendToStream(streamA, 0, [draft]);
+  const revision = journal.changeSignal.revision();
+
+  await expect(journal.appendToStream(streamB, 0, [draft])).rejects.toBeInstanceOf(
+    EventIdConflictError,
+  );
+
+  expect(await journal.readStream(streamB)).toEqual([]);
+  expect(journal.changeSignal.revision()).toBe(revision);
 });
 
 it('round-trips every strict offset-ISO timestamp accepted by draft construction', async () => {

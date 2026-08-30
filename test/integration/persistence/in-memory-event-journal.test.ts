@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createEventData,
+  EventIdConflictError,
   WrongExpectedSequenceError,
   type Clock,
   type EntityRef,
@@ -130,6 +131,21 @@ describe('in-memory event journal', () => {
 
     expect(repeated).toEqual(first);
     expect(await journal.readAll(0)).toHaveLength(1);
+  });
+
+  it('rejects an otherwise identical event id replayed to another stream without notifying', async () => {
+    const journal = new InMemoryEventJournal(new FixedClock());
+    const other: EntityRef<'test', 'other'> = { kind: 'test', id: 'other' };
+    const draft = event('evt-1');
+    await journal.appendToStream(stream, 0, [draft]);
+    const revision = journal.changeSignal.revision();
+
+    await expect(journal.appendToStream(other, 0, [draft])).rejects.toBeInstanceOf(
+      EventIdConflictError,
+    );
+
+    expect(await journal.readStream(other)).toEqual([]);
+    expect(journal.changeSignal.revision()).toBe(revision);
   });
 
   it('rejects an event id reused with different content', async () => {

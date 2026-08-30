@@ -275,8 +275,8 @@ const groupBudgetGrantedEnvelope = childGroupEnvelope(
       message: 'Group budget grant key must identify its stream',
     });
 });
-const eventSchema = z.union([
-  workflowEnvelope(
+const eventSchemas = {
+  [OrchestrationEventType.InstanceStarted]: workflowEnvelope(
     OrchestrationEventType.InstanceStarted,
     z.union([
       z
@@ -299,7 +299,7 @@ const eventSchema = z.union([
         .strict(),
     ]),
   ),
-  eventEnvelopeSchema.extend({
+  [OrchestrationEventType.WorkflowDefinitionRegistered]: eventEnvelopeSchema.extend({
     event: eventDataSchema.extend({
       eventType: z.literal(OrchestrationEventType.WorkflowDefinitionRegistered),
       payload: z
@@ -312,16 +312,19 @@ const eventSchema = z.union([
     }),
     stream: workflowDefinitionsStreamSchema,
   }),
-  workflowEnvelope(
+  [OrchestrationEventType.StageEntered]: workflowEnvelope(
     OrchestrationEventType.StageEntered,
     z.object({ stage: brandedStringSchema(stageName) }).strict(),
   ),
-  workflowEnvelope(OrchestrationEventType.ActivityRequested, activityRequestedSchema),
-  workflowEnvelope(
+  [OrchestrationEventType.ActivityRequested]: workflowEnvelope(
+    OrchestrationEventType.ActivityRequested,
+    activityRequestedSchema,
+  ),
+  [OrchestrationEventType.ActivityStarted]: workflowEnvelope(
     OrchestrationEventType.ActivityStarted,
     z.object({ activationId: brandedStringSchema(activationId) }).strict(),
   ),
-  workflowEnvelope(
+  [OrchestrationEventType.ActivityOutcomeAccepted]: workflowEnvelope(
     OrchestrationEventType.ActivityOutcomeAccepted,
     z
       .object({
@@ -330,7 +333,7 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  workflowEnvelope(
+  [OrchestrationEventType.ActivityExecutionFailed]: workflowEnvelope(
     OrchestrationEventType.ActivityExecutionFailed,
     z
       .object({
@@ -340,7 +343,7 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  workflowEnvelope(
+  [OrchestrationEventType.ActivityRetriedForRunnerQuota]: workflowEnvelope(
     OrchestrationEventType.ActivityRetriedForRunnerQuota,
     z
       .object({
@@ -351,7 +354,7 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  workflowEnvelope(
+  [OrchestrationEventType.ActivityWaiting]: workflowEnvelope(
     OrchestrationEventType.ActivityWaiting,
     z
       .object({
@@ -360,9 +363,15 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  workflowEnvelope(OrchestrationEventType.SignalWaitStarted, expectationSchema),
-  workflowEnvelope(OrchestrationEventType.SignalAccepted, signalSchema),
-  workflowEnvelope(
+  [OrchestrationEventType.SignalWaitStarted]: workflowEnvelope(
+    OrchestrationEventType.SignalWaitStarted,
+    expectationSchema,
+  ),
+  [OrchestrationEventType.SignalAccepted]: workflowEnvelope(
+    OrchestrationEventType.SignalAccepted,
+    signalSchema,
+  ),
+  [OrchestrationEventType.SupplementalActivityQueued]: workflowEnvelope(
     OrchestrationEventType.SupplementalActivityQueued,
     z
       .object({
@@ -372,7 +381,7 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  workflowEnvelope(
+  [OrchestrationEventType.SupplementalActivityDequeued]: workflowEnvelope(
     OrchestrationEventType.SupplementalActivityDequeued,
     z
       .object({
@@ -381,20 +390,23 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  workflowEnvelope(
+  [OrchestrationEventType.RepeatCounted]: workflowEnvelope(
     OrchestrationEventType.RepeatCounted,
     z.object({ routeId: z.string().min(1), count: z.number().int().positive() }).strict(),
   ),
-  workflowEnvelope(
+  [OrchestrationEventType.RetryCounted]: workflowEnvelope(
     OrchestrationEventType.RetryCounted,
     z.object({ retryKey: z.string().min(1), count: z.number().int().positive() }).strict(),
   ),
-  workflowEnvelope(OrchestrationEventType.InstanceCompleted, emptySchema),
-  workflowEnvelope(
+  [OrchestrationEventType.InstanceCompleted]: workflowEnvelope(
+    OrchestrationEventType.InstanceCompleted,
+    emptySchema,
+  ),
+  [OrchestrationEventType.InstanceBlocked]: workflowEnvelope(
     OrchestrationEventType.InstanceBlocked,
     z.object({ reason: z.string() }).strict(),
   ),
-  workflowEnvelope(
+  [OrchestrationEventType.OperatorRetryRequested]: workflowEnvelope(
     OrchestrationEventType.OperatorRetryRequested,
     z
       .object({
@@ -403,16 +415,31 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  workflowEnvelope(OrchestrationEventType.InstanceSuperseded, emptySchema),
-  workflowEnvelope(
+  [OrchestrationEventType.InstanceSuperseded]: workflowEnvelope(
+    OrchestrationEventType.InstanceSuperseded,
+    emptySchema,
+  ),
+  [OrchestrationEventType.ChildRequested]: workflowEnvelope(
     OrchestrationEventType.ChildRequested,
     z.object({ ...childMetadataShape, workflowName: brandedStringSchema(workflowName) }).strict(),
   ),
-  workflowEnvelope(OrchestrationEventType.ChildStarted, childMetadataSchema),
-  workflowEnvelope(OrchestrationEventType.ChildCompleted, childMetadataSchema),
-  workflowEnvelope(OrchestrationEventType.ChildCompletionConsumed, childMetadataSchema),
-  workflowEnvelope(OrchestrationEventType.CausalActivationRejected, childMetadataSchema),
-  workflowEnvelope(
+  [OrchestrationEventType.ChildStarted]: workflowEnvelope(
+    OrchestrationEventType.ChildStarted,
+    childMetadataSchema,
+  ),
+  [OrchestrationEventType.ChildCompleted]: workflowEnvelope(
+    OrchestrationEventType.ChildCompleted,
+    childMetadataSchema,
+  ),
+  [OrchestrationEventType.ChildCompletionConsumed]: workflowEnvelope(
+    OrchestrationEventType.ChildCompletionConsumed,
+    childMetadataSchema,
+  ),
+  [OrchestrationEventType.CausalActivationRejected]: workflowEnvelope(
+    OrchestrationEventType.CausalActivationRejected,
+    childMetadataSchema,
+  ),
+  [OrchestrationEventType.GroupBudgetExhausted]: workflowEnvelope(
     OrchestrationEventType.GroupBudgetExhausted,
     z
       .object({
@@ -422,13 +449,31 @@ const eventSchema = z.union([
       })
       .strict(),
   ),
-  primaryClaimedEnvelope,
-  groupClaimedEnvelope,
-  groupBudgetGrantedEnvelope,
-]);
+  [OrchestrationEventType.PrimaryClaimed]: primaryClaimedEnvelope,
+  [OrchestrationEventType.GroupClaimed]: groupClaimedEnvelope,
+  [OrchestrationEventType.GroupBudgetGranted]: groupBudgetGrantedEnvelope,
+} as const;
+
+const orchestrationEventTypes = new Set<string>(Object.values(OrchestrationEventType));
+
+function orchestrationEventSchemaFor(eventType: string) {
+  return isOrchestrationEventType(eventType) ? eventSchemas[eventType] : null;
+}
+
+function isOrchestrationEventType(eventType: string): eventType is keyof typeof eventSchemas {
+  return orchestrationEventTypes.has(eventType);
+}
 
 export function decodeOrchestrationEvent(event: EventEnvelope): OrchestrationEvent {
-  const result = eventSchema.safeParse(event);
+  const header = eventEnvelopeSchema.safeParse(event);
+  if (!header.success) throw invalidOrchestrationEvent(event, header.error);
+  const schema = orchestrationEventSchemaFor(header.data.event.eventType);
+  if (schema === null) {
+    const unsupported = z.never().safeParse(header.data.event.eventType);
+    if (unsupported.success) throw new Error('Expected unsupported event type validation to fail');
+    throw invalidOrchestrationEvent(event, unsupported.error);
+  }
+  const result = schema.safeParse(event);
   if (!result.success) throw invalidOrchestrationEvent(event, result.error);
   // Zod represents optional object members as `T | undefined`; the durable
   // contract uses exact optional members for compatibility with old events.

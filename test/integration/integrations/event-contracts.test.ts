@@ -3,8 +3,10 @@ import {
   BuiltInAdapterId,
   createDeliveryEventData,
   decodeDeliveryEvent,
+  decodeDeliveryIntentEvent,
   decodeGitHubAdapterEvent,
   DeliveryEventType,
+  DeliveryIntentEventType,
   deliveryStream,
   GitHubEventType,
   integrationStream,
@@ -13,7 +15,9 @@ import {
   type DeliveryEventDataInput,
 } from '../../../src/integrations/github/index.js';
 import { eventId, type EventId } from '../../../src/kernel/index.js';
+import { resourceStream } from '../../../src/resources/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
+import { resId } from '../../support/identities.js';
 
 const stream = integrationStream(BuiltInAdapterId.GitHub);
 const actor = { id: 'octocat', kind: 'human' } as const;
@@ -131,6 +135,23 @@ describe('GitHub adapter event contract', () => {
     ).toThrow();
   });
 
+  it('dispatches a known event type directly to its specific payload schema', () => {
+    const cause = decodingCause(() =>
+      decodeGitHubAdapterEvent(
+        eventEnvelope(GitHubEventType.WorkObserved, { ...samples[0][1], title: 42 }, stream),
+      ),
+    );
+
+    expect(cause).toMatchObject({
+      issues: expect.arrayContaining([
+        expect.objectContaining({ path: ['event', 'payload', 'title'] }),
+      ]),
+    });
+    expect(cause).not.toMatchObject({
+      issues: expect.arrayContaining([expect.objectContaining({ code: 'invalid_union' })]),
+    });
+  });
+
   it('selects unrelated namespaces as null but throws for invalid owned events', () => {
     expect(selectGitHubAdapterEvent(eventEnvelope('work.item-created', {}, stream))).toBeNull();
     expect(() =>
@@ -208,11 +229,17 @@ describe('Delivery event contract', () => {
   });
 
   it('rejects a delivery event whose stream identifies a different intent', () => {
-    expect(() =>
+    const cause = decodingCause(() =>
       decodeDeliveryEvent(
         eventEnvelope(DeliveryEventType.Confirmed, confirmed, deliveryStream(eventId('intent-2'))),
       ),
-    ).toThrow(/intent/i);
+    );
+
+    expect(cause).toMatchObject({
+      issues: expect.arrayContaining([
+        expect.objectContaining({ path: ['event', 'payload', 'intentEventId'] }),
+      ]),
+    });
   });
 
   it('requires an external id only for a confirmed reconciliation', () => {
@@ -253,3 +280,37 @@ describe('Delivery event contract', () => {
     ).toThrow(/externalId/i);
   });
 });
+
+it('reports a nested delivery-intent resource identity path', () => {
+  const resource = resourceStream(resId('1'));
+  const cause = decodingCause(() =>
+    decodeDeliveryIntentEvent(
+      eventEnvelope(
+        DeliveryIntentEventType.StatusPublishRequested,
+        {
+          workflowInstanceId: 'workflow-1',
+          activationId: 'activation-1',
+          resourceId: resId('2'),
+          body: 'Working',
+        },
+        resource,
+      ),
+    ),
+  );
+
+  expect(cause).toMatchObject({
+    issues: expect.arrayContaining([
+      expect.objectContaining({ path: ['event', 'payload', 'resourceId'] }),
+    ]),
+  });
+});
+
+function decodingCause(decode: () => unknown): unknown {
+  try {
+    decode();
+  } catch (error) {
+    if (error instanceof Error) return error.cause;
+    throw error;
+  }
+  throw new Error('Expected event decoding to fail');
+}

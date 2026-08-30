@@ -229,6 +229,19 @@ describe('Activity event contract', () => {
     expect(source).not.toMatch(/export interface ActivityActivated/);
   });
 
+  it('uses EventData naming for pull-request event constructors', async () => {
+    const source = await readFile(
+      new URL('../../../src/activities/pr/event-data.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toMatch(/type ActivityEventDataOf/);
+    expect(source).not.toMatch(/ActivityDraft|event-drafts/);
+    await expect(
+      readFile(new URL('../../../src/activities/pr/event-drafts.ts', import.meta.url), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('rejects event-specific wrong stream kinds', () => {
     expect(() =>
       decodeActivityEvent(eventEnvelope(ActivityEventType.PrDiscovered, context, approveDecision)),
@@ -237,7 +250,7 @@ describe('Activity event contract', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveDecisionClaimed,
-          samples[13].event.payload,
+          samples[14].event.payload,
           resource,
         ),
       ),
@@ -249,7 +262,7 @@ describe('Activity event contract', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveDecisionClaimed,
-          samples[13].event.payload,
+          samples[14].event.payload,
           mergeDecision,
         ),
       ),
@@ -261,7 +274,7 @@ describe('Activity event contract', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrMergeDecisionClaimed,
-          samples[14].event.payload,
+          samples[15].event.payload,
           approveDecision,
         ),
       ),
@@ -286,7 +299,7 @@ describe('Activity event integrity', () => {
     ),
     eventEnvelope(
       ActivityEventType.PrApproveDecisionClaimed,
-      { ...samples[13].event.payload, activationId: ' ' },
+      { ...samples[14].event.payload, activationId: ' ' },
       approveDecision,
     ),
   ])('reports invalid branded IDs through the Activity decoder context', (event) => {
@@ -312,11 +325,37 @@ describe('Activity event integrity', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveDecisionClaimed,
-          { ...samples[13].event.payload, activationId: activationId('activation-2') },
+          { ...samples[14].event.payload, activationId: activationId('activation-2') },
           approveDecision,
         ),
       ),
     ).toThrow();
+  });
+
+  it('reports nested decision-claim refinement issue paths', () => {
+    const cause = decodingCause(() =>
+      decodeActivityEvent(
+        eventEnvelope(
+          ActivityEventType.PrApproveDecisionClaimed,
+          {
+            ...samples[14].event.payload,
+            outcome: {
+              kind: 'waiting',
+              data: { intentEventId: 'other-intent', signalKind: signalName('delivery-result') },
+            },
+          },
+          approveDecision,
+        ),
+      ),
+    );
+
+    expect(cause).toMatchObject({
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          path: ['event', 'payload', 'outcome', 'data', 'intentEventId'],
+        }),
+      ]),
+    });
   });
 });
 
@@ -377,14 +416,14 @@ describe('Activity decision claim integrity', () => {
     {
       name: 'requested claim with a blocked outcome',
       payload: {
-        ...samples[13].event.payload,
+        ...samples[14].event.payload,
         outcome: { kind: 'blocked', data: { reason: 'policy' } },
       },
     },
     {
       name: 'requested claim with a mismatched intent event id',
       payload: {
-        ...samples[13].event.payload,
+        ...samples[14].event.payload,
         outcome: {
           kind: 'waiting',
           data: { intentEventId: 'other-intent', signalKind: signalName('delivery-result') },
@@ -394,7 +433,7 @@ describe('Activity decision claim integrity', () => {
     {
       name: 'denied claim with a waiting outcome',
       payload: {
-        ...samples[13].event.payload,
+        ...samples[14].event.payload,
         decisionKind: 'denied',
         outcome: {
           kind: 'waiting',
@@ -416,7 +455,7 @@ describe('Activity decision claim integrity', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveDecisionClaimed,
-          { ...samples[13].event.payload, activationId: '\uD800' },
+          { ...samples[14].event.payload, activationId: '\uD800' },
           approveDecision,
         ),
       ),
@@ -434,10 +473,20 @@ describe('Activity decision claim integrity', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveDecisionClaimed,
-          { ...samples[13].event.payload, ...mismatch },
+          { ...samples[14].event.payload, ...mismatch },
           approveDecision,
         ),
       ),
     ).toThrow();
   });
 });
+
+function decodingCause(decode: () => unknown): unknown {
+  try {
+    decode();
+  } catch (error) {
+    if (error instanceof Error) return error.cause;
+    throw error;
+  }
+  throw new Error('Expected event decoding to fail');
+}

@@ -133,7 +133,7 @@ const eventSchema: z.ZodType<DeliveryEvent> = z
     if (event.stream.id !== event.event.payload.intentEventId)
       context.addIssue({
         code: 'custom',
-        path: ['payload', 'intentEventId'],
+        path: ['event', 'payload', 'intentEventId'],
         message: 'Delivery intent payload id must identify its stream',
       });
   });

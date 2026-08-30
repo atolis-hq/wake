@@ -7,7 +7,11 @@ import type {
   EventJournal,
   JournalChangeSignal,
 } from '../../kernel/index.js';
-import { InProcessJournalChangeSignal, WrongExpectedSequenceError } from '../../kernel/index.js';
+import {
+  EventIdConflictError,
+  InProcessJournalChangeSignal,
+  WrongExpectedSequenceError,
+} from '../../kernel/index.js';
 
 interface IndexedEvent {
   readonly draft: EventData;
@@ -34,7 +38,7 @@ export class InMemoryEventJournal implements EventJournal {
     if (events.length === 0) throw new Error('appendToStream requires at least one event');
     validateBatch(stream, events);
     const existingEvents = events.map((draft) => this.eventIds.get(draft.eventId));
-    this.rejectChangedEventIds(events, existingEvents);
+    this.rejectChangedEventIds(stream, events, existingEvents);
 
     if (events.length > 0 && existingEvents.every((event) => event !== undefined)) {
       return existingEvents.map((event) => event.envelope);
@@ -116,13 +120,20 @@ export class InMemoryEventJournal implements EventJournal {
   }
 
   private rejectChangedEventIds(
+    stream: EntityRef,
     drafts: readonly EventData[],
     existingEvents: readonly (IndexedEvent | undefined)[],
   ): void {
     for (const [index, draft] of drafts.entries()) {
       const existing = existingEvents[index];
-      if (existing !== undefined && !isDeepStrictEqual(existing.draft, draft)) {
-        throw new Error(`Event id ${draft.eventId} has already been used with different content`);
+      if (
+        existing !== undefined &&
+        (streamKey(existing.envelope.stream) !== streamKey(stream) ||
+          !isDeepStrictEqual(existing.draft, draft))
+      ) {
+        throw new EventIdConflictError(
+          `Event id ${draft.eventId} has already been used with different content`,
+        );
       }
     }
   }

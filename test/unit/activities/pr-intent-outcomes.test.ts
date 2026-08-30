@@ -9,7 +9,7 @@ import { resourceCapability, resourceKind } from '../../../src/resources/index.j
 import { resId, workId } from '../../support/identities.js';
 
 import { activationId, createPullRequestMergeActivity } from '../../../src/activities/index.js';
-import { mergeDenied } from '../../../src/activities/pr/event-drafts.js';
+import { mergeDenied } from '../../../src/activities/pr/event-data.js';
 import { appendIntentOnce } from '../../../src/activities/pr/intent.js';
 import {
   correlationId,

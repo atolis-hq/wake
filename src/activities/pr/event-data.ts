@@ -9,7 +9,7 @@ import { activationId } from '../contracts/identifiers.js';
 import { isReviewAuthorized } from '../review/authorization.js';
 import type { AcceptReviewSignal, ObservePullRequest, RequestChangesSignal } from './contracts.js';
 
-type ActivityDraft<Type extends ActivityEventData['eventType']> = Extract<
+type ActivityEventDataOf<Type extends ActivityEventData['eventType']> = Extract<
   ActivityEventData,
   { eventType: Type }
 >;
@@ -22,13 +22,13 @@ type DeliveryIntentType =
 export const discovered = (
   { resourceId, ...command }: ObservePullRequest,
   context: CommandContext,
-): ActivityDraft<typeof ActivityEventType.PrDiscovered> =>
+): ActivityEventDataOf<typeof ActivityEventType.PrDiscovered> =>
   fact(resourceId, ActivityEventType.PrDiscovered, command, context);
 
 export const revisionChanged = (
   command: ObservePullRequest,
   context: CommandContext,
-): ActivityDraft<typeof ActivityEventType.PrRevisionChanged> =>
+): ActivityEventDataOf<typeof ActivityEventType.PrRevisionChanged> =>
   fact(
     command.resourceId,
     ActivityEventType.PrRevisionChanged,
@@ -43,19 +43,19 @@ export const revisionChanged = (
 export const stateChanged = (
   command: ObservePullRequest,
   context: CommandContext,
-): ActivityDraft<typeof ActivityEventType.PrStateChanged> =>
+): ActivityEventDataOf<typeof ActivityEventType.PrStateChanged> =>
   fact(command.resourceId, ActivityEventType.PrStateChanged, { state: command.state }, context);
 
 export const checksChanged = (
   command: ObservePullRequest,
   context: CommandContext,
-): ActivityDraft<typeof ActivityEventType.PrChecksChanged> =>
+): ActivityEventDataOf<typeof ActivityEventType.PrChecksChanged> =>
   fact(command.resourceId, ActivityEventType.PrChecksChanged, { checks: command.checks }, context);
 
 export const reviewAccepted = (
   command: AcceptReviewSignal,
   context: CommandContext,
-): ActivityDraft<typeof ActivityEventType.PrReviewAccepted> =>
+): ActivityEventDataOf<typeof ActivityEventType.PrReviewAccepted> =>
   fact(
     command.resourceId,
     ActivityEventType.PrReviewAccepted,
@@ -66,7 +66,7 @@ export const reviewAccepted = (
 export const reviewAcceptanceSignalRecorded = (
   command: AcceptReviewSignal,
   context: CommandContext,
-): ActivityDraft<typeof ActivityEventType.ReviewAcceptanceSignalRecorded> =>
+): ActivityEventDataOf<typeof ActivityEventType.ReviewAcceptanceSignalRecorded> =>
   fact(
     command.resourceId,
     ActivityEventType.ReviewAcceptanceSignalRecorded,
@@ -84,7 +84,7 @@ export const reviewAcceptanceSignalRecorded = (
 export const reviewChangesRequested = (
   command: RequestChangesSignal,
   context: CommandContext,
-): ActivityDraft<typeof ActivityEventType.PrReviewChangesRequested> =>
+): ActivityEventDataOf<typeof ActivityEventType.PrReviewChangesRequested> =>
   fact(
     command.resourceId,
     ActivityEventType.PrReviewChangesRequested,
@@ -96,27 +96,27 @@ export const reviewRejected = (
   resourceId: ObservePullRequest['resourceId'],
   reason: ActivityEventPayloads[typeof ActivityEventType.PrReviewRejected]['reason'],
   context: CommandContext,
-): ActivityDraft<typeof ActivityEventType.PrReviewRejected> =>
+): ActivityEventDataOf<typeof ActivityEventType.PrReviewRejected> =>
   fact(resourceId, ActivityEventType.PrReviewRejected, { reason }, context);
 
 export const mergeDenied = (
   reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit = {},
-): ActivityDraft<typeof ActivityEventType.PrMergeDenied> =>
-  denialDraft(ActivityEventType.PrMergeDenied, reason, context, audit);
+): ActivityEventDataOf<typeof ActivityEventType.PrMergeDenied> =>
+  denialEventData(ActivityEventType.PrMergeDenied, reason, context, audit);
 
 export const approveDenied = (
   reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit = {},
-): ActivityDraft<typeof ActivityEventType.PrApproveDenied> =>
-  denialDraft(ActivityEventType.PrApproveDenied, reason, context, audit);
+): ActivityEventDataOf<typeof ActivityEventType.PrApproveDenied> =>
+  denialEventData(ActivityEventType.PrApproveDenied, reason, context, audit);
 
 export const mergeAuthorized = (
   revision: string,
   context: CommandContext,
-): ActivityDraft<typeof ActivityEventType.PrMergeAuthorized> =>
+): ActivityEventDataOf<typeof ActivityEventType.PrMergeAuthorized> =>
   createEventData({
     ...metadata(ActivityEventType.PrMergeAuthorized, context),
     payload: { revision },
@@ -145,7 +145,7 @@ function fact<Type extends ActivityEventData['eventType']>(
   });
 }
 
-function denialDraft<
+function denialEventData<
   Type extends typeof ActivityEventType.PrMergeDenied | typeof ActivityEventType.PrApproveDenied,
 >(
   eventType: Type,
