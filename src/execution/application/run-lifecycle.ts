@@ -3,6 +3,7 @@ import {
   createEventDraft,
   EventActorKind,
   EventSourceKind,
+  WrongExpectedSequenceError,
   type Clock,
 } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
@@ -83,34 +84,47 @@ export async function startRun(input: {
   readonly attempt: number;
   readonly runner: ResolvedRunner;
   readonly lease: WorkspaceLease | undefined;
-}): Promise<string> {
+}): Promise<string | undefined> {
   const { dependencies, runId: currentRunId, activation, context, attempt, runner, lease } = input;
-  const startedAt = dependencies.clock.now().toISOString();
-  const loaded = await dependencies.repository.load(currentRunId);
-  await dependencies.repository.append(currentRunId, loaded.sequence, [
-    createRunEvent({
-      runId: currentRunId,
-      eventId: `${currentRunId}:started`,
-      eventType: ExecutionEventType.RunStarted,
-      occurredAt: startedAt,
-      correlationId: context.orchestrationGroupId,
-      causationId: activation.activationId,
-      payload: {
-        ...runPreparationPayload(activation, context, attempt, runner),
-        startedAt,
-        ...(lease === undefined
-          ? {}
-          : {
-              workspace: {
-                mode: lease.mode,
-                path: lease.path,
-                ...(lease.branch === undefined ? {} : { branch: lease.branch }),
-              },
-            }),
-      },
-    }),
-  ]);
-  return startedAt;
+  let retriedAfterSequence: number | undefined;
+  for (let retries = 0; retries < 3; retries += 1) {
+    const loaded = await dependencies.repository.load(currentRunId);
+    if (loaded.view?.status !== RunStatus.Starting || loaded.view.cancellation !== undefined)
+      return undefined;
+    if (retriedAfterSequence !== undefined && loaded.sequence <= retriedAfterSequence)
+      throw new Error(`Run ${currentRunId} did not advance after a start append conflict`);
+    const startedAt = dependencies.clock.now().toISOString();
+    try {
+      await dependencies.repository.append(currentRunId, loaded.sequence, [
+        createRunEvent({
+          runId: currentRunId,
+          eventId: `${currentRunId}:started`,
+          eventType: ExecutionEventType.RunStarted,
+          occurredAt: startedAt,
+          correlationId: context.orchestrationGroupId,
+          causationId: activation.activationId,
+          payload: {
+            ...runPreparationPayload(activation, context, attempt, runner),
+            startedAt,
+            ...(lease === undefined
+              ? {}
+              : {
+                  workspace: {
+                    mode: lease.mode,
+                    path: lease.path,
+                    ...(lease.branch === undefined ? {} : { branch: lease.branch }),
+                  },
+                }),
+          },
+        }),
+      ]);
+      return startedAt;
+    } catch (error) {
+      if (!(error instanceof WrongExpectedSequenceError) || retries === 2) throw error;
+      retriedAfterSequence = loaded.sequence;
+    }
+  }
+  throw new Error(`Run ${currentRunId} did not start`);
 }
 
 function runPreparationPayload(

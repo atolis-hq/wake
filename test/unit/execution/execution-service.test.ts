@@ -328,6 +328,147 @@ describe('ExecutionService', () => {
     );
   });
 
+  it('does not start a cancelled Run after deferred workspace acquisition completes', async () => {
+    const registry = new ActivityRegistry();
+    let handlerCalls = 0;
+    registry.register({
+      name: activityName('cancelled-before-start'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: {
+        async execute() {
+          handlerCalls += 1;
+          return { kind: 'done' };
+        },
+      },
+    });
+    let acquireEntered!: () => void;
+    const acquired = new Promise<void>((resolve) => {
+      acquireEntered = resolve;
+    });
+    let releaseAcquire!: () => void;
+    const acquireReleased = new Promise<void>((resolve) => {
+      releaseAcquire = resolve;
+    });
+    let released = 0;
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const service = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      {
+        clock,
+        ids: new SequentialIds(),
+        workspaces: {
+          async acquire() {
+            acquireEntered();
+            await acquireReleased;
+            return {
+              workspaceId: 'workspace-1',
+              path: '/workspace-1',
+              mode: 'read-only',
+              async release() {
+                released += 1;
+              },
+            };
+          },
+        },
+      },
+    );
+    const cancelledActivation = {
+      ...activation,
+      activity: activityName('cancelled-before-start'),
+      execution: { workspace: 'read-only' as const },
+    };
+
+    const attempt = service.attempt(cancelledActivation, {
+      ...context,
+      resources: [repositoryResource()],
+    });
+    await acquired;
+    await service.requestCancellation('run-1', 'operator');
+    await service.confirmCancellation('run-1');
+    releaseAcquire();
+
+    await expect(attempt).resolves.toMatchObject({ status: RunStatus.Cancelled });
+    expect(handlerCalls).toBe(0);
+    expect(released).toBe(1);
+    const eventTypes = (await journal.readAll(0)).map((event) => event.eventType);
+    expect(eventTypes).toContain(ExecutionEventType.RunCancellationRequested);
+    expect(eventTypes).toContain(ExecutionEventType.RunCancellationConfirmed);
+    expect(eventTypes).toContain(ExecutionEventType.RunCancelled);
+    expect(eventTypes).toContain(ExecutionEventType.ActivationReleased);
+    expect(eventTypes).not.toContain(ExecutionEventType.RunStarted);
+  });
+
+  it('retries the prepared Run start when a lease renewal wins the append race', async () => {
+    const registry = new ActivityRegistry();
+    let releaseHandler!: () => void;
+    const handlerReleased = new Promise<void>((resolve) => {
+      releaseHandler = resolve;
+    });
+    registry.register({
+      name: activityName('start-race'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: {
+        async execute() {
+          await handlerReleased;
+          return { kind: 'done' };
+        },
+      },
+    });
+    const clock = new FakeClock();
+    const base = new InMemoryEventJournal(clock);
+    let service!: ReturnType<typeof createExecutionService>;
+    let renewBeforeStart = true;
+    const journal: EventJournal = {
+      async append(stream, expectedSequence, events) {
+        if (
+          renewBeforeStart &&
+          events.some((event) => event.eventType === ExecutionEventType.RunStarted)
+        ) {
+          renewBeforeStart = false;
+          await service.renewLease('run-1', 'execution');
+        }
+        return base.append(stream, expectedSequence, events);
+      },
+      readStream: base.readStream.bind(base),
+      readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
+      readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
+    };
+    service = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      { clock, ids: new SequentialIds() },
+    );
+
+    const started = await service.attempt(
+      { ...activation, activity: activityName('start-race') },
+      context,
+    );
+
+    expect(started.status).toBe(RunStatus.Started);
+    const eventTypes = (await base.readAll(0)).map((event) => event.eventType);
+    expect(eventTypes.filter((type) => type === ExecutionEventType.RunStarted)).toHaveLength(1);
+    expect(eventTypes).toContain(ExecutionEventType.RunLeaseRenewed);
+    expect(eventTypes).not.toContain(ExecutionEventType.RunFailed);
+
+    releaseHandler();
+    await waitForRunStatus(service, activation.activationId, 'succeeded');
+  });
+
   it('records a failed starting Run and releases activation when workspace acquisition rejects', async () => {
     const fixture = setup({
       async acquire() {
@@ -346,6 +487,40 @@ describe('ExecutionService', () => {
     expect(eventTypes).toContain(ExecutionEventType.RunFailed);
     expect(eventTypes).toContain(ExecutionEventType.ActivationReleased);
     expect(eventTypes).not.toContain(ExecutionEventType.RunStarted);
+  });
+
+  it('returns the failed Run when activation cleanup cannot be persisted', async () => {
+    const base = new InMemoryEventJournal(new FakeClock());
+    const journal: EventJournal = {
+      async append(stream, expectedSequence, events) {
+        if (events.some((event) => event.eventType === ExecutionEventType.ActivationReleased))
+          throw new Error('activation cleanup interrupted');
+        return base.append(stream, expectedSequence, events);
+      },
+      readStream: base.readStream.bind(base),
+      readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
+      readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
+    };
+    const fixture = setup(
+      {
+        async acquire() {
+          throw new Error('workspace unavailable');
+        },
+      },
+      journal,
+    );
+    const result = await fixture.service.attempt(
+      { ...activation, execution: { workspace: 'read-only' as const } },
+      { ...context, resources: [repositoryResource()] },
+    );
+
+    expect(result).toMatchObject({ status: RunStatus.Failed });
+    const eventTypes = (await base.readAll(0)).map((event) => event.eventType);
+    expect(eventTypes).toContain(ExecutionEventType.RunFailed);
+    expect(eventTypes).not.toContain(ExecutionEventType.ActivationReleased);
   });
 
   it('passes the newly allocated Run ID to workspace acquisition', async () => {

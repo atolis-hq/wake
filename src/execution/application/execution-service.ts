@@ -126,6 +126,11 @@ async function attemptExecution(
       runner,
       lease,
     });
+    if (executionStartedAt === undefined) {
+      await renewal.stop();
+      await cleanupRun(runtime, currentRunId, activation, context, lease);
+      return (await runtime.repository.load(currentRunId)).view!;
+    }
     const completion = completeRun(
       runtime,
       currentRunId,
@@ -299,6 +304,8 @@ async function cleanupRun(
       activationId: activation.activationId,
       runId: currentRunId,
     });
+  } catch {
+    // An activation release can be retried after its claim expires; it must not mask the Run result.
   } finally {
     runtime.active.delete(currentRunId);
     try {
