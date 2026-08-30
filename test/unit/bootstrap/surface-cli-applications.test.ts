@@ -5,10 +5,12 @@ import {
 } from '../../../src/bootstrap/runner-tick-adapter.js';
 import {
   createRunnerIdleWait,
+  createSelfUpdateQuiescePort,
   createSurfaceCliApplications,
   runResidentLifecycle,
 } from '../../../src/bootstrap/surface-cli-applications.js';
 import { createRunnerPipeline, ResidentHost, TickHost } from '../../../src/control-plane/index.js';
+import { RunStatus } from '../../../src/execution/index.js';
 import { InProcessJournalChangeSignal } from '../../../src/kernel/index.js';
 
 it('drains subscriber scheduling progress through a one-shot tick budget while running the pipeline', async () => {
@@ -206,6 +208,30 @@ it('preserves an intake failure when the CLI tick final projection barrier also 
 
   await expect(result).resolves.toBeInstanceOf(AggregateError);
   expect(((await result) as AggregateError).errors).toEqual([intakeFailure, finalBarrierFailure]);
+});
+
+it('includes a live starting Run in production self-update quiescence', async () => {
+  const isLocallyActive = vi.fn(() => true);
+  const recoverActive = vi.fn(async () => []);
+  const quiesce = createSelfUpdateQuiescePort({
+    recovery: { recoverActive },
+    execution: {
+      isLocallyActive,
+      list: async () => [
+        {
+          runId: 'run-preparing',
+          status: RunStatus.Starting,
+          cancellation: undefined,
+          lease: { owner: 'execution', expiresAt: '2026-08-30T12:01:00.000Z' },
+        },
+      ],
+    },
+  } as never);
+
+  await expect(quiesce.activeRuns()).resolves.toEqual([
+    { runId: 'run-preparing', maintenanceCancellable: true },
+  ]);
+  expect(recoverActive).toHaveBeenCalledWith('self-update', isLocallyActive);
 });
 
 it('returns a paused one-shot pipeline result without poking the subscriber', async () => {
