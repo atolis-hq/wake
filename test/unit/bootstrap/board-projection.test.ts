@@ -4,6 +4,7 @@ import { boardConditionCounts, boardProjection } from '../../../src/bootstrap/bo
 import {
   ExecutionEventType,
   ExecutionFailureCode,
+  RunStatus,
   runId,
   runStream,
 } from '../../../src/execution/index.js';
@@ -105,14 +106,14 @@ describe('operator board projection', () => {
           action: 'implement',
           runnerName: 'codex',
           startedAt: '2026-08-30T12:00:00.000Z',
-          phase: 'starting',
+          phase: RunStatus.Starting,
         },
       },
     });
     expect(preparing.runs[run]).toBe(item);
   });
 
-  it('changes a prepared run to running without recounting or resetting its preparation details', () => {
+  it('changes a prepared run to the started machine phase without recounting its preparation', () => {
     const item = workId('board-preparing-started');
     const workflowId = workflowInstanceId(`primary:${item}`);
     const run = runId('run-preparing-started');
@@ -132,7 +133,7 @@ describe('operator board projection', () => {
           action: 'implement',
           runnerName: 'codex',
           startedAt: '2026-08-30T12:00:00.000Z',
-          phase: 'running',
+          phase: RunStatus.Started,
         },
       },
     });
@@ -195,7 +196,7 @@ describe('operator board projection', () => {
     expect(completed.cards[item]).toMatchObject({
       condition: 'active',
       runCount: 2,
-      activeRuns: { [starting]: { phase: 'starting' } },
+      activeRuns: { [starting]: { phase: RunStatus.Starting } },
     });
     expect(completed.cards[item]!.activeRuns[running]).toBeUndefined();
   });
@@ -229,7 +230,7 @@ describe('operator board projection', () => {
 
     expect(failed.cards[item]).toMatchObject({
       condition: 'active',
-      activeRuns: { [starting]: { phase: 'starting' } },
+      activeRuns: { [starting]: { phase: RunStatus.Starting } },
     });
     expect(failed.cards[item]!.activeRuns[running]).toBeUndefined();
   });
@@ -302,7 +303,7 @@ describe('operator board projection', () => {
     expect(preparing.cards[item]).toMatchObject({
       condition: 'needs-input',
       awaitingApproval: true,
-      activeRuns: { [run]: { action: 'review', phase: 'starting' } },
+      activeRuns: { [run]: { action: 'review', phase: RunStatus.Starting } },
     });
   });
 
@@ -321,7 +322,7 @@ describe('operator board projection', () => {
 
     expect(preparing.cards[item]).toMatchObject({
       condition: 'finished',
-      activeRuns: { [runId('run-preparing-finished')]: { phase: 'starting' } },
+      activeRuns: { [runId('run-preparing-finished')]: { phase: RunStatus.Starting } },
     });
   });
 
@@ -923,8 +924,8 @@ describe('operator board projection', () => {
       runPreparationEvent(runId('run-after-legacy-checkpoint'), workflowId, item, 4),
     );
     expect(recovered.cards[item]!.activeRuns).toMatchObject({
-      [run]: { phase: 'running' },
-      [runId('run-after-legacy-checkpoint')]: { phase: 'starting' },
+      [run]: { phase: RunStatus.Started },
+      [runId('run-after-legacy-checkpoint')]: { phase: RunStatus.Starting },
     });
 
     const finished = boardProjection.project(
@@ -938,7 +939,7 @@ describe('operator board projection', () => {
     );
 
     expect(finished.cards[item]!.activeRuns).toMatchObject({
-      [runId('run-after-legacy-checkpoint')]: { phase: 'starting' },
+      [runId('run-after-legacy-checkpoint')]: { phase: RunStatus.Starting },
     });
     expect(finished.cards[item]!.totalDurationMs).toBe(21_660);
   });
@@ -1090,13 +1091,13 @@ describe('operator board projection', () => {
         action: 'implement',
         runnerName: 'claude',
         startedAt: '2026-08-03T12:00:00.000Z',
-        phase: 'running',
+        phase: RunStatus.Started,
       },
       [secondRun]: {
         action: 'implement',
         runnerName: 'codex',
         startedAt: '2026-08-03T12:01:00.000Z',
-        phase: 'running',
+        phase: RunStatus.Started,
       },
     });
 
@@ -1115,7 +1116,7 @@ describe('operator board projection', () => {
         action: 'implement',
         runnerName: 'codex',
         startedAt: '2026-08-03T12:01:00.000Z',
-        phase: 'running',
+        phase: RunStatus.Started,
       },
     });
     expect(finished.cards[item]?.totalDurationMs).toBe(300_000);

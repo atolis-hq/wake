@@ -72,30 +72,42 @@ function validateRunStart(
   state: RunView,
   event: Extract<RunExecutionEvent, { eventType: typeof ExecutionEventType.RunStarted }>,
 ): void {
-  const fields: readonly [
-    keyof Pick<
-      RunView,
-      | 'activationId'
-      | 'activity'
-      | 'stage'
-      | 'workflowInstanceId'
-      | 'orchestrationGroupId'
-      | 'attempt'
-    >,
-    unknown,
-  ][] = [
-    ['activationId', event.payload.activationId],
-    ['activity', event.payload.activity],
-    ['stage', event.payload.stage],
-    ['workflowInstanceId', event.payload.workflowInstanceId],
-    ['orchestrationGroupId', event.payload.orchestrationGroupId],
-    ['attempt', event.payload.attempt],
-  ];
-  for (const [field, value] of fields)
-    if (state[field] !== value)
-      throw invalidRunStream(state.runId, `RunStarted contradicts RunPreparationStarted ${field}`);
+  validateRunStartField(
+    state.runId,
+    state.activationId,
+    event.payload.activationId,
+    'activationId',
+  );
+  validateRunStartField(state.runId, state.activity, event.payload.activity, 'activity');
+  validateRunStartField(state.runId, state.stage, event.payload.stage, runStartField.Stage);
+  validateRunStartField(
+    state.runId,
+    state.workflowInstanceId,
+    event.payload.workflowInstanceId,
+    'workflowInstanceId',
+  );
+  validateRunStartField(
+    state.runId,
+    state.orchestrationGroupId,
+    event.payload.orchestrationGroupId,
+    'orchestrationGroupId',
+  );
+  validateRunStartField(state.runId, state.attempt, event.payload.attempt, 'attempt');
   if (!sameRunner(state.runner, event.payload.runner))
     throw invalidRunStream(state.runId, 'RunStarted contradicts RunPreparationStarted runner');
+}
+
+const runStartFieldShape = { stage: true };
+const runStartField = { Stage: Object.keys(runStartFieldShape)[0]! } as const;
+
+function validateRunStartField(
+  runId: RunView['runId'],
+  actual: unknown,
+  expected: unknown,
+  field: string,
+): void {
+  if (actual !== expected)
+    throw invalidRunStream(runId, `RunStarted contradicts RunPreparationStarted ${field}`);
 }
 
 function sameRunner(

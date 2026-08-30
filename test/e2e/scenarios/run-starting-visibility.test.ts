@@ -10,6 +10,7 @@ import {
   createSurfaceApplications,
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
+import { RunStatus } from '../../../src/execution/index.js';
 import { EventActorKind, correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
@@ -115,7 +116,7 @@ defineScenario(
       expect(startingRuns.items).toHaveLength(1);
       const runId = startingRuns.items[0]!.runId;
       expect(startingRuns.items[0]).toMatchObject({
-        status: 'starting',
+        status: RunStatus.Starting,
         active: true,
         startedAt: expect.any(String),
       });
@@ -126,7 +127,7 @@ defineScenario(
       expect(startingBoard.items[0]).toMatchObject({
         workItemId: work.workItemId,
         condition: 'active',
-        activeRuns: { [runId]: { phase: 'starting' } },
+        activeRuns: { [runId]: { phase: RunStatus.Starting } },
       });
 
       await writeFile(releaseMarker, 'release\n');
@@ -144,7 +145,7 @@ defineScenario(
       const runningBoard = await applications.api.board!.list({ limit: 10 });
       expect(runningBoard.items[0]).toMatchObject({
         condition: 'active',
-        activeRuns: { [runId]: { phase: 'running' } },
+        activeRuns: { [runId]: { phase: RunStatus.Started } },
       });
 
       runner.resolve(fakeRunnerResult());

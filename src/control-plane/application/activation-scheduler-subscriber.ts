@@ -12,6 +12,25 @@ export const activationSchedulerCriticalSectionConsumer =
 
 const defaultFallbackMs = 30_000;
 const maximumTimerDelayMs = 2_147_483_647;
+const activationSchedulerSubscriptionStatusShape = {
+  starting: true,
+  healthy: true,
+  degraded: true,
+  stopped: true,
+};
+const activationSchedulerSubscriptionStatuses = Object.keys(
+  activationSchedulerSubscriptionStatusShape,
+);
+
+export const ActivationSchedulerSubscriptionStatus = {
+  Starting: activationSchedulerSubscriptionStatuses[0]!,
+  Healthy: activationSchedulerSubscriptionStatuses[1]!,
+  Degraded: activationSchedulerSubscriptionStatuses[2]!,
+  Stopped: activationSchedulerSubscriptionStatuses[3]!,
+} as const;
+
+export type ActivationSchedulerSubscriptionHealthStatus =
+  (typeof ActivationSchedulerSubscriptionStatus)[keyof typeof ActivationSchedulerSubscriptionStatus];
 
 export interface ActivationSchedulerSubscriberOptions {
   readonly fallbackMs?: number;
@@ -38,7 +57,7 @@ export interface ActivationSchedulerSubscriptionHost {
 
 export interface ActivationSchedulerSubscriptionHealth {
   readonly consumer: string;
-  readonly status: 'starting' | 'healthy' | 'degraded' | 'stopped';
+  readonly status: ActivationSchedulerSubscriptionHealthStatus;
   readonly checkpoint: number;
   readonly consecutiveFailures: number;
   readonly lastError?: unknown;
@@ -120,7 +139,7 @@ export function createActivationSchedulerSubscriber(
       if (reconciliationFailures === 0) return durable;
       return {
         consumer: activationSchedulerSubscriptionConsumer,
-        status: 'degraded',
+        status: ActivationSchedulerSubscriptionStatus.Degraded,
         checkpoint: durable?.checkpoint ?? 0,
         consecutiveFailures: reconciliationFailures,
         lastError: reconciliationError,

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
+import { BoardActiveRunPhaseValue } from '../../api/contracts/index.js';
 import { WakeApiClient } from '../src/api/client.js';
 import { decodeBoardCard } from '../src/api/decoders.js';
 import { App } from '../src/app/app.js';
@@ -33,14 +34,14 @@ function boardClient(fetchSpy?: (url: string) => void) {
           runnerName: 'fake',
           startedAt: asOf,
           elapsedMs: 12_000,
-          phase: 'starting',
+          phase: BoardActiveRunPhaseValue.Starting,
         },
         'run-implementation': {
           action: 'implement',
           runnerName: 'codex',
           startedAt: asOf,
           elapsedMs: 8_000,
-          phase: 'running',
+          phase: BoardActiveRunPhaseValue.Started,
         },
       },
     },
@@ -165,8 +166,8 @@ describe('board', () => {
     );
     const active = await screen.findByRole('listitem', { name: 'Alpha' });
     const inactive = screen.getByRole('listitem', { name: 'Beta' });
-    expect(within(active).getByText('pr-review starting')).toBeTruthy();
-    expect(within(active).getByText('implement running')).toBeTruthy();
+    expect(within(active).getByText('pr-review Starting')).toBeTruthy();
+    expect(within(active).getByText('implement Running')).toBeTruthy();
     expect(within(active).getByTestId('active-run-dot-run-pr-review').dataset.activeRun).toBe(
       'true',
     );

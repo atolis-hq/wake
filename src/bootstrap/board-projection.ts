@@ -35,9 +35,14 @@ const BoardCondition = {
 
 type BoardConditionValue = (typeof BoardCondition)[keyof typeof BoardCondition];
 
+const activeRunPhaseShape = {
+  [RunStatus.Starting]: true,
+  [RunStatus.Started]: true,
+} as const;
+const activeRunPhases = Object.keys(activeRunPhaseShape);
 const ActiveRunPhase = {
-  Starting: 'starting',
-  Running: 'running',
+  Starting: activeRunPhases[0]! as typeof RunStatus.Starting,
+  Started: activeRunPhases[1]! as typeof RunStatus.Started,
 } as const;
 
 type ActiveRunPhaseValue = (typeof ActiveRunPhase)[keyof typeof ActiveRunPhase];
@@ -497,12 +502,12 @@ function projectRunStarted(
           ...withoutLegacyActiveRun(card),
           activeRuns: {
             ...activeRuns,
-            [event.stream.id]: { ...activeRun, phase: ActiveRunPhase.Running },
+            [event.stream.id]: { ...activeRun, phase: ActiveRunPhase.Started },
           },
         },
       },
     };
-  return projectNewRun(view, event, ActiveRunPhase.Running);
+  return projectNewRun(view, event, ActiveRunPhase.Started);
 }
 
 function projectNewRun(
@@ -602,7 +607,7 @@ function activeRunsFor(
     return Object.fromEntries(
       Object.entries(card.activeRuns).map(([runId, activeRun]) => [
         runId,
-        activeRun.phase === undefined ? { ...activeRun, phase: ActiveRunPhase.Running } : activeRun,
+        activeRun.phase === undefined ? { ...activeRun, phase: ActiveRunPhase.Started } : activeRun,
       ]),
     );
   if (card.activeRun === undefined) return {};
@@ -614,7 +619,7 @@ function activeRunsFor(
     : {
         [legacyRunId]:
           card.activeRun.phase === undefined
-            ? { ...card.activeRun, phase: ActiveRunPhase.Running }
+            ? { ...card.activeRun, phase: ActiveRunPhase.Started }
             : card.activeRun,
       };
 }

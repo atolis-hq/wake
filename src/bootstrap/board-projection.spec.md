@@ -66,9 +66,10 @@ API surface application's board and status applications do that).
   card's condition and `awaitingApproval` untouched — the primary is still
   genuinely waiting on that child.
 - The later `RunStarted` for that Run ID MUST retain the same active entry and
-  change only its phase to `running`; it MUST NOT increment `runCount` or
+  change only its machine phase to `started`; it MUST NOT increment `runCount` or
   create a second card entry. Historical streams whose first event is
-  `RunStarted` remain visible directly as `running` entries.
+  `RunStarted` remain visible directly as `started` entries. Surfaces render a
+  `started` active run as “Running”.
 - A terminal run event (`RunSucceeded`, `RunFailed`, `RunCancelled`,
   `RunAmbiguous`) MUST remove only its own `activeRuns` entry, accumulate its duration into
   `totalDurationMs`, and record `lastRunOutcome`. For `RunSucceeded`

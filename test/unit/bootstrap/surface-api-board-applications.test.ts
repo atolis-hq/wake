@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
 import { boardProjection } from '../../../src/bootstrap/index.js';
 import { createSurfaceApiApplications } from '../../../src/bootstrap/surface-api-applications.js';
+import { RunStatus } from '../../../src/execution/index.js';
 import { WorkEventType, workItemStream } from '../../../src/work/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
 import { workId } from '../../support/identities.js';
@@ -22,13 +23,13 @@ it('presents every active board run with its own elapsed duration', async () => 
             action: 'implement',
             runnerName: 'claude',
             startedAt: '2026-08-03T12:00:00.000Z',
-            phase: 'starting',
+            phase: RunStatus.Starting,
           },
           'run-second': {
             action: 'review',
             runnerName: 'codex',
             startedAt: '2026-08-03T12:03:00.000Z',
-            phase: 'running',
+            phase: RunStatus.Started,
           },
         },
         totalTokens: 0,
@@ -57,14 +58,14 @@ it('presents every active board run with its own elapsed duration', async () => 
       runnerName: 'claude',
       startedAt: '2026-08-03T12:00:00.000Z',
       elapsedMs: 300_000,
-      phase: 'starting',
+      phase: RunStatus.Starting,
     },
     'run-second': {
       action: 'review',
       runnerName: 'codex',
       startedAt: '2026-08-03T12:03:00.000Z',
       elapsedMs: 120_000,
-      phase: 'running',
+      phase: RunStatus.Started,
     },
   });
 });
@@ -111,7 +112,7 @@ it('presents a legacy single active-run checkpoint under its recorded run ID', a
       runnerName: 'claude',
       startedAt: '2026-08-03T12:00:00.000Z',
       elapsedMs: 300_000,
-      phase: 'running',
+      phase: RunStatus.Started,
     },
   });
 });

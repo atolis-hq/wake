@@ -1,4 +1,9 @@
-import { ControlStreamKind } from '../control-plane/index.js';
+import {
+  ActivationSchedulerSubscriptionStatus,
+  ControlStreamKind,
+  type ActivationSchedulerSubscriptionHealthStatus,
+} from '../control-plane/index.js';
+import { RunStatus } from '../execution/index.js';
 import type { EventEnvelope, EventJournal } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
@@ -115,7 +120,7 @@ function activeBoardRuns(
       readonly action: string;
       readonly runnerName?: string;
       readonly startedAt: string;
-      readonly phase: 'starting' | 'running';
+      readonly phase: typeof RunStatus.Starting | typeof RunStatus.Started;
     }
   >
 > {
@@ -123,7 +128,7 @@ function activeBoardRuns(
     return Object.fromEntries(
       Object.entries(card.activeRuns).map(([runId, activeRun]) => [
         runId,
-        { ...activeRun, phase: activeRun.phase ?? 'running' },
+        { ...activeRun, phase: activeRun.phase ?? RunStatus.Started },
       ]),
     );
   if (card.activeRun === undefined) return {};
@@ -132,7 +137,12 @@ function activeBoardRuns(
     .find(([, workItemId]) => workItemId === card.workItemId)?.[0];
   return legacyRunId === undefined
     ? {}
-    : { [legacyRunId]: { ...card.activeRun, phase: card.activeRun.phase ?? 'running' } };
+    : {
+        [legacyRunId]: {
+          ...card.activeRun,
+          phase: card.activeRun.phase ?? RunStatus.Started,
+        },
+      };
 }
 
 function createStatusApplications(root: CompositionRoot, now: () => string) {
@@ -374,18 +384,21 @@ function subscriptionHealthCheck(
   name: string,
   snapshot:
     | {
-        readonly status: 'starting' | 'healthy' | 'degraded' | 'stopped';
+        readonly status: ActivationSchedulerSubscriptionHealthStatus;
         readonly checkpoint: number;
         readonly consecutiveFailures: number;
       }
     | undefined,
 ) {
-  const status = snapshot?.status ?? 'starting';
+  const status = snapshot?.status ?? ActivationSchedulerSubscriptionStatus.Starting;
   const checkpoint = snapshot?.checkpoint ?? 0;
   const consecutiveFailures = snapshot?.consecutiveFailures ?? 0;
   return {
     name,
-    status: status === 'healthy' ? ('ok' as const) : ('degraded' as const),
+    status:
+      status === ActivationSchedulerSubscriptionStatus.Healthy
+        ? ('ok' as const)
+        : ('degraded' as const),
     detail: `${status} at checkpoint ${checkpoint} after ${consecutiveFailures} failures`,
   };
 }

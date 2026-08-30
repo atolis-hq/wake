@@ -1,5 +1,6 @@
 import type {
   AuditEventResponse,
+  BoardActiveRunPhase,
   BoardCardActiveRun,
   BoardCardResponse,
   CollectionResponse,
@@ -25,6 +26,7 @@ import {
 } from '../../../api/contracts/index.js';
 import {
   AcceptedCommandStatusValue,
+  BoardActiveRunPhaseValue,
   ResourceItemField,
   RunResponseField,
   TranscriptChannelValue,
@@ -204,12 +206,13 @@ function decodeBoardCardActiveRuns(
 function decodeBoardCardActiveRun(value: unknown, path: string): BoardCardActiveRun {
   const record = object(value, path);
   const phase = string(record.phase, child(path, 'phase'));
-  if (phase !== 'starting' && phase !== 'running') invalid(child(path, 'phase'));
+  if (!Object.values(BoardActiveRunPhaseValue).includes(phase as BoardActiveRunPhase))
+    invalid(child(path, 'phase'));
   return {
     action: string(record.action, child(path, 'action')),
     startedAt: string(record.startedAt, child(path, 'startedAt')),
     elapsedMs: number(record.elapsedMs, child(path, 'elapsedMs')),
-    phase,
+    phase: phase as BoardActiveRunPhase,
     ...optionalStringProperty(record, 'runnerName', path),
   };
 }

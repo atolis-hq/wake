@@ -154,7 +154,7 @@ for a single WorkItem (see the Work detail component).
   and `active: true`, with `startedAt` set but neither `executionStartedAt`
   nor `finishedAt`. Once its later `RunStarted` is projected, the same Run ID
   is `started`/active with `executionStartedAt`; board reads expose that same
-  Run in `activeRuns` as phase `starting` then `running` and remove it when
+  Run in `activeRuns` as machine phase `starting` then `started` and remove it when
   terminal. `startedAt` and displayed active duration cover the whole attempt,
   including workspace preparation.
 - `runners` MUST synthesize availability purely from the configured runner

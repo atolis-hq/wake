@@ -26,6 +26,14 @@ export const RunResolutionStatusValue = {
   Succeeded: runResolutionStatuses[1]! as RunStatus,
 } as const;
 
+const boardActiveRunPhaseShape = { starting: true, started: true };
+const boardActiveRunPhases = Object.keys(boardActiveRunPhaseShape);
+
+export const BoardActiveRunPhaseValue = {
+  Starting: boardActiveRunPhases[0]! as Extract<RunStatus, keyof typeof boardActiveRunPhaseShape>,
+  Started: boardActiveRunPhases[1]! as Extract<RunStatus, keyof typeof boardActiveRunPhaseShape>,
+} as const;
+
 export const ActivityOutcomeKindValue = ActivityOutcomeKind;
 
 const boardConditionShape = {
