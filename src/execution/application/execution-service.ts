@@ -184,9 +184,18 @@ async function recoverFailedAttempt(
 ): Promise<RunView> {
   const { activation, context, currentRunId, renewal, lease, claimed } = attempt;
   const persisted = await runtime.repository.load(currentRunId);
-  if (persisted.view !== null && isActiveRunStatus(persisted.view.status)) {
+  if (persisted.view !== null) {
+    await renewal?.stop();
+    const settled = await runtime.repository.load(currentRunId);
+    if (settled.view !== null && !isActiveRunStatus(settled.view.status)) {
+      await cleanupRun(runtime, currentRunId, activation, context, lease);
+      return settled.view;
+    }
+    if (settled.view === null) {
+      await releasePreStartResources(runtime, activation, currentRunId, lease, claimed);
+      throw error;
+    }
     try {
-      await renewal?.stop();
       await settleRunFailure(runtime, currentRunId, activation, context, error);
     } finally {
       await cleanupRun(runtime, currentRunId, activation, context, lease);
