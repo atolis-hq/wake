@@ -61,6 +61,36 @@ describe('event processor ownership', () => {
     expect(messages(diagnostics)).toContain('[processor-serialiser-owner]');
   });
 
+  it('permits type-only runtime references in bounded modules', async () => {
+    const root = await fixture({
+      'src/orchestration/application/types.ts': [
+        "import type { EventProcessorHost, EventProcessorRuntime } from '../../../eventing/index.js';",
+        "import type { createFileProcessorRunSerialiser } from '../../../persistence/index.js';",
+        'export type RuntimeTypes = EventProcessorHost | EventProcessorRuntime | typeof createFileProcessorRunSerialiser;',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventProcessorArchitecture(root)).resolves.toEqual([]);
+  });
+
+  it('rejects aliased host, registry, and serialiser construction', async () => {
+    const root = await fixture({
+      'src/orchestration/application/illegal-aliases.ts': [
+        "import { EventProcessorHost as Host } from '../../../eventing/index.js';",
+        "import { EventProcessorRuntime as Runtime } from '../../../bootstrap/index.js';",
+        "import { createFileProcessorRunSerialiser as serialiseFile } from '../../../persistence/index.js';",
+        'export const host = new Host(journal, checkpoints, serialise);',
+        'export const runtime = new Runtime(journal, checkpoints, serialise);',
+        'export const serialiser = serialiseFile(root);',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventProcessorArchitecture(root);
+    expect(messages(diagnostics)).toContain('[event-processor-host-owner]');
+    expect(messages(diagnostics)).toContain('[processor-registry-owner]');
+    expect(messages(diagnostics)).toContain('[processor-serialiser-owner]');
+  });
+
   it('rejects processor handlers and host composition in Persistence', async () => {
     const root = await fixture({
       'src/persistence/application/illegal-processor.ts': [
@@ -75,6 +105,22 @@ describe('event processor ownership', () => {
     const diagnostics = await checker.checkEventProcessorArchitecture(root);
     expect(messages(diagnostics)).toContain('[persistence-processor-handler]');
     expect(messages(diagnostics)).toContain('[processor-registry-owner]');
+  });
+
+  it('rejects computed, shorthand, and factory-linked handlers in Persistence', async () => {
+    const root = await fixture({
+      'src/persistence/application/computed-handler.ts': [
+        'const handle = async () => undefined;',
+        'const handler = () => undefined;',
+        "export const processor = { ['handle']: handle, handler };",
+        'export const factory = () => ({ handle });',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventProcessorArchitecture(root);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[persistence-processor-handler]')),
+    ).not.toHaveLength(0);
   });
 
   it('permits definitions in bounded modules and composition in Bootstrap', async () => {

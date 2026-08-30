@@ -274,7 +274,9 @@ export class OrchestrationService {
       ...new Set(
         this.definitions
           .currentDefinitions()
-          .flatMap(({ definition }) => definition.watches.flatMap((watch) => watch.on?.events ?? [])),
+          .flatMap(({ definition }) =>
+            definition.watches.flatMap((watch) => watch.on?.events ?? []),
+          ),
       ),
     ];
   }

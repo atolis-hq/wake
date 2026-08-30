@@ -1,13 +1,9 @@
 import {
-  correlationId,
-  EventActorKind,
-  type CommandContext,
-} from '../../kernel/index.js';
-import {
   defineEventProcessor,
   EventProcessorCategory,
   EventProcessorReplayPolicy,
 } from '../../eventing/index.js';
+import { correlationId, EventActorKind, type CommandContext } from '../../kernel/index.js';
 import type { TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';

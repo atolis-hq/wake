@@ -1,5 +1,5 @@
 ---
-asOf: f1cd25e219207b9710ccb19632faac67ee757ae8
+asOf: e8707c45
 ---
 
 # Integrations — Module Specification
@@ -250,12 +250,13 @@ Integrations does not own:
   module's own event type constants; Bootstrap composes GitHub Agent
   Context and `resolveGitHubResourceUrl` directly, and supplies the real
   `WorkConclusion` cascade from control-plane's own conclusion policy.
-- The runtime composition root (outside any module) — instantiates
-  `ProviderInstance`s from configuration, tolerating a construction failure
-  per provider, and drives the poll, inbound translation, delivery,
-  agent-run-publication, and outcome-reactor loops each tick, plus each
-  provider's own `maintenance` cycle. No domain module other than Bootstrap
-  depends on Integrations directly.
+- Bootstrap (depends on Integrations) instantiates `ProviderInstance`s from
+  configuration, tolerating a construction failure per provider, and registers
+  each provider inbound processor in the shared Eventing runtime. The intake
+  and runner pipelines drive polling, translation, delivery, publication, and
+  provider maintenance; delivery and provider reconciliation remain explicit
+  bounded lanes. No domain module other than Bootstrap depends on Integrations
+  directly.
 
 ## Decisions, exclusions, and deferred capability
 

@@ -64,14 +64,17 @@ it('ignores facts outside the configured watch event types through its processor
     }),
   ]);
   let matched = 0;
-  const reactor = createWatchReactor({
-    async listWatchMatches() {
-      matched += 1;
-      return [];
+  const reactor = createWatchReactor(
+    {
+      async listWatchMatches() {
+        matched += 1;
+        return [];
+      },
+      async requestChild() {},
+      async rejectCausalActivation() {},
     },
-    async requestChild() {},
-    async rejectCausalActivation() {},
-  }, () => ['review.requested']);
+    () => ['review.requested'],
+  );
   const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
 
   await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({
