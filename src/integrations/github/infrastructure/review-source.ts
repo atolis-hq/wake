@@ -1,5 +1,6 @@
 import { ReviewActorKind, ReviewerAuthorizationSource } from '../../../activities/index.js';
-import { createEventData, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
+import { EventActorKind, EventSourceKind } from '../../../kernel/index.js';
+import { createGitHubEventData } from '../contracts/event-factory.js';
 import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { GitHubPullRequestPayload, GitHubReviewPayload } from '../contracts/payloads.js';
@@ -26,7 +27,7 @@ export function githubReviewObservation(input: {
     number: input.pullRequest.number,
   });
   const draft = (eventId: string, content: string) =>
-    createEventData({
+    createGitHubEventData({
       eventId,
       eventType: GitHubEventType.CommentObserved,
       occurredAt: input.review.submitted_at,

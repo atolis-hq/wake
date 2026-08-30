@@ -1,13 +1,10 @@
-import {
-  createEventData,
-  EventSourceKind,
-  type CommandContext,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
+import { createOrchestrationEventData } from '../contracts/event-factory.js';
 import type { ChildWorkflowRequest } from '../contracts/events.js';
 import { OrchestrationEventType, type OrchestrationGroupEvent } from '../contracts/events.js';
+import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import {
   isOrchestrationGroupStream,
   primaryOrchestrationGroupStream,
@@ -21,7 +18,7 @@ export class CoordinationClaims {
 
   async claimPrimary(
     workItemId: WorkItemId,
-    workflowInstanceId: string,
+    workflowInstanceId: WorkflowInstanceId,
     context: CommandContext,
   ): Promise<void> {
     const stream = primaryOrchestrationGroupStream(workItemId);
@@ -36,7 +33,7 @@ export class CoordinationClaims {
       },
       append: async (sequence) => {
         await this.journal.appendToStream(stream, sequence, [
-          createEventData({
+          createOrchestrationEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.PrimaryClaimed}:${workItemId}`,
             eventType: OrchestrationEventType.PrimaryClaimed,
             occurredAt: context.occurredAt,
@@ -72,7 +69,7 @@ export class CoordinationClaims {
         claimedRequestIds(events).size < request.maxPerGroup + budgetGrants(events),
       append: async (sequence) => {
         await this.journal.appendToStream(stream, sequence, [
-          createEventData({
+          createOrchestrationEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupClaimed}:${request.requestId}`,
             eventType: OrchestrationEventType.GroupClaimed,
             occurredAt: context.occurredAt,
@@ -110,7 +107,7 @@ export class CoordinationClaims {
         ),
       append: async (sequence) => {
         await this.journal.appendToStream(stream, sequence, [
-          createEventData({
+          createOrchestrationEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupBudgetGranted}:${requestId}`,
             eventType: OrchestrationEventType.GroupBudgetGranted,
             occurredAt: context.occurredAt,

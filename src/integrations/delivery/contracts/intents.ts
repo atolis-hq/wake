@@ -3,6 +3,7 @@ import {
   brandedStringSchema,
   eventDataSchema,
   eventEnvelopeSchema,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../../kernel/index.js';
@@ -62,6 +63,8 @@ export interface DeliveryIntentEventPayloads {
 }
 
 export type DeliveryIntentEvent = EventUnion<DeliveryIntentEventPayloads, ResourceStreamRef>;
+
+export type DeliveryIntentEventData = EventDataUnion<DeliveryIntentEventPayloads>;
 const resourceStreamSchema = z
   .object({ kind: z.literal(ResourceStreamKind.Resource), id: brandedStringSchema(resourceId) })
   .strict();

@@ -1,5 +1,6 @@
 import {
   EventActorKind,
+  EventSourceKind,
   WrongExpectedSequenceError,
   correlationId,
   type Clock,
@@ -7,12 +8,9 @@ import {
   type EventJournal,
   type IdGenerator,
 } from '../../kernel/index.js';
-import {
-  ControlEventType,
-  createControlEventData,
-  selectControlEvent,
-} from '../contracts/events.js';
-import { controlPlaneStream } from '../contracts/streams.js';
+import { createControlPlaneEventData } from '../contracts/event-factory.js';
+import { ControlEventType, selectControlEvent } from '../contracts/events.js';
+import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
 
 export interface RunnerControlService {
   pause(runnerName: string, idempotencyKey: string): Promise<void>;
@@ -78,16 +76,26 @@ async function append(
   };
   const event =
     operation === 'pause'
-      ? createControlEventData(
-          ControlEventType.RunnerPaused,
-          { runnerName, cause: 'manual', reason: 'paused by operator' },
-          context,
-        )
-      : createControlEventData(
-          ControlEventType.RunnerResumed,
-          { runnerName, resumedAt: occurredAt },
-          context,
-        );
+      ? createControlPlaneEventData({
+          eventId: `${context.commandId}:${ControlEventType.RunnerPaused}`,
+          eventType: ControlEventType.RunnerPaused,
+          occurredAt: context.occurredAt,
+          correlationId: context.correlationId,
+          causationId: context.commandId,
+          actor: context.actor,
+          source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
+          payload: { runnerName, cause: 'manual', reason: 'paused by operator' },
+        })
+      : createControlPlaneEventData({
+          eventId: `${context.commandId}:${ControlEventType.RunnerResumed}`,
+          eventType: ControlEventType.RunnerResumed,
+          occurredAt: context.occurredAt,
+          correlationId: context.correlationId,
+          causationId: context.commandId,
+          actor: context.actor,
+          source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
+          payload: { runnerName, resumedAt: occurredAt },
+        });
   try {
     await input.journal.appendToStream(stream, events.length, [event]);
   } catch (error) {

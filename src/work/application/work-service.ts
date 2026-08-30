@@ -1,10 +1,6 @@
-import {
-  createEventData,
-  EventSourceKind,
-  type CommandContext,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
+import { createWorkEventData } from '../contracts/event-factory.js';
 import { WorkEventType, type WorkEventData, type WorkEventPayloads } from '../contracts/events.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
 import type { WorkItemView } from '../contracts/views.js';
@@ -143,7 +139,7 @@ function workDraft<Type extends keyof WorkEventPayloads>(
   eventType: Type,
   payload: WorkEventPayloads[Type],
 ) {
-  return createEventData({
+  return createWorkEventData({
     eventId: `${context.commandId}:${eventType}`,
     eventType,
     occurredAt: context.occurredAt,

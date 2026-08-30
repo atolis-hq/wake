@@ -1,6 +1,5 @@
 import type { ActivityOutcome } from '../../activities/index.js';
 import {
-  createEventData,
   EventActorKind,
   EventSourceKind,
   WrongExpectedSequenceError,
@@ -8,6 +7,7 @@ import {
 } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
+import { createRunExecutionEventData } from '../contracts/event-factory.js';
 import {
   ExecutionEventType,
   type RunExecutionEventPayloads,
@@ -248,7 +248,7 @@ export function createRunEvent<Type extends keyof RunExecutionEventPayloads>(inp
   causationId: string;
   payload: RunExecutionEventPayloads[Type];
 }) {
-  return createEventData({
+  return createRunExecutionEventData({
     eventId: input.eventId,
     eventType: input.eventType,
     occurredAt: input.occurredAt,

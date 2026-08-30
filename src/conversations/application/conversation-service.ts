@@ -1,9 +1,4 @@
-import {
-  createEventData,
-  EventSourceKind,
-  type CommandContext,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type {
   AssociateConversationResource,
   CreateConversation,
@@ -12,11 +7,8 @@ import type {
   ReviseConversationEntry,
   TombstoneConversationEntry,
 } from '../contracts/commands.js';
-import {
-  ConversationEventType,
-  type ConversationEventData,
-  type ConversationEventPayloads,
-} from '../contracts/events.js';
+import { createConversationEventData } from '../contracts/event-factory.js';
+import { ConversationEventType, type ConversationEventPayloads } from '../contracts/events.js';
 import { conversationIdForWorkItem, type ConversationId } from '../contracts/identifiers.js';
 import type { ConversationView } from '../contracts/views.js';
 import { applyConversationEvent } from '../domain/conversation.js';
@@ -147,7 +139,7 @@ function changeConversation(repository: ConversationRepository) {
     payload: ConversationEventPayloads[Type],
   ) => {
     const loaded = await repository.load(id);
-    const draft = createEventData({
+    const draft = createConversationEventData({
       eventId: `${context.commandId}:${eventType}`,
       eventType,
       occurredAt: context.occurredAt,
@@ -156,7 +148,7 @@ function changeConversation(repository: ConversationRepository) {
       actor: context.actor,
       source: { kind: EventSourceKind.Internal, id: 'conversation-service' },
       payload,
-    }) as ConversationEventData;
+    });
     const [recorded] = await repository.append(id, loaded.sequence, [draft]);
     const next = recorded === undefined ? null : applyConversationEvent(loaded.view, recorded);
     if (next === null) throw new Error(`Conversation ${id} was not created`);

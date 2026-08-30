@@ -1,6 +1,7 @@
-import { createEventData, EventSourceKind, type CommandContext } from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext } from '../../kernel/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
+import { createOrchestrationEventData } from '../contracts/event-factory.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
@@ -77,7 +78,7 @@ export class StartWorkflow {
       if (!(error instanceof WorkflowDefinitionUnavailableError)) throw error;
       if (!TERMINAL_OR_BLOCKED_STATUSES.has(view.status))
         await this.repository.append(view.workflowInstanceId, sequence, [
-          createEventData({
+          createOrchestrationEventData({
             // workflowInstanceId is included because listWatchMatches shares one
             // CommandContext across every matched parent in a batch; commandId
             // alone would collide when two instances block in the same pass.

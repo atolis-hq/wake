@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  createEventData,
   EventActorKind,
   EventSourceKind,
   WrongExpectedSequenceError,
@@ -10,6 +9,7 @@ import {
 } from '../../kernel/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
+import { createOrchestrationEventData } from '../contracts/event-factory.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { type WorkflowName } from '../contracts/identifiers.js';
 import { OrchestrationStreamKind, workflowDefinitionsStream } from '../contracts/streams.js';
@@ -94,7 +94,7 @@ export class WorkflowDefinitionRegistry {
   ): Promise<void> {
     if (await this.isRegistered(name, fingerprint)) return;
     const stream = workflowDefinitionsStream();
-    const draft = createEventData({
+    const draft = createOrchestrationEventData({
       eventId: `workflow-definition:${name}:${fingerprint}`,
       eventType: OrchestrationEventType.WorkflowDefinitionRegistered,
       occurredAt: context.occurredAt,

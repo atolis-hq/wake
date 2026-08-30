@@ -1,4 +1,5 @@
-import { createEventData, EventActorKind, EventSourceKind } from '../../kernel/index.js';
+import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
+import { createOrchestrationEventData } from '../contracts/event-factory.js';
 import type {
   ChildCoordinationEventPayloads,
   ChildCoordinationMetadata,
@@ -23,7 +24,7 @@ export function coordinationDraft<Type extends keyof ChildCoordinationEventPaylo
   payload: ChildCoordinationEventPayloads[Type],
   ordinal: number,
 ) {
-  return createEventData({
+  return createOrchestrationEventData({
     eventId: `${context.eventIdPrefix}:${eventType}:${ordinal}`,
     eventType,
     occurredAt: context.occurredAt,

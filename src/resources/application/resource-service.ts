@@ -1,11 +1,7 @@
-import {
-  createEventData,
-  EventSourceKind,
-  type CommandContext,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { DiscoverResource } from '../contracts/commands.js';
+import { createResourceEventData } from '../contracts/event-factory.js';
 import {
   ResourceEventType,
   type ResourceEventData,
@@ -245,7 +241,7 @@ function resourceDraft<Type extends keyof ResourceEventPayloads>(
   eventType: Type,
   payload: ResourceEventPayloads[Type],
 ) {
-  return createEventData({
+  return createResourceEventData({
     eventId: `${context.commandId}:${eventType}`,
     eventType,
     occurredAt: context.occurredAt,

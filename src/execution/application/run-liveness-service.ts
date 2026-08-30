@@ -1,11 +1,11 @@
 import {
-  createEventData,
   EventActorKind,
   EventSourceKind,
   WrongExpectedSequenceError,
   type Clock,
 } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
+import { createRunExecutionEventData } from '../contracts/event-factory.js';
 import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
 import type { RunView } from '../contracts/views.js';
@@ -171,7 +171,7 @@ function livenessEvent<
   payload: RunExecutionEventPayloads[Type],
   occurredAt: string,
 ) {
-  return createEventData({
+  return createRunExecutionEventData({
     eventId: `${currentRunId}:${eventType}:${occurredAt}`,
     eventType,
     occurredAt,

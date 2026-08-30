@@ -1,10 +1,7 @@
 import { z } from 'zod';
 import {
-  EventSourceKind,
-  createEventData,
   eventDataSchema,
   eventEnvelopeSchema,
-  type CommandContext,
   type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
@@ -110,21 +107,4 @@ export function decodeControlEvent(event: EventEnvelope): ControlEvent {
 
 export function selectControlEvent(event: EventEnvelope): ControlEvent | null {
   return event.event.eventType.startsWith(ControlEventNamespace) ? decodeControlEvent(event) : null;
-}
-
-export function createControlEventData<Type extends keyof ControlEventPayloads>(
-  eventType: Type,
-  payload: ControlEventPayloads[Type],
-  context: CommandContext,
-): ControlEventData {
-  return createEventData({
-    eventId: `${context.commandId}:${eventType}`,
-    eventType,
-    occurredAt: context.occurredAt,
-    correlationId: context.correlationId,
-    causationId: context.commandId,
-    actor: context.actor,
-    source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
-    payload,
-  }) as ControlEventData;
 }

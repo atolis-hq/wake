@@ -34,6 +34,8 @@ export * from './contracts/event-decoder.js';
 
 export * from './contracts/events.js';
 
+export * from './contracts/event-factory.js';
+
 export * from './contracts/identifiers.js';
 
 export * from './contracts/streams.js';

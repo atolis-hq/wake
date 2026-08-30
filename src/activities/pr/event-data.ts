@@ -1,4 +1,5 @@
-import { createEventData, EventSourceKind, type CommandContext } from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext } from '../../kernel/index.js';
+import { createActivityEventData } from '../contracts/event-factory.js';
 import {
   ActivityEventType,
   type ActivityEventData,
@@ -104,34 +105,59 @@ export const mergeDenied = (
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityEventDataOf<typeof ActivityEventType.PrMergeDenied> =>
-  denialEventData(ActivityEventType.PrMergeDenied, reason, context, audit);
+  createActivityEventData({
+    ...metadata(ActivityEventType.PrMergeDenied, context),
+    payload: denialPayload(ActivityEventType.PrMergeDenied, reason, context, audit),
+  });
 
 export const approveDenied = (
   reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityEventDataOf<typeof ActivityEventType.PrApproveDenied> =>
-  denialEventData(ActivityEventType.PrApproveDenied, reason, context, audit);
+  createActivityEventData({
+    ...metadata(ActivityEventType.PrApproveDenied, context),
+    payload: denialPayload(ActivityEventType.PrApproveDenied, reason, context, audit),
+  });
 
 export const mergeAuthorized = (
   revision: string,
   context: CommandContext,
 ): ActivityEventDataOf<typeof ActivityEventType.PrMergeAuthorized> =>
-  createEventData({
+  createActivityEventData({
     ...metadata(ActivityEventType.PrMergeAuthorized, context),
     payload: { revision },
   });
 
-export const deliveryIntentRequested = <Type extends DeliveryIntentType>(
+export function deliveryIntentRequested(
   resourceId: ObservePullRequest['resourceId'],
-  type: Type,
-  payload: Omit<ActivityEventPayloads[Type], 'idempotencyKey'>,
+  type: typeof ActivityEventType.PrApproveRequested,
+  payload: Omit<
+    ActivityEventPayloads[typeof ActivityEventType.PrApproveRequested],
+    'idempotencyKey'
+  >,
   context: CommandContext,
-) =>
-  createEventData({
+): ActivityEventDataOf<typeof ActivityEventType.PrApproveRequested>;
+export function deliveryIntentRequested(
+  resourceId: ObservePullRequest['resourceId'],
+  type: typeof ActivityEventType.PrMergeRequested,
+  payload: Omit<ActivityEventPayloads[typeof ActivityEventType.PrMergeRequested], 'idempotencyKey'>,
+  context: CommandContext,
+): ActivityEventDataOf<typeof ActivityEventType.PrMergeRequested>;
+export function deliveryIntentRequested(
+  resourceId: ObservePullRequest['resourceId'],
+  type: DeliveryIntentType,
+  payload:
+    | Omit<ActivityEventPayloads[typeof ActivityEventType.PrApproveRequested], 'idempotencyKey'>
+    | Omit<ActivityEventPayloads[typeof ActivityEventType.PrMergeRequested], 'idempotencyKey'>,
+  context: CommandContext,
+): ActivityEventData {
+  void resourceId;
+  return createActivityEventData({
     ...metadata(type, context),
     payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
   });
+}
 
 function fact<Type extends ActivityEventData['eventType']>(
   resourceId: ObservePullRequest['resourceId'],
@@ -139,29 +165,24 @@ function fact<Type extends ActivityEventData['eventType']>(
   payload: ActivityEventPayloads[Type],
   context: CommandContext,
 ) {
-  return createEventData({
+  return createActivityEventData({
     ...metadata(eventType, context),
     payload,
   });
 }
 
-function denialEventData<
-  Type extends typeof ActivityEventType.PrMergeDenied | typeof ActivityEventType.PrApproveDenied,
->(
-  eventType: Type,
+function denialPayload(
+  eventType: typeof ActivityEventType.PrMergeDenied | typeof ActivityEventType.PrApproveDenied,
   reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit,
 ) {
-  return createEventData({
-    ...metadata(eventType, context),
-    payload: {
-      activationId: activationId(context.commandId),
-      idempotencyKey: `${context.commandId}:${eventType}`,
-      reason,
-      ...audit,
-    },
-  });
+  return {
+    activationId: activationId(context.commandId),
+    idempotencyKey: `${context.commandId}:${eventType}`,
+    reason,
+    ...audit,
+  };
 }
 
 function metadata<Type extends ActivityEventData['eventType']>(

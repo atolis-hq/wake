@@ -1,10 +1,10 @@
 import {
   correlationId,
-  createEventData,
   EventActorKind,
   EventSourceKind,
   type CommandContext,
 } from '../../kernel/index.js';
+import { createResourceEventData } from '../contracts/event-factory.js';
 import {
   ResourceEventType,
   type ResourceEvent,
@@ -169,7 +169,7 @@ function resourceDraft<Type extends keyof ResourceEventPayloads>(
   eventType: Type,
   payload: ResourceEventPayloads[Type],
 ) {
-  return createEventData({
+  return createResourceEventData({
     eventId: `${context.commandId}:${eventType}`,
     eventType,
     occurredAt: context.occurredAt,

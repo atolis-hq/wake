@@ -20,7 +20,6 @@ import {
 import type { RunRepository } from '../../../execution/index.js';
 import {
   correlationId,
-  createEventData,
   EventActorKind,
   EventSourceKind,
   UlidIdGenerator,
@@ -51,6 +50,7 @@ import type { WorkConclusion, WorkflowRouter } from '../../contracts/provider.js
 import { deliveryStream, integrationStream } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
+import { createGitHubEventData } from '../contracts/event-factory.js';
 import type {
   ExternalWorkObservedPayload,
   GitHubAdapterEvent,
@@ -298,7 +298,7 @@ export class InboundTranslator {
     const existing = await this.journal!.readStream(stream);
     if (existing.some((event) => event.event.eventId === eventId)) return;
     await this.journal!.appendToStream(stream, existing.length, [
-      createEventData({
+      createGitHubEventData({
         eventId,
         eventType,
         occurredAt: source.event.occurredAt,
@@ -411,7 +411,7 @@ export class InboundTranslator {
     const existing = await this.journal!.readStream(stream);
     if (existing.some((candidate) => candidate.event.eventId === eventId)) return;
     await this.journal!.appendToStream(stream, existing.length, [
-      createEventData({
+      createGitHubEventData({
         eventId,
         eventType: GitHubEventType.InboundTranslationRecovered,
         occurredAt: event.event.occurredAt,
@@ -501,7 +501,7 @@ export class InboundTranslator {
       if (existing.some((event) => event.event.eventId === eventId)) return;
       try {
         await this.journal!.appendToStream(stream, existing.length, [
-          createEventData({
+          createGitHubEventData({
             eventId,
             eventType,
             occurredAt: source.event.occurredAt,
@@ -880,7 +880,7 @@ export class InboundTranslator {
     const existing = await this.journal!.readStream(stream);
     if (existing.some((event) => event.event.eventId === eventId)) return;
     await this.journal!.appendToStream(stream, existing.length, [
-      createEventData({
+      createGitHubEventData({
         eventId,
         eventType: GitHubEventType.AdmissionStarted,
         occurredAt: source.event.occurredAt,
@@ -973,7 +973,7 @@ export class InboundTranslator {
       }
       try {
         await this.journal!.appendToStream(stream, existing.length, [
-          createEventData({
+          createGitHubEventData({
             eventId,
             eventType: GitHubEventType.DeletedWorkObservationSkipped,
             occurredAt: event.event.occurredAt,

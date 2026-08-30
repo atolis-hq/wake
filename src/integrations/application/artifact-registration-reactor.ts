@@ -7,7 +7,6 @@ import {
 } from '../../eventing/index.js';
 import {
   cachedJournalView,
-  createEventData,
   EventActorKind,
   EventSourceKind,
   type CachedJournalView,
@@ -30,6 +29,7 @@ import {
   type ResourceKind,
   type ResourceService,
 } from '../../resources/index.js';
+import { createArtifactEventData } from '../contracts/artifact-event-factory.js';
 import {
   ArtifactEventType,
   decodeArtifactEvent,
@@ -212,7 +212,7 @@ export class ArtifactRegistrationReactor {
     const escalated =
       ambiguous && attempt >= (this.dependencies.maxAmbiguityReconciliationAttempts ?? 3);
     await this.dependencies.journal.appendToStream(stream, sequence, [
-      createEventData({
+      createArtifactEventData({
         eventId: `${record.causationId}:artifact:${record.artifact.externalKey.key}:unresolved:${attempt}`,
         eventType: ArtifactEventType.VerificationUnresolved,
         occurredAt: record.occurredAt,

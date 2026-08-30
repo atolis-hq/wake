@@ -213,7 +213,10 @@ export type OrchestrationGroupEventData =
 export type OrchestrationEvent =
   WorkflowOrchestrationEvent | OrchestrationGroupEvent | WorkflowDefinitionRegisteredEvent;
 
-export type OrchestrationEventData = WorkflowOrchestrationEventData | OrchestrationGroupEventData;
+export type OrchestrationEventData =
+  | WorkflowOrchestrationEventData
+  | OrchestrationGroupEventData
+  | EventDataUnion<WorkflowDefinitionEventPayloads>;
 
 export type ChildCoordinationEventData = Extract<
   OrchestrationEventData,

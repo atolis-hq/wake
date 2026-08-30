@@ -11,12 +11,7 @@ import {
   type EventProcessor,
 } from '../../eventing/index.js';
 import { RunStatus, type RunRepository } from '../../execution/index.js';
-import {
-  createEventData,
-  EventActorKind,
-  EventSourceKind,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { EventActorKind, EventSourceKind, type EventJournal } from '../../kernel/index.js';
 import {
   ApprovalAuthorityKind,
   isApprovalAwaitingSignalKind,
@@ -35,6 +30,7 @@ import {
   type ResourceCorrelationView,
 } from '../../resources/index.js';
 import { ReplyTarget, type ReplyPublicationConfig } from '../contracts/reply-routing.js';
+import { createDeliveryIntentEventData } from '../delivery/contracts/event-factory.js';
 import { DeliveryIntentEventType } from '../delivery/contracts/intents.js';
 import {
   defaultReplyPublication,
@@ -149,7 +145,7 @@ export class AgentRunPublicationReactor {
     const sequence = (await this.dependencies.journal.readStream(stream)).length;
     try {
       await this.dependencies.journal.appendToStream(stream, sequence, [
-        createEventData({
+        createDeliveryIntentEventData({
           eventId: `agent-run:${run.runId}`,
           eventType: DeliveryIntentEventType.AgentRunPublishRequested,
           occurredAt,

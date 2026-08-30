@@ -5,10 +5,11 @@ import {
   ReviewActorKind,
   type PullRequestCheckState as PullRequestCheckStateValue,
 } from '../../../activities/index.js';
-import { createEventData, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
+import { EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
 import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
+import { createGitHubEventData } from '../contracts/event-factory.js';
 import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import {
@@ -129,7 +130,7 @@ function pullRequestObservation(input: {
     },
   };
   const fingerprint = evidenceFingerprint(payload, input.evidence);
-  return createEventData({
+  return createGitHubEventData({
     eventId: `github:pr:${key}:${fingerprint}`,
     eventType: GitHubEventType.WorkObserved,
     occurredAt: pullRequest.updated_at,

@@ -1,16 +1,14 @@
 import {
   EventActorKind,
+  EventSourceKind,
   correlationId,
   type Clock,
   type EventJournal,
   type IdGenerator,
 } from '../../kernel/index.js';
-import {
-  ControlEventType,
-  createControlEventData,
-  selectControlEvent,
-} from '../contracts/events.js';
-import { controlPlaneStream } from '../contracts/streams.js';
+import { createControlPlaneEventData } from '../contracts/event-factory.js';
+import { ControlEventType, selectControlEvent } from '../contracts/events.js';
+import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
 
 export interface ControlPlaneService {
   pause(idempotencyKey: string): Promise<void>;
@@ -81,15 +79,25 @@ async function change(
   };
   const event =
     operation === 'pause'
-      ? createControlEventData(
-          ControlEventType.DispatchPaused,
-          { resumeAt: '9999-12-31T23:59:59.999Z', reason: 'paused by operator' },
-          context,
-        )
-      : createControlEventData(
-          ControlEventType.DispatchResumed,
-          { resumedAt: occurredAt },
-          context,
-        );
+      ? createControlPlaneEventData({
+          eventId: `${context.commandId}:${ControlEventType.DispatchPaused}`,
+          eventType: ControlEventType.DispatchPaused,
+          occurredAt: context.occurredAt,
+          correlationId: context.correlationId,
+          causationId: context.commandId,
+          actor: context.actor,
+          source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
+          payload: { resumeAt: '9999-12-31T23:59:59.999Z', reason: 'paused by operator' },
+        })
+      : createControlPlaneEventData({
+          eventId: `${context.commandId}:${ControlEventType.DispatchResumed}`,
+          eventType: ControlEventType.DispatchResumed,
+          occurredAt: context.occurredAt,
+          correlationId: context.correlationId,
+          causationId: context.commandId,
+          actor: context.actor,
+          source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
+          payload: { resumedAt: occurredAt },
+        });
   await input.journal.appendToStream(stream, events.length, [event]);
 }

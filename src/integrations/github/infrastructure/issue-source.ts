@@ -3,9 +3,10 @@ import {
   ReviewActorKind,
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
-import { createEventData, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
+import { EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
+import { createGitHubEventData } from '../contracts/event-factory.js';
 import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import {
@@ -44,7 +45,7 @@ export function issueObservation(input: {
     labels: withoutWakeMarkers(labels),
     assignees: [...assignees].sort(),
   });
-  return createEventData({
+  return createGitHubEventData({
     eventId: `github:issue:${key}:${fingerprint}`,
     eventType: GitHubEventType.WorkObserved,
     occurredAt: input.issue.updated_at,
@@ -96,7 +97,7 @@ export function issueCommentObservation(input: {
     number: input.issue.number,
   });
   const location = commentLocation(input.comment);
-  return createEventData({
+  return createGitHubEventData({
     eventId: `github:issue-comment:${key}:${input.comment.id}:${input.comment.updated_at}`,
     eventType: GitHubEventType.CommentObserved,
     occurredAt: input.comment.updated_at,

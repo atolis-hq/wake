@@ -1,5 +1,6 @@
 import { activationId, type ActivityName } from '../../activities/index.js';
-import { createEventData, EventActorKind, EventSourceKind } from '../../kernel/index.js';
+import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
+import { createOrchestrationEventData } from '../contracts/event-factory.js';
 import {
   type ActivityRequestedPayload,
   type OrchestrationEventPayloads,
@@ -57,7 +58,7 @@ export function startDraft<Type extends WorkflowOrchestrationEventName>(
   payload: OrchestrationEventPayloads[Type],
   ordinal: number,
 ) {
-  return createEventData({
+  return createOrchestrationEventData({
     eventId: `${input.causationId}:${eventType}:${ordinal}`,
     eventType,
     occurredAt: input.occurredAt,
@@ -76,7 +77,7 @@ export function stateDraft<Type extends WorkflowOrchestrationEventName>(
   payload: OrchestrationEventPayloads[Type],
   ordinal: number,
 ) {
-  return createEventData({
+  return createOrchestrationEventData({
     eventId: `${input.causationId}:${eventType}:${ordinal}`,
     eventType,
     occurredAt: input.occurredAt,

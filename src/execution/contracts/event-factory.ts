@@ -22,6 +22,10 @@ export type ActivationExecutionEventDataInput = {
 export type ExecutionEventDataInput =
   RunExecutionEventDataInput | ActivationExecutionEventDataInput;
 
+export function createRunExecutionEventData<Type extends keyof RunExecutionEventPayloads>(
+  input: EventDataInput<Type, RunExecutionEventPayloads[Type]>,
+): Extract<RunExecutionEventData, { readonly eventType: Type }>;
+
 // Exhaustive dispatch preserves the closed event-to-payload mapping.
 // eslint-disable-next-line complexity
 export function createRunExecutionEventData(
