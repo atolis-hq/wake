@@ -1,16 +1,20 @@
 import type { ActivityOutcome } from '../../activities/index.js';
 import {
+  createEventDraft,
   EventActorKind,
   EventSourceKind,
-  createEventDraft,
   type Clock,
 } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
+import {
+  ExecutionEventType,
+  type RunExecutionEventPayloads,
+  type RunPreparationStartedPayload,
+} from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
 import { runStream } from '../contracts/streams.js';
-import { RunStatus } from '../contracts/vocabulary.js';
+import { isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
 import type { WorkspaceLease } from '../contracts/workspace.js';
 import { failureFrom } from '../domain/run-result.js';
 import { claimRun } from './run-liveness-service.js';
@@ -30,7 +34,7 @@ interface ResolvedRunner {
   readonly cli?: string | undefined;
 }
 
-export async function startRun(input: {
+export async function prepareRun(input: {
   readonly dependencies: RunLifecycleDependencies;
   readonly runId: ReturnType<typeof runId>;
   readonly activation: ExecutionActivation;
@@ -38,7 +42,6 @@ export async function startRun(input: {
   readonly attempt: number;
   readonly startedAt: string;
   readonly runner: ResolvedRunner;
-  readonly lease: WorkspaceLease | undefined;
 }): Promise<void> {
   const {
     dependencies,
@@ -48,9 +51,43 @@ export async function startRun(input: {
     attempt,
     startedAt,
     runner,
-    lease,
   } = input;
   await dependencies.repository.append(currentRunId, 0, [
+    createRunEvent({
+      runId: currentRunId,
+      eventId: `${currentRunId}:preparation-started`,
+      eventType: ExecutionEventType.RunPreparationStarted,
+      occurredAt: startedAt,
+      correlationId: context.orchestrationGroupId,
+      causationId: activation.activationId,
+      payload: {
+        ...runPreparationPayload(activation, context, attempt, runner),
+        startedAt,
+      },
+    }),
+  ]);
+  await claimRun(
+    dependencies.repository,
+    dependencies.clock,
+    dependencies.config,
+    currentRunId,
+    context.owner ?? 'execution',
+  );
+}
+
+export async function startRun(input: {
+  readonly dependencies: RunLifecycleDependencies;
+  readonly runId: ReturnType<typeof runId>;
+  readonly activation: ExecutionActivation;
+  readonly context: ExecutionAttemptContext;
+  readonly attempt: number;
+  readonly runner: ResolvedRunner;
+  readonly lease: WorkspaceLease | undefined;
+}): Promise<string> {
+  const { dependencies, runId: currentRunId, activation, context, attempt, runner, lease } = input;
+  const startedAt = dependencies.clock.now().toISOString();
+  const loaded = await dependencies.repository.load(currentRunId);
+  await dependencies.repository.append(currentRunId, loaded.sequence, [
     createRunEvent({
       runId: currentRunId,
       eventId: `${currentRunId}:started`,
@@ -59,24 +96,8 @@ export async function startRun(input: {
       correlationId: context.orchestrationGroupId,
       causationId: activation.activationId,
       payload: {
-        activationId: activation.activationId,
-        activity: activation.activity,
-        ...(activation.stage === undefined ? {} : { stage: activation.stage }),
-        workflowInstanceId: context.workflowInstanceId,
-        orchestrationGroupId: context.orchestrationGroupId,
-        attempt,
+        ...runPreparationPayload(activation, context, attempt, runner),
         startedAt,
-        ...(runner.name === undefined
-          ? {}
-          : {
-              runner: {
-                name: runner.name,
-                ...(runner.model === undefined ? {} : { model: runner.model }),
-                ...(runner.effort === undefined ? {} : { effort: runner.effort }),
-                ...(runner.pool === undefined ? {} : { pool: runner.pool }),
-                ...(runner.cli === undefined ? {} : { cli: runner.cli }),
-              },
-            }),
         ...(lease === undefined
           ? {}
           : {
@@ -89,13 +110,34 @@ export async function startRun(input: {
       },
     }),
   ]);
-  await claimRun(
-    dependencies.repository,
-    dependencies.clock,
-    dependencies.config,
-    currentRunId,
-    context.owner ?? 'execution',
-  );
+  return startedAt;
+}
+
+function runPreparationPayload(
+  activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
+  attempt: number,
+  runner: ResolvedRunner,
+): Omit<RunPreparationStartedPayload, 'startedAt'> {
+  return {
+    activationId: activation.activationId,
+    activity: activation.activity,
+    ...(activation.stage === undefined ? {} : { stage: activation.stage }),
+    workflowInstanceId: context.workflowInstanceId,
+    orchestrationGroupId: context.orchestrationGroupId,
+    attempt,
+    ...(runner.name === undefined
+      ? {}
+      : {
+          runner: {
+            name: runner.name,
+            ...(runner.model === undefined ? {} : { model: runner.model }),
+            ...(runner.effort === undefined ? {} : { effort: runner.effort }),
+            ...(runner.pool === undefined ? {} : { pool: runner.pool }),
+            ...(runner.cli === undefined ? {} : { cli: runner.cli }),
+          },
+        }),
+  };
 }
 
 export async function recordWorkspaceCleanupFailure(input: {
@@ -154,7 +196,7 @@ export async function recordRunFailure(input: {
   const { dependencies, runId: currentRunId, activation, context, error } = input;
   const loaded = await dependencies.repository.load(currentRunId);
   if (loaded.sequence === 0) throw error;
-  if (loaded.view?.status !== RunStatus.Started) return;
+  if (loaded.view === null || !isActiveRunStatus(loaded.view.status)) return;
   const finishedAt = dependencies.clock.now().toISOString();
   await dependencies.repository.append(currentRunId, loaded.sequence, [
     createRunEvent({

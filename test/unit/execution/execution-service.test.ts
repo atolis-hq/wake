@@ -12,8 +12,11 @@ import {
 } from '../../../src/activities/index.js';
 import {
   createExecutionService,
+  decodeRunExecutionEvent,
   ExecutionEventType,
   ExecutionFailureCode,
+  foldRun,
+  RunStatus,
   type ExecutionActivation,
   type ExecutionAttemptContext,
   type WorkspaceProvider,
@@ -29,7 +32,7 @@ import {} from '../../../src/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 import { resId, workId } from '../../support/identities.js';
 
-function setup(workspace?: WorkspaceProvider, journal?: EventJournal) {
+function setup(workspace?: WorkspaceProvider, journal?: EventJournal, clock = new FakeClock()) {
   const registry = new ActivityRegistry();
   registry.register({
     name: activityName('implement'),
@@ -44,13 +47,13 @@ function setup(workspace?: WorkspaceProvider, journal?: EventJournal) {
       },
     },
   });
-  const eventJournal = journal ?? new InMemoryEventJournal(new FakeClock());
+  const eventJournal = journal ?? new InMemoryEventJournal(clock);
   const service = createExecutionService(
     eventJournal,
     registry,
     { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
     {
-      clock: new FakeClock(),
+      clock,
       ids: new SequentialIds(),
       ...(workspace === undefined ? {} : { workspaces: workspace }),
     },
@@ -72,6 +75,15 @@ const context = {
   orchestrationGroupId: orchestrationGroupId('group-1'),
   resources: [],
 };
+
+function repositoryResource() {
+  return {
+    resourceId: resId('repo'),
+    kind: BuiltInResourceKind.Repository,
+    externalKey: { adapter: 'github', key: 'atolis-hq/wake' },
+    capabilities: [],
+  };
+}
 
 async function waitForRunStatus(
   service: ReturnType<typeof createExecutionService>,
@@ -256,6 +268,86 @@ describe('ExecutionService', () => {
     expect(calls).toBe(0);
   });
 
+  it('persists and leases a starting Run while workspace acquisition is blocked', async () => {
+    const clock = new FakeClock();
+    let acquireEntered!: () => void;
+    const acquired = new Promise<void>((resolve) => {
+      acquireEntered = resolve;
+    });
+    let releaseAcquire!: () => void;
+    const acquireReleased = new Promise<void>((resolve) => {
+      releaseAcquire = resolve;
+    });
+    const fixture = setup(
+      {
+        async acquire() {
+          acquireEntered();
+          await acquireReleased;
+          return {
+            workspaceId: 'workspace-1',
+            path: '/workspace-1',
+            mode: 'read-only',
+            async release() {},
+          };
+        },
+      },
+      undefined,
+      clock,
+    );
+    const workspaceActivation = { ...activation, execution: { workspace: 'read-only' as const } };
+    const workspaceContext = { ...context, resources: [repositoryResource()] };
+
+    const attempt = fixture.service.attempt(workspaceActivation, workspaceContext);
+    await acquired;
+
+    const events = await fixture.journal.readAll(0);
+    expect(events.map((event) => event.eventType)).toEqual(
+      expect.arrayContaining([
+        ExecutionEventType.RunPreparationStarted,
+        ExecutionEventType.RunLeaseClaimed,
+      ]),
+    );
+    expect(events.map((event) => event.eventType)).not.toContain(ExecutionEventType.RunStarted);
+    const preparation = events.find(
+      (event) => event.eventType === ExecutionEventType.RunPreparationStarted,
+    )!;
+    expect(
+      foldRun((await fixture.journal.readStream(preparation.stream)).map(decodeRunExecutionEvent)),
+    ).toMatchObject({ status: RunStatus.Starting });
+
+    clock.advance(1);
+    releaseAcquire();
+    const started = await attempt;
+
+    expect(started).toMatchObject({
+      status: RunStatus.Started,
+      workspace: { path: '/workspace-1', mode: 'read-only' },
+    });
+    expect(new Date(started.executionStartedAt!).getTime()).toBeGreaterThan(
+      new Date(started.startedAt).getTime(),
+    );
+  });
+
+  it('records a failed starting Run and releases activation when workspace acquisition rejects', async () => {
+    const fixture = setup({
+      async acquire() {
+        throw new Error('workspace unavailable');
+      },
+    });
+    const workspaceActivation = { ...activation, execution: { workspace: 'read-only' as const } };
+    const result = await fixture.service.attempt(workspaceActivation, {
+      ...context,
+      resources: [repositoryResource()],
+    });
+
+    expect(result).toMatchObject({ status: RunStatus.Failed });
+    const eventTypes = (await fixture.journal.readAll(0)).map((event) => event.eventType);
+    expect(eventTypes).toContain(ExecutionEventType.RunPreparationStarted);
+    expect(eventTypes).toContain(ExecutionEventType.RunFailed);
+    expect(eventTypes).toContain(ExecutionEventType.ActivationReleased);
+    expect(eventTypes).not.toContain(ExecutionEventType.RunStarted);
+  });
+
   it('passes the newly allocated Run ID to workspace acquisition', async () => {
     let acquiredRunId: string | undefined;
     const fixture = setup({
@@ -433,14 +525,22 @@ describe('ExecutionService', () => {
       ],
     };
 
-    await expect(fixture.service.attempt(workspaceActivation, workspaceContext)).rejects.toThrow(
-      'run start append interrupted',
-    );
+    await expect(
+      fixture.service.attempt(workspaceActivation, workspaceContext),
+    ).resolves.toMatchObject({
+      status: RunStatus.Failed,
+    });
     expect({ acquired, released }).toEqual({ acquired: 1, released: 1 });
 
     const retry = await fixture.service.attempt(workspaceActivation, workspaceContext);
     expect(retry.status).toBe('started');
-    await waitForRunStatus(fixture.service, workspaceActivation.activationId, 'succeeded');
+    await vi.waitFor(async () => {
+      expect(
+        (await fixture.service.list(workspaceActivation.activationId)).find(
+          (run) => run.runId === retry.runId,
+        )?.status,
+      ).toBe(RunStatus.Succeeded);
+    });
     expect({ acquired, released }).toEqual({ acquired: 2, released: 2 });
   });
   it('rejects an unregistered execution runner pool', async () => {

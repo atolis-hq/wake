@@ -10,7 +10,7 @@ import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts
 import type { runId } from '../contracts/identifiers.js';
 import { runStream } from '../contracts/streams.js';
 import type { RunView } from '../contracts/views.js';
-import { RunStatus } from '../contracts/vocabulary.js';
+import { isActiveRunStatus } from '../contracts/vocabulary.js';
 import type { RunRepository } from './run-repository.js';
 
 const defaultLeaseDurationMs = 60_000;
@@ -132,7 +132,7 @@ export async function confirmCancellation(
 }
 
 function requireActiveRun(run: RunView | null): RunView {
-  if (run === null || run.status !== RunStatus.Started) throw new Error('Run is not active');
+  if (run === null || !isActiveRunStatus(run.status)) throw new Error('Run is not active');
   return run;
 }
 

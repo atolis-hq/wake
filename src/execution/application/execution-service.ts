@@ -12,7 +12,7 @@ import type { ExecutionConfig } from '../contracts/config.js';
 import { runId } from '../contracts/identifiers.js';
 import { ExecutionStreamKind } from '../contracts/streams.js';
 import type { RunView } from '../contracts/views.js';
-import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
+import { isActiveRunStatus, RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
 import type { WorkspaceLease } from '../contracts/workspace.js';
 import { claimActivation, releaseActivation } from './activation-claim.js';
 import { cancelActiveRuns } from './active-run-cancellation.js';
@@ -23,6 +23,7 @@ import {
 } from './execution-activity.js';
 import { acquireWorkspace, validateResourceRequirements } from './execution-validation.js';
 import {
+  prepareRun,
   recordRunFailure,
   recordRunSuccess,
   recordWorkspaceCleanupFailure,
@@ -70,7 +71,7 @@ export function createExecutionService(
   };
 }
 
-// Starts the durable Run and hands agent invocation ownership to the detached worker.
+// Prepares the durable Run before workspace acquisition, then hands invocation to the detached worker.
 // eslint-disable-next-line max-lines-per-function
 async function attemptExecution(
   runtime: ExecutionRuntime,
@@ -100,12 +101,12 @@ async function attemptExecution(
     reportRunnerStarted = resolve;
   });
   let lease: WorkspaceLease | undefined;
+  let renewal: ReturnType<typeof renewWhileActive> | undefined;
   let claimed = false;
   try {
     await claimActivationForAttempt(runtime, activation, currentRunId, owner, startedAt);
     claimed = true;
-    lease = await acquireAttemptWorkspace(runtime, activation, context, currentRunId);
-    await startRun({
+    await prepareRun({
       dependencies: runLifecycleDependencies(runtime),
       runId: currentRunId,
       activation,
@@ -113,12 +114,41 @@ async function attemptExecution(
       attempt: prior.length + 1,
       startedAt,
       runner,
+    });
+    renewal = renewWhileActive(runtime, currentRunId, owner);
+    lease = await acquireAttemptWorkspace(runtime, activation, context, currentRunId);
+    const executionStartedAt = await startRun({
+      dependencies: runLifecycleDependencies(runtime),
+      runId: currentRunId,
+      activation,
+      context,
+      attempt: prior.length + 1,
+      runner,
       lease,
+    });
+    const completion = completeRun(
+      runtime,
+      currentRunId,
+      activation,
+      context,
+      executionStartedAt,
+      runner,
+      resume.sessionId,
+      resume.startedAt,
+      resume.usageBaseline,
+      lease,
+      renewal,
+      reportRunnerStarted,
+    );
+    void completion.catch(() => {
+      reportRunnerStarted();
+      // A detached worker must never create an unhandled rejection for its caller.
     });
   } catch (error) {
     const persisted = await runtime.repository.load(currentRunId);
-    if (persisted.view?.status === RunStatus.Started) {
+    if (persisted.view !== null && isActiveRunStatus(persisted.view.status)) {
       try {
+        await renewal?.stop();
         await recordRunFailure({
           dependencies: runLifecycleDependencies(runtime),
           runId: currentRunId,
@@ -131,27 +161,10 @@ async function attemptExecution(
       }
       return (await runtime.repository.load(currentRunId)).view!;
     }
+    await renewal?.stop();
     await releasePreStartResources(runtime, activation, currentRunId, lease, claimed);
     throw error;
   }
-
-  const completion = completeRun(
-    runtime,
-    currentRunId,
-    activation,
-    context,
-    startedAt,
-    runner,
-    resume.sessionId,
-    resume.startedAt,
-    resume.usageBaseline,
-    lease,
-    reportRunnerStarted,
-  );
-  void completion.catch(() => {
-    reportRunnerStarted();
-    // A detached worker must never create an unhandled rejection for its caller.
-  });
   await yieldToRunStart(
     definition.executionKind === ActivityExecutionKind.Deterministic &&
       context.awaitImmediateCompletion
@@ -181,9 +194,15 @@ async function completeRun(
   resumeStartedAt: string | undefined,
   usageBaseline: ReturnType<typeof usageBaselineFor>,
   lease: WorkspaceLease | undefined,
+  renewal: ReturnType<typeof renewWhileActive>,
   reportRunnerStarted: () => void,
 ): Promise<void> {
-  const renewal = renewWhileRunning(runtime, currentRunId, context.owner ?? 'execution');
+  let renewalStopped = false;
+  const stopRenewal = async () => {
+    if (renewalStopped) return;
+    renewalStopped = true;
+    await renewal.stop();
+  };
   try {
     const outcome = await executeActivity(runtime, currentRunId, {
       activation,
@@ -200,7 +219,7 @@ async function completeRun(
       ...(lease === undefined ? {} : { workspace: { path: lease.path, mode: lease.mode } }),
       reportRunnerStarted,
     });
-    await renewal.stop();
+    await stopRenewal();
     await recordRunSuccess({
       dependencies: runLifecycleDependencies(runtime),
       runId: currentRunId,
@@ -210,7 +229,7 @@ async function completeRun(
     });
   } catch (error) {
     try {
-      await renewal.stop();
+      await stopRenewal();
       await recordRunFailure({
         dependencies: runLifecycleDependencies(runtime),
         runId: currentRunId,
@@ -223,12 +242,12 @@ async function completeRun(
     }
   } finally {
     reportRunnerStarted();
-    await renewal.stop();
+    await stopRenewal();
     await cleanupRun(runtime, currentRunId, activation, context, lease);
   }
 }
 
-function renewWhileRunning(
+function renewWhileActive(
   runtime: ExecutionRuntime,
   currentRunId: ReturnType<typeof runId>,
   owner: string,
@@ -559,7 +578,7 @@ function existingRun(runs: readonly RunView[], clock: Clock, owner: string) {
   if (completed !== undefined) return completed;
   const ambiguous = runs.find((run) => run.status === RunStatus.Ambiguous);
   if (ambiguous !== undefined) return ambiguous;
-  const active = runs.find((run) => run.status === RunStatus.Started);
+  const active = runs.find((run) => isActiveRunStatus(run.status));
   if (active === undefined) return undefined;
   if (
     active.lease !== undefined &&
