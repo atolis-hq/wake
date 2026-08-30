@@ -10,9 +10,9 @@ Work, workflow, execution, or provider domain policy.
 ## Invariants
 One-shot ticks run the non-scheduling runner pipeline then poke the durable
 subscriber before delivery; resident runner hosts run only that non-scheduling
-pipeline. Activation scheduling is owned by the named, durable
-`activation-scheduler` subscription. The subscriber depends on a Control Plane
-host port; Bootstrap adapts Persistence. It treats every journal fact as a
+pipeline. Activation scheduling is owned by the named Eventing batch processor
+`activation-scheduler`. The subscriber depends on a Control Plane processor-host
+port; Bootstrap composes the Eventing host. It treats every delivered batch as a
 reconsideration, checkpoints only after a successful pass, and relies on the
 shared scheduler serialiser for global capacity safety. Its durable subscriber identity is
 `subscriber:control-plane.activation-scheduler`; the distinct scheduler

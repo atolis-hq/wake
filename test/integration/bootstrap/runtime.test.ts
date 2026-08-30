@@ -19,6 +19,7 @@ import {
   ControlStreamKind,
   activationSchedulerSubscriptionConsumer,
 } from '../../../src/control-plane/index.js';
+import type { ProcessorRunSerialiser } from '../../../src/eventing/index.js';
 import {
   ExecutionEventType,
   TranscriptStore,
@@ -114,6 +115,37 @@ describe('target composition root', () => {
 
     expect(runtime.projectionSubscriptions).toBeDefined();
     expect(runtime).not.toHaveProperty('projectionRunner');
+  });
+
+  it('hosts the activation scheduler processor through the injected processor serialiser', async () => {
+    const root = await fixtureRoot();
+    const serialisedConsumers: string[] = [];
+    const serialise: ProcessorRunSerialiser = async (consumer, _signal, operation) => {
+      serialisedConsumers.push(consumer);
+      return operation();
+    };
+    const runtime = await createCompositionRoot(root, {
+      config: rootConfig(),
+      journal: new InMemoryEventJournal({ now: () => new Date('2026-08-29T00:00:00.000Z') }),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      subscriptionRunSerialiser: serialise,
+    });
+    const controller = new AbortController();
+    const run = runtime.activationSchedulerSubscriber.start(controller.signal);
+    try {
+      await runtime.work.create(
+        { workItemId: workId('shared-scheduler-serialiser'), objective: 'serialise scheduler' },
+        commandContext({ now: () => new Date('2026-08-29T00:00:00.000Z') }, 'shared-serialiser'),
+      );
+
+      await vi.waitFor(() =>
+        expect(serialisedConsumers).toContain(activationSchedulerSubscriptionConsumer),
+      );
+    } finally {
+      controller.abort();
+      await run.done;
+    }
   });
 
   it('starts a production-composed fake runner from a conversation resume through the subscriber', async () => {

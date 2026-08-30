@@ -321,7 +321,7 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
               detail: describeSelfUpdateFailure(selfUpdateFailure),
             },
         subscriptionHealthCheck('activation-scheduler', schedulerSubscription),
-        ...root.projectionSubscriptions.subscriptions.map(({ consumer }) =>
+        ...root.projectionSubscriptions.processors.map(({ consumer }) =>
           subscriptionHealthCheck(consumer, projectionHealth.get(consumer)),
         ),
       ];

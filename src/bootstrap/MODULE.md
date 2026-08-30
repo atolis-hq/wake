@@ -13,10 +13,11 @@ scheduler owns scheduling; one-shot CLI and API ticks run the runner pipeline
 to produce schedule/reactor facts, then explicitly poke the subscriber before
 delivery. Scheduler runner eligibility is a position-keyed fold of the durable
 control stream, so scheduling does not wait for independently durable
-projection subscriptions. Bootstrap supervises the scheduler and projection
-subscriptions beside resident hosts, composes their filesystem checkpoint locks
-independently from the global scheduler critical-section lock, and stops them
-with the resident signal.
+projection processors. Bootstrap supervises the scheduler and projection
+processors beside resident hosts, composes their shared injected processor
+serialiser independently from the global scheduler critical-section lock, and
+stops them with the resident signal. The scheduler exposes one named batch
+processor; startup and fallback reconciliation remain separate from delivery.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

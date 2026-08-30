@@ -46,7 +46,6 @@ import {
   type ProjectionStore,
 } from '../kernel/index.js';
 import { compileWorkflow, createOrchestrationService } from '../orchestration/index.js';
-import { createFileProcessorRunSerialiser } from '../persistence/index.js';
 import {
   createResourceLookup,
   createResourceService,
@@ -290,7 +289,7 @@ export async function createCompositionRoot(
   );
   const advanceOnce = activationScheduler.runOnce.bind(activationScheduler);
   const activationSchedulerSubscriber = createActivationSchedulerSubscriber(
-    new EventProcessorHost(journal, checkpoints, createFileProcessorRunSerialiser(paths.dataRoot)),
+    new EventProcessorHost(journal, checkpoints, subscriptionRunSerialiser),
     activationScheduler,
   );
   const runtime = await composeIntegrationRuntime({

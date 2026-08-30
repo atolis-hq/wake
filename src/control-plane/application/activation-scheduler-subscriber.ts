@@ -58,6 +58,8 @@ export interface ActivationSchedulerSubscriptionHealth {
 
 /** Schedules durable activation work independently from slow runner reactors. */
 export interface ActivationSchedulerSubscriber {
+  /** The named Eventing processor that schedules once for each delivered batch. */
+  readonly processor: EventProcessor;
   start(signal?: AbortSignal): ActivationSchedulerSubscriberRun;
   poke(options?: AdvanceOptions, signal?: AbortSignal): Promise<AdvanceResult>;
   health(): ActivationSchedulerSubscriptionHealth | undefined;
@@ -92,27 +94,24 @@ export function createActivationSchedulerSubscriber(
       throw error;
     }
   };
+  const processor = createBatchEventProcessor({
+    consumer: activationSchedulerSubscriptionConsumer,
+    name: 'activation-scheduler',
+    owner: ControlStreamKind.Global,
+    category: EventProcessorCategory.Coordinator,
+    replayPolicy: EventProcessorReplayPolicy.Idempotent,
+    handle: async (_events, signal) => {
+      await poke(undefined, signal);
+    },
+  });
   return {
+    processor,
     start(parentSignal?: AbortSignal) {
       const controller = new AbortController();
       const abort = (_event: Event) => controller.abort();
       if (parentSignal?.aborted) controller.abort();
       else parentSignal?.addEventListener('abort', abort, { once: true });
-      const durable = host.start(
-        [
-          createBatchEventProcessor({
-            consumer: activationSchedulerSubscriptionConsumer,
-            name: 'activation-scheduler',
-            owner: ControlStreamKind.Global,
-            category: EventProcessorCategory.Coordinator,
-            replayPolicy: EventProcessorReplayPolicy.Idempotent,
-            handle: async () => {
-              await poke(undefined, controller.signal);
-            },
-          }),
-        ],
-        controller.signal,
-      );
+      const durable = host.start([processor], controller.signal);
       const startup = reconcileIgnoringFailure(() => poke(undefined, controller.signal));
       const fallback = reconcileOnFallback(controller.signal, fallbackMs, waitForFallback, () =>
         poke(undefined, controller.signal),

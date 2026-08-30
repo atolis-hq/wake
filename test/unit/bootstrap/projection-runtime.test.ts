@@ -34,10 +34,10 @@ it('registers every runtime definition with its stable projection consumer', () 
     new InMemoryCheckpointStore(),
   );
 
-  expect(runtime.subscriptions.map(({ consumer }) => consumer)).toEqual(
+  expect(runtime.processors.map(({ consumer }) => consumer)).toEqual(
     runtimeProjectionDefinitions.map(({ name }) => `projection:${name}`),
   );
-  expect(new Set(runtime.subscriptions.map(({ consumer }) => consumer))).toHaveProperty(
+  expect(new Set(runtime.processors.map(({ consumer }) => consumer))).toHaveProperty(
     'size',
     runtimeProjectionDefinitions.length,
   );
