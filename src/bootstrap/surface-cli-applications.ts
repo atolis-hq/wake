@@ -16,6 +16,7 @@ import {
   ExecutionCancellationReason,
   ExecutionFailureCode,
   RunStatus,
+  isActiveRunStatus,
   loadPromptTemplate,
 } from '../execution/index.js';
 import { EventActorKind, JOURNAL_CHANGE_FALLBACK_MS, correlationId } from '../kernel/index.js';
@@ -512,13 +513,13 @@ async function activeExecutionRuns(root: CompositionRoot) {
   // Run whose lease already expired would otherwise never be recovered during
   // a maintenance quiesce wait. Recover it here so an owner that is truly gone
   // (no heartbeat, no lease renewal) reaches a terminal or ambiguous status
-  // instead of sitting as "started" and blocking the update forever.
+  // instead of sitting as active and blocking the update forever.
   await root.recovery.recoverActive('self-update', root.execution.isLocallyActive);
   // Ambiguous Runs are always terminal (finishedAt is set the moment escalation
   // occurs) and require an operator's `run-resolve`, not a maintenance drain or
   // cancellation. Treating them as active would deadlock every future update.
   return (await root.execution.list())
-    .filter((run) => run.status === RunStatus.Started)
+    .filter((run) => isActiveRunStatus(run.status))
     .map((run) => ({
       runId: run.runId,
       maintenanceCancellable: run.cancellation === undefined,
@@ -527,7 +528,7 @@ async function activeExecutionRuns(root: CompositionRoot) {
 
 async function activeExecutionRunIds(root: CompositionRoot): Promise<readonly string[]> {
   return (await root.execution.list())
-    .filter((run) => run.status === RunStatus.Started)
+    .filter((run) => isActiveRunStatus(run.status))
     .map((run) => run.runId);
 }
 

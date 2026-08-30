@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ExecutionEventType, RunStatus } from '../../../src/execution/index.js';
+import { activationId, activityName } from '../../../src/activities/index.js';
+import {
+  ExecutionEventType,
+  runId,
+  RunRepository,
+  RunStatus,
+  runStream,
+} from '../../../src/execution/index.js';
+import { createEventDraft, EventActorKind, EventSourceKind } from '../../../src/kernel/index.js';
+import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { executionFixture } from './support.js';
 
 describe('Run cancellation', () => {
@@ -69,5 +78,36 @@ describe('Run cancellation', () => {
     expect(abort).toHaveBeenCalledWith('operator');
     fixture.complete({ kind: 'done' });
     await pending;
+  });
+
+  it('cancels a starting Run without requiring a runner process', async () => {
+    const fixture = executionFixture();
+    const id = runId('preparing-run');
+    await new RunRepository(fixture.journal).append(id, 0, [
+      createEventDraft({
+        eventId: 'preparing-run:preparation',
+        eventType: ExecutionEventType.RunPreparationStarted,
+        occurredAt: fixture.clock.now().toISOString(),
+        correlationId: 'preparing-run',
+        causationId: 'preparing-run',
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        stream: runStream(id),
+        payload: {
+          activationId: activationId('preparing-activation'),
+          activity: activityName('long-running'),
+          workflowInstanceId: workflowInstanceId('workflow-1'),
+          orchestrationGroupId: orchestrationGroupId('group-1'),
+          attempt: 1,
+          startedAt: fixture.clock.now().toISOString(),
+        },
+      }),
+    ]);
+
+    await expect(
+      fixture.service.cancelActive(['workflow-1'], 'work-cancelled'),
+    ).resolves.toMatchObject([
+      { runId: id, status: RunStatus.Cancelled, cancellation: { reason: 'work-cancelled' } },
+    ]);
   });
 });

@@ -1191,8 +1191,11 @@ describe('advanceOnce', () => {
     // through execution.list() within the same call, proving the loop
     // excludes same-call dispatches via its own tracked state, not by
     // relying on list() to reflect them.
-    function createExecution(options: { reflectDispatches?: boolean } = {}) {
+    function createExecution(
+      options: { reflectDispatches?: boolean; attemptStatus?: 'started' | 'starting' } = {},
+    ) {
       const reflectDispatches = options.reflectDispatches ?? true;
+      const attemptStatus = options.attemptStatus ?? 'started';
       const attempts: string[] = [];
       const runs = new Map<string, FakeRun>();
       return {
@@ -1203,7 +1206,7 @@ describe('advanceOnce', () => {
             attempts.push(activation.activationId);
             const run: FakeRun = {
               runId: `run-${activation.activationId.slice('activation-'.length)}`,
-              status: 'started',
+              status: attemptStatus,
               activationId: activation.activationId,
             };
             if (reflectDispatches) runs.set(activation.activationId, run);
@@ -1293,6 +1296,53 @@ describe('advanceOnce', () => {
         dispatched: [{ activationId: 'activation-a', runId: 'run-a' }],
       });
       expect(execution.attempts).toEqual(['activation-a']);
+    });
+
+    it('counts a starting Run against maxConcurrentRuns capacity', async () => {
+      const pending = [candidate('a')];
+      const orchestration = createOrchestration(pending);
+      const execution = createExecution();
+      execution.runs.set('activation-other', {
+        runId: 'run-other',
+        status: 'starting',
+        activationId: 'activation-other',
+      });
+      const advance = createAdvanceOnce(
+        orchestration.port,
+        execution.port,
+        { correlationsForWork: async () => [] } as never,
+        { now: () => new Date('2026-08-11T00:00:00.000Z') },
+        {
+          ids: { next: () => 'command-00000000000000000000000001' } as never,
+          maxConcurrentRuns: 1,
+          maxDispatches: 1,
+        },
+      );
+
+      await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
+      expect(execution.attempts).toEqual([]);
+    });
+
+    it('reports a starting Run returned by execution as dispatch progress', async () => {
+      const pending = [candidate('a')];
+      const orchestration = createOrchestration(pending);
+      const execution = createExecution({ attemptStatus: 'starting' });
+      const advance = createAdvanceOnce(
+        orchestration.port,
+        execution.port,
+        { correlationsForWork: async () => [] } as never,
+        { now: () => new Date('2026-08-11T00:00:00.000Z') },
+        {
+          ids: { next: () => 'command-00000000000000000000000001' } as never,
+          maxConcurrentRuns: 1,
+          maxDispatches: 1,
+        },
+      );
+
+      await expect(advance({ maxProgress: 1 })).resolves.toEqual({
+        kind: 'progressed',
+        dispatched: [{ activationId: 'activation-a', runId: 'run-a' }],
+      });
     });
 
     it('stops exactly at the maxDispatches burst cap even when maxConcurrentRuns has more room', async () => {

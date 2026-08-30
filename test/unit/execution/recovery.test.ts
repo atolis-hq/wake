@@ -6,6 +6,7 @@ import {
   RecoveryService,
   runId,
   RunRepository,
+  RunStatus,
   runStream,
 } from '../../../src/execution/index.js';
 import {
@@ -98,6 +99,57 @@ it('does not recover a locally tracked Run after its lease duration elapses', as
   ]);
   fixture.complete({ kind: 'done' });
   await fixture.finished('succeeded');
+});
+
+it('leaves an unexpired starting Run alone during active recovery', async () => {
+  const fixture = executionFixture();
+  const id = await appendStartingRun(fixture, 'starting-unexpired', 60_000);
+  let inspections = 0;
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        inspections += 1;
+        return { kind: 'absent' as const };
+      },
+    },
+    fixture.activities,
+  );
+
+  await expect(recovery.recoverActive('resident-b')).resolves.toEqual([]);
+  await expect(new RunRepository(fixture.journal).load(id)).resolves.toMatchObject({
+    view: { status: RunStatus.Starting },
+  });
+  expect(inspections).toBe(0);
+});
+
+it('fails an expired starting Run without external execution inspection', async () => {
+  const fixture = executionFixture();
+  const id = await appendStartingRun(fixture, 'starting-expired', -1);
+  let inspections = 0;
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        inspections += 1;
+        return { kind: 'absent' as const };
+      },
+    },
+    fixture.activities,
+  );
+
+  await expect(recovery.recoverActive('resident-b')).resolves.toMatchObject([
+    {
+      runId: id,
+      status: RunStatus.Failed,
+      failure: {
+        message: 'Preparation was interrupted before execution started',
+      },
+    },
+  ]);
+  expect(inspections).toBe(0);
 });
 
 it('reconciles definitely completed execution without rerunning it', async () => {
@@ -417,3 +469,48 @@ it('validates an operator success outcome against the Run Activity', async () =>
     ),
   ).rejects.toThrow(/undeclared activity outcome/i);
 });
+
+async function appendStartingRun(
+  fixture: ReturnType<typeof executionFixture>,
+  id: string,
+  leaseOffsetMs: number,
+) {
+  const currentRunId = runId(id);
+  const now = fixture.clock.now();
+  await new RunRepository(fixture.journal).append(currentRunId, 0, [
+    createEventDraft({
+      eventId: `${id}:preparation`,
+      eventType: ExecutionEventType.RunPreparationStarted,
+      occurredAt: now.toISOString(),
+      correlationId: id,
+      causationId: id,
+      actor: { kind: EventActorKind.System, id: 'test' },
+      source: { kind: EventSourceKind.Internal, id: 'test' },
+      stream: runStream(currentRunId),
+      payload: {
+        activationId: activationId(`${id}:activation`),
+        activity: activityName('long-running'),
+        workflowInstanceId: workflowInstanceId(`${id}:workflow`),
+        orchestrationGroupId: orchestrationGroupId(`${id}:group`),
+        attempt: 1,
+        startedAt: now.toISOString(),
+      },
+    }),
+    createEventDraft({
+      eventId: `${id}:lease`,
+      eventType: ExecutionEventType.RunLeaseClaimed,
+      occurredAt: now.toISOString(),
+      correlationId: id,
+      causationId: id,
+      actor: { kind: EventActorKind.System, id: 'test' },
+      source: { kind: EventSourceKind.Internal, id: 'test' },
+      stream: runStream(currentRunId),
+      payload: {
+        owner: 'resident-a',
+        acquiredAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + leaseOffsetMs).toISOString(),
+      },
+    }),
+  ]);
+  return currentRunId;
+}

@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { promisify } from 'node:util';
 import type { WorkItemId } from '../../../work/index.js';
 import type { RunView } from '../../contracts/views.js';
-import { RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
+import { isActiveRunStatus, RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
 import type {
   WorkspaceProvider,
   WorkspaceRecovery,
@@ -182,7 +182,7 @@ async function reclaimOwnedMarker(
   if (
     input.runs.some(
       (run) =>
-        (run.status === RunStatus.Started || run.status === RunStatus.Ambiguous) &&
+        (isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous) &&
         (run.runId === marker.runId || run.workspace?.path === marker.path),
     )
   )

@@ -7,6 +7,7 @@ import {
 import type { RunView } from '../../execution/index.js';
 import {
   ActivationClaimConflictError,
+  isActiveRunStatus,
   NoEligibleRunnerError,
   RunStatus,
   WorkspaceMode,
@@ -75,7 +76,7 @@ export function reportUnappliedRunnerQuotaRetry(
  * principle), until capacity, the per-call `maxDispatches` burst cap, or
  * eligible candidates are exhausted. Candidates dispatched earlier in the
  * same call are excluded from later selection via `dispatchedIds`, since
- * their `RunStarted` event is not guaranteed visible through
+ * their Run lifecycle event is not guaranteed visible through
  * `execution.list()` yet.
  */
 export async function runDispatchLoop(
@@ -88,7 +89,7 @@ export async function runDispatchLoop(
 
   while (dispatched.length < ctx.maxDispatches) {
     const allRuns = await ctx.execution.list();
-    if (allRuns.filter((run) => run.status === RunStatus.Started).length >= ctx.maxConcurrentRuns) {
+    if (allRuns.filter((run) => isActiveRunStatus(run.status)).length >= ctx.maxConcurrentRuns) {
       stopReason = { kind: 'no-work' };
       break;
     }
@@ -100,12 +101,12 @@ export async function runDispatchLoop(
           requestedPosition,
           hasActiveRun:
             dispatchedIds.has(item.activation.activationId) ||
-            (await ctx.execution.list(item.activation.activationId)).some(
-              (run) => run.status === RunStatus.Started,
+            (await ctx.execution.list(item.activation.activationId)).some((run) =>
+              isActiveRunStatus(run.status),
             ) ||
             allRuns.some(
               (run) =>
-                run.status === RunStatus.Started &&
+                isActiveRunStatus(run.status) &&
                 run.workflowInstanceId === item.workflow.workflowInstanceId &&
                 run.workspace?.mode === WorkspaceMode.Branch,
             ),
@@ -220,7 +221,7 @@ export async function runDispatchLoop(
         },
         ctx.commandContext(run.runId),
       );
-    if (run.status !== RunStatus.Succeeded && run.status !== RunStatus.Started) {
+    if (run.status !== RunStatus.Succeeded && !isActiveRunStatus(run.status)) {
       stopReason = {
         kind: WorkflowStatus.Blocked,
         workflowInstanceId: selected.workflow.workflowInstanceId,

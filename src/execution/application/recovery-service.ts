@@ -13,6 +13,7 @@ import type { RunView } from '../contracts/views.js';
 import {
   ExecutionFailureCode,
   ExternalExecutionState,
+  isActiveRunStatus,
   RunStatus,
 } from '../contracts/vocabulary.js';
 import { RunRepository } from './run-repository.js';
@@ -63,9 +64,15 @@ export class RecoveryService {
     const currentRunId = runId(id);
     const loaded = await this.repository.load(currentRunId);
     const run = loaded.view;
-    if (run === null || run.status !== RunStatus.Started) return requireRun(run);
+    if (run === null || !isActiveRunStatus(run.status)) return requireRun(run);
     if (run.lease !== undefined && new Date(run.lease.expiresAt) > this.clock.now())
       throw new Error(`Run ${id} does not have an expired lease`);
+    if (run.status === RunStatus.Starting)
+      return this.appendFailure(
+        currentRunId,
+        run,
+        'Preparation was interrupted before execution started',
+      );
     if (run.externalExecution === undefined)
       return this.appendFailure(currentRunId, run, 'External execution was never reported');
     const inspection = await this.inspector.inspect(run.externalExecution);
@@ -130,7 +137,7 @@ export class RecoveryService {
   ): Promise<readonly RunView[]> {
     const recovered: RunView[] = [];
     for (const run of await this.repository.list()) {
-      if (run.status !== RunStatus.Started) continue;
+      if (!isActiveRunStatus(run.status)) continue;
       if (isLocallyActive(run.runId)) continue;
       if (run.lease !== undefined && new Date(run.lease.expiresAt) > this.clock.now()) continue;
       recovered.push(await this.recover(run.runId, owner));
@@ -206,7 +213,7 @@ export class RecoveryService {
   private async append(id: RunId, draft: RunExecutionEventDraft): Promise<RunView> {
     const loaded = await this.repository.load(id);
     if (loaded.view === null) throw new Error(`Run ${id} does not exist`);
-    if (loaded.view.status !== RunStatus.Started) return loaded.view;
+    if (!isActiveRunStatus(loaded.view.status)) return loaded.view;
     await this.repository.append(id, loaded.sequence, [draft]);
     return (await this.repository.load(id)).view!;
   }
