@@ -1,8 +1,36 @@
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   createPullRequestApproveActivity,
   createPullRequestMergeActivity,
 } from '../../../src/activities/index.js';
-import { workflowName } from '../../../src/orchestration/contracts/identifiers.js';
+import {
+  createCompositionRoot,
+  createOneShotRunnerAdvance,
+  parseRootConfig,
+  type CompositionRoot,
+} from '../../../src/bootstrap/index.js';
+import type { ExternalDeliveryAdapter } from '../../../src/integrations/index.js';
+import {
+  correlationId,
+  type CheckpointStore,
+  type Clock,
+  type EventJournal,
+  type ProjectionStore,
+} from '../../../src/kernel/index.js';
+import {
+  orchestrationGroupId,
+  workflowInstanceId,
+  workflowName,
+  type WorkflowInstanceId,
+} from '../../../src/orchestration/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
+} from '../../../src/persistence/index.js';
 import type { ResourceCapability, resourceId } from '../../../src/resources/index.js';
 import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { type WorkItemId } from '../../../src/work/index.js';
@@ -27,6 +55,126 @@ interface ScenarioSetup {
   readonly workItemId: WorkItemId;
   readonly primaryResourceId?: ReturnType<typeof resourceId>;
   readonly revision?: string;
+}
+
+export interface ComposedMergeRootOptions {
+  readonly provider: ExternalDeliveryAdapter;
+  readonly clock?: Clock;
+  readonly journal?: EventJournal;
+  readonly projections?: ProjectionStore;
+  readonly checkpoints?: CheckpointStore;
+}
+
+/** Creates the production composition graph used by delivery E2E scenarios. */
+export async function createComposedMergeRoot(
+  options: ComposedMergeRootOptions,
+): Promise<CompositionRoot> {
+  const clock = options.clock ?? { now: () => new Date('2026-07-30T12:00:00.000Z') };
+  const wakeRoot = await mkdtemp(join(tmpdir(), 'wake-composed-merge-e2e-'));
+  return createCompositionRoot(wakeRoot, {
+    config: parseRootConfig({
+      schemaVersion: 1,
+      work: {},
+      resources: {},
+      execution: {
+        agentRunners: { fake: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
+      },
+      orchestration: {
+        default: 'merge',
+        workflows: {
+          merge: {
+            stages: {
+              merge: {
+                activity: 'pr.merge',
+                with: { method: 'squash', requireChecks: true },
+                on: outcomeRoutes(),
+                requiresApproval: false,
+              },
+            },
+          },
+        },
+      },
+      controlPlane: {},
+      integrations: { fake: { enabled: true, provider: 'fake' } },
+      surfaces: {},
+    }),
+    clock,
+    journal: options.journal ?? new InMemoryEventJournal(clock),
+    projections: options.projections ?? new InMemoryProjectionStore(),
+    checkpoints: options.checkpoints ?? new InMemoryCheckpointStore(),
+    subscriptionRunSerialiser: createInMemoryProcessorRunSerialiser(),
+    decorateDeliveryAdapter: () => options.provider,
+  });
+}
+
+/** Appends merge evidence through the composed services, then waits on the runtime checkpoint barrier. */
+export async function prepareComposedSafeMerge(root: CompositionRoot): Promise<WorkflowInstanceId> {
+  const context = composedCommand('create-work');
+  const work = await root.work.create(
+    { workItemId: workId('one'), objective: 'merge safe' },
+    context,
+  );
+  const primary = resId('primary');
+  await root.resources.discover(
+    {
+      resourceId: primary,
+      kind: resourceKind('pull-request'),
+      externalKey: { adapter: 'fake', key: 'pr-primary' },
+      capabilities: [
+        resourceCapability('reviewable'),
+        resourceCapability('mergeable'),
+        resourceCapability('revisioned'),
+      ],
+    },
+    composedCommand('discover-primary'),
+  );
+  await root.resources.correlate(
+    primary,
+    work.workItemId,
+    'primary',
+    composedCommand('correlate-primary'),
+  );
+  await root.pullRequests.observe(
+    {
+      resourceId: primary,
+      workItemId: work.workItemId,
+      state: 'open',
+      headRevision: 'revision-a',
+      baseRevision: 'base-a',
+      checks: 'passing',
+    },
+    composedCommand('observe-primary'),
+  );
+  await root.pullRequests.acceptReviewSignal(
+    {
+      resourceId: primary,
+      revision: 'revision-a',
+      actorId: 'reviewer',
+      actorKind: 'human',
+      acceptedEventId: 'review-reviewer',
+      resourceAuthorId: 'author',
+      authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
+    },
+    composedCommand('accept-review'),
+  );
+  const workflow = await root.orchestration.start(
+    {
+      workflowInstanceId: workflowInstanceId('workflow-merge'),
+      workItemId: work.workItemId,
+      workflowName: workflowName('merge'),
+      orchestrationGroupId: orchestrationGroupId('group-merge'),
+    },
+    composedCommand('start-merge'),
+  );
+  await root.processorRuntime.catchUp('prepare merge delivery');
+  return workflow.workflowInstanceId;
+}
+
+/** Runs Wake's real one-shot delivery lane, whose barriers use the shared processor registry. */
+export function runComposedDeliveryCycle(root: CompositionRoot) {
+  return createOneShotRunnerAdvance(root)({ maxProgress: 1 });
 }
 
 export async function setupApprovalScenario(
@@ -286,6 +434,15 @@ function command(world: TestWorld, commandId: string) {
     commandId,
     correlationId: 'scenario-1' as never,
     occurredAt: world.clock.now().toISOString(),
+    actor: { kind: 'system' as const, id: 'test' },
+  };
+}
+
+function composedCommand(commandId: string) {
+  return {
+    commandId,
+    correlationId: correlationId('composed-merge-scenario'),
+    occurredAt: '2026-07-30T12:00:00.000Z',
     actor: { kind: 'system' as const, id: 'test' },
   };
 }

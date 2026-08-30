@@ -1,33 +1,33 @@
-import { describe, expect, it } from 'vitest';
-import { composeDeliveryRuntime } from '../../../src/bootstrap/index.js';
+import { rm } from 'node:fs/promises';
+import { afterEach, describe, expect, it } from 'vitest';
 import { DeliveryEventType, DurableFakeDeliveryProvider } from '../../../src/integrations/index.js';
-import { InMemoryProjectionStore } from '../../../src/persistence/index.js';
-import { TestWorld } from '../support/world.js';
-import { executeMerge, setupMergeScenario } from './pr-activity-fixtures.js';
+import {
+  createComposedMergeRoot,
+  prepareComposedSafeMerge,
+  runComposedDeliveryCycle,
+} from './pr-activity-fixtures.js';
 
 const scenario = { id: 'E2E-PR-MERGE-003' } as const;
+const wakeRoots = new Set<string>();
+
+afterEach(async () => {
+  const roots = [...wakeRoots];
+  wakeRoots.clear();
+  await Promise.all(roots.map((wakeRoot) => rm(wakeRoot, { recursive: true, force: true })));
+});
 
 describe(scenario.id, () => {
   it('delivers through projections and advances the waiting workflow only after confirmation', async () => {
-    const world = new TestWorld();
-    const setup = await setupMergeScenario(world, 'safe');
-    const workflowId = await executeMerge(world, setup.workItemId);
     const provider = new DurableFakeDeliveryProvider();
-    const runtime = composeDeliveryRuntime({
-      journal: world.journal,
-      projections: new InMemoryProjectionStore(),
-      checkpoints: world.checkpoints,
-      resource: async (id) => ({ resourceId: id, adapter: 'fake' }),
-      adapter: () => provider,
-      now: () => world.clock.now().toISOString(),
-      orchestration: world.orchestration,
-    });
+    const root = await createComposedMergeRoot({ provider });
+    wakeRoots.add(root.paths.wakeRoot);
+    const workflowId = await prepareComposedSafeMerge(root);
 
-    await runtime.runOnce(new AbortController().signal);
+    await runComposedDeliveryCycle(root);
 
     expect(provider.effects).toHaveLength(1);
-    expect((await world.viewWorkflow(workflowId))?.status).toBe('completed');
-    expect((await world.events()).map((event) => event.eventType)).toContain(
+    expect((await root.orchestration.get(workflowId))?.status).toBe('completed');
+    expect((await root.journal.readAll(0)).map((event) => event.eventType)).toContain(
       DeliveryEventType.Confirmed,
     );
   });

@@ -110,6 +110,7 @@ export interface CompositionRoot {
   readonly work: ReturnType<typeof createWorkService>;
   readonly conversations: ReturnType<typeof createConversationService>;
   readonly resources: ReturnType<typeof createResourceService>;
+  readonly pullRequests: ReturnType<typeof createPullRequestService>;
   readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
@@ -339,6 +340,7 @@ export async function createCompositionRoot(
     work,
     conversations,
     resources,
+    pullRequests,
     lookup,
     orchestration,
     execution,
