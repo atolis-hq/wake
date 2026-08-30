@@ -1,44 +1,22 @@
 import type { CheckpointStore, Clock, EventJournal } from '../../kernel/index.js';
-import { SystemClock, defineClosedVocabulary } from '../../kernel/index.js';
-import {
-  EventProcessorCategory,
-  EventProcessorReplayPolicy,
-  type EventProcessor,
-} from '../contracts/event-processor.js';
+import { SystemClock } from '../../kernel/index.js';
+import { type EventProcessor } from '../contracts/event-processor.js';
 import type { ProcessorRunSerialiser } from '../contracts/processor-run-serialiser.js';
+import {
+  EventProcessorHealthStatus,
+  ProcessorHealthRegistry,
+  type EventProcessorHealth,
+} from './processor-health.js';
+import {
+  assertDistinctProcessorConsumers,
+  assertNonNegativeSafeInteger,
+  assertPositiveSafeInteger,
+  assertProcessor,
+} from './processor-validation.js';
 
 const defaultBatchSize = 100;
-const maximumBatchSize = 10_000;
 const defaultFallbackMs = 30_000;
 const maximumTimerDelayMs = 2_147_483_647;
-const maximumErrorLength = 1_000;
-
-export const EventProcessorHealthStatus = defineClosedVocabulary({
-  Starting: 'starting',
-  CatchingUp: 'catching-up',
-  Healthy: 'healthy',
-  Degraded: 'degraded',
-  Stopped: 'stopped',
-} as const);
-
-export type EventProcessorHealthStatus =
-  (typeof EventProcessorHealthStatus)[keyof typeof EventProcessorHealthStatus];
-
-export interface EventProcessorHealth {
-  readonly consumer: string;
-  readonly name: string;
-  readonly owner: string;
-  readonly category: (typeof EventProcessorCategory)[keyof typeof EventProcessorCategory];
-  readonly status: EventProcessorHealthStatus;
-  readonly checkpoint: number;
-  readonly head: number;
-  readonly lag: number;
-  readonly consecutiveFailures: number;
-  readonly lastError?: { readonly name: string; readonly message: string };
-  readonly lastAttemptAt?: string;
-  readonly lastSuccessAt?: string;
-  readonly lastFailureAt?: string;
-}
 
 export interface EventProcessorHostOptions {
   readonly fallbackMs?: number;
@@ -58,13 +36,15 @@ export interface EventProcessorPass {
 }
 
 export class EventProcessorHost {
-  private readonly snapshots = new Map<string, EventProcessorHealth>();
   private readonly fallbackMs: number;
   private readonly retryBackoff: (
     consecutiveFailures: number,
     signal: AbortSignal,
   ) => Promise<void>;
+
   private readonly clock: Clock;
+
+  private readonly healthRegistry: ProcessorHealthRegistry;
 
   constructor(
     private readonly journal: EventJournal,
@@ -75,13 +55,14 @@ export class EventProcessorHost {
     this.fallbackMs = options.fallbackMs ?? defaultFallbackMs;
     this.retryBackoff = options.retryBackoff ?? defaultRetryBackoff;
     this.clock = options.clock ?? new SystemClock();
+    this.healthRegistry = new ProcessorHealthRegistry(journal, this.clock);
     assertPositiveSafeInteger(this.fallbackMs, 'Processor fallback', maximumTimerDelayMs);
     if (typeof this.retryBackoff !== 'function')
       throw new Error('Processor retry backoff must be a function');
   }
 
   start(processors: readonly EventProcessor[], parentSignal?: AbortSignal): EventProcessorHostRun {
-    assertDistinctConsumers(processors);
+    assertDistinctProcessorConsumers(processors);
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (parentSignal?.aborted) abort();
@@ -116,7 +97,7 @@ export class EventProcessorHost {
   }
 
   health(consumer: string): EventProcessorHealth | undefined {
-    return this.snapshots.get(consumer);
+    return this.healthRegistry.get(consumer);
   }
 
   private async runProcessor(processor: EventProcessor, signal: AbortSignal): Promise<void> {
@@ -127,14 +108,14 @@ export class EventProcessorHost {
         try {
           const pass = await this.serialiseRun(processor.consumer, signal, async () => {
             checkpoint = await this.checkpoints.load(processor.consumer);
-            await this.updateHealth(
+            await this.healthRegistry.update(
               processor,
-              this.snapshots.has(processor.consumer)
-                ? EventProcessorHealthStatus.CatchingUp
-                : EventProcessorHealthStatus.Starting,
+              this.healthRegistry.get(processor.consumer) === undefined
+                ? EventProcessorHealthStatus.Starting
+                : EventProcessorHealthStatus.CatchingUp,
               checkpoint,
               consecutiveFailures,
-              { lastAttemptAt: this.now() },
+              { lastAttemptAt: this.healthRegistry.now() },
             );
             return this.runProcessorPass(processor, signal);
           });
@@ -142,14 +123,14 @@ export class EventProcessorHost {
           checkpoint = pass.checkpoint;
           consecutiveFailures = 0;
           const head = await this.journal.latestGlobalPosition();
-          const health = await this.updateHealth(
+          const health = await this.healthRegistry.update(
             processor,
             checkpoint >= head
               ? EventProcessorHealthStatus.Healthy
               : EventProcessorHealthStatus.CatchingUp,
             checkpoint,
             consecutiveFailures,
-            { lastSuccessAt: this.now() },
+            { lastSuccessAt: this.healthRegistry.now() },
             head,
           );
           if (checkpoint >= health.head)
@@ -162,13 +143,13 @@ export class EventProcessorHost {
           } catch {
             // The next supervised attempt re-reads the durable checkpoint.
           }
-          await this.updateDegradedHealth(processor, checkpoint, consecutiveFailures, error);
+          await this.healthRegistry.degrade(processor, checkpoint, consecutiveFailures, error);
           await this.retryBackoff(consecutiveFailures, signal);
         }
       }
     } finally {
       try {
-        await this.updateHealth(
+        await this.healthRegistry.update(
           processor,
           EventProcessorHealthStatus.Stopped,
           checkpoint,
@@ -233,133 +214,6 @@ export class EventProcessorHost {
     }
     return { checkpoint, eventCount, handledCount };
   }
-
-  private async updateHealth(
-    processor: EventProcessor,
-    status: EventProcessorHealthStatus,
-    checkpoint: number,
-    consecutiveFailures: number,
-    update: Partial<
-      Pick<EventProcessorHealth, 'lastError' | 'lastAttemptAt' | 'lastSuccessAt' | 'lastFailureAt'>
-    > = {},
-    sampledHead?: number,
-  ): Promise<EventProcessorHealth> {
-    const previous = this.snapshots.get(processor.consumer);
-    const head = sampledHead ?? (await this.journal.latestGlobalPosition());
-    const health: EventProcessorHealth = {
-      consumer: processor.consumer,
-      name: processor.name,
-      owner: processor.owner,
-      category: processor.category,
-      status,
-      checkpoint,
-      head,
-      lag: Math.max(0, head - checkpoint),
-      consecutiveFailures,
-      ...(previous?.lastError === undefined ? {} : { lastError: previous.lastError }),
-      ...(previous?.lastAttemptAt === undefined ? {} : { lastAttemptAt: previous.lastAttemptAt }),
-      ...(previous?.lastSuccessAt === undefined ? {} : { lastSuccessAt: previous.lastSuccessAt }),
-      ...(previous?.lastFailureAt === undefined ? {} : { lastFailureAt: previous.lastFailureAt }),
-      ...update,
-    };
-    this.snapshots.set(processor.consumer, health);
-    return health;
-  }
-
-  private async updateDegradedHealth(
-    processor: EventProcessor,
-    checkpoint: number,
-    consecutiveFailures: number,
-    error: unknown,
-  ): Promise<void> {
-    try {
-      await this.updateHealth(
-        processor,
-        EventProcessorHealthStatus.Degraded,
-        checkpoint,
-        consecutiveFailures,
-        {
-          lastError: boundedError(error),
-          lastFailureAt: this.now(),
-        },
-      );
-    } catch {
-      const previous = this.snapshots.get(processor.consumer);
-      const head = previous?.head ?? checkpoint;
-      this.snapshots.set(processor.consumer, {
-        consumer: processor.consumer,
-        name: processor.name,
-        owner: processor.owner,
-        category: processor.category,
-        status: EventProcessorHealthStatus.Degraded,
-        checkpoint,
-        head,
-        lag: Math.max(0, head - checkpoint),
-        consecutiveFailures,
-        lastError: boundedError(error),
-        ...(previous?.lastAttemptAt === undefined ? {} : { lastAttemptAt: previous.lastAttemptAt }),
-        ...(previous?.lastSuccessAt === undefined ? {} : { lastSuccessAt: previous.lastSuccessAt }),
-        lastFailureAt: this.now(),
-      });
-    }
-  }
-
-  private now(): string {
-    return this.clock.now().toISOString();
-  }
-}
-
-function assertDistinctConsumers(processors: readonly EventProcessor[]): void {
-  const consumers = new Set<string>();
-  for (const processor of processors) {
-    assertProcessor(processor);
-    if (consumers.has(processor.consumer))
-      throw new Error(`Processor consumer is already registered: ${processor.consumer}`);
-    consumers.add(processor.consumer);
-  }
-}
-
-function assertProcessor(processor: EventProcessor): void {
-  if (typeof processor.consumer !== 'string' || processor.consumer.length === 0)
-    throw new Error('Processor consumer must not be empty');
-  if (typeof processor.name !== 'string' || processor.name.length === 0)
-    throw new Error('Processor name must not be empty');
-  if (typeof processor.owner !== 'string' || processor.owner.length === 0)
-    throw new Error('Processor owner must not be empty');
-  if (!Object.values(EventProcessorCategory).includes(processor.category))
-    throw new Error('Processor category must be recognized');
-  if (!Object.values(EventProcessorReplayPolicy).includes(processor.replayPolicy))
-    throw new Error('Processor replay policy must be recognized');
-  if (processor.mode !== 'batch' && typeof processor.select !== 'function')
-    throw new Error('Processor selector must be a function');
-  if (typeof processor.handle !== 'function')
-    throw new Error('Processor handler must be a function');
-  if (processor.batchSize !== undefined)
-    assertPositiveSafeInteger(processor.batchSize, 'Processor batch size', maximumBatchSize);
-}
-
-function assertPositiveSafeInteger(value: number, label: string, maximum?: number): void {
-  if (!Number.isSafeInteger(value) || value <= 0 || (maximum !== undefined && value > maximum))
-    throw new Error(
-      `${label} must be a positive safe integer${maximum === undefined ? '' : ` no greater than ${maximum}`}`,
-    );
-}
-
-function assertNonNegativeSafeInteger(value: number, label: string): void {
-  if (!Number.isSafeInteger(value) || value < 0)
-    throw new Error(`${label} must be a non-negative safe integer`);
-}
-
-function boundedError(error: unknown): { readonly name: string; readonly message: string } {
-  if (error instanceof Error)
-    return {
-      name: error.name.slice(0, maximumErrorLength),
-      message: error.message.slice(0, maximumErrorLength),
-    };
-  return {
-    name: 'Error',
-    message: String(error).slice(0, maximumErrorLength),
-  };
 }
 
 function throwIfAborted(signal: AbortSignal): void {

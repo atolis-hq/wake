@@ -15,10 +15,6 @@ import type { ProcessorRunSerialiser } from '../contracts/processor-run-serialis
 
 const projectionBatchSize = 100;
 
-interface ProjectionMessage {
-  readonly key: string;
-}
-
 export function projectionConsumer<Value>(definition: ProjectionDefinition<Value>): string {
   return `projection:${definition.name}`;
 }
