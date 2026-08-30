@@ -111,15 +111,28 @@ function activeBoardRuns(
 ): Readonly<
   Record<
     string,
-    { readonly action: string; readonly runnerName?: string; readonly startedAt: string }
+    {
+      readonly action: string;
+      readonly runnerName?: string;
+      readonly startedAt: string;
+      readonly phase: 'starting' | 'running';
+    }
   >
 > {
-  if (card.activeRuns !== undefined) return card.activeRuns;
+  if (card.activeRuns !== undefined)
+    return Object.fromEntries(
+      Object.entries(card.activeRuns).map(([runId, activeRun]) => [
+        runId,
+        { ...activeRun, phase: activeRun.phase ?? 'running' },
+      ]),
+    );
   if (card.activeRun === undefined) return {};
   const legacyRunId = Object.entries(board.runs)
     .reverse()
     .find(([, workItemId]) => workItemId === card.workItemId)?.[0];
-  return legacyRunId === undefined ? {} : { [legacyRunId]: card.activeRun };
+  return legacyRunId === undefined
+    ? {}
+    : { [legacyRunId]: { ...card.activeRun, phase: card.activeRun.phase ?? 'running' } };
 }
 
 function createStatusApplications(root: CompositionRoot, now: () => string) {

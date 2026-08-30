@@ -18,6 +18,7 @@ describe('independent operational refresh policy', () => {
       workflowDiagrams: 3_000,
     });
     expect(refreshInterval.runs([{ active: true }])).toBe(3_000);
+    expect(refreshInterval.runs([{ active: true, status: 'starting' }])).toBe(3_000);
     expect(refreshInterval.runs([{ active: false }])).toBe(5_000);
   });
 });

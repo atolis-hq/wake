@@ -170,7 +170,7 @@ export function BoardCard({
               data-testid={`active-run-dot-${runId}`}
             />
             <div>
-              <div className={styles.childRunTitle}>{`${activeRun.action} running`}</div>
+              <div className={styles.childRunTitle}>{`${activeRun.action} ${activeRun.phase}`}</div>
               <div className={styles.childRunMeta}>
                 {[activeRun.runnerName, fmtDuration(activeRun.elapsedMs)]
                   .filter((part): part is string => part !== undefined)

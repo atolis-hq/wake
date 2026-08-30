@@ -4,11 +4,14 @@ export const BoardCondition = BoardConditionValues;
 
 export type BoardCardCondition = (typeof BoardCondition)[keyof typeof BoardCondition];
 
+export type BoardActiveRunPhase = 'starting' | 'running';
+
 export interface BoardCardActiveRun {
   readonly action: string;
   readonly runnerName?: string;
   readonly startedAt: string;
   readonly elapsedMs: number;
+  readonly phase: BoardActiveRunPhase;
 }
 
 export interface BoardCardResponse {

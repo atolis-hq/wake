@@ -35,14 +35,9 @@ const BoardCondition = {
 
 type BoardConditionValue = (typeof BoardCondition)[keyof typeof BoardCondition];
 
-const activeRunPhaseShape = {
-  starting: true,
-  running: true,
-};
-const activeRunPhases = Object.keys(activeRunPhaseShape);
 const ActiveRunPhase = {
-  Starting: activeRunPhases[0]!,
-  Running: activeRunPhases[1]!,
+  Starting: 'starting',
+  Running: 'running',
 } as const;
 
 type ActiveRunPhaseValue = (typeof ActiveRunPhase)[keyof typeof ActiveRunPhase];

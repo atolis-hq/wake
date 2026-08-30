@@ -2,6 +2,71 @@ import { expect, it } from 'vitest';
 import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
 import { createExecutionApplications } from '../../../src/bootstrap/surface-api-execution-applications.js';
 
+it('presents preparation and execution runs as active with their distinct timestamps', async () => {
+  const startedAt = '2026-08-16T12:00:00.000Z';
+  const applications = createExecutionApplications(
+    {
+      projections: {
+        list: async () => [
+          {
+            lastGlobalPosition: 2,
+            value: {
+              view: {
+                runId: 'run-starting',
+                activationId: 'activation-1',
+                activity: 'agent',
+                workflowInstanceId: 'workflow-1',
+                orchestrationGroupId: 'group-1',
+                attempt: 1,
+                status: 'starting',
+                startedAt,
+              },
+            },
+          },
+          {
+            lastGlobalPosition: 1,
+            value: {
+              view: {
+                runId: 'run-started',
+                activationId: 'activation-2',
+                activity: 'review',
+                workflowInstanceId: 'workflow-2',
+                orchestrationGroupId: 'group-2',
+                attempt: 1,
+                status: 'started',
+                startedAt,
+                executionStartedAt: '2026-08-16T12:01:00.000Z',
+              },
+            },
+          },
+        ],
+      },
+      journal: {
+        readAll: async (after: number) => [
+          { globalPosition: after + 1, occurredAt: '2026-08-16T13:00:00.000Z' },
+        ],
+      },
+      orchestration: { get: async () => null },
+    } as unknown as CompositionRoot,
+    () => '2026-08-16T13:00:00.000Z',
+  );
+
+  const result = await applications.list({ limit: 10 });
+
+  expect(result.items).toMatchObject([
+    { runId: 'run-starting', status: 'starting', active: true, startedAt },
+    {
+      runId: 'run-started',
+      status: 'started',
+      active: true,
+      startedAt,
+      executionStartedAt: '2026-08-16T12:01:00.000Z',
+    },
+  ]);
+  expect(result.items[0]?.finishedAt).toBeUndefined();
+  expect(result.items[0]?.executionStartedAt).toBeUndefined();
+});
+
 it('records an operator-declared failed resolution and makes its workflow retryable', async () => {
   const calls: string[] = [];
   const applications = createExecutionApplications(

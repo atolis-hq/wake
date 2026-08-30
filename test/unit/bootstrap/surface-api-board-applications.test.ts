@@ -22,11 +22,13 @@ it('presents every active board run with its own elapsed duration', async () => 
             action: 'implement',
             runnerName: 'claude',
             startedAt: '2026-08-03T12:00:00.000Z',
+            phase: 'starting',
           },
           'run-second': {
             action: 'review',
             runnerName: 'codex',
             startedAt: '2026-08-03T12:03:00.000Z',
+            phase: 'running',
           },
         },
         totalTokens: 0,
@@ -55,12 +57,14 @@ it('presents every active board run with its own elapsed duration', async () => 
       runnerName: 'claude',
       startedAt: '2026-08-03T12:00:00.000Z',
       elapsedMs: 300_000,
+      phase: 'starting',
     },
     'run-second': {
       action: 'review',
       runnerName: 'codex',
       startedAt: '2026-08-03T12:03:00.000Z',
       elapsedMs: 120_000,
+      phase: 'running',
     },
   });
 });
@@ -107,6 +111,7 @@ it('presents a legacy single active-run checkpoint under its recorded run ID', a
       runnerName: 'claude',
       startedAt: '2026-08-03T12:00:00.000Z',
       elapsedMs: 300_000,
+      phase: 'running',
     },
   });
 });

@@ -8,6 +8,7 @@ export interface RunResponse {
   readonly status: string;
   readonly active: boolean;
   readonly startedAt: string;
+  readonly executionStartedAt?: string;
   readonly finishedAt?: string;
   readonly outcome?: unknown;
   readonly failure?: { readonly kind: string };

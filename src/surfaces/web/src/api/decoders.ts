@@ -203,10 +203,13 @@ function decodeBoardCardActiveRuns(
 
 function decodeBoardCardActiveRun(value: unknown, path: string): BoardCardActiveRun {
   const record = object(value, path);
+  const phase = string(record.phase, child(path, 'phase'));
+  if (phase !== 'starting' && phase !== 'running') invalid(child(path, 'phase'));
   return {
     action: string(record.action, child(path, 'action')),
     startedAt: string(record.startedAt, child(path, 'startedAt')),
     elapsedMs: number(record.elapsedMs, child(path, 'elapsedMs')),
+    phase,
     ...optionalStringProperty(record, 'runnerName', path),
   };
 }
@@ -363,6 +366,7 @@ export const decodeRun: Decoder<RunResponse> = (value, path = '') => {
     status: string(record.status, child(path, 'status')),
     active: boolean(record.active, child(path, RunResponseField.Active)),
     startedAt: string(record.startedAt, child(path, 'startedAt')),
+    ...optionalStringProperty(record, 'executionStartedAt', path),
     ...optionalStringProperty(record, 'finishedAt', path),
     sentinel: string(record.sentinel, child(path, 'sentinel')),
     ...optionalStringProperty(record, 'runnerName', path),

@@ -64,7 +64,7 @@ export const runColumns = [
   { label: 'Workflow', render: (run: RunResponse) => run.workflowName ?? '?' },
   { label: 'Stage', render: (run: RunResponse) => run.stage ?? '?' },
   { label: 'Runner', render: (run: RunResponse) => runnerLabel(run) },
-  { label: 'Status', render: (run: RunResponse) => run.resolution?.sentinel ?? run.sentinel },
+  { label: 'Status', render: (run: RunResponse) => runStatusLabel(run) },
   { label: 'Started', render: (run: RunResponse) => <LocalTime value={run.startedAt} /> },
   { label: 'Duration', render: (run: RunResponse) => runDuration(run) },
   { label: 'Usage', render: (run: RunResponse) => <TokenUsage usage={run} /> },
@@ -75,8 +75,17 @@ function runnerLabel(run: RunResponse): string {
   return run.runnerModel === undefined ? run.runnerName : `${run.runnerName} (${run.runnerModel})`;
 }
 function runDuration(run: RunResponse): string {
-  if (run.finishedAt === undefined) return '';
-  return fmtDuration(new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime());
+  const end = run.active
+    ? Date.now()
+    : run.finishedAt === undefined
+      ? undefined
+      : Date.parse(run.finishedAt);
+  return end === undefined ? '' : fmtDuration(end - Date.parse(run.startedAt));
+}
+function runStatusLabel(run: RunResponse): string {
+  if (run.status === 'starting') return 'Starting';
+  if (run.status === 'started') return 'Running';
+  return run.resolution?.sentinel ?? run.sentinel;
 }
 export function RunDetail() {
   const { runId = '' } = useParams();
@@ -103,7 +112,7 @@ export function RunDetail() {
       ) : (
         run.data && (
           <Panel>
-            <StatusBadge>{run.data.data.status}</StatusBadge>
+            <StatusBadge>{runStatusLabel(run.data.data)}</StatusBadge>
             <dl className={styles.summary}>
               <dt>Activity</dt>
               <dd>{run.data.data.activity}</dd>
