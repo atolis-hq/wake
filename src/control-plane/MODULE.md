@@ -1,37 +1,52 @@
 # control-plane
 
 ## Purpose
-System-level bounded coordination through one activation scheduler, exposed
-through the `advanceOnce` compatibility facade.
+
+System-level bounded coordination through the activation scheduler and its
+`advanceOnce` compatibility facade.
+
 ## Owns
-Signals, eligibility, selection, budgets, dispatch coordination, and hosts.
+
+Signals, eligibility, selection, budgets, dispatch coordination, schedule
+policy, and host-facing pipeline contracts.
+
 ## Does not own
-Work, workflow, execution, or provider domain policy.
+
+Work, workflow, execution, provider policy, processor hosting, or concrete
+serialisation.
+
 ## Invariants
-One-shot ticks run the non-scheduling runner pipeline then poke the durable
-subscriber before delivery; resident runner hosts run only that non-scheduling
-pipeline. Activation scheduling is owned by the named Eventing batch processor
-`activation-scheduler`. The subscriber depends on a Control Plane processor-host
-port; Bootstrap composes the Eventing host. It treats every delivered batch as a
-reconsideration, checkpoints only after a successful pass, and relies on the
-shared scheduler serialiser for global capacity safety. Its durable subscriber identity is
-`subscriber:control-plane.activation-scheduler`; the distinct scheduler
-critical-section identity is `control-plane.activation-scheduler-critical-section`.
-Startup and fallback reconciliation failures overlay durable-host health until
-a successful scheduler pass clears them. A terminal Run fact releases capacity
-by causing this same subscriber to reconsider pending work; the shared
-serialiser makes that reconsideration safe with ticks and other processes.
+
+The activation scheduler is an Eventing processor definition owned by Control
+Plane and composed by Bootstrap. Each delivered batch is a reconsideration;
+the processor host owns cursor advancement, while the scheduler owns bounded
+selection and durable effects. Its separate reconciler and schedule/poll
+watermarks remain explicit one-shot or periodic lanes.
+
 ## Public contracts
+
 `index.ts` is the only public entry.
+
 ## Configuration
+
 Owns `controlPlane` dispatch limits, schedules, and resident-loop backoff.
-Activation scheduling is always performed by the durable subscriber.
+
 ## Relations and events
-Owns `control.` events; it defines no domain relation semantics.
+
+Owns `control-plane.` events and defines no domain relation semantics.
+
 ## Failure and recovery
-Selection, caps, pauses, retries, and scheduler serialization remain explicit
-and bounded.
+
+Selection, caps, pauses, retries, and scheduler serialisation remain explicit
+and bounded. Processor failure is surfaced through Eventing health; startup
+and fallback reconciliation retain their own diagnostics.
+
 ## Extension rules
-Coordinate public applications; do not absorb their policies.
+
+Define processor selectors and handlers here when they are Control Plane
+policy, but leave host construction, concrete adapters, and full registry
+composition to Bootstrap.
+
 ## Scenarios
+
 E2E-CONTROL-001, E2E-CONTROL-002, E2E-CONTROL-003, E2E-CONTROL-004.

@@ -1,37 +1,54 @@
 # persistence
 
 ## Purpose
-Filesystem and in-memory implementations of Kernel storage ports and Eventing
-processor-run serialisation.
-## Owns
-JSONL journal, projections, checkpoints, locks, processor-run serialisation,
-and diagnostics.
-## Does not own
-Domain projectors, business policy, or composition.
-## Invariants
-Depends only on Kernel and Eventing; projections never reconstruct events.
-## Public contracts
-`index.ts` is the only public entry. Eventing owns processor definitions,
-runtime health, projection adaptation, and rebuilds. Persistence provides the
-concrete in-memory and file-backed processor-run serialisers they require.
-## Configuration
-Owns `persistence`.
-## Relations and events
-Persists envelopes without defining domain semantics.
-## Failure and recovery
-Atomic writes and checkpoints make replay idempotent. A keyed serialiser holds
-the same-consumer file lock across checkpoint load, handler execution, and
-checkpoint save. Callers compose Eventing with an explicit serialiser: memory
-hosts use the in-memory keyed serialiser and filesystem hosts use the
-file-backed keyed serialiser.
 
-Filesystem checkpoints use a versioned injective UTF-8 base64url filename.
-They read legacy checkpoint filenames when a v2 file is absent, then write
-future progress to the v2 filename. Legacy files remain for forward migration
-and best-effort downgrade replay, but binary downgrade after a checkpoint reset
-is unsupported. Checkpoint-path migration is independent of runtime
-architecture, and a binary rollback does not discard durable facts.
+Filesystem and in-memory implementations of Kernel storage ports and the
+Eventing processor-run serialisation port.
+
+## Owns
+
+JSONL journal, projections, checkpoints, filesystem locks, processor-run
+serialisers, and storage diagnostics.
+
+## Does not own
+
+Processor definitions, handlers, host lifecycle, domain policy, or
+composition. Eventing owns processor execution and projection adaptation;
+Bootstrap selects and wires the concrete adapters.
+
+## Invariants
+
+Depends only on Kernel and Eventing. Persistence stores opaque envelopes and
+does not decode domain payloads. Filesystem and in-memory adapters implement
+the same observable contracts; filesystem-only locking and atomic rename are
+mechanical differences.
+
+## Public contracts
+
+`index.ts` is the only public entry. Persistence exports storage adapters and
+concrete keyed serialisers; it does not export a processor host or handler.
+
+## Configuration
+
+Owns the `persistence` namespace for future storage options. Current paths are
+selected by Bootstrap.
+
+## Relations and events
+
+Persists envelopes without defining domain event or relation semantics.
+
+## Failure and recovery
+
+Atomic writes and durable checkpoints make replay retryable. The file-backed
+serialiser holds a consumer lock across the caller's checkpoint-load,
+handler, and checkpoint-save operation. Projection rebuild locking and
+processor retry are Eventing policies, not Persistence handlers.
+
 ## Extension rules
-Adapters implement Kernel ports and Bootstrap selects them.
+
+Implement Kernel ports and the Eventing serialisation port here. Keep event
+selection, decoding, handlers, and runtime lifecycle in their owning modules.
+
 ## Scenarios
+
 E2E-JOURNAL-001, E2E-PROJECTION-001, E2E-FAULT-001.

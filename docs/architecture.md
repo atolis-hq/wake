@@ -59,7 +59,8 @@ location. Adapters retain control
 | Module | Owns |
 | --- | --- |
 | `kernel` | Event envelopes, identifiers, relations, clocks, and persistence contracts. |
-| `persistence` | Filesystem and in-memory event journals, checkpoints, projections, and locks. |
+| `eventing` | Persistence-neutral named processor definitions, hosting, catch-up, retry, health, and projection adaptation. |
+| `persistence` | Filesystem and in-memory event journals, checkpoints, projections, locks, and keyed processor serialisers. |
 | `work` | Work-item facts, lifecycle controls, and work projections. |
 | `resources` | External-resource facts and their correlation to work items. |
 | `conversations` | Canonical work-item conversation facts, entry origins, and rebuildable conversation views. |
@@ -69,7 +70,7 @@ location. Adapters retain control
 | `control-plane` | Bounded advancement, intake, selection, scheduling, quotas, and resident/tick hosts. |
 | `integrations` | Provider polling, inbound translation, artifact registration, and outbound delivery. |
 | `surfaces` | CLI, HTTP API, and web presentation. |
-| `bootstrap` | Root configuration, paths, concrete adapter selection, projections, and composition. |
+| `bootstrap` | Root configuration, paths, concrete adapter selection, the complete processor registry, and composition. |
 
 No domain module imports a provider client, filesystem implementation, or
 surface. Surfaces call public applications and views; they do not write facts
@@ -133,9 +134,12 @@ Activation.
    state to the CLI, API, and UI.
 
 The tick, resident loop, and scheduled host all use the same control-plane
-advancement capability. Recovery is explicit: execution leases and result
+advancement capability. Durable reactions run through one Eventing host and
+explicit Bootstrap registry. Recovery is explicit: execution leases and result
 envelopes make incomplete attempts visible after restart rather than relying on
-process memory.
+process memory. Provider polling, schedules, delivery, surface diagnostics,
+and reconciliation remain separate bounded lanes with their own watermarks or
+checkpoints.
 
 ## Designing for extension
 
@@ -152,6 +156,11 @@ path around it:
   configuration through a named pool; it never becomes a workflow router.
 - A **surface** calls public applications and presents projections. It does not
   append another module's facts directly or infer lifecycle from UI state.
+
+Event processor ownership is enforced in the architecture checks: bounded
+modules may define selectors and handlers, Persistence may supply concrete
+serialisers, and only Bootstrap may construct the host and compose the full
+registry. No module maintains a parallel durable-subscription runtime.
 
 This keeps additions testable with durable fakes, makes production reachability
 provable through Bootstrap, and ensures a new transport or CLI does not change

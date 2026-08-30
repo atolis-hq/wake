@@ -6,28 +6,32 @@ Configured workflow interpretation and durable instances.
 
 ## Owns
 
-Definitions, compilation, instances, activations, waits, child workflows, watches, outcomes, and retry policy.
+Definitions, compilation, instances, activations, waits, child workflows,
+watches, outcomes, retry policy, and orchestration-owned processor handlers.
 
 ## Does not own
 
-Agent invocation, workspaces, provider polling, delivery, or global selection.
+Agent invocation, workspaces, provider polling, delivery, global selection,
+Eventing host construction, or concrete serialisation.
 
 ## Invariants
 
-Interpretation is deterministic; each WorkItem has one active primary workflow and children remain linked to its group.
-Compiled strings stop at the compiler. Domain decisions consume typed state and input and return owned Orchestration event drafts. Persisted events are decoded before they enter the WorkflowInstance fold.
+Interpretation is deterministic; each WorkItem has one active primary workflow
+and children remain linked to its group. Persisted events are decoded before
+folding. Watch and resource-transition processors use stable consumers and
+idempotent handlers; watch recovery remains a separate reconciler with its own
+checkpoint.
 
 ## Public contracts
 
-`index.ts` is the only public entry. `OrchestrationService` is a compatibility and composition facade: it delegates to focused use cases and contains no policy.
+`index.ts` is the only public entry. `OrchestrationService` is a compatibility
+and composition facade containing no policy.
 
 ## Application policy
 
-Use cases own I/O sequencing through the Orchestration repository, coordination claims, and group-budget recorder. Domain files do not import journals, clocks, adapters, or execution infrastructure.
-
-## Decision policy
-
-Activation, retry, signal, supplemental, and child/group decisions remain independent pure policies. The interpreter only dispatches between those policies and transitions.
+Use cases own I/O sequencing through repositories and coordination claims.
+Domain files do not import journals, clocks, adapters, or execution
+infrastructure except through public contracts.
 
 ## Configuration
 
@@ -39,15 +43,13 @@ Owns `orchestration.` events and `workflow.` relations.
 
 ## Failure and recovery
 
-Accepted outcomes are current, typed, and replayable.
-Watch and resource-transition reactions expose typed Eventing processor
-definitions with stable reactor consumers. Their normal handlers do not own
-checkpoints; watch recovery remains a separate reconciler with its own durable
-checkpoint.
+Accepted outcomes are typed and replayable. Processor failures retain their
+Eventing checkpoint; the watch reconciler is an explicit recovery lane.
 
 ## Extension rules
 
-No graph mutation, parallel positions, snapshots, or version entities.
+Define processors and handlers in Orchestration, but let Bootstrap compose the
+runtime and let Eventing own checkpoint and retry mechanics.
 
 ## Scenarios
 
