@@ -658,10 +658,10 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
     });
     expect(journal.changeSignal.revision()).toBe(initialRevision);
 
-    await journal.appendToStream(stream, 0, [draft('event-1', 1)]);
+    await journal.appendToStream(stream, 0, [draft('event-1', 1), draft('event-2', 2)]);
     expect(journal.changeSignal.revision()).toBe(initialRevision + 1);
 
-    await expect(journal.appendToStream(stream, 0, [draft('event-2', 2)])).rejects.toBeInstanceOf(
+    await expect(journal.appendToStream(stream, 0, [draft('event-3', 3)])).rejects.toBeInstanceOf(
       WrongExpectedSequenceError,
     );
     expect(journal.changeSignal.revision()).toBe(initialRevision + 1);
@@ -671,7 +671,7 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
     const firstWait = journal.changeSignal.waitForChange(firstController.signal, 1_000);
     const secondWait = journal.changeSignal.waitForChange(secondController.signal, 1_000);
 
-    await journal.appendToStream(stream, 1, [draft('event-2', 2)]);
+    await journal.appendToStream(stream, 2, [draft('event-3', 3)]);
     await Promise.all([firstWait, secondWait]);
 
     // Idempotently resubmitting the same already-recorded draft is a no-op
@@ -682,7 +682,7 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
       .then(() => {
         wokeOnReplay = true;
       });
-    await journal.appendToStream(stream, 1, [draft('event-2', 2)]);
+    await journal.appendToStream(stream, 2, [draft('event-3', 3)]);
     await vi.advanceTimersByTimeAsync(1);
     expect(wokeOnReplay).toBe(false);
 

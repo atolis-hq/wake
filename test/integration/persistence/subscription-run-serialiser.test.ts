@@ -153,7 +153,7 @@ it('accepts ordinary Unicode file lock consumer identities', async () => {
     const serialise = createFileProcessorRunSerialiser(root);
 
     await expect(
-      serialise('consumer-ðŸ˜€', new AbortController().signal, async () => 'handled'),
+      serialise('consumer-😀', new AbortController().signal, async () => 'handled'),
     ).resolves.toBe('handled');
   } finally {
     await rm(root, { recursive: true, force: true });

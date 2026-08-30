@@ -183,14 +183,14 @@ it('includes every eligible comment, human and Wake alike, within the character 
   const reviewFeedback = [
     '<!-- wake:agent -->',
     '<!-- wake:delivery:review-verdict -->',
-    '**Outcome:** ðŸ”´ Changes Requested',
+    '**Outcome:** 🔴 Changes Requested',
     'The current plan must retain the latest delivery cursor.',
   ].join('\n\n');
   await appendIssueComment(world, 16, reviewFeedback);
   const blockedHandoff = [
     '<!-- wake:agent -->',
     '<!-- wake:delivery:blocked-handoff -->',
-    '**Outcome:** ðŸŸ  Blocked',
+    '**Outcome:** 🟠 Blocked',
     'The operator must provide the missing deployment credential.',
   ].join('\n\n');
   await appendIssueComment(world, 17, blockedHandoff);

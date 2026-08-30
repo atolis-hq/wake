@@ -187,13 +187,13 @@ describe('in-memory event journal', () => {
       const wait = journal.changeSignal.waitForChange(controller.signal, 1_000).then(() => {
         woke = true;
       });
-      await journal.appendToStream(stream, 0, [event('evt-1')]);
+      await journal.appendToStream(stream, 0, [event('evt-1'), event('evt-2')]);
       await wait;
 
       expect(woke).toBe(true);
       expect(journal.changeSignal.revision()).toBe(initialRevision + 1);
 
-      await expect(journal.appendToStream(stream, 0, [event('evt-2')])).rejects.toBeInstanceOf(
+      await expect(journal.appendToStream(stream, 0, [event('evt-3')])).rejects.toBeInstanceOf(
         WrongExpectedSequenceError,
       );
       expect(journal.changeSignal.revision()).toBe(initialRevision + 1);
