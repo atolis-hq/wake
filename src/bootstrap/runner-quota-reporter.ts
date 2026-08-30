@@ -7,6 +7,7 @@ import {
 } from '../control-plane/index.js';
 import {
   EventActorKind,
+  EventSourceKind,
   correlationId,
   type Clock,
   type EventJournal,
@@ -23,15 +24,16 @@ export function createRunnerQuotaReporter(journal: EventJournal, clock: Clock, i
   }) => {
     const stream = controlPlaneStream();
     const occurredAt = clock.now().toISOString();
+    const commandId = ids.next('command');
     await journal.appendToStream(stream, (await journal.readStream(stream)).length, [
       createControlPlaneEventData({
-        eventId: `${ids.next('command')}:${ControlEventType.RunnerPaused}`,
+        eventId: `${commandId}:${ControlEventType.RunnerPaused}`,
         eventType: ControlEventType.RunnerPaused,
         occurredAt,
         correlationId: correlationId(`runner-quota:${runnerName}`),
-        causationId: `runner-quota:${runnerName}`,
+        causationId: commandId,
         actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
-        source: { kind: 'internal', id: ControlStreamKind.Global },
+        source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
         payload: {
           runnerName,
           cause: 'quota',
