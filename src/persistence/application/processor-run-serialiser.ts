@@ -23,14 +23,28 @@ export function createInMemoryProcessorRunSerialiser(): ProcessorRunSerialiser {
 }
 
 export function createFileProcessorRunSerialiser(dataRoot: string): ProcessorRunSerialiser {
+  let acquireTail: Promise<void> = Promise.resolve();
+  const acquire = async (path: string) => {
+    const prior = acquireTail;
+    let release!: () => void;
+    acquireTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prior;
+    try {
+      return await acquireFileLock(path, {
+        staleAfterMs: 60_000,
+        staleRequiresDeadProcess: true,
+      });
+    } finally {
+      release();
+    }
+  };
   return async <Value>(consumer: string, signal: AbortSignal, operation: () => Promise<Value>) => {
     const path = join(dataRoot, 'locks', `subscription-${encodeProcessorConsumer(consumer)}.lock`);
     while (true) {
       throwIfAborted(signal);
-      const lock = await acquireFileLock(path, {
-        staleAfterMs: 60_000,
-        staleRequiresDeadProcess: true,
-      });
+      const lock = await acquire(path);
       if (lock.acquired) {
         try {
           throwIfAborted(signal);

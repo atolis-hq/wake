@@ -326,7 +326,7 @@ export async function createCompositionRoot(
       : { fakeDeliveryProvider: options.fakeDeliveryProvider }),
     providerDefinitions: [gitHubProviderDefinition],
   });
-  processorRuntime.register([...runtime.processors, activationSchedulerSubscriber.processor]);
+  processorRuntime.register([activationSchedulerSubscriber.processor, ...runtime.processors]);
   return {
     config,
     fakeScenarios,

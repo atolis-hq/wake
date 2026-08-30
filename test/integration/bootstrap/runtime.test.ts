@@ -155,7 +155,8 @@ describe('target composition root', () => {
     const resumedRunnerStarted = deferred<void>();
     const trace: string[] = [];
     let runnerStarts = 0;
-    const runtime = await createCompositionRoot('C:/wake-home', {
+    const root = await fixtureRoot();
+    const runtime = await createCompositionRoot(root, {
       config: subscriberConversationRootConfig(),
       journal,
       projections: new InMemoryProjectionStore(),
@@ -236,7 +237,7 @@ describe('target composition root', () => {
       run.abort();
       await run.done;
     }
-  }, 15_000);
+  });
 
   it('reconsiders released capacity through the subscriber and starts the pending activation once', async () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
