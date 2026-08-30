@@ -436,6 +436,7 @@ function projectRunTerminal(
   const finishedAt = terminalFinishedAt(event);
   const activeRuns = activeRunsFor(view, card, workId);
   const activeRun = activeRuns[event.stream.id];
+  const remainingActiveRuns = withoutActiveRun(activeRuns, event.stream.id);
   const runDurationMs =
     activeRun === undefined || finishedAt === undefined
       ? 0
@@ -451,18 +452,26 @@ function projectRunTerminal(
       ...view.cards,
       [workId]: {
         ...withoutLegacyActiveRun(card),
-        activeRuns: withoutActiveRun(activeRuns, event.stream.id),
+        activeRuns: remainingActiveRuns,
         ...(terminal === undefined ? {} : { lastRunOutcome: terminal.lastRunOutcome }),
-        ...(terminal === undefined ||
-        isChildRun ||
-        card.condition === BoardCondition.Finished ||
-        terminal.condition === undefined
+        ...(card.condition === BoardCondition.Finished
           ? {}
-          : { condition: terminal.condition }),
+          : hasPrimaryActiveRun(view, remainingActiveRuns)
+            ? { condition: BoardCondition.Active }
+            : terminal === undefined || isChildRun || terminal.condition === undefined
+              ? {}
+              : { condition: terminal.condition }),
         totalDurationMs: card.totalDurationMs + runDurationMs,
       },
     },
   };
+}
+
+function hasPrimaryActiveRun(
+  view: BoardProjectionView,
+  activeRuns: Readonly<Record<string, StoredActiveRun>>,
+): boolean {
+  return Object.keys(activeRuns).some((runId) => view.childRuns?.[runId] !== true);
 }
 
 function projectRunStarted(

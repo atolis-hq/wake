@@ -200,6 +200,40 @@ describe('operator board projection', () => {
     expect(completed.cards[item]!.activeRuns[running]).toBeUndefined();
   });
 
+  it('keeps the card Active when a primary run fails while another primary attempt remains active', () => {
+    const item = workId('board-mixed-primary-failure');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const starting = runId('run-mixed-primary-starting');
+    const running = runId('run-mixed-primary-running');
+    const active = [
+      runPreparationEvent(starting, workflowId, item, 3),
+      runPreparationEvent(running, workflowId, item, 4),
+      runStartedEvent(running, workflowId, item, 5),
+    ].reduce(
+      (view, event) => boardProjection.project(view, event),
+      seedPrimaryBoard(item, workflowId),
+    );
+
+    const failed = boardProjection.project(
+      active,
+      eventEnvelope(
+        ExecutionEventType.RunFailed,
+        {
+          failure: { kind: ExecutionFailureCode.Unexpected, message: 'runner exited' },
+          finishedAt: '2026-08-30T12:03:00.000Z',
+        },
+        runStream(running),
+        6,
+      ),
+    );
+
+    expect(failed.cards[item]).toMatchObject({
+      condition: 'active',
+      activeRuns: { [starting]: { phase: 'starting' } },
+    });
+    expect(failed.cards[item]!.activeRuns[running]).toBeUndefined();
+  });
+
   it('keeps an approval-waiting primary card in Needs Input for a child preparation', () => {
     const item = workId('board-preparing-child');
     const workflowId = workflowInstanceId(`primary:${item}`);
