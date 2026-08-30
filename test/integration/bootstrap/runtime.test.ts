@@ -132,7 +132,7 @@ describe('target composition root', () => {
       subscriptionRunSerialiser: serialise,
     });
     const controller = new AbortController();
-    const run = runtime.activationSchedulerSubscriber.start(controller.signal);
+    const run = startProcessorRuntime(runtime, controller.signal);
     try {
       await runtime.work.create(
         { workItemId: workId('shared-scheduler-serialiser'), objective: 'serialise scheduler' },
@@ -173,7 +173,7 @@ describe('target composition root', () => {
         };
       },
     });
-    const run = runtime.activationSchedulerSubscriber.start();
+    const run = startProcessorRuntime(runtime);
     const item = await runtime.work.create(
       { workItemId: workId('conversation-latency'), objective: 'resume blocked agent work' },
       commandContext(clock, 'conversation-latency-work'),
@@ -236,7 +236,7 @@ describe('target composition root', () => {
       run.abort();
       await run.done;
     }
-  });
+  }, 15_000);
 
   it('reconsiders released capacity through the subscriber and starts the pending activation once', async () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
@@ -267,7 +267,7 @@ describe('target composition root', () => {
         };
       },
     });
-    const run = runtime.activationSchedulerSubscriber.start();
+    const run = startProcessorRuntime(runtime);
     try {
       await startComposedWorkflow(runtime, clock, 'capacity-first');
       await firstRunnerStarted.promise;
@@ -351,7 +351,7 @@ describe('target composition root', () => {
       clock,
       decorateCheckpoints,
     });
-    const firstRun = first.activationSchedulerSubscriber.start();
+    const firstRun = startProcessorRuntime(first);
     try {
       await startRestartWorkflow(first, clock, 'before-restart');
       await firstCheckpoint.promise;
@@ -384,7 +384,7 @@ describe('target composition root', () => {
         };
       },
     });
-    const restartedRun = restartedRoot.activationSchedulerSubscriber.start();
+    const restartedRun = startProcessorRuntime(restartedRoot);
     try {
       await secondRunnerStarted.promise;
       await secondCheckpoint.promise;
@@ -770,7 +770,7 @@ describe('target composition root', () => {
     );
     const blockedProjection = runtime.projectionSubscriptions.catchUp(analyticsProjection);
     await projections.blockedWriteStarted.promise;
-    const subscriber = runtime.activationSchedulerSubscriber.start();
+    const subscriber = startProcessorRuntime(runtime);
     try {
       await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
         createEventDraft({
@@ -1576,6 +1576,21 @@ function deferred<Value>() {
     resolve = next;
   });
   return { promise, resolve };
+}
+
+function startProcessorRuntime(
+  root: Awaited<ReturnType<typeof createCompositionRoot>>,
+  signal?: AbortSignal,
+) {
+  const processors = root.processorRuntime.start(signal);
+  const reconciliation = root.activationSchedulerSubscriber.start(signal);
+  return {
+    abort() {
+      processors.abort();
+      reconciliation.abort();
+    },
+    done: Promise.all([processors.done, reconciliation.done]).then(() => undefined),
+  };
 }
 
 class BlockingNamespaceProjectionStore extends InMemoryProjectionStore {

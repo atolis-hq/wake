@@ -4,7 +4,6 @@ import {
   EventProcessorReplayPolicy,
   createBatchEventProcessor,
   type EventProcessor,
-  type EventProcessorHostRun,
 } from '../../eventing/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
@@ -31,6 +30,7 @@ export const ActivationSchedulerSubscriptionStatus = {
 
 export type ActivationSchedulerSubscriptionHealthStatus =
   (typeof ActivationSchedulerSubscriptionStatus)[keyof typeof ActivationSchedulerSubscriptionStatus];
+
 export interface ActivationSchedulerSubscriberOptions {
   readonly fallbackMs?: number;
   /** Test seam for deterministic reconciliation barriers. */
@@ -40,12 +40,6 @@ export interface ActivationSchedulerSubscriberOptions {
 export interface ActivationSchedulerSubscriberRun {
   abort(): void;
   readonly done: Promise<void>;
-}
-
-/** Bootstrap adapts Eventing's processor host to this Control Plane port. */
-export interface ActivationSchedulerSubscriptionHost {
-  start(subscriptions: readonly EventProcessor[], signal?: AbortSignal): EventProcessorHostRun;
-  health(consumer: string): ActivationSchedulerSubscriptionHealth | undefined;
 }
 
 export interface ActivationSchedulerSubscriptionHealth {
@@ -62,11 +56,12 @@ export interface ActivationSchedulerSubscriber {
   readonly processor: EventProcessor;
   start(signal?: AbortSignal): ActivationSchedulerSubscriberRun;
   poke(options?: AdvanceOptions, signal?: AbortSignal): Promise<AdvanceResult>;
+  /** Result from the most recent processor-owned scheduler pass, if any. */
+  lastResult(): AdvanceResult | undefined;
   health(): ActivationSchedulerSubscriptionHealth | undefined;
 }
 
 export function createActivationSchedulerSubscriber(
-  host: ActivationSchedulerSubscriptionHost,
   scheduler: ActivationScheduler,
   options: ActivationSchedulerSubscriberOptions = {},
 ): ActivationSchedulerSubscriber {
@@ -74,6 +69,7 @@ export function createActivationSchedulerSubscriber(
   const waitForFallback = options.waitForFallback ?? waitUntilAbort;
   let reconciliationFailures = 0;
   let reconciliationError: unknown;
+  let lastResult: AdvanceResult | undefined;
   if (!Number.isSafeInteger(fallbackMs) || fallbackMs <= 0 || fallbackMs > maximumTimerDelayMs)
     throw new Error(
       `Activation scheduler fallback must be a positive safe integer no greater than ${maximumTimerDelayMs}`,
@@ -85,6 +81,7 @@ export function createActivationSchedulerSubscriber(
   ): Promise<AdvanceResult> => {
     try {
       const result = await scheduler.runOnce(advance, signal);
+      lastResult = result;
       reconciliationFailures = 0;
       reconciliationError = undefined;
       return result;
@@ -106,39 +103,43 @@ export function createActivationSchedulerSubscriber(
   });
   return {
     processor,
-    start(parentSignal?: AbortSignal) {
-      const controller = new AbortController();
-      const abort = (_event: Event) => controller.abort();
-      if (parentSignal?.aborted) controller.abort();
-      else parentSignal?.addEventListener('abort', abort, { once: true });
-      const durable = host.start([processor], controller.signal);
-      const startup = reconcileIgnoringFailure(() => poke(undefined, controller.signal));
-      const fallback = reconcileOnFallback(controller.signal, fallbackMs, waitForFallback, () =>
-        poke(undefined, controller.signal),
-      );
-      const done = Promise.all([durable.done, startup, fallback])
-        .then(() => undefined)
-        .finally(() => parentSignal?.removeEventListener('abort', abort));
-      return {
-        abort: () => {
-          controller.abort();
-          durable.abort();
-        },
-        done,
-      };
-    },
+    start: (parentSignal) => createSubscriberRun(parentSignal, fallbackMs, waitForFallback, poke),
     poke,
+    lastResult: () => lastResult,
     health: () => {
-      const durable = host.health(activationSchedulerSubscriptionConsumer);
-      if (reconciliationFailures === 0) return durable;
+      if (reconciliationFailures === 0) return undefined;
       return {
         consumer: activationSchedulerSubscriptionConsumer,
         status: ActivationSchedulerSubscriptionStatus.Degraded,
-        checkpoint: durable?.checkpoint ?? 0,
+        checkpoint: 0,
         consecutiveFailures: reconciliationFailures,
         ...(reconciliationError === undefined ? {} : { lastError: reconciliationError }),
       };
     },
+  };
+}
+
+function createSubscriberRun(
+  parentSignal: AbortSignal | undefined,
+  fallbackMs: number,
+  waitForFallback: ActivationSchedulerSubscriberOptions['waitForFallback'] extends infer Wait
+    ? Exclude<Wait, undefined>
+    : never,
+  poke: (options?: AdvanceOptions, signal?: AbortSignal) => Promise<AdvanceResult>,
+): ActivationSchedulerSubscriberRun {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (parentSignal?.aborted) abort();
+  else parentSignal?.addEventListener('abort', abort, { once: true });
+  const startup = reconcileIgnoringFailure(() => poke(undefined, controller.signal));
+  const fallback = reconcileOnFallback(controller.signal, fallbackMs, waitForFallback, () =>
+    poke(undefined, controller.signal),
+  );
+  return {
+    abort,
+    done: Promise.all([startup, fallback])
+      .then(() => undefined)
+      .finally(() => parentSignal?.removeEventListener('abort', abort)),
   };
 }
 

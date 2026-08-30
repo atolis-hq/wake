@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 
+import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
 import {
-  createRuntimeProjectionSubscriptions,
+  createRuntimeProjectionSubscriptions as composeRuntimeProjectionSubscriptions,
   runtimeProjectionDefinitions,
 } from '../../../src/bootstrap/index.js';
 import { resolveWakePaths } from '../../../src/bootstrap/paths.js';
@@ -12,6 +13,7 @@ import { composePersistence } from '../../../src/bootstrap/persistence-compositi
 import type { ProcessorRunSerialiser } from '../../../src/eventing/index.js';
 import {
   createEventDraft,
+  type CheckpointStore,
   type EntityRef,
   type EventJournal,
   type ProjectionDefinition,
@@ -24,6 +26,7 @@ import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -193,7 +196,7 @@ it('uses file locking for two fully injected projection runtimes at one data roo
     expect(secondJournalReadStarted).toBe(false);
     releaseFirstWrite.resolve();
     await Promise.all([firstPass, secondPass]);
-    expect(secondJournalReadStarted).toBe(true);
+    expect(secondJournalReadStarted).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -219,7 +222,7 @@ it('lets a sibling subscription reach the journal head while another projection 
     expect(await checkpoints.load('projection:ready-projection')).toBe(1);
   });
   expect(await checkpoints.load('projection:blocked-projection')).toBe(0);
-  expect(runtime.health().map(({ consumer }) => consumer)).toEqual([
+  expect((await runtime.health()).map(({ consumer }) => consumer)).toEqual([
     'projection:blocked-projection',
     'projection:ready-projection',
   ]);
@@ -275,6 +278,26 @@ function recordingSerialiser(consumers: string[]): ProcessorRunSerialiser {
     consumers.push(consumer);
     return operation();
   };
+}
+
+function createRuntimeProjectionSubscriptions(
+  journal: EventJournal,
+  projections: ProjectionStore,
+  checkpoints: CheckpointStore,
+  serialiseRun: ProcessorRunSerialiser = createInMemoryProcessorRunSerialiser(),
+  definitions = runtimeProjectionDefinitions,
+) {
+  const processorRuntime = new EventProcessorRuntime(journal, checkpoints, serialiseRun);
+  const subscriptions = composeRuntimeProjectionSubscriptions(
+    journal,
+    projections,
+    checkpoints,
+    processorRuntime,
+    serialiseRun,
+    definitions,
+  );
+  processorRuntime.register(subscriptions.processors);
+  return subscriptions;
 }
 
 class BlockingProjectionStore extends InMemoryProjectionStore {

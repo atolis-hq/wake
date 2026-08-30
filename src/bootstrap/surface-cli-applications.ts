@@ -139,7 +139,7 @@ export function createSurfaceCliApplications(
         return runResidentLifecycle({
           signal,
           budget,
-          projectionSubscriptions: root.projectionSubscriptions,
+          processorRuntime: root.processorRuntime,
           activationSchedulerSubscriber: root.activationSchedulerSubscriber,
           intakeResident,
           runnerResident,
@@ -285,7 +285,7 @@ export interface ResidentLifecycleHost {
 export interface ResidentLifecycleInput {
   readonly signal: AbortSignal;
   readonly budget: HostBudget;
-  readonly projectionSubscriptions: Pick<CompositionRoot['projectionSubscriptions'], 'start'>;
+  readonly processorRuntime: Pick<CompositionRoot['processorRuntime'], 'start'>;
   readonly activationSchedulerSubscriber: Pick<
     CompositionRoot['activationSchedulerSubscriber'],
     'start'
@@ -295,21 +295,20 @@ export interface ResidentLifecycleInput {
   readonly close: () => Promise<void>;
 }
 
-/** Starts independently checkpointed subscriptions before their resident consumers. */
+/** Starts one processor registry before its resident consumers. */
 export async function runResidentLifecycle(input: ResidentLifecycleInput): Promise<HostResult> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (input.signal.aborted) abort();
   else input.signal.addEventListener('abort', abort, { once: true });
-  let projectionRun:
-    ReturnType<ResidentLifecycleInput['projectionSubscriptions']['start']> | undefined;
+  let processorRun: ReturnType<ResidentLifecycleInput['processorRuntime']['start']> | undefined;
   let schedulerRun:
     ReturnType<ResidentLifecycleInput['activationSchedulerSubscriber']['start']> | undefined;
   let intakeRun: Promise<HostResult> | undefined;
   const failures: unknown[] = [];
   let result: HostResult | undefined;
   try {
-    projectionRun = input.projectionSubscriptions.start(controller.signal);
+    processorRun = input.processorRuntime.start(controller.signal);
     schedulerRun = input.activationSchedulerSubscriber.start(controller.signal);
     intakeRun = input.intakeResident.run(controller.signal, input.budget);
     result = await input.runnerResident.run(controller.signal, input.budget);
@@ -317,11 +316,11 @@ export async function runResidentLifecycle(input: ResidentLifecycleInput): Promi
     failures.push(error);
   } finally {
     captureCleanupFailure(failures, () => controller.abort());
-    captureCleanupFailure(failures, () => projectionRun?.abort());
+    captureCleanupFailure(failures, () => processorRun?.abort());
     captureCleanupFailure(failures, () => schedulerRun?.abort());
     await captureAsyncCleanupFailure(failures, async () => {
       failures.push(
-        ...(await settledRunFailures([intakeRun, projectionRun?.done, schedulerRun?.done])),
+        ...(await settledRunFailures([intakeRun, processorRun?.done, schedulerRun?.done])),
       );
     });
     captureCleanupFailure(failures, () => input.signal.removeEventListener('abort', abort));

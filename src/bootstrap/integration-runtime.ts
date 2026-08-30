@@ -12,7 +12,7 @@ import {
   type createControlPlaneService,
 } from '../control-plane/index.js';
 import type { createConversationService } from '../conversations/index.js';
-import { EventProcessorHost, type ProcessorRunSerialiser } from '../eventing/index.js';
+import { type EventProcessor, type ProcessorRunSerialiser } from '../eventing/index.js';
 import {
   RunRepository,
   createRuntimeMemoryProfile,
@@ -55,7 +55,7 @@ import {
   workflowName,
   type createOrchestrationService,
 } from '../orchestration/index.js';
-import { createInMemoryProcessorRunSerialiser, withFileLock } from '../persistence/index.js';
+import { withFileLock } from '../persistence/index.js';
 import {
   BuiltInResourceCapability,
   resourceId,
@@ -64,6 +64,7 @@ import {
 } from '../resources/index.js';
 import type { createWorkService } from '../work/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
+import type { EventProcessorRuntime } from './event-processor-runtime.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import {
   createRuntimeProjectionSubscriptions,
@@ -73,6 +74,7 @@ import { createCapabilityResourceTransitionEvidence } from './resource-transitio
 
 export interface IntegrationRuntime {
   readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
+  readonly processors: readonly EventProcessor[];
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
@@ -98,6 +100,7 @@ export interface IntegrationRuntimeInput {
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
   readonly subscriptionRunSerialiser?: ProcessorRunSerialiser;
+  readonly processorRuntime: EventProcessorRuntime;
   readonly scheduleCheckpoints: ScheduleCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
@@ -164,6 +167,7 @@ export async function composeIntegrationRuntime(
     input.journal,
     input.projections,
     input.checkpoints,
+    input.processorRuntime,
     input.subscriptionRunSerialiser,
   );
   const delivery = new DeliveryService({
@@ -210,11 +214,6 @@ export async function composeIntegrationRuntime(
     conversations: input.conversations,
     ...(replies === undefined ? {} : { replies }),
   });
-  const reactorHost = new EventProcessorHost(
-    input.journal,
-    input.checkpoints,
-    input.subscriptionRunSerialiser ?? createInMemoryProcessorRunSerialiser(),
-  );
   const watch = createWatchReactor(
     input.orchestration,
     () => input.orchestration.watchEventTypes(),
@@ -244,9 +243,10 @@ export async function composeIntegrationRuntime(
     resourceTransitionEvidence,
   );
   input.orchestration.setAcceptSignalOperationCoordinator(async (operation) => {
-    await reactorHost.runThrough(
-      resourceTransitions.processor,
+    await input.processorRuntime.catchUpThrough(
+      'resource-transition signal',
       await input.journal.latestGlobalPosition(),
+      [resourceTransitions.processor],
     );
     return operation();
   });
@@ -274,14 +274,6 @@ export async function composeIntegrationRuntime(
         return appended;
       });
     },
-    translateInbound: async () => {
-      return observeMemory(memoryProfile, 'intake.translate', async () => {
-        let translated = 0;
-        for (const provider of providers)
-          translated += (await reactorHost.runOnce(provider.inbound.processor)).handledCount;
-        return translated;
-      });
-    },
   });
   const runnerPipeline = createRunnerPipeline({
     isPaused: input.isPaused,
@@ -295,23 +287,15 @@ export async function composeIntegrationRuntime(
             actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
           });
       }),
-    react: () =>
-      observeMemory(memoryProfile, 'runner.react', async () => {
-        await reactorHost.runOnce(watch.processor);
+    maintain: () =>
+      observeMemory(memoryProfile, 'runner.maintenance', async () => {
         await watchReconciler.reconcileOnce();
-        await reactorHost.runOnce(resourceTransitions.processor);
-        await reactorHost.runOnce(artifacts.processor);
         await artifacts.reconcileOnce();
-        await reactorHost.runOnce(outcomes.processor);
         await outcomes.reconcileOnce();
         for (const provider of providers) {
           await provider.reconciler?.reconcileOnce();
           await provider.maintenance?.runOnce();
         }
-      }),
-    publishAgentRuns: () =>
-      observeMemory(memoryProfile, 'runner.publish-agent-runs', async () => {
-        await reactorHost.runOnce(agentRunPublications.processor);
       }),
     deliver: (signal) =>
       observeMemory(memoryProfile, 'runner.deliver', async () => {
@@ -325,6 +309,15 @@ export async function composeIntegrationRuntime(
   });
   return {
     projectionSubscriptions,
+    processors: [
+      ...projectionSubscriptions.processors,
+      watch.processor,
+      resourceTransitions.processor,
+      artifacts.processor,
+      outcomes.processor,
+      agentRunPublications.processor,
+      ...providers.map((provider) => provider.inbound.processor),
+    ],
     providers,
     providerFailures,
     delivery,

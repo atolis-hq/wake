@@ -5,8 +5,7 @@ export type RunnerPipelineResult = Extract<AdvanceResult, { readonly kind: 'no-w
 export interface RunnerPipelineStages {
   readonly isPaused?: () => Promise<boolean>;
   readonly runSchedules: () => Promise<void>;
-  readonly react: () => Promise<void>;
-  readonly publishAgentRuns?: () => Promise<void>;
+  readonly maintain?: () => Promise<void>;
   readonly deliver: (signal: AbortSignal) => Promise<void>;
 }
 
@@ -23,8 +22,8 @@ export interface RunnerPipeline {
 }
 
 /**
- * Runs the internal half of a Wake tick: schedules, reactors, publication,
- * and delivery. None of this touches a rate-limited external poll, so its
+ * Runs the non-reactive internal half of a Wake tick: schedules, maintenance,
+ * and delivery. Processors are owned by the Eventing runtime. None of this touches a rate-limited external poll, so its
  * host runs on a fast, un-backed-off cadence — see IntakePipeline for the
  * half that does need backoff.
  */
@@ -38,9 +37,7 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
     if (await isPaused()) return { kind: 'paused' };
     await stages.runSchedules();
     if (await isPaused()) return { kind: 'paused' };
-    await stages.react();
-    if (await isPaused()) return { kind: 'paused' };
-    await stages.publishAgentRuns?.();
+    await stages.maintain?.();
     if (await isPaused()) return { kind: 'paused' };
     return (
       (await runDeliveryPhase(stages, isPaused, signal, beforeDelivery)) ?? { kind: 'no-work' }
@@ -70,7 +67,5 @@ async function runDeliveryPhase(
   await beforeDelivery?.();
   if (await isPaused()) return { kind: 'paused' };
   await stages.deliver(signal);
-  if (await isPaused()) return { kind: 'paused' };
-  await stages.react();
   return undefined;
 }

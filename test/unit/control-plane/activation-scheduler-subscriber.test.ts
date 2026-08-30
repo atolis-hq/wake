@@ -6,13 +6,15 @@ import { createFileActivationSchedulerSerialiser } from '../../../src/bootstrap/
 import {
   activationSchedulerSubscriptionConsumer,
   createActivationScheduler,
-  createActivationSchedulerSubscriber,
+  createActivationSchedulerSubscriber as createProcessorSubscriber,
   type ActivationScheduler,
 } from '../../../src/control-plane/index.js';
 import {
   EventProcessorCategory,
   EventProcessorHost,
   EventProcessorReplayPolicy,
+  type EventProcessor,
+  type EventProcessorHostRun,
 } from '../../../src/eventing/index.js';
 import { EventActorKind, EventSourceKind, createEventDraft } from '../../../src/kernel/index.js';
 import {
@@ -22,6 +24,48 @@ import {
   createFileProcessorRunSerialiser,
   createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
+
+interface LegacyProcessorHost {
+  start(processors: readonly EventProcessor[], signal?: AbortSignal): EventProcessorHostRun;
+  health(consumer: string):
+    | {
+        readonly consumer: string;
+        readonly status: string;
+        readonly checkpoint: number;
+        readonly consecutiveFailures: number;
+        readonly lastError?: unknown;
+      }
+    | undefined;
+}
+
+function createActivationSchedulerSubscriber(
+  hostOrScheduler: LegacyProcessorHost | ActivationScheduler,
+  schedulerOrOptions: ActivationScheduler | Parameters<typeof createProcessorSubscriber>[1] = {},
+  options: Parameters<typeof createProcessorSubscriber>[1] = {},
+) {
+  if (!('start' in hostOrScheduler))
+    return createProcessorSubscriber(
+      hostOrScheduler,
+      schedulerOrOptions as Parameters<typeof createProcessorSubscriber>[1],
+    );
+  const host = hostOrScheduler;
+  const subscriber = createProcessorSubscriber(schedulerOrOptions as ActivationScheduler, options);
+  return {
+    ...subscriber,
+    start(signal?: AbortSignal) {
+      const processor = host.start([subscriber.processor], signal);
+      const reconciliation = subscriber.start(signal);
+      return {
+        abort() {
+          processor.abort();
+          reconciliation.abort();
+        },
+        done: Promise.all([processor.done, reconciliation.done]).then(() => undefined),
+      };
+    },
+    health: () => subscriber.health() ?? host.health(activationSchedulerSubscriptionConsumer),
+  };
+}
 
 describe('ActivationSchedulerSubscriber', () => {
   it('exposes one named processor that pokes once per delivered batch', async () => {

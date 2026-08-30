@@ -21,7 +21,12 @@ it('uses the subscriber one-shot scheduler pass without duplicating dispatch thr
       paths: { wakeRoot: tmpdir() },
       config: {},
       providers: [],
-      activationSchedulerSubscriber: scheduler,
+      activationSchedulerSubscriber: {
+        ...scheduler,
+        processor: {} as never,
+        lastResult: () => undefined,
+      },
+      processorRuntime: { processors: [], catchUp: async () => 0 },
       projectionSubscriptions: { catchUpOnce: async () => 0 },
       runnerPipeline,
       projections: { read: async () => null },
@@ -47,7 +52,7 @@ it('surfaces adapter health checks from provider instances alongside system chec
       paths: { wakeRoot: tmpdir() },
       config: {},
       activationSchedulerSubscriber: { health: () => undefined },
-      projectionSubscriptions: { processors: [], health: () => [] },
+      processorRuntime: { processors: [], health: async () => [] },
       providers: [
         {
           adapter: 'github-issues',
@@ -122,7 +127,7 @@ it('stays ok when every adapter health check is ok', async () => {
           consecutiveFailures: 0,
         }),
       },
-      projectionSubscriptions: { processors: [], health: () => [] },
+      processorRuntime: { processors: [], health: async () => [] },
       providers: [
         {
           adapter: 'github-issues',
@@ -162,7 +167,7 @@ it('surfaces durable activation scheduler subscription health', async () => {
           lastError: new Error('scheduler failed'),
         }),
       },
-      projectionSubscriptions: { processors: [], health: () => [] },
+      processorRuntime: { processors: [], health: async () => [] },
     } as unknown as CompositionRoot,
     () => '2026-08-17T00:00:00.000Z',
   );
@@ -184,9 +189,9 @@ it('surfaces every registered projection consumer and represents absent snapshot
       config: {},
       providers: [],
       activationSchedulerSubscriber: { health: () => undefined },
-      projectionSubscriptions: {
+      processorRuntime: {
         processors: [{ consumer: 'projection:work' }, { consumer: 'projection:board' }],
-        health: () => [
+        health: async () => [
           {
             consumer: 'projection:work',
             status: 'healthy',

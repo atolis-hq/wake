@@ -3,17 +3,22 @@ import type {
   AdvanceOnce,
   RunnerPipeline,
 } from '../control-plane/index.js';
+import { EventProcessorCategory, type EventProcessor } from '../eventing/index.js';
 
 export interface RunnerTickRuntime {
   readonly runnerPipeline: RunnerPipeline;
-  readonly activationSchedulerSubscriber: Pick<ActivationSchedulerSubscriber, 'poke'>;
-}
-
-export interface OneShotRunnerTickRuntime extends RunnerTickRuntime {
-  readonly projectionSubscriptions: {
-    catchUpOnce(signal?: AbortSignal): Promise<number>;
+  readonly activationSchedulerSubscriber: Pick<ActivationSchedulerSubscriber, 'poke' | 'processor'>;
+  readonly processorRuntime: {
+    readonly processors: readonly EventProcessor[];
+    catchUp(
+      name: string,
+      processors?: readonly EventProcessor[],
+      signal?: AbortSignal,
+    ): Promise<number>;
   };
 }
+
+export type OneShotRunnerTickRuntime = RunnerTickRuntime;
 
 export async function withFinalProjectionCatchUp<T>(
   operation: () => Promise<T>,
@@ -48,23 +53,27 @@ export async function withFinalProjectionCatchUp<T>(
 
 /** One-shot ticks produce schedule/reactor facts before reconciling subscriber-owned activation work. */
 export function createOneShotRunnerAdvance(root: OneShotRunnerTickRuntime): AdvanceOnce {
+  const factProcessors = root.processorRuntime.processors.filter(
+    ({ category }) => category !== EventProcessorCategory.Coordinator,
+  );
+  const catchUpFacts = () => root.processorRuntime.catchUp('fact catch-up', factProcessors);
   return (options) =>
-    withFinalProjectionCatchUp(
-      async () => {
-        let scheduled:
-          Awaited<ReturnType<typeof root.activationSchedulerSubscriber.poke>> | undefined;
-        await root.projectionSubscriptions.catchUpOnce();
-        const pipeline = await root.runnerPipeline.run(options, undefined, async () => {
-          await root.projectionSubscriptions.catchUpOnce();
-          scheduled = await root.activationSchedulerSubscriber.poke(options);
-        });
-        if (pipeline.kind === 'paused') return pipeline;
-        if (scheduled === undefined)
-          throw new Error('Subscriber scheduler did not run before delivery');
-        return scheduled;
-      },
-      () => root.projectionSubscriptions.catchUpOnce(),
-    );
+    withFinalProjectionCatchUp(async () => {
+      let scheduled:
+        Awaited<ReturnType<typeof root.activationSchedulerSubscriber.poke>> | undefined;
+      await catchUpFacts();
+      const pipeline = await root.runnerPipeline.run(options, undefined, async () => {
+        await catchUpFacts();
+        await root.processorRuntime.catchUp('activation scheduling', [
+          root.activationSchedulerSubscriber.processor,
+        ]);
+        scheduled = await root.activationSchedulerSubscriber.poke(options);
+      });
+      if (pipeline.kind === 'paused') return pipeline;
+      if (scheduled === undefined)
+        throw new Error('Subscriber scheduler did not run before delivery');
+      return scheduled;
+    }, catchUpFacts);
 }
 
 /** Resident scheduling is owned by the durable subscriber, never its tick loop. */

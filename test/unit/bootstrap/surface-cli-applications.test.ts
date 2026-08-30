@@ -13,6 +13,17 @@ import { createRunnerPipeline, ResidentHost, TickHost } from '../../../src/contr
 import { RunStatus } from '../../../src/execution/index.js';
 import { InProcessJournalChangeSignal } from '../../../src/kernel/index.js';
 
+const testProcessorRuntime = {
+  processors: [],
+  catchUp: async () => 0,
+};
+
+function schedulerProcessor<T extends { readonly poke: (...args: never[]) => unknown }>(
+  scheduler: T,
+) {
+  return { ...scheduler, processor: {} as never, lastResult: () => undefined };
+}
+
 it('drains subscriber scheduling progress through a one-shot tick budget while running the pipeline', async () => {
   const scheduler = {
     poke: vi
@@ -35,8 +46,8 @@ it('drains subscriber scheduling progress through a one-shot tick budget while r
   };
   const tick = new TickHost(
     createOneShotRunnerAdvance({
-      activationSchedulerSubscriber: scheduler,
-      projectionSubscriptions: { catchUpOnce: async () => 0 },
+      activationSchedulerSubscriber: schedulerProcessor(scheduler),
+      processorRuntime: testProcessorRuntime,
       runnerPipeline,
     }),
   );
@@ -66,7 +77,7 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
     runSchedules: async () => {
       trace.push('run-schedules');
     },
-    react: async () => {
+    maintain: async () => {
       trace.push('react');
     },
     deliver: async () => {
@@ -77,8 +88,8 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
 
   await expect(
     createOneShotRunnerAdvance({
-      activationSchedulerSubscriber: scheduler,
-      projectionSubscriptions: { catchUpOnce: async () => 0 },
+      activationSchedulerSubscriber: schedulerProcessor(scheduler),
+      processorRuntime: testProcessorRuntime,
       runnerPipeline,
     })({
       maxProgress: 1,
@@ -91,6 +102,32 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
   expect(trace.indexOf('schedule')).toBeLessThan(trace.indexOf('deliver'));
 });
 
+it('runs one-shot scheduling after each fact barrier instead of reusing a cached processor result', async () => {
+  const scheduler = {
+    poke: vi
+      .fn()
+      .mockResolvedValueOnce({ kind: 'progressed' as const, dispatched: [] })
+      .mockResolvedValueOnce({ kind: 'no-work' as const }),
+  };
+  const advance = createOneShotRunnerAdvance({
+    activationSchedulerSubscriber: {
+      ...scheduler,
+      processor: {} as never,
+    },
+    processorRuntime: testProcessorRuntime,
+    runnerPipeline: {
+      run: async (_options, _signal, beforeDelivery: (() => Promise<void>) | undefined) => {
+        await beforeDelivery?.();
+        return { kind: 'no-work' as const };
+      },
+    },
+  });
+
+  await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });
+  await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'no-work' });
+  expect(scheduler.poke).toHaveBeenCalledTimes(2);
+});
+
 it('catches projections before pipeline work, before the scheduler poke, and after failure', async () => {
   const trace: string[] = [];
   const scheduler = {
@@ -100,10 +137,11 @@ it('catches projections before pipeline work, before the scheduler poke, and aft
     }),
   };
   const root = {
-    activationSchedulerSubscriber: scheduler,
-    projectionSubscriptions: {
-      catchUpOnce: vi.fn(async () => {
-        trace.push('projections');
+    activationSchedulerSubscriber: schedulerProcessor(scheduler),
+    processorRuntime: {
+      processors: [],
+      catchUp: vi.fn(async () => {
+        trace.push('facts');
         return 0;
       }),
     },
@@ -121,44 +159,43 @@ it('catches projections before pipeline work, before the scheduler poke, and aft
     'delivery rejected',
   );
 
-  expect(trace).toEqual([
-    'projections',
-    'pipeline',
-    'projections',
-    'schedule',
-    'delivery',
-    'projections',
-  ]);
+  expect(trace).toEqual(['facts', 'pipeline', 'facts', 'facts', 'schedule', 'delivery', 'facts']);
 });
 
 it('catches projections again while unwinding an initial projection barrier failure', async () => {
-  const projectionSubscriptions = {
-    catchUpOnce: vi.fn().mockRejectedValueOnce(new Error('projection unavailable')),
+  const processorRuntime = {
+    processors: [],
+    catchUp: vi.fn().mockRejectedValueOnce(new Error('fact catch-up unavailable')),
   };
   const runnerPipeline = { run: vi.fn(async () => ({ kind: 'no-work' as const })) };
 
   await expect(
     createOneShotRunnerAdvance({
-      activationSchedulerSubscriber: { poke: async () => ({ kind: 'no-work' as const }) },
-      projectionSubscriptions,
+      activationSchedulerSubscriber: schedulerProcessor({
+        poke: async () => ({ kind: 'no-work' as const }),
+      }),
+      processorRuntime,
       runnerPipeline,
     })({ maxProgress: 1 }),
-  ).rejects.toThrow('projection unavailable');
+  ).rejects.toThrow('fact catch-up unavailable');
 
-  expect(projectionSubscriptions.catchUpOnce).toHaveBeenCalledTimes(2);
+  expect(processorRuntime.catchUp).toHaveBeenCalledTimes(2);
   expect(runnerPipeline.run).not.toHaveBeenCalled();
 });
 
 it('preserves an operational failure when the final one-shot projection barrier also fails', async () => {
   const operationalFailure = new Error('delivery rejected');
   const finalBarrierFailure = new Error('final projection catch-up failed');
-  const projectionSubscriptions = {
-    catchUpOnce: vi.fn().mockResolvedValueOnce(0).mockRejectedValueOnce(finalBarrierFailure),
+  const processorRuntime = {
+    processors: [],
+    catchUp: vi.fn().mockResolvedValueOnce(0).mockRejectedValueOnce(finalBarrierFailure),
   };
 
   const result = createOneShotRunnerAdvance({
-    activationSchedulerSubscriber: { poke: async () => ({ kind: 'no-work' as const }) },
-    projectionSubscriptions,
+    activationSchedulerSubscriber: schedulerProcessor({
+      poke: async () => ({ kind: 'no-work' as const }),
+    }),
+    processorRuntime,
     runnerPipeline: { run: async () => Promise.reject(operationalFailure) },
   })({ maxProgress: 1 }).catch((error: unknown) => error);
 
@@ -196,6 +233,7 @@ it('preserves an intake failure when the CLI tick final projection barrier also 
       projectionSubscriptions,
       intakePipeline: { run: async () => Promise.reject(intakeFailure) },
       activationSchedulerSubscriber: { poke: async () => ({ kind: 'no-work' as const }) },
+      processorRuntime: testProcessorRuntime,
       runnerPipeline: { run: async () => ({ kind: 'no-work' as const }) },
     } as never,
     {} as never,
@@ -242,8 +280,8 @@ it('returns a paused one-shot pipeline result without poking the subscriber', as
 
   await expect(
     createOneShotRunnerAdvance({
-      activationSchedulerSubscriber: scheduler,
-      projectionSubscriptions: { catchUpOnce: async () => 0 },
+      activationSchedulerSubscriber: schedulerProcessor(scheduler),
+      processorRuntime: testProcessorRuntime,
       runnerPipeline,
     })({
       maxProgress: 1,
@@ -265,7 +303,8 @@ it('does not let a blocking subscriber poke stall subscriber-mode resident runne
   const resident = new ResidentHost(
     new TickHost(
       createResidentRunnerAdvance({
-        activationSchedulerSubscriber: scheduler,
+        activationSchedulerSubscriber: schedulerProcessor(scheduler),
+        processorRuntime: testProcessorRuntime,
         runnerPipeline,
       }),
     ),
@@ -287,7 +326,7 @@ it('aborts an in-flight resident delivery when the lifecycle stops', async () =>
   });
   const runnerPipeline = createRunnerPipeline({
     runSchedules: async () => undefined,
-    react: async () => undefined,
+    maintain: async () => undefined,
     deliver: async (signal) => {
       deliveryStarted();
       await new Promise<void>((resolve) => {
@@ -299,7 +338,10 @@ it('aborts an in-flight resident delivery when the lifecycle stops', async () =>
   const runnerResident = new ResidentHost(
     new TickHost(
       createResidentRunnerAdvance({
-        activationSchedulerSubscriber: { poke: async () => ({ kind: 'no-work' as const }) },
+        activationSchedulerSubscriber: schedulerProcessor({
+          poke: async () => ({ kind: 'no-work' as const }),
+        }),
+        processorRuntime: testProcessorRuntime,
         runnerPipeline,
       }),
     ),
@@ -320,7 +362,7 @@ it('aborts an in-flight resident delivery when the lifecycle stops', async () =>
   const lifecycle = runResidentLifecycle({
     signal: controller.signal,
     budget: { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 },
-    projectionSubscriptions: { start: () => projections },
+    processorRuntime: { start: () => projections },
     activationSchedulerSubscriber: { start: () => scheduler },
     intakeResident: {
       run: async (signal: AbortSignal) => {
@@ -364,7 +406,7 @@ it('supervises projection subscriptions before residents and aborts every owned 
   await runResidentLifecycle({
     signal: controller.signal,
     budget: { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 },
-    projectionSubscriptions: {
+    processorRuntime: {
       start: vi.fn(() => {
         trace.push('projections:start');
         return projections;
@@ -447,7 +489,7 @@ it('settles every owned run and preserves resident and subscription failures bef
   const result = runResidentLifecycle({
     signal: new AbortController().signal,
     budget: { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 },
-    projectionSubscriptions: { start: () => projections },
+    processorRuntime: { start: () => projections },
     activationSchedulerSubscriber: { start: () => scheduler },
     intakeResident: {
       run: async (signal: AbortSignal) => {
@@ -507,7 +549,7 @@ it('continues cleanup when an owned subscription abort throws', async () => {
   const result = runResidentLifecycle({
     signal: parent.signal,
     budget: { maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 },
-    projectionSubscriptions: { start: () => projections },
+    processorRuntime: { start: () => projections },
     activationSchedulerSubscriber: { start: () => scheduler },
     intakeResident: {
       run: async (signal: AbortSignal) => {

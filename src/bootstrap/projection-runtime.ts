@@ -2,7 +2,6 @@ import { activityProjectionDefinitions } from '../activities/index.js';
 import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
 import { conversationProjection } from '../conversations/index.js';
 import {
-  EventProcessorHost,
   ProjectionRebuilder,
   createProjectionProcessor,
   type EventProcessor,
@@ -33,6 +32,7 @@ import {
 import { workProjection } from '../work/index.js';
 import { analyticsProjection } from './analytics-projection.js';
 import { boardProjection } from './board-projection.js';
+import type { EventProcessorRuntime } from './event-processor-runtime.js';
 
 export const runtimeProjectionDefinitions = [
   conversationProjection,
@@ -60,21 +60,21 @@ export interface RuntimeProjectionSubscriptions {
   catchUpOnce(signal?: AbortSignal): Promise<number>;
   catchUp(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
   rebuild(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number>;
-  health(): readonly EventProcessorHealth[];
+  health(): Promise<readonly EventProcessorHealth[]>;
 }
 
 class RuntimeProjectionSubscriptionRuntime implements RuntimeProjectionSubscriptions {
   readonly processors: readonly EventProcessor[];
   private readonly processorsByDefinition = new Map<string, EventProcessor>();
   private readonly definitionsByName = new Map<string, ProjectionDefinition>();
-  private readonly host: EventProcessorHost;
   private readonly rebuilder: ProjectionRebuilder;
 
   constructor(
     private readonly journal: EventJournal,
     projections: ProjectionStore,
-    private readonly checkpoints: CheckpointStore,
+    checkpoints: CheckpointStore,
     serialiseRun: ProcessorRunSerialiser,
+    private readonly runtime: EventProcessorRuntime,
     definitions: readonly ProjectionDefinition[],
   ) {
     this.processors = definitions.map((definition) => {
@@ -85,48 +85,32 @@ class RuntimeProjectionSubscriptionRuntime implements RuntimeProjectionSubscript
       this.definitionsByName.set(definition.name, definition);
       return processor;
     });
-    this.host = new EventProcessorHost(journal, checkpoints, serialiseRun);
     this.rebuilder = new ProjectionRebuilder(journal, projections, checkpoints, serialiseRun);
   }
 
   start(signal: AbortSignal): EventProcessorHostRun {
-    return this.host.start(this.processors, signal);
+    return this.runtime.start(signal);
   }
 
   async catchUpOnce(signal?: AbortSignal): Promise<number> {
-    const targetGlobalPosition = await this.journal.latestGlobalPosition();
-    const pendingProcessors = (
-      await Promise.all(
-        this.processors.map(async (processor) => ({
-          processor,
-          checkpoint: await this.checkpoints.load(processor.consumer),
-        })),
-      )
-    ).filter(({ checkpoint }) => checkpoint < targetGlobalPosition);
-    const passes = await Promise.all(
-      pendingProcessors.map(({ processor }) =>
-        this.host.runThrough(processor, targetGlobalPosition, signal),
-      ),
-    );
-    return passes.reduce((eventCount, pass) => eventCount + pass.eventCount, 0);
+    return this.runtime.catchUp('projection catch-up', this.processors, signal);
   }
 
   async catchUp(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number> {
     const processor = this.processorsByDefinition.get(definition.name);
     if (processor === undefined)
       throw new Error(`Runtime projection definition is not registered: ${definition.name}`);
-    return (await this.host.runOnce(processor, signal)).eventCount;
+    return this.runtime.catchUp(`projection:${definition.name}`, [processor], signal);
   }
 
   rebuild(definition: ProjectionDefinition, signal?: AbortSignal): Promise<number> {
     return this.rebuilder.rebuild(this.registeredDefinition(definition), signal);
   }
 
-  health(): readonly EventProcessorHealth[] {
-    return this.processors.flatMap((processor) => {
-      const snapshot = this.host.health(processor.consumer);
-      return snapshot === undefined ? [] : [snapshot];
-    });
+  async health(): Promise<readonly EventProcessorHealth[]> {
+    const health = await this.runtime.health();
+    const consumers = new Set(this.processors.map((processor) => processor.consumer));
+    return health.filter(({ consumer }) => consumers.has(consumer));
   }
 
   private registeredDefinition(definition: ProjectionDefinition): ProjectionDefinition {
@@ -141,6 +125,7 @@ export function createRuntimeProjectionSubscriptions(
   journal: EventJournal,
   projections: ProjectionStore,
   checkpoints: CheckpointStore,
+  runtime: EventProcessorRuntime,
   serialiseRun: ProcessorRunSerialiser = createInMemoryProcessorRunSerialiser(),
   definitions: readonly ProjectionDefinition[] = runtimeProjectionDefinitions,
 ): RuntimeProjectionSubscriptions {
@@ -149,6 +134,7 @@ export function createRuntimeProjectionSubscriptions(
     projections,
     checkpoints,
     serialiseRun,
+    runtime,
     definitions,
   );
 }

@@ -305,10 +305,12 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
     async health() {
       const checkedAt = now();
       const selfUpdateFailure = await createSelfUpdateFailureLog(root.paths.wakeRoot).read();
-      const schedulerSubscription = root.activationSchedulerSubscriber.health();
-      const projectionHealth = new Map(
-        root.projectionSubscriptions.health().map((snapshot) => [snapshot.consumer, snapshot]),
+      const processorHealth = new Map(
+        (await root.processorRuntime.health()).map((snapshot) => [snapshot.consumer, snapshot]),
       );
+      const schedulerSubscription =
+        root.activationSchedulerSubscriber.health() ??
+        processorHealth.get('subscriber:control-plane.activation-scheduler');
       const checks = [
         { name: 'journal', status: 'ok' as const },
         { name: 'projections', status: 'ok' as const },
@@ -321,8 +323,8 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
               detail: describeSelfUpdateFailure(selfUpdateFailure),
             },
         subscriptionHealthCheck('activation-scheduler', schedulerSubscription),
-        ...root.projectionSubscriptions.processors.map(({ consumer }) =>
-          subscriptionHealthCheck(consumer, projectionHealth.get(consumer)),
+        ...root.processorRuntime.processors.map(({ consumer }) =>
+          subscriptionHealthCheck(consumer, processorHealth.get(consumer)),
         ),
       ];
       const adapters = root.providers.flatMap((instance) =>

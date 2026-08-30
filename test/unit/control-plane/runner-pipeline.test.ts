@@ -2,36 +2,33 @@ import { describe, expect, it, vi } from 'vitest';
 import { createRunnerPipeline } from '../../../src/control-plane/application/runner-pipeline.js';
 
 describe('RunnerPipeline', () => {
-  it('runs schedules and reactors without accepting a scheduler stage', async () => {
-    const react = vi.fn(async () => undefined);
+  it('runs schedules and maintenance without accepting a scheduler stage', async () => {
+    const maintain = vi.fn(async () => undefined);
     const pipeline = createRunnerPipeline({
       runSchedules: async () => undefined,
-      react,
+      maintain,
       deliver: async () => undefined,
     });
 
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
 
-    expect(react).toHaveBeenCalledTimes(2);
+    expect(maintain).toHaveBeenCalledOnce();
   });
 
   it('runs no operational stages while paused', async () => {
     const runSchedules = vi.fn(async () => undefined);
-    const react = vi.fn(async () => undefined);
-    const publishAgentRuns = vi.fn(async () => undefined);
+    const maintain = vi.fn(async () => undefined);
     const deliver = vi.fn(async () => undefined);
     const pipeline = createRunnerPipeline({
       isPaused: async () => true,
       runSchedules,
-      react,
-      publishAgentRuns,
+      maintain,
       deliver,
     });
 
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
     expect(runSchedules).not.toHaveBeenCalled();
-    expect(react).not.toHaveBeenCalled();
-    expect(publishAgentRuns).not.toHaveBeenCalled();
+    expect(maintain).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
   });
 
@@ -52,7 +49,7 @@ describe('RunnerPipeline', () => {
     });
     const pipeline = createRunnerPipeline({
       runSchedules,
-      react: async () => undefined,
+      maintain: async () => undefined,
       deliver: async () => undefined,
     });
 
@@ -76,7 +73,7 @@ describe('RunnerPipeline', () => {
       runSchedules: async () => {
         paused = true;
       },
-      react: async () => {
+      maintain: async () => {
         reactions += 1;
       },
       deliver: async () => {
@@ -91,7 +88,7 @@ describe('RunnerPipeline', () => {
   it('propagates a later stage failure', async () => {
     const pipeline = createRunnerPipeline({
       runSchedules: async () => undefined,
-      react: async () => {
+      maintain: async () => {
         throw new Error('label delivery denied');
       },
       deliver: async () => undefined,
@@ -100,14 +97,14 @@ describe('RunnerPipeline', () => {
     await expect(pipeline.run({ maxProgress: 1 })).rejects.toThrow('label delivery denied');
   });
 
-  it('never reports scheduler progress after producing schedule and reactor facts', async () => {
+  it('never reports scheduler progress after producing schedule and maintenance facts', async () => {
     const stages: string[] = [];
     const pipeline = createRunnerPipeline({
       runSchedules: async () => {
         stages.push('schedules');
       },
-      react: async () => {
-        stages.push('react');
+      maintain: async () => {
+        stages.push('maintain');
       },
       deliver: async () => {
         stages.push('deliver');
@@ -115,18 +112,15 @@ describe('RunnerPipeline', () => {
     });
 
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
-    expect(stages).toEqual(['schedules', 'react', 'deliver', 'react']);
+    expect(stages).toEqual(['schedules', 'maintain', 'deliver']);
   });
 
-  it('publishes agent-run reports after reactors and before delivery', async () => {
+  it('runs delivery after maintenance without invoking processor stages', async () => {
     const stages: string[] = [];
     const pipeline = createRunnerPipeline({
       runSchedules: async () => undefined,
-      react: async () => {
-        stages.push('react');
-      },
-      publishAgentRuns: async () => {
-        stages.push('publish-agent-runs');
+      maintain: async () => {
+        stages.push('maintain');
       },
       deliver: async () => {
         stages.push('deliver');
@@ -135,7 +129,6 @@ describe('RunnerPipeline', () => {
 
     await pipeline.run({ maxProgress: 1 });
 
-    expect(stages.indexOf('publish-agent-runs')).toBeGreaterThan(stages.indexOf('react'));
-    expect(stages.indexOf('publish-agent-runs')).toBeLessThan(stages.indexOf('deliver'));
+    expect(stages).toEqual(['maintain', 'deliver']);
   });
 });

@@ -13,7 +13,7 @@ import {
   type ScheduleCheckpointStore,
 } from '../control-plane/index.js';
 import { createConversationService } from '../conversations/index.js';
-import { EventProcessorHost, type ProcessorRunSerialiser } from '../eventing/index.js';
+import { type ProcessorRunSerialiser } from '../eventing/index.js';
 import {
   ExecutionCancellationReason,
   ExternalExecutionState,
@@ -56,6 +56,7 @@ import { createWorkService } from '../work/index.js';
 import { createFileActivationSchedulerSerialiser } from './activation-scheduler-serialiser.js';
 import { createBuiltInActivityRegistry } from './activity-registry.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
+import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime } from './integration-runtime.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
@@ -121,6 +122,7 @@ export interface CompositionRoot {
   readonly isPaused: () => Promise<boolean>;
   readonly activationScheduler: ActivationScheduler;
   readonly activationSchedulerSubscriber: ActivationSchedulerSubscriber;
+  readonly processorRuntime: EventProcessorRuntime;
   readonly advanceOnce: ActivationScheduler['runOnce'];
   readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
   readonly providers: readonly ProviderInstance[];
@@ -154,6 +156,11 @@ export async function createCompositionRoot(
     paths,
     clock,
     options,
+  );
+  const processorRuntime = new EventProcessorRuntime(
+    journal,
+    checkpoints,
+    subscriptionRunSerialiser,
   );
   const work = createWorkService(journal);
   const conversations = createConversationService(journal);
@@ -288,10 +295,7 @@ export async function createCompositionRoot(
     },
   );
   const advanceOnce = activationScheduler.runOnce.bind(activationScheduler);
-  const activationSchedulerSubscriber = createActivationSchedulerSubscriber(
-    new EventProcessorHost(journal, checkpoints, subscriptionRunSerialiser),
-    activationScheduler,
-  );
+  const activationSchedulerSubscriber = createActivationSchedulerSubscriber(activationScheduler);
   const runtime = await composeIntegrationRuntime({
     config,
     journal,
@@ -311,6 +315,7 @@ export async function createCompositionRoot(
     ids,
     wakeRoot,
     subscriptionRunSerialiser,
+    processorRuntime,
     scheduleCheckpoints:
       options.scheduleCheckpoints ?? new FileScheduleCheckpointStore(paths.dataRoot),
     ...(options.decorateDeliveryAdapter === undefined
@@ -321,6 +326,7 @@ export async function createCompositionRoot(
       : { fakeDeliveryProvider: options.fakeDeliveryProvider }),
     providerDefinitions: [gitHubProviderDefinition],
   });
+  processorRuntime.register([...runtime.processors, activationSchedulerSubscriber.processor]);
   return {
     config,
     fakeScenarios,
@@ -343,6 +349,7 @@ export async function createCompositionRoot(
     isPaused: isRuntimePaused,
     activationScheduler,
     activationSchedulerSubscriber,
+    processorRuntime,
     advanceOnce,
     resolveResourceLink,
     ...runtime,
