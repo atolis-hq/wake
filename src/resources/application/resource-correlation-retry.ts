@@ -1,6 +1,6 @@
 import {
   correlationId,
-  createEventDraft,
+  createEventData,
   EventActorKind,
   EventSourceKind,
   type CommandContext,
@@ -8,7 +8,7 @@ import {
 import {
   ResourceEventType,
   type ResourceEvent,
-  type ResourceEventDraft,
+  type ResourceEventData,
   type ResourceEventPayloads,
 } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';
@@ -148,7 +148,7 @@ function retryAttempts(events: readonly ResourceEvent[]): number {
 async function appendResourceEvent(
   repository: ResourceRepository,
   resourceId: ResourceId,
-  draft: ResourceEventDraft,
+  draft: ResourceEventData,
 ): Promise<void> {
   const loaded = await repository.load(resourceId);
   await repository.append(resourceId, loaded.sequence, [draft]);
@@ -160,7 +160,7 @@ function resourceDraft<Type extends keyof ResourceEventPayloads>(
   eventType: Type,
   payload: ResourceEventPayloads[Type],
 ) {
-  return createEventDraft({
+  return createEventData({
     eventId: `${context.commandId}:${eventType}`,
     eventType,
     occurredAt: context.occurredAt,

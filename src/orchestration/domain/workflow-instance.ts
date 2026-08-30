@@ -1,6 +1,6 @@
 import type {
   WorkflowOrchestrationEvent,
-  WorkflowOrchestrationEventDraft,
+  WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -14,7 +14,7 @@ import {
 
 export { orchestrationStatusTransitions };
 
-type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventDraft;
+type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventData;
 
 export function foldWorkflowInstance(events: readonly WorkflowFact[]): WorkflowInstanceView | null {
   const first = events.find((event) => event.eventType === OrchestrationEventType.InstanceStarted);

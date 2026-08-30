@@ -3,7 +3,7 @@ import {
   decodeConversationEvent,
   selectConversationEvent,
   type ConversationEvent,
-  type ConversationEventDraft,
+  type ConversationEventData,
 } from '../contracts/events.js';
 import type { ConversationId } from '../contracts/identifiers.js';
 import { conversationStream } from '../contracts/streams.js';
@@ -26,7 +26,7 @@ export class ConversationRepository {
     };
   }
 
-  async append(id: ConversationId, expected: number, drafts: readonly ConversationEventDraft[]) {
+  async append(id: ConversationId, expected: number, drafts: readonly ConversationEventData[]) {
     return (await this.journal.append(conversationStream(id), expected, drafts)).map(
       decodeConversationEvent,
     );

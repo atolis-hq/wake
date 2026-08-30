@@ -8,7 +8,7 @@ import {
   runStream,
   type RunRepository,
 } from '../../../src/execution/index.js';
-import { createEventDraft, eventId, type EntityRef } from '../../../src/kernel/index.js';
+import { createEventData, eventId, type EntityRef } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowName,
@@ -51,7 +51,7 @@ it('ignores facts outside the configured watch event types through its processor
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
   await journal.append(watchStream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'unrelated-watch-fact',
       eventType: 'work.created',
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -279,7 +279,7 @@ it('keeps its checkpoint unchanged until every watch request succeeds', async ()
     id: 'watch-reactor',
   };
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'event-1',
       eventType: 'review.requested',
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -383,7 +383,7 @@ it('replays the identical child request after checkpoint persistence fails', asy
     id: 'checkpoint-replay',
   };
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'event-replay-1',
       eventType: 'review.requested',
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -448,7 +448,7 @@ it('replays the identical child request after checkpoint persistence fails', asy
 it('reconciles a durable watch trigger orphaned after its checkpoint advanced', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   await journal.append(watchStream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'orphaned-trigger',
       eventType: 'review.requested',
       occurredAt: '2026-07-30T12:00:00.000Z',

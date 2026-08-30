@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { ActivityEventType } from '../../../src/activities/index.js';
 import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
-  createEventDraft,
+  createEventData,
   eventId,
   type CheckpointStore,
   type CommandContext,
@@ -51,7 +51,7 @@ it('ignores unrelated facts through its processor selector', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'unrelated-fact',
       eventType: 'work.created',
       occurredAt: '2026-08-15T12:00:00.000Z',
@@ -234,7 +234,7 @@ it('delegates bounded checkpoint progress to the event processor host', async ()
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'event-1',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:00:00.000Z',
@@ -245,7 +245,7 @@ it('delegates bounded checkpoint progress to the event processor host', async ()
       stream,
       payload: { state: 'merged' },
     }),
-    createEventDraft({
+    createEventData({
       eventId: 'event-2',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:01:00.000Z',
@@ -294,7 +294,7 @@ it('catches up more than one batch through the eventing barrier', async () => {
     stream,
     0,
     Array.from({ length: 101 }, (_, index) =>
-      createEventDraft({
+      createEventData({
         eventId: `event-${index + 1}`,
         eventType: ActivityEventType.PrStateChanged,
         occurredAt: '2026-08-15T12:00:00.000Z',
@@ -327,7 +327,7 @@ it('serializes an overlapping processor pass and catch-up barrier through checkp
   const journal = new InMemoryEventJournal(new FakeClock());
   const durable = new InMemoryCheckpointStore();
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'event-1',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:00:00.000Z',
@@ -338,7 +338,7 @@ it('serializes an overlapping processor pass and catch-up barrier through checkp
       stream,
       payload: { state: 'merged' },
     }),
-    createEventDraft({
+    createEventData({
       eventId: 'event-2',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:01:00.000Z',
@@ -402,7 +402,7 @@ it('does not advance after a failed reaction and reuses its command context on r
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'event-fail-react',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:00:00.000Z',
@@ -448,7 +448,7 @@ it('does not advance after a checkpoint failure and reuses its command context o
   const journal = new InMemoryEventJournal(new FakeClock());
   const durable = new InMemoryCheckpointStore();
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'event-fail-checkpoint',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:00:00.000Z',

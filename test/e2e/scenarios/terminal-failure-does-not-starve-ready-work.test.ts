@@ -11,7 +11,7 @@ import {
   EventActorKind,
   EventSourceKind,
   correlationId,
-  createEventDraft,
+  createEventData,
 } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
@@ -182,7 +182,7 @@ it('E2E-CONTROL-005: a held delivery cannot delay one-shot subscriber scheduling
       commandContext(clock, 'slow-delivery-resource'),
     );
     await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
-      createEventDraft({
+      createEventData({
         eventId: 'slow-delivery-intent',
         eventType: DeliveryIntentEventType.StatusPublishRequested,
         occurredAt: clock.now().toISOString(),

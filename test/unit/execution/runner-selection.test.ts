@@ -18,7 +18,7 @@ import {
   type Runner,
   type RunView,
 } from '../../../src/execution/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../../../src/kernel/index.js';
+import { createEventData, EventActorKind, EventSourceKind } from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {} from '../../../src/work/index.js';
@@ -599,7 +599,7 @@ async function seedPriorRun(
   const stream = runStream(runId(id));
   const { testStatus: status = 'failed', runnerName = 'standard', ...metadata } = usage ?? {};
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: clock.now().toISOString(),
@@ -619,7 +619,7 @@ async function seedPriorRun(
         runner: { name: runnerName, cli },
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `${id}:result`,
       eventType: ExecutionEventType.RunRunnerResultReported,
       occurredAt: clock.now().toISOString(),
@@ -641,7 +641,7 @@ async function seedPriorRun(
       ? []
       : status === 'ambiguous'
         ? [
-            createEventDraft({
+            createEventData({
               eventId: `${id}:ambiguous`,
               eventType: ExecutionEventType.RunAmbiguous,
               occurredAt: clock.now().toISOString(),
@@ -654,7 +654,7 @@ async function seedPriorRun(
             }),
           ]
         : [
-            createEventDraft({
+            createEventData({
               eventId: `${id}:failed`,
               eventType: ExecutionEventType.RunFailed,
               occurredAt: clock.now().toISOString(),

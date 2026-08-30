@@ -2,7 +2,7 @@ import { z } from 'zod';
 import {
   brandedStringSchema,
   eventEnvelopeSchema,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../kernel/index.js';
@@ -49,7 +49,7 @@ export interface WorkEventPayloads {
 
 export type WorkEvent = EventUnion<WorkEventPayloads, WorkItemStreamRef>;
 
-export type WorkEventDraft = EventDraftUnion<WorkEventPayloads, WorkItemStreamRef>;
+export type WorkEventData = EventDataUnion<WorkEventPayloads, WorkItemStreamRef>;
 
 const streamSchema = z
   .object({

@@ -15,7 +15,7 @@ import {
   brandedStringSchema,
   eventEnvelopeSchema,
   offsetIsoTimestampSchema,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../kernel/index.js';
@@ -237,21 +237,21 @@ export interface ActivationExecutionEventPayloads {
 
 export type RunExecutionEvent = EventUnion<RunExecutionEventPayloads, RunStreamRef>;
 
-export type RunExecutionEventDraft = EventDraftUnion<RunExecutionEventPayloads, RunStreamRef>;
+export type RunExecutionEventData = EventDataUnion<RunExecutionEventPayloads, RunStreamRef>;
 
 export type ActivationExecutionEvent = EventUnion<
   ActivationExecutionEventPayloads,
   ActivationStreamRef
 >;
 
-export type ActivationExecutionEventDraft = EventDraftUnion<
+export type ActivationExecutionEventData = EventDataUnion<
   ActivationExecutionEventPayloads,
   ActivationStreamRef
 >;
 
 export type ExecutionEvent = RunExecutionEvent | ActivationExecutionEvent;
 
-export type ExecutionEventDraft = RunExecutionEventDraft | ActivationExecutionEventDraft;
+export type ExecutionEventData = RunExecutionEventData | ActivationExecutionEventData;
 
 const runStreamSchema = z
   .object({

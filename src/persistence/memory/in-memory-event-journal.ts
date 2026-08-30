@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type {
   Clock,
   EntityRef,
-  EventDraft,
+  EventData,
   EventEnvelope,
   EventJournal,
   JournalChangeSignal,
@@ -10,7 +10,7 @@ import type {
 import { InProcessJournalChangeSignal, WrongExpectedSequenceError } from '../../kernel/index.js';
 
 interface IndexedEvent {
-  readonly draft: EventDraft;
+  readonly draft: EventData;
   readonly envelope: EventEnvelope;
 }
 
@@ -29,7 +29,7 @@ export class InMemoryEventJournal implements EventJournal {
   async append(
     stream: EntityRef,
     expectedSequence: number,
-    events: readonly EventDraft[],
+    events: readonly EventData[],
   ): Promise<readonly EventEnvelope[]> {
     validateBatch(stream, events);
     const existingEvents = events.map((draft) => this.eventIds.get(draft.eventId));
@@ -114,7 +114,7 @@ export class InMemoryEventJournal implements EventJournal {
   }
 
   private rejectChangedEventIds(
-    drafts: readonly EventDraft[],
+    drafts: readonly EventData[],
     existingEvents: readonly (IndexedEvent | undefined)[],
   ): void {
     for (const [index, draft] of drafts.entries()) {
@@ -138,8 +138,8 @@ function assertSameStream(expected: EntityRef, actual: EntityRef): void {
   }
 }
 
-function validateBatch(stream: EntityRef, drafts: readonly EventDraft[]): void {
-  const eventIds = new Map<string, EventDraft>();
+function validateBatch(stream: EntityRef, drafts: readonly EventData[]): void {
+  const eventIds = new Map<string, EventData>();
   for (const draft of drafts) {
     assertSameStream(stream, draft.stream);
     const prior = eventIds.get(draft.eventId);

@@ -7,7 +7,7 @@ import {
 } from '../../kernel/index.js';
 import {
   ControlEventType,
-  createControlEventDraft,
+  createControlEventData,
   selectControlEvent,
 } from '../contracts/events.js';
 import { controlPlaneStream } from '../contracts/streams.js';
@@ -77,12 +77,12 @@ async function change(
   };
   const event =
     operation === 'pause'
-      ? createControlEventDraft(
+      ? createControlEventData(
           ControlEventType.DispatchPaused,
           { resumeAt: '9999-12-31T23:59:59.999Z', reason: 'paused by operator' },
           context,
         )
-      : createControlEventDraft(
+      : createControlEventData(
           ControlEventType.DispatchResumed,
           { resumedAt: occurredAt },
           context,

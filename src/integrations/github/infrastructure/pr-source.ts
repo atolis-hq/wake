@@ -5,12 +5,12 @@ import {
   ReviewActorKind,
   type PullRequestCheckState as PullRequestCheckStateValue,
 } from '../../../activities/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
+import { createEventData, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
 import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
-import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
+import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import {
   gitHubAssigneeLogins,
@@ -96,7 +96,7 @@ function pullRequestObservation(input: {
   readonly evidence: CheckEvidence;
   readonly changedFiles: readonly string[] | undefined;
   readonly adapter?: AdapterId;
-}): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
+}): Extract<GitHubAdapterEventData, { eventType: typeof GitHubEventType.WorkObserved }> {
   const pullRequest = input.pullRequest;
   const key = formatGitHubResourceKey({
     ...parseRepository(input.repository),
@@ -130,7 +130,7 @@ function pullRequestObservation(input: {
     },
   };
   const fingerprint = evidenceFingerprint(payload, input.evidence);
-  return createEventDraft({
+  return createEventData({
     eventId: `github:pr:${key}:${fingerprint}`,
     eventType: GitHubEventType.WorkObserved,
     occurredAt: pullRequest.updated_at,

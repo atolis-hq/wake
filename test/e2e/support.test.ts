@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEventDraft, type EventEnvelope } from '../../src/kernel/index.js';
+import { createEventData, type EventEnvelope } from '../../src/kernel/index.js';
 import { workItemStream } from '../../src/work/index.js';
 import { workId } from '../support/identities.js';
 import { FaultInjector, InjectedFaultError } from './support/faults.js';
@@ -51,7 +51,7 @@ describe('event-model support', () => {
   });
 
   it('formats stable causal traces without recorded time', () => {
-    const draft = createEventDraft({
+    const draft = createEventData({
       eventId: 'evt-1',
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00.000Z',

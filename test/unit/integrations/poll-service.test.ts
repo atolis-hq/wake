@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { PollService } from '../../../src/integrations/application/poll-service.js';
 import { integrationStream } from '../../../src/integrations/contracts/streams.js';
-import { createEventDraft } from '../../../src/kernel/index.js';
+import { createEventData } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -78,7 +78,7 @@ function provider(source: {
 }
 
 function draft(eventId = 'github:issue:owner/repo#1:revision') {
-  return createEventDraft({
+  return createEventData({
     eventId,
     eventType: 'integration.github.work-observed',
     occurredAt: '2026-08-16T19:22:00.000Z',

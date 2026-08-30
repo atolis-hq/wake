@@ -3,7 +3,7 @@ import { EventActorKind, type EventActor } from '../../kernel/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type {
   SupplementalActivityRequest,
-  WorkflowOrchestrationEventDraft,
+  WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
@@ -43,7 +43,7 @@ export function requestSupplementalActivity(
 }
 
 export function finishSupplemental(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: AcceptActivityOutcome,
@@ -80,7 +80,7 @@ export function finishSupplemental(
 }
 
 export function requestNextSupplemental(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   state: WorkflowInstanceView,
   input: DecisionContext,
 ): void {

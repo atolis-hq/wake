@@ -3,7 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createEventDraft, type EntityRef } from '../../src/kernel/index.js';
+import { createEventData, type EntityRef } from '../../src/kernel/index.js';
 import { FileEventJournal, FileProjectionStore } from '../../src/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
@@ -32,7 +32,7 @@ describe('persistence write-path cache incrementality', () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-architecture-journal-'));
     const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
     const draft = (id: string, sequence: number) =>
-      createEventDraft({
+      createEventData({
         eventId: id,
         eventType: 'work.item-created',
         occurredAt: '2026-07-30T12:00:00Z',

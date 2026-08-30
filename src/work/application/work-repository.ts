@@ -3,7 +3,7 @@ import {
   decodeWorkEvent,
   selectWorkEvent,
   type WorkEvent,
-  type WorkEventDraft,
+  type WorkEventData,
 } from '../contracts/events.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
 import { workItemStream } from '../contracts/streams.js';
@@ -27,7 +27,7 @@ export class WorkRepository {
   async append(
     workItemId: WorkItemId,
     expectedSequence: number,
-    drafts: readonly WorkEventDraft[],
+    drafts: readonly WorkEventData[],
   ): Promise<readonly WorkEvent[]> {
     const events = await this.journal.append(workItemStream(workItemId), expectedSequence, drafts);
     return events.map(decodeWorkEvent);

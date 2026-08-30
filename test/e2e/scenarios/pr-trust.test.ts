@@ -5,7 +5,7 @@ import { configureIntakeRouting } from '../support/intake-routing.js';
 
 import {
   BuiltInAdapterId,
-  createEventDraft,
+  createEventData,
   githubReviewObservation,
   InboundTranslator,
   integrationStream,
@@ -104,7 +104,7 @@ async function appendIntegrationEvent(
 ): Promise<void> {
   const stream = integrationStream(BuiltInAdapterId.GitHub);
   await world.journal.append(stream, (await world.journal.readStream(stream)).length, [
-    createEventDraft({
+    createEventData({
       eventId,
       eventType,
       occurredAt: world.clock.now().toISOString(),

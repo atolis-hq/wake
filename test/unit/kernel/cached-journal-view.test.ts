@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import {
   cachedJournalView,
-  createEventDraft,
+  createEventData,
   InProcessJournalChangeSignal,
   JOURNAL_CHANGE_FALLBACK_MS,
   type EntityRef,
@@ -12,7 +12,7 @@ import { FakeClock } from '../../e2e/support/world.js';
 const stream: EntityRef<'counter', 'one'> = { kind: 'counter', id: 'one' };
 
 function draft(eventId: string) {
-  return createEventDraft({
+  return createEventData({
     eventId,
     eventType: 'counted',
     occurredAt: '2026-07-30T12:00:00Z',

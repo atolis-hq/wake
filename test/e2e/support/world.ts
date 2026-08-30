@@ -26,7 +26,7 @@ import {
 } from '../../../src/execution/index.js';
 import {
   correlationId,
-  createEventDraft,
+  createEventData,
   type Clock,
   type EntityRef,
   type EventEnvelope,
@@ -217,7 +217,7 @@ export class TestWorld {
   ): Promise<EventEnvelope<Type, Payload>> {
     const currentEvents = await this.journal.readStream(this.stream);
     const [appended] = await this.journal.append(this.stream, currentEvents.length, [
-      createEventDraft({
+      createEventData({
         eventId: this.ids.next('event'),
         eventType,
         occurredAt: this.clock.now().toISOString(),
@@ -473,7 +473,7 @@ export class TestWorld {
   ): Promise<void> {
     const events = await this.journal.readStream(stream);
     const [event] = await this.journal.append(stream, events.length, [
-      createEventDraft({
+      createEventData({
         eventId,
         eventType,
         occurredAt: this.clock.now().toISOString(),

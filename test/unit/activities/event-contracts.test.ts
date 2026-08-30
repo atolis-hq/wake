@@ -10,7 +10,7 @@ import {
   type PullRequestDenialCode,
   selectActivityEvent,
 } from '../../../src/activities/index.js';
-import { createEventDraft } from '../../../src/kernel/index.js';
+import { createEventData } from '../../../src/kernel/index.js';
 import { signalName } from '../../../src/orchestration/contracts/identifiers.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { workItemStream } from '../../../src/work/index.js';
@@ -29,7 +29,7 @@ const context = {
   baseRevision: 'def',
   checks: 'passing',
 } as const;
-const approveIntent = createEventDraft({
+const approveIntent = createEventData({
   eventId: 'approve-intent',
   eventType: ActivityEventType.PrApproveRequested,
   occurredAt: '2026-07-31T12:00:00.000Z',
@@ -47,7 +47,7 @@ const approveIntent = createEventDraft({
     body: null,
   },
 });
-const mergeIntent = createEventDraft({
+const mergeIntent = createEventData({
   ...approveIntent,
   eventId: 'merge-intent',
   eventType: ActivityEventType.PrMergeRequested,
@@ -61,7 +61,7 @@ const mergeIntent = createEventDraft({
     requireChecks: true,
   },
 });
-const approveDenial = createEventDraft({
+const approveDenial = createEventData({
   ...approveIntent,
   eventId: 'approve-denied',
   eventType: ActivityEventType.PrApproveDenied,

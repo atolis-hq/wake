@@ -16,7 +16,7 @@ import {
   type EventProcessor,
   type EventProcessorHostRun,
 } from '../../../src/eventing/index.js';
-import { EventActorKind, EventSourceKind, createEventDraft } from '../../../src/kernel/index.js';
+import { EventActorKind, EventSourceKind, createEventData } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
   InMemoryCheckpointStore,
@@ -451,7 +451,7 @@ describe('ActivationSchedulerSubscriber', () => {
     const run = subscriber.start(controller.signal);
     await vi.waitFor(() => expect(scheduler.runOnce).toHaveBeenCalledOnce());
     await journal.append({ kind: 'test', id: 'one' }, 0, [
-      createEventDraft({
+      createEventData({
         eventId: 'event-one',
         eventType: 'test.fact',
         occurredAt: clock.now().toISOString(),
@@ -480,7 +480,7 @@ describe('ActivationSchedulerSubscriber', () => {
     const journal = new InMemoryEventJournal(clock);
     const checkpoints = new InMemoryCheckpointStore();
     await journal.append({ kind: 'test', id: 'one' }, 0, [
-      createEventDraft({
+      createEventData({
         eventId: 'event-one',
         eventType: 'test.fact',
         occurredAt: clock.now().toISOString(),
@@ -522,7 +522,7 @@ function deferred<Value>() {
 
 async function appendFact(journal: InMemoryEventJournal, clock: { now(): Date }): Promise<void> {
   await journal.append({ kind: 'test', id: 'one' }, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'event-one',
       eventType: 'test.fact',
       occurredAt: clock.now().toISOString(),

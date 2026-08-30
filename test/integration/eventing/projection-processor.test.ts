@@ -7,7 +7,7 @@ import {
   createProjectionProcessor,
   projectionConsumer,
 } from '../../../src/eventing/index.js';
-import { createEventDraft, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
+import { createEventData, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -224,7 +224,7 @@ async function appendCountedEvent(
   eventId: string,
 ): Promise<void> {
   await journal.append(stream, expectedSequence, [
-    createEventDraft({
+    createEventData({
       eventId,
       eventType: 'counted',
       occurredAt: '2026-07-30T12:00:00Z',

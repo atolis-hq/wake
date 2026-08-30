@@ -1,11 +1,11 @@
 import type { EventProcessor } from '../../eventing/index.js';
-import type { EventDraft } from '../../kernel/index.js';
+import type { EventData } from '../../kernel/index.js';
 import type { IntegrationStreamRef } from './streams.js';
 
-export type ProviderEventDraft = EventDraft<string, unknown, IntegrationStreamRef>;
+export type ProviderEventData = EventData<string, unknown, IntegrationStreamRef>;
 
 export interface ExternalEventSource {
-  poll(signal: AbortSignal): Promise<readonly ProviderEventDraft[]>;
+  poll(signal: AbortSignal): Promise<readonly ProviderEventData[]>;
   /** Commits provider cursor state after every draft from the poll is durable. */
   markPollPersisted?(): Promise<void>;
 }

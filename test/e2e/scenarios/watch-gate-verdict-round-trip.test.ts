@@ -20,7 +20,7 @@ import {
   InboundTranslator,
   integrationStream,
 } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventDraft } from '../../../src/kernel/index.js';
+import { correlationId, createEventData } from '../../../src/kernel/index.js';
 import {
   OrchestrationEventType,
   WatchGateVerdictSignal,
@@ -76,7 +76,7 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
   expect(outbound.body).toContain('"outcome": "DONE"');
 
   await fixture.world.journal.append(integrationStream(BuiltInAdapterId.GitHub), 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'github:comment:watch-gate-verdict',
       eventType: 'integration.github.comment-observed',
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -157,7 +157,7 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
   });
 
   await fixture.world.journal.append(integrationStream(BuiltInAdapterId.GitHub), 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'github:comment:watch-gate-extend',
       eventType: 'integration.github.comment-observed',
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -250,7 +250,7 @@ it('supersedes a recovered child whose parent has already left its gate before d
   const stream = workflowInstanceStream(fixture.parent.workflowInstanceId);
   const events = await fixture.world.journal.readStream(stream);
   await fixture.world.journal.append(stream, events.length, [
-    createEventDraft({
+    createEventData({
       eventId: 'recovered-parent-signal',
       eventType: OrchestrationEventType.SignalAccepted,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -348,7 +348,7 @@ async function appendTerminalAgentRun(
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
   await world.journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: `execution:${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: now,
@@ -366,7 +366,7 @@ async function appendTerminalAgentRun(
         startedAt: now,
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `execution:${id}:agent-result`,
       eventType: ExecutionEventType.RunRunnerResultReported,
       occurredAt: now,
@@ -380,7 +380,7 @@ async function appendTerminalAgentRun(
         agent: { outcome: 'DONE', displayBody: 'Review complete.', metadata: {} },
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `execution:${id}:succeeded`,
       eventType: ExecutionEventType.RunSucceeded,
       occurredAt: now,
@@ -403,7 +403,7 @@ async function appendStartedRun(
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
   await world.journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: `execution:${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: now,

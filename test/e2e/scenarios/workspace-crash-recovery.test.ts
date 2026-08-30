@@ -17,7 +17,7 @@ import {
   runId,
   runStream,
 } from '../../../src/execution/index.js';
-import { EventActorKind, EventSourceKind, createEventDraft } from '../../../src/kernel/index.js';
+import { EventActorKind, EventSourceKind, createEventData } from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { workId } from '../../support/identities.js';
 import { defineScenario } from '../support/scenario.js';
@@ -199,7 +199,7 @@ async function appendRun(
   const currentRunId = runId(id);
   const occurredAt = '2026-08-11T00:00:00.000Z';
   await root.journal.append(runStream(currentRunId), 0, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:${eventType}`,
       eventType,
       occurredAt,
@@ -227,7 +227,7 @@ async function appendAmbiguous(
   const currentRunId = runId(id);
   const occurredAt = '2026-08-11T00:00:00.000Z';
   await root.journal.append(runStream(currentRunId), 1, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:${ExecutionEventType.RunAmbiguous}`,
       eventType: ExecutionEventType.RunAmbiguous,
       occurredAt,

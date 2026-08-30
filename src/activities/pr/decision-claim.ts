@@ -1,5 +1,5 @@
 import {
-  createEventDraft,
+  createEventData,
   EventSourceKind,
   type EventEnvelope,
   type EventJournal,
@@ -7,7 +7,7 @@ import {
 import {
   ActivityEventType,
   decodeActivityEvent,
-  decodeActivityEventDraft,
+  decodeActivityEventData,
   type ActivityEventPayloads,
 } from '../contracts/events.js';
 import type { ActivationId } from '../contracts/identifiers.js';
@@ -66,7 +66,7 @@ export async function claimDecision<Action extends PullRequestAction>(
   if (existing !== null) return existing;
 
   const stream = activityDecisionStream(activationId, action);
-  const claim = createEventDraft({
+  const claim = createEventData({
     eventId: decisionClaimId(activationId, action),
     eventType: decisionEventType(action),
     occurredAt: proposal.fact.occurredAt,
@@ -83,7 +83,7 @@ export async function claimDecision<Action extends PullRequestAction>(
       fact: proposal.fact,
     },
   });
-  decodeActivityEventDraft(claim);
+  decodeActivityEventData(claim);
 
   try {
     await journal.append(stream, 0, [claim]);

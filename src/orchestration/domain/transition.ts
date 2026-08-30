@@ -4,7 +4,7 @@ import type {
   CompiledWorkflow,
   TransitionTarget,
 } from '../contracts/config.js';
-import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
+import type { WorkflowOrchestrationEventData } from '../contracts/events.js';
 import {
   OrchestrationEventType,
   ResourceTransitionSignal,
@@ -29,7 +29,7 @@ interface DecisionContext {
 // Route completion combines the mutually exclusive wait, await, and target policies.
 // eslint-disable-next-line complexity, max-lines-per-function
 export function finishRoute(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: TransitionInput,
@@ -112,7 +112,7 @@ export function finishRoute(
 }
 
 function pushStageEntry(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: DecisionContext,
@@ -143,7 +143,7 @@ function pushStageEntry(
 // Shared by a route with no gate (target reached directly) and a resumed wait
 // (target reached after an accepted signal); neither carries repeat counting.
 export function resumeToTarget(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: DecisionContext,

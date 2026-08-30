@@ -38,7 +38,7 @@ import {
   EventSourceKind,
   causationId,
   correlationId,
-  createEventDraft,
+  createEventData,
   eventId,
 } from '../../../src/kernel/index.js';
 import {
@@ -405,7 +405,7 @@ describe('target composition root', () => {
     const journal = new InMemoryEventJournal(clock);
     const id = runId('run-restart-recovery');
     await journal.append(runStream(id), 0, [
-      createEventDraft({
+      createEventData({
         eventId: 'run-restart-recovery:started',
         eventType: ExecutionEventType.RunStarted,
         occurredAt: clock.now().toISOString(),
@@ -774,7 +774,7 @@ describe('target composition root', () => {
     const subscriber = startProcessorRuntime(runtime);
     try {
       await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
-        createEventDraft({
+        createEventData({
           eventId: 'targeted-delivery-intent',
           eventType: DeliveryIntentEventType.StatusPublishRequested,
           occurredAt: clock.now().toISOString(),

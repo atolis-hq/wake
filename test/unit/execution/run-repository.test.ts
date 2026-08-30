@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import { RunRepository } from '../../../src/execution/application/run-repository.js';
 import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
-import { createEventDraft } from '../../../src/kernel/index.js';
+import { createEventData } from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
@@ -10,7 +10,7 @@ import { FakeClock } from '../../e2e/support/world.js';
 async function seedRun(journal: InMemoryEventJournal, id: string, activation: string) {
   const stream = runStream(runId(id));
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: '2026-07-30T12:00:00Z',

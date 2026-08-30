@@ -6,7 +6,7 @@ import { EventProcessorHost, createProjectionProcessor } from '../../../src/even
 import {
   BuiltInAdapterId,
   InboundTranslator,
-  createEventDraft,
+  createEventData,
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
@@ -39,7 +39,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
   const pullRequests = createPullRequestService(journal, work, resources);
   const prResource = resId('github-owner-repo-1');
   const payload = observation('head-a');
-  const evidence = createEventDraft({
+  const evidence = createEventData({
     eventId: 'github:pr-1',
     eventType: 'integration.github.work-observed',
     occurredAt: clock.now().toISOString(),
@@ -195,7 +195,7 @@ async function appendObservation(
 ) {
   const stream = integrationStream(BuiltInAdapterId.GitHub);
   await journal.append(stream, (await journal.readStream(stream)).length, [
-    createEventDraft({
+    createEventData({
       eventId,
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -216,7 +216,7 @@ async function appendComment(
   revision: string,
   eventId: string,
 ) {
-  const event = createEventDraft({
+  const event = createEventData({
     eventId,
     eventType: 'integration.github.comment-observed',
     occurredAt: clock.now().toISOString(),

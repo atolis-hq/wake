@@ -1,97 +1,95 @@
-import { createEventDraft, type EventDraftInput } from '../../kernel/index.js';
+import { createEventData, type EventDataInput } from '../../kernel/index.js';
 import {
   ExecutionEventType,
-  type ActivationExecutionEventDraft,
+  type ActivationExecutionEventData,
   type ActivationExecutionEventPayloads,
-  type ExecutionEventDraft,
-  type RunExecutionEventDraft,
+  type ExecutionEventData,
+  type RunExecutionEventData,
   type RunExecutionEventPayloads,
 } from './events.js';
 import type { ActivationStreamRef, RunStreamRef } from './streams.js';
 
-export type RunExecutionEventDraftInput = {
-  [Type in keyof RunExecutionEventPayloads]: EventDraftInput<
+export type RunExecutionEventDataInput = {
+  [Type in keyof RunExecutionEventPayloads]: EventDataInput<
     Type,
     RunExecutionEventPayloads[Type],
     RunStreamRef
   >;
 }[keyof RunExecutionEventPayloads];
 
-export type ActivationExecutionEventDraftInput = {
-  [Type in keyof ActivationExecutionEventPayloads]: EventDraftInput<
+export type ActivationExecutionEventDataInput = {
+  [Type in keyof ActivationExecutionEventPayloads]: EventDataInput<
     Type,
     ActivationExecutionEventPayloads[Type],
     ActivationStreamRef
   >;
 }[keyof ActivationExecutionEventPayloads];
 
-export type ExecutionEventDraftInput =
-  RunExecutionEventDraftInput | ActivationExecutionEventDraftInput;
+export type ExecutionEventDataInput =
+  RunExecutionEventDataInput | ActivationExecutionEventDataInput;
 
 // Exhaustive dispatch preserves the closed event-to-payload mapping.
 // eslint-disable-next-line complexity
-export function createRunExecutionEventDraft(
-  input: RunExecutionEventDraftInput,
-): RunExecutionEventDraft {
+export function createRunExecutionEventData(
+  input: RunExecutionEventDataInput,
+): RunExecutionEventData {
   switch (input.eventType) {
     case ExecutionEventType.RunPreparationStarted:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunStarted:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunSucceeded:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunFailed:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunLeaseClaimed:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunLeaseRenewed:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunExternalExecutionReported:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunRunnerResultReported:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunWorkspaceCleanupFailed:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunCancellationRequested:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunCancellationConfirmed:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunCancelled:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunRecovered:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunAmbiguityObserved:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.RunAmbiguous:
-      return createEventDraft(input);
+      return createEventData(input);
   }
 }
 
-export function createActivationExecutionEventDraft(
-  input: ActivationExecutionEventDraftInput,
-): ActivationExecutionEventDraft {
+export function createActivationExecutionEventData(
+  input: ActivationExecutionEventDataInput,
+): ActivationExecutionEventData {
   switch (input.eventType) {
     case ExecutionEventType.ActivationClaimed:
-      return createEventDraft(input);
+      return createEventData(input);
     case ExecutionEventType.ActivationReleased:
-      return createEventDraft(input);
+      return createEventData(input);
   }
 }
 
-export function createExecutionEventDraft(
-  input: RunExecutionEventDraftInput,
-): RunExecutionEventDraft;
+export function createExecutionEventData(input: RunExecutionEventDataInput): RunExecutionEventData;
 
-export function createExecutionEventDraft(
-  input: ActivationExecutionEventDraftInput,
-): ActivationExecutionEventDraft;
+export function createExecutionEventData(
+  input: ActivationExecutionEventDataInput,
+): ActivationExecutionEventData;
 
-export function createExecutionEventDraft(input: ExecutionEventDraftInput): ExecutionEventDraft {
+export function createExecutionEventData(input: ExecutionEventDataInput): ExecutionEventData {
   switch (input.eventType) {
     case ExecutionEventType.ActivationClaimed:
     case ExecutionEventType.ActivationReleased:
-      return createActivationExecutionEventDraft(input);
+      return createActivationExecutionEventData(input);
     default:
-      return createRunExecutionEventDraft(input);
+      return createRunExecutionEventData(input);
   }
 }

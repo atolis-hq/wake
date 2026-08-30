@@ -19,7 +19,7 @@ import {
 import type { RunRepository } from '../../../execution/index.js';
 import {
   correlationId,
-  createEventDraft,
+  createEventData,
   EventActorKind,
   EventSourceKind,
   UlidIdGenerator,
@@ -290,7 +290,7 @@ export class InboundTranslator {
     const existing = await this.journal!.readStream(stream);
     if (existing.some((event) => event.eventId === eventId)) return;
     await this.journal!.append(stream, existing.length, [
-      createEventDraft({
+      createEventData({
         eventId,
         eventType,
         occurredAt: source.occurredAt,
@@ -406,7 +406,7 @@ export class InboundTranslator {
     const existing = await this.journal!.readStream(stream);
     if (existing.some((candidate) => candidate.eventId === eventId)) return;
     await this.journal!.append(stream, existing.length, [
-      createEventDraft({
+      createEventData({
         eventId,
         eventType: GitHubEventType.InboundTranslationRecovered,
         occurredAt: event.occurredAt,
@@ -494,7 +494,7 @@ export class InboundTranslator {
       if (existing.some((event) => event.eventId === eventId)) return;
       try {
         await this.journal!.append(stream, existing.length, [
-          createEventDraft({
+          createEventData({
             eventId,
             eventType,
             occurredAt: source.occurredAt,
@@ -869,7 +869,7 @@ export class InboundTranslator {
     const existing = await this.journal!.readStream(stream);
     if (existing.some((event) => event.eventId === eventId)) return;
     await this.journal!.append(stream, existing.length, [
-      createEventDraft({
+      createEventData({
         eventId,
         eventType: GitHubEventType.AdmissionStarted,
         occurredAt: source.occurredAt,
@@ -963,7 +963,7 @@ export class InboundTranslator {
       }
       try {
         await this.journal!.append(stream, existing.length, [
-          createEventDraft({
+          createEventData({
             eventId,
             eventType: GitHubEventType.DeletedWorkObservationSkipped,
             occurredAt: event.occurredAt,

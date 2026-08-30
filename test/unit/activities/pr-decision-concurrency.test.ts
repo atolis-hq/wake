@@ -15,7 +15,7 @@ import {
   type PullRequestService,
 } from '../../../src/activities/index.js';
 import { appendIntentOnce } from '../../../src/activities/pr/intent.js';
-import type { EventDraft, EventJournal } from '../../../src/kernel/index.js';
+import type { EventData, EventJournal } from '../../../src/kernel/index.js';
 import { type ResourceView } from '../../../src/resources/index.js';
 import {} from '../../../src/work/index.js';
 import { TestWorld } from '../../e2e/support/world.js';
@@ -126,7 +126,7 @@ function interleavingJournal(base: EventJournal) {
   return { journal, deniedDecisionReached, globalReads: () => globalReadCount };
 }
 
-function decisionKind(event: EventDraft | undefined): 'requested' | 'denied' | undefined {
+function decisionKind(event: EventData | undefined): 'requested' | 'denied' | undefined {
   if (event?.eventType.endsWith('-decision-claimed')) {
     const payload = event.payload as { decisionKind?: 'requested' | 'denied' };
     return payload.decisionKind;

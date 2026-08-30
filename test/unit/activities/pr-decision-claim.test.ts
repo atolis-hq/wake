@@ -3,7 +3,7 @@ import {
   activationId,
   activityDecisionStream,
   ActivityEventType,
-  decodeActivityEventDraft,
+  decodeActivityEventData,
   type ActivityFactDraft,
 } from '../../../src/activities/index.js';
 import type { PullRequestActivityOutcome } from '../../../src/activities/pr/contracts.js';
@@ -12,7 +12,7 @@ import {
   type PullRequestDecision,
 } from '../../../src/activities/pr/decision-claim.js';
 import {
-  createEventDraft,
+  createEventData,
   InProcessJournalChangeSignal,
   type EventJournal,
 } from '../../../src/kernel/index.js';
@@ -58,7 +58,7 @@ it('maps action and decision kind to the exact canonical fact type', () => {
 it('rejects a malformed outcome/fact pair through the draft decoder context', () => {
   const activation = activationId('activation-1');
   const stream = resourceStream(resId('1'));
-  const approveRequest = createEventDraft({
+  const approveRequest = createEventData({
     eventId: 'approve-request',
     eventType: ActivityEventType.PrApproveRequested,
     occurredAt: '2026-07-31T12:00:00.000Z',
@@ -75,7 +75,7 @@ it('rejects a malformed outcome/fact pair through the draft decoder context', ()
       body: null,
     },
   });
-  const malformedClaim = createEventDraft({
+  const malformedClaim = createEventData({
     eventId: 'approve-claim',
     eventType: ActivityEventType.PrApproveDecisionClaimed,
     occurredAt: approveRequest.occurredAt,
@@ -93,7 +93,7 @@ it('rejects a malformed outcome/fact pair through the draft decoder context', ()
     },
   });
 
-  expect(() => decodeActivityEventDraft(malformedClaim)).toThrow(
+  expect(() => decodeActivityEventData(malformedClaim)).toThrow(
     /Invalid Activity event draft approve-claim/i,
   );
 });
@@ -119,7 +119,7 @@ it('rejects an inexact decision claim before calling the journal append boundary
   };
   const activation = activationId('activation-1');
   const stream = resourceStream(resId('1'));
-  const mergeRequest = createEventDraft({
+  const mergeRequest = createEventData({
     eventId: 'merge-request',
     eventType: ActivityEventType.PrMergeRequested,
     occurredAt: '2026-07-31T12:00:00.000Z',

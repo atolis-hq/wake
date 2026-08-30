@@ -3,7 +3,7 @@ import { activationId } from '../../activities/index.js';
 import {
   brandedStringSchema,
   eventEnvelopeSchema,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../kernel/index.js';
@@ -38,7 +38,7 @@ export interface ArtifactEventPayloads {
 
 export type ArtifactEvent = EventUnion<ArtifactEventPayloads, IntegrationStreamRef>;
 
-export type ArtifactEventDraft = EventDraftUnion<ArtifactEventPayloads, IntegrationStreamRef>;
+export type ArtifactEventData = EventDataUnion<ArtifactEventPayloads, IntegrationStreamRef>;
 
 const schema: z.ZodType<ArtifactEvent> = eventEnvelopeSchema
   .extend({
@@ -86,8 +86,8 @@ export function decodeArtifactEvent(event: EventEnvelope): ArtifactEvent {
 }
 
 export function artifactVerificationUnresolvedDraft(
-  input: Omit<ArtifactEventDraft, 'schemaVersion'>,
-): ArtifactEventDraft {
+  input: Omit<ArtifactEventData, 'schemaVersion'>,
+): ArtifactEventData {
   return { ...input, schemaVersion: 1 };
 }
 

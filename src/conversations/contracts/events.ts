@@ -2,7 +2,7 @@ import { z } from 'zod';
 import {
   brandedStringSchema,
   eventEnvelopeSchema,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../kernel/index.js';
@@ -46,7 +46,7 @@ export interface ConversationEventPayloads {
 
 export type ConversationEvent = EventUnion<ConversationEventPayloads, ConversationStreamRef>;
 
-export type ConversationEventDraft = EventDraftUnion<
+export type ConversationEventData = EventDataUnion<
   ConversationEventPayloads,
   ConversationStreamRef
 >;

@@ -10,7 +10,7 @@ import {
   createBatchEventProcessor,
   type ProcessorRunSerialiser,
 } from '../../../src/eventing/index.js';
-import { createEventDraft, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
+import { createEventData, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
   InMemoryEventJournal,
@@ -188,7 +188,7 @@ it('uses the established subscription lock basename for cross-version exclusion'
 async function appendFact(journal: InMemoryEventJournal): Promise<void> {
   const stream: EntityRef<'subscription-test', 'one'> = { kind: 'subscription-test', id: 'one' };
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'subscription-test',
       eventType: 'subscription-test.recorded',
       occurredAt: '2026-08-29T12:00:00.000Z',

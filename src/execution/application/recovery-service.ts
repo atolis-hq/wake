@@ -4,8 +4,8 @@ import type { Clock, CommandContext, EventJournal } from '../../kernel/index.js'
 import { correlationId, EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import type { RecoveryCoordinator } from '../contracts/control-plane.js';
-import { createRunExecutionEventDraft } from '../contracts/event-factory.js';
-import { ExecutionEventType, type RunExecutionEventDraft } from '../contracts/events.js';
+import { createRunExecutionEventData } from '../contracts/event-factory.js';
+import { ExecutionEventType, type RunExecutionEventData } from '../contracts/events.js';
 import { runId, type RunId } from '../contracts/identifiers.js';
 import type { AgentRunnerResult } from '../contracts/runner.js';
 import { runStream } from '../contracts/streams.js';
@@ -113,12 +113,12 @@ export class RecoveryService {
         : undefined;
     const draft =
       resolution.kind === RunStatus.Succeeded
-        ? createRunExecutionEventDraft({
+        ? createRunExecutionEventData({
             ...resolutionMetadata(currentRunId, loaded.view, context),
             eventType: ExecutionEventType.RunSucceeded,
             payload: { outcome: outcome!, finishedAt: context.occurredAt },
           })
-        : createRunExecutionEventDraft({
+        : createRunExecutionEventData({
             ...resolutionMetadata(currentRunId, loaded.view, context),
             eventType: ExecutionEventType.RunFailed,
             payload: { failure: resolution.failure, finishedAt: context.occurredAt },
@@ -189,7 +189,7 @@ export class RecoveryService {
     if (loaded.view.status !== RunStatus.Started) return loaded.view;
     const occurredAt = this.clock.now().toISOString();
     const attempt = loaded.view.ambiguityAttempts + 1;
-    const drafts: RunExecutionEventDraft[] = [
+    const drafts: RunExecutionEventData[] = [
       ambiguityObservedDraft(id, loaded.view, { reason, attempt }, occurredAt),
     ];
     if (attempt >= (this.config.maxAmbiguityReconciliationAttempts ?? 3))
@@ -210,7 +210,7 @@ export class RecoveryService {
     return updated;
   }
 
-  private async append(id: RunId, draft: RunExecutionEventDraft): Promise<RunView> {
+  private async append(id: RunId, draft: RunExecutionEventData): Promise<RunView> {
     const loaded = await this.repository.load(id);
     if (loaded.view === null) throw new Error(`Run ${id} does not exist`);
     if (!isActiveRunStatus(loaded.view.status)) return loaded.view;
@@ -228,8 +228,8 @@ function leaseRenewedDraft(
   run: RunView,
   payload: { readonly owner: string; readonly acquiredAt: string; readonly expiresAt: string },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return createRunExecutionEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunLeaseRenewed,
     payload,
@@ -245,8 +245,8 @@ function recoveredDraft(
     readonly finishedAt: string;
   },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return createRunExecutionEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunRecovered,
     payload,
@@ -264,8 +264,8 @@ function failedDraft(
     readonly finishedAt: string;
   },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return createRunExecutionEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunFailed,
     payload,
@@ -277,8 +277,8 @@ function ambiguityObservedDraft(
   run: RunView,
   payload: { readonly reason: string; readonly attempt: number },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return createRunExecutionEventData({
     ...eventMetadata(id, run, occurredAt),
     eventId: `${id}:recovery-ambiguity:${payload.attempt}:${occurredAt}`,
     eventType: ExecutionEventType.RunAmbiguityObserved,
@@ -291,8 +291,8 @@ function ambiguousDraft(
   run: RunView,
   payload: { readonly reason: string; readonly finishedAt: string },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return createRunExecutionEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunAmbiguous,
     payload,

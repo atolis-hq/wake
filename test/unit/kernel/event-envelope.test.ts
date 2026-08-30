@@ -1,18 +1,18 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
-  createEventDraft,
+  createEventData,
   createRelation,
   type Brand,
   type EntityRef,
-  type EventDraft,
-  type EventDraftInput,
-  type EventDraftUnion,
+  type EventData,
+  type EventDataInput,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
   type RelationDefinition,
 } from '../../../src/kernel/index.js';
 
-function workDraftInput<Stream extends EntityRef>(stream: Stream) {
+function workDataInput<Stream extends EntityRef>(stream: Stream) {
   return {
     eventId: 'evt-1',
     eventType: 'work.item-created',
@@ -53,7 +53,7 @@ describe('event envelope', () => {
 
     type WorkEvent = EventUnion<WorkEventPayloads, WorkStream>;
 
-    type WorkEventDraft = EventDraftUnion<WorkEventPayloads, WorkStream>;
+    type WorkEventData = EventDataUnion<WorkEventPayloads, WorkStream>;
 
     expectTypeOf<Extract<WorkEvent, { eventType: 'work.item-created' }>>().toEqualTypeOf<
       EventEnvelope<
@@ -62,42 +62,41 @@ describe('event envelope', () => {
         EntityRef<'work-item', WorkItemId>
       >
     >();
-    expectTypeOf<Extract<WorkEventDraft, { eventType: 'work.item-closed' }>>().toEqualTypeOf<
-      EventDraft<
-        'work.item-closed',
-        { readonly reason: string },
-        EntityRef<'work-item', WorkItemId>
-      >
+    expectTypeOf<Extract<WorkEventData, { eventType: 'work.item-closed' }>>().toEqualTypeOf<
+      EventData<'work.item-closed', { readonly reason: string }, EntityRef<'work-item', WorkItemId>>
     >();
   });
 
-  it('supports an explicit two-generic draft input and factory call', () => {
+  it('supports an explicit two-generic event data input and factory call', () => {
     type Payload = { readonly objective: string };
 
-    const input: EventDraftInput<'work.item-created', Payload> = workDraftInput({
+    const input: EventDataInput<'work.item-created', Payload> = workDataInput({
       kind: 'work-item',
       id: 'work-1',
     } as const);
 
-    const draft = createEventDraft<'work.item-created', Payload>(input);
+    const data = createEventData<'work.item-created', Payload>(input);
 
-    expectTypeOf(draft).toEqualTypeOf<EventDraft<'work.item-created', Payload, EntityRef>>();
+    expectTypeOf(data).toEqualTypeOf<EventData<'work.item-created', Payload, EntityRef>>();
+    expect(data).not.toHaveProperty('recordedAt');
+    expect(data).not.toHaveProperty('sequence');
+    expect(data).not.toHaveProperty('globalPosition');
   });
 
-  it('retains exact stream inference for an unannotated draft factory call', () => {
+  it('retains exact stream inference for an unannotated event data factory call', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
 
     const workItemId = 'work-1' as WorkItemId;
 
-    const draft = createEventDraft(workDraftInput({ kind: 'work-item', id: workItemId } as const));
+    const data = createEventData(workDataInput({ kind: 'work-item', id: workItemId } as const));
 
-    expectTypeOf(draft.stream).toEqualTypeOf<EntityRef<'work-item', WorkItemId>>();
+    expectTypeOf(data.stream).toEqualTypeOf<EntityRef<'work-item', WorkItemId>>();
   });
 });
 
-describe('event draft validation', () => {
+describe('event data validation', () => {
   it('keeps domain payload separate from universal metadata', () => {
-    const draft = createEventDraft({
+    const data = createEventData({
       eventId: 'evt-1',
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -109,9 +108,9 @@ describe('event draft validation', () => {
       payload: { objective: 'Ship the change' },
     });
 
-    expect(draft.schemaVersion).toBe(1);
-    expect(draft.payload).toEqual({ objective: 'Ship the change' });
-    expect(draft).not.toHaveProperty('github');
+    expect(data.schemaVersion).toBe(1);
+    expect(data.payload).toEqual({ objective: 'Ship the change' });
+    expect(data).not.toHaveProperty('github');
   });
 
   it.each([
@@ -122,7 +121,7 @@ describe('event draft validation', () => {
     ['causationId', ' '],
   ] as const)('rejects invalid %s metadata', (field, value) => {
     expect(() =>
-      createEventDraft({
+      createEventData({
         eventId: 'evt-1',
         eventType: 'work.item-created',
         occurredAt: '2026-07-30T12:00:00.000Z',
@@ -141,8 +140,8 @@ describe('event draft validation', () => {
     'rejects a Date.parse-compatible non-offset-ISO occurredAt before construction: %s',
     (value) => {
       expect(() =>
-        createEventDraft({
-          ...workDraftInput({ kind: 'work-item', id: 'work-1' } as const),
+        createEventData({
+          ...workDataInput({ kind: 'work-item', id: 'work-1' } as const),
           occurredAt: value,
         }),
       ).toThrow(/occurred at.*offset.*iso/i);
@@ -151,7 +150,7 @@ describe('event draft validation', () => {
 
   it.each(['actor', 'source'] as const)('rejects an empty %s id', (metadata) => {
     expect(() =>
-      createEventDraft({
+      createEventData({
         eventId: 'evt-1',
         eventType: 'work.item-created',
         occurredAt: '2026-07-30T12:00:00.000Z',

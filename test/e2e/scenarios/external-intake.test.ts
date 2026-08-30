@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   BuiltInAdapterId,
-  createEventDraft,
+  createEventData,
   InboundTranslator,
   integrationStream,
   type ExternalWorkObservedPayload,
@@ -43,7 +43,7 @@ describe(`${scenario.id} ${scenario.title}`, () => {
       actor: { id: 'octocat', kind: 'human' },
       raw: { providerOnly: true },
     };
-    const evidence = createEventDraft({
+    const evidence = createEventData({
       eventId: 'github:delivery-7',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),

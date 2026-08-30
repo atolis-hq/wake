@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import {
   cachedJournalView,
-  createEventDraft,
+  createEventData,
   type EntityRef,
-  type EventDraft,
+  type EventData,
 } from '../../../src/kernel/index.js';
 import { FileEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
@@ -24,7 +24,7 @@ it('reopens the journal and continues stream sequence and global position', asyn
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -46,7 +46,7 @@ it('returns an existing idempotent event while appending only new events in a mi
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-mixed-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.changed',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -73,7 +73,7 @@ it('round-trips every strict offset-ISO timestamp accepted by draft construction
     '2026-07-30T13:00:00+01:00',
   ];
   const drafts = occurredAt.map((timestamp, index) =>
-    createEventDraft({
+    createEventData({
       eventId: `event-${index + 1}`,
       eventType: 'work.item-created',
       occurredAt: timestamp,
@@ -109,7 +109,7 @@ it('validates a finalized envelope before filesystem serialization', async () =>
     source: { kind: 'internal', id: 'test' },
     stream,
     payload: { objective: 'ship' },
-  } as unknown as EventDraft;
+  } as unknown as EventData;
 
   await expect(
     new FileEventJournal(root, new FakeClock()).append(stream, 0, [invalidDraft]),
@@ -171,7 +171,7 @@ it('does not re-parse prior history from disk after appending new events', async
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-cache-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string, sequence: number) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -209,7 +209,7 @@ it('refreshes a cached view when another file-journal instance appends', async (
     kind: 'work-item',
     id: 'cached-view',
   };
-  const draft = createEventDraft({
+  const draft = createEventData({
     eventId: 'cached-view-event',
     eventType: 'work.item-created',
     occurredAt: '2026-07-30T12:00:00Z',
@@ -233,7 +233,7 @@ it('refreshes a cached view when another file-journal instance appends', async (
 it('checks segment fingerprints without parsing an unchanged warm journal', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-warm-cache-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-  const draft = createEventDraft({
+  const draft = createEventData({
     eventId: 'event-1',
     eventType: 'work.item-created',
     occurredAt: '2026-07-30T12:00:00Z',
@@ -262,7 +262,7 @@ it('recovers a warmed reader after a JSONL append crashes before manifest update
   try {
     const root = await mkdtemp(join(tmpdir(), 'wake-journal-manifest-crash-'));
     const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-    const draft = createEventDraft({
+    const draft = createEventData({
       eventId: 'event-1',
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -317,7 +317,7 @@ it('uses the refreshed warm-cache stream index for ordered, isolated stream read
   const runStream: EntityRef<'run', 'shared-id'> = { kind: 'run', id: 'shared-id' };
   const missingStream: EntityRef<'work-item', 'missing'> = { kind: 'work-item', id: 'missing' };
   const draft = (stream: EntityRef, id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -367,7 +367,7 @@ it('coalesces concurrent reads on a cold cache into a single on-disk decode', as
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-concurrent-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string, sequence: number) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -410,7 +410,7 @@ it('revalidates an in-flight local scan after an external append before assignin
   const external: EntityRef<'work-item', 'external'> = { kind: 'work-item', id: 'external' };
   const local: EntityRef<'work-item', 'local'> = { kind: 'work-item', id: 'local' };
   const draft = (stream: EntityRef, id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -484,7 +484,7 @@ it('readStream on a cold cache parses only the segment files that can hold that 
   const streamA: EntityRef<'work-item', 'work-a'> = { kind: 'work-item', id: 'work-a' };
   const streamB: EntityRef<'work-item', 'work-b'> = { kind: 'work-item', id: 'work-b' };
   const draft = (stream: EntityRef, id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -517,7 +517,7 @@ it('readAll(after) on a cold cache skips segments entirely at or before the give
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-cold-tail-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -549,7 +549,7 @@ it('falls back to a full scan and still returns correct data when the persisted 
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-stale-index-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -576,7 +576,7 @@ it('falls back to a full scan when a valid-shaped persisted index points at the 
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-invalid-index-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -605,7 +605,7 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
     const root = await mkdtemp(join(tmpdir(), 'wake-journal-change-signal-'));
     const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
     const draft = (id: string, sequence: number) =>
-      createEventDraft({
+      createEventData({
         eventId: id,
         eventType: 'work.item-created',
         occurredAt: '2026-07-30T12:00:00Z',
@@ -651,7 +651,7 @@ it('arms a watcher on a fresh root and wakes promptly after the first external a
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-fresh-root-wake-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -692,7 +692,7 @@ it('discovers an external append by fallback when watcher setup fails', async ()
   try {
     const root = await mkdtemp(join(tmpdir(), 'wake-journal-fallback-wake-'));
     const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-    const draft = createEventDraft({
+    const draft = createEventData({
       eventId: 'event-1',
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',
@@ -778,7 +778,7 @@ it('wakes every concurrent waiter from one external append', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-many-waiters-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
-    createEventDraft({
+    createEventData({
       eventId: id,
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00Z',

@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import {
   EventSourceKind,
-  createEventDraft,
+  createEventData,
   eventEnvelopeSchema,
   type CommandContext,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../kernel/index.js';
@@ -41,7 +41,7 @@ export interface ControlEventPayloads {
 
 export type ControlEvent = EventUnion<ControlEventPayloads, ControlStreamRef>;
 
-export type ControlEventDraft = EventDraftUnion<ControlEventPayloads, ControlStreamRef>;
+export type ControlEventData = EventDataUnion<ControlEventPayloads, ControlStreamRef>;
 
 const streamSchema = z
   .object({ kind: z.literal(ControlStreamKind.Global), id: z.literal('global') })
@@ -103,12 +103,12 @@ export function selectControlEvent(event: EventEnvelope): ControlEvent | null {
   return event.eventType.startsWith(ControlEventNamespace) ? decodeControlEvent(event) : null;
 }
 
-export function createControlEventDraft<Type extends keyof ControlEventPayloads>(
+export function createControlEventData<Type extends keyof ControlEventPayloads>(
   eventType: Type,
   payload: ControlEventPayloads[Type],
   context: CommandContext,
-): ControlEventDraft {
-  return createEventDraft({
+): ControlEventData {
+  return createEventData({
     eventId: `${context.commandId}:${eventType}`,
     eventType,
     occurredAt: context.occurredAt,
@@ -118,5 +118,5 @@ export function createControlEventDraft<Type extends keyof ControlEventPayloads>
     source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
     stream: controlPlaneStream(),
     payload,
-  }) as ControlEventDraft;
+  }) as ControlEventData;
 }

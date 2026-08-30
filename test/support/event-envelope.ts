@@ -1,4 +1,4 @@
-import { createEventDraft, type EntityRef, type EventEnvelope } from '../../src/kernel/index.js';
+import { createEventData, type EntityRef, type EventEnvelope } from '../../src/kernel/index.js';
 
 export function eventEnvelope<Type extends string, Payload, Stream extends EntityRef>(
   eventType: Type,
@@ -7,7 +7,7 @@ export function eventEnvelope<Type extends string, Payload, Stream extends Entit
   position = 7,
 ): EventEnvelope<Type, Payload, Stream> {
   return {
-    ...createEventDraft({
+    ...createEventData({
       eventId: `event-${position}`,
       eventType,
       occurredAt: '2026-07-31T12:00:00.000Z',

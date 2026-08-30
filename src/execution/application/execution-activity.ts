@@ -2,7 +2,7 @@ import { type ActivityExecutionContext, type ActivityRegistry } from '../../acti
 import { type Clock, type EventJournal, type IdGenerator } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { ExecutionEventType, type RunExecutionEventDraft } from '../contracts/events.js';
+import { ExecutionEventType, type RunExecutionEventData } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
 import { ProviderQuotaExceededFailureKind } from '../contracts/runner.js';
 import { ExecutionCancellationReason } from '../contracts/vocabulary.js';
@@ -168,7 +168,7 @@ function runnerResultReporter(
       correlationId: context.orchestrationGroupId,
       causationId: activation.activationId,
       payload: { transport: result.transport, agent: parseAgentRunnerResponse(result) },
-    }) as RunExecutionEventDraft;
+    }) as RunExecutionEventData;
     await appendIdempotently(runtime.repository, currentRunId, loaded.sequence, event);
     if (
       result.failure?.kind === ProviderQuotaExceededFailureKind &&
@@ -189,7 +189,7 @@ async function appendIdempotently(
   repository: RunRepository,
   currentRunId: ReturnType<typeof runId>,
   sequence: number,
-  event: RunExecutionEventDraft,
+  event: RunExecutionEventData,
 ): Promise<void> {
   try {
     await repository.append(currentRunId, sequence, [event]);

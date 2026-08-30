@@ -23,7 +23,7 @@ export interface EventSource {
   readonly id: string;
 }
 
-export interface EventDraft<
+export interface EventData<
   Type extends string = string,
   Payload = unknown,
   Stream extends EntityRef = EntityRef,
@@ -44,7 +44,7 @@ export interface EventEnvelope<
   Type extends string = string,
   Payload = unknown,
   Stream extends EntityRef = EntityRef,
-> extends EventDraft<Type, Payload, Stream> {
+> extends EventData<Type, Payload, Stream> {
   readonly recordedAt: string;
   readonly sequence: number;
   readonly globalPosition: number;
@@ -54,6 +54,6 @@ export type EventUnion<Payloads extends object, Stream extends EntityRef> = {
   [Type in keyof Payloads & string]: EventEnvelope<Type, Payloads[Type], Stream>;
 }[keyof Payloads & string];
 
-export type EventDraftUnion<Payloads extends object, Stream extends EntityRef> = {
-  [Type in keyof Payloads & string]: EventDraft<Type, Payloads[Type], Stream>;
+export type EventDataUnion<Payloads extends object, Stream extends EntityRef> = {
+  [Type in keyof Payloads & string]: EventData<Type, Payloads[Type], Stream>;
 }[keyof Payloads & string];

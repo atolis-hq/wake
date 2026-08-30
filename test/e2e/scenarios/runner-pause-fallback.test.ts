@@ -8,7 +8,7 @@ import {
 import {
   ControlEventType,
   controlPlaneStream,
-  createControlEventDraft,
+  createControlEventData,
 } from '../../../src/control-plane/index.js';
 import { correlationId } from '../../../src/kernel/index.js';
 import {
@@ -111,7 +111,7 @@ async function appendQuotaPause(
   const stream = controlPlaneStream();
   const occurredAt = clock.now().toISOString();
   await journal.append(stream, (await journal.readStream(stream)).length, [
-    createControlEventDraft(
+    createControlEventData(
       ControlEventType.RunnerPaused,
       {
         runnerName: 'sonnet',

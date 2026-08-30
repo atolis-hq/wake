@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BuiltInAdapterId,
-  createEventDraft,
+  createEventData,
   type ExternalEventSource,
   integrationStream,
   PollService,
@@ -16,7 +16,7 @@ describe('PollService', () => {
     const source: ExternalEventSource = {
       async poll() {
         return [
-          createEventDraft({
+          createEventData({
             eventId: 'github:delivery-1',
             eventType: 'integration.github.work-observed',
             occurredAt: '2026-07-30T12:00:00.000Z',
@@ -62,7 +62,7 @@ describe('PollService', () => {
       changeSignal: delegate.changeSignal,
     };
     const draft = (id: string) =>
-      createEventDraft({
+      createEventData({
         eventId: id,
         eventType: 'integration.github.work-observed',
         occurredAt: '2026-07-30T12:00:00.000Z',

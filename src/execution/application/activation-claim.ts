@@ -6,7 +6,7 @@ import {
   type EventJournal,
 } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { createActivationExecutionEventDraft } from '../contracts/event-factory.js';
+import { createActivationExecutionEventData } from '../contracts/event-factory.js';
 import {
   decodeActivationExecutionEvent,
   ExecutionEventType,
@@ -38,7 +38,7 @@ export async function claimActivation(input: {
   if (last?.eventType === ExecutionEventType.ActivationClaimed && claimIsUnexpired(last, clock))
     throw new ActivationClaimConflictError(activationId);
   await journal.append(stream, events.length, [
-    createActivationExecutionEventDraft({
+    createActivationExecutionEventData({
       eventId: `${activationId}:claim:${runId}`,
       eventType: ExecutionEventType.ActivationClaimed,
       occurredAt,
@@ -68,7 +68,7 @@ export async function releaseActivation(input: {
   const stream = activationStream(activationId);
   const events = (await journal.readStream(stream)).map(decodeActivationExecutionEvent);
   await journal.append(stream, events.length, [
-    createActivationExecutionEventDraft({
+    createActivationExecutionEventData({
       eventId: `${activationId}:released:${runId}`,
       eventType: ExecutionEventType.ActivationReleased,
       occurredAt: clock.now().toISOString(),

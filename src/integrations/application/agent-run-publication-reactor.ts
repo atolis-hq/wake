@@ -12,7 +12,7 @@ import {
 } from '../../eventing/index.js';
 import { RunStatus, type RunRepository } from '../../execution/index.js';
 import {
-  createEventDraft,
+  createEventData,
   EventActorKind,
   EventSourceKind,
   type EventJournal,
@@ -155,7 +155,7 @@ export class AgentRunPublicationReactor {
     const sequence = (await this.dependencies.journal.readStream(stream)).length;
     try {
       await this.dependencies.journal.append(stream, sequence, [
-        createEventDraft({
+        createEventData({
           eventId: `agent-run:${run.runId}`,
           eventType: DeliveryIntentEventType.AgentRunPublishRequested,
           occurredAt,

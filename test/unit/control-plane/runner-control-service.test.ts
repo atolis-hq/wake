@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import {
   ControlEventType,
   controlPlaneStream,
-  createControlEventDraft,
+  createControlEventData,
   createRunnerControlService,
 } from '../../../src/control-plane/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
@@ -78,7 +78,7 @@ it('rejects unpause after a quota pause has elapsed', async () => {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
   await journal.append(controlPlaneStream(), 0, [
-    createControlEventDraft(
+    createControlEventData(
       ControlEventType.RunnerPaused,
       {
         runnerName: 'sonnet',

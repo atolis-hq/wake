@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEventDraft } from '../../../src/kernel/index.js';
+import { createEventData } from '../../../src/kernel/index.js';
 import {
   decodeWorkEvent,
   foldWorkItem,
@@ -12,7 +12,7 @@ const stream = workItemStream(workId('1'));
 
 function event(eventType: string, payload: unknown, sequence: number): WorkEvent {
   return decodeWorkEvent({
-    ...createEventDraft({
+    ...createEventData({
       eventId: `event-${sequence}`,
       eventType,
       occurredAt: '2026-07-30T12:00:00.000Z',

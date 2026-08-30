@@ -9,7 +9,7 @@ import {
 } from '../../../src/activities/index.js';
 import { EventProcessorHost } from '../../../src/eventing/index.js';
 import { ArtifactRegistrationReactor } from '../../../src/integrations/index.js';
-import { createEventDraft, EventActorKind } from '../../../src/kernel/index.js';
+import { createEventData, EventActorKind } from '../../../src/kernel/index.js';
 import { workflowInstanceId, workflowInstanceStream } from '../../../src/orchestration/index.js';
 import {
   createInMemoryProcessorRunSerialiser,
@@ -43,7 +43,7 @@ describe('ArtifactRegistrationReactor', () => {
       createInMemoryProcessorRunSerialiser(),
     );
     await journal.append({ kind: 'test', id: 'unrelated' }, 0, [
-      createEventDraft({
+      createEventData({
         eventId: 'unrelated-artifact-fact',
         eventType: 'work.created',
         occurredAt: '2026-08-30T00:00:00.000Z',
@@ -393,7 +393,7 @@ function draft(
   payload: unknown,
   workflow: ReturnType<typeof workflowInstanceId>,
 ) {
-  return createEventDraft({
+  return createEventData({
     eventId: `${eventType}:artifact`,
     eventType,
     occurredAt: '2026-08-02T00:00:00.000Z',

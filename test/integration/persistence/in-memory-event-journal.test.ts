@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createEventDraft,
+  createEventData,
   WrongExpectedSequenceError,
   type Clock,
   type EntityRef,
-  type EventDraft,
+  type EventData,
 } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 
@@ -20,8 +20,8 @@ function event(
   eventId: string,
   eventType = 'test.happened',
   payload: unknown = { value: eventId },
-): EventDraft {
-  return createEventDraft({
+): EventData {
+  return createEventData({
     eventId,
     eventType,
     occurredAt: '2026-07-30T12:00:00.000Z',
@@ -65,7 +65,7 @@ describe('in-memory event journal', () => {
     const other: EntityRef<'test', 'other'> = { kind: 'test', id: 'other' };
     await journal.append(stream, 0, [event('evt-1')]);
     await journal.append(other, 0, [
-      createEventDraft({ ...event('evt-2'), stream: other, eventId: 'evt-2' }),
+      createEventData({ ...event('evt-2'), stream: other, eventId: 'evt-2' }),
     ]);
     await journal.append(stream, 1, [event('evt-3')]);
 
@@ -121,7 +121,7 @@ describe('in-memory event journal', () => {
   it('does not partially append a batch when a later event is invalid', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
     const other: EntityRef<'test', 'other'> = { kind: 'test', id: 'other' };
-    const wrongStreamEvent = createEventDraft({
+    const wrongStreamEvent = createEventData({
       ...event('evt-2'),
       eventId: 'evt-2',
       stream: other,

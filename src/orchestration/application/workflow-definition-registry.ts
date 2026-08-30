@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
-  createEventDraft,
+  createEventData,
   EventActorKind,
   EventSourceKind,
   WrongExpectedSequenceError,
@@ -89,7 +89,7 @@ export class WorkflowDefinitionRegistry {
   ): Promise<void> {
     if (await this.isRegistered(name, fingerprint)) return;
     const stream = workflowDefinitionsStream();
-    const draft = createEventDraft({
+    const draft = createEventData({
       eventId: `workflow-definition:${name}:${fingerprint}`,
       eventType: OrchestrationEventType.WorkflowDefinitionRegistered,
       occurredAt: context.occurredAt,

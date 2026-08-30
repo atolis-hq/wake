@@ -9,7 +9,7 @@ import {
   pullRequestProjection,
   type PullRequestAuthorityInput,
 } from '../../../src/activities/index.js';
-import { createEventDraft } from '../../../src/kernel/index.js';
+import { createEventData } from '../../../src/kernel/index.js';
 import type { resourceId } from '../../../src/resources/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import {} from '../../../src/work/index.js';
@@ -164,7 +164,7 @@ function prEvent(
   payload: Record<string, unknown>,
 ) {
   return {
-    ...createEventDraft({
+    ...createEventData({
       eventId: `event-${position}`,
       eventType,
       occurredAt: '2026-07-30T12:00:00.000Z',

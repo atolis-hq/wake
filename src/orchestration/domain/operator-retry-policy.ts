@@ -1,6 +1,6 @@
 import { ActivityOutcomeKind, BuiltInActivityName } from '../../activities/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
-import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
+import type { WorkflowOrchestrationEventData } from '../contracts/events.js';
 import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
 import { signalName, stageName, watchId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -139,7 +139,7 @@ function requestRetry(
     };
 
   const stage = definition.stages[stageName(state.currentStage)]!;
-  const events: WorkflowOrchestrationEventDraft[] = [
+  const events: WorkflowOrchestrationEventData[] = [
     stateDraft(
       state,
       input,

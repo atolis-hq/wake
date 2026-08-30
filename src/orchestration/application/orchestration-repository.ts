@@ -9,7 +9,7 @@ import {
 } from '../contracts/event-decoder.js';
 import type {
   WorkflowOrchestrationEvent,
-  WorkflowOrchestrationEventDraft,
+  WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import { workflowInstanceId } from '../contracts/identifiers.js';
 import { isWorkflowInstanceStream, workflowInstanceStream } from '../contracts/streams.js';
@@ -47,7 +47,7 @@ export class OrchestrationRepository {
   async append(
     id: string,
     sequence: number,
-    drafts: readonly WorkflowOrchestrationEventDraft[],
+    drafts: readonly WorkflowOrchestrationEventData[],
   ): Promise<readonly WorkflowOrchestrationEvent[]> {
     const events = await this.journal.append(
       workflowInstanceStream(workflowInstanceId(id)),

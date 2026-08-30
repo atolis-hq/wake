@@ -11,9 +11,9 @@ import {
 } from '../../../../src/integrations/index.js';
 import {
   correlationId,
-  createEventDraft,
+  createEventData,
   eventId,
-  type EventDraft,
+  type EventData,
 } from '../../../../src/kernel/index.js';
 import {
   resourceCapability,
@@ -452,7 +452,7 @@ async function appendConfirmedDelivery(
 ) {
   const intent = await appendEvent(
     world,
-    createEventDraft({
+    createEventData({
       eventId: input.intentEventId,
       eventType: input.eventType,
       occurredAt: input.occurredAt,
@@ -493,11 +493,11 @@ async function appendConfirmedDelivery(
   return appendEvent(
     world,
     input.reconciled === true
-      ? createEventDraft({
+      ? createEventData({
           ...delivery({ externalId: 'github-comment-1', result: DeliveryResultKind.Confirmed }),
           eventType: DeliveryEventType.Reconciled,
         })
-      : createEventDraft({
+      : createEventData({
           ...delivery({ externalId: 'github-comment-1' }),
           eventId: `${input.intentEventId}-confirmed`,
           eventType: DeliveryEventType.Confirmed,
@@ -505,7 +505,7 @@ async function appendConfirmedDelivery(
   );
 }
 
-async function appendEvent(world: TestWorld, event: EventDraft) {
+async function appendEvent(world: TestWorld, event: EventData) {
   const events = await world.journal.readStream(event.stream);
   const [appended] = await world.journal.append(event.stream, events.length, [event]);
   if (appended === undefined) throw new Error('Expected the journal to append an event');

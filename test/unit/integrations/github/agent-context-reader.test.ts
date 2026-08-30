@@ -16,7 +16,7 @@ import {
 } from '../../../../src/integrations/index.js';
 import {
   correlationId,
-  createEventDraft,
+  createEventData,
   EventActorKind,
   eventId,
   EventSourceKind,
@@ -75,7 +75,7 @@ it('includes the latest correlated pull request check evidence without reading c
     ResourceCorrelationRole.Secondary,
     { ...context, commandId: 'correlate-older-pull-request' },
   );
-  const olderObservation = createEventDraft({
+  const olderObservation = createEventData({
     eventId: 'github:pr:atolis-hq/wake#9:older',
     eventType: GitHubEventType.WorkObserved,
     occurredAt: '2026-08-14T00:00:00.000Z',
@@ -102,7 +102,7 @@ it('includes the latest correlated pull request check evidence without reading c
       },
     },
   });
-  const latestObservation = createEventDraft({
+  const latestObservation = createEventData({
     ...olderObservation,
     eventId: 'github:pr:atolis-hq/wake#8:latest',
     correlationId: 'github:atolis-hq/wake#8',
@@ -667,7 +667,7 @@ async function appendConfirmedAgentRunComment(
     readonly displayBody: string;
   },
 ): Promise<void> {
-  const intent = createEventDraft({
+  const intent = createEventData({
     eventId: input.intentEventId,
     eventType: DeliveryIntentEventType.AgentRunPublishRequested,
     occurredAt: input.occurredAt,
@@ -698,7 +698,7 @@ async function appendConfirmedAgentRunComment(
     [intent],
   );
   if (published === undefined) throw new Error('Expected agent-run publication intent');
-  const confirmation = createEventDraft({
+  const confirmation = createEventData({
     eventId: `${input.intentEventId}-confirmed`,
     eventType: DeliveryEventType.Confirmed,
     occurredAt: input.occurredAt,

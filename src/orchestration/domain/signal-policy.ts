@@ -7,7 +7,7 @@ import type { ApprovalAuthority, CompiledWorkflow } from '../contracts/config.js
 import type {
   OrchestrationSignal,
   SignalExpectation,
-  WorkflowOrchestrationEventDraft,
+  WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
@@ -57,7 +57,7 @@ export function acceptSignal(
   const signal = input.signal;
   const expected = state.waitingFor!;
   const authority = signal.authority ?? { kind: ApprovalAuthorityKind.Human };
-  const events: WorkflowOrchestrationEventDraft[] = [
+  const events: WorkflowOrchestrationEventData[] = [
     stateDraft(state, input, OrchestrationEventType.SignalAccepted, { ...signal, authority }, 1),
   ];
   const target =
@@ -68,7 +68,7 @@ export function acceptSignal(
 }
 
 function requestLegacyReentry(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: DecisionContext,
@@ -174,7 +174,7 @@ export function acceptWaitingOutcome(
     state.waitingFor.signalKind === waiting.data.signalKind
   )
     return { kind: 'ignored', reason: 'waiting outcome was already recorded' };
-  const events: WorkflowOrchestrationEventDraft[] = [
+  const events: WorkflowOrchestrationEventData[] = [
     stateDraft(
       state,
       input,

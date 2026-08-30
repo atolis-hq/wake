@@ -3,7 +3,7 @@ import { activationId } from '../../../src/activities/contracts/identifiers.js';
 import { activityName } from '../../../src/activities/index.js';
 import {
   activationStream,
-  createRunExecutionEventDraft,
+  createRunExecutionEventData,
   decodeActivationExecutionEvent,
   decodeExecutionEvent,
   decodeRunExecutionEvent,
@@ -239,7 +239,7 @@ describe('Execution event contract', () => {
     expect(selectRunExecutionEvent(preparation)?.eventType).toBe(
       ExecutionEventType.RunPreparationStarted,
     );
-    expect(createRunExecutionEventDraft(preparation)).toMatchObject({
+    expect(createRunExecutionEventData(preparation)).toMatchObject({
       eventType: ExecutionEventType.RunPreparationStarted,
       stream,
       payload: runSamples[0][1],

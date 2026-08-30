@@ -10,7 +10,7 @@ import {
   runStream,
 } from '../../../src/execution/index.js';
 import {
-  createEventDraft,
+  createEventData,
   EventActorKind,
   EventSourceKind,
   WrongExpectedSequenceError,
@@ -93,7 +93,7 @@ describe('Run cancellation', () => {
     const fixture = executionFixture();
     const id = runId('preparing-run');
     await new RunRepository(fixture.journal).append(id, 0, [
-      createEventDraft({
+      createEventData({
         eventId: 'preparing-run:preparation',
         eventType: ExecutionEventType.RunPreparationStarted,
         occurredAt: fixture.clock.now().toISOString(),
@@ -144,7 +144,7 @@ describe('Run cancellation', () => {
     );
     const id = runId('no-cancellation-progress');
     await new RunRepository(base).append(id, 0, [
-      createEventDraft({
+      createEventData({
         eventId: `${id}:preparation`,
         eventType: ExecutionEventType.RunPreparationStarted,
         occurredAt: clock.now().toISOString(),

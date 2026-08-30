@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import {
-  createEventDraft,
+  createEventData,
   EventActorKind,
   EventSourceKind,
   type EventJournal,
@@ -122,7 +122,7 @@ async function execute(
   const existing = await journal.readStream(stream);
   if (!existing.some((event) => event.eventId === eventId)) {
     await journal.append(stream, existing.length, [
-      createEventDraft({
+      createEventData({
         eventId,
         eventType: ActivityEventType.IssueCompleteRequested,
         occurredAt,

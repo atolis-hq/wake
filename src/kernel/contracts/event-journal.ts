@@ -1,4 +1,4 @@
-import type { EventDraft, EventEnvelope } from './events.js';
+import type { EventData, EventEnvelope } from './events.js';
 import type { EntityRef } from './identifiers.js';
 import type { JournalChangeSignal } from './journal-change-signal.js';
 
@@ -8,7 +8,7 @@ export interface EventJournal {
   append(
     stream: EntityRef,
     expectedSequence: number,
-    events: readonly EventDraft[],
+    events: readonly EventData[],
   ): Promise<readonly EventEnvelope[]>;
   readStream(stream: EntityRef): Promise<readonly EventEnvelope[]>;
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;

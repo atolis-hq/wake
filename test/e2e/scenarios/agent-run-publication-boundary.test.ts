@@ -10,7 +10,7 @@ import {
 import { AgentRunPublicationReactor } from '../../../src/integrations/application/agent-run-publication-reactor.js';
 import { projectDeliveries } from '../../../src/integrations/delivery/application/delivery-projector.js';
 import { BuiltInAdapterId } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventDraft } from '../../../src/kernel/index.js';
+import { correlationId, createEventData } from '../../../src/kernel/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
@@ -148,7 +148,7 @@ async function appendTerminalAgentRun(
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
   await world.journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: now,
@@ -166,7 +166,7 @@ async function appendTerminalAgentRun(
         startedAt: now,
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `${id}:agent-result`,
       eventType: ExecutionEventType.RunRunnerResultReported,
       occurredAt: now,
@@ -180,7 +180,7 @@ async function appendTerminalAgentRun(
         agent: { outcome: 'DONE', displayBody: 'Plan complete.', metadata: {} },
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `${id}:succeeded`,
       eventType: ExecutionEventType.RunSucceeded,
       occurredAt: now,
@@ -203,7 +203,7 @@ async function appendFailedAgentRun(
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
   await world.journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: now,
@@ -221,7 +221,7 @@ async function appendFailedAgentRun(
         startedAt: now,
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `${id}:failed`,
       eventType: ExecutionEventType.RunFailed,
       occurredAt: now,

@@ -10,7 +10,7 @@ import {
   runStream,
 } from '../../../src/execution/index.js';
 import {
-  createEventDraft,
+  createEventData,
   EventActorKind,
   EventSourceKind,
   type EventJournal,
@@ -31,7 +31,7 @@ it('lists Run views from one journal snapshot without per-Run stream reads', asy
   const second = runId('snapshot-second');
   for (const id of [first, second]) {
     await writer.append(id, 0, [
-      createEventDraft({
+      createEventData({
         eventId: `${id}:started`,
         eventType: ExecutionEventType.RunStarted,
         occurredAt: fixture.clock.now().toISOString(),
@@ -227,7 +227,7 @@ it('fails an unclaimed Run with no external execution instead of refusing recove
   const fixture = executionFixture();
   const id = runId('unclaimed-run');
   await new RunRepository(fixture.journal).append(id, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'unclaimed-started',
       eventType: ExecutionEventType.RunStarted,
       occurredAt: fixture.clock.now().toISOString(),
@@ -478,7 +478,7 @@ async function appendStartingRun(
   const currentRunId = runId(id);
   const now = fixture.clock.now();
   await new RunRepository(fixture.journal).append(currentRunId, 0, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:preparation`,
       eventType: ExecutionEventType.RunPreparationStarted,
       occurredAt: now.toISOString(),
@@ -496,7 +496,7 @@ async function appendStartingRun(
         startedAt: now.toISOString(),
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `${id}:lease`,
       eventType: ExecutionEventType.RunLeaseClaimed,
       occurredAt: now.toISOString(),

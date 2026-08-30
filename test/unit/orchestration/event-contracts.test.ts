@@ -19,7 +19,7 @@ import {
   workflowInstanceStream,
   type OrchestrationWaitingActivityOutcome,
   type WorkflowOrchestrationEvent,
-  type WorkflowOrchestrationEventDraft,
+  type WorkflowOrchestrationEventData,
 } from '../../../src/orchestration/index.js';
 import {} from '../../../src/work/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
@@ -207,7 +207,7 @@ it('types decoded and draft ActivityWaiting outcomes with the Orchestration bran
   >;
 
   type WaitingDraft = Extract<
-    WorkflowOrchestrationEventDraft,
+    WorkflowOrchestrationEventData,
     { readonly eventType: typeof OrchestrationEventType.ActivityWaiting }
   >;
 

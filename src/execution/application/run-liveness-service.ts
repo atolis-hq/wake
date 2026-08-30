@@ -1,5 +1,5 @@
 import {
-  createEventDraft,
+  createEventData,
   EventActorKind,
   EventSourceKind,
   WrongExpectedSequenceError,
@@ -172,7 +172,7 @@ function livenessEvent<
   payload: RunExecutionEventPayloads[Type],
   occurredAt: string,
 ) {
-  return createEventDraft({
+  return createEventData({
     eventId: `${currentRunId}:${eventType}:${occurredAt}`,
     eventType,
     occurredAt,

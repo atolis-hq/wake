@@ -1,5 +1,5 @@
 import {
-  createEventDraft,
+  createEventData,
   EventSourceKind,
   type CommandContext,
   type EventJournal,
@@ -14,7 +14,7 @@ import type {
 } from '../contracts/commands.js';
 import {
   ConversationEventType,
-  type ConversationEventDraft,
+  type ConversationEventData,
   type ConversationEventPayloads,
 } from '../contracts/events.js';
 import { conversationIdForWorkItem, type ConversationId } from '../contracts/identifiers.js';
@@ -148,7 +148,7 @@ function changeConversation(repository: ConversationRepository) {
     payload: ConversationEventPayloads[Type],
   ) => {
     const loaded = await repository.load(id);
-    const draft = createEventDraft({
+    const draft = createEventData({
       eventId: `${context.commandId}:${eventType}`,
       eventType,
       occurredAt: context.occurredAt,
@@ -158,7 +158,7 @@ function changeConversation(repository: ConversationRepository) {
       source: { kind: EventSourceKind.Internal, id: 'conversation-service' },
       stream: conversationStream(id),
       payload,
-    }) as ConversationEventDraft;
+    }) as ConversationEventData;
     const [recorded] = await repository.append(id, loaded.sequence, [draft]);
     const next = recorded === undefined ? null : applyConversationEvent(loaded.view, recorded);
     if (next === null) throw new Error(`Conversation ${id} was not created`);

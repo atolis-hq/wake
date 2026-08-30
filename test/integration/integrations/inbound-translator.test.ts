@@ -13,7 +13,7 @@ import {
 } from '../../../src/conversations/index.js';
 import {
   BuiltInAdapterId,
-  createEventDraft,
+  createEventData,
   GitHubEventType,
   InboundTranslator,
   integrationStream,
@@ -43,7 +43,7 @@ describe('InboundTranslator', () => {
     const journal = new InMemoryEventJournal(clock);
     const checkpoints = new InMemoryCheckpointStore();
     const translator = new FakeInboundTranslator(adapterId('fake'), {} as never);
-    const foreign = createEventDraft({
+    const foreign = createEventData({
       eventId: 'fake-on-delivery-stream',
       eventType: FakeEventType.WorkObserved,
       occurredAt: clock.now().toISOString(),
@@ -73,7 +73,7 @@ describe('InboundTranslator', () => {
       orchestration,
       routing,
     });
-    const foreign = createEventDraft({
+    const foreign = createEventData({
       eventId: 'foreign-work',
       eventType: GitHubEventType.WorkObserved,
       occurredAt: clock.now().toISOString(),
@@ -124,7 +124,7 @@ describe('InboundTranslator', () => {
     const { resources, lookup } = createTestResourceServices(journal);
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:delivery-7',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -167,7 +167,7 @@ describe('InboundTranslator', () => {
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
     const stream = integrationStream(BuiltInAdapterId.GitHub);
     await journal.append(stream, 0, [
-      createEventDraft({
+      createEventData({
         eventId: 'github:issue:owner/repo#partial:v1',
         eventType: GitHubEventType.WorkObserved,
         occurredAt: clock.now().toISOString(),
@@ -218,7 +218,7 @@ describe('InboundTranslator', () => {
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue:owner/repo#7:security',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -265,7 +265,7 @@ describe('InboundTranslator', () => {
     });
     const stream = integrationStream(BuiltInAdapterId.GitHub);
     const [poison, later] = await journal.append(stream, 0, [
-      createEventDraft({
+      createEventData({
         eventId: 'github:issue:owner/repo#poison:v1',
         eventType: GitHubEventType.WorkObserved,
         occurredAt: clock.now().toISOString(),
@@ -276,7 +276,7 @@ describe('InboundTranslator', () => {
         stream,
         payload: { ...observation(), externalKey: 'owner/repo#poison' },
       }),
-      createEventDraft({
+      createEventData({
         eventId: 'github:issue:owner/repo#later:v1',
         eventType: GitHubEventType.WorkObserved,
         occurredAt: clock.now().toISOString(),
@@ -335,7 +335,7 @@ describe('InboundTranslator', () => {
       orchestration,
       routing,
     });
-    const initial = createEventDraft({
+    const initial = createEventData({
       eventId: 'github:issue:owner/repo#7:v1',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -371,7 +371,7 @@ describe('InboundTranslator', () => {
       initial.stream,
       (await journal.readStream(initial.stream)).length,
       [
-        createEventDraft({
+        createEventData({
           eventId: 'github:issue:owner/repo#7:v2',
           eventType: 'integration.github.work-observed',
           occurredAt: clock.now().toISOString(),
@@ -382,7 +382,7 @@ describe('InboundTranslator', () => {
           stream: integrationStream(BuiltInAdapterId.GitHub),
           payload: { ...observation(), revision: 'def456' },
         }),
-        createEventDraft({
+        createEventData({
           eventId: 'github:issue:owner/repo#8:v1',
           eventType: 'integration.github.work-observed',
           occurredAt: clock.now().toISOString(),
@@ -441,7 +441,7 @@ describe('InboundTranslator', () => {
     const { resources, lookup } = createTestResourceServices(journal);
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:pr:owner/repo#11:v1',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -477,7 +477,7 @@ describe('InboundTranslator', () => {
     const { resources, lookup } = createTestResourceServices(journal);
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:delivery-8',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -516,7 +516,7 @@ describe('InboundTranslator', () => {
         runs: new RunRepository(fixture.world.journal),
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:comment:watch-gate-verdict',
       eventType: 'integration.github.comment-observed',
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -555,7 +555,7 @@ describe('InboundTranslator', () => {
         pullRequests: fixture.world.pullRequests,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:1',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -616,7 +616,7 @@ describe('InboundTranslator', () => {
         conversations,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:987',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -661,7 +661,7 @@ describe('InboundTranslator', () => {
         conversations,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:988',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -692,7 +692,7 @@ describe('InboundTranslator', () => {
       },
     ]);
 
-    const updated = createEventDraft({
+    const updated = createEventData({
       ...event,
       eventId: 'github:issue-comment:atolis-hq/wake#583:988:updated',
       occurredAt: '2026-08-18T00:00:00.000Z',
@@ -729,7 +729,7 @@ describe('InboundTranslator', () => {
         } as never,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:989',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -813,7 +813,7 @@ describe('InboundTranslator', () => {
         conversations,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:990',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -875,7 +875,7 @@ describe('InboundTranslator conclusion', () => {
       conclusion,
     });
 
-    const open = createEventDraft({
+    const open = createEventData({
       eventId: 'github:issue:owner/repo#9:v1',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -889,7 +889,7 @@ describe('InboundTranslator conclusion', () => {
     await journal.append(open.stream, 0, [open]);
     await processInbound(translator, journal, checkpoints);
 
-    const closed = createEventDraft({
+    const closed = createEventData({
       eventId: 'github:issue:owner/repo#9:v2',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -939,7 +939,7 @@ describe('InboundTranslator conclusion', () => {
       conclusion,
     });
 
-    const open = createEventDraft({
+    const open = createEventData({
       eventId: 'github:issue:owner/repo#10:v1',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -953,7 +953,7 @@ describe('InboundTranslator conclusion', () => {
     await journal.append(open.stream, 0, [open]);
     await processInbound(translator, journal, checkpoints);
 
-    const closed = createEventDraft({
+    const closed = createEventData({
       eventId: 'github:issue:owner/repo#10:v2',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),

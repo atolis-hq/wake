@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   BuiltInAdapterId,
-  createDeliveryEventDraft,
+  createDeliveryEventData,
   decodeDeliveryEvent,
   decodeGitHubAdapterEvent,
   DeliveryEventType,
@@ -10,7 +10,7 @@ import {
   integrationStream,
   selectDeliveryEvent,
   selectGitHubAdapterEvent,
-  type DeliveryEventDraftInput,
+  type DeliveryEventDataInput,
 } from '../../../src/integrations/github/index.js';
 import { eventId, type EventId } from '../../../src/kernel/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
@@ -141,7 +141,7 @@ describe('GitHub adapter event contract', () => {
 
 it('preserves the canonical EventId brand through delivery factory inputs', () => {
   type ConfirmedInput = Extract<
-    DeliveryEventDraftInput,
+    DeliveryEventDataInput,
     { readonly eventType: typeof DeliveryEventType.Confirmed }
   >;
 
@@ -162,7 +162,7 @@ describe('Delivery event contract', () => {
   } as const;
 
   it('decodes owned delivery events on their exact delivery stream', () => {
-    const draft = createDeliveryEventDraft({
+    const draft = createDeliveryEventData({
       eventId: 'delivery-confirmed-1',
       eventType: DeliveryEventType.Confirmed,
       occurredAt: '2026-07-31T12:00:00.000Z',

@@ -1,6 +1,6 @@
 import type { ActivityOutcome } from '../../activities/index.js';
 import {
-  createEventDraft,
+  createEventData,
   EventActorKind,
   EventSourceKind,
   WrongExpectedSequenceError,
@@ -249,7 +249,7 @@ export function createRunEvent<Type extends keyof RunExecutionEventPayloads>(inp
   causationId: string;
   payload: RunExecutionEventPayloads[Type];
 }) {
-  return createEventDraft({
+  return createEventData({
     eventId: input.eventId,
     eventType: input.eventType,
     occurredAt: input.occurredAt,

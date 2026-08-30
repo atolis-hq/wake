@@ -9,7 +9,7 @@ import {
 } from '../../kernel/index.js';
 import {
   ControlEventType,
-  createControlEventDraft,
+  createControlEventData,
   selectControlEvent,
 } from '../contracts/events.js';
 import { controlPlaneStream } from '../contracts/streams.js';
@@ -75,12 +75,12 @@ async function append(
   };
   const event =
     operation === 'pause'
-      ? createControlEventDraft(
+      ? createControlEventData(
           ControlEventType.RunnerPaused,
           { runnerName, cause: 'manual', reason: 'paused by operator' },
           context,
         )
-      : createControlEventDraft(
+      : createControlEventData(
           ControlEventType.RunnerResumed,
           { runnerName, resumedAt: occurredAt },
           context,

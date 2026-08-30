@@ -6,7 +6,7 @@ import {
   pullRequestProjection,
 } from '../../../src/activities/index.js';
 import { createProjectionProcessor, EventProcessorHost } from '../../../src/eventing/index.js';
-import { createEventDraft, type EventEnvelope } from '../../../src/kernel/index.js';
+import { createEventData, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
   createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
@@ -18,7 +18,7 @@ import { FakeClock } from '../../e2e/support/world.js';
 
 function event(type: string, payload: Record<string, unknown>): EventEnvelope {
   return {
-    ...createEventDraft({
+    ...createEventData({
       eventId: `event-${type}`,
       eventType: type,
       occurredAt: '2026-07-30T12:00:00.000Z',

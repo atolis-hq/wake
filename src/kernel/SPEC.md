@@ -235,7 +235,7 @@ command handling safe to retry.
 
 ## Conceptual schema
 
-**EventDraft**
+**EventData**
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -250,7 +250,7 @@ command handling safe to retry.
 | `stream` | EntityRef | The stream this event belongs to. |
 | `payload` | module-defined | The event's own data; opaque to kernel. |
 
-**EventEnvelope** (extends EventDraft)
+**EventEnvelope** (extends EventData)
 
 | Field | Type | Description |
 | --- | --- | --- |

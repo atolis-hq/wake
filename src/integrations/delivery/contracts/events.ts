@@ -3,7 +3,7 @@ import {
   brandedStringSchema,
   eventEnvelopeSchema,
   eventId,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventId,
   type EventUnion,
@@ -58,7 +58,7 @@ export interface DeliveryEventPayloads {
 
 export type DeliveryEvent = EventUnion<DeliveryEventPayloads, DeliveryStreamRef>;
 
-export type DeliveryEventDraft = EventDraftUnion<DeliveryEventPayloads, DeliveryStreamRef>;
+export type DeliveryEventData = EventDataUnion<DeliveryEventPayloads, DeliveryStreamRef>;
 
 const correlationSchema = z
   .object({

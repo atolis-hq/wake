@@ -1,9 +1,9 @@
-import { createEventDraft, EventSourceKind, type CommandContext } from '../../kernel/index.js';
+import { createEventData, EventSourceKind, type CommandContext } from '../../kernel/index.js';
 import { resourceStream, type ResourceStreamRef } from '../../resources/index.js';
 import type { WorkItemStreamRef } from '../../work/index.js';
 import {
   ActivityEventType,
-  type ActivityEventDraft,
+  type ActivityEventData,
   type ActivityEventPayloads,
   type PullRequestDenialPayload,
 } from '../contracts/events.js';
@@ -11,8 +11,8 @@ import { activationId } from '../contracts/identifiers.js';
 import { isReviewAuthorized } from '../review/authorization.js';
 import type { AcceptReviewSignal, ObservePullRequest, RequestChangesSignal } from './contracts.js';
 
-type ActivityDraft<Type extends ActivityEventDraft['eventType']> = Extract<
-  ActivityEventDraft,
+type ActivityDraft<Type extends ActivityEventData['eventType']> = Extract<
+  ActivityEventData,
   { eventType: Type }
 >;
 
@@ -122,7 +122,7 @@ export const mergeAuthorized = (
   revision: string,
   context: CommandContext,
 ): ActivityDraft<typeof ActivityEventType.PrMergeAuthorized> =>
-  createEventDraft({
+  createEventData({
     ...metadata(ActivityEventType.PrMergeAuthorized, context),
     stream,
     payload: { revision },
@@ -134,19 +134,19 @@ export const deliveryIntentRequested = <Type extends DeliveryIntentType>(
   payload: Omit<ActivityEventPayloads[Type], 'idempotencyKey'>,
   context: CommandContext,
 ) =>
-  createEventDraft({
+  createEventData({
     ...metadata(type, context),
     stream: resourceStream(resourceId),
     payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
   });
 
-function fact<Type extends ActivityEventDraft['eventType']>(
+function fact<Type extends ActivityEventData['eventType']>(
   resourceId: ObservePullRequest['resourceId'],
   eventType: Type,
   payload: ActivityEventPayloads[Type],
   context: CommandContext,
 ) {
-  return createEventDraft({
+  return createEventData({
     ...metadata(eventType, context),
     stream: resourceStream(resourceId),
     payload,
@@ -162,7 +162,7 @@ function denialDraft<
   context: CommandContext,
   audit: DenialAudit,
 ) {
-  return createEventDraft({
+  return createEventData({
     ...metadata(eventType, context),
     stream,
     payload: {
@@ -174,7 +174,7 @@ function denialDraft<
   });
 }
 
-function metadata<Type extends ActivityEventDraft['eventType']>(
+function metadata<Type extends ActivityEventData['eventType']>(
   eventType: Type,
   context: CommandContext,
 ) {

@@ -22,7 +22,7 @@ import {
   EventActorKind,
   EventSourceKind,
   correlationId,
-  createEventDraft,
+  createEventData,
 } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
@@ -434,7 +434,7 @@ async function appendStaleStartedRun(
     stream: runStream(currentRunId),
   };
   await root.journal.append(runStream(currentRunId), 0, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: startedAt,
@@ -450,7 +450,7 @@ async function appendStaleStartedRun(
     }),
   ]);
   await root.journal.append(runStream(currentRunId), 1, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:lease-claimed`,
       eventType: ExecutionEventType.RunLeaseClaimed,
       occurredAt: startedAt,
@@ -459,7 +459,7 @@ async function appendStaleStartedRun(
     }),
   ]);
   await root.journal.append(runStream(currentRunId), 2, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:external`,
       eventType: ExecutionEventType.RunExternalExecutionReported,
       occurredAt: startedAt,
@@ -483,7 +483,7 @@ async function appendAmbiguousRun(
     stream: runStream(currentRunId),
   };
   await root.journal.append(runStream(currentRunId), 0, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: startedAt,
@@ -500,7 +500,7 @@ async function appendAmbiguousRun(
   ]);
   const finishedAt = '2026-08-16T08:52:20.525Z';
   await root.journal.append(runStream(currentRunId), 1, [
-    createEventDraft({
+    createEventData({
       eventId: `${id}:ambiguous`,
       eventType: ExecutionEventType.RunAmbiguous,
       occurredAt: finishedAt,

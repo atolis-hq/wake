@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
-import { createEventDraft, eventId } from '../../../src/kernel/index.js';
+import { createEventData, eventId } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal, InMemoryProjectionStore } from '../../../src/persistence/index.js';
 
 const clock = { now: () => new Date('2026-08-09T00:00:00.000Z') };
@@ -36,7 +36,7 @@ function confirmedEvent(overrides: {
 }) {
   const intentEventId = overrides.intentEventId ?? 'intent-1';
   const stream = deliveryStream(eventId(intentEventId));
-  return createEventDraft({
+  return createEventData({
     eventId: `${intentEventId}:confirmed`,
     eventType: DeliveryEventType.Confirmed,
     occurredAt: clock.now().toISOString(),
@@ -57,7 +57,7 @@ function confirmedEvent(overrides: {
 }
 
 function failedEvent() {
-  return createEventDraft({
+  return createEventData({
     eventId: 'intent-1:failed',
     eventType: DeliveryEventType.Failed,
     occurredAt: clock.now().toISOString(),
@@ -79,7 +79,7 @@ function failedEvent() {
 }
 
 function reconciledConfirmedEvent() {
-  return createEventDraft({
+  return createEventData({
     eventId: 'intent-1:reconciled',
     eventType: DeliveryEventType.Reconciled,
     occurredAt: clock.now().toISOString(),

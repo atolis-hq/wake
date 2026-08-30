@@ -8,7 +8,7 @@ import {
   DeliveryIntentEventType,
   deliveryStream,
 } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventDraft, eventId } from '../../../src/kernel/index.js';
+import { correlationId, createEventData, eventId } from '../../../src/kernel/index.js';
 import { watchId, workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import { WatchGateVerdictSignal } from '../../../src/orchestration/index.js';
 import { resourceKind, resourceStream, type ResourceId } from '../../../src/resources/index.js';
@@ -229,7 +229,7 @@ async function appendConfirmedAgentRunComment(
   displayBody: string,
 ): Promise<void> {
   const intentId = 'agent-run-publish-rejection';
-  const intent = createEventDraft({
+  const intent = createEventData({
     eventId: intentId,
     eventType: DeliveryIntentEventType.AgentRunPublishRequested,
     occurredAt: world.clock.now().toISOString(),
@@ -259,7 +259,7 @@ async function appendConfirmedAgentRunComment(
     [intent],
   );
   if (published === undefined) throw new Error('Expected agent-run publication intent');
-  const confirmation = createEventDraft({
+  const confirmation = createEventData({
     eventId: `${intentId}-confirmed`,
     eventType: DeliveryEventType.Confirmed,
     occurredAt: world.clock.now().toISOString(),

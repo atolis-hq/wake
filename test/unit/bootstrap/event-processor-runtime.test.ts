@@ -5,7 +5,7 @@ import {
   EventProcessorReplayPolicy,
   defineEventProcessor,
 } from '../../../src/eventing/index.js';
-import { createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
+import { createEventData, type EntityRef } from '../../../src/kernel/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -125,7 +125,7 @@ function processor(consumer: string, name: string, handle: () => Promise<void>) 
 async function appendFact(journal: InMemoryEventJournal): Promise<void> {
   const stream: EntityRef<'test', 'one'> = { kind: 'test', id: 'one' };
   await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'test-event-one',
       eventType: 'test.recorded',
       occurredAt: '2026-08-30T00:00:00.000Z',

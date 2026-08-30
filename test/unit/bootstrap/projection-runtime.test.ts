@@ -12,7 +12,7 @@ import { resolveWakePaths } from '../../../src/bootstrap/paths.js';
 import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
 import type { ProcessorRunSerialiser } from '../../../src/eventing/index.js';
 import {
-  createEventDraft,
+  createEventData,
   type CheckpointStore,
   type EntityRef,
   type EventJournal,
@@ -258,7 +258,7 @@ async function appendCountedEvents(
     stream,
     0,
     Array.from({ length: count }, (_, index) =>
-      createEventDraft({
+      createEventData({
         eventId: `${eventIdPrefix}-${index}`,
         eventType: 'counted',
         occurredAt: '2026-08-29T00:00:00.000Z',

@@ -8,7 +8,7 @@ import {
   runStream,
 } from '../../../../src/execution/index.js';
 import { applyWatchGateVerdictSignal } from '../../../../src/integrations/github/application/inbound-watch-gate-signals.js';
-import { createEventDraft } from '../../../../src/kernel/index.js';
+import { createEventData } from '../../../../src/kernel/index.js';
 import { workflowName } from '../../../../src/orchestration/index.js';
 import { TestWorld } from '../../../e2e/support/world.js';
 
@@ -168,7 +168,7 @@ async function waitingWatchGate() {
 async function appendNonterminalChildRun(fixture: Awaited<ReturnType<typeof waitingWatchGate>>) {
   const id = runId('run-active-watch-child');
   await fixture.world.journal.append(runStream(id), 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'execution:run-active-watch-child:started',
       eventType: ExecutionEventType.RunStarted,
       occurredAt: '2026-08-08T00:00:00.000Z',

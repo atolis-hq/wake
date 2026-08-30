@@ -1,5 +1,5 @@
 import {
-  createEventDraft,
+  createEventData,
   EventSourceKind,
   type CommandContext,
   type EventJournal,
@@ -8,7 +8,7 @@ import type { WorkItemId } from '../../work/index.js';
 import type { DiscoverResource } from '../contracts/commands.js';
 import {
   ResourceEventType,
-  type ResourceEventDraft,
+  type ResourceEventData,
   type ResourceEventPayloads,
 } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';
@@ -234,7 +234,7 @@ async function correlateResource(
 async function appendResourceEvent(
   repository: ResourceRepository,
   resourceId: ResourceId,
-  draft: ResourceEventDraft,
+  draft: ResourceEventData,
 ): Promise<void> {
   const loaded = await repository.load(resourceId);
   await repository.append(resourceId, loaded.sequence, [draft]);
@@ -246,7 +246,7 @@ function resourceDraft<Type extends keyof ResourceEventPayloads>(
   eventType: Type,
   payload: ResourceEventPayloads[Type],
 ) {
-  return createEventDraft({
+  return createEventData({
     eventId: `${context.commandId}:${eventType}`,
     eventType,
     occurredAt: context.occurredAt,

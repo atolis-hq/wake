@@ -8,8 +8,8 @@ import {
 import { deliveryStream, IntegrationStreamKind } from '../../contracts/streams.js';
 import type { ExternalDeliveryAdapter } from '../contracts/config.js';
 import {
-  createDeliveryEventDraft,
-  type DeliveryEventDraftInput,
+  createDeliveryEventData,
+  type DeliveryEventDataInput,
 } from '../contracts/event-factory.js';
 import { DeliveryEventType } from '../contracts/events.js';
 import type { DeliveryIntentView } from '../contracts/views.js';
@@ -62,7 +62,7 @@ export class DeliveryService {
       source: { kind: EventSourceKind.Internal, id: IntegrationStreamKind.Delivery },
       stream: deliveryStream(intent.intentEventId),
     };
-    const draft: DeliveryEventDraftInput =
+    const draft: DeliveryEventDataInput =
       resolution.kind === DeliveryResultKind.Confirmed
         ? {
             ...metadata,
@@ -141,17 +141,17 @@ export class DeliveryService {
     return intent;
   }
 
-  private async append(draft: DeliveryEventDraftInput): Promise<void> {
+  private async append(draft: DeliveryEventDataInput): Promise<void> {
     const sequence = (await this.dependencies.journal.readStream(draft.stream)).length;
     await this.dependencies.journal.append(draft.stream, sequence, [
-      createDeliveryEventDraft(draft),
+      createDeliveryEventData(draft),
     ]);
   }
 
   private metadata(
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
-    eventType: DeliveryEventDraftInput['eventType'],
+    eventType: DeliveryEventDataInput['eventType'],
   ) {
     return {
       eventId: `${intent.intentEventId}:${eventType}:${occurrence.ordinal}`,
@@ -177,7 +177,7 @@ export class DeliveryService {
   private attemptStarted(
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
-  ): DeliveryEventDraftInput {
+  ): DeliveryEventDataInput {
     return {
       ...this.metadata(intent, occurrence, DeliveryEventType.AttemptStarted),
       eventType: DeliveryEventType.AttemptStarted,
@@ -189,7 +189,7 @@ export class DeliveryService {
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
     externalId: string,
-  ): DeliveryEventDraftInput {
+  ): DeliveryEventDataInput {
     return {
       ...this.metadata(intent, occurrence, DeliveryEventType.Confirmed),
       eventType: DeliveryEventType.Confirmed,
@@ -202,7 +202,7 @@ export class DeliveryService {
     occurrence: DeliveryOccurrence,
     code: string,
     message: string,
-  ): DeliveryEventDraftInput {
+  ): DeliveryEventDataInput {
     return {
       ...this.metadata(intent, occurrence, DeliveryEventType.Failed),
       eventType: DeliveryEventType.Failed,
@@ -214,7 +214,7 @@ export class DeliveryService {
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
     reconciliationKey: string,
-  ): DeliveryEventDraftInput {
+  ): DeliveryEventDataInput {
     return {
       ...this.metadata(intent, occurrence, DeliveryEventType.Ambiguous),
       eventType: DeliveryEventType.Ambiguous,
@@ -226,7 +226,7 @@ export class DeliveryService {
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
     attempt: number,
-  ): DeliveryEventDraftInput {
+  ): DeliveryEventDataInput {
     return {
       ...this.metadata(intent, occurrence, DeliveryEventType.Escalated),
       eventType: DeliveryEventType.Escalated,
@@ -241,7 +241,7 @@ export class DeliveryService {
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
     result: Awaited<ReturnType<ExternalDeliveryAdapter['reconcile']>>,
-  ): DeliveryEventDraftInput {
+  ): DeliveryEventDataInput {
     const metadata = this.metadata(intent, occurrence, DeliveryEventType.Reconciled);
     const correlation = this.correlation(intent, occurrence);
     switch (result.kind) {

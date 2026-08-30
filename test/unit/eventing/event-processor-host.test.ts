@@ -6,7 +6,7 @@ import {
   createBatchEventProcessor,
   defineEventProcessor,
 } from '../../../src/eventing/index.js';
-import { createEventDraft, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
+import { createEventData, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -620,7 +620,7 @@ async function appendFacts(journal: InMemoryEventJournal, count: number): Promis
   const stream: EntityRef<'subscription-test', 'one'> = { kind: 'subscription-test', id: 'one' };
   for (let index = 0; index < count; index += 1) {
     await journal.append(stream, index, [
-      createEventDraft({
+      createEventData({
         eventId: `subscription-test-${index}`,
         eventType: 'subscription-test.recorded',
         occurredAt: '2026-08-29T12:00:00.000Z',

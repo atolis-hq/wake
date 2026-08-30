@@ -1,5 +1,5 @@
 import {
-  createEventDraft,
+  createEventData,
   EventSourceKind,
   type CommandContext,
   type EventJournal,
@@ -36,7 +36,7 @@ export class CoordinationClaims {
       },
       append: async (sequence) => {
         await this.journal.append(stream, sequence, [
-          createEventDraft({
+          createEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.PrimaryClaimed}:${workItemId}`,
             eventType: OrchestrationEventType.PrimaryClaimed,
             occurredAt: context.occurredAt,
@@ -73,7 +73,7 @@ export class CoordinationClaims {
         claimedRequestIds(events).size < request.maxPerGroup + budgetGrants(events),
       append: async (sequence) => {
         await this.journal.append(stream, sequence, [
-          createEventDraft({
+          createEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupClaimed}:${request.requestId}`,
             eventType: OrchestrationEventType.GroupClaimed,
             occurredAt: context.occurredAt,
@@ -112,7 +112,7 @@ export class CoordinationClaims {
         ),
       append: async (sequence) => {
         await this.journal.append(stream, sequence, [
-          createEventDraft({
+          createEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupBudgetGranted}:${requestId}`,
             eventType: OrchestrationEventType.GroupBudgetGranted,
             occurredAt: context.occurredAt,

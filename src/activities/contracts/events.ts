@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import {
-  type EventDraft,
-  type EventDraftUnion,
+  type EventData,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../kernel/index.js';
@@ -104,18 +104,18 @@ type DeniedOutcome = Extract<
 >;
 
 type RequestedFact<Action extends PullRequestDecisionAction> = Action extends 'approve'
-  ? EventDraft<
+  ? EventData<
       typeof ActivityEventType.PrApproveRequested,
       PullRequestApproveRequestedPayload,
       ResourceStreamRef
     >
-  : EventDraft<
+  : EventData<
       typeof ActivityEventType.PrMergeRequested,
       PullRequestMergeRequestedPayload,
       ResourceStreamRef
     >;
 
-type DeniedFact<Action extends PullRequestDecisionAction> = EventDraft<
+type DeniedFact<Action extends PullRequestDecisionAction> = EventData<
   Action extends 'approve'
     ? typeof ActivityEventType.PrApproveDenied
     : typeof ActivityEventType.PrMergeDenied,
@@ -223,18 +223,18 @@ export type ActivityFact =
   | EventUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
 
 export type ActivityFactDraft =
-  | EventDraftUnion<ResourceFactPayloads, ResourceStreamRef>
-  | EventDraftUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
+  | EventDataUnion<ResourceFactPayloads, ResourceStreamRef>
+  | EventDataUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
 
 export type ActivityEvent =
   | ActivityFact
   | EventUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
   | EventUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
 
-export type ActivityEventDraft =
+export type ActivityEventData =
   | ActivityFactDraft
-  | EventDraftUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
-  | EventDraftUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
+  | EventDataUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
+  | EventDataUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
 
 const { draftSchema, eventSchema } = createActivityEventSchemas(ActivityEventType);
 
@@ -248,7 +248,7 @@ export function selectActivityEvent(event: EventEnvelope): ActivityEvent | null 
   return ownsActivityEventType(event.eventType) ? decodeActivityEvent(event) : null;
 }
 
-export function decodeActivityEventDraft(draft: EventDraft): ActivityEventDraft {
+export function decodeActivityEventData(draft: EventData): ActivityEventData {
   const result = draftSchema.safeParse(draft);
   if (!result.success)
     throw new Error(

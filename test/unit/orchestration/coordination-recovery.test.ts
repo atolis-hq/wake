@@ -6,7 +6,7 @@ import { EventProcessorHost } from '../../../src/eventing/index.js';
 import { createExecutionService } from '../../../src/execution/index.js';
 import {
   correlationId,
-  createEventDraft,
+  createEventData,
   eventId,
   type CommandContext,
   type EntityRef,
@@ -177,7 +177,7 @@ it('retries the same durable child claim after a crash before checkpointing the 
     id: 'watch-trigger',
   };
   const [trigger] = await journal.append(stream, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'review-trigger-1',
       eventType: 'review.requested',
       occurredAt: '2026-07-30T12:00:00.000Z',

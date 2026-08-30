@@ -1,9 +1,9 @@
 import type { CheckpointStore } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
-import type { GitHubAdapterEventDraft } from '../contracts/events.js';
+import type { GitHubAdapterEventData } from '../contracts/events.js';
 
 export interface PollBatch {
-  readonly drafts: readonly GitHubAdapterEventDraft[];
+  readonly drafts: readonly GitHubAdapterEventData[];
   readonly succeeded: boolean;
 }
 

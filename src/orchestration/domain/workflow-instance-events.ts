@@ -4,12 +4,12 @@ import type { ActivationId } from '../../activities/index.js';
 import {
   OrchestrationEventType,
   type WorkflowOrchestrationEvent,
-  type WorkflowOrchestrationEventDraft,
+  type WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../contracts/views.js';
 import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabulary.js';
 
-type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventDraft;
+type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventData;
 
 /**
  * The single source of truth for which orchestration events change a

@@ -3,11 +3,11 @@ import {
   ReviewActorKind,
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
+import { createEventData, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
 import { integrationStream } from '../../contracts/streams.js';
-import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
+import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import {
   gitHubAssigneeLogins,
@@ -22,7 +22,7 @@ export function issueObservation(input: {
   readonly repository: string;
   readonly issue: GitHubIssuePayload;
   readonly adapter?: AdapterId;
-}): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
+}): Extract<GitHubAdapterEventData, { eventType: typeof GitHubEventType.WorkObserved }> {
   const key = formatGitHubResourceKey({
     ...parseRepository(input.repository),
     number: input.issue.number,
@@ -45,7 +45,7 @@ export function issueObservation(input: {
     labels: withoutWakeMarkers(labels),
     assignees: [...assignees].sort(),
   });
-  return createEventDraft({
+  return createEventData({
     eventId: `github:issue:${key}:${fingerprint}`,
     eventType: GitHubEventType.WorkObserved,
     occurredAt: input.issue.updated_at,
@@ -90,7 +90,7 @@ export function issueCommentObservation(input: {
   readonly comment: GitHubIssueCommentPayload;
   readonly authorization?: ReviewerAuthorizationEvidence;
   readonly adapter?: AdapterId;
-}): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.CommentObserved }> | null {
+}): Extract<GitHubAdapterEventData, { eventType: typeof GitHubEventType.CommentObserved }> | null {
   const body = input.comment.body?.trim();
   if (body === undefined || body.length === 0) return null;
   const key = formatGitHubResourceKey({
@@ -98,7 +98,7 @@ export function issueCommentObservation(input: {
     number: input.issue.number,
   });
   const location = commentLocation(input.comment);
-  return createEventDraft({
+  return createEventData({
     eventId: `github:issue-comment:${key}:${input.comment.id}:${input.comment.updated_at}`,
     eventType: GitHubEventType.CommentObserved,
     occurredAt: input.comment.updated_at,

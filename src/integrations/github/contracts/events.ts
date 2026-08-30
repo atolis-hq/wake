@@ -10,7 +10,7 @@ import {
 import {
   brandedStringSchema,
   eventEnvelopeSchema,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../../kernel/index.js';
@@ -175,7 +175,7 @@ export interface GitHubEventPayloads {
 
 export type GitHubAdapterEvent = EventUnion<GitHubEventPayloads, IntegrationStreamRef>;
 
-export type GitHubAdapterEventDraft = EventDraftUnion<GitHubEventPayloads, IntegrationStreamRef>;
+export type GitHubAdapterEventData = EventDataUnion<GitHubEventPayloads, IntegrationStreamRef>;
 
 const streamSchema = z
   .object({

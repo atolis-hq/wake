@@ -1,11 +1,11 @@
 import {
-  createEventDraft,
+  createEventData,
   EventSourceKind,
   type CommandContext,
   type EventJournal,
 } from '../../kernel/index.js';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
-import { WorkEventType, type WorkEventDraft, type WorkEventPayloads } from '../contracts/events.js';
+import { WorkEventType, type WorkEventData, type WorkEventPayloads } from '../contracts/events.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
 import { workItemStream } from '../contracts/streams.js';
 import type { WorkItemView } from '../contracts/views.js';
@@ -31,7 +31,7 @@ export function createWorkService(journal: EventJournal): WorkService {
   const change = (
     workItemId: WorkItemId,
     context: CommandContext,
-    draft: WorkEventDraft,
+    draft: WorkEventData,
     allowMissing?: boolean,
     requireOpen?: boolean,
   ) => changeWorkItem(repository, workItemId, context, draft, allowMissing, requireOpen);
@@ -104,7 +104,7 @@ async function changeWorkItem(
   repository: WorkRepository,
   workItemId: WorkItemId,
   context: CommandContext,
-  draft: WorkEventDraft,
+  draft: WorkEventData,
   allowMissing = false,
   requireOpen = true,
 ): Promise<WorkItemView> {
@@ -130,7 +130,7 @@ async function setAutoApproval(
   change: (
     workItemId: WorkItemId,
     context: CommandContext,
-    draft: WorkEventDraft,
+    draft: WorkEventData,
   ) => Promise<WorkItemView>,
   workItemId: WorkItemId,
   context: CommandContext,
@@ -149,7 +149,7 @@ function workDraft<Type extends keyof WorkEventPayloads>(
   eventType: Type,
   payload: WorkEventPayloads[Type],
 ) {
-  return createEventDraft({
+  return createEventData({
     eventId: `${context.commandId}:${eventType}`,
     eventType,
     occurredAt: context.occurredAt,
@@ -167,7 +167,7 @@ async function setFrozen(
   change: (
     workItemId: WorkItemId,
     context: CommandContext,
-    draft: WorkEventDraft,
+    draft: WorkEventData,
   ) => Promise<WorkItemView>,
   workItemId: WorkItemId,
   context: CommandContext,
@@ -194,7 +194,7 @@ async function setDeleted(
   change: (
     workItemId: WorkItemId,
     context: CommandContext,
-    draft: WorkEventDraft,
+    draft: WorkEventData,
     allowMissing?: boolean,
     requireOpen?: boolean,
   ) => Promise<WorkItemView>,

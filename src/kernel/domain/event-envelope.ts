@@ -1,8 +1,8 @@
-import type { EventActor, EventDraft, EventSource } from '../contracts/events.js';
+import type { EventActor, EventData, EventSource } from '../contracts/events.js';
 import { causationId, correlationId, eventId, type EntityRef } from '../contracts/identifiers.js';
 import { offsetIsoTimestampSchema } from '../contracts/schema.js';
 
-export interface EventDraftInput<
+export interface EventDataInput<
   Type extends string,
   Payload,
   Stream extends EntityRef = EntityRef,
@@ -18,11 +18,9 @@ export interface EventDraftInput<
   readonly payload: Payload;
 }
 
-export function createEventDraft<
-  Type extends string,
-  Payload,
-  Stream extends EntityRef = EntityRef,
->(input: EventDraftInput<Type, Payload, Stream>): EventDraft<Type, Payload, Stream> {
+export function createEventData<Type extends string, Payload, Stream extends EntityRef = EntityRef>(
+  input: EventDataInput<Type, Payload, Stream>,
+): EventData<Type, Payload, Stream> {
   if (input.eventType.trim().length === 0) throw new Error('event type must not be empty');
   const occurredAt = offsetIsoTimestampSchema.safeParse(input.occurredAt);
   if (!occurredAt.success)

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import {
   brandedStringSchema,
   eventEnvelopeSchema,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../kernel/index.js';
@@ -86,7 +86,7 @@ export interface ResourceEventPayloads {
 
 export type ResourceEvent = EventUnion<ResourceEventPayloads, ResourceStreamRef>;
 
-export type ResourceEventDraft = EventDraftUnion<ResourceEventPayloads, ResourceStreamRef>;
+export type ResourceEventData = EventDataUnion<ResourceEventPayloads, ResourceStreamRef>;
 
 export interface ResourceEventStream {
   readonly resourceId: ResourceId;

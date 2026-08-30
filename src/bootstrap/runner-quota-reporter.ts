@@ -2,7 +2,7 @@ import {
   ControlEventType,
   ControlStreamKind,
   controlPlaneStream,
-  createControlEventDraft,
+  createControlEventData,
   resolveRunnerQuotaResumeAt,
 } from '../control-plane/index.js';
 import {
@@ -24,7 +24,7 @@ export function createRunnerQuotaReporter(journal: EventJournal, clock: Clock, i
     const stream = controlPlaneStream();
     const occurredAt = clock.now().toISOString();
     await journal.append(stream, (await journal.readStream(stream)).length, [
-      createControlEventDraft(
+      createControlEventData(
         ControlEventType.RunnerPaused,
         {
           runnerName,

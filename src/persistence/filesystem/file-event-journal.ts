@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type {
   Clock,
   EntityRef,
-  EventDraft,
+  EventData,
   EventEnvelope,
   EventJournal,
   JournalChangeSignal,
@@ -76,7 +76,7 @@ export class FileEventJournal implements EventJournal {
   async append(
     stream: EntityRef,
     expectedSequence: number,
-    drafts: readonly EventDraft[],
+    drafts: readonly EventData[],
   ): Promise<readonly EventEnvelope[]> {
     return withFileLock(
       join(this.root, 'locks', 'event-journal.lock'),
@@ -596,7 +596,7 @@ function indexEventsByStream(
   return indexed;
 }
 
-const sameDraft = (event: EventEnvelope, draft: EventDraft) =>
+const sameDraft = (event: EventEnvelope, draft: EventData) =>
   isDeepStrictEqual(
     {
       eventId: event.eventId,
