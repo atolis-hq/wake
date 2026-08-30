@@ -5,13 +5,8 @@ import {
   ActivityOutcomeKind,
   type ActivityDefinition,
 } from '../activities/index.js';
-import { DeliveryIntentEventType } from '../integrations/index.js';
-import {
-  createEventData,
-  EventActorKind,
-  EventSourceKind,
-  type EventJournal,
-} from '../kernel/index.js';
+import { createDeliveryIntentEventData, DeliveryIntentEventType } from '../integrations/index.js';
+import { EventActorKind, EventSourceKind, type EventJournal } from '../kernel/index.js';
 import { resourceStream } from '../resources/index.js';
 
 export function createStatusPublishActivity(
@@ -34,7 +29,7 @@ export function createStatusPublishActivity(
         if (resource === undefined) throw new Error('status.publish requires an intake resource');
         const sequence = (await journal.readStream(resourceStream(resource.resourceId))).length;
         await journal.appendToStream(resourceStream(resource.resourceId), sequence, [
-          createEventData({
+          createDeliveryIntentEventData({
             eventId: `${invocation.activationId}:status.publish`,
             eventType: DeliveryIntentEventType.StatusPublishRequested,
             occurredAt: new Date().toISOString(),
