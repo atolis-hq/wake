@@ -78,6 +78,25 @@ it('does not write when a projection does not select an event', async () => {
   expect(await projections.list('unselected-counts')).toEqual([]);
 });
 
+it('does not mutate a projection batch when its signal is already aborted', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const stream: EntityRef<'counter', 'aborted'> = { kind: 'counter', id: 'aborted' };
+  await appendCountedEvent(journal, stream, 0, 'aborted-event');
+  const projections = new InMemoryProjectionStore();
+  const controller = new AbortController();
+  controller.abort();
+
+  await expect(
+    applyProjectionBatch(
+      projectionDefinition('aborted-counts'),
+      projections,
+      await journal.readAll(0),
+      controller.signal,
+    ),
+  ).rejects.toThrow(/aborted/i);
+  expect(await projections.list('aborted-counts')).toEqual([]);
+});
+
 it('replays after a checkpoint failure without folding the projection twice', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const stream: EntityRef<'counter', 'checkpoint'> = { kind: 'counter', id: 'checkpoint' };

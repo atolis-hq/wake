@@ -101,6 +101,25 @@ describe('contract vocabulary discovery', () => {
 });
 
 describe('contract vocabulary catalogue boundaries', () => {
+  it('scopes health-status vocabularies to their owning module without weakening local literals', async () => {
+    const root = await fixture({
+      'src/eventing/contracts/vocabulary.ts': [
+        "import { defineClosedVocabulary } from '../../kernel/index.js';",
+        'export const ProcessorHealthStatus = defineClosedVocabulary({',
+        "  Degraded: 'degraded',",
+        '} as const);',
+      ].join('\n'),
+      'src/eventing/application/runtime.ts': "const status = 'degraded';",
+      'src/integrations/application/runtime.ts': "const status = 'degraded';",
+    });
+
+    const diagnostics = await checkContractVocabulary(root, { rules: ['closed-vocabulary'] });
+
+    expect(messages(diagnostics)).toBe(
+      'src/eventing/application/runtime.ts:1:16 [closed-vocabulary] "degraded" must be replaced by ProcessorHealthStatus',
+    );
+  });
+
   it('rejects a closed-vocabulary collision hidden behind a name-like function', async () => {
     const root = await fixture({
       'src/kernel/contracts/vocabulary.ts': [

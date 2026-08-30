@@ -6,10 +6,10 @@ import type {
   ProjectionStore,
 } from '../../kernel/index.js';
 import {
+  defineEventProcessor,
   EventProcessorCategory,
   EventProcessorReplayPolicy,
   type EventProcessor,
-  type EventProcessorDefinition,
 } from '../contracts/event-processor.js';
 import type { ProcessorRunSerialiser } from '../contracts/processor-run-serialiser.js';
 
@@ -27,7 +27,7 @@ export function createProjectionProcessor<Value>(
   definition: ProjectionDefinition<Value>,
   projections: ProjectionStore,
 ): EventProcessor {
-  return {
+  return defineEventProcessor({
     consumer: projectionConsumer(definition),
     name: definition.name,
     owner: EventProcessorCategory.Projection,
@@ -36,7 +36,7 @@ export function createProjectionProcessor<Value>(
     batchSize: projectionBatchSize,
     select: (event) => definition.select(event),
     handle: (selected, event) => applyProjectionEvent(definition, projections, selected.key, event),
-  } as EventProcessorDefinition<ProjectionMessage> as EventProcessor;
+  });
 }
 
 export async function applyProjectionEvent<Value>(
@@ -61,9 +61,11 @@ export async function applyProjectionBatch<Value>(
   events: readonly EventEnvelope[],
   signal: AbortSignal = new AbortController().signal,
 ): Promise<void> {
+  throwIfAborted(signal);
   const processor = createProjectionProcessor(definition, projections);
   if (processor.mode === 'batch') throw new Error('Projection processors must handle each event');
   for (const event of events) {
+    throwIfAborted(signal);
     const selected = processor.select(event);
     if (selected !== null) await processor.handle(selected, event, signal);
   }

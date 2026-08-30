@@ -325,8 +325,14 @@ function registerObject(detail, object, initializer, rule, owner, registrations,
       column: character + 1,
       initializerStart: initializer.getStart(detail.source),
       initializerEnd: initializer.getEnd(),
+      ...(owner.endsWith('HealthStatus') ? { moduleScope: moduleScope(detail.path) } : {}),
     });
   }
+}
+
+function moduleScope(path) {
+  const parts = path.split('/');
+  return parts[0] === 'src' ? parts[1] : parts[0];
 }
 
 function propertyIssue(property, owner) {

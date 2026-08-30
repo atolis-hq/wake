@@ -24,7 +24,7 @@ export function createInMemoryProcessorRunSerialiser(): ProcessorRunSerialiser {
 
 export function createFileProcessorRunSerialiser(dataRoot: string): ProcessorRunSerialiser {
   return async <Value>(consumer: string, signal: AbortSignal, operation: () => Promise<Value>) => {
-    const path = join(dataRoot, 'locks', `processor-${encodeProcessorConsumer(consumer)}.lock`);
+    const path = join(dataRoot, 'locks', `subscription-${encodeProcessorConsumer(consumer)}.lock`);
     while (true) {
       throwIfAborted(signal);
       const lock = await acquireFileLock(path, {

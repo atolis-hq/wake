@@ -577,6 +577,45 @@ it('retries a health head read failure without stopping its sibling', async () =
   await run.done;
 });
 
+it('does not invoke a batch handler or checkpoint after cancellation during a gated read', async () => {
+  const source = new InMemoryEventJournal(new FakeClock());
+  await appendFacts(source, 1);
+  const readStarted = deferred<void>();
+  const releaseRead = deferred<void>();
+  const journal = {
+    append: source.append.bind(source),
+    readStream: source.readStream.bind(source),
+    latestGlobalPosition: source.latestGlobalPosition.bind(source),
+    waitForEventsAfter: source.waitForEventsAfter.bind(source),
+    changeSignal: source.changeSignal,
+    async readAll(afterGlobalPosition: number, limit?: number) {
+      readStarted.resolve();
+      await releaseRead.promise;
+      return source.readAll(afterGlobalPosition, limit);
+    },
+  };
+  const checkpoints = new InMemoryCheckpointStore();
+  const controller = new AbortController();
+  let handled = false;
+  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const pass = host.runOnce(
+    batchProcessor({
+      consumer: 'gated-cancel',
+      handle: async () => {
+        handled = true;
+      },
+    }),
+    controller.signal,
+  );
+
+  await readStarted.promise;
+  controller.abort();
+  releaseRead.resolve();
+  await expect(pass).rejects.toThrow(/aborted/i);
+  expect(handled).toBe(false);
+  expect(await checkpoints.load('gated-cancel')).toBe(0);
+});
+
 async function appendFacts(journal: InMemoryEventJournal, count: number): Promise<void> {
   const stream: EntityRef<'subscription-test', 'one'> = { kind: 'subscription-test', id: 'one' };
   for (let index = 0; index < count; index += 1) {

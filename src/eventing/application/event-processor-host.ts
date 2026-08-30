@@ -192,6 +192,7 @@ export class EventProcessorHost {
         ? events
         : events.filter((event) => event.globalPosition <= targetGlobalPosition);
     if (bounded.length === 0) return { checkpoint, eventCount: 0, handledCount: 0 };
+    throwIfAborted(signal);
     if (processor.mode === 'batch') {
       await processor.handle(bounded, signal);
       const nextCheckpoint = bounded.at(-1)!.globalPosition;

@@ -14,7 +14,9 @@ import { createEventDraft, type EntityRef } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
   InMemoryEventJournal,
+  acquireFileLock,
   createFileProcessorRunSerialiser,
+  encodeProcessorConsumer,
 } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -153,6 +155,31 @@ it('accepts ordinary Unicode file lock consumer identities', async () => {
     await expect(
       serialise('consumer-😀', new AbortController().signal, async () => 'handled'),
     ).resolves.toBe('handled');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it('uses the established subscription lock basename for cross-version exclusion', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-processor-serialiser-'));
+  try {
+    const consumer = 'cross-version';
+    const legacyLock = await acquireFileLock(
+      join(root, 'locks', `subscription-${encodeProcessorConsumer(consumer)}.lock`),
+      { staleAfterMs: 60_000, staleRequiresDeadProcess: true },
+    );
+    if (!legacyLock.acquired) throw new Error('Could not establish legacy lock');
+    const serialise = createFileProcessorRunSerialiser(root);
+    let entered = false;
+    const pending = serialise(consumer, new AbortController().signal, async () => {
+      entered = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(entered).toBe(false);
+    await legacyLock.release();
+    await pending;
+    expect(entered).toBe(true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
