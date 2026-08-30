@@ -55,7 +55,7 @@ it('maps action and decision kind to the exact canonical fact type', () => {
   expectTypeOf<MergeDenied['outcome']>().toEqualTypeOf<Outcome<'blocked'>>();
 });
 
-it('rejects a malformed outcome/fact pair through the draft decoder context', () => {
+it('rejects a malformed outcome/fact pair through the event data decoder context', () => {
   const activation = activationId('activation-1');
   const stream = resourceStream(resId('1'));
   const approveRequest = createEventData({
@@ -94,7 +94,7 @@ it('rejects a malformed outcome/fact pair through the draft decoder context', ()
   });
 
   expect(() => decodeActivityEventData(malformedClaim)).toThrow(
-    /Invalid Activity event draft approve-claim/i,
+    /Invalid Activity event data approve-claim/i,
   );
 });
 
@@ -147,7 +147,7 @@ it('rejects an inexact decision claim before calling the journal append boundary
   } as unknown as PullRequestDecision<'approve'>;
 
   await expect(claimDecision(journal, activation, 'approve', invalidProposal)).rejects.toThrow(
-    /Invalid Activity event draft/i,
+    /Invalid Activity event data/i,
   );
   expect(appends).toBe(0);
 });

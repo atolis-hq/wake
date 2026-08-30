@@ -252,7 +252,7 @@ export function decodeActivityEventData(draft: EventData): ActivityEventData {
   const result = draftSchema.safeParse(draft);
   if (!result.success)
     throw new Error(
-      `Invalid Activity event draft ${draft.eventId} (${draft.eventType}): ${result.error.message}`,
+      `Invalid Activity event data ${draft.eventId} (${draft.eventType}): ${result.error.message}`,
       { cause: result.error },
     );
   return result.data;
