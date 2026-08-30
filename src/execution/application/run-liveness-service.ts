@@ -80,6 +80,7 @@ export async function requestCancellation(
   reason: NonNullable<RunView['cancellation']>['reason'],
   active: ReadonlyMap<string, AbortController>,
 ) {
+  let retriedAfterSequence: number | undefined;
   while (true) {
     const loaded = await repository.load(currentRunId);
     const run = requireActiveRun(loaded.view);
@@ -87,6 +88,8 @@ export async function requestCancellation(
       active.get(currentRunId)?.abort(reason);
       return run;
     }
+    if (retriedAfterSequence !== undefined && loaded.sequence <= retriedAfterSequence)
+      throw new Error(`Run ${currentRunId} did not advance after a cancellation request conflict`);
     const requestedAt = clock.now().toISOString();
     try {
       await repository.append(currentRunId, loaded.sequence, [
@@ -99,7 +102,10 @@ export async function requestCancellation(
         ),
       ]);
     } catch (error) {
-      if (error instanceof WrongExpectedSequenceError) continue;
+      if (error instanceof WrongExpectedSequenceError) {
+        retriedAfterSequence = loaded.sequence;
+        continue;
+      }
       throw error;
     }
     active.get(currentRunId)?.abort(reason);

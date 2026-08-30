@@ -92,7 +92,7 @@ a CLI command.
   clears the lease; failure retains it and the complete runtime pause.
 - In `quiescing`, the updater waits for every active or ambiguous Run view to
   empty for the configured positive drain timeout. It then requests durable
-  `maintenance` cancellation only for started, not already-cancelled Runs,
+  `maintenance` cancellation for `starting` and `started`, not already-cancelled Runs,
   waits the configured cancellation timeout, and fails without checkout if
   any active/ambiguous view remains. A cancellation write collision is safe
   only when rereading the public view proves the Run has become terminal.

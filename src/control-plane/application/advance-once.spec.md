@@ -94,7 +94,7 @@ Work's own aggregate remains the source of that state.
   resolution: that succeeded outcome is reconciled and accepted.
 - When no reconciliation candidate exists, Advancement runs its dispatch
   loop: while dispatched-this-call is below `maxDispatches`, it counts all
-  `started` Runs and, when that count has reached `maxConcurrentRuns`, stops
+  active (`starting` and `started`) Runs and, when that count has reached `maxConcurrentRuns`, stops
   dispatching (returning `no-work`, or `progressed` with whatever was already
   dispatched earlier in the same call). Otherwise it applies Dispatch
   Policy's fairness-ordered selection over the pending candidates, excluding

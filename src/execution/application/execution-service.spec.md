@@ -132,6 +132,10 @@ workspace mechanics itself — it only resolves and invokes them.
   continues while the local handler is running; a fresh process has no tracked
   worker and therefore remains responsible for reconciling an expired durable
   Run after restart.
+- If a cancellation request is observed before `RunStarted`, Execution MUST
+  confirm it itself before cleanup, whether preparation subsequently completes
+  or throws; request-only cancellation therefore reaches the same terminal
+  `cancelled` Run rather than being recorded as a workspace failure.
 - The handler's reported external-execution identity and final runner
   result MUST each be appended to the Run stream as they arrive,
   independent of the Run's current status — these facts are appended even
@@ -161,7 +165,7 @@ workspace mechanics itself — it only resolves and invokes them.
   creates the Run propagates unchanged to the caller.
 - Whether the attempt succeeds, fails, or the Run was already moved to a
   terminal status by a concurrent cancellation, the Activation claim MUST
-  be released, the tracked `AbortController` MUST be removed, and any
+  be released, the tracked `AbortController` and local-attempt marker MUST be removed, and any
   acquired workspace lease MUST be released — in that order — before the
   attempt call returns or its error propagates. A workspace lease's
   `release()` failing MUST NOT propagate from `attempt`: it MUST instead be
