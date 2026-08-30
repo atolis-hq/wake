@@ -151,12 +151,14 @@ describe('DeliveryService', () => {
     const events = await journal.readAll(0);
     expect(events).toHaveLength(1);
     expect(decodeDeliveryEvent(events[0]!)).toMatchObject({
-      eventType: DeliveryEventType.Failed,
-      payload: {
-        intentEventId: 'intent-unavailable-provider',
-        occurrenceOrdinal: 1,
-        code: 'provider-unavailable',
-        message: 'Delivery provider github is unavailable',
+      event: {
+        eventType: DeliveryEventType.Failed,
+        payload: {
+          intentEventId: 'intent-unavailable-provider',
+          occurrenceOrdinal: 1,
+          code: 'provider-unavailable',
+          message: 'Delivery provider github is unavailable',
+        },
       },
     });
   });
