@@ -193,7 +193,6 @@ export async function composeIntegrationRuntime(
   });
   const artifacts = new ArtifactRegistrationReactor({
     journal: input.journal,
-    checkpoints: input.checkpoints,
     resources: input.resources,
     ids: input.ids,
     providers,
@@ -205,7 +204,6 @@ export async function composeIntegrationRuntime(
   )?.replyPublication;
   const agentRunPublications = new AgentRunPublicationReactor({
     journal: input.journal,
-    checkpoints: input.checkpoints,
     runs,
     resources: input.resources,
     orchestration: input.orchestration,
@@ -217,7 +215,11 @@ export async function composeIntegrationRuntime(
     input.checkpoints,
     input.subscriptionRunSerialiser ?? createInMemoryProcessorRunSerialiser(),
   );
-  const watch = createWatchReactor(input.orchestration, () => input.orchestration.watchEventTypes(), runs);
+  const watch = createWatchReactor(
+    input.orchestration,
+    () => input.orchestration.watchEventTypes(),
+    runs,
+  );
   const watchReconciler = createWatchReconciler(
     input.orchestration,
     input.journal,
@@ -250,7 +252,6 @@ export async function composeIntegrationRuntime(
   });
   const outcomes = new DeliveryOutcomeReactor(
     input.journal,
-    input.checkpoints,
     input.orchestration,
     input.projections,
     input.conversations,
@@ -298,13 +299,15 @@ export async function composeIntegrationRuntime(
         await reactorHost.runOnce(watch.processor);
         await watchReconciler.reconcileOnce();
         await reactorHost.runOnce(resourceTransitions.processor);
-        await artifacts.runOnce();
-        await outcomes.runOnce();
+        await reactorHost.runOnce(artifacts.processor);
+        await artifacts.reconcileOnce();
+        await reactorHost.runOnce(outcomes.processor);
+        await outcomes.reconcileOnce();
         for (const provider of providers) await provider.maintenance?.runOnce();
       }),
     publishAgentRuns: () =>
       observeMemory(memoryProfile, 'runner.publish-agent-runs', async () => {
-        await agentRunPublications.runOnce();
+        await reactorHost.runOnce(agentRunPublications.processor);
       }),
     deliver: (signal) =>
       observeMemory(memoryProfile, 'runner.deliver', async () => {

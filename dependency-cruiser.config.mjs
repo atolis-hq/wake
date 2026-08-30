@@ -34,6 +34,7 @@ const dependencyMap = {
   ],
   integrations: [
     'kernel',
+    'eventing',
     'work',
     'resources',
     'activities',

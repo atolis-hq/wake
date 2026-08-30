@@ -10,7 +10,11 @@ import {
   createWorkCancellationPolicy,
   type AdvanceResult,
 } from '../../../src/control-plane/index.js';
-import { createProjectionProcessor, EventProcessorHost } from '../../../src/eventing/index.js';
+import {
+  createProjectionProcessor,
+  EventProcessorHost,
+  type EventProcessor,
+} from '../../../src/eventing/index.js';
 import {
   createExecutionService,
   createRecoveryCoordinator,
@@ -484,6 +488,10 @@ export class TestWorld {
     if (event === undefined) throw new Error('Watch trigger was not appended');
     await this.syncWorkflowDefinitions();
     await this.reactorHost.runOnce(this.watchReactor.processor);
+  }
+
+  async process(processor: EventProcessor): Promise<void> {
+    await this.reactorHost.runOnce(processor);
   }
 
   async events(type?: string): Promise<readonly EventEnvelope[]> {

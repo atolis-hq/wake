@@ -4,12 +4,17 @@ import {
   ConversationOriginKind,
   type ConversationService,
 } from '../../conversations/index.js';
+import {
+  defineEventProcessor,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  type EventProcessor,
+} from '../../eventing/index.js';
 import { RunStatus, type RunRepository } from '../../execution/index.js';
 import {
   createEventDraft,
   EventActorKind,
   EventSourceKind,
-  type CheckpointStore,
   type EventJournal,
 } from '../../kernel/index.js';
 import {
@@ -17,6 +22,7 @@ import {
   isApprovalAwaitingSignalKind,
   OrchestrationEventType,
   OrchestrationStreamKind,
+  selectWorkflowOrchestrationEvent,
   WatchGateVerdictSignal,
   type OrchestrationService,
   type WorkflowInstanceView,
@@ -38,43 +44,61 @@ import { projectTerminalAgentRunReport, type TerminalRun } from './terminal-agen
 
 /** Projects terminal agent runs into one durable outbound intent per configured resource. */
 export class AgentRunPublicationReactor {
+  readonly processor: EventProcessor;
+
   constructor(
     private readonly dependencies: {
       readonly journal: EventJournal;
-      readonly checkpoints: CheckpointStore;
       readonly runs: RunRepository;
       readonly resources: Pick<ResourceService, 'correlationsForWork' | 'get'>;
       readonly orchestration: Pick<OrchestrationService, 'listAll'>;
       readonly conversations?: Pick<ConversationService, 'createForWorkItem' | 'record'>;
       readonly replies?: ReplyPublicationConfig | undefined;
     },
-  ) {}
+  ) {
+    this.processor = defineEventProcessor({
+      consumer: 'reactor:agent-run-publication',
+      name: 'agent-run-publication',
+      owner: 'integrations',
+      category: EventProcessorCategory.Reactor,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select(event) {
+        const outcome = selectWorkflowOrchestrationEvent(event);
+        return outcome?.eventType === OrchestrationEventType.ActivityOutcomeAccepted ||
+          outcome?.eventType === OrchestrationEventType.ActivityExecutionFailed
+          ? outcome
+          : null;
+      },
+      handle: async (outcome) => this.react(outcome),
+    });
+  }
 
-  async runOnce(limit = 100): Promise<number> {
-    const consumer = 'reactor:agent-run-publication';
-    const events = await this.dependencies.journal.readAll(
-      await this.dependencies.checkpoints.load(consumer),
-      limit,
-    );
-    for (const event of events) {
-      if (event.eventType === OrchestrationEventType.ActivityOutcomeAccepted)
-        await this.publishAcceptedOutcome(
-          event.stream.id,
-          (event.payload as { readonly activationId: string }).activationId,
-          event.recordedAt,
-          event.eventId,
-          event.correlationId,
-        );
-      if (event.eventType === OrchestrationEventType.ActivityExecutionFailed)
-        await this.publish(
-          (event.payload as { readonly runId: string }).runId,
-          event.recordedAt,
-          event.eventId,
-          event.correlationId,
-        );
-      await this.dependencies.checkpoints.save(consumer, event.globalPosition);
+  async react(
+    outcome: Extract<
+      NonNullable<ReturnType<typeof selectWorkflowOrchestrationEvent>>,
+      {
+        readonly eventType:
+          | typeof OrchestrationEventType.ActivityOutcomeAccepted
+          | typeof OrchestrationEventType.ActivityExecutionFailed;
+      }
+    >,
+  ): Promise<void> {
+    if (outcome.eventType === OrchestrationEventType.ActivityOutcomeAccepted) {
+      await this.publishAcceptedOutcome(
+        outcome.stream.id,
+        outcome.payload.activationId,
+        outcome.recordedAt,
+        outcome.eventId,
+        outcome.correlationId,
+      );
+      return;
     }
-    return events.length;
+    await this.publish(
+      outcome.payload.runId,
+      outcome.recordedAt,
+      outcome.eventId,
+      outcome.correlationId,
+    );
   }
 
   private async publishAcceptedOutcome(

@@ -56,18 +56,18 @@ it('E2E-AGENT-PUBLICATION-001 waits for the approval decision before publishing 
   await appendTerminalAgentRun(world, run, workflow.workflowInstanceId, activation);
   const publications = new AgentRunPublicationReactor({
     journal: world.journal,
-    checkpoints: world.checkpoints,
     runs: new RunRepository(world.journal),
     resources: world.resources,
     orchestration: world.orchestration,
   });
 
-  await publications.runOnce();
+  await world.process(publications.processor);
   expect(projectDeliveries(await world.journal.readAll(0))).toEqual([]);
 
   await world.acceptOutcome(workflow.workflowInstanceId, activation, { kind: 'done' });
-  await publications.runOnce();
-  await publications.runOnce();
+  await world.process(publications.processor);
+  await world.checkpoints.reset('reactor:agent-run-publication');
+  await world.process(publications.processor);
 
   expect(projectDeliveries(await world.journal.readAll(0))).toMatchObject([
     { payload: { report: { runId: run, outcome: 'DONE', awaitingApproval: true } } },
@@ -114,13 +114,12 @@ it('E2E-AGENT-PUBLICATION-002 publishes a transport failure after it is resolved
   await appendFailedAgentRun(world, run, workflow.workflowInstanceId, activation);
   const publications = new AgentRunPublicationReactor({
     journal: world.journal,
-    checkpoints: world.checkpoints,
     runs: new RunRepository(world.journal),
     resources: world.resources,
     orchestration: world.orchestration,
   });
 
-  await publications.runOnce();
+  await world.process(publications.processor);
   expect(projectDeliveries(await world.journal.readAll(0))).toEqual([]);
 
   await world.resolveExecutionFailure(workflow.workflowInstanceId, {
@@ -128,8 +127,8 @@ it('E2E-AGENT-PUBLICATION-002 publishes a transport failure after it is resolved
     runId: run,
     reason: 'runner exited 1',
   });
-  await publications.runOnce();
-  await publications.runOnce();
+  await world.process(publications.processor);
+  await world.process(publications.processor);
 
   await expect(world.viewWorkflow(workflow.workflowInstanceId)).resolves.toMatchObject({
     status: 'blocked',

@@ -1,7 +1,7 @@
 # integrations
 
 ## Purpose
-Provider adapters, translation, delivery, and reconciliation.
+Provider adapters, typed event reactors, translation, delivery, and reconciliation.
 ## Owns
 Payload contracts, external queries, formatting, translators, and delivery.
 ## Does not own
@@ -15,7 +15,10 @@ Owns `integrations`.
 ## Relations and events
 Owns `integration.` evidence, provider-neutral `status.` and `reply.` intents, and `delivery.` durable delivery facts, including the `integration` and `delivery` streams.
 ## Failure and recovery
-Delivery outcomes explicitly include confirmed, failed, and ambiguous.
+Integration reactors define stable `reactor:*` event processors and keep their
+selectors and event decoding inside Integrations. Delivery outcomes explicitly
+include confirmed, failed, and ambiguous; bounded reconciliation is separate
+from incremental processor handling.
 ## Extension rules
 Provider types stay here; domains validate all proposed commands.
 ## Scenarios

@@ -58,13 +58,13 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
     { kind: 'done' },
   );
 
-  await new AgentRunPublicationReactor({
+  const publications = new AgentRunPublicationReactor({
     journal: fixture.world.journal,
-    checkpoints: fixture.world.checkpoints,
     runs: new RunRepository(fixture.world.journal),
     resources: fixture.world.resources,
     orchestration: fixture.world.orchestration,
-  }).runOnce();
+  });
+  await fixture.world.process(publications.processor);
 
   const [intent] = projectDeliveries(await fixture.world.journal.readAll(0));
   expect(intent).toBeDefined();

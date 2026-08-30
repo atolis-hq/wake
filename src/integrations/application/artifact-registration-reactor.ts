@@ -1,11 +1,16 @@
 import { reportedArtifactSchema } from '../../activities/index.js';
 import {
+  defineEventProcessor,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  type EventProcessor,
+} from '../../eventing/index.js';
+import {
   cachedJournalView,
   createEventDraft,
   EventActorKind,
   EventSourceKind,
   type CachedJournalView,
-  type CheckpointStore,
   type EventEnvelope,
   type EventJournal,
   type IdGenerator,
@@ -40,7 +45,6 @@ import { integrationStream } from '../contracts/streams.js';
 
 interface ArtifactRegistrationDependencies {
   readonly journal: EventJournal;
-  readonly checkpoints: CheckpointStore;
   readonly resources: ResourceService;
   readonly ids: IdGenerator;
   readonly providers: readonly ProviderInstance[];
@@ -68,25 +72,24 @@ type ArtifactRecord = {
 
 export class ArtifactRegistrationReactor {
   private readonly latestUnresolved: CachedJournalView<ReadonlyMap<string, ArtifactEvent>>;
+  readonly processor: EventProcessor;
 
   constructor(private readonly dependencies: ArtifactRegistrationDependencies) {
     this.latestUnresolved = cachedJournalView(dependencies.journal, deriveLatestUnresolved);
-  }
-
-  async runOnce(limit = 100): Promise<number> {
-    const consumer = 'reactor:artifact-registration';
-    const events = await this.dependencies.journal.readAll(
-      await this.dependencies.checkpoints.load(consumer),
-      limit,
-    );
-    for (const event of events) {
-      const outcome = selectWorkflowOrchestrationEvent(event);
-      if (outcome?.eventType === OrchestrationEventType.ActivityOutcomeAccepted)
-        await this.register(outcome);
-      await this.dependencies.checkpoints.save(consumer, event.globalPosition);
-    }
-    await this.reconcileAmbiguous();
-    return events.length;
+    this.processor = defineEventProcessor({
+      consumer: 'reactor:artifact-registration',
+      name: 'artifact-registration',
+      owner: 'integrations',
+      category: EventProcessorCategory.Reactor,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select(event) {
+        const outcome = selectWorkflowOrchestrationEvent(event);
+        return outcome?.eventType === OrchestrationEventType.ActivityOutcomeAccepted
+          ? outcome
+          : null;
+      },
+      handle: async (outcome) => this.register(outcome),
+    });
   }
 
   private async register(
@@ -117,7 +120,7 @@ export class ArtifactRegistrationReactor {
       );
   }
 
-  private async reconcileAmbiguous(): Promise<void> {
+  async reconcileOnce(): Promise<void> {
     const latest = await this.latestUnresolved.get();
     for (const event of latest.values()) {
       if (event.payload.status !== ArtifactVerificationStatus.Ambiguous || event.payload.escalated)

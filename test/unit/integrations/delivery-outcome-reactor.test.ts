@@ -3,13 +3,31 @@ import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
 import { createEventDraft, eventId } from '../../../src/kernel/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
+import { InMemoryEventJournal, InMemoryProjectionStore } from '../../../src/persistence/index.js';
 
 const clock = { now: () => new Date('2026-08-09T00:00:00.000Z') };
+
+it('exposes its stable event processor identity', () => {
+  const reactor = new DeliveryOutcomeReactor({} as never, {} as never, {} as never);
+
+  expect(reactor).toMatchObject({
+    processor: {
+      consumer: 'reactor:delivery-outcomes',
+      name: 'delivery-outcomes',
+      owner: 'integrations',
+    },
+  });
+});
+
+it('skips facts outside the delivery namespace', () => {
+  const reactor = new DeliveryOutcomeReactor({} as never, {} as never, {} as never);
+
+  expect(
+    (reactor.processor as never as { select: (event: unknown) => unknown }).select({
+      eventType: 'work.created',
+    }),
+  ).toBeNull();
+});
 
 function confirmedEvent(overrides: {
   readonly intentEventId?: string;
@@ -90,7 +108,6 @@ it('resolves an activation that is genuinely waiting on this delivery', async ()
   const accepted: unknown[] = [];
   const reactor = new DeliveryOutcomeReactor(
     journal,
-    new InMemoryCheckpointStore(),
     {
       async get() {
         return {
@@ -106,7 +123,8 @@ it('resolves an activation that is genuinely waiting on this delivery', async ()
     new InMemoryProjectionStore(),
   );
 
-  await reactor.runOnce();
+  await reactor.react((await journal.readAll(0))[0]!);
+  await reactor.reconcileOnce();
 
   expect(accepted).toHaveLength(1);
   expect(accepted[0]).toMatchObject({
@@ -124,7 +142,6 @@ it('catches up a matching confirmation that was checkpointed before its delivery
   let isWaiting = false;
   const reactor = new DeliveryOutcomeReactor(
     journal,
-    new InMemoryCheckpointStore(),
     {
       async get() {
         return isWaiting
@@ -144,9 +161,9 @@ it('catches up a matching confirmation that was checkpointed before its delivery
     new InMemoryProjectionStore(),
   );
 
-  await reactor.runOnce();
+  await reactor.react((await journal.readAll(0))[0]!);
   isWaiting = true;
-  await reactor.runOnce();
+  await reactor.reconcileOnce();
 
   expect(accepted).toHaveLength(1);
   expect(accepted[0]).toMatchObject({
@@ -155,7 +172,7 @@ it('catches up a matching confirmation that was checkpointed before its delivery
   });
 });
 
-it('catches up a confirmation when its delivery wait appears during the same reactor pass', async () => {
+it('catches up a confirmation when its delivery wait appears during reconciliation', async () => {
   const journal = new InMemoryEventJournal(clock);
   await journal.append(deliveryStream(eventId('intent-1')), 0, [
     confirmedEvent({ intentEventId: 'intent-1' }),
@@ -164,7 +181,6 @@ it('catches up a confirmation when its delivery wait appears during the same rea
   let reads = 0;
   const reactor = new DeliveryOutcomeReactor(
     journal,
-    new InMemoryCheckpointStore(),
     {
       async get() {
         reads += 1;
@@ -185,7 +201,8 @@ it('catches up a confirmation when its delivery wait appears during the same rea
     new InMemoryProjectionStore(),
   );
 
-  await reactor.runOnce();
+  await reactor.react((await journal.readAll(0))[0]!);
+  await reactor.reconcileOnce();
 
   expect(accepted).toHaveLength(1);
 });
@@ -197,7 +214,6 @@ it('catches up a matching failure that was checkpointed before its delivery wait
   let isWaiting = false;
   const reactor = new DeliveryOutcomeReactor(
     journal,
-    new InMemoryCheckpointStore(),
     {
       async get() {
         return isWaiting
@@ -217,9 +233,9 @@ it('catches up a matching failure that was checkpointed before its delivery wait
     new InMemoryProjectionStore(),
   );
 
-  await reactor.runOnce();
+  await reactor.react((await journal.readAll(0))[0]!);
   isWaiting = true;
-  await reactor.runOnce();
+  await reactor.reconcileOnce();
 
   expect(accepted).toMatchObject([{ outcome: { kind: 'failed', data: { reason: 'denied' } } }]);
 });
@@ -230,7 +246,6 @@ it('resolves a confirmed reconciliation for its matching delivery wait', async (
   const accepted: unknown[] = [];
   const reactor = new DeliveryOutcomeReactor(
     journal,
-    new InMemoryCheckpointStore(),
     {
       async get() {
         return {
@@ -246,7 +261,7 @@ it('resolves a confirmed reconciliation for its matching delivery wait', async (
     new InMemoryProjectionStore(),
   );
 
-  await reactor.runOnce();
+  await reactor.react((await journal.readAll(0))[0]!);
 
   expect(accepted).toMatchObject([{ outcome: { kind: 'done' } }]);
 });
@@ -259,7 +274,6 @@ it('does not resolve a merely-still-open activation that never asked to wait on 
   const accepted: unknown[] = [];
   const reactor = new DeliveryOutcomeReactor(
     journal,
-    new InMemoryCheckpointStore(),
     {
       async get() {
         // A plain agent activation left pending for an unrelated reason (e.g.
@@ -278,7 +292,7 @@ it('does not resolve a merely-still-open activation that never asked to wait on 
     new InMemoryProjectionStore(),
   );
 
-  await reactor.runOnce();
+  await reactor.react((await journal.readAll(0))[0]!);
 
   expect(accepted).toHaveLength(0);
 });
@@ -291,7 +305,6 @@ it('does not resolve a different activation even if it is waiting on an unrelate
   const accepted: unknown[] = [];
   const reactor = new DeliveryOutcomeReactor(
     journal,
-    new InMemoryCheckpointStore(),
     {
       async get() {
         return {
@@ -308,21 +321,19 @@ it('does not resolve a different activation even if it is waiting on an unrelate
     new InMemoryProjectionStore(),
   );
 
-  await reactor.runOnce();
+  await reactor.react((await journal.readAll(0))[0]!);
 
   expect(accepted).toHaveLength(0);
 });
 
 it('continues delivery reconciliation when recording conversation provenance fails', async () => {
   const journal = new InMemoryEventJournal(clock);
-  const checkpoints = new InMemoryCheckpointStore();
   await journal.append(deliveryStream(eventId('intent-1')), 0, [
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
   const reactor = new DeliveryOutcomeReactor(
     journal,
-    checkpoints,
     {
       async get() {
         return {
@@ -355,8 +366,7 @@ it('continues delivery reconciliation when recording conversation provenance fai
     { recordRepresentation: async () => Promise.reject(new Error('conversation unavailable')) },
   );
 
-  await expect(reactor.runOnce()).resolves.toBe(1);
+  await expect(reactor.react((await journal.readAll(0))[0]!)).resolves.toBeUndefined();
 
   expect(accepted).toHaveLength(1);
-  expect(await checkpoints.load('reactor:delivery-outcomes')).toBeGreaterThan(0);
 });

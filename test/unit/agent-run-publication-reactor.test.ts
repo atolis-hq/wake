@@ -1,21 +1,31 @@
 import { expect, it, vi } from 'vitest';
 import { AgentRunPublicationReactor } from '../../src/integrations/application/agent-run-publication-reactor.js';
 
+it('exposes its stable event processor identity', () => {
+  const reactor = new AgentRunPublicationReactor({ journal: {} } as never);
+
+  expect(reactor).toMatchObject({
+    processor: {
+      consumer: 'reactor:agent-run-publication',
+      name: 'agent-run-publication',
+      owner: 'integrations',
+    },
+  });
+});
+
+it('skips facts outside the workflow orchestration namespace', () => {
+  const reactor = new AgentRunPublicationReactor({ journal: {} } as never);
+
+  expect(
+    (reactor.processor as never as { select: (event: unknown) => unknown }).select({
+      eventType: 'execution.run-succeeded',
+    }),
+  ).toBeNull();
+});
+
 it('does not publish from a raw execution completion before orchestration resolves it', async () => {
   const reactor = new AgentRunPublicationReactor({
-    journal: {
-      readAll: async () => [
-        {
-          eventType: 'execution.run-succeeded',
-          stream: { id: 'run-1' },
-          recordedAt: '2026-08-08T00:01:00.000Z',
-          eventId: 'run-1:succeeded',
-          correlationId: 'correlation-1',
-          globalPosition: 1,
-        },
-      ],
-    },
-    checkpoints: { load: async () => 0, save: async () => undefined },
+    journal: {},
     runs: {},
     resources: {},
     orchestration: {},
@@ -23,7 +33,11 @@ it('does not publish from a raw execution completion before orchestration resolv
   const publish = vi.fn();
   (reactor as never as { publish: typeof publish }).publish = publish;
 
-  await reactor.runOnce();
+  expect(
+    (reactor.processor as never as { select: (event: unknown) => unknown }).select({
+      eventType: 'execution.run-succeeded',
+    }),
+  ).toBeNull();
 
   expect(publish).not.toHaveBeenCalled();
 });
@@ -43,7 +57,6 @@ it('does not publish a terminal agent reply when canonical conversation recordin
         appended.push(events);
       },
     },
-    checkpoints: {},
     runs: {
       load: async () => ({
         view: {
@@ -107,7 +120,6 @@ it('publishes a failed Run only after orchestration records its execution failur
         },
       ],
     },
-    checkpoints: { load: async () => 0, save: async () => undefined },
     runs: { load: async () => ({ view: { runId: 'run-failed' } }) },
     resources: {},
     orchestration: {},
@@ -115,7 +127,14 @@ it('publishes a failed Run only after orchestration records its execution failur
   const publish = vi.fn();
   (reactor as never as { publish: typeof publish }).publish = publish;
 
-  await reactor.runOnce();
+  await reactor.react({
+    eventType: 'orchestration.activity-execution-failed',
+    stream: { id: 'workflow-1' },
+    payload: { activationId: 'activation-1', runId: 'run-failed', reason: 'runner exited 1' },
+    recordedAt: '2026-08-08T00:01:00.000Z',
+    eventId: 'workflow-1:execution-failed',
+    correlationId: 'correlation-1',
+  } as never);
 
   expect(publish).toHaveBeenCalledWith(
     'run-failed',
@@ -137,7 +156,6 @@ it('uses the stage immediately preceding the run activation rather than a later 
         { eventType: 'orchestration.stage-entered', payload: { stage: 'implement' } },
       ],
     },
-    checkpoints: {},
     runs: {},
     resources: {},
     orchestration: {},
@@ -256,7 +274,6 @@ async function publishWatchChildOutcome(input: {
         appended.push(events);
       },
     },
-    checkpoints: {},
     runs: {
       load: async () => ({
         view: {
@@ -326,7 +343,6 @@ async function publishWithReplyTarget(
         appended.push(events);
       },
     },
-    checkpoints: {},
     runs: {
       load: async () => ({
         view: {

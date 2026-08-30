@@ -1,5 +1,6 @@
 import { ResidentHost, TickHost, type AdvanceOnce } from '../control-plane/index.js';
 import type { ConversationService } from '../conversations/index.js';
+import { EventProcessorHost } from '../eventing/index.js';
 import {
   DeliveryOutcomeReactor,
   deliveryProjectionDefinitions,
@@ -11,6 +12,7 @@ import {
 } from '../integrations/index.js';
 import type { CheckpointStore, EventJournal, ProjectionStore } from '../kernel/index.js';
 import type { OrchestrationService } from '../orchestration/index.js';
+import { createInMemoryProcessorRunSerialiser } from '../persistence/index.js';
 import type { CompositionRoot, CompositionRootOptions } from './composition-root.js';
 import { createRuntimeProjectionSubscriptions } from './projection-runtime.js';
 import type { SurfaceApplicationOptions } from './surface-applications.js';
@@ -21,18 +23,11 @@ export function composeDeliveryService(dependencies: DeliveryServiceDependencies
 
 export function composeDeliveryOutcomeReactor(
   journal: EventJournal,
-  checkpoints: CheckpointStore,
   orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>,
   projections: ProjectionStore,
   conversations?: Pick<ConversationService, 'recordRepresentation'>,
 ): DeliveryOutcomeReactor {
-  return new DeliveryOutcomeReactor(
-    journal,
-    checkpoints,
-    orchestration,
-    projections,
-    conversations,
-  );
+  return new DeliveryOutcomeReactor(journal, orchestration, projections, conversations);
 }
 
 export interface DeliveryRuntimeDependencies {
@@ -66,17 +61,22 @@ export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies
   });
   const reactor = composeDeliveryOutcomeReactor(
     dependencies.journal,
-    dependencies.checkpoints,
     dependencies.orchestration,
     dependencies.projections,
     dependencies.conversations,
+  );
+  const processorHost = new EventProcessorHost(
+    dependencies.journal,
+    dependencies.checkpoints,
+    createInMemoryProcessorRunSerialiser(),
   );
   return {
     async runOnce(signal: AbortSignal) {
       await projectionSubscriptions.catchUpOnce(signal);
       const delivered = await service.deliverNext(signal);
       await projectionSubscriptions.catchUpOnce(signal);
-      await reactor.runOnce();
+      await processorHost.runOnce(reactor.processor, signal);
+      await reactor.reconcileOnce();
       return delivered;
     },
   };
