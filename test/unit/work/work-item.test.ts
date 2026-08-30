@@ -12,7 +12,7 @@ const stream = workItemStream(workId('1'));
 
 function event(eventType: string, payload: unknown, sequence: number): WorkEvent {
   return decodeWorkEvent({
-    ...createEventData({
+    event: createEventData({
       eventId: `event-${sequence}`,
       eventType,
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -20,9 +20,9 @@ function event(eventType: string, payload: unknown, sequence: number): WorkEvent
       causationId: 'command-1',
       actor: { kind: 'operator', id: 'operator-1' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload,
     }),
+    stream,
     recordedAt: '2026-07-30T12:00:00.000Z',
     sequence,
     globalPosition: sequence,

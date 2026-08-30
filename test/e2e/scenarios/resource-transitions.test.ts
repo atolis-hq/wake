@@ -113,8 +113,8 @@ it('uses the earliest matching primary-PR fact before a later watch verdict', as
   await world.acceptSignal(started.workflowInstanceId, {
     kind: WatchGateVerdictSignal,
     actorId: 'reviewer',
-    actorDecision: { authorized: true, evidenceId: laterVerdict.eventId },
-    providerEventId: laterVerdict.eventId,
+    actorDecision: { authorized: true, evidenceId: laterVerdict.event.eventId },
+    providerEventId: laterVerdict.event.eventId,
     authority: { kind: 'watch', watch: watchId('review') },
     outcome: 'done',
   });
@@ -291,7 +291,7 @@ it('waits after auto-merge delivery confirmation until the primary PR merges', a
   expect(
     (
       await world.journal.readStream({ kind: 'workflow-instance', id: started.workflowInstanceId })
-    ).filter((event) => event.eventType === OrchestrationEventType.ActivityRequested),
+    ).filter((event) => event.event.eventType === OrchestrationEventType.ActivityRequested),
   ).toHaveLength(1);
 
   await world.observePullRequest({
@@ -310,7 +310,7 @@ it('waits after auto-merge delivery confirmation until the primary PR merges', a
   );
   expect(
     (await world.journal.readStream({ kind: 'workflow-instance', id: started.workflowInstanceId }))
-      .filter((event) => event.eventType === OrchestrationEventType.StageEntered)
-      .map((event) => event.payload),
+      .filter((event) => event.event.eventType === OrchestrationEventType.StageEntered)
+      .map((event) => event.event.payload),
   ).toEqual([{ stage: 'merge' }, { stage: 'complete-issue' }]);
 });

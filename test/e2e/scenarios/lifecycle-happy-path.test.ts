@@ -86,7 +86,7 @@ defineScenario(
       true,
     );
     expect(
-      (await world.events('orchestration.stage-entered')).map((event) => event.payload),
+      (await world.events('orchestration.stage-entered')).map((event) => event.event.payload),
     ).toEqual([{ stage: 'refine' }, { stage: 'implement' }]);
     expect(await world.viewWork(work.workItemId)).toMatchObject({ state: 'open' });
   },

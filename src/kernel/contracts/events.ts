@@ -23,11 +23,7 @@ export interface EventSource {
   readonly id: string;
 }
 
-export interface EventData<
-  Type extends string = string,
-  Payload = unknown,
-  Stream extends EntityRef = EntityRef,
-> {
+export interface EventData<Type extends string = string, Payload = unknown> {
   readonly eventId: EventId;
   readonly eventType: Type;
   readonly schemaVersion: 1;
@@ -36,24 +32,25 @@ export interface EventData<
   readonly causationId: CausationId;
   readonly actor: EventActor;
   readonly source: EventSource;
-  readonly stream: Stream;
   readonly payload: Payload;
 }
 
 export interface EventEnvelope<
-  Type extends string = string,
-  Payload = unknown,
+  Event extends EventData = EventData,
   Stream extends EntityRef = EntityRef,
-> extends EventData<Type, Payload, Stream> {
+> {
+  readonly event: Event;
+  readonly stream: Stream;
   readonly recordedAt: string;
   readonly sequence: number;
   readonly globalPosition: number;
 }
 
-export type EventUnion<Payloads extends object, Stream extends EntityRef> = {
-  [Type in keyof Payloads & string]: EventEnvelope<Type, Payloads[Type], Stream>;
-}[keyof Payloads & string];
+export type EventUnion<Payloads extends object, Stream extends EntityRef> = EventEnvelope<
+  EventDataUnion<Payloads>,
+  Stream
+>;
 
-export type EventDataUnion<Payloads extends object, Stream extends EntityRef> = {
-  [Type in keyof Payloads & string]: EventData<Type, Payloads[Type], Stream>;
+export type EventDataUnion<Payloads extends object> = {
+  [Type in keyof Payloads & string]: EventData<Type, Payloads[Type]>;
 }[keyof Payloads & string];

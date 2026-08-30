@@ -1,6 +1,5 @@
 import { expect, it } from 'vitest';
 import { PollService } from '../../../src/integrations/application/poll-service.js';
-import { integrationStream } from '../../../src/integrations/contracts/streams.js';
 import { createEventData } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
@@ -86,7 +85,6 @@ function draft(eventId = 'github:issue:owner/repo#1:revision') {
     causationId: 'github:issue:owner/repo#1:revision',
     actor: { kind: 'integration', id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: integrationStream('github' as never),
     payload: { externalKey: 'owner/repo#1' },
   });
 }

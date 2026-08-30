@@ -207,7 +207,6 @@ async function appendRun(
       causationId: `activation-${id}`,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: runStream(currentRunId),
       payload: {
         activationId: activationId(`activation-${id}`),
         activity: activityName('fake'),
@@ -235,7 +234,6 @@ async function appendAmbiguous(
       causationId: `activation-${id}`,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: runStream(currentRunId),
       payload: { reason: 'recovery needs an operator', finishedAt: occurredAt },
     }),
   ]);

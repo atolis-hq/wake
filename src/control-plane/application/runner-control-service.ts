@@ -58,7 +58,10 @@ async function append(
     operation === 'pause' ? ControlEventType.RunnerPaused : ControlEventType.RunnerResumed;
   const correlation = correlationId(`runner:${runnerName}:${idempotencyKey}`);
   if (
-    events.some((event) => event.eventType === expectedType && event.correlationId === correlation)
+    events.some(
+      (event) =>
+        event.event.eventType === expectedType && event.event.correlationId === correlation,
+    )
   )
     return;
   if (
@@ -92,7 +95,8 @@ async function append(
     const latest = await input.journal.readStream(stream);
     if (
       latest.some(
-        (entry) => entry.eventType === expectedType && entry.correlationId === correlation,
+        (entry) =>
+          entry.event.eventType === expectedType && entry.event.correlationId === correlation,
       )
     )
       return;
@@ -109,13 +113,16 @@ function runnerIsPaused(
   for (const envelope of events) {
     const event = selectControlEvent(envelope);
     if (
-      event?.eventType === ControlEventType.RunnerPaused &&
-      event.payload.runnerName === runnerName
+      event?.event.eventType === ControlEventType.RunnerPaused &&
+      event.event.payload.runnerName === runnerName
     )
-      pause = event.payload.resumeAt === undefined ? {} : { resumeAt: event.payload.resumeAt };
+      pause =
+        event.event.payload.resumeAt === undefined
+          ? {}
+          : { resumeAt: event.event.payload.resumeAt };
     if (
-      event?.eventType === ControlEventType.RunnerResumed &&
-      event.payload.runnerName === runnerName
+      event?.event.eventType === ControlEventType.RunnerResumed &&
+      event.event.payload.runnerName === runnerName
     )
       pause = undefined;
   }

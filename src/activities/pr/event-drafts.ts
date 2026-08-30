@@ -1,6 +1,4 @@
 import { createEventData, EventSourceKind, type CommandContext } from '../../kernel/index.js';
-import { resourceStream, type ResourceStreamRef } from '../../resources/index.js';
-import type { WorkItemStreamRef } from '../../work/index.js';
 import {
   ActivityEventType,
   type ActivityEventData,
@@ -102,29 +100,25 @@ export const reviewRejected = (
   fact(resourceId, ActivityEventType.PrReviewRejected, { reason }, context);
 
 export const mergeDenied = (
-  stream: ResourceStreamRef | WorkItemStreamRef,
   reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityDraft<typeof ActivityEventType.PrMergeDenied> =>
-  denialDraft(ActivityEventType.PrMergeDenied, stream, reason, context, audit);
+  denialDraft(ActivityEventType.PrMergeDenied, reason, context, audit);
 
 export const approveDenied = (
-  stream: ResourceStreamRef | WorkItemStreamRef,
   reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityDraft<typeof ActivityEventType.PrApproveDenied> =>
-  denialDraft(ActivityEventType.PrApproveDenied, stream, reason, context, audit);
+  denialDraft(ActivityEventType.PrApproveDenied, reason, context, audit);
 
 export const mergeAuthorized = (
-  stream: ResourceStreamRef,
   revision: string,
   context: CommandContext,
 ): ActivityDraft<typeof ActivityEventType.PrMergeAuthorized> =>
   createEventData({
     ...metadata(ActivityEventType.PrMergeAuthorized, context),
-    stream,
     payload: { revision },
   });
 
@@ -136,7 +130,6 @@ export const deliveryIntentRequested = <Type extends DeliveryIntentType>(
 ) =>
   createEventData({
     ...metadata(type, context),
-    stream: resourceStream(resourceId),
     payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
   });
 
@@ -148,7 +141,6 @@ function fact<Type extends ActivityEventData['eventType']>(
 ) {
   return createEventData({
     ...metadata(eventType, context),
-    stream: resourceStream(resourceId),
     payload,
   });
 }
@@ -157,14 +149,12 @@ function denialDraft<
   Type extends typeof ActivityEventType.PrMergeDenied | typeof ActivityEventType.PrApproveDenied,
 >(
   eventType: Type,
-  stream: ResourceStreamRef | WorkItemStreamRef,
   reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit,
 ) {
   return createEventData({
     ...metadata(eventType, context),
-    stream,
     payload: {
       activationId: activationId(context.commandId),
       idempotencyKey: `${context.commandId}:${eventType}`,

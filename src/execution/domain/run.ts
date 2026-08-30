@@ -6,36 +6,40 @@ import { ExecutionFailureCode, isActiveRunStatus, RunStatus } from '../contracts
 export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
   const creation = events[0];
   if (creation === undefined) return null;
+  const creationEvent = creation.event;
   if (
-    creation.eventType !== ExecutionEventType.RunPreparationStarted &&
-    creation.eventType !== ExecutionEventType.RunStarted
+    creationEvent.eventType !== ExecutionEventType.RunPreparationStarted &&
+    creationEvent.eventType !== ExecutionEventType.RunStarted
   )
     throw invalidRunStream(creation.stream.id, 'first event must create the run');
   for (const event of events.slice(1))
-    if (event.eventType === ExecutionEventType.RunPreparationStarted)
+    if (event.event.eventType === ExecutionEventType.RunPreparationStarted)
       throw invalidRunStream(creation.stream.id, 'RunPreparationStarted must be the first event');
 
-  const startedFromPreparation = creation.eventType === ExecutionEventType.RunPreparationStarted;
+  const startedFromPreparation =
+    creationEvent.eventType === ExecutionEventType.RunPreparationStarted;
   const state: RunView = {
     runId: creation.stream.id,
-    activationId: creation.payload.activationId,
-    activity: creation.payload.activity,
-    ...(creation.payload.stage === undefined ? {} : { stage: creation.payload.stage }),
-    workflowInstanceId: creation.payload.workflowInstanceId,
-    orchestrationGroupId: creation.payload.orchestrationGroupId,
-    attempt: creation.payload.attempt,
+    activationId: creationEvent.payload.activationId,
+    activity: creationEvent.payload.activity,
+    ...(creationEvent.payload.stage === undefined ? {} : { stage: creationEvent.payload.stage }),
+    workflowInstanceId: creationEvent.payload.workflowInstanceId,
+    orchestrationGroupId: creationEvent.payload.orchestrationGroupId,
+    attempt: creationEvent.payload.attempt,
     status: startedFromPreparation ? RunStatus.Starting : RunStatus.Started,
     ambiguityAttempts: 0,
     escalated: false,
-    startedAt: creation.payload.startedAt,
-    ...(startedFromPreparation ? {} : { executionStartedAt: creation.payload.startedAt }),
-    ...(creation.payload.runner === undefined ? {} : { runner: creation.payload.runner }),
+    startedAt: creationEvent.payload.startedAt,
+    ...(startedFromPreparation ? {} : { executionStartedAt: creationEvent.payload.startedAt }),
+    ...(creationEvent.payload.runner === undefined ? {} : { runner: creationEvent.payload.runner }),
   };
-  for (const event of events.slice(1)) applyRunEvent(state, event);
+  for (const event of events.slice(1)) applyRunEvent(state, event.event);
   return state;
 }
 
-function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
+type RunEventData = RunExecutionEvent['event'];
+
+function applyRunEvent(state: RunView, event: RunEventData): void {
   if (!isActiveRunStatus(state.status)) {
     if (isOperatorAmbiguousTerminalEvent(state, event)) return applyTerminalEvent(state, event);
     return;
@@ -64,9 +68,9 @@ function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
 
 function isOperatorAmbiguousTerminalEvent(
   state: RunView,
-  event: RunExecutionEvent,
+  event: RunEventData,
 ): event is Extract<
-  RunExecutionEvent,
+  RunEventData,
   {
     eventType: typeof ExecutionEventType.RunSucceeded | typeof ExecutionEventType.RunFailed;
   }
@@ -81,7 +85,7 @@ function isOperatorAmbiguousTerminalEvent(
 
 function validateRunStart(
   state: RunView,
-  event: Extract<RunExecutionEvent, { eventType: typeof ExecutionEventType.RunStarted }>,
+  event: Extract<RunEventData, { eventType: typeof ExecutionEventType.RunStarted }>,
 ): void {
   validateRunStartField(
     state.runId,
@@ -124,7 +128,7 @@ function validateRunStartField(
 function sameRunner(
   left: RunView['runner'],
   right: Extract<
-    RunExecutionEvent,
+    RunEventData,
     { eventType: typeof ExecutionEventType.RunStarted }
   >['payload']['runner'],
 ): boolean {
@@ -136,7 +140,7 @@ const runnerFields = ['name', 'model', 'effort', 'pool', 'cli'] as const;
 function applyTerminalEvent(
   state: RunView,
   event: Extract<
-    RunExecutionEvent,
+    RunEventData,
     {
       eventType:
         | typeof ExecutionEventType.RunSucceeded
@@ -170,7 +174,7 @@ function applyTerminalEvent(
 function applyLivenessEvent(
   state: RunView,
   event: Exclude<
-    RunExecutionEvent,
+    RunEventData,
     {
       eventType:
         | typeof ExecutionEventType.RunPreparationStarted

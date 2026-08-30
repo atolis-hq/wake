@@ -190,7 +190,7 @@ it('replays an uncheckpointed handler batch after a checkpoint failure', async (
       consumer: 'checkpoint-failure',
       handle: async (events) => {
         attempts += 1;
-        for (const event of events) durableEffects.add(event.eventId);
+        for (const event of events) durableEffects.add(event.event.eventId);
         if (attempts === 2) replayed.resolve();
       },
     },
@@ -628,7 +628,6 @@ async function appendFacts(journal: InMemoryEventJournal, count: number): Promis
         causationId: 'causation',
         actor: { kind: 'system', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream,
         payload: {},
       }),
     ]);

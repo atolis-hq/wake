@@ -145,7 +145,6 @@ it('preserves the canonical EventId brand through delivery factory inputs', () =
     { readonly eventType: typeof DeliveryEventType.Confirmed }
   >;
 
-  expectTypeOf<ConfirmedInput['stream']['id']>().toEqualTypeOf<EventId>();
   expectTypeOf<ConfirmedInput['payload']['intentEventId']>().toEqualTypeOf<EventId>();
 });
 
@@ -170,20 +169,22 @@ describe('Delivery event contract', () => {
       causationId: 'intent-1',
       actor: { kind: 'system', id: 'delivery' },
       source: { kind: 'internal', id: 'delivery' },
-      stream: delivery,
       payload: confirmed,
     });
 
     expect(
       decodeDeliveryEvent({
-        ...draft,
+        event: draft,
+        stream: delivery,
         recordedAt: draft.occurredAt,
         sequence: 1,
         globalPosition: 5,
       }),
     ).toMatchObject({
-      eventType: DeliveryEventType.Confirmed,
-      payload: confirmed,
+      event: {
+        eventType: DeliveryEventType.Confirmed,
+        payload: confirmed,
+      },
       stream: delivery,
     });
   });

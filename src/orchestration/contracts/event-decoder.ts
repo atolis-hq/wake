@@ -11,6 +11,7 @@ import {
 import { WorkspaceMode } from '../../execution/index.js';
 import {
   brandedStringSchema,
+  eventDataSchema,
   eventEnvelopeSchema,
   type EventEnvelope,
 } from '../../kernel/index.js';
@@ -35,6 +36,7 @@ import {
 } from './identifiers.js';
 import {
   childOrchestrationGroupStreamId,
+  isWorkflowInstanceStream,
   OrchestrationStreamKind,
   primaryOrchestrationGroupStreamId,
 } from './streams.js';
@@ -202,9 +204,11 @@ export const workflowEnvelope = <Type extends string, Payload extends z.ZodType>
   payload: Payload,
 ) =>
   eventEnvelopeSchema.extend({
-    eventType: z.literal(eventType),
+    event: eventDataSchema.extend({
+      eventType: z.literal(eventType),
+      payload,
+    }),
     stream: workflowStreamSchema,
-    payload,
   });
 
 export const primaryGroupEnvelope = <Type extends string, Payload extends z.ZodType>(
@@ -212,9 +216,11 @@ export const primaryGroupEnvelope = <Type extends string, Payload extends z.ZodT
   payload: Payload,
 ) =>
   eventEnvelopeSchema.extend({
-    eventType: z.literal(eventType),
+    event: eventDataSchema.extend({
+      eventType: z.literal(eventType),
+      payload,
+    }),
     stream: primaryGroupStreamSchema,
-    payload,
   });
 
 export const childGroupEnvelope = <Type extends string, Payload extends z.ZodType>(
@@ -222,9 +228,11 @@ export const childGroupEnvelope = <Type extends string, Payload extends z.ZodTyp
   payload: Payload,
 ) =>
   eventEnvelopeSchema.extend({
-    eventType: z.literal(eventType),
+    event: eventDataSchema.extend({
+      eventType: z.literal(eventType),
+      payload,
+    }),
     stream: childGroupStreamSchema,
-    payload,
   });
 
 const primaryClaimedEnvelope = primaryGroupEnvelope(
@@ -236,10 +244,10 @@ const primaryClaimedEnvelope = primaryGroupEnvelope(
     })
     .strict(),
 ).superRefine((event, context) => {
-  if (event.stream.id !== `primary:${event.payload.workItemId}`)
+  if (event.stream.id !== `primary:${event.event.payload.workItemId}`)
     context.addIssue({
       code: 'custom',
-      path: ['payload', 'workItemId'],
+      path: ['event', 'payload', 'workItemId'],
       message: 'Primary claim work item must identify its stream',
     });
 });
@@ -247,10 +255,10 @@ const groupClaimedEnvelope = childGroupEnvelope(
   OrchestrationEventType.GroupClaimed,
   z.object({ key: childGroupIdSchema, requestId: z.string().min(1) }).strict(),
 ).superRefine((event, context) => {
-  if (event.payload.key !== event.stream.id)
+  if (event.event.payload.key !== event.stream.id)
     context.addIssue({
       code: 'custom',
-      path: ['payload', 'key'],
+      path: ['event', 'payload', 'key'],
       message: 'Group claim key must identify its stream',
     });
 });
@@ -260,14 +268,14 @@ const groupBudgetGrantedEnvelope = childGroupEnvelope(
     .object({ key: childGroupIdSchema, requestId: z.string().min(1), commandId: z.string().min(1) })
     .strict(),
 ).superRefine((event, context) => {
-  if (event.payload.key !== event.stream.id)
+  if (event.event.payload.key !== event.stream.id)
     context.addIssue({
       code: 'custom',
-      path: ['payload', 'key'],
+      path: ['event', 'payload', 'key'],
       message: 'Group budget grant key must identify its stream',
     });
 });
-const eventSchema = z.discriminatedUnion('eventType', [
+const eventSchema = z.union([
   workflowEnvelope(
     OrchestrationEventType.InstanceStarted,
     z.union([
@@ -292,15 +300,17 @@ const eventSchema = z.discriminatedUnion('eventType', [
     ]),
   ),
   eventEnvelopeSchema.extend({
-    eventType: z.literal(OrchestrationEventType.WorkflowDefinitionRegistered),
+    event: eventDataSchema.extend({
+      eventType: z.literal(OrchestrationEventType.WorkflowDefinitionRegistered),
+      payload: z
+        .object({
+          workflowName: brandedStringSchema(workflowName),
+          fingerprint: z.string().min(1),
+          compiledDefinition: z.custom<CompiledWorkflow>(),
+        })
+        .strict(),
+    }),
     stream: workflowDefinitionsStreamSchema,
-    payload: z
-      .object({
-        workflowName: brandedStringSchema(workflowName),
-        fingerprint: z.string().min(1),
-        compiledDefinition: z.custom<CompiledWorkflow>(),
-      })
-      .strict(),
   }),
   workflowEnvelope(
     OrchestrationEventType.StageEntered,
@@ -426,7 +436,9 @@ export function decodeOrchestrationEvent(event: EventEnvelope): OrchestrationEve
 }
 
 export function selectOrchestrationEvent(event: EventEnvelope): OrchestrationEvent | null {
-  return event.eventType.startsWith('orchestration.') ? decodeOrchestrationEvent(event) : null;
+  return event.event.eventType.startsWith('orchestration.')
+    ? decodeOrchestrationEvent(event)
+    : null;
 }
 
 export function selectWorkflowOrchestrationEvent(
@@ -434,20 +446,16 @@ export function selectWorkflowOrchestrationEvent(
 ): WorkflowOrchestrationEvent | null {
   const owned = selectOrchestrationEvent(event);
   if (owned === null) return null;
-  switch (owned.eventType) {
-    case OrchestrationEventType.PrimaryClaimed:
-    case OrchestrationEventType.GroupClaimed:
-    case OrchestrationEventType.GroupBudgetGranted:
-    case OrchestrationEventType.WorkflowDefinitionRegistered:
-      return null;
-    default:
-      return owned;
-  }
+  return isWorkflowEvent(owned) ? owned : null;
+}
+
+function isWorkflowEvent(event: OrchestrationEvent): event is WorkflowOrchestrationEvent {
+  return isWorkflowInstanceStream(event.stream);
 }
 
 function invalidOrchestrationEvent(event: EventEnvelope, cause: z.ZodError): Error {
   return new Error(
-    `Invalid Orchestration event ${event.eventId} at global position ${event.globalPosition} (${event.eventType}): ${cause.message}`,
+    `Invalid Orchestration event ${event.event.eventId} at global position ${event.globalPosition} (${event.event.eventType}): ${cause.message}`,
     { cause },
   );
 }

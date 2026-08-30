@@ -18,6 +18,9 @@ import {
   OrchestrationEventType,
   requestRunnerQuotaRetry,
   startInstance,
+  workflowInstanceStream,
+  type WorkflowOrchestrationEvent,
+  type WorkflowOrchestrationEventData,
 } from '../../../src/orchestration/index.js';
 import { workId } from '../../support/identities.js';
 
@@ -60,7 +63,7 @@ function fixture() {
     causationId: 'start-command',
   });
   if (started.kind !== 'append') throw new Error('expected start decision');
-  const state = foldWorkflowInstance(started.events)!;
+  const state = foldWorkflowInstance(recorded(started.events))!;
   return { state, startEvents: started.events };
 }
 
@@ -101,7 +104,7 @@ describe('runner-quota-retry-policy', () => {
       OrchestrationEventType.ActivityRequested,
     ]);
 
-    const next = foldWorkflowInstance([...startEvents, ...decision.events])!;
+    const next = foldWorkflowInstance(recorded([...startEvents, ...decision.events]))!;
     expect(next.status).toBe(WorkflowStatus.Active);
     expect(next.acceptedOutcomes).toContain(pendingActivationId);
     expect(next.retryCounts).toEqual({});
@@ -182,3 +185,13 @@ describe('runner-quota-retry-policy', () => {
     expect(requested.supplemental).toBeUndefined();
   });
 });
+
+function recorded(events: readonly WorkflowOrchestrationEventData[]): WorkflowOrchestrationEvent[] {
+  return events.map((event, index) => ({
+    event,
+    stream: workflowInstanceStream(workflowInstanceId('workflow-1')),
+    recordedAt: event.occurredAt,
+    sequence: index + 1,
+    globalPosition: index + 1,
+  }));
+}

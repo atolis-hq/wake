@@ -90,7 +90,7 @@ export function createWatchReactor(
       replayPolicy: EventProcessorReplayPolicy.Idempotent,
       select(event) {
         selectOrchestrationEvent(event);
-        return watchEventTypes().includes(event.eventType) ? event : null;
+        return watchEventTypes().includes(event.event.eventType) ? event : null;
       },
       handle: async (event) => react(event, commandContext(event)),
     }),
@@ -128,7 +128,7 @@ export function createWatchReconciler(
             (await orchestration.listWatchMatches(event, context)).map(async (match) => {
               const watches = waiting.get(match.parent.workflowInstanceId);
               return watches?.has(match.watch.id) === true &&
-                !(await hasDurableWatchOutcome(orchestration, journal, match, event.eventId))
+                !(await hasDurableWatchOutcome(orchestration, journal, match, event.event.eventId))
                 ? match
                 : null;
             }),
@@ -161,12 +161,12 @@ async function dispatch(
     )
       continue;
     const requestId = workflowInstanceId(
-      `${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`,
+      `${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.event.eventId}`,
     );
     const request = {
       parentWorkflowInstanceId: match.parent.workflowInstanceId,
       watchId: match.watch.id,
-      triggerId: event.eventId,
+      triggerId: event.event.eventId,
       workflowName: workflowName(match.watch.workflow),
       causalCycleId: causalCycle ?? requestId,
       requestId,
@@ -176,7 +176,7 @@ async function dispatch(
     if (
       (await orchestration.isCausalRepeat?.(
         match.parent.workflowInstanceId,
-        event.eventId,
+        event.event.eventId,
         causalCycle,
         request.requestId,
       )) === true
@@ -207,27 +207,27 @@ async function hasDurableWatchOutcome(
   return parentEvents.some((event) => {
     const owned = selectOrchestrationEvent(event);
     return (
-      owned?.eventType === OrchestrationEventType.GroupBudgetExhausted &&
-      owned.payload.requestId === requestId
+      owned?.event.eventType === OrchestrationEventType.GroupBudgetExhausted &&
+      owned.event.payload.requestId === requestId
     );
   });
 }
 
 function commandContext(event: PersistedEvent): CommandContext {
   return {
-    commandId: `${event.eventId}:watch`,
-    correlationId: correlationId(event.correlationId),
-    occurredAt: event.occurredAt,
+    commandId: `${event.event.eventId}:watch`,
+    correlationId: correlationId(event.event.correlationId),
+    occurredAt: event.event.occurredAt,
     actor: { kind: EventActorKind.System, id: 'watch-reactor' },
   };
 }
 
 function orchestrationCausalCycleId(event: OrchestrationEvent | null): string | undefined {
-  return event !== null && 'causalCycleId' in event.payload
-    ? event.payload.causalCycleId
+  return event !== null && 'causalCycleId' in event.event.payload
+    ? event.event.payload.causalCycleId
     : undefined;
 }
 
 function watchCommandId(context: CommandContext, match: WatchMatch, event: PersistedEvent): string {
-  return `${context.commandId}:parent:${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`;
+  return `${context.commandId}:parent:${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.event.eventId}`;
 }

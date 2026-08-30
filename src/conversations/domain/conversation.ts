@@ -1,4 +1,4 @@
-import type { ConversationEvent } from '../contracts/events.js';
+import type { ConversationEvent, ConversationEventData } from '../contracts/events.js';
 import { ConversationEventType } from '../contracts/events.js';
 import type { ConversationView } from '../contracts/views.js';
 
@@ -12,31 +12,32 @@ export function applyConversationEvent(
   view: ConversationView | null,
   event: ConversationEvent,
 ): ConversationView | null {
-  switch (event.eventType) {
+  const data = event.event;
+  switch (data.eventType) {
     case ConversationEventType.Created:
       return {
         conversationId: event.stream.id,
-        workItemId: event.payload.workItemId,
+        workItemId: data.payload.workItemId,
         entries: [],
         resources: [],
       };
     case ConversationEventType.EntryRecorded:
-      return appendEntry(view, event);
+      return appendEntry(view, data);
     case ConversationEventType.ResourceAssociated:
-      return appendResource(view, event);
+      return appendResource(view, data);
     case ConversationEventType.EntryRevised:
-      return reviseEntry(view, event);
+      return reviseEntry(view, data);
     case ConversationEventType.EntryTombstoned:
-      return tombstoneEntry(view, event);
+      return tombstoneEntry(view, data);
     case ConversationEventType.EntryRepresentationRecorded:
-      return recordRepresentation(view, event);
+      return recordRepresentation(view, data);
   }
 }
 
 function appendEntry(
   view: ConversationView | null,
   event: Extract<
-    ConversationEvent,
+    ConversationEventData,
     { readonly eventType: typeof ConversationEventType.EntryRecorded }
   >,
 ): ConversationView | null {
@@ -62,7 +63,7 @@ function appendEntry(
 function recordRepresentation(
   view: ConversationView | null,
   event: Extract<
-    ConversationEvent,
+    ConversationEventData,
     { readonly eventType: typeof ConversationEventType.EntryRepresentationRecorded }
   >,
 ): ConversationView | null {
@@ -91,7 +92,7 @@ function recordRepresentation(
 function appendResource(
   view: ConversationView | null,
   event: Extract<
-    ConversationEvent,
+    ConversationEventData,
     { readonly eventType: typeof ConversationEventType.ResourceAssociated }
   >,
 ): ConversationView | null {
@@ -113,7 +114,7 @@ function appendResource(
 function reviseEntry(
   view: ConversationView | null,
   event: Extract<
-    ConversationEvent,
+    ConversationEventData,
     { readonly eventType: typeof ConversationEventType.EntryRevised }
   >,
 ): ConversationView | null {
@@ -138,7 +139,7 @@ function reviseEntry(
 function tombstoneEntry(
   view: ConversationView | null,
   event: Extract<
-    ConversationEvent,
+    ConversationEventData,
     { readonly eventType: typeof ConversationEventType.EntryTombstoned }
   >,
 ): ConversationView | null {

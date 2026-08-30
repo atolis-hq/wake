@@ -15,7 +15,7 @@ it('E2E-LIVE-007 caps retries and escalates the composed workflow', async () => 
 
   expect(
     (await world.events()).filter(
-      (event) => event.eventType === OrchestrationEventType.RetryCounted,
+      (event) => event.event.eventType === OrchestrationEventType.RetryCounted,
     ),
   ).toHaveLength(2);
 }, 15_000);

@@ -8,7 +8,12 @@ import {
   runStream,
   type RunRepository,
 } from '../../../src/execution/index.js';
-import { createEventData, eventId, type EntityRef } from '../../../src/kernel/index.js';
+import {
+  createEventData,
+  eventId,
+  type EntityRef,
+  type EventEnvelope,
+} from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowName,
@@ -59,7 +64,6 @@ it('ignores facts outside the configured watch event types through its processor
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: watchStream,
       payload: {},
     }),
   ]);
@@ -94,10 +98,10 @@ const canonicalEvent = (
   id: string,
   payload: unknown,
   stream: EntityRef = watchStream,
-) => ({
-  ...eventEnvelope(eventType, payload, stream),
-  eventId: eventId(id),
-});
+) => {
+  const envelope = eventEnvelope(eventType, payload, stream);
+  return { ...envelope, event: { ...envelope.event, eventId: eventId(id) } };
+};
 
 it('rejects a malformed owned orchestration envelope before routing watches', async () => {
   const reactor = createWatchReactor({
@@ -164,7 +168,7 @@ it('does not inspect an unrelated domain payload for causal metadata', async () 
 });
 
 it('passes the persisted event to watch matching so predicates can decode its payload', async () => {
-  let matchedEvent: { readonly eventType: string; readonly payload: unknown } | undefined;
+  let matchedEvent: EventEnvelope | undefined;
   const event = canonicalEvent('pr.checks-changed', 'checks-failed', { checks: 'failing' });
   const reactor = createWatchReactor({
     async listWatchMatches(candidate) {
@@ -183,8 +187,10 @@ it('passes the persisted event to watch matching so predicates can decode its pa
   });
 
   expect(matchedEvent).toMatchObject({
-    eventType: 'pr.checks-changed',
-    payload: { checks: 'failing' },
+    event: {
+      eventType: 'pr.checks-changed',
+      payload: { checks: 'failing' },
+    },
   });
 });
 
@@ -287,7 +293,6 @@ it('keeps its checkpoint unchanged until every watch request succeeds', async ()
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {},
     }),
   ]);
@@ -391,7 +396,6 @@ it('replays the identical child request after checkpoint persistence fails', asy
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {},
     }),
   ]);
@@ -456,7 +460,6 @@ it('reconciles a durable watch trigger orphaned after its checkpoint advanced', 
       causationId: 'orphaned-trigger',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: watchStream,
       payload: {},
     }),
   ]);

@@ -1,13 +1,8 @@
 import { createEventData, type EventDataInput } from '../../../kernel/index.js';
-import type { DeliveryStreamRef } from '../../contracts/streams.js';
 import { DeliveryEventType, type DeliveryEventData, type DeliveryEventPayloads } from './events.js';
 
 export type DeliveryEventDataInput = {
-  [Type in keyof DeliveryEventPayloads]: EventDataInput<
-    Type,
-    DeliveryEventPayloads[Type],
-    DeliveryStreamRef
-  >;
+  [Type in keyof DeliveryEventPayloads]: EventDataInput<Type, DeliveryEventPayloads[Type]>;
 }[keyof DeliveryEventPayloads];
 
 export function createDeliveryEventData(input: DeliveryEventDataInput): DeliveryEventData {

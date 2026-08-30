@@ -156,7 +156,6 @@ async function appendTerminalAgentRun(
       causationId: 'publication-boundary',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId,
         activity: 'agent',
@@ -174,7 +173,6 @@ async function appendTerminalAgentRun(
       causationId: 'publication-boundary',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         transport: 'succeeded',
         agent: { outcome: 'DONE', displayBody: 'Plan complete.', metadata: {} },
@@ -188,7 +186,6 @@ async function appendTerminalAgentRun(
       causationId: 'publication-boundary',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { outcome: { kind: 'done' }, finishedAt: now },
     }),
   ] as never);
@@ -211,7 +208,6 @@ async function appendFailedAgentRun(
       causationId: 'publication-failure',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId,
         activity: 'agent',
@@ -229,7 +225,6 @@ async function appendFailedAgentRun(
       causationId: 'publication-failure',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         failure: {
           kind: 'unexpected-execution-failure',

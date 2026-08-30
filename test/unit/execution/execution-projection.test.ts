@@ -29,7 +29,7 @@ describe('execution projections', () => {
     );
     const started = eventEnvelope(
       ExecutionEventType.RunStarted,
-      { ...preparation.payload, startedAt: '2026-08-30T12:01:00.000Z' },
+      { ...preparation.event.payload, startedAt: '2026-08-30T12:01:00.000Z' },
       runStream(run),
       2,
     );

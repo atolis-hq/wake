@@ -139,7 +139,7 @@ it('resolves through the matching primary when another primary resource does not
     ActivityEventType.PrStateChanged,
     ActivityEventType.PrChecksChanged,
   ]);
-  expect(resolved).toEqual({ transition, evidenceId: fact.eventId });
+  expect(resolved).toEqual({ transition, evidenceId: fact.event.eventId });
   expect(pullRequestPolicyCalls).toBe(1);
 });
 
@@ -282,11 +282,11 @@ it('does not invoke the pull-request policy for a completable resource', async (
     async resolve(input) {
       completablePolicyCalls += 1;
       const transition = input.transitions.find(
-        (candidate) => candidate.event === input.fact?.eventType,
+        (candidate) => candidate.event === input.fact?.event.eventType,
       );
       return transition === undefined || input.fact === undefined
         ? null
-        : { transition, evidenceId: input.fact.eventId };
+        : { transition, evidenceId: input.fact.event.eventId };
     },
   };
   const evidence = createCapabilityResourceTransitionEvidence({
@@ -328,7 +328,7 @@ it('does not invoke the pull-request policy for a completable resource', async (
     evidence.resolve({ workItemId: workItem, transitions: [transition], fact: matchingFact }),
   ).resolves.toEqual({
     transition,
-    evidenceId: matchingFact.eventId,
+    evidenceId: matchingFact.event.eventId,
   });
   await expect(
     evidence.resolve({ workItemId: workItem, transitions: [transition], fact: unrelatedFact }),

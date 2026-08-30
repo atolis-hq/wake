@@ -88,7 +88,7 @@ it('persists instances and accepts outcomes idempotently', async () => {
   expect(instance.workflowDefinitionFingerprint).toMatch(/^[a-f0-9]{64}$/);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.workflow-definition-registered',
+      (event) => event.event.eventType === 'orchestration.workflow-definition-registered',
     ),
   ).toHaveLength(1);
   const projections = new InMemoryProjectionStore();
@@ -131,7 +131,7 @@ it('persists instances and accepts outcomes idempotently', async () => {
   );
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.workflow-definition-registered',
+      (event) => event.event.eventType === 'orchestration.workflow-definition-registered',
     ),
   ).toHaveLength(2);
   expect(newInstance.workflowDefinitionFingerprint).not.toBe(

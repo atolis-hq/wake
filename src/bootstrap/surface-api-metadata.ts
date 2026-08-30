@@ -18,5 +18,5 @@ export async function projectionMeta(
   const event = (await journal.readAll(position - 1, 1))[0];
   if (event === undefined || event.globalPosition !== position)
     throw new Error(`Journal fact unavailable for projection position ${position}`);
-  return { asOf: event.occurredAt, position };
+  return { asOf: event.event.occurredAt, position };
 }

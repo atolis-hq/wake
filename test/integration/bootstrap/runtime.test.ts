@@ -31,7 +31,7 @@ import {
   issueCommentObservation,
   issueObservation,
 } from '../../../src/integrations/github/infrastructure/issue-source.js';
-import { DeliveryIntentEventType } from '../../../src/integrations/index.js';
+import { DeliveryIntentEventType, integrationStream } from '../../../src/integrations/index.js';
 import type { CheckpointStore, EventJournal, ProjectionStore } from '../../../src/kernel/index.js';
 import {
   EventActorKind,
@@ -196,7 +196,7 @@ describe('target composition root', () => {
         journal,
         0,
         (event) =>
-          event.eventType === OrchestrationEventType.InstanceBlocked &&
+          event.event.eventType === OrchestrationEventType.InstanceBlocked &&
           event.stream.id === workflow,
       );
       trace.push('blocked');
@@ -216,11 +216,11 @@ describe('target composition root', () => {
       trace.push('message-recorded');
 
       const facts = await journal.readStream(workflowInstanceStream(workflow));
-      expect(facts.map((event) => event.eventType)).toContain(
+      expect(facts.map((event) => event.event.eventType)).toContain(
         OrchestrationEventType.OperatorRetryRequested,
       );
       expect(
-        facts.filter((event) => event.eventType === OrchestrationEventType.ActivityRequested),
+        facts.filter((event) => event.event.eventType === OrchestrationEventType.ActivityRequested),
       ).toHaveLength(2);
       trace.push('retry-and-activity-durable');
 
@@ -413,7 +413,6 @@ describe('target composition root', () => {
         causationId: 'run-restart-recovery',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: runStream(id),
         payload: {
           activationId: activationId('activation-restart-recovery'),
           activity: BuiltInActivityName.Agent,
@@ -725,7 +724,6 @@ describe('target composition root', () => {
         causationId: causationId('decorated-delivery'),
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'resource', id: resource.resourceId },
         payload: {
           workflowInstanceId: 'workflow-decorated-delivery',
           activationId: 'activation-decorated-delivery',
@@ -782,7 +780,6 @@ describe('target composition root', () => {
           causationId: 'targeted-delivery-intent',
           actor: { kind: EventActorKind.System, id: 'test' },
           source: { kind: EventSourceKind.Internal, id: 'test' },
-          stream: { kind: 'resource', id: resource.resourceId },
           payload: {
             workflowInstanceId: 'workflow-targeted-delivery',
             activationId: 'activation-targeted-delivery',
@@ -1241,7 +1238,7 @@ describe('target composition root', () => {
         user: { login: 'author', type: 'User' },
       },
     });
-    await journal.appendToStream(issue.stream, 0, [issue]);
+    await journal.appendToStream(integrationStream(GitHubAdapter), 0, [issue]);
     const comment = issueCommentObservation({
       repository: 'atolis-hq/wake',
       issue: { number: 7 },
@@ -1254,7 +1251,7 @@ describe('target composition root', () => {
       },
     });
     if (comment === null) throw new Error('Test comment observation was unexpectedly empty');
-    await journal.appendToStream(comment.stream, 1, [comment]);
+    await journal.appendToStream(integrationStream(GitHubAdapter), 1, [comment]);
     let prompt = '';
 
     await runtime.activities.execute(

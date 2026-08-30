@@ -8,11 +8,13 @@ import {
   DeliveryIntentEventType,
   DeliveryResultKind,
   deliveryStream,
+  integrationStream,
 } from '../../../../src/integrations/index.js';
 import {
   correlationId,
   createEventData,
   eventId,
+  type EntityRef,
   type EventData,
 } from '../../../../src/kernel/index.js';
 import {
@@ -460,7 +462,6 @@ async function appendConfirmedDelivery(
       causationId: `causation:${input.intentEventId}`,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: resourceStream(resourceId),
       payload: {
         workflowInstanceId: 'workflow-1',
         activationId: 'activation-1',
@@ -468,6 +469,7 @@ async function appendConfirmedDelivery(
         body: input.body,
       },
     }),
+    resourceStream(resourceId),
   );
   if (input.confirmed === false) return intent;
   const delivery = (payload: {
@@ -480,7 +482,6 @@ async function appendConfirmedDelivery(
     causationId: `causation:${input.intentEventId}`,
     actor: { kind: 'system' as const, id: 'test' },
     source: { kind: 'internal' as const, id: 'test' },
-    stream: deliveryStream(eventId(input.intentEventId)),
     payload: {
       intentEventId: eventId(input.intentEventId),
       intentGlobalPosition: intent.globalPosition,
@@ -502,12 +503,13 @@ async function appendConfirmedDelivery(
           eventId: `${input.intentEventId}-confirmed`,
           eventType: DeliveryEventType.Confirmed,
         }),
+    deliveryStream(eventId(input.intentEventId)),
   );
 }
 
-async function appendEvent(world: TestWorld, event: EventData) {
-  const events = await world.journal.readStream(event.stream);
-  const [appended] = await world.journal.appendToStream(event.stream, events.length, [event]);
+async function appendEvent(world: TestWorld, event: EventData, stream: EntityRef) {
+  const events = await world.journal.readStream(stream);
+  const [appended] = await world.journal.appendToStream(stream, events.length, [event]);
   if (appended === undefined) throw new Error('Expected the journal to append an event');
   return appended;
 }
@@ -543,6 +545,7 @@ async function appendIssueComment(
     },
   });
   if (event === null) throw new Error('Test comment observation was unexpectedly empty');
-  const events = await world.journal.readStream(event.stream);
-  await world.journal.appendToStream(event.stream, events.length, [event]);
+  const stream = integrationStream(adapter);
+  const events = await world.journal.readStream(stream);
+  await world.journal.appendToStream(stream, events.length, [event]);
 }

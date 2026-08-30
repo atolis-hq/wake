@@ -51,7 +51,6 @@ describe('ArtifactRegistrationReactor', () => {
         causationId: 'artifact-cause',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream: { kind: 'test', id: 'unrelated' },
         payload: {},
       }),
     ]);
@@ -304,7 +303,7 @@ DONE`;
 
     expect(
       (await journal.readAll(0)).some(
-        (event) => event.eventType === 'integration.artifact-verification-unresolved',
+        (event) => event.event.eventType === 'integration.artifact-verification-unresolved',
       ),
     ).toBe(true);
     expect(await checkpoints.load('reactor:artifact-registration')).toBeGreaterThan(0);
@@ -391,7 +390,7 @@ DONE`;
 function draft(
   eventType: string,
   payload: unknown,
-  workflow: ReturnType<typeof workflowInstanceId>,
+  _workflow: ReturnType<typeof workflowInstanceId>,
 ) {
   return createEventData({
     eventId: `${eventType}:artifact`,
@@ -401,7 +400,6 @@ function draft(
     causationId: 'artifact-cause',
     actor: { kind: EventActorKind.System, id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: workflowInstanceStream(workflow),
     payload,
   });
 }

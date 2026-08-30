@@ -59,7 +59,7 @@ defineScenario(
       frozen: false,
       deleted: false,
     });
-    expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
+    expect((await journal.readAll(0)).map((event) => event.event.eventType)).toEqual([
       'work.item-created',
       'resources.resource-discovered',
       'resources.work-correlation-established',

@@ -27,7 +27,7 @@ describe(scenario.id, () => {
 
     expect(provider.effects).toHaveLength(1);
     expect((await root.orchestration.get(workflowId))?.status).toBe('completed');
-    expect((await root.journal.readAll(0)).map((event) => event.eventType)).toContain(
+    expect((await root.journal.readAll(0)).map((event) => event.event.eventType)).toContain(
       DeliveryEventType.Confirmed,
     );
   });

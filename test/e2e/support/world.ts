@@ -29,6 +29,7 @@ import {
   createEventData,
   type Clock,
   type EntityRef,
+  type EventData,
   type EventEnvelope,
   type IdGenerator,
 } from '../../../src/kernel/index.js';
@@ -214,23 +215,23 @@ export class TestWorld {
     eventType: Type,
     payload: Payload,
     cause: string,
-  ): Promise<EventEnvelope<Type, Payload>> {
+  ): Promise<EventEnvelope<EventData<Type, Payload>, typeof this.stream>> {
     const currentEvents = await this.journal.readStream(this.stream);
+    const draft = createEventData({
+      eventId: this.ids.next('event'),
+      eventType,
+      occurredAt: this.clock.now().toISOString(),
+      correlationId: 'scenario-1',
+      causationId: cause,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload,
+    });
     const [appended] = await this.journal.appendToStream(this.stream, currentEvents.length, [
-      createEventData({
-        eventId: this.ids.next('event'),
-        eventType,
-        occurredAt: this.clock.now().toISOString(),
-        correlationId: 'scenario-1',
-        causationId: cause,
-        actor: { kind: 'system', id: 'test' },
-        source: { kind: 'internal', id: 'test' },
-        stream: this.stream,
-        payload,
-      }),
+      draft,
     ]);
     if (appended === undefined) throw new Error('Scenario fact was not appended');
-    return appended as EventEnvelope<Type, Payload>;
+    return { ...appended, event: draft, stream: this.stream };
   }
 
   async trace(): Promise<string> {
@@ -481,7 +482,6 @@ export class TestWorld {
         causationId: eventId,
         actor: { kind: 'integration', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream,
         payload,
       }),
     ]);
@@ -496,7 +496,7 @@ export class TestWorld {
 
   async events(type?: string): Promise<readonly EventEnvelope[]> {
     const events = await this.journal.readAll(0);
-    return type === undefined ? events : events.filter((event) => event.eventType === type);
+    return type === undefined ? events : events.filter((event) => event.event.eventType === type);
   }
 
   viewWork(id: WorkItemId) {

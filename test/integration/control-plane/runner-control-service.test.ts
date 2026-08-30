@@ -27,7 +27,7 @@ it('deduplicates an unpause after a filesystem-backed service restart', async ()
   });
   await restarted.unpause('sonnet', 'operator-43');
 
-  expect((await reopened.readAll(0)).map((event) => event.eventType)).toEqual([
+  expect((await reopened.readAll(0)).map((event) => event.event.eventType)).toEqual([
     ControlEventType.RunnerPaused,
     ControlEventType.RunnerResumed,
   ]);

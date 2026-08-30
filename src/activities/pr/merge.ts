@@ -107,7 +107,8 @@ async function executeMerge(
     BuiltInResourceCapability.Mergeable,
   );
   if (!resource.allowed) {
-    const denial = mergeDenied(workItemStream(invocation.workItemId), resource.reason, command, {
+    const factStream = workItemStream(invocation.workItemId);
+    const denial = mergeDenied(resource.reason, command, {
       ...selectionDenialAudit(invocation.input.target, resource.candidates),
       method: invocation.input.method,
     });
@@ -115,6 +116,7 @@ async function executeMerge(
       decisionKind: 'denied',
       outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: resource.reason } },
       fact: denial,
+      factStream,
     });
   }
   const decision = decidePullRequestAuthority(authority, {
@@ -130,7 +132,8 @@ async function executeMerge(
     },
   });
   if (!decision.allowed) {
-    const denial = mergeDenied(resourceStream(resource.resourceId), decision.reason, command, {
+    const factStream = resourceStream(resource.resourceId);
+    const denial = mergeDenied(decision.reason, command, {
       ...selectedDenialAudit(authority, resource.resourceId),
       method: invocation.input.method,
     });
@@ -138,6 +141,7 @@ async function executeMerge(
       decisionKind: 'denied',
       outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: decision.reason } },
       fact: denial,
+      factStream,
     });
   }
   const intent = deliveryIntentRequested(
@@ -161,5 +165,6 @@ async function executeMerge(
       data: { intentEventId: intent.eventId, signalKind: 'delivery-result' },
     },
     fact: intent,
+    factStream: resourceStream(decision.resourceId),
   });
 }

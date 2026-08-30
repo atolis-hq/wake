@@ -32,8 +32,9 @@ export function createResourceTransitionReactor(
 ) {
   const react = async (event: PersistedEvent, context: CommandContext): Promise<void> => {
     const orchestrationEvent = selectOrchestrationEvent(event);
-    const isWaitStart = orchestrationEvent?.eventType === OrchestrationEventType.SignalWaitStarted;
-    if (!isWaitStart && !evidence.triggers.includes(event.eventType)) return;
+    const isWaitStart =
+      orchestrationEvent?.event.eventType === OrchestrationEventType.SignalWaitStarted;
+    if (!isWaitStart && !evidence.triggers.includes(event.event.eventType)) return;
     const fact = isWaitStart ? undefined : event;
     for (const match of await orchestration.listResourceTransitionMatches(event)) {
       const resolved = await evidence.resolve({
@@ -61,8 +62,8 @@ export function createResourceTransitionReactor(
       batchSize,
       select(event) {
         const orchestrationEvent = selectOrchestrationEvent(event);
-        return orchestrationEvent?.eventType === OrchestrationEventType.SignalWaitStarted ||
-          evidence.triggers.includes(event.eventType)
+        return orchestrationEvent?.event.eventType === OrchestrationEventType.SignalWaitStarted ||
+          evidence.triggers.includes(event.event.eventType)
           ? event
           : null;
       },
@@ -73,9 +74,9 @@ export function createResourceTransitionReactor(
 
 function commandContext(event: PersistedEvent): CommandContext {
   return {
-    commandId: `${event.eventId}:resource-transition`,
-    correlationId: correlationId(event.correlationId),
-    occurredAt: event.occurredAt,
+    commandId: `${event.event.eventId}:resource-transition`,
+    correlationId: correlationId(event.event.correlationId),
+    occurredAt: event.event.occurredAt,
     actor: { kind: EventActorKind.System, id: 'resource-transition-reactor' },
   };
 }

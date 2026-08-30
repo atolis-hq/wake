@@ -391,7 +391,9 @@ async function journalGroupBudgetExhaustion(
 ) {
   return (await journal.readStream(workflowInstanceStream(workflowInstanceId))).flatMap((event) => {
     const owned = selectOrchestrationEvent(event);
-    return owned?.eventType === OrchestrationEventType.GroupBudgetExhausted ? [owned.payload] : [];
+    return owned?.event.eventType === OrchestrationEventType.GroupBudgetExhausted
+      ? [owned.event.payload]
+      : [];
   });
 }
 

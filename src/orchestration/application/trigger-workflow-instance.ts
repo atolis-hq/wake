@@ -17,7 +17,7 @@ export async function resolveTriggerWorkflowInstanceId(
   runs: Pick<RunRepository, 'load'> | undefined,
 ): Promise<WorkflowInstanceId | undefined> {
   if (
-    event.eventType === OrchestrationEventType.SignalWaitStarted &&
+    event.event.eventType === OrchestrationEventType.SignalWaitStarted &&
     isWorkflowInstanceStream(event.stream)
   )
     return event.stream.id;

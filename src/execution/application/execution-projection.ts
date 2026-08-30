@@ -34,18 +34,18 @@ export const runsByWorkflowInstanceProjection: ProjectionDefinition<readonly Run
     const owned = selectRunExecutionEvent(event);
     if (owned === null) return null;
     if (
-      owned.eventType !== ExecutionEventType.RunPreparationStarted &&
-      owned.eventType !== ExecutionEventType.RunStarted
+      owned.event.eventType !== ExecutionEventType.RunPreparationStarted &&
+      owned.event.eventType !== ExecutionEventType.RunStarted
     )
       return null;
-    return { key: owned.payload.workflowInstanceId };
+    return { key: owned.event.payload.workflowInstanceId };
   },
   initial: () => [],
   project(previous, event) {
     const owned = selectRunExecutionEvent(event);
     if (
-      owned?.eventType !== ExecutionEventType.RunPreparationStarted &&
-      owned?.eventType !== ExecutionEventType.RunStarted
+      owned?.event.eventType !== ExecutionEventType.RunPreparationStarted &&
+      owned?.event.eventType !== ExecutionEventType.RunStarted
     )
       return previous;
     return previous.includes(owned.stream.id) ? previous : [...previous, owned.stream.id];

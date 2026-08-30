@@ -18,7 +18,6 @@ async function seedRun(journal: InMemoryEventJournal, id: string, activation: st
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId: activationId(activation),
         activity: activityName('implement'),

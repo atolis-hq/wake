@@ -1,8 +1,7 @@
 import type { EventProcessor } from '../../eventing/index.js';
 import type { EventData } from '../../kernel/index.js';
-import type { IntegrationStreamRef } from './streams.js';
 
-export type ProviderEventData = EventData<string, unknown, IntegrationStreamRef>;
+export type ProviderEventData = EventData<string, unknown>;
 
 export interface ExternalEventSource {
   poll(signal: AbortSignal): Promise<readonly ProviderEventData[]>;

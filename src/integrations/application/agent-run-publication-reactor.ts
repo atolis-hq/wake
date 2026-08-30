@@ -64,8 +64,8 @@ export class AgentRunPublicationReactor {
       replayPolicy: EventProcessorReplayPolicy.Idempotent,
       select(event) {
         const outcome = selectWorkflowOrchestrationEvent(event);
-        return outcome?.eventType === OrchestrationEventType.ActivityOutcomeAccepted ||
-          outcome?.eventType === OrchestrationEventType.ActivityExecutionFailed
+        return outcome?.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted ||
+          outcome?.event.eventType === OrchestrationEventType.ActivityExecutionFailed
           ? outcome
           : null;
       },
@@ -74,30 +74,24 @@ export class AgentRunPublicationReactor {
   }
 
   async react(
-    outcome: Extract<
-      NonNullable<ReturnType<typeof selectWorkflowOrchestrationEvent>>,
-      {
-        readonly eventType:
-          | typeof OrchestrationEventType.ActivityOutcomeAccepted
-          | typeof OrchestrationEventType.ActivityExecutionFailed;
-      }
-    >,
+    outcome: NonNullable<ReturnType<typeof selectWorkflowOrchestrationEvent>>,
   ): Promise<void> {
-    if (outcome.eventType === OrchestrationEventType.ActivityOutcomeAccepted) {
+    if (outcome.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted) {
       await this.publishAcceptedOutcome(
         outcome.stream.id,
-        outcome.payload.activationId,
+        outcome.event.payload.activationId,
         outcome.recordedAt,
-        outcome.eventId,
-        outcome.correlationId,
+        outcome.event.eventId,
+        outcome.event.correlationId,
       );
       return;
     }
+    if (outcome.event.eventType !== OrchestrationEventType.ActivityExecutionFailed) return;
     await this.publish(
-      outcome.payload.runId,
+      outcome.event.payload.runId,
       outcome.recordedAt,
-      outcome.eventId,
-      outcome.correlationId,
+      outcome.event.eventId,
+      outcome.event.correlationId,
     );
   }
 
@@ -163,7 +157,6 @@ export class AgentRunPublicationReactor {
           causationId: causationId as never,
           actor: { kind: EventActorKind.Integration, id: 'agent-run-publication' },
           source: { kind: EventSourceKind.Internal, id: 'agent-run-publication' },
-          stream,
           payload: {
             workflowInstanceId: run.workflowInstanceId,
             activationId: run.activationId,
@@ -241,15 +234,18 @@ export class AgentRunPublicationReactor {
       kind: OrchestrationStreamKind.WorkflowInstance,
       id: workflowInstanceId,
     } as never);
-    const request = events.findIndex(
+    const orchestrationEvents = events
+      .map(selectWorkflowOrchestrationEvent)
+      .filter((event) => event !== null);
+    const request = orchestrationEvents.findIndex(
       (event) =>
-        event.eventType === OrchestrationEventType.ActivityRequested &&
-        (event.payload as { readonly activationId: string }).activationId === activationId,
+        event.event.eventType === OrchestrationEventType.ActivityRequested &&
+        event.event.payload.activationId === activationId,
     );
     for (let index = request - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (event?.eventType === OrchestrationEventType.StageEntered)
-        return (event.payload as { readonly stage: string }).stage;
+      const event = orchestrationEvents[index];
+      if (event?.event.eventType === OrchestrationEventType.StageEntered)
+        return event.event.payload.stage;
     }
     return undefined;
   }

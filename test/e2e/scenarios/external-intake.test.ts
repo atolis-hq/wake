@@ -51,10 +51,9 @@ describe(`${scenario.id} ${scenario.title}`, () => {
       causationId: 'github:delivery-7',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload,
     });
-    await journal.appendToStream(evidence.stream, 0, [evidence]);
+    await journal.appendToStream(integrationStream(BuiltInAdapterId.GitHub), 0, [evidence]);
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
     const translator = new InboundTranslator(journal, work, resources, {
       lookup,

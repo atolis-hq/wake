@@ -104,23 +104,14 @@ type DeniedOutcome = Extract<
 >;
 
 type RequestedFact<Action extends PullRequestDecisionAction> = Action extends 'approve'
-  ? EventData<
-      typeof ActivityEventType.PrApproveRequested,
-      PullRequestApproveRequestedPayload,
-      ResourceStreamRef
-    >
-  : EventData<
-      typeof ActivityEventType.PrMergeRequested,
-      PullRequestMergeRequestedPayload,
-      ResourceStreamRef
-    >;
+  ? EventData<typeof ActivityEventType.PrApproveRequested, PullRequestApproveRequestedPayload>
+  : EventData<typeof ActivityEventType.PrMergeRequested, PullRequestMergeRequestedPayload>;
 
 type DeniedFact<Action extends PullRequestDecisionAction> = EventData<
   Action extends 'approve'
     ? typeof ActivityEventType.PrApproveDenied
     : typeof ActivityEventType.PrMergeDenied,
-  PullRequestDenialPayload,
-  ResourceStreamRef | WorkItemStreamRef
+  PullRequestDenialPayload
 >;
 
 type PullRequestDecisionClaimPayload<Action extends PullRequestDecisionAction> =
@@ -130,6 +121,7 @@ type PullRequestDecisionClaimPayload<Action extends PullRequestDecisionAction> =
       readonly decisionKind: 'requested';
       readonly outcome: RequestedOutcome;
       readonly fact: RequestedFact<Action>;
+      readonly factStream: ResourceStreamRef;
     }
   | {
       readonly action: Action;
@@ -137,6 +129,7 @@ type PullRequestDecisionClaimPayload<Action extends PullRequestDecisionAction> =
       readonly decisionKind: 'denied';
       readonly outcome: DeniedOutcome;
       readonly fact: DeniedFact<Action>;
+      readonly factStream: ResourceStreamRef | WorkItemStreamRef;
     };
 
 export interface ActivityEventPayloads {
@@ -222,9 +215,8 @@ export type ActivityFact =
   | EventUnion<ResourceFactPayloads, ResourceStreamRef>
   | EventUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
 
-export type ActivityFactDraft =
-  | EventDataUnion<ResourceFactPayloads, ResourceStreamRef>
-  | EventDataUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
+export type ActivityFactEventData =
+  EventDataUnion<ResourceFactPayloads> | EventDataUnion<DenialPayloads>;
 
 export type ActivityEvent =
   | ActivityFact
@@ -232,9 +224,9 @@ export type ActivityEvent =
   | EventUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
 
 export type ActivityEventData =
-  | ActivityFactDraft
-  | EventDataUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
-  | EventDataUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
+  | ActivityFactEventData
+  | EventDataUnion<ApproveDecisionPayloads>
+  | EventDataUnion<MergeDecisionPayloads>;
 
 const { draftSchema, eventSchema } = createActivityEventSchemas(ActivityEventType);
 
@@ -245,7 +237,7 @@ export function decodeActivityEvent(event: EventEnvelope): ActivityEvent {
 }
 
 export function selectActivityEvent(event: EventEnvelope): ActivityEvent | null {
-  return ownsActivityEventType(event.eventType) ? decodeActivityEvent(event) : null;
+  return ownsActivityEventType(event.event.eventType) ? decodeActivityEvent(event) : null;
 }
 
 export function decodeActivityEventData(draft: EventData): ActivityEventData {
@@ -269,7 +261,7 @@ function ownsActivityEventType(eventType: string): boolean {
 
 function invalidActivityEvent(event: EventEnvelope, cause: z.ZodError): Error {
   return new Error(
-    `Invalid Activity event ${event.eventId} at global position ${event.globalPosition} (${event.eventType}): ${cause.message}`,
+    `Invalid Activity event ${event.event.eventId} at global position ${event.globalPosition} (${event.event.eventType}): ${cause.message}`,
     { cause },
   );
 }

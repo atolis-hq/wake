@@ -1,10 +1,9 @@
 import { expect, expectTypeOf, it } from 'vitest';
 import {
   activationId,
-  activityDecisionStream,
   ActivityEventType,
   decodeActivityEventData,
-  type ActivityFactDraft,
+  type ActivityFactEventData,
 } from '../../../src/activities/index.js';
 import type { PullRequestActivityOutcome } from '../../../src/activities/pr/contracts.js';
 import {
@@ -20,8 +19,8 @@ import { signalName } from '../../../src/orchestration/contracts/identifiers.js'
 import { resourceStream } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
 
-type Fact<Type extends ActivityFactDraft['eventType']> = Extract<
-  ActivityFactDraft,
+type Fact<Type extends ActivityFactEventData['eventType']> = Extract<
+  ActivityFactEventData,
   { eventType: Type }
 >;
 
@@ -66,7 +65,6 @@ it('rejects a malformed outcome/fact pair through the event data decoder context
     causationId: 'causation-1',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'activities-pr' },
-    stream,
     payload: {
       idempotencyKey: 'approve-request',
       activationId: activation,
@@ -83,13 +81,13 @@ it('rejects a malformed outcome/fact pair through the event data decoder context
     causationId: approveRequest.causationId,
     actor: approveRequest.actor,
     source: { kind: 'internal', id: 'activities-pr' },
-    stream: activityDecisionStream(activation, 'approve'),
     payload: {
       action: 'approve',
       activationId: activation,
       decisionKind: 'requested',
       outcome: { kind: 'blocked', data: { reason: 'policy' } },
       fact: approveRequest,
+      factStream: stream,
     },
   });
 
@@ -127,7 +125,6 @@ it('rejects an inexact decision claim before calling the journal append boundary
     causationId: 'causation-1',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'activities-pr' },
-    stream,
     payload: {
       idempotencyKey: 'merge-request',
       activationId: activation,
@@ -144,6 +141,7 @@ it('rejects an inexact decision claim before calling the journal append boundary
       data: { intentEventId: mergeRequest.eventId, signalKind: signalName('delivery-result') },
     },
     fact: mergeRequest,
+    factStream: stream,
   } as unknown as PullRequestDecision<'approve'>;
 
   await expect(claimDecision(journal, activation, 'approve', invalidProposal)).rejects.toThrow(

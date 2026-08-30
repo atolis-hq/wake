@@ -24,11 +24,11 @@ it('writes durable manual pause and explicit resume facts for a configured runne
   await service.unpause('sonnet', 'operator-43');
 
   const events = await journal.readAll(0);
-  expect(events.map((event) => event.eventType)).toEqual([
+  expect(events.map((event) => event.event.eventType)).toEqual([
     ControlEventType.RunnerPaused,
     ControlEventType.RunnerResumed,
   ]);
-  expect(events[0]?.payload).toMatchObject({
+  expect(events[0]?.event.payload).toMatchObject({
     runnerName: 'sonnet',
     cause: 'manual',
     reason: 'paused by operator',
@@ -68,7 +68,7 @@ it('deduplicates an unpause after recreating the service from the same journal',
 
   const second = createRunnerControlService({ ...input, ids: new SequentialIds() });
   await second.unpause('sonnet', 'operator-43');
-  expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
+  expect((await journal.readAll(0)).map((event) => event.event.eventType)).toEqual([
     ControlEventType.RunnerPaused,
     ControlEventType.RunnerResumed,
   ]);
@@ -117,7 +117,7 @@ it('converges concurrent durable unpause commands from separate service instance
   ).resolves.toEqual([undefined, undefined]);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === ControlEventType.RunnerResumed,
+      (event) => event.event.eventType === ControlEventType.RunnerResumed,
     ),
   ).toHaveLength(1);
 });

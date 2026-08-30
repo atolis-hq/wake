@@ -34,13 +34,15 @@ describe('pr.merge Activity', () => {
     });
     expect(await world.events('pr.merge-requested')).toEqual([
       expect.objectContaining({
-        eventId: 'activation-1:pr.merge-requested',
-        payload: expect.objectContaining({
-          activationId: activationId('activation-1'),
-          resourceId: resource,
-          revision: 'head-a',
-          method: 'squash',
-          idempotencyKey: 'activation-1:pr.merge-requested',
+        event: expect.objectContaining({
+          eventId: 'activation-1:pr.merge-requested',
+          payload: expect.objectContaining({
+            activationId: activationId('activation-1'),
+            resourceId: resource,
+            revision: 'head-a',
+            method: 'squash',
+            idempotencyKey: 'activation-1:pr.merge-requested',
+          }),
         }),
       }),
     ]);
@@ -130,7 +132,7 @@ describe('pr.merge Activity', () => {
       ),
     ).resolves.toMatchObject({ kind: 'waiting' });
     expect(await world.events('pr.merge-requested')).toMatchObject([
-      { payload: { autoMerge: true } },
+      { event: { payload: { autoMerge: true } } },
     ]);
   });
 

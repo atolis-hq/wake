@@ -33,11 +33,13 @@ type DecisionFromClaim<Claim> = Claim extends {
   readonly decisionKind: infer Kind extends PullRequestDecisionKind;
   readonly outcome: infer Outcome extends PullRequestActivityOutcome;
   readonly fact: infer Fact;
+  readonly factStream: infer FactStream;
 }
   ? {
       readonly decisionKind: Kind;
       readonly outcome: Outcome;
       readonly fact: Fact;
+      readonly factStream: FactStream;
     }
   : never;
 
@@ -51,7 +53,7 @@ export async function readDecisionClaim<Action extends PullRequestAction>(
 ): Promise<PullRequestDecision<Action> | null> {
   const claimId = decisionClaimId(activationId, action);
   const event = (await journal.readStream(activityDecisionStream(activationId, action))).find(
-    (candidate) => candidate.eventId === claimId,
+    (candidate) => candidate.event.eventId === claimId,
   );
   return event === undefined ? null : parseClaim(event, activationId, action);
 }
@@ -74,13 +76,13 @@ export async function claimDecision<Action extends PullRequestAction>(
     causationId: proposal.fact.causationId,
     actor: proposal.fact.actor,
     source: { kind: EventSourceKind.Internal, id: 'activities-pr' },
-    stream,
     payload: {
       action,
       activationId,
       decisionKind: proposal.decisionKind,
       outcome: proposal.outcome,
       fact: proposal.fact,
+      factStream: proposal.factStream,
     },
   });
   decodeActivityEventData(claim);
@@ -100,7 +102,7 @@ export async function completeDecisionClaim(
   appender: IntentAppender,
   decision: PullRequestDecision,
 ): Promise<PullRequestActivityOutcome> {
-  const result = await appendResolved(journal, appender, decision.fact.stream, decision.fact);
+  const result = await appendResolved(journal, appender, decision.factStream, decision.fact);
   return result === IntentAppendStatus.Failed
     ? { kind: ActivityOutcomeKind.Failed, data: { reason: ActivityFailureCode.IntentWriteFailed } }
     : decision.outcome;
@@ -129,16 +131,17 @@ function parseClaim<Action extends PullRequestAction>(
   const decoded = decodeActivityEvent(event);
   const expectedType = decisionEventType(action);
   if (
-    decoded.eventType !== expectedType ||
-    decoded.payload.activationId !== activationId ||
-    decoded.payload.action !== action
+    decoded.event.eventType !== expectedType ||
+    decoded.event.payload.activationId !== activationId ||
+    decoded.event.payload.action !== action
   ) {
-    throw new Error(`Invalid pull-request decision claim ${event.eventId}`);
+    throw new Error(`Invalid pull-request decision claim ${event.event.eventId}`);
   }
   return {
-    decisionKind: decoded.payload.decisionKind,
-    outcome: decoded.payload.outcome,
-    fact: decoded.payload.fact,
+    decisionKind: decoded.event.payload.decisionKind,
+    outcome: decoded.event.payload.outcome,
+    fact: decoded.event.payload.fact,
+    factStream: decoded.event.payload.factStream,
   } as PullRequestDecision<Action>;
 }
 

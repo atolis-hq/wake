@@ -8,7 +8,11 @@ import {
   selectDeliveryIntentEvent,
 } from '../../delivery/contracts/intents.js';
 import { DeliveryResultKind } from '../../delivery/contracts/vocabulary.js';
-import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
+import {
+  GitHubEventType,
+  selectGitHubAdapterEvent,
+  type GitHubAdapterEventOf,
+} from '../contracts/events.js';
 import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { formatAgentRunComment } from './agent-run-comment.js';
 import { appendDeliveryMarker, deliveryMarker } from './delivery-marker.js';
@@ -117,9 +121,9 @@ function commentIntents(
     if (
       intent !== null &&
       isCommentIntent(intent) &&
-      githubResourceIds.has(intent.payload.resourceId)
+      githubResourceIds.has(intent.event.payload.resourceId)
     )
-      intents.set(intent.eventId, intent);
+      intents.set(intent.event.eventId, intent);
   }
   return intents;
 }
@@ -144,12 +148,12 @@ function confirmations(
   for (const event of events) {
     const delivery = selectDeliveryEvent(event);
     if (delivery === null || !isConfirmed(delivery)) continue;
-    const intent = intents.get(delivery.payload.intentEventId);
+    const intent = intents.get(delivery.event.payload.intentEventId);
     if (intent === undefined) continue;
     const candidate = { event, intent };
-    const current = confirmed.get(delivery.payload.intentEventId);
+    const current = confirmed.get(delivery.event.payload.intentEventId);
     if (current === undefined || candidate.event.globalPosition < current.event.globalPosition)
-      confirmed.set(delivery.payload.intentEventId, candidate);
+      confirmed.set(delivery.event.payload.intentEventId, candidate);
   }
   return confirmed;
 }
@@ -168,11 +172,11 @@ function reconcileCommentHistory(
   for (const entry of observed.values())
     history.set(entry.messageId, {
       entry: entry.value,
-      occurredAt: entry.event.occurredAt,
+      occurredAt: entry.event.event.occurredAt,
       globalPosition: entry.event.globalPosition,
     });
   for (const [intentEventId, confirmation] of confirmed) {
-    const resource = resourcesById.get(confirmation.intent.payload.resourceId);
+    const resource = resourcesById.get(confirmation.intent.event.payload.resourceId);
     if (resource === undefined) continue;
     const resourceKey = `${resource.externalKey.adapter}:${resource.externalKey.key}`;
     const matchingProvider = [...observed.values()].find(
@@ -182,8 +186,8 @@ function reconcileCommentHistory(
     history.set(intentEventId, {
       entry:
         matchingProvider?.value ??
-        syntheticComment(confirmation.intent, confirmation.event.occurredAt, publicUiUrl),
-      occurredAt: confirmation.event.occurredAt,
+        syntheticComment(confirmation.intent, confirmation.event.event.occurredAt, publicUiUrl),
+      occurredAt: confirmation.event.event.occurredAt,
       globalPosition: confirmation.event.globalPosition,
     });
     if (matchingProvider !== undefined) history.delete(matchingProvider.messageId);
@@ -194,15 +198,7 @@ function reconcileCommentHistory(
     .map((entry) => entry.entry);
 }
 
-type ConfirmableCommentIntent = Extract<
-  NonNullable<ReturnType<typeof selectDeliveryIntentEvent>>,
-  {
-    readonly eventType:
-      | typeof DeliveryIntentEventType.StatusPublishRequested
-      | typeof DeliveryIntentEventType.ReplyPublishRequested
-      | typeof DeliveryIntentEventType.AgentRunPublishRequested;
-  }
->;
+type ConfirmableCommentIntent = NonNullable<ReturnType<typeof selectDeliveryIntentEvent>>;
 
 interface Confirmation {
   readonly event: EventEnvelope;
@@ -226,43 +222,50 @@ function isCommentIntent(
   value: NonNullable<ReturnType<typeof selectDeliveryIntentEvent>>,
 ): value is ConfirmableCommentIntent {
   return (
-    value.eventType === DeliveryIntentEventType.StatusPublishRequested ||
-    value.eventType === DeliveryIntentEventType.ReplyPublishRequested ||
-    value.eventType === DeliveryIntentEventType.AgentRunPublishRequested
+    value.event.eventType === DeliveryIntentEventType.StatusPublishRequested ||
+    value.event.eventType === DeliveryIntentEventType.ReplyPublishRequested ||
+    value.event.eventType === DeliveryIntentEventType.AgentRunPublishRequested
   );
 }
 
 function isConfirmed(value: NonNullable<ReturnType<typeof selectDeliveryEvent>>): boolean {
   return (
-    value.eventType === DeliveryEventType.Confirmed ||
-    (value.eventType === DeliveryEventType.Reconciled &&
-      value.payload.result === DeliveryResultKind.Confirmed)
+    value.event.eventType === DeliveryEventType.Confirmed ||
+    (value.event.eventType === DeliveryEventType.Reconciled &&
+      value.event.payload.result === DeliveryResultKind.Confirmed)
   );
 }
 
 function providerComment(event: EventEnvelope, keys: ReadonlySet<string>): ProviderComment | null {
   const observed = selectGitHubAdapterEvent(event);
   if (
-    observed?.eventType !== GitHubEventType.CommentObserved ||
-    !keys.has(`${observed.stream.id}:${observed.payload.externalKey}`)
+    !isCommentObserved(observed) ||
+    !keys.has(`${observed.stream.id}:${observed.event.payload.externalKey}`)
   )
     return null;
   return {
     event,
     messageId: observedCommentExternalId(observed),
-    resourceKey: `${observed.stream.id}:${observed.payload.externalKey}`,
+    resourceKey: `${observed.stream.id}:${observed.event.payload.externalKey}`,
     value: commentWithSourceMessageId(
       {
-        author: observed.payload.actor.id,
-        occurredAt: observed.occurredAt,
-        body: observed.payload.body,
-        ...(observed.payload.reviewKind !== 'issue' || observed.payload.location === undefined
+        author: observed.event.payload.actor.id,
+        occurredAt: observed.event.occurredAt,
+        body: observed.event.payload.body,
+        ...(observed.event.payload.reviewKind !== 'issue' ||
+        observed.event.payload.location === undefined
           ? {}
-          : { location: observed.payload.location }),
+          : { location: observed.event.payload.location }),
       },
       observedCommentExternalId(observed),
     ),
   };
+}
+
+function isCommentObserved(
+  event: ReturnType<typeof selectGitHubAdapterEvent>,
+): event is GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved> {
+  return event?.event.eventType === GitHubEventType.CommentObserved;
 }
 
 function commentWithSourceMessageId(
@@ -274,13 +277,10 @@ function commentWithSourceMessageId(
 }
 
 function observedCommentExternalId(
-  event: Extract<
-    NonNullable<ReturnType<typeof selectGitHubAdapterEvent>>,
-    { readonly eventType: typeof GitHubEventType.CommentObserved }
-  >,
+  event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
 ): string {
-  const id = event.payload.raw.id;
-  return typeof id === 'string' || typeof id === 'number' ? String(id) : event.eventId;
+  const id = event.event.payload.raw.id;
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : event.event.eventId;
 }
 
 function syntheticComment(
@@ -293,7 +293,7 @@ function syntheticComment(
     occurredAt,
     body: deliveredCommentBody(intent, publicUiUrl),
   };
-  deliveryIntentIds.set(entry, intent.eventId);
+  deliveryIntentIds.set(entry, intent.event.eventId);
   return entry;
 }
 
@@ -302,14 +302,14 @@ function deliveredCommentBody(
   publicUiUrl: string | undefined,
 ): string {
   const body =
-    intent.eventType === DeliveryIntentEventType.AgentRunPublishRequested
+    intent.event.eventType === DeliveryIntentEventType.AgentRunPublishRequested
       ? formatAgentRunComment({
-          idempotencyKey: intent.eventId,
-          ...intent.payload.report,
+          idempotencyKey: intent.event.eventId,
+          ...intent.event.payload.report,
           publicUiUrl,
         })
-      : intent.payload.body;
-  return appendDeliveryMarker(body, intent.eventId);
+      : intent.event.payload.body;
+  return appendDeliveryMarker(body, intent.event.eventId);
 }
 
 function parseAdapterId(value: string) {

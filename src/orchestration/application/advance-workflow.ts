@@ -3,13 +3,7 @@ import { EventSourceKind, createEventData, type CommandContext } from '../../ker
 import type { TransitionTarget } from '../contracts/config.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import {
-  commandName,
-  workflowInstanceId,
-  type SignalName,
-  type WorkflowInstanceId,
-} from '../contracts/identifiers.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
+import { commandName, type SignalName, type WorkflowInstanceId } from '../contracts/identifiers.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
 import {
   requestChangesResume as decideChangesResume,
@@ -89,7 +83,6 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
       actor: context.actor,
       source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-      stream: workflowInstanceStream(workflowInstanceId(id)),
       payload: { activationId },
     });
     await this.repository.append(id, loaded.sequence, [event]);
@@ -107,7 +100,6 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
       actor: context.actor,
       source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-      stream: workflowInstanceStream(id),
       payload: { reason },
     });
     await this.repository.append(id, loaded.sequence, [event]);
@@ -128,7 +120,6 @@ export class AdvanceWorkflow {
       loaded.view.acceptedOutcomes.includes(input.activationId)
     )
       return loaded.view;
-    const stream = workflowInstanceStream(id);
     await this.repository.append(id, loaded.sequence, [
       createEventData({
         eventId: `${context.commandId}:${OrchestrationEventType.ActivityExecutionFailed}`,
@@ -138,7 +129,6 @@ export class AdvanceWorkflow {
         causationId: context.commandId,
         actor: context.actor,
         source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-        stream,
         payload: input,
       }),
       createEventData({
@@ -149,7 +139,6 @@ export class AdvanceWorkflow {
         causationId: context.commandId,
         actor: context.actor,
         source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-        stream,
         payload: { reason: input.reason },
       }),
     ]);

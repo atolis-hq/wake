@@ -25,7 +25,7 @@ import {
 } from '../../../resources/index.js';
 import { WorkStatus, type WorkService } from '../../../work/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
-import type { GitHubAdapterEvent, GitHubEventType } from '../contracts/events.js';
+import type { GitHubAdapterEventOf, GitHubEventType } from '../contracts/events.js';
 import { GitHubBuiltInCommand, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import {
   isHumanNonWakeReply,
@@ -37,10 +37,7 @@ import { commandContext } from './inbound-context.js';
 import { ignoreIneligibleOperatorRetry } from './operator-retry-command.js';
 import { translateGitHubReviewCommand } from './review-command-translator.js';
 
-type CommentObservedEvent = Extract<
-  GitHubAdapterEvent,
-  { eventType: typeof GitHubEventType.CommentObserved }
->;
+type CommentObservedEvent = GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>;
 
 export async function applyReviewSignal(input: {
   readonly event: CommentObservedEvent;
@@ -55,7 +52,7 @@ export async function applyReviewSignal(input: {
 }): Promise<void> {
   const { event, journal, resources, work, lookup, adapter, orchestration } = input;
   if (journal === undefined || resources === undefined || work === undefined) return;
-  const payload = event.payload;
+  const payload = event.event.payload;
   if (payload.reviewKind === 'issue') {
     await applyIssueReviewSignal({ event, resources, work, lookup, orchestration, adapter });
     return;
@@ -76,7 +73,7 @@ async function applyFormalReviewSignal(input: {
 }): Promise<void> {
   const { event, journal, resources, work, lookup, pullRequests, ids, adapter, orchestration } =
     input;
-  const payload = event.payload;
+  const payload = event.event.payload;
   if (payload.reviewKind !== 'formal') return;
   if (lookup === undefined) throw new Error('InboundTranslator lookup is required');
   let resourceIdValue = await lookup.resourceIdForExternalKey({
@@ -91,7 +88,7 @@ async function applyFormalReviewSignal(input: {
     actorKind: payload.actor.kind,
     resourceAuthorId: payload.resourceAuthorId ?? UnknownGitHubIdentity,
     authorization: payload.authorization ?? { source: ReviewerAuthorizationSource.None },
-    providerEventId: event.eventId,
+    providerEventId: event.event.eventId,
     body: payload.body,
   });
   if (proposed === null) return;
@@ -130,16 +127,16 @@ async function applyIssueReviewSignal(input: {
   readonly adapter: AdapterId;
 }): Promise<void> {
   const { event, resources, work, lookup, orchestration, adapter } = input;
-  if (!isHumanNonWakeReply(event.payload.actor.kind, event.payload.body)) return;
+  if (!isHumanNonWakeReply(event.event.payload.actor.kind, event.event.payload.body)) return;
   if (resources === undefined || lookup === undefined || orchestration === undefined) return;
   const resourceIdValue = await lookup.resourceIdForExternalKey({
     adapter,
-    key: event.payload.externalKey,
+    key: event.event.payload.externalKey,
   });
   if (resourceIdValue === null) return;
   const resource = await resources.get(resourceIdValue);
-  const command = recognizedCommand(event.payload.body);
-  const plainReply = isPlainReply(event.payload.body);
+  const command = recognizedCommand(event.event.payload.body);
+  const plainReply = isPlainReply(event.event.payload.body);
   if (command !== null)
     return applyIssueCommand({
       event,
@@ -228,10 +225,12 @@ async function applyIssueBudgetExtension(input: {
   if (orchestration === undefined) return;
   if (
     !isReviewAuthorized({
-      actorId: event.payload.actor.id,
-      actorKind: event.payload.actor.kind,
+      actorId: event.event.payload.actor.id,
+      actorKind: event.event.payload.actor.kind,
       resourceAuthorId: UnknownGitHubIdentity,
-      authorization: event.payload.authorization ?? { source: ReviewerAuthorizationSource.None },
+      authorization: event.event.payload.authorization ?? {
+        source: ReviewerAuthorizationSource.None,
+      },
     })
   )
     return;
@@ -264,10 +263,12 @@ async function applyIssueRetrySignal(input: {
   if (orchestration === undefined) return;
   if (
     !isReviewAuthorized({
-      actorId: event.payload.actor.id,
-      actorKind: event.payload.actor.kind,
+      actorId: event.event.payload.actor.id,
+      actorKind: event.event.payload.actor.kind,
       resourceAuthorId: UnknownGitHubIdentity,
-      authorization: event.payload.authorization ?? { source: ReviewerAuthorizationSource.None },
+      authorization: event.event.payload.authorization ?? {
+        source: ReviewerAuthorizationSource.None,
+      },
     })
   )
     return;
@@ -295,10 +296,12 @@ async function applyIssueRestartSignal(input: {
   if (orchestration === undefined) return;
   if (
     !isReviewAuthorized({
-      actorId: event.payload.actor.id,
-      actorKind: event.payload.actor.kind,
+      actorId: event.event.payload.actor.id,
+      actorKind: event.event.payload.actor.kind,
       resourceAuthorId: UnknownGitHubIdentity,
-      authorization: event.payload.authorization ?? { source: ReviewerAuthorizationSource.None },
+      authorization: event.event.payload.authorization ?? {
+        source: ReviewerAuthorizationSource.None,
+      },
     })
   )
     return;
@@ -330,7 +333,7 @@ async function applyIssueApprovalSignal(input: {
   if (resources === undefined || lookup === undefined || orchestration === undefined) return;
   const resourceIdValue = await lookup.resourceIdForExternalKey({
     adapter,
-    key: event.payload.externalKey,
+    key: event.event.payload.externalKey,
   });
   if (resourceIdValue === null) return;
   await applyWorkflowSignal({
@@ -358,7 +361,7 @@ async function applyPullRequestWorkflowSignal(input: {
 }): Promise<void> {
   const { event, lookup, resources, work, orchestration, adapter, outcome } = input;
   if (
-    event.payload.actor.kind !== ReviewActorKind.Human ||
+    event.event.payload.actor.kind !== ReviewActorKind.Human ||
     lookup === undefined ||
     resources === undefined ||
     orchestration === undefined
@@ -366,7 +369,7 @@ async function applyPullRequestWorkflowSignal(input: {
     return;
   const resourceIdValue = await lookup.resourceIdForExternalKey({
     adapter,
-    key: event.payload.externalKey,
+    key: event.event.payload.externalKey,
   });
   if (resourceIdValue === null) return;
   await applyWorkflowSignal({
@@ -411,13 +414,13 @@ async function applyWorkflowSignal(input: {
         {
           kind: workflow.waitingFor.signalKind,
           outcome,
-          actorId: event.payload.actor.id,
+          actorId: event.event.payload.actor.id,
           actorDecision: {
-            authorized: event.payload.actor.kind === ReviewActorKind.Human,
-            evidenceId: event.eventId,
+            authorized: event.event.payload.actor.kind === ReviewActorKind.Human,
+            evidenceId: event.event.eventId,
           },
-          providerEventId: event.eventId,
-          ...(event.payload.actor.kind === ReviewActorKind.Human
+          providerEventId: event.event.eventId,
+          ...(event.event.payload.actor.kind === ReviewActorKind.Human
             ? { authority: { kind: ApprovalAuthorityKind.Human } }
             : {}),
         },

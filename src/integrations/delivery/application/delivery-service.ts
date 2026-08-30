@@ -60,7 +60,6 @@ export class DeliveryService {
       causationId: context.commandId,
       actor: context.actor,
       source: { kind: EventSourceKind.Internal, id: IntegrationStreamKind.Delivery },
-      stream: deliveryStream(intent.intentEventId),
     };
     const draft: DeliveryEventDataInput =
       resolution.kind === DeliveryResultKind.Confirmed
@@ -79,7 +78,7 @@ export class DeliveryService {
             },
           };
     try {
-      await this.append(draft);
+      await this.append(intent, draft);
     } catch {
       // A concurrent operator or automatic confirmation wins; return the projected state.
     }
@@ -101,6 +100,7 @@ export class DeliveryService {
     const adapter = this.dependencies.adapter(resource.adapter);
     if (adapter === null) {
       await this.append(
+        intent,
         this.failed(
           intent,
           occurrence,
@@ -116,34 +116,35 @@ export class DeliveryService {
         intent.reconciliationKey ?? intent.intentEventId,
         signal,
       );
-      await this.append(this.reconciled(intent, occurrence, reconciled));
+      await this.append(intent, this.reconciled(intent, occurrence, reconciled));
       if (reconciled.kind === DeliveryResultKind.Unknown) {
         const count = (intent.reconciliationAttempts ?? 0) + 1;
         if (count >= (this.dependencies.maxAmbiguityReconciliationAttempts ?? 3))
-          await this.append(this.escalated(intent, occurrence, count));
+          await this.append(intent, this.escalated(intent, occurrence, count));
         return intent;
       }
       if (reconciled.kind !== DeliveryResultKind.NotFound) return intent;
     }
-    await this.append(this.attemptStarted(intent, occurrence));
+    await this.append(intent, this.attemptStarted(intent, occurrence));
     const result = await adapter.deliver(intent, signal);
     switch (result.kind) {
       case DeliveryResultKind.Confirmed:
-        await this.append(this.confirmed(intent, occurrence, result.externalId));
+        await this.append(intent, this.confirmed(intent, occurrence, result.externalId));
         break;
       case DeliveryResultKind.Failed:
-        await this.append(this.failed(intent, occurrence, result.code, result.message));
+        await this.append(intent, this.failed(intent, occurrence, result.code, result.message));
         break;
       case DeliveryResultKind.Ambiguous:
-        await this.append(this.ambiguous(intent, occurrence, result.reconciliationKey));
+        await this.append(intent, this.ambiguous(intent, occurrence, result.reconciliationKey));
         break;
     }
     return intent;
   }
 
-  private async append(draft: DeliveryEventDataInput): Promise<void> {
-    const sequence = (await this.dependencies.journal.readStream(draft.stream)).length;
-    await this.dependencies.journal.appendToStream(draft.stream, sequence, [
+  private async append(intent: DeliveryIntentView, draft: DeliveryEventDataInput): Promise<void> {
+    const stream = deliveryStream(intent.intentEventId);
+    const sequence = (await this.dependencies.journal.readStream(stream)).length;
+    await this.dependencies.journal.appendToStream(stream, sequence, [
       createDeliveryEventData(draft),
     ]);
   }
@@ -160,7 +161,6 @@ export class DeliveryService {
       causationId: intent.intentEventId,
       actor: { kind: EventActorKind.System, id: IntegrationStreamKind.Delivery },
       source: { kind: EventSourceKind.Internal, id: IntegrationStreamKind.Delivery },
-      stream: deliveryStream(intent.intentEventId),
     };
   }
 

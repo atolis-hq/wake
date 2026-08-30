@@ -607,7 +607,6 @@ async function seedPriorRun(
       causationId: activationValue.activationId,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream,
       payload: {
         activationId: activationValue.activationId,
         activity: activationValue.activity,
@@ -627,7 +626,6 @@ async function seedPriorRun(
       causationId: activationValue.activationId,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream,
       payload: {
         transport: 'failed',
         agent: {
@@ -649,7 +647,6 @@ async function seedPriorRun(
               causationId: activationValue.activationId,
               actor: { kind: EventActorKind.System, id: 'test' },
               source: { kind: EventSourceKind.Internal, id: 'test' },
-              stream,
               payload: { reason: 'ambiguous', finishedAt: clock.now().toISOString() },
             }),
           ]
@@ -662,7 +659,6 @@ async function seedPriorRun(
               causationId: activationValue.activationId,
               actor: { kind: EventActorKind.System, id: 'test' },
               source: { kind: EventSourceKind.Internal, id: 'test' },
-              stream,
               payload: {
                 failure: { kind: 'unexpected-execution-failure', message: 'failed' },
                 finishedAt: clock.now().toISOString(),

@@ -49,7 +49,7 @@ describe('Work item auto-approval consent', () => {
     expect(granted.autoApprovalGranted).toBe(true);
     expect(again.autoApprovalGranted).toBe(true);
     const grants = (await journal.readStream(stream)).filter(
-      (event) => event.eventType === WorkEventType.AutoApprovalGranted,
+      (event) => event.event.eventType === WorkEventType.AutoApprovalGranted,
     );
     expect(grants).toHaveLength(1);
   });
@@ -70,7 +70,7 @@ describe('Work item auto-approval consent', () => {
     expect(untouched.autoApprovalGranted).toBe(false);
     expect(revoked.autoApprovalGranted).toBe(false);
     const revocations = (await journal.readStream(stream)).filter(
-      (event) => event.eventType === WorkEventType.AutoApprovalRevoked,
+      (event) => event.event.eventType === WorkEventType.AutoApprovalRevoked,
     );
     expect(revocations).toHaveLength(1);
   });

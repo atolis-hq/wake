@@ -139,7 +139,9 @@ describe('ExecutionService', () => {
 
     expect(started.status).toBe('started');
     expect(
-      (await journal.readAll(0)).filter((event) => event.eventType === 'execution.run-started'),
+      (await journal.readAll(0)).filter(
+        (event) => event.event.eventType === 'execution.run-started',
+      ),
     ).toHaveLength(1);
     expect((await service.list(pendingActivation.activationId))[0]).toMatchObject({
       runId: started.runId,
@@ -150,7 +152,9 @@ describe('ExecutionService', () => {
     expect(duplicate).toMatchObject({ runId: started.runId, status: 'started' });
     expect(handlerCalls).toBe(1);
     expect(
-      (await journal.readAll(0)).filter((event) => event.eventType === 'execution.run-started'),
+      (await journal.readAll(0)).filter(
+        (event) => event.event.eventType === 'execution.run-started',
+      ),
     ).toHaveLength(1);
 
     releaseHandler();
@@ -309,7 +313,7 @@ describe('ExecutionService', () => {
       releaseRenewal();
 
       await expect(attempt).resolves.toMatchObject({ status: RunStatus.Cancelled });
-      const eventTypes = (await base.readAll(0)).map((event) => event.eventType);
+      const eventTypes = (await base.readAll(0)).map((event) => event.event.eventType);
       expect(eventTypes).toEqual(
         expect.arrayContaining([
           ExecutionEventType.RunCancellationRequested,
@@ -462,7 +466,7 @@ describe('ExecutionService', () => {
     rejectAcquire();
 
     await expect(attempt).resolves.toMatchObject({ status: RunStatus.Cancelled });
-    const eventTypes = (await journal.readAll(0)).map((event) => event.eventType);
+    const eventTypes = (await journal.readAll(0)).map((event) => event.event.eventType);
     expect(
       eventTypes.filter(
         (eventType) =>
@@ -527,7 +531,7 @@ describe('ExecutionService', () => {
       ),
     ).resolves.toMatchObject({ status: RunStatus.Failed });
 
-    const eventTypes = (await base.readAll(0)).map((event) => event.eventType);
+    const eventTypes = (await base.readAll(0)).map((event) => event.event.eventType);
     expect(injectedRenewals).toBe(4);
     expect(
       eventTypes.filter((eventType) => eventType === ExecutionEventType.RunLeaseRenewed),
@@ -592,15 +596,17 @@ describe('ExecutionService', () => {
     await expect(
       recovery.recoverActive('resident', fixture.service.isLocallyActive),
     ).resolves.toEqual([]);
-    expect(events.map((event) => event.eventType)).toEqual(
+    expect(events.map((event) => event.event.eventType)).toEqual(
       expect.arrayContaining([
         ExecutionEventType.RunPreparationStarted,
         ExecutionEventType.RunLeaseClaimed,
       ]),
     );
-    expect(events.map((event) => event.eventType)).not.toContain(ExecutionEventType.RunStarted);
+    expect(events.map((event) => event.event.eventType)).not.toContain(
+      ExecutionEventType.RunStarted,
+    );
     const preparation = events.find(
-      (event) => event.eventType === ExecutionEventType.RunPreparationStarted,
+      (event) => event.event.eventType === ExecutionEventType.RunPreparationStarted,
     )!;
     expect(
       foldRun((await fixture.journal.readStream(preparation.stream)).map(decodeRunExecutionEvent)),
@@ -698,7 +704,7 @@ describe('ExecutionService', () => {
     expect(handlerCalls).toBe(0);
     expect(activeWhenActivationReleased).toBe(true);
     expect(service.isLocallyActive('run-1')).toBe(false);
-    const eventTypes = (await journal.readAll(0)).map((event) => event.eventType);
+    const eventTypes = (await journal.readAll(0)).map((event) => event.event.eventType);
     expect(eventTypes).toContain(ExecutionEventType.RunCancellationRequested);
     expect(eventTypes).toContain(ExecutionEventType.RunCancellationConfirmed);
     expect(eventTypes).toContain(ExecutionEventType.RunCancelled);
@@ -764,7 +770,7 @@ describe('ExecutionService', () => {
     );
 
     expect(started.status).toBe(RunStatus.Started);
-    const eventTypes = (await base.readAll(0)).map((event) => event.eventType);
+    const eventTypes = (await base.readAll(0)).map((event) => event.event.eventType);
     expect(eventTypes.filter((type) => type === ExecutionEventType.RunStarted)).toHaveLength(1);
     expect(eventTypes).toContain(ExecutionEventType.RunLeaseRenewed);
     expect(eventTypes).not.toContain(ExecutionEventType.RunFailed);
@@ -786,7 +792,7 @@ describe('ExecutionService', () => {
     });
 
     expect(result).toMatchObject({ status: RunStatus.Failed });
-    const eventTypes = (await fixture.journal.readAll(0)).map((event) => event.eventType);
+    const eventTypes = (await fixture.journal.readAll(0)).map((event) => event.event.eventType);
     expect(eventTypes).toContain(ExecutionEventType.RunPreparationStarted);
     expect(eventTypes).toContain(ExecutionEventType.RunFailed);
     expect(eventTypes).toContain(ExecutionEventType.ActivationReleased);
@@ -822,7 +828,7 @@ describe('ExecutionService', () => {
     );
 
     expect(result).toMatchObject({ status: RunStatus.Failed });
-    const eventTypes = (await base.readAll(0)).map((event) => event.eventType);
+    const eventTypes = (await base.readAll(0)).map((event) => event.event.eventType);
     expect(eventTypes).toContain(ExecutionEventType.RunFailed);
     expect(eventTypes).not.toContain(ExecutionEventType.ActivationReleased);
   });
@@ -890,7 +896,7 @@ describe('ExecutionService', () => {
     expect(started.status).toBe('started');
     await waitForRunStatus(fixture.service, activation.activationId, 'succeeded');
     await vi.waitFor(async () => {
-      expect((await fixture.journal.readAll(0)).map((event) => event.eventType)).toContain(
+      expect((await fixture.journal.readAll(0)).map((event) => event.event.eventType)).toContain(
         'execution.workspace-cleanup-failed',
       );
     });

@@ -459,7 +459,6 @@ describe('ActivationSchedulerSubscriber', () => {
         causationId: 'test',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'test', id: 'one' },
         payload: {},
       }),
     ]);
@@ -488,7 +487,6 @@ describe('ActivationSchedulerSubscriber', () => {
         causationId: 'test',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'test', id: 'one' },
         payload: {},
       }),
     ]);
@@ -530,7 +528,6 @@ async function appendFact(journal: InMemoryEventJournal, clock: { now(): Date })
       causationId: 'test',
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: { kind: 'test', id: 'one' },
       payload: {},
     }),
   ]);

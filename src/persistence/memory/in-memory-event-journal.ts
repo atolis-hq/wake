@@ -57,7 +57,8 @@ export class InMemoryEventJournal implements EventJournal {
         continue;
       }
       const envelope: EventEnvelope = {
-        ...draft,
+        event: draft,
+        stream,
         recordedAt,
         sequence: streamEvents.length + 1,
         globalPosition: this.events.length + 1,
@@ -131,18 +132,9 @@ function streamKey(stream: EntityRef): string {
   return `${stream.kind}:${stream.id}`;
 }
 
-function assertSameStream(expected: EntityRef, actual: EntityRef): void {
-  if (streamKey(expected) !== streamKey(actual)) {
-    throw new Error(
-      `Event stream ${streamKey(actual)} does not match append stream ${streamKey(expected)}`,
-    );
-  }
-}
-
-function validateBatch(stream: EntityRef, drafts: readonly EventData[]): void {
+function validateBatch(_stream: EntityRef, drafts: readonly EventData[]): void {
   const eventIds = new Map<string, EventData>();
   for (const draft of drafts) {
-    assertSameStream(stream, draft.stream);
     const prior = eventIds.get(draft.eventId);
     if (prior !== undefined) {
       if (!isDeepStrictEqual(prior, draft)) {

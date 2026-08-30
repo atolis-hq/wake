@@ -15,6 +15,7 @@ import {
   InProcessJournalChangeSignal,
   WrongExpectedSequenceError,
 } from '../../kernel/index.js';
+import { decodeEventRecord, encodeEventRecord } from './event-record-codec.js';
 import { withFileLock } from './file-lock.js';
 
 export interface FileEventJournalWatcher {
@@ -83,7 +84,7 @@ export class FileEventJournal implements EventJournal {
       join(this.root, 'locks', 'event-journal.lock'),
       async () => {
         const current = await this.scan();
-        const byId = new Map(current.map((event) => [event.eventId, event]));
+        const byId = new Map(current.map((envelope) => [envelope.event.eventId, envelope]));
         const batchIds = new Set<string>();
         for (const draft of drafts) {
           if (batchIds.has(draft.eventId))
@@ -94,7 +95,7 @@ export class FileEventJournal implements EventJournal {
         for (const [index, event] of existing.entries())
           if (event !== undefined && !sameDraft(event, drafts[index]!))
             throw new Error(
-              `Event id ${event.eventId} has already been used with different content`,
+              `Event id ${event.event.eventId} has already been used with different content`,
             );
         if (drafts.length > 0 && existing.every(isDefined)) return existing.filter(isDefined);
         const streamEvents = this.cachedEventsForStream(stream);
@@ -102,8 +103,6 @@ export class FileEventJournal implements EventJournal {
           throw new WrongExpectedSequenceError(
             `Expected sequence ${expectedSequence} for ${key(stream)}, actual ${streamEvents.length}`,
           );
-        for (const draft of drafts)
-          if (key(draft.stream) !== key(stream)) throw new Error('Event stream mismatch');
         const recordedAt = this.clock.now().toISOString();
         let newCount = 0;
         const envelopes = drafts.map((draft, index): EventEnvelope => {
@@ -111,14 +110,17 @@ export class FileEventJournal implements EventJournal {
           if (prior !== undefined) return prior;
           newCount += 1;
           return {
-            ...draft,
+            event: draft,
+            stream,
             recordedAt,
             sequence: streamEvents.length + newCount,
             globalPosition: current.length + newCount,
           };
         });
         const finalizedEnvelopes = envelopes.map((event) => decodeEventEnvelope(event));
-        const newEnvelopes = finalizedEnvelopes.filter((event) => !byId.has(event.eventId));
+        const newEnvelopes = finalizedEnvelopes.filter(
+          (envelope) => !byId.has(envelope.event.eventId),
+        );
         if (newEnvelopes.length > 0) {
           const directory = join(this.root, 'events');
           await mkdir(directory, { recursive: true });
@@ -126,7 +128,7 @@ export class FileEventJournal implements EventJournal {
           const file = `${day}.jsonl`;
           await appendFile(
             join(directory, file),
-            newEnvelopes.map((event) => JSON.stringify(event)).join('\n') + '\n',
+            newEnvelopes.map(encodeEventRecord).join('\n') + '\n',
             'utf8',
           );
           await this.extendCache(file, current, newEnvelopes);
@@ -282,7 +284,7 @@ export class FileEventJournal implements EventJournal {
     const existingSegment = priorSegments.find((segment) => segment.file === file);
     let offset = existingSegment?.size ?? 0;
     const indexedEvents = newEnvelopes.map((event) => {
-      const length = Buffer.byteLength(`${JSON.stringify(event)}\n`);
+      const length = Buffer.byteLength(`${encodeEventRecord(event)}\n`);
       const indexed = {
         globalPosition: event.globalPosition,
         stream: key(event.stream),
@@ -423,7 +425,7 @@ export class FileEventJournal implements EventJournal {
     let input: unknown;
     try {
       input = JSON.parse(buffer.toString('utf8'));
-      const event = decodeEventEnvelope(input);
+      const event = decodeEventRecord(input);
       validateEnvelope(event, indexed.globalPosition);
       if (key(event.stream) !== indexed.stream) throw new Error('Indexed stream mismatch');
       return event;
@@ -457,7 +459,7 @@ export class FileEventJournal implements EventJournal {
         let input: unknown;
         try {
           input = JSON.parse(line);
-          const event = decodeEventEnvelope(input);
+          const event = decodeEventRecord(input);
           validateEnvelope(event, events.length + 1);
           events.push(event);
           indexedEvents.push({
@@ -597,22 +599,7 @@ function indexEventsByStream(
   return indexed;
 }
 
-const sameDraft = (event: EventEnvelope, draft: EventData) =>
-  isDeepStrictEqual(
-    {
-      eventId: event.eventId,
-      eventType: event.eventType,
-      schemaVersion: event.schemaVersion,
-      occurredAt: event.occurredAt,
-      correlationId: event.correlationId,
-      causationId: event.causationId,
-      actor: event.actor,
-      source: event.source,
-      stream: event.stream,
-      payload: event.payload,
-    },
-    draft,
-  );
+const sameDraft = (event: EventEnvelope, draft: EventData) => isDeepStrictEqual(event.event, draft);
 
 function validateEnvelope(event: EventEnvelope, expectedPosition: number): void {
   if (event.globalPosition !== expectedPosition) throw new Error('Invalid event envelope position');

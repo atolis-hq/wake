@@ -50,7 +50,11 @@ it('atomically keeps one activation decision across interleaved authority evalua
     },
   ]);
   expect(await world.events('pr.merge-decision-claimed')).toEqual([
-    expect.objectContaining({ payload: expect.objectContaining({ decisionKind: 'requested' }) }),
+    expect.objectContaining({
+      event: expect.objectContaining({
+        payload: expect.objectContaining({ decisionKind: 'requested' }),
+      }),
+    }),
   ]);
   expect(await world.events('pr.merge-requested')).toHaveLength(1);
   expect(await world.events('pr.merge-denied')).toHaveLength(0);

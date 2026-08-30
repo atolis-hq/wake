@@ -100,7 +100,7 @@ defineScenario(
       2,
     );
     const [acceptedSignal] = await world.events('orchestration.signal-accepted');
-    expect(acceptedSignal?.payload).toEqual(
+    expect(acceptedSignal?.event.payload).toEqual(
       expect.objectContaining({
         kind: 'orchestration.child-completed',
         providerEventId: childId,
@@ -112,8 +112,8 @@ defineScenario(
     expect(
       starts.filter(
         (event) =>
-          (event.payload as { parentWorkflowInstanceId?: string }).parentWorkflowInstanceId ===
-          undefined,
+          (event.event.payload as { parentWorkflowInstanceId?: string })
+            .parentWorkflowInstanceId === undefined,
       ),
     ).toHaveLength(1);
     expect(await world.events('orchestration.child-completion-consumed')).toHaveLength(1);

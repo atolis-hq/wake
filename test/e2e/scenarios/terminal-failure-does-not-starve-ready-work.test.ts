@@ -190,7 +190,6 @@ it('E2E-CONTROL-005: a held delivery cannot delay one-shot subscriber scheduling
         causationId: 'slow-delivery-intent',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'resource', id: resource.resourceId },
         payload: {
           workflowInstanceId: 'workflow-slow-delivery',
           activationId: 'activation-slow-delivery',

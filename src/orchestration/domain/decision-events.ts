@@ -5,12 +5,7 @@ import {
   type OrchestrationEventPayloads,
   type WorkflowOrchestrationEventName,
 } from '../contracts/events.js';
-import {
-  workflowInstanceId,
-  type StageName,
-  type WorkflowInstanceId,
-} from '../contracts/identifiers.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
+import type { StageName, WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 
 interface DecisionContext {
@@ -70,7 +65,6 @@ export function startDraft<Type extends WorkflowOrchestrationEventName>(
     causationId: input.causationId,
     actor,
     source,
-    stream: workflowInstanceStream(workflowInstanceId(input.workflowInstanceId)),
     payload,
   });
 }
@@ -90,7 +84,6 @@ export function stateDraft<Type extends WorkflowOrchestrationEventName>(
     causationId: input.causationId,
     actor,
     source,
-    stream: workflowInstanceStream(workflowInstanceId(state.workflowInstanceId)),
     payload,
   });
 }

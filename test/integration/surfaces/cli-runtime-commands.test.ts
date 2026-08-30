@@ -41,7 +41,6 @@ describe('Wake target CLI runtime commands', () => {
         causationId: causationId('audit-causation'),
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'work-item', id: 'work-demo' },
         payload: { objective: 'Audit the canonical journal' },
       },
     ]);
@@ -55,7 +54,6 @@ describe('Wake target CLI runtime commands', () => {
         causationId: causationId('non-work-causation'),
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'resource', id: 'work-demo' },
         payload: { provider: 'test' },
       },
     ]);

@@ -57,7 +57,7 @@ function deriveResourceIds(
     ...new Set(
       events
         .map(selectResourceEvent)
-        .filter((event) => event?.eventType === ResourceEventType.ResourceDiscovered)
+        .filter((event) => event?.event.eventType === ResourceEventType.ResourceDiscovered)
         .map((event) => event!.stream.id),
     ),
   ];

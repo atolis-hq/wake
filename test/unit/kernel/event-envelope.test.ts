@@ -12,7 +12,7 @@ import {
   type RelationDefinition,
 } from '../../../src/kernel/index.js';
 
-function workDataInput<Stream extends EntityRef>(stream: Stream) {
+function workDataInput() {
   return {
     eventId: 'evt-1',
     eventType: 'work.item-created',
@@ -21,7 +21,6 @@ function workDataInput<Stream extends EntityRef>(stream: Stream) {
     causationId: 'cmd-1',
     actor: { kind: 'system', id: 'wake' },
     source: { kind: 'internal', id: 'wake' },
-    stream,
     payload: { objective: 'Ship the change' },
   } as const;
 }
@@ -41,7 +40,7 @@ describe('event envelope', () => {
     expect(stream.id).toBe(workItemId);
   });
 
-  it('maps each event type to its exact payload and stream', () => {
+  it('maps each event type to its exact payload and envelope stream', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
 
     type WorkStream = EntityRef<'work-item', WorkItemId>;
@@ -53,44 +52,44 @@ describe('event envelope', () => {
 
     type WorkEvent = EventUnion<WorkEventPayloads, WorkStream>;
 
-    type WorkEventData = EventDataUnion<WorkEventPayloads, WorkStream>;
+    type WorkEventData = EventDataUnion<WorkEventPayloads>;
 
-    expectTypeOf<Extract<WorkEvent, { eventType: 'work.item-created' }>>().toEqualTypeOf<
-      EventEnvelope<
-        'work.item-created',
-        { readonly objective: string },
-        EntityRef<'work-item', WorkItemId>
-      >
+    expectTypeOf<WorkEvent>().toEqualTypeOf<
+      EventEnvelope<EventDataUnion<WorkEventPayloads>, EntityRef<'work-item', WorkItemId>>
     >();
     expectTypeOf<Extract<WorkEventData, { eventType: 'work.item-closed' }>>().toEqualTypeOf<
-      EventData<'work.item-closed', { readonly reason: string }, EntityRef<'work-item', WorkItemId>>
+      EventData<'work.item-closed', { readonly reason: string }>
     >();
   });
 
   it('supports an explicit two-generic event data input and factory call', () => {
     type Payload = { readonly objective: string };
 
-    const input: EventDataInput<'work.item-created', Payload> = workDataInput({
-      kind: 'work-item',
-      id: 'work-1',
-    } as const);
+    const input: EventDataInput<'work.item-created', Payload> = workDataInput();
 
     const data = createEventData<'work.item-created', Payload>(input);
 
-    expectTypeOf(data).toEqualTypeOf<EventData<'work.item-created', Payload, EntityRef>>();
+    expectTypeOf(data).toEqualTypeOf<EventData<'work.item-created', Payload>>();
     expect(data).not.toHaveProperty('recordedAt');
     expect(data).not.toHaveProperty('sequence');
     expect(data).not.toHaveProperty('globalPosition');
   });
 
-  it('retains exact stream inference for an unannotated event data factory call', () => {
+  it('keeps stream identity outside unannotated event data', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
 
     const workItemId = 'work-1' as WorkItemId;
 
-    const data = createEventData(workDataInput({ kind: 'work-item', id: workItemId } as const));
+    const data = createEventData(workDataInput());
+    const envelope: EventEnvelope<typeof data, EntityRef<'work-item', WorkItemId>> = {
+      event: data,
+      stream: { kind: 'work-item', id: workItemId },
+      recordedAt: '2026-07-30T12:00:01.000Z',
+      sequence: 1,
+      globalPosition: 1,
+    };
 
-    expectTypeOf(data.stream).toEqualTypeOf<EntityRef<'work-item', WorkItemId>>();
+    expectTypeOf(envelope.stream).toEqualTypeOf<EntityRef<'work-item', WorkItemId>>();
   });
 });
 
@@ -104,7 +103,6 @@ describe('event data validation', () => {
       causationId: 'cmd-1',
       actor: { kind: 'system', id: 'wake' },
       source: { kind: 'internal', id: 'wake' },
-      stream: { kind: 'work-item', id: 'work-1' },
       payload: { objective: 'Ship the change' },
     });
 
@@ -129,7 +127,6 @@ describe('event data validation', () => {
         causationId: 'cmd-1',
         actor: { kind: 'system', id: 'wake' },
         source: { kind: 'internal', id: 'wake' },
-        stream: { kind: 'work-item', id: 'work-1' },
         payload: {},
         [field]: value,
       }),
@@ -141,7 +138,7 @@ describe('event data validation', () => {
     (value) => {
       expect(() =>
         createEventData({
-          ...workDataInput({ kind: 'work-item', id: 'work-1' } as const),
+          ...workDataInput(),
           occurredAt: value,
         }),
       ).toThrow(/occurred at.*offset.*iso/i);
@@ -158,7 +155,6 @@ describe('event data validation', () => {
         causationId: 'cmd-1',
         actor: { kind: 'system', id: 'wake' },
         source: { kind: 'internal', id: 'wake' },
-        stream: { kind: 'work-item', id: 'work-1' },
         payload: {},
         [metadata]: {
           kind: metadata === 'actor' ? 'system' : 'internal',

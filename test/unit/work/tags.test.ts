@@ -28,8 +28,8 @@ describe('Work item tags', () => {
     await service.create({ workItemId: workId('1'), objective: 'Fix it', tags: ['bug'] }, context);
 
     const events = await journal.readStream(stream);
-    expect(events[0]?.eventType).toBe(WorkEventType.ItemCreated);
-    expect(decodeWorkEvent(events[0]!).payload).toMatchObject({ tags: ['bug'] });
+    expect(events[0]?.event.eventType).toBe(WorkEventType.ItemCreated);
+    expect(decodeWorkEvent(events[0]!).event.payload).toMatchObject({ tags: ['bug'] });
   });
 
   it('projects tags onto the WorkItem view', async () => {

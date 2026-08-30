@@ -63,7 +63,7 @@ export class FakeInboundTranslator {
       category: EventProcessorCategory.Translator,
       replayPolicy: EventProcessorReplayPolicy.Idempotent,
       select: (event) => this.selectEvidence(event),
-      handle: async ({ evidence, event }) => this.apply(evidence, event),
+      handle: async ({ evidence, event }) => this.apply(evidence, event.event),
     });
     this.reconciler = { reconcileOnce: () => this.reconcileOnce() };
   }
@@ -76,12 +76,12 @@ export class FakeInboundTranslator {
     event: EventEnvelope,
   ): { readonly evidence: FakeWorkEvidence; readonly event: EventEnvelope } | null {
     if (
-      event.eventType !== FakeEventType.WorkObserved ||
+      event.event.eventType !== FakeEventType.WorkObserved ||
       !isIntegrationStream(event.stream) ||
       event.stream.id !== this.adapter
     )
       return null;
-    return { evidence: evidenceSchema.parse(event.payload), event };
+    return { evidence: evidenceSchema.parse(event.event.payload), event };
   }
 
   private async apply(

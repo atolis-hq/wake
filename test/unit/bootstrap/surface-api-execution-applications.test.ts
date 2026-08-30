@@ -43,7 +43,10 @@ it('presents preparation and execution runs as active with their distinct timest
       },
       journal: {
         readAll: async (after: number) => [
-          { globalPosition: after + 1, occurredAt: '2026-08-16T13:00:00.000Z' },
+          {
+            globalPosition: after + 1,
+            event: { occurredAt: '2026-08-16T13:00:00.000Z' },
+          },
         ],
       },
       orchestration: { get: async () => null },

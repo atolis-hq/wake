@@ -7,21 +7,15 @@ import {
   type RunExecutionEventData,
   type RunExecutionEventPayloads,
 } from './events.js';
-import type { ActivationStreamRef, RunStreamRef } from './streams.js';
 
 export type RunExecutionEventDataInput = {
-  [Type in keyof RunExecutionEventPayloads]: EventDataInput<
-    Type,
-    RunExecutionEventPayloads[Type],
-    RunStreamRef
-  >;
+  [Type in keyof RunExecutionEventPayloads]: EventDataInput<Type, RunExecutionEventPayloads[Type]>;
 }[keyof RunExecutionEventPayloads];
 
 export type ActivationExecutionEventDataInput = {
   [Type in keyof ActivationExecutionEventPayloads]: EventDataInput<
     Type,
-    ActivationExecutionEventPayloads[Type],
-    ActivationStreamRef
+    ActivationExecutionEventPayloads[Type]
   >;
 }[keyof ActivationExecutionEventPayloads];
 

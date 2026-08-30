@@ -16,11 +16,13 @@ describe(scenario.id, () => {
 
     expect(
       (await world.events()).filter(
-        (event) => event.eventType === ActivityEventType.PrMergeRequested,
+        (event) => event.event.eventType === ActivityEventType.PrMergeRequested,
       ),
     ).toHaveLength(1);
     expect(
-      (await world.events()).filter((event) => event.eventType === ActivityEventType.PrMergeDenied),
+      (await world.events()).filter(
+        (event) => event.event.eventType === ActivityEventType.PrMergeDenied,
+      ),
     ).toHaveLength(0);
   });
 });

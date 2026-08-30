@@ -104,7 +104,7 @@ describe('Resource correlations', () => {
 
     expect(
       (await journal.readStream(resourceStream(resId('one')))).filter(
-        (event) => event.eventType === 'resources.work-correlation-established',
+        (event) => event.event.eventType === 'resources.work-correlation-established',
       ),
     ).toHaveLength(1);
   });
@@ -119,7 +119,7 @@ describe('Resource correlations', () => {
     await expect(
       service.correlate(resource, workId('two'), 'primary', context('command-3')),
     ).rejects.toThrow('primary');
-    expect((await journal.readStream(resourceStream(resId('one')))).at(-1)?.eventType).toBe(
+    expect((await journal.readStream(resourceStream(resId('one')))).at(-1)?.event.eventType).toBe(
       'resources.work-correlation-conflicted',
     );
   });
@@ -165,13 +165,15 @@ describe('Resource correlations', () => {
 
     expect(await service.get(resource)).toMatchObject({ correlationStatus: 'unresolvable' });
     expect((await journal.readStream(resourceStream(resource))).at(-1)).toMatchObject({
-      eventType: 'resources.work-correlation-unresolvable',
-      payload: { attemptCount: 4, lastFailureReason: 'no primary correlation' },
+      event: {
+        eventType: 'resources.work-correlation-unresolvable',
+        payload: { attemptCount: 4, lastFailureReason: 'no primary correlation' },
+      },
     });
     await service.retryPendingWorkCorrelations();
     expect(
       (await journal.readStream(resourceStream(resource))).filter(
-        (event) => event.eventType === 'resources.work-correlation-unresolvable',
+        (event) => event.event.eventType === 'resources.work-correlation-unresolvable',
       ),
     ).toHaveLength(1);
   });
@@ -218,8 +220,10 @@ describe('Resource correlations', () => {
     );
 
     expect((await journal.readStream(resourceStream(resource))).at(-1)).toMatchObject({
-      eventType: 'resources.work-correlation-retry-pending',
-      payload: { attemptCount: 1, lastFailureReason: 'no primary correlation' },
+      event: {
+        eventType: 'resources.work-correlation-retry-pending',
+        payload: { attemptCount: 1, lastFailureReason: 'no primary correlation' },
+      },
     });
   });
 });

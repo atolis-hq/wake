@@ -99,9 +99,9 @@ export class RecoveryService {
       if (
         loaded.events?.some(
           (event) =>
-            event.causationId === context.commandId &&
-            (event.eventType === ExecutionEventType.RunSucceeded ||
-              event.eventType === ExecutionEventType.RunFailed),
+            event.event.causationId === context.commandId &&
+            (event.event.eventType === ExecutionEventType.RunSucceeded ||
+              event.event.eventType === ExecutionEventType.RunFailed),
         )
       )
         return loaded.view;

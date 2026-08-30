@@ -20,8 +20,10 @@ it(`${scenario.id} delivers against the Resource identity intake minted in this 
   expect(resource).toBeDefined();
   const events = await world.events();
   const [intent] = events.filter(
-    (event) => event.eventType === DeliveryIntentEventType.StatusPublishRequested,
+    (event) => event.event.eventType === DeliveryIntentEventType.StatusPublishRequested,
   );
   expect(intent?.stream.id).toBe(resource?.value.resourceId);
-  expect(events.filter((event) => event.eventType === DeliveryEventType.Confirmed)).toHaveLength(1);
+  expect(
+    events.filter((event) => event.event.eventType === DeliveryEventType.Confirmed),
+  ).toHaveLength(1);
 });

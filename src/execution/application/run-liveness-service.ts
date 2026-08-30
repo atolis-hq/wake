@@ -8,7 +8,6 @@ import {
 import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
-import { runStream } from '../contracts/streams.js';
 import type { RunView } from '../contracts/views.js';
 import { isActiveRunStatus } from '../contracts/vocabulary.js';
 import type { RunRepository } from './run-repository.js';
@@ -180,7 +179,6 @@ function livenessEvent<
     causationId: run.activationId,
     actor: { kind: EventActorKind.System, id: 'execution' },
     source: { kind: EventSourceKind.Internal, id: 'execution' },
-    stream: runStream(currentRunId),
     payload,
   });
 }

@@ -25,8 +25,8 @@ export class PollService {
           throw new Error(`Provider ${adapter} emitted an unknown event type`);
         const stream = integrationStream(adapter);
         const existing = await this.journal.readStream(stream);
-        if (existing.some((event) => event.eventId === draft.eventId)) continue;
-        await this.journal.appendToStream(stream, existing.length, [{ ...draft, stream }]);
+        if (existing.some((event) => event.event.eventId === draft.eventId)) continue;
+        await this.journal.appendToStream(stream, existing.length, [draft]);
         appended += 1;
       } catch (error) {
         failed += 1;

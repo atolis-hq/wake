@@ -27,7 +27,7 @@ it(
     expect(workItems).toHaveLength(1);
 
     const publishIntents = (await world.events()).filter(
-      (event) => event.eventType === 'agent-run.publish-requested',
+      (event) => event.event.eventType === 'agent-run.publish-requested',
     );
     expect(publishIntents.length).toBeGreaterThanOrEqual(2);
 

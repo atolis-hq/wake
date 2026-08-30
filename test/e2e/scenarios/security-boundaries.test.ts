@@ -26,7 +26,7 @@ defineScenario(
 
     await world.runTicksUntilIdle();
     const workflowId = (await world.events()).find(
-      (event) => event.eventType === 'orchestration.instance-started',
+      (event) => event.event.eventType === 'orchestration.instance-started',
     )!.stream.id;
     await world.acceptSignal(workflowId, {
       kind: signalName('approved'),
@@ -38,11 +38,11 @@ defineScenario(
 
     const composedEvents = await world.events();
     expect(
-      composedEvents.filter((event) => event.eventType === ActivityEventType.PrMergeDenied),
+      composedEvents.filter((event) => event.event.eventType === ActivityEventType.PrMergeDenied),
     ).toMatchObject([{ payload: { reason: 'stale-approval' } }]);
     expect(
       (await world.events()).filter(
-        (event) => event.eventType === ActivityEventType.PrMergeRequested,
+        (event) => event.event.eventType === ActivityEventType.PrMergeRequested,
       ),
     ).toHaveLength(0);
 
@@ -65,7 +65,7 @@ defineScenario(
     await bot.runTicksUntilIdle();
     expect(
       (await bot.events()).filter(
-        (event) => event.eventType === ActivityEventType.PrMergeRequested,
+        (event) => event.event.eventType === ActivityEventType.PrMergeRequested,
       ),
     ).toHaveLength(0);
 
@@ -95,7 +95,7 @@ defineScenario(
     await artifact.runTicksUntilIdle();
     expect(
       (await artifact.events()).filter(
-        (event) => event.eventType === ActivityEventType.PrMergeRequested,
+        (event) => event.event.eventType === ActivityEventType.PrMergeRequested,
       ),
     ).toHaveLength(0);
   },

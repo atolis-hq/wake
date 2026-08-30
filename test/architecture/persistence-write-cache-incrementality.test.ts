@@ -40,7 +40,6 @@ describe('persistence write-path cache incrementality', () => {
         causationId: id,
         actor: { kind: 'system', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream,
         payload: { objective: `event ${sequence}` },
       });
     const journal = new FileEventJournal(root, new FakeClock());

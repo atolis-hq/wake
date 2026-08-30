@@ -43,13 +43,14 @@ export const eventDataSchema = z
     causationId: nonEmptyString.pipe(brandedStringSchema(causationId)),
     actor: eventActorSchema,
     source: eventSourceSchema,
-    stream: entityRefSchema,
     payload: z.unknown(),
   })
   .strict();
 
-export const eventEnvelopeSchema = eventDataSchema
-  .extend({
+export const eventEnvelopeSchema = z
+  .object({
+    event: eventDataSchema,
+    stream: entityRefSchema,
     recordedAt: offsetIsoTimestampSchema,
     sequence: z.number().int().positive(),
     globalPosition: z.number().int().positive(),

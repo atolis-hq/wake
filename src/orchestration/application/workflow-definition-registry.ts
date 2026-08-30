@@ -25,16 +25,21 @@ export const workflowDefinitionsProjection: ProjectionDefinition<CompiledWorkflo
   name: OrchestrationStreamKind.WorkflowDefinitions,
   select(event) {
     const owned = selectOrchestrationEvent(event);
-    return owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered
-      ? { key: workflowDefinitionKey(owned.payload.workflowName, owned.payload.fingerprint) }
+    return owned?.event.eventType === OrchestrationEventType.WorkflowDefinitionRegistered
+      ? {
+          key: workflowDefinitionKey(
+            owned.event.payload.workflowName,
+            owned.event.payload.fingerprint,
+          ),
+        }
       : null;
   },
   initial: () => undefined as never,
   project(_previous, event) {
     const owned = selectOrchestrationEvent(event);
-    if (owned?.eventType !== OrchestrationEventType.WorkflowDefinitionRegistered)
+    if (owned?.event.eventType !== OrchestrationEventType.WorkflowDefinitionRegistered)
       throw new Error('Expected workflow definition registration');
-    return owned.payload.compiledDefinition;
+    return owned.event.payload.compiledDefinition;
   },
 };
 
@@ -97,7 +102,6 @@ export class WorkflowDefinitionRegistry {
       causationId: context.commandId,
       actor: { kind: EventActorKind.System, id: 'orchestration' },
       source: { kind: EventSourceKind.Internal, id: 'orchestration' },
-      stream,
       payload: { workflowName: name, fingerprint, compiledDefinition: definition },
     });
     // The deterministic event id makes retries idempotent; CAS protects the
@@ -121,9 +125,9 @@ export class WorkflowDefinitionRegistry {
     const found = (await this.journal.readStream(workflowDefinitionsStream())).some((event) => {
       const owned = selectOrchestrationEvent(event);
       return (
-        owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
-        owned.payload.workflowName === name &&
-        owned.payload.fingerprint === fingerprint
+        owned?.event.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
+        owned.event.payload.workflowName === name &&
+        owned.event.payload.fingerprint === fingerprint
       );
     });
     if (found) this.knownRegistered.add(key);

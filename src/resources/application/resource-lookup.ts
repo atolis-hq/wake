@@ -46,19 +46,19 @@ export function createResourceLookup(dependencies: {
       const retracted: ResourceCorrelationView[] = [];
       for (const event of await dependencies.journal.readStream(resourceStream(resourceId))) {
         const owned = selectResourceEvent(event);
-        if (owned?.eventType === ResourceEventType.WorkCorrelationEstablished) {
-          active.set(owned.payload.workItemId, {
+        if (owned?.event.eventType === ResourceEventType.WorkCorrelationEstablished) {
+          active.set(owned.event.payload.workItemId, {
             resourceId,
-            workItemId: owned.payload.workItemId,
-            role: owned.payload.role,
-            provenance: owned.payload.provenance,
-            establishedByEventId: owned.eventId,
+            workItemId: owned.event.payload.workItemId,
+            role: owned.event.payload.role,
+            provenance: owned.event.payload.provenance,
+            establishedByEventId: owned.event.eventId,
           });
         }
-        if (owned?.eventType === ResourceEventType.WorkCorrelationRetracted) {
-          const correlation = active.get(owned.payload.workItemId);
+        if (owned?.event.eventType === ResourceEventType.WorkCorrelationRetracted) {
+          const correlation = active.get(owned.event.payload.workItemId);
           if (correlation !== undefined) {
-            active.delete(owned.payload.workItemId);
+            active.delete(owned.event.payload.workItemId);
             if (correlation.role === ResourceCorrelationRole.Primary) retracted.push(correlation);
           }
         }

@@ -283,7 +283,9 @@ it('emits changed check evidence when GitHub checks change without PR metadata c
   });
   expect(resource).not.toBeNull();
   expect((await pullRequests.get(resource!))?.checks).toBe('passing');
-  expect((await journal.readAll(0)).map((event) => event.eventType)).toContain('pr.checks-changed');
+  expect((await journal.readAll(0)).map((event) => event.event.eventType)).toContain(
+    'pr.checks-changed',
+  );
 });
 
 it('distinguishes pending to passing to a new pending run and deduplicates identical repolls', async () => {
@@ -316,7 +318,7 @@ it('distinguishes pending to passing to a new pending run and deduplicates ident
 
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'integration.github.work-observed',
+      (event) => event.event.eventType === 'integration.github.work-observed',
     ),
   ).toHaveLength(3);
   const resource = await lookup.resourceIdForExternalKey({

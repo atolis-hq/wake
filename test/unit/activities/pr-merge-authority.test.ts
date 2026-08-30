@@ -32,7 +32,9 @@ describe('PullRequestService merge authority audit', () => {
     );
     expect(
       (await world.journal.readStream(resourceStream(resource.resourceId))).at(-1),
-    ).toMatchObject({ eventType: 'pr.merge-denied', payload: { reason: 'missing-resource' } });
+    ).toMatchObject({
+      event: { eventType: 'pr.merge-denied', payload: { reason: 'missing-resource' } },
+    });
   });
 
   it('appends a durable denial to the Work audit stream when no Resource exists', async () => {
@@ -44,8 +46,7 @@ describe('PullRequestService merge authority audit', () => {
     );
 
     expect((await world.journal.readStream(workItemStream(missingWork))).at(-1)).toMatchObject({
-      eventType: 'pr.merge-denied',
-      payload: { reason: 'missing-resource' },
+      event: { eventType: 'pr.merge-denied', payload: { reason: 'missing-resource' } },
     });
   });
 
@@ -91,8 +92,10 @@ describe('PullRequestService merge authority audit', () => {
     const denials = await world.events('pr.merge-denied');
     expect(denials).toHaveLength(1);
     expect(denials[0]).toMatchObject({
-      occurredAt: '2026-07-30T12:10:00Z',
-      payload: { reason: 'checks-pending' },
+      event: {
+        occurredAt: '2026-07-30T12:10:00Z',
+        payload: { reason: 'checks-pending' },
+      },
     });
   });
 });
@@ -138,8 +141,10 @@ it('reuses a durable authorization after mutable authority becomes failing', asy
 
   expect(await world.events('pr.merge-authorized')).toEqual([
     expect.objectContaining({
-      occurredAt: '2026-07-30T12:10:00Z',
-      payload: { revision: 'head-a' },
+      event: expect.objectContaining({
+        occurredAt: '2026-07-30T12:10:00Z',
+        payload: { revision: 'head-a' },
+      }),
     }),
   ]);
   expect(await world.events('pr.merge-denied')).toHaveLength(0);

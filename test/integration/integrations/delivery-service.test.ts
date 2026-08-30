@@ -56,8 +56,8 @@ describe('DeliveryService', () => {
 
     expect(calls).toEqual(['intent-1']);
     const events = await journal.readAll(0);
-    expect(decodeDeliveryEvent(events[1]!).eventType).toBe(DeliveryEventType.Confirmed);
-    expect(decodeDeliveryEvent(events[1]!).payload).toMatchObject({
+    expect(decodeDeliveryEvent(events[1]!).event.eventType).toBe(DeliveryEventType.Confirmed);
+    expect(decodeDeliveryEvent(events[1]!).event.payload).toMatchObject({
       intentEventId: 'intent-1',
       intentGlobalPosition: 1,
       workflowInstanceId: 'workflow-1',
@@ -93,7 +93,7 @@ describe('DeliveryService', () => {
     const service = new DeliveryService({
       journal,
       intents: async () => {
-        const eventTypes = (await journal.readAll(0)).map((event) => event.eventType);
+        const eventTypes = (await journal.readAll(0)).map((event) => event.event.eventType);
         return eventTypes.includes(DeliveryEventType.Failed) ? [second] : [first, second];
       },
       resource: async (id) => ({
@@ -116,7 +116,7 @@ describe('DeliveryService', () => {
     await service.deliverNext(new AbortController().signal);
 
     expect(calls).toEqual(['first', 'second']);
-    expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
+    expect((await journal.readAll(0)).map((event) => event.event.eventType)).toEqual([
       DeliveryEventType.AttemptStarted,
       DeliveryEventType.Failed,
       DeliveryEventType.AttemptStarted,

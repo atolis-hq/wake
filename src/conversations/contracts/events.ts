@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   brandedStringSchema,
+  eventDataSchema,
   eventEnvelopeSchema,
   type EventDataUnion,
   type EventEnvelope,
@@ -46,10 +47,7 @@ export interface ConversationEventPayloads {
 
 export type ConversationEvent = EventUnion<ConversationEventPayloads, ConversationStreamRef>;
 
-export type ConversationEventData = EventDataUnion<
-  ConversationEventPayloads,
-  ConversationStreamRef
->;
+export type ConversationEventData = EventDataUnion<ConversationEventPayloads>;
 const stream = z
   .object({
     kind: z.literal(ConversationStreamKind.Conversation),
@@ -87,54 +85,66 @@ const origin = z.discriminatedUnion('kind', [
     })
     .strict(),
 ]);
-const schema = z.discriminatedUnion('eventType', [
+const schema = z.union([
   eventEnvelopeSchema.extend({
-    eventType: z.literal(ConversationEventType.Created),
+    event: eventDataSchema.extend({
+      eventType: z.literal(ConversationEventType.Created),
+      payload: z.object({ workItemId: brandedStringSchema(workItemId) }).strict(),
+    }),
     stream,
-    payload: z.object({ workItemId: brandedStringSchema(workItemId) }).strict(),
   }),
   eventEnvelopeSchema.extend({
-    eventType: z.literal(ConversationEventType.EntryRepresentationRecorded),
+    event: eventDataSchema.extend({
+      eventType: z.literal(ConversationEventType.EntryRepresentationRecorded),
+      payload: z
+        .object({
+          entryId: z.string().min(1),
+          resourceId: z.string().min(1),
+          externalId: z.string().min(1),
+        })
+        .strict(),
+    }),
     stream,
-    payload: z
-      .object({
-        entryId: z.string().min(1),
-        resourceId: z.string().min(1),
-        externalId: z.string().min(1),
-      })
-      .strict(),
   }),
   eventEnvelopeSchema.extend({
-    eventType: z.literal(ConversationEventType.ResourceAssociated),
+    event: eventDataSchema.extend({
+      eventType: z.literal(ConversationEventType.ResourceAssociated),
+      payload: z
+        .object({ resourceId: z.string().min(1), threadId: z.string().min(1).optional() })
+        .strict(),
+    }),
     stream,
-    payload: z
-      .object({ resourceId: z.string().min(1), threadId: z.string().min(1).optional() })
-      .strict(),
   }),
   eventEnvelopeSchema.extend({
-    eventType: z.literal(ConversationEventType.EntryRecorded),
+    event: eventDataSchema.extend({
+      eventType: z.literal(ConversationEventType.EntryRecorded),
+      payload: z.object({ entryId: z.string().min(1), body: z.string(), origin }).strict(),
+    }),
     stream,
-    payload: z.object({ entryId: z.string().min(1), body: z.string(), origin }).strict(),
   }),
   eventEnvelopeSchema.extend({
-    eventType: z.literal(ConversationEventType.EntryRevised),
+    event: eventDataSchema.extend({
+      eventType: z.literal(ConversationEventType.EntryRevised),
+      payload: z.object({ entryId: z.string().min(1), body: z.string() }).strict(),
+    }),
     stream,
-    payload: z.object({ entryId: z.string().min(1), body: z.string() }).strict(),
   }),
   eventEnvelopeSchema.extend({
-    eventType: z.literal(ConversationEventType.EntryTombstoned),
+    event: eventDataSchema.extend({
+      eventType: z.literal(ConversationEventType.EntryTombstoned),
+      payload: z.object({ entryId: z.string().min(1) }).strict(),
+    }),
     stream,
-    payload: z.object({ entryId: z.string().min(1) }).strict(),
   }),
 ]);
 
 export function decodeConversationEvent(event: EventEnvelope): ConversationEvent {
   const result = schema.safeParse(event);
   if (!result.success)
-    throw new Error(`Invalid Conversation event ${event.eventId}: ${result.error.message}`);
+    throw new Error(`Invalid Conversation event ${event.event.eventId}: ${result.error.message}`);
   return result.data;
 }
 
 export function selectConversationEvent(event: EventEnvelope): ConversationEvent | null {
-  return event.eventType.startsWith('conversation.') ? decodeConversationEvent(event) : null;
+  return event.event.eventType.startsWith('conversation.') ? decodeConversationEvent(event) : null;
 }

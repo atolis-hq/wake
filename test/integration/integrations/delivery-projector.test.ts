@@ -116,7 +116,7 @@ describe('delivery projector', () => {
       1,
     );
     const correlation = {
-      intentEventId: intent.eventId,
+      intentEventId: intent.event.eventId,
       intentGlobalPosition: 99,
       workflowInstanceId: 'workflow-1',
       activationId: 'activation-1',
@@ -129,12 +129,12 @@ describe('delivery projector', () => {
         eventEnvelope(
           DeliveryEventType.Reconciled,
           { ...correlation, result: DeliveryResultKind.Confirmed, externalId: 'github-42' },
-          deliveryStream(intent.eventId),
+          deliveryStream(intent.event.eventId),
           2,
         ),
       ]),
     ).toMatchObject([
-      { intentEventId: intent.eventId, globalPosition: 1, state: DeliveryState.Pending },
+      { intentEventId: intent.event.eventId, globalPosition: 1, state: DeliveryState.Pending },
     ]);
   });
 
@@ -161,19 +161,22 @@ describe('delivery projector', () => {
     const resolution = eventEnvelope(
       eventType,
       {
-        intentEventId: intent.eventId,
+        intentEventId: intent.event.eventId,
         intentGlobalPosition: intent.globalPosition,
         workflowInstanceId: 'workflow-1',
         activationId: 'activation-1',
         occurrenceOrdinal: 1,
         ...extra,
       },
-      deliveryStream(intent.eventId),
+      deliveryStream(intent.event.eventId),
       2,
     );
     const afterIntent = deliveryProjection.project(null, intent);
     const view = deliveryProjection.project(afterIntent, resolution);
-    expect(view).toMatchObject({ state: expectedState, resolvedAt: resolution.occurredAt });
+    expect(view).toMatchObject({
+      state: expectedState,
+      resolvedAt: resolution.event.occurredAt,
+    });
   });
 
   it('stays unresolved while a delivery is still pending', () => {

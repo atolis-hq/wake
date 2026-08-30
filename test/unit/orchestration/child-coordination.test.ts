@@ -152,8 +152,8 @@ it('allows only one primary start in a Promise.all race', async () => {
   expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
   const roots = (await journal.readAll(0)).filter(
     (event) =>
-      event.eventType === 'orchestration.instance-started' &&
-      !(event.payload as Record<string, unknown>).parentWorkflowInstanceId,
+      event.event.eventType === 'orchestration.instance-started' &&
+      !(event.event.payload as Record<string, unknown>).parentWorkflowInstanceId,
   );
   expect(roots).toHaveLength(1);
 });
@@ -168,11 +168,13 @@ it('enforces a group budget in a Promise.all race and durably records the loser'
   ]);
   expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'orchestration.child-started'),
+    (await journal.readAll(0)).filter(
+      (event) => event.event.eventType === 'orchestration.child-started',
+    ),
   ).toHaveLength(1);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.group-budget-exhausted',
+      (event) => event.event.eventType === 'orchestration.group-budget-exhausted',
     ),
   ).toHaveLength(2);
   await expect(
@@ -180,7 +182,7 @@ it('enforces a group budget in a Promise.all race and durably records the loser'
   ).resolves.toMatchObject({ kind: 'group-budget-exhausted' });
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.group-budget-exhausted',
+      (event) => event.event.eventType === 'orchestration.group-budget-exhausted',
     ),
   ).toHaveLength(2);
 });
@@ -228,7 +230,7 @@ it('extends each exhausted group only after a human-authorized grant', async () 
   ).rejects.toThrow('requires human authority');
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.group-budget-granted',
+      (event) => event.event.eventType === 'orchestration.group-budget-granted',
     ),
   ).toHaveLength(0);
 
@@ -239,11 +241,13 @@ it('extends each exhausted group only after a human-authorized grant', async () 
   );
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.group-budget-granted',
+      (event) => event.event.eventType === 'orchestration.group-budget-granted',
     ),
   ).toHaveLength(1);
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'orchestration.child-started'),
+    (await journal.readAll(0)).filter(
+      (event) => event.event.eventType === 'orchestration.child-started',
+    ),
   ).toHaveLength(2);
 
   const retried = (await service.listAll()).find(
@@ -280,7 +284,7 @@ it('extends each exhausted group only after a human-authorized grant', async () 
   );
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.group-budget-granted',
+      (event) => event.event.eventType === 'orchestration.group-budget-granted',
     ),
   ).toHaveLength(2);
 });
@@ -348,7 +352,7 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
   expect(
     (await journal.readAll(0)).filter(
       (event) =>
-        event.eventType === 'orchestration.child-started' &&
+        event.event.eventType === 'orchestration.child-started' &&
         ['incomplete-child', 'fake-parent-child', 'wrong-work-child', 'wrong-group-child'].includes(
           event.stream.id,
         ),
@@ -542,7 +546,7 @@ it('still reconciles a pending child completion when an unrelated instance canno
 });
 
 async function eventsOf(journal: EventJournal, eventType: string) {
-  return (await journal.readAll(0)).filter((event) => event.eventType === eventType);
+  return (await journal.readAll(0)).filter((event) => event.event.eventType === eventType);
 }
 
 function requireStarted(
@@ -563,7 +567,7 @@ async function expectCoordinationMetadata(journal: EventJournal, childId: string
   ];
   for (const eventType of types) {
     const [event] = await eventsOf(journal, eventType);
-    expect(event?.payload, eventType).toEqual(
+    expect(event?.event.payload, eventType).toEqual(
       expect.objectContaining({
         parentWorkflowInstanceId: workflowInstanceId('parent-1'),
         watchId: 'review',
@@ -575,7 +579,7 @@ async function expectCoordinationMetadata(journal: EventJournal, childId: string
     );
   }
   const [accepted] = await eventsOf(journal, 'orchestration.signal-accepted');
-  expect(accepted?.payload).toEqual(
+  expect(accepted?.event.payload).toEqual(
     expect.objectContaining({
       kind: 'orchestration.child-completed',
       providerEventId: childId,

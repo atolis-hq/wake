@@ -27,7 +27,7 @@ it(`${mergeScenario.id} emits the configured method and remains waiting for deli
     }),
   ]);
   const [intent] = await world.events('pr.merge-requested');
-  expect(intent?.payload).toMatchObject({ idempotencyKey: intent?.eventId });
+  expect(intent?.event.payload).toMatchObject({ idempotencyKey: intent?.event.eventId });
   expect((await world.viewWorkflow(workflowId))?.status).toBe('waiting');
   expect(await world.events('pr.merge-denied')).toHaveLength(0);
 });
@@ -96,7 +96,7 @@ it('attributes an invalid explicit target denial to the WorkItem', async () => {
 
   const [denial] = await world.events('pr.merge-denied');
   expect(denial?.stream).toEqual(workItemStream(setup.workItemId));
-  expect(denial?.payload).toEqual(
+  expect(denial?.event.payload).toEqual(
     expect.objectContaining({
       reason: 'missing-resource',
       target: { resourceId: resId('not-correlated') },
@@ -137,7 +137,7 @@ it.each([
     expect(denials[0]?.stream).toEqual(
       selectionDenied ? workItemStream(setup.workItemId) : resourceStream(setup.primaryResourceId!),
     );
-    expect(denials[0]?.payload).toEqual(
+    expect(denials[0]?.event.payload).toEqual(
       expect.objectContaining(
         selectionDenied
           ? {
@@ -148,7 +148,7 @@ it.each([
               revision: null,
               reason,
               method: 'squash',
-              idempotencyKey: denials[0]?.eventId,
+              idempotencyKey: denials[0]?.event.eventId,
             }
           : {
               activationId: expect.any(String),
@@ -156,7 +156,7 @@ it.each([
               revision: setup.revision,
               reason,
               method: 'squash',
-              idempotencyKey: denials[0]?.eventId,
+              idempotencyKey: denials[0]?.event.eventId,
             },
       ),
     );

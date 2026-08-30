@@ -222,10 +222,10 @@ function createEventApplications(root: CompositionRoot, now: () => string) {
         (event) =>
           workItemId === undefined ||
           event.stream.id === workItemId ||
-          (typeof event.payload === 'object' &&
-            event.payload !== null &&
-            'workItemId' in event.payload &&
-            event.payload.workItemId === workItemId),
+          (typeof event.event.payload === 'object' &&
+            event.event.payload !== null &&
+            'workItemId' in event.event.payload &&
+            event.event.payload.workItemId === workItemId),
       );
       const visible = events.slice(0, query.limit);
       const newest = visible[0];
@@ -518,14 +518,14 @@ export function elapsedSince(timestamp: string, nowMs: number): number {
 
 function presentEvents(events: readonly EventEnvelope[]): readonly AuditEventResponse[] {
   return events.map((event) => ({
-    id: event.eventId,
-    type: event.eventType,
-    occurredAt: event.occurredAt,
+    id: event.event.eventId,
+    type: event.event.eventType,
+    occurredAt: event.event.occurredAt,
     position: event.globalPosition,
     stream: event.stream,
-    causationId: event.causationId,
-    correlationId: event.correlationId,
-    payload: event.payload,
+    causationId: event.event.causationId,
+    correlationId: event.event.correlationId,
+    payload: event.event.payload,
   }));
 }
 

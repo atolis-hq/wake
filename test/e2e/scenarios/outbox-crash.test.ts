@@ -47,7 +47,7 @@ describe(scenario.id, () => {
     expect((await root.orchestration.get(workflowId))?.status).toBe('waiting');
     expect(
       (await root.journal.readAll(0)).filter(
-        ({ eventType }) => eventType === DeliveryEventType.Confirmed,
+        ({ event }) => event.eventType === DeliveryEventType.Confirmed,
       ),
     ).toHaveLength(0);
 
@@ -59,17 +59,17 @@ describe(scenario.id, () => {
     expect((await root.orchestration.get(workflowId))?.status).toBe('completed');
     expect(
       (await root.journal.readAll(0)).filter(
-        ({ eventType }) => eventType === DeliveryEventType.Reconciled,
+        ({ event }) => event.eventType === DeliveryEventType.Reconciled,
       ),
     ).toHaveLength(1);
     expect(
       (await root.journal.readAll(0)).filter(
-        ({ eventType }) => eventType === DeliveryEventType.Confirmed,
+        ({ event }) => event.eventType === DeliveryEventType.Confirmed,
       ),
     ).toHaveLength(0);
     expect(
       (await root.journal.readAll(0)).filter(
-        ({ eventType }) => eventType === OrchestrationEventType.InstanceCompleted,
+        ({ event }) => event.eventType === OrchestrationEventType.InstanceCompleted,
       ),
     ).toHaveLength(1);
   });
@@ -106,30 +106,32 @@ describe(scenario.id, () => {
     expect((await root.orchestration.get(workflowId))?.status).toBe('waiting');
 
     const deliveryEvents = (await root.journal.readAll(0))
-      .filter(({ eventType }) => eventType === DeliveryEventType.AttemptStarted)
+      .filter(({ event }) => event.eventType === DeliveryEventType.AttemptStarted)
       .concat(
         (await root.journal.readAll(0)).filter(
-          ({ eventType }) => eventType === DeliveryEventType.Ambiguous,
+          ({ event }) => event.eventType === DeliveryEventType.Ambiguous,
         ),
         (await root.journal.readAll(0)).filter(
-          ({ eventType }) => eventType === DeliveryEventType.Reconciled,
+          ({ event }) => event.eventType === DeliveryEventType.Reconciled,
         ),
       )
       .map(decodeDeliveryEvent);
-    expect(new Set(deliveryEvents.map((event) => event.eventId)).size).toBe(deliveryEvents.length);
+    expect(new Set(deliveryEvents.map(({ event }) => event.eventId)).size).toBe(
+      deliveryEvents.length,
+    );
     for (const event of deliveryEvents)
-      expect(event.eventId).toBe(
-        `${event.payload.intentEventId}:${event.eventType}:${event.payload.occurrenceOrdinal}`,
+      expect(event.event.eventId).toBe(
+        `${event.event.payload.intentEventId}:${event.event.eventType}:${event.event.payload.occurrenceOrdinal}`,
       );
     expect(
       deliveryEvents
-        .filter((event) => event.eventType === DeliveryEventType.AttemptStarted)
-        .map((event) => event.payload.occurrenceOrdinal),
+        .filter(({ event }) => event.eventType === DeliveryEventType.AttemptStarted)
+        .map(({ event }) => event.payload.occurrenceOrdinal),
     ).toEqual([1, 2]);
     expect(
       deliveryEvents
-        .filter((event) => event.eventType === DeliveryEventType.Reconciled)
-        .map((event) => event.payload),
+        .filter(({ event }) => event.eventType === DeliveryEventType.Reconciled)
+        .map(({ event }) => event.payload),
     ).toMatchObject([
       { result: DeliveryResultKind.NotFound, occurrenceOrdinal: 2 },
       { result: DeliveryResultKind.Unknown, occurrenceOrdinal: 3 },
@@ -167,12 +169,12 @@ async function rebuildUnresolvedDeliveryWork(): Promise<void> {
   expect((await restarted.orchestration.get(workflowId))?.status).toBe('completed');
   expect(
     (await restarted.journal.readAll(0)).filter(
-      ({ eventType }) => eventType === DeliveryEventType.Reconciled,
+      ({ event }) => event.eventType === DeliveryEventType.Reconciled,
     ),
   ).toHaveLength(1);
   expect(
     (await restarted.journal.readAll(0)).filter(
-      ({ eventType }) => eventType === OrchestrationEventType.InstanceCompleted,
+      ({ event }) => event.eventType === OrchestrationEventType.InstanceCompleted,
     ),
   ).toHaveLength(1);
 }

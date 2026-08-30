@@ -22,8 +22,18 @@ it('serializes appends shared by resident runtime loops', async () => {
     persistence.journal.appendToStream(stream, 1, [event('event-2')]),
   ]);
 
-  expect(first).toEqual([expect.objectContaining({ eventId: 'event-1', sequence: 1 })]);
-  expect(second).toEqual([expect.objectContaining({ eventId: 'event-2', sequence: 2 })]);
+  expect(first).toEqual([
+    expect.objectContaining({
+      event: expect.objectContaining({ eventId: 'event-1' }),
+      sequence: 1,
+    }),
+  ]);
+  expect(second).toEqual([
+    expect.objectContaining({
+      event: expect.objectContaining({ eventId: 'event-2' }),
+      sequence: 2,
+    }),
+  ]);
   expect(expectedSequences).toEqual([0, 1]);
 });
 
@@ -38,7 +48,6 @@ function event(eventId: string): EventData {
     causationId: 'causation-1',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream,
     payload: { eventId },
   });
 }
@@ -53,7 +62,11 @@ function concurrentAppendRejectingJournal(): {
   return {
     expectedSequences,
     journal: {
-      async appendToStream(_stream, expectedSequence, events): Promise<readonly EventEnvelope[]> {
+      async appendToStream(
+        appendStream,
+        expectedSequence,
+        events,
+      ): Promise<readonly EventEnvelope[]> {
         if (events.length === 0) throw new Error('appendToStream requires at least one event');
         if (appendInFlight) throw new Error('concurrent append');
         appendInFlight = true;
@@ -61,7 +74,8 @@ function concurrentAppendRejectingJournal(): {
         appendInFlight = false;
         expectedSequences.push(expectedSequence);
         return events.map((event, index) => ({
-          ...event,
+          event,
+          stream: appendStream,
           recordedAt: '2026-08-30T00:00:00.000Z',
           sequence: expectedSequence + index + 1,
           globalPosition: ++globalPosition,

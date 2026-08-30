@@ -17,7 +17,7 @@ import {
   type ResourceView,
 } from '../../resources/index.js';
 import type { WorkItemId, WorkItemStreamRef } from '../../work/index.js';
-import type { ActivityFactDraft } from '../contracts/events.js';
+import type { ActivityFactEventData } from '../contracts/events.js';
 import { isPullRequestLikeResource } from './capability.js';
 import type {
   PullRequestActivityOutcome,
@@ -161,12 +161,12 @@ export async function appendResolved(
   journal: EventJournal,
   appender: IntentAppender,
   stream: ResourceStreamRef | WorkItemStreamRef,
-  event: ActivityFactDraft,
+  event: ActivityFactEventData,
 ): Promise<Exclude<IntentAppendResult, typeof IntentAppendStatus.Ambiguous>> {
   const result = await appender.append(stream, event);
   if (result !== IntentAppendStatus.Ambiguous) return result;
   const events = await journal.readStream(stream);
-  return events.some((candidate) => candidate.eventId === event.eventId)
+  return events.some((candidate) => candidate.event.eventId === event.eventId)
     ? IntentAppendStatus.Known
     : IntentAppendStatus.Failed;
 }

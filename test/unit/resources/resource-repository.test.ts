@@ -39,7 +39,6 @@ async function discover(journal: InMemoryEventJournal, id: typeof first, sequenc
       causationId: 'resource-test',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         kind: resourceKind('issue'),
         externalKey: { adapter: 'fake', key: id },

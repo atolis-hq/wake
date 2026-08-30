@@ -77,12 +77,14 @@ it('creates one provider-neutral approval intent for the current primary PR revi
   });
   expect(await world.events('pr.approve-requested')).toEqual([
     expect.objectContaining({
-      payload: expect.objectContaining({
-        activationId: activationId('activation-1'),
-        resourceId: resource,
-        revision: 'head-a',
-        body: 'Reviewed',
-        idempotencyKey: 'activation-1:pr.approve-requested',
+      event: expect.objectContaining({
+        payload: expect.objectContaining({
+          activationId: activationId('activation-1'),
+          resourceId: resource,
+          revision: 'head-a',
+          body: 'Reviewed',
+          idempotencyKey: 'activation-1:pr.approve-requested',
+        }),
       }),
     }),
   ]);

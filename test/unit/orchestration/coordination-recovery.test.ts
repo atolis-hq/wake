@@ -162,8 +162,8 @@ it('binds durable primary ownership to the first exact WorkflowInstance across a
   });
   const roots = (await journal.readAll(0)).filter(
     (event) =>
-      event.eventType === 'orchestration.instance-started' &&
-      !(event.payload as Record<string, unknown>).parentWorkflowInstanceId,
+      event.event.eventType === 'orchestration.instance-started' &&
+      !(event.event.payload as Record<string, unknown>).parentWorkflowInstanceId,
   );
   expect(roots.map((event) => event.stream.id)).toEqual(['primary-a']);
   expect(await service.get(workflowInstanceId('primary-b'))).toBeNull();
@@ -185,7 +185,6 @@ it('retries the same durable child claim after a crash before checkpointing the 
       causationId: 'review-trigger-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {},
     }),
   ]);
@@ -220,7 +219,7 @@ it('retries the same durable child claim after a crash before checkpointing the 
   expect((await service.get(workflowInstanceId(childId)))?.workflowInstanceId).toBe(childId);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.child-requested',
+      (event) => event.event.eventType === 'orchestration.child-requested',
     ),
   ).toHaveLength(1);
   await expect(
@@ -243,7 +242,9 @@ it('retries the same durable child claim after a crash before checkpointing the 
     requestId: `${parent.workflowInstanceId}:watch:review:trigger:distinct-trigger`,
   });
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'orchestration.group-claimed'),
+    (await journal.readAll(0)).filter(
+      (event) => event.event.eventType === 'orchestration.group-claimed',
+    ),
   ).toHaveLength(1);
 });
 
@@ -254,10 +255,10 @@ it('uses unique durable event identities for the same trigger across two parents
   const event = watchEvent('shared-trigger');
   await createWatchReactor(service).react(event, command('shared-trigger:watch'));
   const requested = (await journal.readAll(0)).filter(
-    (candidate) => candidate.eventType === 'orchestration.child-requested',
+    (candidate) => candidate.event.eventType === 'orchestration.child-requested',
   );
   expect(requested).toHaveLength(2);
-  expect(new Set(requested.map((candidate) => candidate.eventId)).size).toBe(2);
+  expect(new Set(requested.map((candidate) => candidate.event.eventId)).size).toBe(2);
 
   await createWatchReactor({
     listWatchMatches: (eventType) => service.listWatchMatches(eventType),
@@ -268,10 +269,10 @@ it('uses unique durable event identities for the same trigger across two parents
     },
   }).react(watchEvent('shared-causal-trigger'), command('shared-causal-trigger:watch'));
   const rejected = (await journal.readAll(0)).filter(
-    (candidate) => candidate.eventType === 'orchestration.causal-activation-rejected',
+    (candidate) => candidate.event.eventType === 'orchestration.causal-activation-rejected',
   );
   expect(rejected).toHaveLength(2);
-  expect(new Set(rejected.map((candidate) => candidate.eventId)).size).toBe(2);
+  expect(new Set(rejected.map((candidate) => candidate.event.eventId)).size).toBe(2);
 });
 
 it('reconciles an unconsumed child completion during ordinary restarted advancement', async () => {
@@ -328,7 +329,7 @@ it('reconciles an unconsumed child completion during ordinary restarted advancem
     ).rejects.toThrow('injected handoff crash');
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.signal-accepted',
+      (event) => event.event.eventType === 'orchestration.signal-accepted',
     ),
   ).toHaveLength(0);
 
@@ -351,14 +352,14 @@ it('reconciles an unconsumed child completion during ordinary restarted advancem
       children[index]!.workflowInstanceId,
     ]);
   const accepted = (await journal.readAll(0)).filter(
-    (event) => event.eventType === 'orchestration.signal-accepted',
+    (event) => event.event.eventType === 'orchestration.signal-accepted',
   );
   const consumed = (await journal.readAll(0)).filter(
-    (event) => event.eventType === 'orchestration.child-completion-consumed',
+    (event) => event.event.eventType === 'orchestration.child-completion-consumed',
   );
   expect(accepted).toHaveLength(2);
   expect(consumed).toHaveLength(2);
-  expect(new Set([...accepted, ...consumed].map((event) => event.eventId)).size).toBe(4);
+  expect(new Set([...accepted, ...consumed].map((event) => event.event.eventId)).size).toBe(4);
 });
 
 function failWorkflowStartOnce(journal: EventJournal, id: string): EventJournal {

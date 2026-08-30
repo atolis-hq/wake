@@ -71,10 +71,10 @@ it(`${scenario.id} cancels Work with a live fake Run across Execution restart`, 
     status: 'cancelled',
     cancellation: { reason: 'work-cancelled', confirmedAt: expect.any(String) },
   });
-  expect((await world.events()).map((event) => event.eventType)).toContain(
+  expect((await world.events()).map((event) => event.event.eventType)).toContain(
     'execution.run-cancellation-requested',
   );
-  expect((await world.events()).map((event) => event.eventType)).toContain(
+  expect((await world.events()).map((event) => event.event.eventType)).toContain(
     'execution.run-cancellation-confirmed',
   );
 

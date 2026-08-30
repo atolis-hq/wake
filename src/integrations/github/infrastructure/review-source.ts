@@ -1,11 +1,9 @@
 import { ReviewActorKind, ReviewerAuthorizationSource } from '../../../activities/index.js';
 import { createEventData, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
-import { integrationStream } from '../../contracts/streams.js';
 import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { GitHubPullRequestPayload, GitHubReviewPayload } from '../contracts/payloads.js';
 import {
-  GitHubAdapter,
   GitHubBuiltInCommand,
   GitHubReviewState,
   UnknownGitHubIdentity,
@@ -36,7 +34,6 @@ export function githubReviewObservation(input: {
       causationId: `github:review:${input.review.id}`,
       actor: { kind: EventActorKind.Integration, id: 'github' },
       source: { kind: EventSourceKind.Adapter, id: 'github' },
-      stream: integrationStream(GitHubAdapter),
       payload: {
         externalKey: key,
         reviewKind: 'formal' as const,

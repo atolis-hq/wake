@@ -59,7 +59,6 @@ it('ignores unrelated facts through its processor selector', async () => {
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {},
     }),
   ]);
@@ -110,10 +109,8 @@ function evidence(resolve: ResourceTransitionEvidence['resolve']): ResourceTrans
 }
 
 function mergedFact(id = 'merged-1') {
-  return {
-    ...eventEnvelope(ActivityEventType.PrStateChanged, { state: 'merged' }, stream),
-    eventId: eventId(id),
-  };
+  const envelope = eventEnvelope(ActivityEventType.PrStateChanged, { state: 'merged' }, stream);
+  return { ...envelope, event: { ...envelope.event, eventId: eventId(id) } };
 }
 
 it('applies an evidence-resolved resource transition', async () => {
@@ -192,16 +189,17 @@ it('asks evidence to search history when a resource-transition wait starts', asy
       return null;
     }),
   );
+  const envelope = eventEnvelope(
+    OrchestrationEventType.SignalWaitStarted,
+    {
+      signalKind: 'orchestration.resource-transition',
+      resourceTransitions: [transition],
+    },
+    workflowInstanceStream(match.workflowInstanceId),
+  );
   const waitStarted = {
-    ...eventEnvelope(
-      OrchestrationEventType.SignalWaitStarted,
-      {
-        signalKind: 'orchestration.resource-transition',
-        resourceTransitions: [transition],
-      },
-      workflowInstanceStream(match.workflowInstanceId),
-    ),
-    eventId: eventId('wait-started-1'),
+    ...envelope,
+    event: { ...envelope.event, eventId: eventId('wait-started-1') },
   };
 
   await reactor.react(waitStarted, context);
@@ -242,7 +240,6 @@ it('delegates bounded checkpoint progress to the event processor host', async ()
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
     createEventData({
@@ -253,7 +250,6 @@ it('delegates bounded checkpoint progress to the event processor host', async ()
       causationId: 'cause-2',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
   ]);
@@ -302,7 +298,6 @@ it('catches up more than one batch through the eventing barrier', async () => {
         causationId: `cause-${index + 1}`,
         actor: { kind: 'integration', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream,
         payload: { state: 'merged' },
       }),
     ),
@@ -335,7 +330,6 @@ it('serializes an overlapping processor pass and catch-up barrier through checkp
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
     createEventData({
@@ -346,7 +340,6 @@ it('serializes an overlapping processor pass and catch-up barrier through checkp
       causationId: 'cause-2',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
   ]);
@@ -382,7 +375,7 @@ it('serializes an overlapping processor pass and catch-up barrier through checkp
       },
     },
     evidence(async ({ fact }) =>
-      fact === undefined ? null : { transition, evidenceId: fact.eventId },
+      fact === undefined ? null : { transition, evidenceId: fact.event.eventId },
     ),
   );
   const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
@@ -410,7 +403,6 @@ it('does not advance after a failed reaction and reuses its command context on r
       causationId: 'cause-fail',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
   ]);
@@ -456,7 +448,6 @@ it('does not advance after a checkpoint failure and reuses its command context o
       causationId: 'cause-checkpoint',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
   ]);

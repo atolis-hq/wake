@@ -24,7 +24,7 @@ it('skips facts outside the delivery namespace', () => {
 
   expect(
     (reactor.processor as never as { select: (event: unknown) => unknown }).select({
-      eventType: 'work.created',
+      event: { eventType: 'work.created' },
     }),
   ).toBeNull();
 });
@@ -35,7 +35,6 @@ function confirmedEvent(overrides: {
   readonly activationId?: string;
 }) {
   const intentEventId = overrides.intentEventId ?? 'intent-1';
-  const stream = deliveryStream(eventId(intentEventId));
   return createEventData({
     eventId: `${intentEventId}:confirmed`,
     eventType: DeliveryEventType.Confirmed,
@@ -44,7 +43,6 @@ function confirmedEvent(overrides: {
     causationId: 'delivery-outcome-test',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream,
     payload: {
       intentEventId,
       intentGlobalPosition: 1,
@@ -65,7 +63,6 @@ function failedEvent() {
     causationId: 'delivery-outcome-test',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: deliveryStream(eventId('intent-1')),
     payload: {
       intentEventId: 'intent-1',
       intentGlobalPosition: 1,
@@ -87,7 +84,6 @@ function reconciledConfirmedEvent() {
     causationId: 'delivery-outcome-test',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: deliveryStream(eventId('intent-1')),
     payload: {
       intentEventId: 'intent-1',
       intentGlobalPosition: 1,

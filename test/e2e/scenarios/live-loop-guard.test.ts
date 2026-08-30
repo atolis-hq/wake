@@ -18,13 +18,17 @@ describe('E2E-LIVE-006', () => {
 
     const events = await world.events();
     expect(
-      events.filter((event) => event.eventType === OrchestrationEventType.ChildRequested),
+      events.filter((event) => event.event.eventType === OrchestrationEventType.ChildRequested),
     ).toHaveLength(1);
     expect(
-      events.filter((event) => event.eventType === OrchestrationEventType.CausalActivationRejected),
+      events.filter(
+        (event) => event.event.eventType === OrchestrationEventType.CausalActivationRejected,
+      ),
     ).toHaveLength(1);
     expect(
-      events.filter((event) => event.eventType === OrchestrationEventType.GroupBudgetExhausted),
+      events.filter(
+        (event) => event.event.eventType === OrchestrationEventType.GroupBudgetExhausted,
+      ),
     ).toHaveLength(1);
   }, 15_000);
 });

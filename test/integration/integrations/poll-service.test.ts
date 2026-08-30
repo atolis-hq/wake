@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  BuiltInAdapterId,
   createEventData,
   type ExternalEventSource,
-  integrationStream,
   PollService,
 } from '../../../src/integrations/github/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
@@ -24,7 +22,6 @@ describe('PollService', () => {
             causationId: 'github:delivery-1',
             actor: { kind: 'integration', id: 'github' },
             source: { kind: 'adapter', id: 'github' },
-            stream: integrationStream(BuiltInAdapterId.GitHub),
             payload: {
               externalKey: 'owner/repo#7',
               kind: 'issue',
@@ -42,7 +39,7 @@ describe('PollService', () => {
 
     await new PollService(journal, source).pollOnce(new AbortController().signal);
 
-    expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
+    expect((await journal.readAll(0)).map((event) => event.event.eventType)).toEqual([
       'integration.github.work-observed',
     ]);
   });
@@ -70,7 +67,6 @@ describe('PollService', () => {
         causationId: id,
         actor: { kind: 'integration', id: 'github' },
         source: { kind: 'adapter', id: 'github' },
-        stream: integrationStream(BuiltInAdapterId.GitHub),
         payload: {
           externalKey: `owner/repo#${id}`,
           kind: 'issue' as const,

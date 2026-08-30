@@ -21,7 +21,7 @@ it(`${scenario.id} takes fake provider evidence through the composed on-disk pro
   expect(await world.readProjection('resources')).toHaveLength(1);
   expect(await world.readProjection('orchestration')).toHaveLength(1);
   expect(
-    (await world.events()).filter((event) => event.eventType === DeliveryEventType.Confirmed),
+    (await world.events()).filter((event) => event.event.eventType === DeliveryEventType.Confirmed),
   ).toHaveLength(1);
 });
 
@@ -56,7 +56,7 @@ it(`${promptScenario.id} renders a Wake-root prompt template through the compose
   await world.tick();
 
   expect(
-    (await world.events()).filter((event) => event.eventType === DeliveryEventType.Confirmed),
+    (await world.events()).filter((event) => event.event.eventType === DeliveryEventType.Confirmed),
   ).toHaveLength(1);
 });
 
@@ -90,6 +90,6 @@ surfaces:
   await world.tick();
 
   expect(
-    (await world.events()).filter((event) => event.eventType === DeliveryEventType.Confirmed),
+    (await world.events()).filter((event) => event.event.eventType === DeliveryEventType.Confirmed),
   ).toHaveLength(1);
 });

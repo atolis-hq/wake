@@ -10,13 +10,10 @@ import {
   type WorkflowInstanceId,
   type WorkflowInstanceView,
 } from '../../../orchestration/index.js';
-import type { GitHubAdapterEvent, GitHubEventType } from '../contracts/events.js';
+import type { GitHubAdapterEventOf, GitHubEventType } from '../contracts/events.js';
 import { commandContext } from './inbound-context.js';
 
-type CommentObservedEvent = Extract<
-  GitHubAdapterEvent,
-  { eventType: typeof GitHubEventType.CommentObserved }
->;
+type CommentObservedEvent = GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>;
 
 const markerSchema = z
   .object({
@@ -61,7 +58,7 @@ export async function applyWatchGateVerdictSignal(input: {
 }): Promise<void> {
   const { event, runs, orchestration } = input;
   if (runs === undefined || orchestration === undefined) return;
-  const marker = extractMarker(event.payload.body);
+  const marker = extractMarker(event.event.payload.body);
   if (marker === null) return;
   const outcome = translateOutcome(marker.outcome);
   if (outcome === null) return;
@@ -75,9 +72,9 @@ export async function applyWatchGateVerdictSignal(input: {
       kind: WatchGateVerdictSignal,
       outcome: verdict.outcome,
       authority: { kind: ApprovalAuthorityKind.Watch, watch: verdict.childWatchId },
-      actorId: event.payload.actor.id,
-      actorDecision: { authorized: true, evidenceId: event.eventId },
-      providerEventId: event.eventId,
+      actorId: event.event.payload.actor.id,
+      actorDecision: { authorized: true, evidenceId: event.event.eventId },
+      providerEventId: event.event.eventId,
     },
     commandContext(event),
   );

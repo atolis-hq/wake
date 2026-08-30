@@ -20,7 +20,6 @@ function draft(eventId: string) {
     causationId: 'cause',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream,
     payload: {},
   });
 }

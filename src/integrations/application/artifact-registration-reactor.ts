@@ -84,7 +84,7 @@ export class ArtifactRegistrationReactor {
       replayPolicy: EventProcessorReplayPolicy.Idempotent,
       select(event) {
         const outcome = selectWorkflowOrchestrationEvent(event);
-        return outcome?.eventType === OrchestrationEventType.ActivityOutcomeAccepted
+        return outcome?.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted
           ? outcome
           : null;
       },
@@ -93,14 +93,12 @@ export class ArtifactRegistrationReactor {
   }
 
   private async register(
-    outcome: Extract<
-      ReturnType<typeof selectWorkflowOrchestrationEvent>,
-      { readonly eventType: typeof OrchestrationEventType.ActivityOutcomeAccepted }
-    >,
+    outcome: NonNullable<ReturnType<typeof selectWorkflowOrchestrationEvent>>,
   ): Promise<void> {
-    const artifacts = reportedArtifacts(outcome.payload.outcome.data);
+    if (outcome.event.eventType !== OrchestrationEventType.ActivityOutcomeAccepted) return;
+    const artifacts = reportedArtifacts(outcome.event.payload.outcome.data);
     if (artifacts.length === 0) return;
-    const branch = await this.branchFor(outcome.payload.activationId);
+    const branch = await this.branchFor(outcome.event.payload.activationId);
     if (branch === undefined) return;
     const workItemId = await this.workItemFor(outcome.stream.id);
     if (workItemId === null) return;
@@ -108,10 +106,10 @@ export class ArtifactRegistrationReactor {
       await this.verifyAndRegister(
         {
           workflowInstanceId: outcome.stream.id,
-          activationId: outcome.payload.activationId,
+          activationId: outcome.event.payload.activationId,
           artifact,
-          correlationId: outcome.correlationId,
-          causationId: outcome.eventId,
+          correlationId: outcome.event.correlationId,
+          causationId: outcome.event.eventId,
           occurredAt: outcome.recordedAt,
         },
         branch,
@@ -123,23 +121,26 @@ export class ArtifactRegistrationReactor {
   async reconcileOnce(): Promise<void> {
     const latest = await this.latestUnresolved.get();
     for (const event of latest.values()) {
-      if (event.payload.status !== ArtifactVerificationStatus.Ambiguous || event.payload.escalated)
+      if (
+        event.event.payload.status !== ArtifactVerificationStatus.Ambiguous ||
+        event.event.payload.escalated
+      )
         continue;
-      const branch = await this.branchFor(event.payload.activationId);
-      const workItemId = await this.workItemFor(event.payload.workflowInstanceId);
+      const branch = await this.branchFor(event.event.payload.activationId);
+      const workItemId = await this.workItemFor(event.event.payload.workflowInstanceId);
       if (branch === undefined || workItemId === null) continue;
       await this.verifyAndRegister(
         {
-          workflowInstanceId: event.payload.workflowInstanceId,
-          activationId: event.payload.activationId,
-          artifact: event.payload.artifact,
-          correlationId: event.correlationId,
-          causationId: event.causationId,
+          workflowInstanceId: event.event.payload.workflowInstanceId,
+          activationId: event.event.payload.activationId,
+          artifact: event.event.payload.artifact,
+          correlationId: event.event.correlationId,
+          causationId: event.event.causationId,
           occurredAt: event.recordedAt,
         },
         branch,
         workItemId as never,
-        event.payload.attempt + 1,
+        event.event.payload.attempt + 1,
       );
     }
   }
@@ -219,7 +220,6 @@ export class ArtifactRegistrationReactor {
         causationId: record.causationId as never,
         actor: { kind: EventActorKind.Integration, id: 'artifact-registration' },
         source: { kind: EventSourceKind.Internal, id: 'artifact-registration' },
-        stream,
         payload: {
           workflowInstanceId: record.workflowInstanceId,
           activationId: record.activationId as never,
@@ -242,8 +242,10 @@ export class ArtifactRegistrationReactor {
     const events = await this.dependencies.journal.readStream(workflowInstanceStream(workflow));
     const started = events
       .map(selectWorkflowOrchestrationEvent)
-      .find((event) => event?.eventType === OrchestrationEventType.InstanceStarted);
-    return started?.payload.workItemId ?? null;
+      .find((event) => event?.event.eventType === OrchestrationEventType.InstanceStarted);
+    return started?.event.eventType === OrchestrationEventType.InstanceStarted
+      ? started.event.payload.workItemId
+      : null;
   }
 }
 
@@ -252,9 +254,9 @@ function deriveLatestUnresolved(
 ): ReadonlyMap<string, ArtifactEvent> {
   const latest = new Map<string, ArtifactEvent>();
   for (const event of events) {
-    if (event.eventType !== ArtifactEventType.VerificationUnresolved) continue;
+    if (event.event.eventType !== ArtifactEventType.VerificationUnresolved) continue;
     const decoded = decodeArtifactEvent(event);
-    const key = `${decoded.causationId}:${decoded.payload.artifact.externalKey.adapter}:${decoded.payload.artifact.externalKey.key}`;
+    const key = `${decoded.event.causationId}:${decoded.event.payload.artifact.externalKey.adapter}:${decoded.event.payload.artifact.externalKey.key}`;
     latest.set(key, decoded);
   }
   return latest;

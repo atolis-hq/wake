@@ -47,8 +47,8 @@ function isPausedIn(events: Awaited<ReturnType<EventJournal['readStream']>>): bo
   let paused = false;
   for (const envelope of events) {
     const event = selectControlEvent(envelope);
-    if (event?.eventType === ControlEventType.DispatchPaused) paused = true;
-    if (event?.eventType === ControlEventType.DispatchResumed) paused = false;
+    if (event?.event.eventType === ControlEventType.DispatchPaused) paused = true;
+    if (event?.event.eventType === ControlEventType.DispatchResumed) paused = false;
   }
   return paused;
 }
@@ -63,7 +63,11 @@ async function change(
   const eventType =
     operation === 'pause' ? ControlEventType.DispatchPaused : ControlEventType.DispatchResumed;
   const correlation = correlationId(`control:${operation}:${idempotencyKey}`);
-  if (events.some((event) => event.eventType === eventType && event.correlationId === correlation))
+  if (
+    events.some(
+      (event) => event.event.eventType === eventType && event.event.correlationId === correlation,
+    )
+  )
     return;
   const currentlyPaused = isPausedIn(events);
   if ((operation === 'pause' && currentlyPaused) || (operation === 'resume' && !currentlyPaused))

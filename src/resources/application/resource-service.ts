@@ -12,7 +12,6 @@ import {
   type ResourceEventPayloads,
 } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';
-import { resourceStream } from '../contracts/streams.js';
 import type {
   ExternalResourceKey,
   ResourceCorrelationView,
@@ -254,7 +253,6 @@ function resourceDraft<Type extends keyof ResourceEventPayloads>(
     causationId: context.commandId,
     actor: context.actor,
     source: { kind: EventSourceKind.Internal, id: 'resource-service' },
-    stream: resourceStream(resourceId),
     payload,
   });
 }

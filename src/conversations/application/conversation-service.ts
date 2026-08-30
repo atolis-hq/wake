@@ -18,7 +18,6 @@ import {
   type ConversationEventPayloads,
 } from '../contracts/events.js';
 import { conversationIdForWorkItem, type ConversationId } from '../contracts/identifiers.js';
-import { conversationStream } from '../contracts/streams.js';
 import type { ConversationView } from '../contracts/views.js';
 import { applyConversationEvent } from '../domain/conversation.js';
 import { ConversationRepository } from './conversation-repository.js';
@@ -156,7 +155,6 @@ function changeConversation(repository: ConversationRepository) {
       causationId: context.commandId,
       actor: context.actor,
       source: { kind: EventSourceKind.Internal, id: 'conversation-service' },
-      stream: conversationStream(id),
       payload,
     }) as ConversationEventData;
     const [recorded] = await repository.append(id, loaded.sequence, [draft]);

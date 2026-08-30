@@ -13,25 +13,24 @@ export const workProjection: ProjectionDefinition<WorkItemView | null> = {
   project(previous, event) {
     const owned = selectWorkEvent(event);
     if (owned === null) return previous;
-    if (owned.eventType === WorkEventType.ItemCreated)
+    if (owned.event.eventType === WorkEventType.ItemCreated)
       return {
         workItemId: owned.stream.id,
-        objective: owned.payload.objective,
+        objective: owned.event.payload.objective,
         state: WorkStatus.Open,
-        tags: owned.payload.tags ?? [],
+        tags: owned.event.payload.tags ?? [],
         autoApprovalGranted: false,
         relatedWorkItems: [],
       };
     // Every other event revises an existing item; a fold that has not seen the creation
     // yet has nothing to revise.
-    return previous === null ? previous : revise(previous, owned);
+    return previous === null ? previous : revise(previous, owned.event);
   },
 };
 
-type ExistingWorkEvent = Exclude<
-  ReturnType<typeof selectWorkEvent>,
-  null | { eventType: typeof WorkEventType.ItemCreated }
->;
+type WorkEventData = NonNullable<ReturnType<typeof selectWorkEvent>>['event'];
+
+type ExistingWorkEvent = Exclude<WorkEventData, { eventType: typeof WorkEventType.ItemCreated }>;
 
 function revise(previous: WorkItemView, owned: ExistingWorkEvent): WorkItemView {
   switch (owned.eventType) {

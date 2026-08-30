@@ -214,10 +214,14 @@ defineScenario(
     expect(implementAttempts).toBe(2);
     const requests = await world.events('orchestration.child-requested');
     expect(
-      requests.filter((event) => (event.payload as { watchId: string }).watchId === 'plan-review'),
+      requests.filter(
+        (event) => (event.event.payload as { watchId: string }).watchId === 'plan-review',
+      ),
     ).toHaveLength(1);
     expect(
-      requests.filter((event) => (event.payload as { watchId: string }).watchId === 'pr-review'),
+      requests.filter(
+        (event) => (event.event.payload as { watchId: string }).watchId === 'pr-review',
+      ),
     ).toHaveLength(2);
     expect((await world.viewWorkflow(parent.workflowInstanceId))?.status).toBe('completed');
   },
@@ -237,7 +241,6 @@ async function appendConfirmedAgentRunComment(
     causationId: intentId,
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: resourceStream(resourceId),
     payload: {
       workflowInstanceId: 'workflow-1',
       activationId: 'activation-1',
@@ -267,7 +270,6 @@ async function appendConfirmedAgentRunComment(
     causationId: intentId,
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: deliveryStream(eventId(intentId)),
     payload: {
       intentEventId: eventId(intentId),
       intentGlobalPosition: published.globalPosition,
@@ -277,5 +279,5 @@ async function appendConfirmedAgentRunComment(
       externalId: 'github-comment-rejection',
     },
   });
-  await world.journal.appendToStream(confirmation.stream, 0, [confirmation]);
+  await world.journal.appendToStream(deliveryStream(eventId(intentId)), 0, [confirmation]);
 }

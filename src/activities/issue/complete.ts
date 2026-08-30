@@ -120,7 +120,7 @@ async function execute(
   const eventId = `${invocation.activationId}:${ActivityEventType.IssueCompleteRequested}`;
   const stream = resourceStream(target.resourceId);
   const existing = await journal.readStream(stream);
-  if (!existing.some((event) => event.eventId === eventId)) {
+  if (!existing.some((event) => event.event.eventId === eventId)) {
     await journal.appendToStream(stream, existing.length, [
       createEventData({
         eventId,
@@ -130,7 +130,6 @@ async function execute(
         causationId: invocation.activationId,
         actor: { kind: EventActorKind.System, id: 'activities-issue' },
         source: { kind: EventSourceKind.Internal, id: 'activities-issue' },
-        stream,
         payload: {
           idempotencyKey: eventId,
           activationId: invocation.activationId,

@@ -58,7 +58,7 @@ describe('PullRequestService', () => {
     );
 
     expect(
-      (await journal.readStream(resourceStream(resource))).map((event) => event.eventType),
+      (await journal.readStream(resourceStream(resource))).map((event) => event.event.eventType),
     ).toEqual([
       'resources.resource-discovered',
       'resources.work-correlation-established',
@@ -118,7 +118,7 @@ describe('PullRequestService review evidence', () => {
       context('accept'),
     );
 
-    expect((await journal.readStream(resourceStream(resource))).at(-1)?.eventType).toBe(
+    expect((await journal.readStream(resourceStream(resource))).at(-1)?.event.eventType).toBe(
       'pr.review-rejected',
     );
     expect(
@@ -191,7 +191,7 @@ describe('PullRequestService.factsFor', () => {
 
     const events = await service.factsFor(resource);
 
-    expect(events.map((event) => event.eventType)).toEqual([
+    expect(events.map((event) => event.event.eventType)).toEqual([
       'pr.discovered',
       'pr.revision-changed',
       'pr.checks-changed',

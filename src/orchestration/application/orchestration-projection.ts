@@ -34,16 +34,16 @@ export const workflowsByWorkItemProjection: ProjectionDefinition<
   name: 'workflows-by-work-item',
   select(event) {
     const owned = selectWorkflowOrchestrationEvent(event);
-    return owned?.eventType === OrchestrationEventType.InstanceStarted &&
+    return owned?.event.eventType === OrchestrationEventType.InstanceStarted &&
       isWorkflowInstanceStream(owned.stream)
-      ? { key: owned.payload.workItemId }
+      ? { key: owned.event.payload.workItemId }
       : null;
   },
   initial: () => [],
   project(previous, event) {
     const owned = selectWorkflowOrchestrationEvent(event);
     if (
-      owned?.eventType !== OrchestrationEventType.InstanceStarted ||
+      owned?.event.eventType !== OrchestrationEventType.InstanceStarted ||
       !isWorkflowInstanceStream(owned.stream)
     )
       return previous;

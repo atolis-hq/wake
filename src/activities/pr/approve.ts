@@ -93,7 +93,8 @@ async function executeApproval(
     BuiltInResourceCapability.Approvable,
   );
   if (!resource.allowed) {
-    const denial = approveDenied(workItemStream(invocation.workItemId), resource.reason, command, {
+    const factStream = workItemStream(invocation.workItemId);
+    const denial = approveDenied(resource.reason, command, {
       ...selectionDenialAudit(invocation.input.target, resource.candidates),
       body: invocation.input.body ?? null,
     });
@@ -101,6 +102,7 @@ async function executeApproval(
       decisionKind: 'denied',
       outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: resource.reason } },
       fact: denial,
+      factStream,
     });
   }
   const decision = decidePullRequestAuthority(authority, {
@@ -109,7 +111,8 @@ async function executeApproval(
     requireChecks: false,
   });
   if (!decision.allowed) {
-    const denial = approveDenied(resourceStream(resource.resourceId), decision.reason, command, {
+    const factStream = resourceStream(resource.resourceId);
+    const denial = approveDenied(decision.reason, command, {
       ...selectedDenialAudit(authority, resource.resourceId),
       body: invocation.input.body ?? null,
     });
@@ -117,6 +120,7 @@ async function executeApproval(
       decisionKind: 'denied',
       outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: decision.reason } },
       fact: denial,
+      factStream,
     });
   }
   const intent = deliveryIntentRequested(
@@ -138,5 +142,6 @@ async function executeApproval(
       data: { intentEventId: intent.eventId, signalKind: 'delivery-result' },
     },
     fact: intent,
+    factStream: resourceStream(decision.resourceId),
   });
 }

@@ -59,11 +59,11 @@ describe('event-model support', () => {
       causationId: 'cmd-1',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: workItemStream(workId('1')),
       payload: { objective: 'test' },
     });
     const envelope: EventEnvelope = {
-      ...draft,
+      event: draft,
+      stream: workItemStream(workId('1')),
       recordedAt: '2099-01-01T00:00:00.000Z',
       sequence: 1,
       globalPosition: 3,

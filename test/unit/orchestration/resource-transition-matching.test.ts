@@ -6,7 +6,7 @@ import {
   ActivityRegistry,
   PullRequestState,
 } from '../../../src/activities/index.js';
-import { correlationId, type CommandContext, type EntityRef } from '../../../src/kernel/index.js';
+import { correlationId, type CommandContext } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -19,12 +19,13 @@ import {
   WorkflowStatus,
 } from '../../../src/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
+import { resourceStream } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
-import { workId } from '../../support/identities.js';
+import { resId, workId } from '../../support/identities.js';
 
-const prStream: EntityRef<'test', 'pr-1'> = { kind: 'test', id: 'pr-1' };
+const prStream = resourceStream(resId('1'));
 
 async function waitingService() {
   const journal = new InMemoryEventJournal(new FakeClock());
@@ -106,7 +107,7 @@ async function waitingService() {
   expect(waiting.waitingFor?.resourceTransitions).toHaveLength(2);
   const waitStarted = (await journal.readAll(0)).find(
     (event) =>
-      event.eventType === OrchestrationEventType.SignalWaitStarted &&
+      event.event.eventType === OrchestrationEventType.SignalWaitStarted &&
       event.stream.id === waiting.workflowInstanceId,
   )!;
   return { journal, service, baseContext, instance: waiting, waitStarted };
@@ -154,7 +155,7 @@ it('ignores instances that are not waiting', async () => {
   await service.applyResourceTransition(
     instance.workflowInstanceId,
     matches[0]!.transitions[0]!.target,
-    mergedFact.eventId,
+    mergedFact.event.eventId,
     { ...baseContext, commandId: 'apply-1' },
   );
 
@@ -180,14 +181,14 @@ it('does not re-fire a second sequential apply once the instance has left Waitin
   const first = await service.applyResourceTransition(
     instance.workflowInstanceId,
     target,
-    mergedFact.eventId,
+    mergedFact.event.eventId,
     { ...baseContext, commandId: 'apply-1' },
   );
   const afterFirst = (await journal.readAll(0)).length;
   const second = await service.applyResourceTransition(
     instance.workflowInstanceId,
     target,
-    mergedFact.eventId,
+    mergedFact.event.eventId,
     { ...baseContext, commandId: 'apply-2' },
   );
   const afterSecond = (await journal.readAll(0)).length;
@@ -222,13 +223,13 @@ it('two overlapping applies of the same confirmed evidence, same command context
     service.applyResourceTransition(
       instance.workflowInstanceId,
       target,
-      mergedFact.eventId,
+      mergedFact.event.eventId,
       context,
     ),
     service.applyResourceTransition(
       instance.workflowInstanceId,
       target,
-      mergedFact.eventId,
+      mergedFact.event.eventId,
       context,
     ),
   ]);
@@ -237,9 +238,9 @@ it('two overlapping applies of the same confirmed evidence, same command context
   expect(second?.currentStage).toBe('after-merge');
   const stageEnteredCount = (await journal.readAll(0)).filter(
     (event) =>
-      event.eventType === OrchestrationEventType.StageEntered &&
+      event.event.eventType === OrchestrationEventType.StageEntered &&
       event.stream.id === instance.workflowInstanceId &&
-      (event.payload as { stage?: string }).stage === 'after-merge',
+      (event.event.payload as { stage?: string }).stage === 'after-merge',
   ).length;
   expect(stageEnteredCount).toBe(1);
 });
@@ -255,11 +256,11 @@ it('two overlapping applies of the same confirmed evidence, different command co
   const target = matches[0]!.transitions[0]!.target;
 
   const [first, second] = await Promise.all([
-    service.applyResourceTransition(instance.workflowInstanceId, target, mergedFact.eventId, {
+    service.applyResourceTransition(instance.workflowInstanceId, target, mergedFact.event.eventId, {
       ...baseContext,
       commandId: 'apply-concurrent-a',
     }),
-    service.applyResourceTransition(instance.workflowInstanceId, target, mergedFact.eventId, {
+    service.applyResourceTransition(instance.workflowInstanceId, target, mergedFact.event.eventId, {
       ...baseContext,
       commandId: 'apply-concurrent-b',
     }),
@@ -269,9 +270,9 @@ it('two overlapping applies of the same confirmed evidence, different command co
   expect(second?.currentStage).toBe('after-merge');
   const stageEnteredCount = (await journal.readAll(0)).filter(
     (event) =>
-      event.eventType === OrchestrationEventType.StageEntered &&
+      event.event.eventType === OrchestrationEventType.StageEntered &&
       event.stream.id === instance.workflowInstanceId &&
-      (event.payload as { stage?: string }).stage === 'after-merge',
+      (event.event.payload as { stage?: string }).stage === 'after-merge',
   ).length;
   expect(stageEnteredCount).toBe(1);
 });

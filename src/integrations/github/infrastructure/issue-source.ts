@@ -6,7 +6,6 @@ import {
 import { createEventData, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
-import { integrationStream } from '../../contracts/streams.js';
 import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import {
@@ -53,7 +52,6 @@ export function issueObservation(input: {
     causationId: `github:${key}:${fingerprint}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: EventSourceKind.Adapter, id: input.adapter ?? GitHubAdapter },
-    stream: integrationStream(input.adapter ?? GitHubAdapter),
     payload: {
       externalKey: key,
       kind: 'issue',
@@ -106,7 +104,6 @@ export function issueCommentObservation(input: {
     causationId: `github:issue-comment:${input.comment.id}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: EventSourceKind.Adapter, id: input.adapter ?? GitHubAdapter },
-    stream: integrationStream(input.adapter ?? GitHubAdapter),
     payload: {
       reviewKind: 'issue',
       externalKey: key,

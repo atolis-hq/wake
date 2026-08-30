@@ -84,7 +84,6 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
       causationId: 'github:comment:watch-gate-verdict',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'owner/repo#7',
@@ -165,7 +164,6 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
       causationId: 'github:comment:watch-gate-extend',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'owner/repo#17',
@@ -258,7 +256,6 @@ it('supersedes a recovered child whose parent has already left its gate before d
       causationId: 'recovered-parent-signal',
       actor: { kind: 'operator', id: 'owner' },
       source: { kind: 'internal', id: 'recovery' },
-      stream,
       payload: {
         kind: WatchGateVerdictSignal,
         actorId: 'owner',
@@ -356,7 +353,6 @@ async function appendTerminalAgentRun(
       causationId: 'watch-gate-verdict',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId,
         activity: 'agent',
@@ -374,7 +370,6 @@ async function appendTerminalAgentRun(
       causationId: 'watch-gate-verdict',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         transport: 'succeeded',
         agent: { outcome: 'DONE', displayBody: 'Review complete.', metadata: {} },
@@ -388,7 +383,6 @@ async function appendTerminalAgentRun(
       causationId: 'watch-gate-verdict',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { outcome: { kind: 'done' }, finishedAt: now },
     }),
   ] as never);
@@ -411,7 +405,6 @@ async function appendStartedRun(
       causationId: 'watch-gate-verdict',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId,
         activity: 'agent',

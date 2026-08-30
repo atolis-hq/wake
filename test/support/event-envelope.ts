@@ -5,9 +5,9 @@ export function eventEnvelope<Type extends string, Payload, Stream extends Entit
   payload: Payload,
   stream: Stream,
   position = 7,
-): EventEnvelope<Type, Payload, Stream> {
+): EventEnvelope<ReturnType<typeof createEventData<Type, Payload>>, Stream> {
   return {
-    ...createEventData({
+    event: createEventData({
       eventId: `event-${position}`,
       eventType,
       occurredAt: '2026-07-31T12:00:00.000Z',
@@ -15,9 +15,9 @@ export function eventEnvelope<Type extends string, Payload, Stream extends Entit
       causationId: 'causation-1',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload,
     }),
+    stream,
     recordedAt: '2026-07-31T12:00:01.000Z',
     sequence: position,
     globalPosition: position,

@@ -42,7 +42,6 @@ export function createStatusPublishActivity(
             causationId: invocation.causationId,
             actor: { kind: EventActorKind.System, id: 'status.publish' },
             source: { kind: EventSourceKind.Internal, id: 'status.publish' },
-            stream: resourceStream(resource.resourceId),
             payload: {
               workflowInstanceId: invocation.workflowInstanceId,
               activationId: invocation.activationId,

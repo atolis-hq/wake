@@ -184,8 +184,10 @@ it('requests and accepts one typed Activity outcome', async () => {
   expect(completed.status).toBe('completed');
   const accepted = (await journal.readAll(0))
     .map(selectWorkflowOrchestrationEvent)
-    .find((event) => event?.eventType === OrchestrationEventType.ActivityOutcomeAccepted);
-  expect(accepted?.payload.outcome).toEqual({ kind: 'done' });
+    .find((event) => event?.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted);
+  if (accepted?.event.eventType !== OrchestrationEventType.ActivityOutcomeAccepted)
+    throw new Error('Expected an accepted Activity outcome');
+  expect(accepted.event.payload.outcome).toEqual({ kind: 'done' });
 });
 
 it('waits for and accepts a typed signal', async () => {
@@ -273,7 +275,7 @@ it('coordinates a child without a parent-child success loop', async () => {
   expect(await service.listAll()).toHaveLength(2);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === OrchestrationEventType.ChildCompletionConsumed,
+      (event) => event.event.eventType === OrchestrationEventType.ChildCompletionConsumed,
     ),
   ).toHaveLength(1);
 });

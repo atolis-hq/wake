@@ -14,7 +14,6 @@ import {
   type RunPreparationStartedPayload,
 } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
-import { runStream } from '../contracts/streams.js';
 import type { RunView } from '../contracts/views.js';
 import { isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
 import type { WorkspaceLease } from '../contracts/workspace.js';
@@ -257,7 +256,6 @@ export function createRunEvent<Type extends keyof RunExecutionEventPayloads>(inp
     causationId: input.causationId,
     actor: { kind: EventActorKind.System, id: 'execution' },
     source: { kind: EventSourceKind.Internal, id: 'execution' },
-    stream: runStream(input.runId),
     payload: input.payload,
   });
 }

@@ -7,7 +7,6 @@ import {
   runId,
   RunRepository,
   RunStatus,
-  runStream,
 } from '../../../src/execution/index.js';
 import {
   createEventData,
@@ -39,7 +38,6 @@ it('lists Run views from one journal snapshot without per-Run stream reads', asy
         causationId: 'snapshot',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: runStream(id),
         payload: {
           activationId: activationId(`${id}:activation`),
           activity: activityName('long-running'),
@@ -235,7 +233,6 @@ it('fails an unclaimed Run with no external execution instead of refusing recove
       causationId: 'test',
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: runStream(id),
       payload: {
         activationId: activationId('unclaimed-activation'),
         activity: activityName('long-running'),
@@ -279,7 +276,7 @@ it('records unknown external execution as ambiguous', async () => {
   await expect(recovery.recover(run.runId, 'resident-b')).resolves.toMatchObject({
     status: 'ambiguous',
   });
-  expect((await fixture.events()).at(-1)?.eventType).toBe(ExecutionEventType.RunAmbiguous);
+  expect((await fixture.events()).at(-1)?.event.eventType).toBe(ExecutionEventType.RunAmbiguous);
 });
 
 it('does not rerun an escalated ambiguous Run', async () => {
@@ -392,7 +389,7 @@ it('accepts an operator resolution only after a Run is escalated', async () => {
       },
     ),
   ).resolves.toMatchObject({ status: 'succeeded', escalated: false, outcome: { kind: 'done' } });
-  expect((await fixture.events()).at(-1)?.actor).toEqual({
+  expect((await fixture.events()).at(-1)?.event.actor).toEqual({
     kind: EventActorKind.Operator,
     id: 'operator-1',
   });
@@ -436,7 +433,7 @@ it('rejects resolution before escalation and converges concurrent operator resol
   ]);
   expect(results.map((result) => result.status)).toEqual([results[0]!.status, results[0]!.status]);
   expect(
-    (await fixture.events()).filter((event) => event.actor.kind === EventActorKind.Operator),
+    (await fixture.events()).filter((event) => event.event.actor.kind === EventActorKind.Operator),
   ).toHaveLength(1);
 });
 
@@ -486,7 +483,6 @@ async function appendStartingRun(
       causationId: id,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: runStream(currentRunId),
       payload: {
         activationId: activationId(`${id}:activation`),
         activity: activityName('long-running'),
@@ -504,7 +500,6 @@ async function appendStartingRun(
       causationId: id,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: runStream(currentRunId),
       payload: {
         owner: 'resident-a',
         acquiredAt: now.toISOString(),

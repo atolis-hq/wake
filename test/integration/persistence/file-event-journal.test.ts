@@ -1,5 +1,5 @@
 import type * as FsPromises from 'node:fs/promises';
-import { appendFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
@@ -21,6 +21,60 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, readFile: readFileMock, stat: statMock };
 });
 
+it('loads the current flat JSONL record as a nested in-memory envelope', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-flat-compatibility-'));
+  await mkdir(join(root, 'events'));
+  await copyFile(
+    join(process.cwd(), 'test', 'fixtures', 'journal', 'current-flat-event.jsonl'),
+    join(root, 'events', '2026-08-30.jsonl'),
+  );
+
+  await expect(new FileEventJournal(root, new FakeClock()).readAll(0)).resolves.toEqual([
+    {
+      event: {
+        eventId: 'event-1',
+        eventType: 'test.created',
+        schemaVersion: 1,
+        occurredAt: '2026-08-30T12:00:00.000Z',
+        correlationId: 'correlation-1',
+        causationId: 'command-1',
+        actor: { kind: 'system', id: 'test' },
+        source: { kind: 'internal', id: 'test' },
+        payload: { value: 1 },
+      },
+      stream: { kind: 'test', id: '1' },
+      recordedAt: '2026-08-30T12:00:00.001Z',
+      sequence: 1,
+      globalPosition: 1,
+    },
+  ]);
+});
+
+it('writes newly appended envelopes with the exact legacy flat JSONL shape and key order', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-flat-write-'));
+  const stream: EntityRef<'test', 'new'> = { kind: 'test', id: 'new' };
+  const journal = new FileEventJournal(root, new FakeClock());
+
+  await journal.appendToStream(stream, 0, [
+    createEventData({
+      eventId: 'event-new',
+      eventType: 'test.created',
+      occurredAt: '2026-07-30T11:59:59.000Z',
+      correlationId: 'correlation-new',
+      causationId: 'command-new',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: { value: 2 },
+    }),
+  ]);
+
+  const jsonl = await readFile(join(root, 'events', '2026-07-30.jsonl'), 'utf8');
+  expect(jsonl).toBe(
+    '{"eventId":"event-new","eventType":"test.created","schemaVersion":1,"occurredAt":"2026-07-30T11:59:59.000Z","correlationId":"correlation-new","causationId":"command-new","actor":{"kind":"system","id":"test"},"source":{"kind":"internal","id":"test"},"stream":{"kind":"test","id":"new"},"payload":{"value":2},"recordedAt":"2026-07-30T12:00:00.000Z","sequence":1,"globalPosition":1}\n',
+  );
+  expect(JSON.parse(jsonl)).not.toHaveProperty('event');
+});
+
 it('requires events, appends batches in sequence, and leaves the tail unchanged on rejected appends', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-append-to-stream-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
@@ -33,7 +87,6 @@ it('requires events, appends batches in sequence, and leaves the tail unchanged 
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
   const journal = new FileEventJournal(root, new FakeClock());
@@ -66,7 +119,6 @@ it('reopens the journal and continues stream sequence and global position', asyn
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
   await new FileEventJournal(root, new FakeClock()).appendToStream(stream, 0, [draft('event-1')]);
@@ -88,14 +140,16 @@ it('returns an existing idempotent event while appending only new events in a mi
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { id },
     });
   const journal = new FileEventJournal(root, new FakeClock());
   await journal.appendToStream(stream, 0, [draft('event-1')]);
   const result = await journal.appendToStream(stream, 1, [draft('event-1'), draft('event-2')]);
   expect(result.map((event) => event.globalPosition)).toEqual([1, 2]);
-  expect((await journal.readAll(0)).map((event) => event.eventId)).toEqual(['event-1', 'event-2']);
+  expect((await journal.readAll(0)).map((event) => event.event.eventId)).toEqual([
+    'event-1',
+    'event-2',
+  ]);
 });
 
 it('round-trips every strict offset-ISO timestamp accepted by draft construction', async () => {
@@ -115,7 +169,6 @@ it('round-trips every strict offset-ISO timestamp accepted by draft construction
       causationId: `event-${index + 1}`,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     }),
   );
@@ -124,7 +177,9 @@ it('round-trips every strict offset-ISO timestamp accepted by draft construction
 
   await expect(new FileEventJournal(root, new FakeClock()).readAll(0)).resolves.toEqual(
     expect.arrayContaining(
-      occurredAt.map((timestamp) => expect.objectContaining({ occurredAt: timestamp })),
+      occurredAt.map((timestamp) =>
+        expect.objectContaining({ event: expect.objectContaining({ occurredAt: timestamp }) }),
+      ),
     ),
   );
 });
@@ -141,7 +196,6 @@ it('validates a finalized envelope before filesystem serialization', async () =>
     causationId: 'event-invalid',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream,
     payload: { objective: 'ship' },
   } as unknown as EventData;
 
@@ -213,7 +267,6 @@ it('does not re-parse prior history from disk after appending new events', async
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: `event ${sequence}` },
     });
   const journal = new FileEventJournal(root, new FakeClock());
@@ -251,7 +304,6 @@ it('refreshes a cached view when another file-journal instance appends', async (
     causationId: 'cached-view-event',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream,
     payload: { objective: 'ship' },
   });
   const writer = new FileEventJournal(root, new FakeClock());
@@ -275,7 +327,6 @@ it('checks segment fingerprints without parsing an unchanged warm journal', asyn
     causationId: 'event-1',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream,
     payload: { objective: 'ship' },
   });
   const journal = new FileEventJournal(root, new FakeClock());
@@ -304,7 +355,6 @@ it('recovers a warmed reader after a JSONL append crashes before manifest update
       causationId: 'event-1',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
     const writer = new FileEventJournal(root, new FakeClock());
@@ -336,7 +386,7 @@ it('recovers a warmed reader after a JSONL append crashes before manifest update
     await expect(wait).resolves.toBeUndefined();
 
     expect(await reader.latestGlobalPosition()).toBe(2);
-    expect((await reader.readAll(1)).map((event) => event.eventId)).toEqual(['event-2']);
+    expect((await reader.readAll(1)).map((event) => event.event.eventId)).toEqual(['event-2']);
   } finally {
     vi.useRealTimers();
   }
@@ -359,7 +409,6 @@ it('uses the refreshed warm-cache stream index for ordered, isolated stream read
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
   const clock = new FakeClock();
@@ -372,23 +421,25 @@ it('uses the refreshed warm-cache stream index for ordered, isolated stream read
   // A full read, unlike the cold manifest path, populates the in-memory
   // cache that the next stream read must refresh after an external append.
   await reader.latestGlobalPosition();
-  expect((await reader.readStream(workStream)).map((event) => event.eventId)).toEqual([
+  expect((await reader.readStream(workStream)).map((event) => event.event.eventId)).toEqual([
     'work-1',
     'work-2',
   ]);
-  expect((await reader.readStream(runStream)).map((event) => event.eventId)).toEqual(['run-1']);
+  expect((await reader.readStream(runStream)).map((event) => event.event.eventId)).toEqual([
+    'run-1',
+  ]);
   expect(await reader.readStream(missingStream)).toEqual([]);
 
   // A different journal instance changes the segment after this reader has
   // warmed its cache, so the next read must rebuild both cache and index.
   await writer.appendToStream(runStream, 1, [draft(runStream, 'run-2')]);
-  expect((await reader.readStream(runStream)).map((event) => event.eventId)).toEqual([
+  expect((await reader.readStream(runStream)).map((event) => event.event.eventId)).toEqual([
     'run-1',
     'run-2',
   ]);
 
   readFileMock.mockClear();
-  expect((await reader.readStream(workStream)).map((event) => event.eventId)).toEqual([
+  expect((await reader.readStream(workStream)).map((event) => event.event.eventId)).toEqual([
     'work-1',
     'work-2',
   ]);
@@ -409,7 +460,6 @@ it('coalesces concurrent reads on a cold cache into a single on-disk decode', as
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: `event ${sequence}` },
     });
   await new FileEventJournal(root, new FakeClock()).appendToStream(stream, 0, [
@@ -452,7 +502,6 @@ it('revalidates an in-flight local scan after an external append before assignin
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: id },
     });
   const remoteWriter = new FileEventJournal(root, clock);
@@ -500,12 +549,24 @@ it('revalidates an in-flight local scan after an external append before assignin
 
     await expect(staleRead).resolves.toBe(1);
     await expect(localAppend).resolves.toEqual([
-      expect.objectContaining({ eventId: 'event-3', globalPosition: 3 }),
+      expect.objectContaining({
+        event: expect.objectContaining({ eventId: 'event-3' }),
+        globalPosition: 3,
+      }),
     ]);
     await expect(new FileEventJournal(root, clock).readAll(0)).resolves.toEqual([
-      expect.objectContaining({ eventId: 'event-1', globalPosition: 1 }),
-      expect.objectContaining({ eventId: 'event-2', globalPosition: 2 }),
-      expect.objectContaining({ eventId: 'event-3', globalPosition: 3 }),
+      expect.objectContaining({
+        event: expect.objectContaining({ eventId: 'event-1' }),
+        globalPosition: 1,
+      }),
+      expect.objectContaining({
+        event: expect.objectContaining({ eventId: 'event-2' }),
+        globalPosition: 2,
+      }),
+      expect.objectContaining({
+        event: expect.objectContaining({ eventId: 'event-3' }),
+        globalPosition: 3,
+      }),
     ]);
   } finally {
     releaseSnapshot.resolve();
@@ -526,7 +587,6 @@ it('readStream on a cold cache parses only the segment files that can hold that 
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
   const clock = new FakeClock();
@@ -540,7 +600,7 @@ it('readStream on a cold cache parses only the segment files that can hold that 
   readFileMock.mockClear();
   const reader = new FileEventJournal(root, clock);
   const events = await reader.readStream(streamA);
-  expect(events.map((event) => event.eventId)).toEqual(['event-a1']);
+  expect(events.map((event) => event.event.eventId)).toEqual(['event-a1']);
   const wholeSegmentReads = readFileMock.mock.calls
     .map(([path]) => String(path))
     .filter((path) => path.endsWith('.jsonl'));
@@ -559,7 +619,6 @@ it('readAll(after) on a cold cache skips segments entirely at or before the give
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
   const clock = new FakeClock();
@@ -572,7 +631,7 @@ it('readAll(after) on a cold cache skips segments entirely at or before the give
   readFileMock.mockClear();
   const reader = new FileEventJournal(root, clock);
   const events = await reader.readAll(1);
-  expect(events.map((event) => event.eventId)).toEqual(['event-2']);
+  expect(events.map((event) => event.event.eventId)).toEqual(['event-2']);
   const wholeSegmentReads = readFileMock.mock.calls
     .map(([path]) => String(path))
     .filter((path) => path.endsWith('.jsonl'));
@@ -591,7 +650,6 @@ it('falls back to a full scan and still returns correct data when the persisted 
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
   const writer = new FileEventJournal(root, new FakeClock());
@@ -599,8 +657,11 @@ it('falls back to a full scan and still returns correct data when the persisted 
   await writeFile(join(root, 'events', 'index-manifest.json'), '{not json', 'utf8');
 
   const reader = new FileEventJournal(root, new FakeClock());
-  expect((await reader.readAll(0)).map((event) => event.eventId)).toEqual(['event-1', 'event-2']);
-  expect((await reader.readStream(stream)).map((event) => event.eventId)).toEqual([
+  expect((await reader.readAll(0)).map((event) => event.event.eventId)).toEqual([
+    'event-1',
+    'event-2',
+  ]);
+  expect((await reader.readStream(stream)).map((event) => event.event.eventId)).toEqual([
     'event-1',
     'event-2',
   ]);
@@ -618,7 +679,6 @@ it('falls back to a full scan when a valid-shaped persisted index points at the 
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
   const writer = new FileEventJournal(root, new FakeClock());
@@ -630,7 +690,10 @@ it('falls back to a full scan when a valid-shaped persisted index points at the 
   await writeFile(join(root, 'events', 'index-manifest.json'), JSON.stringify(manifest), 'utf8');
 
   const reader = new FileEventJournal(root, new FakeClock());
-  expect((await reader.readAll(0)).map((event) => event.eventId)).toEqual(['event-1', 'event-2']);
+  expect((await reader.readAll(0)).map((event) => event.event.eventId)).toEqual([
+    'event-1',
+    'event-2',
+  ]);
 });
 
 it('notifies changeSignal after a real write, and wakes multiple subscribers off one append', async () => {
@@ -647,7 +710,6 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
         causationId: id,
         actor: { kind: 'system', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream,
         payload: { objective: `event ${sequence}` },
       });
     const journal = new FileEventJournal(root, new FakeClock());
@@ -706,7 +768,6 @@ it('arms a watcher on a fresh root and wakes promptly after the first external a
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
   const clock = new FakeClock();
@@ -731,7 +792,7 @@ it('arms a watcher on a fresh root and wakes promptly after the first external a
   }
 
   expect(watcher.unref).toHaveBeenCalledOnce();
-  expect((await reader.readAll(0)).map((entry) => entry.eventId)).toEqual(['event-1']);
+  expect((await reader.readAll(0)).map((entry) => entry.event.eventId)).toEqual(['event-1']);
 });
 
 it('discovers an external append by fallback when watcher setup fails', async () => {
@@ -747,7 +808,6 @@ it('discovers an external append by fallback when watcher setup fails', async ()
       causationId: 'event-1',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
     const watcher = controlledWatcherFactory(new Error('watch unavailable'));
@@ -760,7 +820,7 @@ it('discovers an external append by fallback when watcher setup fails', async ()
     await vi.advanceTimersByTimeAsync(1_000);
 
     await expect(wait).resolves.toBeUndefined();
-    expect((await reader.readAll(0)).map((entry) => entry.eventId)).toEqual(['event-1']);
+    expect((await reader.readAll(0)).map((entry) => entry.event.eventId)).toEqual(['event-1']);
   } finally {
     vi.useRealTimers();
   }
@@ -833,7 +893,6 @@ it('wakes every concurrent waiter from one external append', async () => {
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { objective: 'ship' },
     });
   const clock = new FakeClock();

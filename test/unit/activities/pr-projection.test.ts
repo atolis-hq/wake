@@ -18,7 +18,7 @@ import { FakeClock } from '../../e2e/support/world.js';
 
 function event(type: string, payload: Record<string, unknown>): EventEnvelope {
   return {
-    ...createEventData({
+    event: createEventData({
       eventId: `event-${type}`,
       eventType: type,
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -26,9 +26,9 @@ function event(type: string, payload: Record<string, unknown>): EventEnvelope {
       causationId: 'command-1',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: resourceStream(resId('1')),
       payload,
     }),
+    stream: resourceStream(resId('1')),
     globalPosition: 1,
     recordedAt: '2026-07-30T12:00:00.000Z',
     sequence: 1,
@@ -85,7 +85,7 @@ describe('pullRequestProjection', () => {
       baseRevision: 'base-a',
       checks: 'passing',
     });
-    await journal.appendToStream(draft.stream, 0, [draft]);
+    await journal.appendToStream(draft.stream, 0, [draft.event]);
     const store = new InMemoryProjectionStore();
     const host = new EventProcessorHost(
       journal,

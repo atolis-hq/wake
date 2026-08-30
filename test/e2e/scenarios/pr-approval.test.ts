@@ -31,7 +31,7 @@ it(`${scenario.id} emits one exact-revision provider-neutral approval intent`, a
     }),
   ]);
   const [intent] = await world.events('pr.approve-requested');
-  expect(intent?.payload).toMatchObject({ idempotencyKey: intent?.eventId });
+  expect(intent?.event.payload).toMatchObject({ idempotencyKey: intent?.event.eventId });
   expect((await world.viewWorkflow(workflowId))?.status).toBe('waiting');
   expect(await world.events('pr.approve-denied')).toHaveLength(0);
 });
@@ -58,7 +58,7 @@ it.each([
     expect(denials[0]?.stream).toEqual(
       selectionDenied ? workItemStream(setup.workItemId) : resourceStream(setup.primaryResourceId!),
     );
-    expect(denials[0]?.payload).toEqual(
+    expect(denials[0]?.event.payload).toEqual(
       expect.objectContaining(
         selectionDenied
           ? {
@@ -69,7 +69,7 @@ it.each([
               revision: null,
               reason,
               body: 'Reviewed',
-              idempotencyKey: denials[0]?.eventId,
+              idempotencyKey: denials[0]?.event.eventId,
             }
           : {
               activationId: expect.any(String),
@@ -77,7 +77,7 @@ it.each([
               revision: setup.revision,
               reason,
               body: 'Reviewed',
-              idempotencyKey: denials[0]?.eventId,
+              idempotencyKey: denials[0]?.event.eventId,
             },
       ),
     );

@@ -113,7 +113,7 @@ it('treats exhausted sequence conflicts without the event as a failed append', a
     async waitForEventsAfter() {},
     changeSignal: new InProcessJournalChangeSignal(),
   };
-  const intent = mergeDenied(stream, PullRequestDenialCode.MissingResource, {
+  const intent = mergeDenied(PullRequestDenialCode.MissingResource, {
     commandId: 'activation-1',
     occurredAt: '2026-07-30T12:00:00.000Z',
     correlationId: correlationId('scenario-1'),

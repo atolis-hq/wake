@@ -2,7 +2,6 @@ import { createEventData, EventSourceKind, type CommandContext } from '../../ker
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import { validateChildProvenance } from '../domain/child-policy.js';
@@ -89,7 +88,6 @@ export class StartWorkflow {
             causationId: context.commandId,
             actor: context.actor,
             source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-            stream: workflowInstanceStream(view.workflowInstanceId),
             payload: { reason: 'workflow-definition-unavailable' },
           }),
         ]);

@@ -261,10 +261,10 @@ describe('approval authority acceptance', () => {
     );
 
     const accepted = (await journal.readAll(0)).find(
-      (event) => event.eventType === OrchestrationEventType.SignalAccepted,
+      (event) => event.event.eventType === OrchestrationEventType.SignalAccepted,
     );
 
-    expect(accepted?.payload).toMatchObject({
+    expect(accepted?.event.payload).toMatchObject({
       authority: { kind: ApprovalAuthorityKind.Auto },
       actorId: 'owner',
       actorDecision: { authorized: true, evidenceId: 'approval-evidence-1' },

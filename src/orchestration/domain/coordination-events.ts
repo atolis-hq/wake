@@ -4,12 +4,7 @@ import type {
   ChildCoordinationMetadata,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import {
-  workflowInstanceId,
-  type WorkflowInstanceId,
-  type WorkflowName,
-} from '../contracts/identifiers.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
+import type { WorkflowInstanceId, WorkflowName } from '../contracts/identifiers.js';
 
 interface CoordinationDraftContext {
   readonly workflowInstanceId: WorkflowInstanceId;
@@ -36,7 +31,6 @@ export function coordinationDraft<Type extends keyof ChildCoordinationEventPaylo
     causationId: context.causationId,
     actor,
     source,
-    stream: workflowInstanceStream(workflowInstanceId(context.workflowInstanceId)),
     payload,
   });
 }

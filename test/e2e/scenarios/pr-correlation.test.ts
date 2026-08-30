@@ -47,10 +47,9 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
     causationId: 'github:pr-1',
     actor: { kind: 'integration', id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: integrationStream(BuiltInAdapterId.GitHub),
     payload,
   });
-  await journal.appendToStream(evidence.stream, 0, [evidence]);
+  await journal.appendToStream(integrationStream(BuiltInAdapterId.GitHub), 0, [evidence]);
   const translator = new InboundTranslator(journal, work, resources, {
     pullRequests,
     lookup,
@@ -84,19 +83,23 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
   ]);
   await appendObservation(journal, clock, observation('head-b'), 'github:pr-2');
   await processInbound(translator, journal, checkpoints);
-  expect((await journal.readAll(0)).map((event) => event.eventType)).toContain(
+  expect((await journal.readAll(0)).map((event) => event.event.eventType)).toContain(
     'pr.revision-changed',
   );
   const safePullRequest = await pullRequests.get(prResource);
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'pr.review-rejected'),
+    (await journal.readAll(0)).filter((event) => event.event.eventType === 'pr.review-rejected'),
   ).toHaveLength(0);
 
   await appendComment(journal, clock, 'owner/repo#unlinked', 'head-a', 'github:review-unlinked');
   await processInbound(translator, journal, checkpoints);
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'pr.review-rejected'),
-  ).toEqual([expect.objectContaining({ payload: { reason: 'missing-resource' } })]);
+    (await journal.readAll(0)).filter((event) => event.event.eventType === 'pr.review-rejected'),
+  ).toEqual([
+    expect.objectContaining({
+      event: expect.objectContaining({ payload: { reason: 'missing-resource' } }),
+    }),
+  ]);
   expect(await work.get(correlation!.workItemId)).toMatchObject({
     objective: payload.title,
   });
@@ -113,10 +116,14 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
   await appendComment(journal, clock, payload.externalKey, 'head-b', 'github:review-conflicted');
   await processInbound(translator, journal, checkpoints);
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'pr.review-rejected'),
+    (await journal.readAll(0)).filter((event) => event.event.eventType === 'pr.review-rejected'),
   ).toEqual([
-    expect.objectContaining({ payload: { reason: 'missing-resource' } }),
-    expect.objectContaining({ payload: { reason: 'correlation-conflict' } }),
+    expect.objectContaining({
+      event: expect.objectContaining({ payload: { reason: 'missing-resource' } }),
+    }),
+    expect.objectContaining({
+      event: expect.objectContaining({ payload: { reason: 'correlation-conflict' } }),
+    }),
   ]);
   expect(await work.get(correlation!.workItemId)).toMatchObject({
     objective: payload.title,
@@ -203,7 +210,6 @@ async function appendObservation(
       causationId: eventId,
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream,
       payload,
     }),
   ]);
@@ -224,7 +230,6 @@ async function appendComment(
     causationId: eventId,
     actor: { kind: 'integration', id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: integrationStream(BuiltInAdapterId.GitHub),
     payload: {
       externalKey,
       reviewKind: 'formal',

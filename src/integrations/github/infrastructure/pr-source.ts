@@ -7,7 +7,6 @@ import {
 } from '../../../activities/index.js';
 import { createEventData, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
-import { integrationStream } from '../../contracts/streams.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
 import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
 import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
@@ -138,7 +137,6 @@ function pullRequestObservation(input: {
     causationId: `github:${key}:${fingerprint}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: EventSourceKind.Adapter, id: input.adapter ?? GitHubAdapter },
-    stream: integrationStream(input.adapter ?? GitHubAdapter),
     payload,
   });
 }

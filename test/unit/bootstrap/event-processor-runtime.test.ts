@@ -133,7 +133,6 @@ async function appendFact(journal: InMemoryEventJournal): Promise<void> {
       causationId: 'test-causation',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { value: 1 },
     }),
   ]);

@@ -7,7 +7,6 @@ import {
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
 import { WorkEventType, type WorkEventData, type WorkEventPayloads } from '../contracts/events.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
-import { workItemStream } from '../contracts/streams.js';
 import type { WorkItemView } from '../contracts/views.js';
 import { WorkStatus } from '../contracts/vocabulary.js';
 import { WorkRepository } from './work-repository.js';
@@ -39,7 +38,7 @@ export function createWorkService(journal: EventJournal): WorkService {
   return {
     async create(command, context) {
       const loaded = await repository.load(command.workItemId);
-      const draft = workDraft(command.workItemId, context, WorkEventType.ItemCreated, {
+      const draft = workDraft(context, WorkEventType.ItemCreated, {
         objective: command.objective,
         ...(command.tags === undefined ? {} : { tags: command.tags }),
       });
@@ -50,7 +49,7 @@ export function createWorkService(journal: EventJournal): WorkService {
       return change(
         command.workItemId,
         context,
-        workDraft(command.workItemId, context, WorkEventType.ObjectiveRevised, {
+        workDraft(context, WorkEventType.ObjectiveRevised, {
           objective: command.objective,
         }),
       );
@@ -59,24 +58,20 @@ export function createWorkService(journal: EventJournal): WorkService {
       return change(
         command.from,
         context,
-        workDraft(command.from, context, WorkEventType.ItemLinked, {
+        workDraft(context, WorkEventType.ItemLinked, {
           to: command.to,
           relation: command.relation,
         }),
       );
     },
     close(workItemId, reason, context) {
-      return change(
-        workItemId,
-        context,
-        workDraft(workItemId, context, WorkEventType.ItemClosed, { reason }),
-      );
+      return change(workItemId, context, workDraft(context, WorkEventType.ItemClosed, { reason }));
     },
     cancel(workItemId, reason, context) {
       return change(
         workItemId,
         context,
-        workDraft(workItemId, context, WorkEventType.ItemCancelled, { reason }),
+        workDraft(context, WorkEventType.ItemCancelled, { reason }),
       );
     },
     grantAutoApproval(workItemId, context) {
@@ -140,11 +135,10 @@ async function setAutoApproval(
   if (current === null) throw new Error(`WorkItem ${workItemId} does not exist`);
   if (current.autoApprovalGranted === granted) return current;
   const eventType = granted ? WorkEventType.AutoApprovalGranted : WorkEventType.AutoApprovalRevoked;
-  return change(workItemId, context, workDraft(workItemId, context, eventType, {}));
+  return change(workItemId, context, workDraft(context, eventType, {}));
 }
 
 function workDraft<Type extends keyof WorkEventPayloads>(
-  workItemId: WorkItemId,
   context: CommandContext,
   eventType: Type,
   payload: WorkEventPayloads[Type],
@@ -157,7 +151,6 @@ function workDraft<Type extends keyof WorkEventPayloads>(
     causationId: context.commandId,
     actor: context.actor,
     source: { kind: EventSourceKind.Internal, id: 'work-service' },
-    stream: workItemStream(workItemId),
     payload,
   });
 }
@@ -180,12 +173,7 @@ async function setFrozen(
   return change(
     workItemId,
     context,
-    workDraft(
-      workItemId,
-      context,
-      frozen ? WorkEventType.ItemFrozen : WorkEventType.ItemUnfrozen,
-      {},
-    ),
+    workDraft(context, frozen ? WorkEventType.ItemFrozen : WorkEventType.ItemUnfrozen, {}),
   );
 }
 
@@ -210,7 +198,7 @@ async function setDeleted(
   return change(
     workItemId,
     context,
-    workDraft(workItemId, context, WorkEventType.ItemDeleted, {}),
+    workDraft(context, WorkEventType.ItemDeleted, {}),
     false,
     false,
   );

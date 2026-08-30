@@ -266,7 +266,6 @@ async function appendCountedEvents(
         causationId: 'causation',
         actor: { kind: 'system', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream,
         payload: {},
       }),
     ),

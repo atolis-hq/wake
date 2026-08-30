@@ -226,7 +226,7 @@ describe('Execution event contract', () => {
       ),
     );
 
-    expect(selected?.eventType).toBe(ExecutionEventType.ActivationClaimed);
+    expect(selected?.event.eventType).toBe(ExecutionEventType.ActivationClaimed);
   });
 
   it('selects and creates preparation events on run streams', () => {
@@ -236,12 +236,11 @@ describe('Execution event contract', () => {
       stream,
     );
 
-    expect(selectRunExecutionEvent(preparation)?.eventType).toBe(
+    expect(selectRunExecutionEvent(preparation)?.event.eventType).toBe(
       ExecutionEventType.RunPreparationStarted,
     );
-    expect(createRunExecutionEventData(preparation)).toMatchObject({
+    expect(createRunExecutionEventData(preparation.event)).toMatchObject({
       eventType: ExecutionEventType.RunPreparationStarted,
-      stream,
       payload: runSamples[0][1],
     });
   });

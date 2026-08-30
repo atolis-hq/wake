@@ -7,7 +7,6 @@ import {
   runId,
   RunRepository,
   RunStatus,
-  runStream,
 } from '../../../src/execution/index.js';
 import {
   createEventData,
@@ -45,7 +44,7 @@ describe('Run cancellation', () => {
 
     await fixture.service.requestCancellation(run.runId, 'operator');
 
-    expect((await fixture.events()).map((event) => event.eventType)).toContain(
+    expect((await fixture.events()).map((event) => event.event.eventType)).toContain(
       ExecutionEventType.RunCancellationRequested,
     );
     expect(fixture.cancelled).toBe(true);
@@ -101,7 +100,6 @@ describe('Run cancellation', () => {
         causationId: 'preparing-run',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: runStream(id),
         payload: {
           activationId: activationId('preparing-activation'),
           activity: activityName('long-running'),
@@ -152,7 +150,6 @@ describe('Run cancellation', () => {
         causationId: 'activation-1',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: runStream(id),
         payload: {
           activationId: activationId('activation-1'),
           activity: activityName('long-running'),

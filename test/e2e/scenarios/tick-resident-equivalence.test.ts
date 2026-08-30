@@ -125,13 +125,13 @@ it('E2E-CONTROL-007: resident processing advances inbound, orchestration, artifa
       const delivered = await waitForJournalEvent(
         journal,
         0,
-        (event) => event.eventType === DeliveryEventType.Confirmed,
+        (event) => event.event.eventType === DeliveryEventType.Confirmed,
       );
       const runStarted = (await journal.readAll(0)).find(
-        (event) => event.eventType === ExecutionEventType.RunStarted,
+        (event) => event.event.eventType === ExecutionEventType.RunStarted,
       );
       const acceptedOutcome = (await journal.readAll(0)).find(
-        (event) => event.eventType === OrchestrationEventType.ActivityOutcomeAccepted,
+        (event) => event.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted,
       );
       expect(runStarted).toBeDefined();
       expect(acceptedOutcome).toBeDefined();

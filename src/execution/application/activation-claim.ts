@@ -35,7 +35,10 @@ export async function claimActivation(input: {
   const stream = activationStream(activationId);
   const events = (await journal.readStream(stream)).map(decodeActivationExecutionEvent);
   const last = events.at(-1);
-  if (last?.eventType === ExecutionEventType.ActivationClaimed && claimIsUnexpired(last, clock))
+  if (
+    last?.event.eventType === ExecutionEventType.ActivationClaimed &&
+    claimIsUnexpired(last.event, clock)
+  )
     throw new ActivationClaimConflictError(activationId);
   await journal.appendToStream(stream, events.length, [
     createActivationExecutionEventData({
@@ -46,7 +49,6 @@ export async function claimActivation(input: {
       causationId: runId,
       actor: { kind: EventActorKind.System, id: owner },
       source: { kind: EventSourceKind.Internal, id: 'execution' },
-      stream,
       payload: {
         runId,
         owner,
@@ -76,7 +78,6 @@ export async function releaseActivation(input: {
       causationId: runId,
       actor: { kind: EventActorKind.System, id: 'execution' },
       source: { kind: EventSourceKind.Internal, id: 'execution' },
-      stream,
       payload: { runId },
     }),
   ]);
@@ -84,7 +85,7 @@ export async function releaseActivation(input: {
 
 function claimIsUnexpired(
   event: Extract<
-    ActivationExecutionEvent,
+    ActivationExecutionEvent['event'],
     { readonly eventType: typeof ExecutionEventType.ActivationClaimed }
   >,
   clock: Clock,

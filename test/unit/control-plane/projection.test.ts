@@ -7,17 +7,19 @@ import {
 import { causationId, correlationId, eventId } from '../../../src/kernel/index.js';
 
 const event = (eventType: string, payload: unknown, globalPosition: number) => ({
-  eventId: eventId(`event-${globalPosition}`),
-  eventType,
-  schemaVersion: 1 as const,
-  occurredAt: '2026-07-31T12:00:00.000Z',
+  event: {
+    eventId: eventId(`event-${globalPosition}`),
+    eventType,
+    schemaVersion: 1 as const,
+    occurredAt: '2026-07-31T12:00:00.000Z',
+    correlationId: correlationId('correlation-1'),
+    causationId: causationId('causation-1'),
+    actor: { kind: 'system' as const, id: 'control-plane' },
+    source: { kind: 'internal' as const, id: 'control-plane' },
+    payload,
+  },
   recordedAt: '2026-07-31T12:00:00.000Z',
-  correlationId: correlationId('correlation-1'),
-  causationId: causationId('causation-1'),
-  actor: { kind: 'system' as const, id: 'control-plane' },
-  source: { kind: 'internal' as const, id: 'control-plane' },
   stream: controlPlaneStream(),
-  payload,
   sequence: globalPosition,
   globalPosition,
 });

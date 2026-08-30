@@ -201,20 +201,11 @@ export type WorkflowDefinitionRegisteredEvent = EventUnion<
 
 export type OrchestrationGroupEvent = PrimaryOrchestrationGroupEvent | ChildOrchestrationGroupEvent;
 
-export type WorkflowOrchestrationEventData = EventDataUnion<
-  WorkflowEventPayloads,
-  WorkflowInstanceStreamRef
->;
+export type WorkflowOrchestrationEventData = EventDataUnion<WorkflowEventPayloads>;
 
-type PrimaryOrchestrationGroupEventData = EventDataUnion<
-  PrimaryGroupEventPayloads,
-  PrimaryOrchestrationGroupStreamRef
->;
+type PrimaryOrchestrationGroupEventData = EventDataUnion<PrimaryGroupEventPayloads>;
 
-type ChildOrchestrationGroupEventData = EventDataUnion<
-  ChildGroupEventPayloads,
-  ChildOrchestrationGroupStreamRef
->;
+type ChildOrchestrationGroupEventData = EventDataUnion<ChildGroupEventPayloads>;
 
 export type OrchestrationGroupEventData =
   PrimaryOrchestrationGroupEventData | ChildOrchestrationGroupEventData;

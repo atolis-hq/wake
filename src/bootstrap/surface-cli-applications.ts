@@ -184,12 +184,12 @@ export function createSurfaceCliApplications(
             (event) => event.stream.kind === WorkStreamKind.WorkItem && event.stream.id === id,
           )
           .map((event) => ({
-            eventId: event.eventId,
-            eventType: event.eventType,
-            occurredAt: event.occurredAt,
+            eventId: event.event.eventId,
+            eventType: event.event.eventType,
+            occurredAt: event.event.occurredAt,
             stream: `${event.stream.kind}:${event.stream.id}`,
-            causationId: event.causationId,
-            correlationId: event.correlationId,
+            causationId: event.event.causationId,
+            correlationId: event.event.correlationId,
           }));
       },
     },

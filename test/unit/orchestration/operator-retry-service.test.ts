@@ -133,7 +133,7 @@ it('concurrently replays a retry command with a changed occurredAt only once', a
   expect(first.operatorRetryCommandIds).toEqual(['retry-concurrent']);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.operator-retry-requested',
+      (event) => event.event.eventType === 'orchestration.operator-retry-requested',
     ),
   ).toHaveLength(1);
 });

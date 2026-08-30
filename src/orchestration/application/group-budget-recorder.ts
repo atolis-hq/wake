@@ -34,8 +34,8 @@ export class GroupBudgetRecorder {
         events.some((event) => {
           const owned = selectOrchestrationEvent(event);
           return (
-            owned?.eventType === OrchestrationEventType.GroupBudgetExhausted &&
-            owned.payload.requestId === metadata.requestId
+            owned?.event.eventType === OrchestrationEventType.GroupBudgetExhausted &&
+            owned.event.payload.requestId === metadata.requestId
           );
         })
       )

@@ -91,11 +91,10 @@ async function appendAcceptance(
   });
   const event = events.find((candidate) => candidate.payload.body === '/accepted');
   if (event === undefined) throw new Error('Approved GitHub review was not translated');
-  await world.journal.appendToStream(
-    event.stream,
-    (await world.journal.readStream(event.stream)).length,
-    [event],
-  );
+  const stream = integrationStream(BuiltInAdapterId.GitHub);
+  await world.journal.appendToStream(stream, (await world.journal.readStream(stream)).length, [
+    event,
+  ]);
 }
 
 async function appendIntegrationEvent(
@@ -114,7 +113,6 @@ async function appendIntegrationEvent(
       causationId: eventId,
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream,
       payload,
     }),
   ]);

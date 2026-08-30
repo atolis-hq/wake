@@ -58,7 +58,9 @@ export class DeliveryOutcomeReactor {
   }
 
   async reconcileOnce(): Promise<void> {
-    const pending = new Map((await this.loadPending()).map((event) => [event.eventId, event]));
+    const pending = new Map(
+      (await this.loadPending()).map((event) => [event.event.eventId, event]),
+    );
     for (const [id, event] of pending) {
       if ((await this.reconcile(event)) === true) pending.delete(id);
     }
@@ -69,30 +71,34 @@ export class DeliveryOutcomeReactor {
     const delivery = selectDeliveryEvent(event);
     if (delivery === null) return null;
     const outcome =
-      delivery.eventType === DeliveryEventType.Confirmed ||
-      (delivery.eventType === DeliveryEventType.Reconciled &&
-        delivery.payload.result === DeliveryResultKind.Confirmed)
-        ? { kind: ActivityOutcomeKind.Done, data: { deliveryEventId: delivery.eventId } }
-        : delivery.eventType === DeliveryEventType.Failed
-          ? { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.payload.code } }
+      delivery.event.eventType === DeliveryEventType.Confirmed ||
+      (delivery.event.eventType === DeliveryEventType.Reconciled &&
+        delivery.event.payload.result === DeliveryResultKind.Confirmed)
+        ? { kind: ActivityOutcomeKind.Done, data: { deliveryEventId: delivery.event.eventId } }
+        : delivery.event.eventType === DeliveryEventType.Failed
+          ? { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.event.payload.code } }
           : null;
     if (outcome === null) return null;
     try {
       await this.recordConversationRepresentation(event, delivery);
     } catch (error) {
       // Optional conversation provenance must not block delivery reconciliation.
-      console.error(`Conversation provenance recording failed for ${delivery.eventId}`, error);
+      console.error(
+        `Conversation provenance recording failed for ${delivery.event.eventId}`,
+        error,
+      );
     }
     const command = {
-      workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),
-      activationId: activationId(delivery.payload.activationId),
+      workflowInstanceId: workflowInstanceId(delivery.event.payload.workflowInstanceId),
+      activationId: activationId(delivery.event.payload.activationId),
     };
-    if (!(await this.isAwaitingThisDelivery(command, delivery.payload.intentEventId))) return false;
+    if (!(await this.isAwaitingThisDelivery(command, delivery.event.payload.intentEventId)))
+      return false;
     await this.orchestration.acceptOutcome(
       { ...command, outcome },
       {
-        commandId: delivery.eventId,
-        correlationId: event.correlationId,
+        commandId: delivery.event.eventId,
+        correlationId: event.event.correlationId,
         actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
         occurredAt: event.recordedAt,
       },
@@ -107,10 +113,10 @@ export class DeliveryOutcomeReactor {
     if (this.conversations === undefined || !isConfirmedDelivery(delivery)) return;
     const intent = await conversationDeliveryIntent(
       this.projections,
-      delivery.payload.intentEventId,
+      delivery.event.payload.intentEventId,
     );
     if (intent === undefined) return;
-    const externalId = (delivery.payload as { readonly externalId?: string }).externalId;
+    const externalId = confirmedExternalId(delivery);
     if (externalId === undefined) return;
     const payload = intent.payload as {
       readonly conversationId: string;
@@ -124,8 +130,8 @@ export class DeliveryOutcomeReactor {
         externalId,
       },
       {
-        commandId: delivery.eventId,
-        correlationId: event.correlationId,
+        commandId: delivery.event.eventId,
+        correlationId: event.event.correlationId,
         actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
         occurredAt: event.recordedAt,
       },
@@ -161,8 +167,10 @@ export class DeliveryOutcomeReactor {
   }
 
   private async savePendingEvent(event: EventEnvelope): Promise<void> {
-    const pending = new Map((await this.loadPending()).map((value) => [value.eventId, value]));
-    pending.set(event.eventId, event);
+    const pending = new Map(
+      (await this.loadPending()).map((value) => [value.event.eventId, value]),
+    );
+    pending.set(event.event.eventId, event);
     await this.savePending([...pending.values()]);
   }
 }
@@ -171,10 +179,10 @@ function isResolvedDelivery(
   delivery: ReturnType<typeof selectDeliveryEvent>,
 ): delivery is NonNullable<ReturnType<typeof selectDeliveryEvent>> {
   return (
-    delivery?.eventType === DeliveryEventType.Confirmed ||
-    delivery?.eventType === DeliveryEventType.Failed ||
-    (delivery?.eventType === DeliveryEventType.Reconciled &&
-      delivery.payload.result === DeliveryResultKind.Confirmed)
+    delivery?.event.eventType === DeliveryEventType.Confirmed ||
+    delivery?.event.eventType === DeliveryEventType.Failed ||
+    (delivery?.event.eventType === DeliveryEventType.Reconciled &&
+      delivery.event.payload.result === DeliveryResultKind.Confirmed)
   );
 }
 
@@ -182,10 +190,21 @@ function isConfirmedDelivery(
   delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
 ): boolean {
   return (
-    delivery.eventType === DeliveryEventType.Confirmed ||
-    (delivery.eventType === DeliveryEventType.Reconciled &&
-      delivery.payload.result === DeliveryResultKind.Confirmed)
+    delivery.event.eventType === DeliveryEventType.Confirmed ||
+    (delivery.event.eventType === DeliveryEventType.Reconciled &&
+      delivery.event.payload.result === DeliveryResultKind.Confirmed)
   );
+}
+
+function confirmedExternalId(
+  delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
+): string | undefined {
+  if (delivery.event.eventType === DeliveryEventType.Confirmed)
+    return delivery.event.payload.externalId;
+  return delivery.event.eventType === DeliveryEventType.Reconciled &&
+    delivery.event.payload.result === DeliveryResultKind.Confirmed
+    ? delivery.event.payload.externalId
+    : undefined;
 }
 
 async function conversationDeliveryIntent(projections: ProjectionStore, intentEventId: string) {

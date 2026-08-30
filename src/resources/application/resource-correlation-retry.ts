@@ -12,7 +12,6 @@ import {
   type ResourceEventPayloads,
 } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';
-import { resourceStream } from '../contracts/streams.js';
 import type { ResourceCorrelationView } from '../contracts/views.js';
 import type { ResourceExternalOutcome } from '../contracts/vocabulary.js';
 import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
@@ -99,7 +98,8 @@ export async function retryPendingWorkCorrelations(
     if (attempts === 0) continue;
     const last = [...loaded.resource.events]
       .reverse()
-      .find((event) => event.eventType === ResourceEventType.WorkCorrelationRetryPending);
+      .map((event) => event.event)
+      .find(isCorrelationRetryPending);
     const reason =
       last?.payload.lastFailureReason ?? 'Resource has no active primary WorkItem correlation';
     const attemptCount = attempts + 1;
@@ -126,6 +126,15 @@ export async function retryPendingWorkCorrelations(
   return processed;
 }
 
+function isCorrelationRetryPending(
+  event: ResourceEvent['event'],
+): event is Extract<
+  ResourceEvent['event'],
+  { eventType: typeof ResourceEventType.WorkCorrelationRetryPending }
+> {
+  return event.eventType === ResourceEventType.WorkCorrelationRetryPending;
+}
+
 function hasPrimary(correlations: readonly ResourceCorrelationView[]): boolean {
   return correlations.some((value) => value.role === ResourceCorrelationRole.Primary);
 }
@@ -135,12 +144,12 @@ function retryAttempts(events: readonly ResourceEvent[]): number {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]!;
     if (
-      event.eventType === ResourceEventType.WorkCorrelationEstablished &&
-      event.payload.role === ResourceCorrelationRole.Primary
+      event.event.eventType === ResourceEventType.WorkCorrelationEstablished &&
+      event.event.payload.role === ResourceCorrelationRole.Primary
     )
       break;
-    if (event.eventType === ResourceEventType.WorkCorrelationRetryPending)
-      attempts = Math.max(attempts, event.payload.attemptCount);
+    if (event.event.eventType === ResourceEventType.WorkCorrelationRetryPending)
+      attempts = Math.max(attempts, event.event.payload.attemptCount);
   }
   return attempts;
 }
@@ -168,7 +177,6 @@ function resourceDraft<Type extends keyof ResourceEventPayloads>(
     causationId: context.commandId,
     actor: context.actor,
     source: { kind: EventSourceKind.Internal, id: 'resource-service' },
-    stream: resourceStream(resourceId),
     payload,
   });
 }
