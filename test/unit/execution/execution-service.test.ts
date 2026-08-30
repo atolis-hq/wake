@@ -427,7 +427,7 @@ describe('ExecutionService', () => {
     });
     const clock = new FakeClock();
     const base = new InMemoryEventJournal(clock);
-    let service!: ReturnType<typeof createExecutionService>;
+    const serviceRef: { value?: ReturnType<typeof createExecutionService> } = {};
     let renewBeforeStart = true;
     const journal: EventJournal = {
       async append(stream, expectedSequence, events) {
@@ -436,7 +436,7 @@ describe('ExecutionService', () => {
           events.some((event) => event.eventType === ExecutionEventType.RunStarted)
         ) {
           renewBeforeStart = false;
-          await service.renewLease('run-1', 'execution');
+          await serviceRef.value!.renewLease('run-1', 'execution');
         }
         return base.append(stream, expectedSequence, events);
       },
@@ -447,12 +447,13 @@ describe('ExecutionService', () => {
       readLatest: base.readLatest?.bind(base),
       changeSignal: base.changeSignal,
     };
-    service = createExecutionService(
+    serviceRef.value = createExecutionService(
       journal,
       registry,
       { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
       { clock, ids: new SequentialIds() },
     );
+    const service = serviceRef.value;
 
     const started = await service.attempt(
       { ...activation, activity: activityName('start-race') },

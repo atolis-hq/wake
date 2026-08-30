@@ -37,13 +37,7 @@ export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
 
 function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
   if (!isActiveRunStatus(state.status)) {
-    if (
-      state.status === RunStatus.Ambiguous &&
-      event.actor.kind === EventActorKind.Operator &&
-      (event.eventType === ExecutionEventType.RunSucceeded ||
-        event.eventType === ExecutionEventType.RunFailed)
-    )
-      return applyTerminalEvent(state, event);
+    if (isOperatorAmbiguousTerminalEvent(state, event)) return applyTerminalEvent(state, event);
     return;
   }
   switch (event.eventType) {
@@ -66,6 +60,23 @@ function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
     default:
       return applyLivenessEvent(state, event);
   }
+}
+
+function isOperatorAmbiguousTerminalEvent(
+  state: RunView,
+  event: RunExecutionEvent,
+): event is Extract<
+  RunExecutionEvent,
+  {
+    eventType: typeof ExecutionEventType.RunSucceeded | typeof ExecutionEventType.RunFailed;
+  }
+> {
+  return (
+    state.status === RunStatus.Ambiguous &&
+    event.actor.kind === EventActorKind.Operator &&
+    (event.eventType === ExecutionEventType.RunSucceeded ||
+      event.eventType === ExecutionEventType.RunFailed)
+  );
 }
 
 function validateRunStart(
@@ -117,14 +128,10 @@ function sameRunner(
     { eventType: typeof ExecutionEventType.RunStarted }
   >['payload']['runner'],
 ): boolean {
-  return (
-    left?.name === right?.name &&
-    left?.model === right?.model &&
-    left?.effort === right?.effort &&
-    left?.pool === right?.pool &&
-    left?.cli === right?.cli
-  );
+  return runnerFields.every((field) => left?.[field] === right?.[field]);
 }
+
+const runnerFields = ['name', 'model', 'effort', 'pool', 'cli'] as const;
 
 function applyTerminalEvent(
   state: RunView,

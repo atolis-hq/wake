@@ -1,5 +1,5 @@
 import {
-  BoardActiveRunPhaseValue,
+  type BoardActiveRunPhaseValue,
   BoardConditionValue as BoardConditionValues,
 } from './transport-values.js';
 

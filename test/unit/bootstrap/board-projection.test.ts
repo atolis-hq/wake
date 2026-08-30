@@ -20,6 +20,7 @@ import { eventEnvelope } from '../../support/event-envelope.js';
 import { workId } from '../../support/identities.js';
 
 type WorkItemId = ReturnType<typeof workId>;
+
 type WorkflowInstanceId = ReturnType<typeof workflowInstanceId>;
 
 function seedPrimaryBoard(item: WorkItemId, workflowId: WorkflowInstanceId) {

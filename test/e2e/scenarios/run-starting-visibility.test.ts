@@ -244,8 +244,8 @@ async function createRepository(wakeRoot: string): Promise<string> {
 
 async function writePrepareHook(
   wakeRoot: string,
-  enteredMarker: string,
-  releaseMarker: string,
+  _enteredMarker: string,
+  _releaseMarker: string,
 ): Promise<void> {
   await writeFile(
     join(wakeRoot, 'prepare-workspace.cjs'),

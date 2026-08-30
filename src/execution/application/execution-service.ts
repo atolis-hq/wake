@@ -150,25 +150,11 @@ async function attemptExecution(
       // A detached worker must never create an unhandled rejection for its caller.
     });
   } catch (error) {
-    const persisted = await runtime.repository.load(currentRunId);
-    if (persisted.view !== null && isActiveRunStatus(persisted.view.status)) {
-      try {
-        await renewal?.stop();
-        await recordRunFailure({
-          dependencies: runLifecycleDependencies(runtime),
-          runId: currentRunId,
-          activation,
-          context,
-          error,
-        });
-      } finally {
-        await cleanupRun(runtime, currentRunId, activation, context, lease);
-      }
-      return (await runtime.repository.load(currentRunId)).view!;
-    }
-    await renewal?.stop();
-    await releasePreStartResources(runtime, activation, currentRunId, lease, claimed);
-    throw error;
+    return recoverFailedAttempt(
+      runtime,
+      { activation, context, currentRunId, renewal, lease, claimed },
+      error,
+    );
   }
   await yieldToRunStart(
     definition.executionKind === ActivityExecutionKind.Deterministic &&
@@ -179,6 +165,40 @@ async function attemptExecution(
         : runnerStarted,
   );
   return (await runtime.repository.load(currentRunId)).view!;
+}
+
+async function recoverFailedAttempt(
+  runtime: ExecutionRuntime,
+  attempt: {
+    readonly activation: ExecutionActivation;
+    readonly context: ExecutionAttemptContext;
+    readonly currentRunId: ReturnType<typeof runId>;
+    readonly renewal: ReturnType<typeof renewWhileActive> | undefined;
+    readonly lease: WorkspaceLease | undefined;
+    readonly claimed: boolean;
+  },
+  error: unknown,
+): Promise<RunView> {
+  const { activation, context, currentRunId, renewal, lease, claimed } = attempt;
+  const persisted = await runtime.repository.load(currentRunId);
+  if (persisted.view !== null && isActiveRunStatus(persisted.view.status)) {
+    try {
+      await renewal?.stop();
+      await recordRunFailure({
+        dependencies: runLifecycleDependencies(runtime),
+        runId: currentRunId,
+        activation,
+        context,
+        error,
+      });
+    } finally {
+      await cleanupRun(runtime, currentRunId, activation, context, lease);
+    }
+    return (await runtime.repository.load(currentRunId)).view!;
+  }
+  await renewal?.stop();
+  await releasePreStartResources(runtime, activation, currentRunId, lease, claimed);
+  throw error;
 }
 
 async function yieldToRunStart(runnerStarted: Promise<void> | undefined): Promise<void> {

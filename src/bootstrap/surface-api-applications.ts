@@ -3,7 +3,7 @@ import {
   ControlStreamKind,
   type ActivationSchedulerSubscriptionHealthStatus,
 } from '../control-plane/index.js';
-import { RunStatus } from '../execution/index.js';
+import { type RunStatus } from '../execution/index.js';
 import type { EventEnvelope, EventJournal } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';

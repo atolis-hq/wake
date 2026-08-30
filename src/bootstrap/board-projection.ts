@@ -525,39 +525,109 @@ function projectNewRun(
   >,
   phase: BoardActiveRunPhase,
 ): BoardProjectionView {
-  const workId = view.workflows[event.payload.workflowInstanceId];
-  const card = workId === undefined ? undefined : view.cards[workId];
-  if (card === undefined || workId === undefined) return view;
-  const childAction = view.children?.[event.payload.workflowInstanceId];
-  const isChildRun = childAction !== undefined;
-  const activeRuns = activeRunsFor(view, card, workId);
-  const alreadyRegistered = view.runs[event.stream.id] !== undefined;
+  const target = newRunTarget(view, event);
+  if (target === undefined) return view;
+  const { workId } = target;
   return {
     ...view,
     runs: { ...view.runs, [event.stream.id]: workId },
-    ...(isChildRun ? { childRuns: { ...view.childRuns, [event.stream.id]: true } } : {}),
+    ...childRunReference(view, event, target.isChildRun),
     cards: {
       ...view.cards,
-      [workId]: {
-        ...(isChildRun
-          ? withoutLegacyActiveRun(card)
-          : withoutLegacyActiveRun(withoutLastRunOutcome(withoutAwaitingApproval(card)))),
-        runCount: alreadyRegistered ? card.runCount : card.runCount + 1,
-        ...(shouldSetCardActive(card, isChildRun) ? { condition: BoardCondition.Active } : {}),
-        lastRunAt: event.payload.startedAt,
-        activeRuns: {
-          ...activeRuns,
-          [event.stream.id]: {
-            action: childAction ?? event.payload.stage ?? card.stage ?? event.payload.activity,
-            startedAt: event.payload.startedAt,
-            phase,
-            ...(event.payload.runner?.name === undefined
-              ? {}
-              : { runnerName: event.payload.runner.name }),
-          },
-        },
-      },
+      [workId]: newRunCard(view, event, target, phase),
     },
+  };
+}
+
+function newRunTarget(
+  view: BoardProjectionView,
+  event: Extract<
+    ReturnType<typeof selectRunExecutionEvent> & {},
+    {
+      eventType:
+        typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted;
+    }
+  >,
+):
+  | {
+      readonly workId: string;
+      readonly card: StoredCard;
+      readonly childAction: string | undefined;
+      readonly isChildRun: boolean;
+    }
+  | undefined {
+  const workId = view.workflows[event.payload.workflowInstanceId];
+  const card = workId === undefined ? undefined : view.cards[workId];
+  if (workId === undefined || card === undefined) return undefined;
+  const childAction = view.children?.[event.payload.workflowInstanceId];
+  return { workId, card, childAction, isChildRun: childAction !== undefined };
+}
+
+function childRunReference(
+  view: BoardProjectionView,
+  event: Extract<
+    ReturnType<typeof selectRunExecutionEvent> & {},
+    {
+      eventType:
+        typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted;
+    }
+  >,
+  isChildRun: boolean,
+): Pick<BoardProjectionView, 'childRuns'> | Record<string, never> {
+  return isChildRun ? { childRuns: { ...view.childRuns, [event.stream.id]: true } } : {};
+}
+
+function newRunCard(
+  view: BoardProjectionView,
+  event: Extract<
+    ReturnType<typeof selectRunExecutionEvent> & {},
+    {
+      eventType:
+        typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted;
+    }
+  >,
+  target: {
+    readonly workId: string;
+    readonly card: StoredCard;
+    readonly childAction: string | undefined;
+    readonly isChildRun: boolean;
+  },
+  phase: BoardActiveRunPhase,
+): StoredCard {
+  const { card, childAction, isChildRun, workId } = target;
+  const activeRuns = activeRunsFor(view, card, workId);
+  const alreadyRegistered = view.runs[event.stream.id] !== undefined;
+  return {
+    ...(isChildRun
+      ? withoutLegacyActiveRun(card)
+      : withoutLegacyActiveRun(withoutLastRunOutcome(withoutAwaitingApproval(card)))),
+    runCount: alreadyRegistered ? card.runCount : card.runCount + 1,
+    ...(shouldSetCardActive(card, isChildRun) ? { condition: BoardCondition.Active } : {}),
+    lastRunAt: event.payload.startedAt,
+    activeRuns: {
+      ...activeRuns,
+      [event.stream.id]: newActiveRun(event, childAction, card, phase),
+    },
+  };
+}
+
+function newActiveRun(
+  event: Extract<
+    ReturnType<typeof selectRunExecutionEvent> & {},
+    {
+      eventType:
+        typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted;
+    }
+  >,
+  childAction: string | undefined,
+  card: StoredCard,
+  phase: BoardActiveRunPhase,
+): StoredActiveRun {
+  return {
+    action: childAction ?? event.payload.stage ?? card.stage ?? event.payload.activity,
+    startedAt: event.payload.startedAt,
+    phase,
+    ...(event.payload.runner?.name === undefined ? {} : { runnerName: event.payload.runner.name }),
   };
 }
 
