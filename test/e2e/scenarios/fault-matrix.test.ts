@@ -313,8 +313,10 @@ async function assertExecutionRecovery(
   // An execution fault must not launch the same agent work twice. The request
   // is evidence from the real runner boundary and its identity is the Run that
   // recorded the outcome, not a fabricated test value.
-  expect(runnerRequests, point).toHaveLength(point === 'run.start.after' ? 0 : 1);
-  if (point === 'run.start.after') return;
+  expect(runnerRequests, point).toHaveLength(
+    point === 'run.start.before' || point === 'run.start.after' ? 0 : 1,
+  );
+  if (point === 'run.start.before' || point === 'run.start.after') return;
   const [request] = runnerRequests;
   expect(
     runs.some((run) => run.runId === request!.runId),
@@ -330,12 +332,12 @@ async function assertExecutionRecovery(
   ).toBe(true);
   switch (point) {
     case 'run.start.before':
-      // Pre-append interruption never creates a Run; the replay starts it once.
+      // Preparation is durable before a start append, so an interruption here
+      // fails that starting attempt without invoking the external runner.
       expect(
         events.filter((event) => event.eventType === 'execution.run-started'),
         point,
-      ).toHaveLength(1);
-      expect(recoveredResult, point).toHaveLength(1);
+      ).toHaveLength(0);
       return;
     case 'run.start.after':
       // A durable start without a reported external identity is never replayed.

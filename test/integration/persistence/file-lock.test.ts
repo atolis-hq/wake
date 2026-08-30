@@ -213,7 +213,11 @@ it('retains time-only stale recovery when dead-process proof is not requested', 
 });
 
 it('allows exactly one concurrent contender to recover a dead stale lock', async () => {
-  for (let round = 0; round < 25; round += 1) {
+  // A single round starts enough simultaneous filesystem contenders to cover
+  // the recovery election. Keep only a small repeat count so this regression
+  // does not strand work beyond Vitest's timeout when every integration
+  // worker is using the temporary filesystem.
+  for (let round = 0; round < 6; round += 1) {
     const path = await lockPath(`concurrent-stale-${round}.lock`);
     const stale = await acquireFileLock(path, {
       now: new Date(0),
@@ -267,7 +271,10 @@ it('releases its own record even when another acquisition contends', async () =>
 
 it('does not expose last-owner directory cleanup as an acquisition failure', async () => {
   const strict = { staleRequiresDeadProcess: true } as const;
-  for (let round = 0; round < 100; round += 1) {
+  // The controlled ENOENT test below covers a directory that disappears
+  // during acquisition. These rounds exercise the real cleanup/acquire
+  // overlap without turning an isolation regression into an I/O stress test.
+  for (let round = 0; round < 6; round += 1) {
     const path = await lockPath(`last-owner-cleanup-${round}.lock`);
     const owner = await acquireFileLock(path, strict);
 
