@@ -24,6 +24,7 @@ import { analyticsProjection, type AnalyticsProjectionView } from './analytics-p
 import {
   boardConditionCounts,
   boardProjection,
+  normalizeBoardActiveRunPhase,
   type BoardProjectionView,
 } from './board-projection.js';
 import type { CompositionRoot } from './composition-root.js';
@@ -128,7 +129,7 @@ function activeBoardRuns(
     return Object.fromEntries(
       Object.entries(card.activeRuns).map(([runId, activeRun]) => [
         runId,
-        { ...activeRun, phase: activeRun.phase ?? RunStatus.Started },
+        { ...activeRun, phase: normalizeBoardActiveRunPhase(activeRun.phase) },
       ]),
     );
   if (card.activeRun === undefined) return {};
@@ -140,7 +141,7 @@ function activeBoardRuns(
     : {
         [legacyRunId]: {
           ...card.activeRun,
-          phase: card.activeRun.phase ?? RunStatus.Started,
+          phase: normalizeBoardActiveRunPhase(card.activeRun.phase),
         },
       };
 }

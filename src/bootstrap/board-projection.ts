@@ -45,19 +45,18 @@ const ActiveRunPhase = {
   Started: activeRunPhases[1]! as typeof RunStatus.Started,
 } as const;
 
-const legacyActiveRunPhaseShape = { running: true };
-const LegacyActiveRunPhase = {
-  Running: Object.keys(legacyActiveRunPhaseShape)[0]!,
-} as const;
+export type BoardActiveRunPhase = (typeof ActiveRunPhase)[keyof typeof ActiveRunPhase];
 
-type ActiveRunPhaseValue = (typeof ActiveRunPhase)[keyof typeof ActiveRunPhase];
+export function normalizeBoardActiveRunPhase(phase: unknown): BoardActiveRunPhase {
+  return phase === RunStatus.Starting ? ActiveRunPhase.Starting : ActiveRunPhase.Started;
+}
 
 interface StoredActiveRun {
   readonly action: string;
   readonly runnerName?: string;
   readonly startedAt: string;
   // Optional only for checkpoints written before phase was introduced.
-  readonly phase?: ActiveRunPhaseValue;
+  readonly phase?: BoardActiveRunPhase;
 }
 
 interface StoredCard {
@@ -524,7 +523,7 @@ function projectNewRun(
         typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted;
     }
   >,
-  phase: ActiveRunPhaseValue,
+  phase: BoardActiveRunPhase,
 ): BoardProjectionView {
   const workId = view.workflows[event.payload.workflowInstanceId];
   const card = workId === undefined ? undefined : view.cards[workId];
@@ -623,10 +622,7 @@ function activeRunsFor(
 }
 
 function normalizedActiveRun(activeRun: StoredActiveRun): StoredActiveRun {
-  const phase: string | undefined = activeRun.phase;
-  return phase === undefined || phase === LegacyActiveRunPhase.Running
-    ? { ...activeRun, phase: ActiveRunPhase.Started }
-    : activeRun;
+  return { ...activeRun, phase: normalizeBoardActiveRunPhase(activeRun.phase) };
 }
 
 function withoutActiveRun(

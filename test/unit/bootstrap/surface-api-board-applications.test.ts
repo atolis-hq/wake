@@ -7,8 +7,9 @@ import { WorkEventType, workItemStream } from '../../../src/work/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
 import { workId } from '../../support/identities.js';
 
-it('presents every active board run with its own elapsed duration', async () => {
+it('normalizes a retired keyed active-run phase during an immediate board API read', async () => {
   const item = workId('board-api-concurrent-runs');
+  const legacyPhase = 'running' as const;
   const root = rootWithBoard({
     cards: {
       [item]: {
@@ -29,7 +30,7 @@ it('presents every active board run with its own elapsed duration', async () => 
             action: 'review',
             runnerName: 'codex',
             startedAt: '2026-08-03T12:03:00.000Z',
-            phase: RunStatus.Started,
+            phase: legacyPhase,
           },
         },
         totalTokens: 0,
@@ -45,7 +46,7 @@ it('presents every active board run with its own elapsed duration', async () => 
     runs: {},
     children: {},
     childRuns: {},
-  });
+  } as unknown as ReturnType<typeof boardProjection.initial>);
 
   const result = await createSurfaceApiApplications(
     root,
@@ -70,8 +71,9 @@ it('presents every active board run with its own elapsed duration', async () => 
   });
 });
 
-it('presents a legacy single active-run checkpoint under its recorded run ID', async () => {
+it('normalizes a retired single active-run phase during an immediate board API read', async () => {
   const item = workId('board-api-legacy-active-run');
+  const legacyPhase = 'running' as const;
   const root = rootWithBoard({
     cards: {
       [item]: {
@@ -85,6 +87,7 @@ it('presents a legacy single active-run checkpoint under its recorded run ID', a
           action: 'implement',
           runnerName: 'claude',
           startedAt: '2026-08-03T12:00:00.000Z',
+          phase: legacyPhase,
         },
         totalTokens: 0,
         inputTokens: 0,
