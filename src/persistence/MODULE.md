@@ -21,7 +21,9 @@ Bootstrap selects and wires the concrete adapters.
 Depends only on Kernel and Eventing. Persistence stores opaque envelopes and
 does not decode domain payloads. Filesystem and in-memory adapters implement
 the same observable contracts; filesystem-only locking and atomic rename are
-mechanical differences.
+mechanical differences. It does not import bounded event contracts. Only the
+journal adapters assign envelope metadata; publishers supply `EventData`
+through `appendToStream`.
 
 ## Public contracts
 
@@ -47,7 +49,9 @@ processor retry are Eventing policies, not Persistence handlers.
 ## Extension rules
 
 Implement Kernel ports and the Eventing serialisation port here. Keep event
-selection, decoding, handlers, and runtime lifecycle in their owning modules.
+selection, bounded event construction and decoding, handlers, and runtime
+lifecycle in their owning modules. Do not reintroduce draft vocabulary or a
+legacy journal `append` operation.
 
 ## Scenarios
 

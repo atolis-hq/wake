@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { expect, it, vi } from 'vitest';
 import { createStatusPublishActivity } from '../../../src/bootstrap/status-publish-activity.js';
 import {
@@ -68,14 +67,4 @@ it('records a status delivery intent with its exact invocation metadata', async 
   } finally {
     vi.useRealTimers();
   }
-});
-
-it('delegates status delivery intent construction to Integrations', async () => {
-  const source = await readFile(
-    new URL('../../../src/bootstrap/status-publish-activity.ts', import.meta.url),
-    'utf8',
-  );
-
-  expect(source).toContain('createDeliveryIntentEventData');
-  expect(source).not.toMatch(/\bcreateEventData\b/);
 });

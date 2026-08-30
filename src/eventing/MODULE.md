@@ -22,6 +22,8 @@ Processors are at-least-once and serial per consumer. A checkpoint advances
 only after a complete bounded batch succeeds. A failed batch remains eligible
 for retry. Selectors decode their owning namespace and return null for other
 namespaces. Processor consumers are stable and distinct.
+Eventing depends only on Kernel event contracts: it neither imports bounded
+event vocabularies nor constructs bounded event data or journal envelopes.
 
 ## Public contracts
 
@@ -48,7 +50,8 @@ live processing while clearing, replaying, and checkpointing the projection.
 
 Bounded modules define selectors and idempotent handlers and export processor
 definitions. They do not construct a host or a concrete serialiser. Bootstrap
-registers the complete processor set and selects Persistence adapters.
+registers the complete processor set and selects Persistence adapters. Event
+publication remains behind each bounded module's event factory.
 
 ## Scenarios
 

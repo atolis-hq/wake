@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { expect, it } from 'vitest';
 import { createRunnerQuotaReporter } from '../../../src/bootstrap/runner-quota-reporter.js';
 import {
@@ -34,14 +33,4 @@ it('preserves the generated command identity on durable runner quota pauses', as
       },
     }),
   );
-});
-
-it('delegates runner quota fact construction to Control Plane', async () => {
-  const source = await readFile(
-    new URL('../../../src/bootstrap/runner-quota-reporter.ts', import.meta.url),
-    'utf8',
-  );
-
-  expect(source).toContain('createControlPlaneEventData');
-  expect(source).not.toMatch(/\bcreateEventData\b/);
 });

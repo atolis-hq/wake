@@ -8,10 +8,10 @@ interface Diagnostic {
   readonly message: string;
 }
 
-type CheckEventProcessorArchitecture = (root: string) => Promise<readonly Diagnostic[]>;
+type CheckEventArchitecture = (root: string) => Promise<readonly Diagnostic[]>;
 
-const checker = (await import('../../scripts/check-event-processor-architecture.mjs')) as {
-  readonly checkEventProcessorArchitecture: CheckEventProcessorArchitecture;
+const checker = (await import('../../scripts/check-event-architecture.mjs')) as {
+  readonly checkEventArchitecture: CheckEventArchitecture;
 };
 const roots: string[] = [];
 
@@ -70,7 +70,7 @@ describe('event processor ownership', () => {
       ].join('\n'),
     });
 
-    const diagnostics = await checker.checkEventProcessorArchitecture(root);
+    const diagnostics = await checker.checkEventArchitecture(root);
     expect(messages(diagnostics)).toContain('[event-processor-host-owner]');
   });
 
@@ -82,7 +82,7 @@ describe('event processor ownership', () => {
       ].join('\n'),
     });
 
-    const diagnostics = await checker.checkEventProcessorArchitecture(root);
+    const diagnostics = await checker.checkEventArchitecture(root);
     expect(messages(diagnostics)).toContain('[processor-serialiser-owner]');
   });
 
@@ -95,7 +95,7 @@ describe('event processor ownership', () => {
       ].join('\n'),
     });
 
-    await expect(checker.checkEventProcessorArchitecture(root)).resolves.toEqual([]);
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
   });
 
   it('rejects aliased host, registry, and serialiser construction', async () => {
@@ -116,7 +116,7 @@ describe('event processor ownership', () => {
       ].join('\n'),
     });
 
-    const diagnostics = await checker.checkEventProcessorArchitecture(root);
+    const diagnostics = await checker.checkEventArchitecture(root);
     expect(messages(diagnostics)).toContain('[event-processor-host-owner]');
     expect(messages(diagnostics)).toContain('[processor-registry-owner]');
     expect(messages(diagnostics)).toContain('[processor-serialiser-owner]');
@@ -134,7 +134,7 @@ describe('event processor ownership', () => {
       ].join('\n'),
     });
 
-    const diagnostics = await checker.checkEventProcessorArchitecture(root);
+    const diagnostics = await checker.checkEventArchitecture(root);
     expect(messages(diagnostics)).toContain('[persistence-processor-handler]');
     expect(messages(diagnostics)).toContain('[processor-registry-owner]');
   });
@@ -151,7 +151,7 @@ describe('event processor ownership', () => {
       ].join('\n'),
     });
 
-    const diagnostics = await checker.checkEventProcessorArchitecture(root);
+    const diagnostics = await checker.checkEventArchitecture(root);
     expect(
       diagnostics.filter(({ message }) => message.includes('[persistence-processor-handler]')),
     ).not.toHaveLength(0);
@@ -168,7 +168,7 @@ describe('event processor ownership', () => {
       ].join('\n'),
     });
 
-    const diagnostics = await checker.checkEventProcessorArchitecture(root);
+    const diagnostics = await checker.checkEventArchitecture(root);
     expect(messages(diagnostics)).toContain('[persistence-processor-handler]');
   });
 
@@ -189,7 +189,7 @@ describe('event processor ownership', () => {
       ].join('\n'),
     });
 
-    await expect(checker.checkEventProcessorArchitecture(root)).resolves.toEqual([]);
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
   });
 
   it('permits definitions in bounded modules and composition in Bootstrap', async () => {
@@ -204,11 +204,11 @@ describe('event processor ownership', () => {
       ].join('\n'),
     });
 
-    await expect(checker.checkEventProcessorArchitecture(root)).resolves.toEqual([]);
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
   });
 
   it('passes the production source tree', { timeout: 30_000 }, async () => {
-    const diagnostics = await checker.checkEventProcessorArchitecture('src');
+    const diagnostics = await checker.checkEventArchitecture('src');
     expect(diagnostics).toEqual([]);
   });
 });
