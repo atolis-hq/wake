@@ -1,5 +1,5 @@
 ---
-asOf: b3907794
+asOf: dd708e68
 ---
 
 # Persistence - Module Specification
@@ -36,6 +36,12 @@ payloads as opaque. Global positions are assigned once at append and are never
 reassigned by replay or rebuild. Retried writes are idempotent according to
 each storage port's contract.
 
+The filesystem codec preserves the exact established flat JSONL record while
+the in-memory adapter stores the nested `EventEnvelope<EventData>` model. Both
+are compatibility representations of the same journal contract; no journal
+data migration or projection rebuild is required. Persistence records, loads,
+and signals changes without decoding a bounded module's event data.
+
 The file-backed processor serialiser holds its consumer-specific lock across
 the caller's complete checkpoint-load, handler, and checkpoint-save operation.
 It does not load checkpoints, invoke handlers, or advance cursors itself.
@@ -71,8 +77,10 @@ checkpoint intact for Eventing retry.
 
 ## Decisions and exclusions
 
-There is no compaction, archival, or journal deletion. SQLite is a future
-adapter behind the same ports. Persistence does not provide a parallel legacy
-subscription host or a projection handler runtime.
+There is no compaction, archival, or journal deletion. SQLite, Emmett, or
+Kurrent can be future adapters behind the same ports when they preserve Wake's
+compatibility, global-order, push-wake, checkpoint, and lock semantics.
+Persistence does not provide a parallel subscription host or projection handler
+runtime.
 
 E2E-JOURNAL-001, E2E-PROJECTION-001, E2E-FAULT-001.

@@ -1,5 +1,5 @@
 ---
-asOf: b3907794
+asOf: dd708e68
 ---
 
 # Control Plane - Module Specification
@@ -17,6 +17,11 @@ Control Plane owns activation scheduling, selection, capacity and pause
 policies, tick/intake/resident pipeline contracts, and schedule slots. It does
 not own Work, Orchestration, Execution, provider policy, Eventing host
 construction, or concrete serialisation.
+
+Control Plane owns its event types, payload map, stream references, selector
+and decoder, and `createControlPlaneEventData` factory. Its services create
+immutable event data and append it to their own streams with expected sequence;
+they do not construct envelopes or durable-subscription hosts.
 
 ## Activation processor
 

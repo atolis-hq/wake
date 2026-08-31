@@ -1,5 +1,5 @@
 ---
-asOf: cac75756
+asOf: dd708e68
 ---
 
 # Bootstrap - Module Specification
@@ -16,6 +16,11 @@ Bootstrap owns paths, configuration validation, adapter selection, projection
 composition, provider composition, process hosts, and the Eventing runtime
 registry. It does not own domain policy, provider payload contracts,
 Persistence semantics, or processor handlers.
+
+Bootstrap is the only composition root: it wires module event-data factories,
+Persistence adapters, Eventing subscriptions/checkpoints/projections, and the
+complete processor registry. It does not create domain event data on a module's
+behalf or bypass an owning module's stream and expected-sequence append path.
 
 ## Runtime composition
 

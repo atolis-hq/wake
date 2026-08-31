@@ -1,5 +1,5 @@
 ---
-asOf: 6f7414f4
+asOf: dd708e68
 ---
 
 # Orchestration — Module Specification
@@ -42,6 +42,13 @@ Orchestration does not own:
   WorkItem, and routing the initial trigger, is a caller's responsibility.
   Orchestration only supplies the pure candidate-to-workflow-name matching
   function that caller uses.
+
+## Event publishing boundary
+
+Orchestration owns its event types, payload map, workflow-instance stream
+references, selector/decoder, and `createOrchestrationEventData` factory. It
+creates immutable event data and appends non-empty expected-sequence batches;
+it does not construct envelope metadata or own durable subscriptions.
 
 ## Ubiquitous language
 

@@ -20,7 +20,8 @@ or workflow shape.
   model is a rebuildable interpretation of facts, never an alternate source of
   truth.
 - **A bounded module owns its vocabulary.** Event names, payloads, stream
-  references, closed status/outcome vocabularies, decoders, and draft factories
+  references, closed status/outcome vocabularies, decoders, and `EventData`
+  factories
   belong to one module. Consumers use its public contract rather than copying
   strings or reconstructing envelopes.
 - **Policy is deterministic and separate from execution.** Orchestration
@@ -79,10 +80,26 @@ application graph.
 
 ## Durable model
 
-The append-only journal is authoritative. Events have a globally ordered
-envelope with an event type, stream reference, payload, and occurrence time.
-Every owning module supplies strict event decoders; a decoder returns `null`
-for another namespace and rejects malformed events in its own namespace.
+The append-only journal is authoritative. A bounded module creates immutable
+`EventData`: its event identity, type, occurrence and causal metadata, actor,
+source, and typed payload. It contains no stream or journal metadata. The
+journal accepts a non-empty `appendToStream(stream, expectedSequence, events)`
+batch and records an `EventEnvelope<EventData>` by attaching the stream,
+recording time, stream sequence, and global position. Expected sequence is
+optimistic concurrency: the module chooses how to handle a conflict and whether
+to retry; the journal provides neither automatic retry nor a general deduplication
+policy.
+
+Each bounded module owns its event types, payload map, stream references,
+selector/decoder, and `create<Owner>EventData` factory. The contracts enforce
+event-type-to-stream ownership at compile time and validate it again while
+decoding persisted data. A selector returns `null` for another namespace and
+rejects malformed data in its own namespace.
+
+Filesystem storage preserves the established flat JSONL record through the
+Persistence codec, while the in-memory adapter keeps the nested envelope model.
+No journal data migration or projection rebuild is required for that storage
+compatibility boundary.
 
 Projections are derived read models. The filesystem implementation stores the
 journal and projection/checkpoint data below the Wake home's `.wake/`
@@ -161,6 +178,20 @@ Event processor ownership is enforced in the architecture checks: bounded
 modules may define selectors and handlers, Persistence may supply concrete
 serialisers, and only Bootstrap may construct the host and compose the full
 registry. No module maintains a parallel durable-subscription runtime.
+
+The symbol-aware `check-event-architecture` gate also enforces publishing and
+processor ownership, bounded imports, legacy-vocabulary bans, and manifest
+namespaces. Eventing hosts subscriptions, checkpoints, and projections without
+knowing domain facts; Persistence records, loads, and signals changes without
+knowing domain facts; Bootstrap composes both with module factories and the
+processor registry. Surfaces flatten an internal envelope only at their
+transport boundary to preserve existing API, CLI, and web shapes.
+
+The current ports deliberately remain narrow. They match established event-store
+concepts without adding infrastructure: SQLite, Emmett, or Kurrent adapters can
+fit behind `EventJournal` and Eventing later. Kurrent would require new
+infrastructure, and neither a SQLite nor Emmett substitution currently replaces
+Wake's compatibility, global-order, push-wake, checkpoint, and lock semantics.
 
 This keeps additions testable with durable fakes, makes production reachability
 provable through Bootstrap, and ensures a new transport or CLI does not change

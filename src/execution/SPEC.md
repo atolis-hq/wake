@@ -1,5 +1,5 @@
 ---
-asOf: e8707c45
+asOf: dd708e68
 ---
 
 # Execution — Module Specification
@@ -43,6 +43,13 @@ Execution does not own:
 - Correlating a Run to a provider-side identity, or minting a `WorkItemId`.
   Execution only receives resource views and a `WorkItemId` already minted
   by Work.
+
+## Event publishing boundary
+
+Execution owns its event types, payload map, run and activation stream
+references, selectors/decoders, and `createExecutionEventData` factory. It
+creates immutable event data and appends non-empty batches with expected
+sequence; it does not construct envelope metadata or a processor host.
 
 ## Ubiquitous language
 

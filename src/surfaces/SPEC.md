@@ -1,5 +1,5 @@
 ---
-asOf: e8707c45
+asOf: dd708e68
 ---
 
 # Surfaces — Module Specification
@@ -47,6 +47,13 @@ Surfaces does not own:
 - Adapter clients: Surfaces does not talk to GitHub, Docker, or an agent
   runner directly; those integrations sit behind the domain applications it
   calls.
+
+## Event transport boundary
+
+Surfaces does not publish or reconstruct events. Where a public API, CLI, or
+web transport exposes an event, it flattens the internal envelope only at that
+boundary to preserve the external response shape; stream and journal metadata
+remain derived from the recorded envelope.
 
 ## Ubiquitous language
 

@@ -1,5 +1,5 @@
 ---
-asOf: e8707c45
+asOf: dd708e68
 ---
 
 # Integrations — Module Specification
@@ -55,6 +55,15 @@ Integrations does not own:
   Activities' PR Observation and Authority own that; Integrations' GitHub
   inbound translator only calls its `observe`/`acceptReviewSignal`/
   `requestChangesSignal` commands and does not re-implement their rules.
+
+## Event publishing boundary
+
+Integrations owns its observation, artifact, delivery, and provider event
+types, payload maps, stream references, selectors/decoders, and event-data
+factories. It appends immutable event data to the selected stream with expected
+sequence; it does not construct envelopes or a processor host. Its
+pending-delivery projection transparently reads legacy flat and interim nested
+stored records, then writes the delivery-owned canonical record.
 
 ## Ubiquitous language
 

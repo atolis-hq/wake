@@ -1,5 +1,5 @@
 ---
-asOf: b3907794
+asOf: dd708e68
 ---
 
 # Eventing - Module Specification
@@ -28,6 +28,12 @@ Eventing owns:
 Eventing does not own journal, projection, checkpoint, or lock implementations,
 domain event vocabularies, provider payloads, handler policy, or application
 composition.
+
+Eventing is domain-agnostic: it receives recorded envelopes, hosts durable
+subscriptions and checkpoints, and adapts projections without constructing
+event data or knowing an event namespace. Persistence supplies storage and
+change notification; Bootstrap composes module factories, projections, and the
+explicit processor registry.
 
 ## Processor contract
 

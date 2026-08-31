@@ -1,5 +1,5 @@
 ---
-asOf: e8707c45
+asOf: dd708e68
 ---
 
 # Resources — Module Specification
@@ -38,6 +38,13 @@ Resources does not own:
 - Deciding workflow routing, which activities run, or Activity-level policy.
   Other modules read Resource state to make those decisions; Resources does
   not make them.
+
+## Event publishing boundary
+
+Resources owns its event types, payload map, resource stream references,
+selector/decoder, and `createResourceEventData` factory. It creates immutable
+event data and appends non-empty expected-sequence batches; it does not
+construct envelope metadata or a processor host.
 
 ## Ubiquitous language
 

@@ -1,10 +1,26 @@
 # Wake events
 
-Wake stores immutable, globally ordered event envelopes. The envelope contract
-is defined by `src/kernel/contracts/events.ts`; every event has an identifier,
-an event type, a typed stream reference, a payload, and an occurrence time.
-The append-only journal is the durable record. Projections are rebuildable
-read models and never define or reconstruct events.
+Wake stores immutable, globally ordered event envelopes. The append-only
+journal is the durable record; projections are rebuildable read models and
+never define or reconstruct events.
+
+## Event record model
+
+An owning module creates immutable `EventData`: event identity and type,
+schema version, occurrence and causal metadata, actor, source, and typed
+payload. `EventData` has no stream or journal metadata.
+
+The journal records `EventEnvelope<EventData>` by adding the stream,
+`recordedAt`, stream `sequence`, and `globalPosition`. Modules append a
+non-empty batch with `appendToStream(stream, expectedSequence, events)`.
+`expectedSequence` is optimistic concurrency; modules choose conflict handling
+and idempotency. The journal does not apply automatic retry or a general
+deduplication policy.
+
+The filesystem adapter writes the exact established flat JSONL record through
+the Persistence codec. The in-memory adapter holds the nested envelope model.
+Those representations are compatible reads of the same record, so no journal
+data migration or projection rebuild is required.
 
 ## Event ownership
 
@@ -39,10 +55,12 @@ owning module's contract source.
 | `control-plane` | `control-plane.dispatch-paused`, `control-plane.dispatch-resumed`, `control-plane.runner-paused`, `control-plane.runner-resumed` |
 | `integrations` | `integration.github.work-observed`, `integration.github.comment-observed`, `integration.github.delivery-observed`, `integration.artifact-verification-unresolved`, `delivery.attempt-started`, `delivery.confirmed`, `delivery.failed`, `delivery.ambiguous`, `delivery.reconciled`, `delivery.escalated` |
 
-An event must be written only to the stream kind required by its schema. Typed
-draft factories enforce this at compile time; runtime selectors validate it
-when replaying persisted data. Selectors return `null` for another module's
-namespace and throw if an event in their own namespace is malformed.
+An event must be written only to the stream kind required by its schema. Each
+bounded module owns its event types, payload map, stream references,
+selector/decoder, and `create<Owner>EventData` factory. These contracts enforce
+event-type-to-stream ownership at compile time and at runtime when persisted
+data is decoded. Selectors return `null` for another module's namespace and
+throw if an event in their own namespace is malformed.
 
 ## Event handling rules
 
@@ -70,6 +88,19 @@ choose outbound targets or workflow transitions.
   vocabulary, not magic strings or copied provider locators.
 - Register production projections in Bootstrap so replay and normal operation
   observe the same event sequence.
+- Eventing hosts durable subscriptions, checkpoints, and projections without
+  domain knowledge. Persistence records, loads, and signals changes without
+  domain knowledge. Bootstrap composes the processor registry and module
+  factories; only surfaces flatten an envelope for external transport.
+- The pending-delivery projection reads both legacy flat and interim nested
+  stored records, then writes its delivery-owned canonical record.
+
+`check-event-architecture` is a symbol-aware architecture gate. It enforces
+publishing and processor ownership, bounded imports, legacy-vocabulary bans,
+and manifest namespaces. The existing narrow ports also leave a future seam:
+SQLite, Emmett, or Kurrent adapters can sit behind `EventJournal` and Eventing
+when they preserve Wake's compatibility, global-order, push-wake, checkpoint,
+and lock semantics.
 
 For the current module topology and advancement path, see
 [Architecture](architecture.md).

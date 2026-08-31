@@ -22,7 +22,7 @@ Depends only on Kernel and Eventing. Persistence stores opaque envelopes and
 does not decode domain payloads. Filesystem and in-memory adapters implement
 the same observable contracts; filesystem-only locking and atomic rename are
 mechanical differences. It does not import bounded event contracts. Only the
-journal adapters assign envelope metadata; publishers supply `EventData`
+journal adapters assign envelope metadata; producers supply `EventData`
 through `appendToStream`.
 
 ## Public contracts

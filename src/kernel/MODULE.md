@@ -17,7 +17,7 @@ factory of the module that owns the event namespace. `EventJournal` accepts
 No configuration namespace.
 ## Relations and events
 Defines universal primitives, not domain semantics. Journal adapters, not
-publishers, assign stream, sequence, position, and recording metadata to form
+producers, assign stream, sequence, position, and recording metadata to form
 an `EventEnvelope`.
 ## Failure and recovery
 Ports expose failures; facts remain append-only.

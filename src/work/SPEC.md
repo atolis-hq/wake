@@ -1,5 +1,5 @@
 ---
-asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
+asOf: dd708e68
 ---
 
 # Work — Module Specification
@@ -34,6 +34,13 @@ Work does not own:
   Work, at the point an external observation is first admitted as Wake work;
   Work only accepts and validates that a `WorkItemId` follows Wake's own
   format. Work never derives identity from a provider key.
+
+## Event publishing boundary
+
+Work owns its event types, payload map, WorkItem stream reference,
+selector/decoder, and `createWorkEventData` factory. It creates immutable event
+data and appends non-empty expected-sequence batches; it does not construct
+envelope metadata or a processor host.
 
 ## Ubiquitous language
 

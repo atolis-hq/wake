@@ -1,5 +1,5 @@
 ---
-asOf: e8707c45
+asOf: dd708e68
 ---
 
 # Kernel — Module Specification
@@ -21,7 +21,7 @@ Kernel owns:
 - The event data and event envelope shape, and the rules for constructing a
   valid event data.
 - The storage and time ports every other module programs against:
-  `EventJournal` (append/readStream/readAll, plus an optional `readLatest`
+  `EventJournal` (`appendToStream`/`readStream`/`readAll`, plus an optional `readLatest`
   for backward reads, and a `changeSignal` advisory wake-up for a resident
   consumer waiting on new events — see `JournalChangeSignal`),
   `ProjectionStore` (read/write/list/clear), `CheckpointStore`
@@ -50,17 +50,18 @@ Kernel does not own:
   passed into a module's own aggregate, not a command handler.
 - Deriving a command's own identity into a deterministic `eventId`. That
   mapping — and any command-level replay idempotency built on it — is each
-  module's own aggregate's decision; kernel only guarantees what happens at
-  the journal once such an `eventId` is submitted (see Append idempotency
-  below).
+  module's own aggregate's decision; kernel provides the append contract, not
+  a module-level retry or idempotency policy.
 
 ## Ubiquitous language
 
-- **Event data** — an event not yet appended to a stream: `eventId`,
+- **Event data** — immutable producer data not yet recorded: `eventId`,
   `eventType`, `schemaVersion` (fixed at `1`), `occurredAt`, `correlationId`,
-  `causationId`, `actor`, `source`, `stream`, and `payload`.
-- **Event envelope** — an event data that has been accepted and appended,
-  with `recordedAt`, `sequence`, and `globalPosition` added by the journal.
+  `causationId`, `actor`, `source`, and `payload`. It has no stream or journal
+  metadata.
+- **Event envelope** — the journal-recorded wrapper around event data, with
+  `stream`, `recordedAt`, `sequence`, and `globalPosition` assigned by the
+  journal.
 - **Stream** — the strictly ordered sequence of event envelopes belonging to
   one `EntityRef`.
 - **EntityRef** — a `{ kind, id }` pair addressing any stream or related
@@ -108,12 +109,12 @@ Kernel does not own:
 - Every event data and envelope carries `schemaVersion: 1`; kernel defines
   no migration or version-negotiation behaviour on top of it (see
   Decisions).
+- An owning bounded module creates its own event data through its exported
+  `create<Owner>EventData` factory. Kernel's `createEventData` is the common
+  validation primitive, not a domain event factory.
 
 **Stream identity and ordering**
 
-- Every event submitted in one append call MUST target the same stream as
-  the call itself; an append MUST reject a batch containing an event whose
-  own `stream` disagrees with the stream the call was made against.
 - `sequence` MUST start at `1` for the first event ever appended to a
   stream and MUST increase by exactly `1` for each subsequent event
   appended to that same stream, with no gaps.
@@ -121,38 +122,22 @@ Kernel does not own:
   the journal, across all streams, and MUST increase by exactly `1` for
   each subsequently appended event — giving the whole journal one strict
   serial order independent of which stream an event belongs to.
-- Append MUST be optimistic-concurrency controlled by `expectedSequence`:
+- `appendToStream` MUST be optimistic-concurrency controlled by `expectedSequence`:
   the caller states the stream length it believes currently exists: when
   the stream's actual current length differs, append MUST be rejected and
   MUST NOT record any of the submitted events.
 
-**Append idempotency**
+**Append and conflict handling**
 
-This is the guarantee every module's aggregate relies on to make its own
-command handling safe to retry.
+`appendToStream(stream, expectedSequence, events)` accepts a non-empty batch;
+the caller supplies the stream separately from immutable event data.
+`expectedSequence` is optimistic concurrency: a module decides whether to
+retry, report, or otherwise resolve a conflict. The journal does not provide
+automatic retry or a general deduplication policy.
 
-- Each event submitted to `append` is identified by its own `eventId`.
-  Resubmitting event data whose `eventId` is already recorded, with content
-  identical to what was previously recorded, MUST NOT create a duplicate
-  event and MUST return the previously recorded envelope for that
-  `eventId`.
-- Resubmitting event data whose `eventId` is already recorded but whose
-  content differs from what was previously recorded MUST be rejected: an
-  `eventId`, once used, MUST NOT be reused for a different event.
-- When every event submitted in one `append` call is already recorded under
-  its `eventId` with identical content, the whole call MUST be accepted as
-  a no-op returning the original envelopes, without re-validating
-  `expectedSequence` against the stream's current length. This is what
-  makes a whole append safe to retry verbatim after a caller cannot tell
-  whether its previous attempt was recorded.
-- Within a single `append` call, the same `eventId` MUST NOT be submitted
-  more than once, even with identical content twice — a batch MUST be
-  internally unique by `eventId`.
-- When only some of a call's `eventId`s are already recorded and others are
-  genuinely new, `append` MUST validate `expectedSequence` against the
-  stream's actual current length, MUST record only the new events, and
-  MUST return the previously recorded envelopes unchanged for the ones that
-  already existed.
+- The module supplies an event identity as part of event data and owns its
+  idempotency policy. The append contract only records an accepted batch or
+  rejects it without recording any of that batch.
 
 **Reading**
 
@@ -239,7 +224,7 @@ command handling safe to retry.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `eventId` | branded `EventId` | Identity of this event; governs append idempotency. |
+| `eventId` | branded `EventId` | Identity of this event; its owning module applies idempotency policy. |
 | `eventType` | string, non-empty | The owning module's own closed-vocabulary event type name. |
 | `schemaVersion` | literal `1` | Fixed; kernel defines no other value yet. |
 | `occurredAt` | offset ISO-8601 timestamp | When the fact became true in the world, as stamped by the producer. |
@@ -247,13 +232,14 @@ command handling safe to retry.
 | `causationId` | branded `CausationId` | Names the event or command that immediately triggered this one. |
 | `actor` | Actor | Who or what caused this event. |
 | `source` | Source | Whether this event originated internally or via an adapter. |
-| `stream` | EntityRef | The stream this event belongs to. |
 | `payload` | module-defined | The event's own data; opaque to kernel. |
 
-**EventEnvelope** (extends EventData)
+**EventEnvelope<EventData>**
 
 | Field | Type | Description |
 | --- | --- | --- |
+| `event` | EventData | Immutable producer data accepted by the journal. |
+| `stream` | EntityRef | The stream selected for this append. |
 | `recordedAt` | offset ISO-8601 timestamp | When the journal accepted the append; set by the journal, not the caller. |
 | `sequence` | positive integer | This event's 1-based position within its own stream. |
 | `globalPosition` | positive integer | This event's 1-based position within the whole journal, across all streams. |
@@ -329,7 +315,7 @@ pieces above are best read as a map, not a component table:
 | Primitive or port | Role |
 | --- | --- |
 | Event data / envelope | The universal shape every module's own event types instantiate. |
-| `EventJournal` | The append/read port a module's aggregate and projections are built against. |
+| `EventJournal` | The `appendToStream`/read port a module's aggregate and projections are built against. |
 | `ProjectionStore` | The read-model storage port a module's projection writes to and reads from. |
 | `CheckpointStore` | The replay-cursor port a projection or process uses to resume forward-only. |
 | `Clock` / `IdGenerator` | The time and identity-minting ports modules depend on instead of calling `Date`/`ulid` directly. |

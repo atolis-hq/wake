@@ -1,5 +1,5 @@
 ---
-asOf: e8707c45
+asOf: dd708e68
 ---
 
 # Activities ? Module Specification
@@ -45,6 +45,14 @@ Activities does not own:
   result. Activities records the *intent* to deliver as a durable fact and
   reports a `waiting` outcome; something outside this module performs
   delivery and reports the result as a signal Orchestration correlates back.
+
+## Event publishing boundary
+
+Activities owns its event types, payload map, stream references, selector and
+decoder, and `createActivityEventData` factory. It creates immutable event data
+without stream or journal metadata; the repository appends a non-empty batch to
+the owning stream with an expected sequence. Activities handles its own
+idempotency and conflicts; it does not construct envelopes or host processors.
 
 ## Ubiquitous language
 
