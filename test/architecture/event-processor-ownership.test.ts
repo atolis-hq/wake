@@ -227,6 +227,24 @@ describe('event processor ownership', () => {
     expect(messages(diagnostics)).not.toContain('orchestration/application/typed-definition.ts');
   });
 
+  it('does not reject a complete but type-incompatible processor definition lookalike', async () => {
+    const root = await fixture({
+      'src/persistence/application/incompatible-definition-lookalike.ts': [
+        'export const lookalike = {',
+        '  consumer: 1,',
+        '  name: 2,',
+        '  owner: 3,',
+        '  category: 4,',
+        '  replayPolicy: 5,',
+        "  select: 'not-a-function',",
+        "  handle: 'not-a-function',",
+        '};',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
   it('rejects a resolved Eventing processor factory and its linked handler', async () => {
     const root = await fixture({
       'src/persistence/application/factory-handler.ts': [

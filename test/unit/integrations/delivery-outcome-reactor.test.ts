@@ -5,7 +5,7 @@ import { expect, it } from 'vitest';
 import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
-import { createEventData, eventId, type EventEnvelope } from '../../../src/kernel/index.js';
+import { createEventData, eventId } from '../../../src/kernel/index.js';
 import {
   encode,
   FileProjectionStore,
@@ -14,6 +14,14 @@ import {
 } from '../../../src/persistence/index.js';
 
 const clock = { now: () => new Date('2026-08-09T00:00:00.000Z') };
+
+interface StoredPendingDeliveryOutcome {
+  readonly eventId: string;
+  readonly eventType: string;
+  readonly correlationId: string;
+  readonly recordedAt: string;
+  readonly payload: Readonly<Record<string, unknown>>;
+}
 
 it('exposes its stable event processor identity', () => {
   const reactor = new DeliveryOutcomeReactor({} as never, {} as never, {} as never);
@@ -65,17 +73,25 @@ it('normalizes a legacy flat pending projection when reconciliation leaves it pe
 
   await reactor.reconcileOnce();
 
-  const stored = await projections.read<{ readonly events: readonly EventEnvelope[] }>(
-    namespace,
-    key,
-  );
+  const stored = await projections.read<{
+    readonly events: readonly StoredPendingDeliveryOutcome[];
+  }>(namespace, key);
   expect(stored?.value.events).toEqual([
-    expect.objectContaining({
-      event: expect.objectContaining({ eventId: 'intent-1:confirmed' }),
-      stream: { kind: 'delivery', id: 'intent-1' },
-    }),
+    {
+      eventId: 'intent-1:confirmed',
+      eventType: DeliveryEventType.Confirmed,
+      correlationId: 'delivery-outcome-test',
+      recordedAt: '2026-08-09T00:00:01.000Z',
+      payload: {
+        intentEventId: 'intent-1',
+        intentGlobalPosition: 1,
+        workflowInstanceId: 'primary:work-1',
+        activationId: 'primary:work-1:activity:1',
+        occurrenceOrdinal: 1,
+        externalId: 'external-1',
+      },
+    },
   ]);
-  expect(stored?.value.events[0]).not.toHaveProperty('eventId');
 });
 
 function confirmedEvent(overrides: {
@@ -144,6 +160,117 @@ function reconciledConfirmedEvent() {
     },
   }) as never;
 }
+
+it('projects live journal envelopes into canonical pending delivery records idempotently', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    confirmedEvent({ intentEventId: 'intent-1' }),
+  ]);
+  await journal.appendToStream(deliveryStream(eventId('intent-2')), 0, [
+    confirmedEvent({
+      intentEventId: 'intent-2',
+      workflowInstanceId: 'primary:work-2',
+      activationId: 'primary:work-2:activity:1',
+    }),
+  ]);
+  const projections = new InMemoryProjectionStore();
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'unrelated', status: 'active' },
+        } as never;
+      },
+      async acceptOutcome() {
+        throw new Error('An active activation must leave the delivery pending');
+      },
+    },
+    projections,
+  );
+  const events = await journal.readAll(0);
+
+  await reactor.react(events[0]!);
+  await reactor.react(events[1]!);
+  await reactor.react(events[0]!);
+
+  const stored = await projections.read<{
+    readonly events: readonly StoredPendingDeliveryOutcome[];
+  }>('reactor:delivery-outcomes:pending', 'pending-confirmations');
+  expect(stored?.value.events).toEqual([
+    {
+      eventId: 'intent-1:confirmed',
+      eventType: DeliveryEventType.Confirmed,
+      correlationId: 'delivery-outcome-test',
+      recordedAt: clock.now().toISOString(),
+      payload: expect.objectContaining({
+        intentEventId: 'intent-1',
+        workflowInstanceId: 'primary:work-1',
+      }),
+    },
+    {
+      eventId: 'intent-2:confirmed',
+      eventType: DeliveryEventType.Confirmed,
+      correlationId: 'delivery-outcome-test',
+      recordedAt: clock.now().toISOString(),
+      payload: expect.objectContaining({
+        intentEventId: 'intent-2',
+        workflowInstanceId: 'primary:work-2',
+      }),
+    },
+  ]);
+});
+
+it('rewrites interim nested pending envelopes to canonical delivery records', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    confirmedEvent({ intentEventId: 'intent-1' }),
+  ]);
+  const [envelope] = await journal.readAll(0);
+  const projections = new InMemoryProjectionStore();
+  await projections.write({
+    namespace: 'reactor:delivery-outcomes:pending',
+    key: 'pending-confirmations',
+    lastGlobalPosition: 0,
+    value: { events: [envelope!] },
+  });
+  const reactor = new DeliveryOutcomeReactor(
+    journal,
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+        } as never;
+      },
+      async acceptOutcome() {
+        throw new Error('An active activation must leave the delivery pending');
+      },
+    },
+    projections,
+  );
+
+  await reactor.reconcileOnce();
+
+  const stored = await projections.read<{
+    readonly events: readonly StoredPendingDeliveryOutcome[];
+  }>('reactor:delivery-outcomes:pending', 'pending-confirmations');
+  expect(stored?.value.events).toEqual([
+    {
+      eventId: 'intent-1:confirmed',
+      eventType: DeliveryEventType.Confirmed,
+      correlationId: 'delivery-outcome-test',
+      recordedAt: clock.now().toISOString(),
+      payload: {
+        intentEventId: 'intent-1',
+        intentGlobalPosition: 1,
+        workflowInstanceId: 'primary:work-1',
+        activationId: 'primary:work-1:activity:1',
+        occurrenceOrdinal: 1,
+        externalId: 'external-1',
+      },
+    },
+  ]);
+});
 
 it('resolves an activation that is genuinely waiting on this delivery', async () => {
   const journal = new InMemoryEventJournal(clock);

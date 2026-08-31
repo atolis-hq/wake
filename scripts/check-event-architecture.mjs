@@ -58,7 +58,8 @@ export async function checkEventArchitectureWithStats(root = 'src') {
   const analysis = createAnalysisState();
   const bindings = collectBindings(program, typeChecker, analysis);
   const canonicalSymbols = collectCanonicalSymbols(program, typeChecker, sourceRoot);
-  analysis.canonicalSymbols = canonicalSymbols;
+  const canonicalTypes = collectCanonicalTypes(program, typeChecker, sourceRoot, canonicalSymbols);
+  analysis.canonicalTypes = canonicalTypes;
   const diagnostics = [];
 
   for (const file of files) {
@@ -95,7 +96,7 @@ export async function checkEventArchitectureWithStats(root = 'src') {
       moduleName,
       relativePath,
       manifests,
-      canonicalSymbols,
+      canonicalTypes,
       diagnostics,
       analysis,
     });
@@ -330,6 +331,34 @@ function collectCanonicalSymbols(program, typeChecker, sourceRoot) {
   return symbols;
 }
 
+function collectCanonicalTypes(program, typeChecker, sourceRoot, canonicalSymbols) {
+  const types = new Map();
+  for (const [kind, symbol] of canonicalSymbols)
+    addCanonicalType(types, kind, typeChecker.getDeclaredTypeOfSymbol(symbol));
+
+  function visit(node) {
+    if (ts.isTypeReferenceNode(node)) {
+      const symbol = resolveSymbol(
+        typeChecker.getSymbolAtLocation(rightmostEntityName(node.typeName)),
+        typeChecker,
+      );
+      const kind = protectedSymbolKind(symbol, sourceRoot);
+      if (kind !== undefined) addCanonicalType(types, kind, typeChecker.getTypeFromTypeNode(node));
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  for (const sourceFile of program.getSourceFiles())
+    if (!sourceFile.isDeclarationFile) visit(sourceFile);
+  return types;
+}
+
+function addCanonicalType(types, kind, type) {
+  const candidates = types.get(kind);
+  if (candidates === undefined) types.set(kind, new Set([type]));
+  else candidates.add(type);
+}
+
 function inspectRuntimeConstruction(
   sourceFile,
   bindings,
@@ -406,7 +435,7 @@ function inspectPersistenceProcessors(
     }
     if (
       ts.isObjectLiteralExpression(node) &&
-      isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, analysis.canonicalSymbols)
+      isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, analysis.canonicalTypes)
     )
       addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported);
     ts.forEachChild(node, visit);
@@ -515,7 +544,7 @@ function inspectPublishingOwnership(context) {
     moduleName,
     relativePath,
     manifests,
-    canonicalSymbols,
+    canonicalTypes,
     diagnostics,
   } = context;
 
@@ -548,9 +577,8 @@ function inspectPublishingOwnership(context) {
     inspectEventDataFactoryBinding(node, context);
     if (
       ts.isObjectLiteralExpression(node) &&
-      moduleName !== 'kernel' &&
-      isEventEnvelopeConstruction(node, typeChecker, sourceRoot, canonicalSymbols) &&
-      !isApprovedEnvelopeConstructionPath(relativePath)
+      isEventEnvelopeConstruction(node, typeChecker, sourceRoot, canonicalTypes) &&
+      !isApprovedEnvelopeConstruction(node, relativePath, typeChecker, sourceRoot)
     )
       addDiagnostic(
         node,
@@ -562,7 +590,7 @@ function inspectPublishingOwnership(context) {
     if (
       ts.isObjectLiteralExpression(node) &&
       publishingInfrastructureModules.has(moduleName) &&
-      isBoundedEventDataConstruction(node, typeChecker, sourceRoot, manifests, canonicalSymbols)
+      isBoundedEventDataConstruction(node, typeChecker, sourceRoot, manifests, canonicalTypes)
     )
       addDiagnostic(
         node,
@@ -948,6 +976,21 @@ function isApprovedEnvelopeConstructionPath(relativePath) {
   );
 }
 
+function isApprovedEnvelopeConstruction(node, relativePath, typeChecker, sourceRoot) {
+  if (isApprovedEnvelopeConstructionPath(relativePath)) return true;
+  if (!pathMatches(relativePath, 'kernel/contracts/event-schema.ts')) return false;
+  for (let current = node.parent; current !== undefined; current = current.parent) {
+    if (
+      (ts.isFunctionDeclaration(current) || ts.isFunctionExpression(current)) &&
+      current.name !== undefined
+    ) {
+      const symbol = resolveSymbol(typeChecker.getSymbolAtLocation(current.name), typeChecker);
+      return protectedSymbolKind(symbol, sourceRoot) === 'event-envelope-decoder';
+    }
+  }
+  return false;
+}
+
 function isKernelTestPath(relativePath) {
   return (
     /^test\/unit\/kernel\/.*\.test\.(?:cts|mts|tsx?)$/u.test(relativePath) ||
@@ -963,58 +1006,19 @@ function isTestPath(relativePath) {
   );
 }
 
-function isEventEnvelopeConstruction(node, typeChecker, sourceRoot, canonicalSymbols) {
-  if (isEventEnvelopeDecoderInput(node, typeChecker, sourceRoot)) return false;
+function isEventEnvelopeConstruction(node, typeChecker, sourceRoot, canonicalTypes) {
   const contextualType = typeChecker.getContextualType(node);
-  if (typeContainsProtectedKind(contextualType, 'event-envelope', typeChecker, sourceRoot))
+  if (
+    typeContainsProtectedKind(contextualType, 'event-envelope', typeChecker, sourceRoot) &&
+    typeChecker.isTypeAssignableTo(typeChecker.getTypeAtLocation(node), contextualType)
+  )
     return true;
-  const envelopeSymbol = canonicalSymbols.get('event-envelope');
-  if (envelopeSymbol === undefined) return false;
-  const envelopeType = typeChecker.getDeclaredTypeOfSymbol(envelopeSymbol);
+  return isAssignableToCanonicalType(node, 'event-envelope', typeChecker, canonicalTypes);
+}
+
+function isBoundedEventDataConstruction(node, typeChecker, sourceRoot, manifests, canonicalTypes) {
+  if (!isAssignableToCanonicalType(node, 'event-data', typeChecker, canonicalTypes)) return false;
   const nodeType = typeChecker.getTypeAtLocation(node);
-  return (
-    isStructurallyCompatibleObject(nodeType, envelopeType, node, typeChecker) ||
-    isEventEnvelopeShape(nodeType, canonicalSymbols, typeChecker, node)
-  );
-}
-
-function isEventEnvelopeShape(type, canonicalSymbols, typeChecker, location) {
-  const envelopeSymbol = canonicalSymbols.get('event-envelope');
-  const eventDataSymbol = canonicalSymbols.get('event-data');
-  if (envelopeSymbol === undefined || eventDataSymbol === undefined) return false;
-  const envelopeType = typeChecker.getDeclaredTypeOfSymbol(envelopeSymbol);
-  if (!hasRequiredTargetProperties(type, envelopeType)) return false;
-  const eventProperty = type.getProperty('event');
-  if (eventProperty === undefined) return false;
-  const eventType = typeChecker.getTypeOfSymbolAtLocation(eventProperty, location);
-  return hasRequiredTargetProperties(
-    eventType,
-    typeChecker.getDeclaredTypeOfSymbol(eventDataSymbol),
-  );
-}
-
-function isEventEnvelopeDecoderInput(node, typeChecker, sourceRoot) {
-  const parent = node.parent;
-  if (!ts.isCallExpression(parent) || !parent.arguments.includes(node)) return false;
-  const symbol = resolveSymbol(
-    typeChecker.getSymbolAtLocation(unwrapExpression(parent.expression)),
-    typeChecker,
-  );
-  return protectedSymbolKind(symbol, sourceRoot) === 'event-envelope-decoder';
-}
-
-function isBoundedEventDataConstruction(
-  node,
-  typeChecker,
-  sourceRoot,
-  manifests,
-  canonicalSymbols,
-) {
-  const eventDataSymbol = canonicalSymbols.get('event-data');
-  if (eventDataSymbol === undefined) return false;
-  const eventDataType = typeChecker.getDeclaredTypeOfSymbol(eventDataSymbol);
-  const nodeType = typeChecker.getTypeAtLocation(node);
-  if (!hasRequiredTargetProperties(nodeType, eventDataType)) return false;
   const contextualType = typeChecker.getContextualType(node);
   if (
     typeContainsProtectedKind(contextualType, 'event-data', typeChecker, sourceRoot) &&
@@ -1029,71 +1033,29 @@ function isBoundedEventDataConstruction(
   return eventTypes.some((eventType) => ownerForEventType(eventType, manifests) !== undefined);
 }
 
-function isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, canonicalSymbols) {
+function isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, canonicalTypes) {
   const contextualType = typeChecker.getContextualType(node);
   if (
-    typeContainsProtectedKind(contextualType, 'processor-definition', typeChecker, sourceRoot) ||
-    typeContainsProtectedKind(contextualType, 'batch-processor-definition', typeChecker, sourceRoot)
+    (typeContainsProtectedKind(contextualType, 'processor-definition', typeChecker, sourceRoot) ||
+      typeContainsProtectedKind(
+        contextualType,
+        'batch-processor-definition',
+        typeChecker,
+        sourceRoot,
+      )) &&
+    typeChecker.isTypeAssignableTo(typeChecker.getTypeAtLocation(node), contextualType)
   )
     return true;
+  return ['processor-definition', 'batch-processor-definition'].some((kind) =>
+    isAssignableToCanonicalType(node, kind, typeChecker, canonicalTypes),
+  );
+}
+
+function isAssignableToCanonicalType(node, kind, typeChecker, canonicalTypes) {
   const sourceType = typeChecker.getTypeAtLocation(node);
-  for (const kind of ['processor-definition', 'batch-processor-definition']) {
-    const symbol = canonicalSymbols.get(kind);
-    if (symbol === undefined) continue;
-    const targetType = typeChecker.getDeclaredTypeOfSymbol(symbol);
-    if (hasRequiredTargetProperties(sourceType, targetType)) return true;
-  }
+  for (const targetType of canonicalTypes.get(kind) ?? [])
+    if (typeChecker.isTypeAssignableTo(sourceType, targetType)) return true;
   return false;
-}
-
-function isStructurallyCompatibleObject(
-  sourceType,
-  targetType,
-  location,
-  typeChecker,
-  seen = new Set(),
-) {
-  if (typeChecker.isTypeAssignableTo(sourceType, targetType)) return true;
-  const key = `${sourceType.id}:${targetType.id}`;
-  if (seen.has(key)) return true;
-  seen.add(key);
-  for (const targetProperty of typeChecker.getPropertiesOfType(targetType)) {
-    if ((targetProperty.flags & ts.SymbolFlags.Optional) !== 0) continue;
-    const sourceProperty = sourceType.getProperty(targetProperty.name);
-    if (sourceProperty === undefined) return false;
-    const sourcePropertyType = typeChecker.getTypeOfSymbolAtLocation(sourceProperty, location);
-    const targetLocation =
-      targetProperty.valueDeclaration ?? targetProperty.declarations?.[0] ?? location;
-    const declaredTargetType = typeChecker.getTypeOfSymbolAtLocation(
-      targetProperty,
-      targetLocation,
-    );
-    const targetPropertyType =
-      typeChecker.getBaseConstraintOfType(declaredTargetType) ?? declaredTargetType;
-    if (typeChecker.isTypeAssignableTo(sourcePropertyType, targetPropertyType)) continue;
-    if (
-      (sourcePropertyType.flags & ts.TypeFlags.Object) !== 0 &&
-      (targetPropertyType.flags & ts.TypeFlags.Object) !== 0 &&
-      isStructurallyCompatibleObject(
-        sourcePropertyType,
-        targetPropertyType,
-        location,
-        typeChecker,
-        seen,
-      )
-    )
-      continue;
-    return false;
-  }
-  return true;
-}
-
-function hasRequiredTargetProperties(sourceType, targetType) {
-  for (const targetProperty of targetType.getProperties()) {
-    if ((targetProperty.flags & ts.SymbolFlags.Optional) !== 0) continue;
-    if (sourceType.getProperty(targetProperty.name) === undefined) return false;
-  }
-  return true;
 }
 
 function boundedEventOwnerForType(type, typeChecker, sourceRoot, manifests, seen = new Set()) {

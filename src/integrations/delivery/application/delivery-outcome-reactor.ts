@@ -8,13 +8,17 @@ import {
   type EventProcessor,
 } from '../../../eventing/index.js';
 import {
-  decodeEventEnvelope,
+  brandedStringSchema,
+  correlationId,
   entityRefSchema,
   EventActorKind,
   eventDataSchema,
   eventEnvelopeSchema,
+  eventId,
   offsetIsoTimestampSchema,
+  type CorrelationId,
   type EventEnvelope,
+  type EventId,
   type EventJournal,
   type ProjectionStore,
 } from '../../../kernel/index.js';
@@ -25,7 +29,11 @@ import {
   type WorkflowInstanceId,
 } from '../../../orchestration/index.js';
 import { IntegrationStreamKind } from '../../contracts/streams.js';
-import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
+import {
+  DeliveryEventType,
+  selectDeliveryEvent,
+  type DeliveryEventPayloads,
+} from '../contracts/events.js';
 import type { DeliveryIntentView } from '../contracts/views.js';
 import { DeliveryIntentKind, DeliveryResultKind } from '../contracts/vocabulary.js';
 
@@ -33,11 +41,68 @@ const deliveryResultSignalKind = 'delivery-result';
 const pendingNamespace = 'reactor:delivery-outcomes:pending';
 const pendingKey = 'pending-confirmations';
 
+type PendingDeliveryOutcome =
+  | PendingDeliveryOutcomeOf<typeof DeliveryEventType.Confirmed>
+  | PendingDeliveryOutcomeOf<typeof DeliveryEventType.Failed>
+  | (PendingDeliveryOutcomeOf<typeof DeliveryEventType.Reconciled> & {
+      readonly payload: DeliveryEventPayloads[typeof DeliveryEventType.Reconciled] & {
+        readonly result: typeof DeliveryResultKind.Confirmed;
+        readonly externalId: string;
+      };
+    });
+
+interface PendingDeliveryOutcomeOf<Type extends keyof DeliveryEventPayloads> {
+  readonly eventId: EventId;
+  readonly eventType: Type;
+  readonly correlationId: CorrelationId;
+  readonly recordedAt: string;
+  readonly payload: DeliveryEventPayloads[Type];
+}
+
 interface PendingConfirmations {
-  readonly events: readonly EventEnvelope[];
+  readonly events: readonly PendingDeliveryOutcome[];
 }
 
 const pendingConfirmationsSchema = z.object({ events: z.array(z.unknown()) }).strict();
+const pendingCorrelationSchema = z
+  .object({
+    intentEventId: brandedStringSchema(eventId),
+    intentGlobalPosition: z.number().int().positive(),
+    workflowInstanceId: z.string().min(1),
+    activationId: z.string().min(1),
+    occurrenceOrdinal: z.number().int().positive(),
+  })
+  .strict();
+const pendingOutcomeHeaderSchema = z
+  .object({
+    eventId: brandedStringSchema(eventId),
+    correlationId: brandedStringSchema(correlationId),
+    recordedAt: offsetIsoTimestampSchema,
+  })
+  .strict();
+const pendingDeliveryOutcomeSchema: z.ZodType<PendingDeliveryOutcome> = z.discriminatedUnion(
+  'eventType',
+  [
+    pendingOutcomeHeaderSchema.extend({
+      eventType: z.literal(DeliveryEventType.Confirmed),
+      payload: pendingCorrelationSchema.extend({ externalId: z.string().min(1) }),
+    }),
+    pendingOutcomeHeaderSchema.extend({
+      eventType: z.literal(DeliveryEventType.Failed),
+      payload: pendingCorrelationSchema.extend({
+        code: z.string().min(1),
+        message: z.string().min(1),
+      }),
+    }),
+    pendingOutcomeHeaderSchema.extend({
+      eventType: z.literal(DeliveryEventType.Reconciled),
+      payload: pendingCorrelationSchema.extend({
+        result: z.literal(DeliveryResultKind.Confirmed),
+        externalId: z.string().min(1),
+      }),
+    }),
+  ],
+);
 const legacyPendingEnvelopeSchema = eventDataSchema
   .omit({ payload: true })
   .extend({
@@ -72,66 +137,54 @@ export class DeliveryOutcomeReactor {
   }
 
   async react(event: EventEnvelope): Promise<void> {
-    if ((await this.reconcile(event)) === false) await this.savePendingEvent(event);
+    const delivery = selectDeliveryEvent(event);
+    if (!isResolvedDelivery(delivery)) return;
+    const pending = projectPendingDeliveryOutcome(event, delivery);
+    if ((await this.reconcile(pending)) === false) await this.savePendingEvent(pending);
   }
 
   async reconcileOnce(): Promise<void> {
-    const pending = new Map(
-      (await this.loadPending()).map((event) => [event.event.eventId, event]),
-    );
+    const pending = new Map((await this.loadPending()).map((event) => [event.eventId, event]));
     for (const [id, event] of pending) {
       if ((await this.reconcile(event)) === true) pending.delete(id);
     }
     await this.savePending([...pending.values()]);
   }
 
-  private async reconcile(event: EventEnvelope): Promise<boolean | null> {
-    const delivery = selectDeliveryEvent(event);
-    if (delivery === null) return null;
+  private async reconcile(delivery: PendingDeliveryOutcome): Promise<boolean> {
     const outcome =
-      delivery.event.eventType === DeliveryEventType.Confirmed ||
-      (delivery.event.eventType === DeliveryEventType.Reconciled &&
-        delivery.event.payload.result === DeliveryResultKind.Confirmed)
-        ? { kind: ActivityOutcomeKind.Done, data: { deliveryEventId: delivery.event.eventId } }
-        : delivery.event.eventType === DeliveryEventType.Failed
-          ? { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.event.payload.code } }
-          : null;
-    if (outcome === null) return null;
+      delivery.eventType === DeliveryEventType.Confirmed ||
+      delivery.eventType === DeliveryEventType.Reconciled
+        ? { kind: ActivityOutcomeKind.Done, data: { deliveryEventId: delivery.eventId } }
+        : { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.payload.code } };
     try {
-      await this.recordConversationRepresentation(event, delivery);
+      await this.recordConversationRepresentation(delivery);
     } catch (error) {
       // Optional conversation provenance must not block delivery reconciliation.
-      console.error(
-        `Conversation provenance recording failed for ${delivery.event.eventId}`,
-        error,
-      );
+      console.error(`Conversation provenance recording failed for ${delivery.eventId}`, error);
     }
     const command = {
-      workflowInstanceId: workflowInstanceId(delivery.event.payload.workflowInstanceId),
-      activationId: activationId(delivery.event.payload.activationId),
+      workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),
+      activationId: activationId(delivery.payload.activationId),
     };
-    if (!(await this.isAwaitingThisDelivery(command, delivery.event.payload.intentEventId)))
-      return false;
+    if (!(await this.isAwaitingThisDelivery(command, delivery.payload.intentEventId))) return false;
     await this.orchestration.acceptOutcome(
       { ...command, outcome },
       {
-        commandId: delivery.event.eventId,
-        correlationId: event.event.correlationId,
+        commandId: delivery.eventId,
+        correlationId: delivery.correlationId,
         actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
-        occurredAt: event.recordedAt,
+        occurredAt: delivery.recordedAt,
       },
     );
     return true;
   }
 
-  private async recordConversationRepresentation(
-    event: EventEnvelope,
-    delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
-  ): Promise<void> {
+  private async recordConversationRepresentation(delivery: PendingDeliveryOutcome): Promise<void> {
     if (this.conversations === undefined || !isConfirmedDelivery(delivery)) return;
     const intent = await conversationDeliveryIntent(
       this.projections,
-      delivery.event.payload.intentEventId,
+      delivery.payload.intentEventId,
     );
     if (intent === undefined) return;
     const externalId = confirmedExternalId(delivery);
@@ -148,10 +201,10 @@ export class DeliveryOutcomeReactor {
         externalId,
       },
       {
-        commandId: delivery.event.eventId,
-        correlationId: event.event.correlationId,
+        commandId: delivery.eventId,
+        correlationId: delivery.correlationId,
         actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
-        occurredAt: event.recordedAt,
+        occurredAt: delivery.recordedAt,
       },
     );
   }
@@ -170,13 +223,13 @@ export class DeliveryOutcomeReactor {
     );
   }
 
-  private async loadPending(): Promise<readonly EventEnvelope[]> {
+  private async loadPending(): Promise<readonly PendingDeliveryOutcome[]> {
     const stored = await this.projections.read<unknown>(pendingNamespace, pendingKey);
     if (stored === null) return [];
-    return pendingConfirmationsSchema.parse(stored.value).events.map(decodePendingEnvelope);
+    return pendingConfirmationsSchema.parse(stored.value).events.map(decodePendingOutcome);
   }
 
-  private async savePending(events: readonly EventEnvelope[]): Promise<void> {
+  private async savePending(events: readonly PendingDeliveryOutcome[]): Promise<void> {
     await this.projections.write<PendingConfirmations>({
       namespace: pendingNamespace,
       key: pendingKey,
@@ -185,35 +238,41 @@ export class DeliveryOutcomeReactor {
     });
   }
 
-  private async savePendingEvent(event: EventEnvelope): Promise<void> {
-    const pending = new Map(
-      (await this.loadPending()).map((value) => [value.event.eventId, value]),
-    );
-    pending.set(event.event.eventId, event);
+  private async savePendingEvent(event: PendingDeliveryOutcome): Promise<void> {
+    const pending = new Map((await this.loadPending()).map((value) => [value.eventId, value]));
+    pending.set(event.eventId, event);
     await this.savePending([...pending.values()]);
   }
 }
 
-function decodePendingEnvelope(value: unknown): EventEnvelope {
+function decodePendingOutcome(value: unknown): PendingDeliveryOutcome {
+  const canonical = pendingDeliveryOutcomeSchema.safeParse(value);
+  if (canonical.success) return canonical.data;
   const nested = eventEnvelopeSchema.safeParse(value);
-  if (nested.success) return nested.data;
+  if (nested.success) {
+    const delivery = selectDeliveryEvent(nested.data);
+    if (isResolvedDelivery(delivery)) return projectPendingDeliveryOutcome(nested.data, delivery);
+  }
   const legacy = legacyPendingEnvelopeSchema.parse(value);
-  return decodeEventEnvelope({
-    event: {
-      eventId: legacy.eventId,
-      eventType: legacy.eventType,
-      schemaVersion: legacy.schemaVersion,
-      occurredAt: legacy.occurredAt,
-      correlationId: legacy.correlationId,
-      causationId: legacy.causationId,
-      actor: legacy.actor,
-      source: legacy.source,
-      payload: legacy.payload,
-    },
-    stream: legacy.stream,
+  return pendingDeliveryOutcomeSchema.parse({
+    eventId: legacy.eventId,
+    eventType: legacy.eventType,
+    correlationId: legacy.correlationId,
     recordedAt: legacy.recordedAt,
-    sequence: legacy.sequence,
-    globalPosition: legacy.globalPosition,
+    payload: legacy.payload,
+  });
+}
+
+function projectPendingDeliveryOutcome(
+  envelope: EventEnvelope,
+  delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
+): PendingDeliveryOutcome {
+  return pendingDeliveryOutcomeSchema.parse({
+    eventId: delivery.event.eventId,
+    eventType: delivery.event.eventType,
+    correlationId: envelope.event.correlationId,
+    recordedAt: envelope.recordedAt,
+    payload: delivery.event.payload,
   });
 }
 
@@ -228,25 +287,15 @@ function isResolvedDelivery(
   );
 }
 
-function isConfirmedDelivery(
-  delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
-): boolean {
+function isConfirmedDelivery(delivery: PendingDeliveryOutcome): boolean {
   return (
-    delivery.event.eventType === DeliveryEventType.Confirmed ||
-    (delivery.event.eventType === DeliveryEventType.Reconciled &&
-      delivery.event.payload.result === DeliveryResultKind.Confirmed)
+    delivery.eventType === DeliveryEventType.Confirmed ||
+    delivery.eventType === DeliveryEventType.Reconciled
   );
 }
 
-function confirmedExternalId(
-  delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
-): string | undefined {
-  if (delivery.event.eventType === DeliveryEventType.Confirmed)
-    return delivery.event.payload.externalId;
-  return delivery.event.eventType === DeliveryEventType.Reconciled &&
-    delivery.event.payload.result === DeliveryResultKind.Confirmed
-    ? delivery.event.payload.externalId
-    : undefined;
+function confirmedExternalId(delivery: PendingDeliveryOutcome): string | undefined {
+  return delivery.eventType === DeliveryEventType.Failed ? undefined : delivery.payload.externalId;
 }
 
 async function conversationDeliveryIntent(projections: ProjectionStore, intentEventId: string) {

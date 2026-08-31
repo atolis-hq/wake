@@ -30,6 +30,7 @@ async function fixture(
   const sourceFiles = {
     'src/kernel/index.ts': [
       "export { createEventData } from './domain/event-envelope.js';",
+      "export { decodeEventEnvelope } from './contracts/event-schema.js';",
       "export type { EventData, EventEnvelope } from './contracts/events.js';",
       "export type { EventJournal } from './contracts/event-journal.js';",
     ].join('\n'),
@@ -63,6 +64,12 @@ async function fixture(
       "import type { EventData, EventEnvelope } from './events.js';",
       'export interface EventJournal {',
       '  appendToStream(stream: unknown, sequence: number, events: readonly EventData[]): Promise<readonly EventEnvelope[]>;',
+      '}',
+    ].join('\n'),
+    'src/kernel/contracts/event-schema.ts': [
+      "import type { EventEnvelope } from './events.js';",
+      'export function decodeEventEnvelope(input: unknown): EventEnvelope {',
+      '  return input as EventEnvelope;',
       '}',
     ].join('\n'),
     'src/work/index.ts': [
@@ -135,10 +142,10 @@ function eventInput(eventType = 'work.created'): string {
   ].join('\n');
 }
 
-function envelopeLiteral(): string {
+function envelopeLiteral(eventType = 'work.created'): string {
   return [
     '{',
-    `  event: { ...${eventInput()}, schemaVersion: 1 },`,
+    `  event: { ...${eventInput(eventType)}, schemaVersion: 1 },`,
     "  stream: { kind: 'work', id: 'work-1' },",
     "  recordedAt: '2026-08-31T12:00:01.000Z',",
     '  sequence: 1,',
@@ -344,7 +351,7 @@ describe('event publishing ownership', () => {
         'const { ...kernel } = Kernel;',
         'let assignedFactories: Array<typeof createEventData> = [local];',
         '[...assignedFactories] = [createEventData];',
-        'let assignedKernel: typeof Kernel = { createEventData: local };',
+        'let assignedKernel: typeof Kernel = { createEventData: local, decodeEventEnvelope: (input) => input as never };',
         '({ ...assignedKernel } = Kernel);',
         'declare const index: number;',
         'declare const property: string;',
@@ -446,6 +453,69 @@ describe('event publishing ownership', () => {
 
     const diagnostics = await checker.checkEventArchitecture(root);
     expect(messages(diagnostics)).toContain('[event-envelope-construction-owner]');
+  });
+
+  it('allows only the exact Kernel envelope decoder implementation to reshape envelopes', async () => {
+    const root = await fixture({
+      'src/kernel/domain/illegal-envelope.ts': [
+        "import type { EventEnvelope } from '../index.js';",
+        `export const envelope: EventEnvelope = ${envelopeLiteral('kernel.test')};`,
+      ].join('\n'),
+      'src/bootstrap/decoder-wrapped-envelope.ts': [
+        "import { decodeEventEnvelope } from '../kernel/index.js';",
+        `export const envelope = decodeEventEnvelope(${envelopeLiteral('kernel.test')});`,
+      ].join('\n'),
+      'src/kernel/contracts/event-schema.ts': [
+        "import type { EventEnvelope } from './events.js';",
+        'export function decodeEventEnvelope(input: EventEnvelope): EventEnvelope {',
+        '  const parsed = input;',
+        '  return {',
+        '    event: parsed.event,',
+        '    stream: parsed.stream,',
+        '    recordedAt: parsed.recordedAt,',
+        '    sequence: parsed.sequence,',
+        '    globalPosition: parsed.globalPosition,',
+        '  };',
+        '}',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-envelope-construction-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'bootstrap/decoder-wrapped-envelope.ts:2:45',
+      'kernel/domain/illegal-envelope.ts:2:40',
+    ]);
+  });
+
+  it('does not reject complete but type-incompatible event and envelope lookalikes', async () => {
+    const root = await fixture({
+      'src/bootstrap/incompatible-lookalikes.ts': [
+        'const event = {',
+        '  eventId: 1,',
+        "  eventType: 'work.created' as const,",
+        "  schemaVersion: '1',",
+        '  occurredAt: () => undefined,',
+        '  correlationId: false,',
+        "  causationId: Symbol('causation'),",
+        "  actor: 'system',",
+        '  source: [],',
+        '  payload: () => undefined,',
+        '};',
+        'export const envelope = {',
+        '  event,',
+        '  stream: 42,',
+        '  recordedAt: () => undefined,',
+        "  sequence: '1',",
+        '  globalPosition: false,',
+        '};',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
   });
 
   it('rejects structurally assignable envelope and bounded event literals assembled with spreads', async () => {
