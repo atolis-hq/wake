@@ -554,6 +554,90 @@ describe('event publishing ownership', () => {
     ).toHaveLength(1);
   });
 
+  it('rejects symbol-resolved Object.assign and typed builder construction forms', async () => {
+    const root = await fixture({
+      'src/bootstrap/non-literal-construction.ts': [
+        "import type { EventEnvelope } from '../kernel/index.js';",
+        "import type { WorkEventData } from '../work/index.js';",
+        'const eventHeader = {',
+        "  eventId: 'event-1', occurredAt: '2026-08-31T12:00:00.000Z', correlationId: 'correlation-1', causationId: 'causation-1',",
+        "  actor: { kind: 'system', id: 'test' }, source: { kind: 'internal', id: 'test' },",
+        '};',
+        "const kernelTail = { eventType: 'kernel.test' as const, schemaVersion: 1 as const, payload: {} };",
+        'const kernelEvent = Object.assign({}, eventHeader, kernelTail);',
+        'const envelopeMetadata = {',
+        "  stream: { kind: 'work', id: 'work-1' }, recordedAt: '2026-08-31T12:00:01.000Z', sequence: 1, globalPosition: 1,",
+        '};',
+        'const assign = Object.assign;',
+        "const assignKey = 'assign' as const;",
+        'export const aliasedEnvelope: EventEnvelope = assign({}, { event: kernelEvent }, envelopeMetadata);',
+        'export const computedEnvelope: EventEnvelope = Object[assignKey]({}, { event: kernelEvent }, envelopeMetadata);',
+        "const workTail = { eventType: 'work.created' as const, schemaVersion: 1 as const, payload: { id: 'work-1' } };",
+        'export const directWorkEvent: WorkEventData = Object.assign({}, eventHeader, workTail);',
+        'const Objects = Object;',
+        'export function buildWorkEvent(): WorkEventData {',
+        '  return Objects.assign({}, eventHeader, workTail);',
+        '}',
+        'class EnvelopeBuilder implements EventEnvelope {',
+        '  constructor(',
+        "    readonly event: EventEnvelope['event'],",
+        "    readonly stream: EventEnvelope['stream'],",
+        '    readonly recordedAt: string,',
+        '    readonly sequence: number,',
+        '    readonly globalPosition: number,',
+        '  ) {}',
+        '}',
+        'export function buildEnvelope(): EventEnvelope {',
+        '  return new EnvelopeBuilder(kernelEvent, envelopeMetadata.stream, envelopeMetadata.recordedAt, 1, 1);',
+        '}',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[event-envelope-construction-owner]')),
+    ).toHaveLength(3);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[bounded-event-data-construction]')),
+    ).toHaveLength(2);
+  });
+
+  it('allows decoder and journal-read flows while ignoring local or incompatible assign functions', async () => {
+    const root = await fixture({
+      'src/kernel/contracts/event-schema.ts': [
+        "import type { EventEnvelope } from './events.js';",
+        'export function decodeEventEnvelope(input: unknown): EventEnvelope {',
+        '  const parsed = input as EventEnvelope;',
+        '  return Object.assign({}, parsed);',
+        '}',
+      ].join('\n'),
+      'src/kernel/contracts/event-journal.ts': [
+        "import type { EventData, EventEnvelope } from './events.js';",
+        'export interface EventJournal {',
+        '  appendToStream(stream: unknown, sequence: number, events: readonly EventData[]): Promise<readonly EventEnvelope[]>;',
+        '  readAll(): Promise<readonly EventEnvelope[]>;',
+        '}',
+      ].join('\n'),
+      'src/bootstrap/read-envelope.ts': [
+        "import type { EventEnvelope, EventJournal } from '../kernel/index.js';",
+        'declare const journal: EventJournal;',
+        'export async function readEnvelope(): Promise<EventEnvelope> {',
+        '  return (await journal.readAll())[0]!;',
+        '}',
+      ].join('\n'),
+      'src/bootstrap/local-assign-lookalikes.ts': [
+        'const LocalObject = { assign: <Value>(value: Value): Value => value };',
+        'export const incomplete = LocalObject.assign({ event: { payload: null }, sequence: 1 });',
+        'export const incompatible = LocalObject.assign({',
+        "  event: { eventId: 1, eventType: 'work.created', schemaVersion: '1', occurredAt: false, correlationId: 2, causationId: 3, actor: 'system', source: [], payload: () => undefined },",
+        "  stream: 4, recordedAt: false, sequence: '1', globalPosition: null,",
+        '});',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
   it('inspects runtime ownership in .mts source files', async () => {
     const root = await fixture({
       'src/bootstrap/illegal-factory.mts': [

@@ -53,6 +53,8 @@ async function fixture(files: Readonly<Record<string, string>>): Promise<string>
       '  readonly select: (event: unknown) => Message | null;',
       '  readonly handle: (message: Message, event: unknown, signal: AbortSignal) => Promise<void>;',
       '}',
+      'type RegisteredEventProcessor = EventProcessorDefinition<any>;',
+      'export type { RegisteredEventProcessor };',
       'export function defineEventProcessor(value: unknown) { return value; }',
       'export function defineBatchEventProcessor(value: unknown) { return value; }',
     ].join('\n'),
@@ -146,7 +148,7 @@ describe('event processor ownership', () => {
     expect(messages(diagnostics)).toContain('[processor-serialiser-owner]');
   });
 
-  it('resolves processor aliases at each construction site instead of using the final assignment', async () => {
+  it('reports protected constructor references without flagging later local replacements', async () => {
     const root = await fixture({
       'src/orchestration/application/flow-aware-host.ts': [
         "import { EventProcessorHost } from '../../eventing/index.js';",
@@ -168,9 +170,119 @@ describe('event processor ownership', () => {
         .filter(({ message }) => message.includes('[event-processor-host-owner]'))
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual([
-      'orchestration/application/flow-aware-host.ts:4:31',
-      'orchestration/application/flow-aware-host.ts:10:32',
+      'orchestration/application/flow-aware-host.ts:3:40',
+      'orchestration/application/flow-aware-host.ts:9:10',
     ]);
+  });
+
+  it('reports protected constructor references inside conditional, loop, nested, and passing flows', async () => {
+    const root = await fixture({
+      'src/orchestration/application/control-flow-host-references.ts': [
+        "import { EventProcessorHost } from '../../eventing/index.js';",
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'declare const condition: boolean;',
+        'let Conditional = LocalHost;',
+        'if (condition) Conditional = EventProcessorHost;',
+        'let Loop = LocalHost;',
+        'for (const enabled of [condition]) {',
+        '  if (enabled) {',
+        '    Loop = EventProcessorHost;',
+        '  }',
+        '}',
+        'let Nested = LocalHost;',
+        'function neverCalled() {',
+        '  Nested = EventProcessorHost;',
+        '}',
+        'void neverCalled;',
+        'const consume = (_value: unknown): void => undefined;',
+        'consume(EventProcessorHost);',
+        'Conditional = LocalHost;',
+        'Loop = LocalHost;',
+        'export const localConditional = new Conditional();',
+        'export const localLoop = new Loop();',
+        'export const localNested = new Nested();',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-processor-host-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'orchestration/application/control-flow-host-references.ts:5:30',
+      'orchestration/application/control-flow-host-references.ts:9:12',
+      'orchestration/application/control-flow-host-references.ts:14:12',
+      'orchestration/application/control-flow-host-references.ts:18:9',
+    ]);
+  });
+
+  it('applies runtime-reference ownership to the complete processor infrastructure symbol set', async () => {
+    const root = await fixture({
+      'src/orchestration/application/illegal-runtime-references.ts': [
+        "import { EventProcessorHost } from '../../eventing/index.js';",
+        "import * as Eventing from '../../eventing/index.js';",
+        "import { EventProcessorRuntime } from '../../bootstrap/index.js';",
+        "import { createFileProcessorRunSerialiser } from '../../persistence/index.js';",
+        'const consume = (_value: unknown): void => undefined;',
+        'consume(EventProcessorHost);',
+        "const hostKey = 'EventProcessorHost' as const;",
+        'const namespacedHost = Eventing.EventProcessorHost;',
+        'const computedHost = Eventing[hostKey];',
+        'const runtime = EventProcessorRuntime;',
+        'const serialiser = createFileProcessorRunSerialiser;',
+        'export { computedHost, namespacedHost, runtime, serialiser };',
+      ].join('\n'),
+      'src/persistence/application/illegal-factory-references.ts': [
+        "import { defineEventProcessor } from '../../eventing/index.js';",
+        'const consume = (_value: unknown): void => undefined;',
+        'const stored = defineEventProcessor;',
+        'consume(defineEventProcessor);',
+        'export { stored };',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-processor-host-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'orchestration/application/illegal-runtime-references.ts:6:9',
+      'orchestration/application/illegal-runtime-references.ts:8:33',
+      'orchestration/application/illegal-runtime-references.ts:9:22',
+    ]);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[processor-registry-owner]')),
+    ).toHaveLength(1);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[processor-serialiser-owner]')),
+    ).toHaveLength(1);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[persistence-processor-handler]')),
+    ).toHaveLength(2);
+  });
+
+  it('does not treat an uncalled nested factory assignment as the origin of a later local call', async () => {
+    const root = await fixture({
+      'src/persistence/application/nested-factory-reference.ts': [
+        "import { defineEventProcessor } from '../../eventing/index.js';",
+        'const localFactory = (value: unknown): unknown => value;',
+        'let Factory: typeof defineEventProcessor = localFactory;',
+        'function neverCalled() {',
+        '  Factory = defineEventProcessor;',
+        '}',
+        'void neverCalled;',
+        'export const unrelated = Factory({ handle: async () => undefined });',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual(['persistence/application/nested-factory-reference.ts:5:13']);
   });
 
   it('rejects processor handlers and host composition in Persistence', async () => {
@@ -245,6 +357,59 @@ describe('event processor ownership', () => {
     await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
   });
 
+  it('rejects implementing and structurally assignable processor classes in Persistence only', async () => {
+    const implementingClass = [
+      "import type { EventProcessorDefinition } from '../../eventing/index.js';",
+      'export class StoredProcessor implements EventProcessorDefinition<string> {',
+      "  readonly consumer = 'consumer';",
+      "  readonly name = 'name';",
+      "  readonly owner = 'owner';",
+      "  readonly category = 'projection';",
+      "  readonly replayPolicy = 'rebuildable';",
+      "  select(_event: unknown): string { return 'message'; }",
+      '  async handle(_message: string, _event: unknown, _signal: AbortSignal): Promise<void> {}',
+      '}',
+    ].join('\n');
+    const root = await fixture({
+      'src/persistence/application/processor-class.ts': implementingClass,
+      'src/persistence/application/processor-class-expression.ts': [
+        'export const StoredProcessorExpression = class {',
+        "  readonly consumer = 'consumer';",
+        "  readonly name = 'name';",
+        "  readonly owner = 'owner';",
+        "  readonly category = 'projection';",
+        "  readonly replayPolicy = 'rebuildable';",
+        "  select(_event: unknown): string { return 'message'; }",
+        '  async handle(_message: string, _event: unknown, _signal: AbortSignal): Promise<void> {}',
+        '};',
+      ].join('\n'),
+      'src/persistence/application/incompatible-processor-class.ts': [
+        'export class IncompatibleProcessor {',
+        '  readonly consumer = 1;',
+        '  readonly name = 2;',
+        '  readonly owner = 3;',
+        '  readonly category = 4;',
+        '  readonly replayPolicy = 5;',
+        "  readonly select = 'not-a-function';",
+        "  readonly handle = 'not-a-function';",
+        '}',
+      ].join('\n'),
+      'src/orchestration/application/processor-class.ts': implementingClass,
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'persistence/application/processor-class-expression.ts:1:42',
+      'persistence/application/processor-class.ts:2:14',
+    ]);
+    expect(messages(diagnostics)).not.toContain('incompatible-processor-class.ts');
+    expect(messages(diagnostics)).not.toContain('orchestration/application/processor-class.ts');
+  });
+
   it('rejects a resolved Eventing processor factory and its linked handler', async () => {
     const root = await fixture({
       'src/persistence/application/factory-handler.ts': [
@@ -282,7 +447,7 @@ describe('event processor ownership', () => {
     );
   });
 
-  it('memoizes a depth-18 default/rest origin graph', async () => {
+  it('bounds depth-18 alias analysis after reporting its protected reference', async () => {
     const chain = [
       "import { EventProcessorHost } from '../../eventing/index.js';",
       'class LocalHost { constructor(...args: unknown[]) { void args; } }',

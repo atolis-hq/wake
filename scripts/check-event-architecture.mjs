@@ -67,12 +67,11 @@ export async function checkEventArchitectureWithStats(root = 'src') {
     if (sourceFile === undefined) continue;
     const relativePath = normalizeSourcePath(file, sourceRoot);
     const moduleName = relativePath.split('/')[0];
-    inspectRuntimeConstruction(
+    inspectProcessorRuntimeReferences(
       sourceFile,
       bindings,
       typeChecker,
       sourceRoot,
-      moduleName,
       relativePath,
       diagnostics,
       analysis,
@@ -345,6 +344,11 @@ function collectCanonicalTypes(program, typeChecker, sourceRoot, canonicalSymbol
       const kind = protectedSymbolKind(symbol, sourceRoot);
       if (kind !== undefined) addCanonicalType(types, kind, typeChecker.getTypeFromTypeNode(node));
     }
+    if (ts.isExpressionWithTypeArguments(node)) {
+      const symbol = resolveSymbol(typeChecker.getSymbolAtLocation(node.expression), typeChecker);
+      const kind = protectedSymbolKind(symbol, sourceRoot);
+      if (kind !== undefined) addCanonicalType(types, kind, typeChecker.getTypeAtLocation(node));
+    }
     ts.forEachChild(node, visit);
   }
 
@@ -359,49 +363,104 @@ function addCanonicalType(types, kind, type) {
   else candidates.add(type);
 }
 
-function inspectRuntimeConstruction(
+function inspectProcessorRuntimeReferences(
   sourceFile,
   bindings,
   typeChecker,
   sourceRoot,
-  moduleName,
   relativePath,
   diagnostics,
 ) {
   function visit(node) {
-    if (ts.isNewExpression(node)) {
-      const kind = resolveProtectedKind(node.expression, bindings, typeChecker, sourceRoot);
-      if (kind === 'host' && !['eventing', 'bootstrap'].includes(moduleName))
-        addDiagnostic(
-          node,
-          sourceRoot,
-          'event-processor-host-owner',
-          'EventProcessorHost may only be constructed by eventing or bootstrap',
-          diagnostics,
-        );
-      if (kind === 'registry' && moduleName !== 'bootstrap')
-        addDiagnostic(
-          node,
-          sourceRoot,
-          'processor-registry-owner',
-          'the complete EventProcessorRuntime may only be composed by bootstrap',
-          diagnostics,
-        );
-    }
-    if (ts.isCallExpression(node)) {
-      const kind = resolveProtectedKind(node.expression, bindings, typeChecker, sourceRoot);
-      if (kind === 'serialiser' && !['persistence', 'bootstrap'].includes(moduleName))
-        addDiagnostic(
-          node,
-          sourceRoot,
-          'processor-serialiser-owner',
-          'concrete processor serialisers may only be constructed by persistence or bootstrap',
-          diagnostics,
-        );
-    }
+    const reference = protectedProcessorRuntimeReference(node, bindings, typeChecker, sourceRoot);
+    if (
+      reference !== undefined &&
+      !isExcludedRuntimeReference(reference.node) &&
+      !isApprovedProcessorRuntimeReference(reference.kind, relativePath)
+    )
+      addProcessorRuntimeReferenceDiagnostic(reference, sourceRoot, diagnostics);
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
+}
+
+function protectedProcessorRuntimeReference(node, bindings, typeChecker, sourceRoot) {
+  if (ts.isIdentifier(node)) {
+    const symbol = resolveSymbol(typeChecker.getSymbolAtLocation(node), typeChecker);
+    const kind = protectedSymbolKind(symbol, sourceRoot);
+    return isProcessorRuntimeKind(kind) ? { node, kind } : undefined;
+  }
+  if (ts.isElementAccessExpression(node)) {
+    const symbol = resolveSymbol(expressionSymbol(node, bindings, typeChecker), typeChecker);
+    const kind = protectedSymbolKind(symbol, sourceRoot);
+    return isProcessorRuntimeKind(kind) ? { node, kind } : undefined;
+  }
+  return undefined;
+}
+
+function isProcessorRuntimeKind(kind) {
+  return ['host', 'registry', 'serialiser', 'processor-factory'].includes(kind);
+}
+
+function isExcludedRuntimeReference(node) {
+  if (isWithinImport(node) || isWithinTypePosition(node) || isTypeOnlyExportReference(node))
+    return true;
+  const parent = node.parent;
+  return (
+    (ts.isFunctionDeclaration(parent) ||
+      ts.isFunctionExpression(parent) ||
+      ts.isMethodDeclaration(parent) ||
+      ts.isVariableDeclaration(parent) ||
+      ts.isClassDeclaration(parent) ||
+      ts.isClassExpression(parent) ||
+      ts.isInterfaceDeclaration(parent) ||
+      ts.isTypeAliasDeclaration(parent)) &&
+    parent.name === node
+  );
+}
+
+function isApprovedProcessorRuntimeReference(kind, relativePath) {
+  if (kind === 'host')
+    return relativePath.startsWith('eventing/') || relativePath.startsWith('bootstrap/');
+  if (kind === 'registry') return relativePath.startsWith('bootstrap/');
+  if (kind === 'serialiser')
+    return relativePath.startsWith('persistence/') || relativePath.startsWith('bootstrap/');
+  return kind === 'processor-factory' && !relativePath.startsWith('persistence/');
+}
+
+function addProcessorRuntimeReferenceDiagnostic(reference, sourceRoot, diagnostics) {
+  if (reference.kind === 'host')
+    addDiagnostic(
+      reference.node,
+      sourceRoot,
+      'event-processor-host-owner',
+      'EventProcessorHost runtime references are restricted to eventing and bootstrap',
+      diagnostics,
+    );
+  if (reference.kind === 'registry')
+    addDiagnostic(
+      reference.node,
+      sourceRoot,
+      'processor-registry-owner',
+      'EventProcessorRuntime runtime references are restricted to bootstrap',
+      diagnostics,
+    );
+  if (reference.kind === 'serialiser')
+    addDiagnostic(
+      reference.node,
+      sourceRoot,
+      'processor-serialiser-owner',
+      'processor serialiser runtime references are restricted to persistence and bootstrap',
+      diagnostics,
+    );
+  if (reference.kind === 'processor-factory')
+    addDiagnostic(
+      reference.node,
+      sourceRoot,
+      'persistence-processor-handler',
+      'persistence may not define handlers for Eventing processors',
+      diagnostics,
+    );
 }
 
 function inspectPersistenceProcessors(
@@ -416,9 +475,12 @@ function inspectPersistenceProcessors(
   const reported = new Set();
   function visit(node) {
     if (ts.isCallExpression(node)) {
-      const kind = resolveProtectedKind(node.expression, bindings, typeChecker, sourceRoot);
+      const symbol = resolveSymbol(
+        expressionSymbol(node.expression, bindings, typeChecker),
+        typeChecker,
+      );
+      const kind = protectedSymbolKind(symbol, sourceRoot);
       if (kind === 'processor-factory') {
-        addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported);
         for (const argument of node.arguments)
           inspectLinkedHandlerProperties(
             argument,
@@ -438,6 +500,11 @@ function inspectPersistenceProcessors(
       isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, analysis.canonicalTypes)
     )
       addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported);
+    if (
+      (ts.isClassDeclaration(node) || ts.isClassExpression(node)) &&
+      isProcessorDefinitionClass(node, typeChecker, analysis.canonicalTypes)
+    )
+      addPersistenceDiagnostic(node.name ?? node, sourceRoot, diagnostics, reported);
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
@@ -576,7 +643,7 @@ function inspectPublishingOwnership(context) {
     inspectEventDataFactoryReference(node, context);
     inspectEventDataFactoryBinding(node, context);
     if (
-      ts.isObjectLiteralExpression(node) &&
+      isConstructionExpression(node, bindings, typeChecker, sourceRoot) &&
       isEventEnvelopeConstruction(node, typeChecker, sourceRoot, canonicalTypes) &&
       !isApprovedEnvelopeConstruction(node, relativePath, typeChecker, sourceRoot)
     )
@@ -588,7 +655,7 @@ function inspectPublishingOwnership(context) {
         diagnostics,
       );
     if (
-      ts.isObjectLiteralExpression(node) &&
+      isConstructionExpression(node, bindings, typeChecker, sourceRoot) &&
       publishingInfrastructureModules.has(moduleName) &&
       isBoundedEventDataConstruction(node, typeChecker, sourceRoot, manifests, canonicalTypes)
     )
@@ -991,6 +1058,16 @@ function isApprovedEnvelopeConstruction(node, relativePath, typeChecker, sourceR
   return false;
 }
 
+function isConstructionExpression(node, bindings, typeChecker, sourceRoot) {
+  return (
+    ts.isObjectLiteralExpression(node) ||
+    ts.isNewExpression(node) ||
+    (ts.isCallExpression(node) &&
+      resolveProtectedKind(node.expression, bindings, typeChecker, sourceRoot, node) ===
+        'object-assign')
+  );
+}
+
 function isKernelTestPath(relativePath) {
   return (
     /^test\/unit\/kernel\/.*\.test\.(?:cts|mts|tsx?)$/u.test(relativePath) ||
@@ -1051,11 +1128,36 @@ function isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, canoni
   );
 }
 
+function isProcessorDefinitionClass(node, typeChecker, canonicalTypes) {
+  const symbol = node.name === undefined ? undefined : typeChecker.getSymbolAtLocation(node.name);
+  const instanceType =
+    symbol === undefined
+      ? typeChecker.getTypeAtLocation(node).getConstructSignatures()[0]?.getReturnType()
+      : typeChecker.getDeclaredTypeOfSymbol(symbol);
+  if (instanceType === undefined) return false;
+  return ['processor-definition', 'batch-processor-definition'].some((kind) =>
+    isTypeAssignableToCanonicalType(instanceType, kind, typeChecker, canonicalTypes),
+  );
+}
+
 function isAssignableToCanonicalType(node, kind, typeChecker, canonicalTypes) {
   const sourceType = typeChecker.getTypeAtLocation(node);
+  return isTypeAssignableToCanonicalType(sourceType, kind, typeChecker, canonicalTypes);
+}
+
+function isTypeAssignableToCanonicalType(sourceType, kind, typeChecker, canonicalTypes) {
+  if (isUnprovableCompatibilityType(sourceType)) return false;
   for (const targetType of canonicalTypes.get(kind) ?? [])
-    if (typeChecker.isTypeAssignableTo(sourceType, targetType)) return true;
+    if (
+      !isUnprovableCompatibilityType(targetType) &&
+      typeChecker.isTypeAssignableTo(sourceType, targetType)
+    )
+      return true;
   return false;
+}
+
+function isUnprovableCompatibilityType(type) {
+  return (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never)) !== 0;
 }
 
 function boundedEventOwnerForType(type, typeChecker, sourceRoot, manifests, seen = new Set()) {
@@ -1434,6 +1536,7 @@ function resolveSymbol(symbol, typeChecker, seen = new Set()) {
 
 function protectedSymbolKind(symbol, sourceRoot) {
   if (symbol === undefined) return undefined;
+  if (isCanonicalObjectAssignSymbol(symbol)) return 'object-assign';
   for (const declaration of symbol.declarations ?? []) {
     const path = normalizeSourcePath(declaration.getSourceFile().fileName, sourceRoot);
     const name = symbol.name;
@@ -1478,6 +1581,19 @@ function protectedSymbolKind(symbol, sourceRoot) {
       return 'event-journal';
   }
   return undefined;
+}
+
+function isCanonicalObjectAssignSymbol(symbol) {
+  if (symbol.name !== 'assign') return false;
+  return (symbol.declarations ?? []).some(
+    (declaration) =>
+      ts.isMethodSignature(declaration) &&
+      ts.isInterfaceDeclaration(declaration.parent) &&
+      declaration.parent.name.text === 'ObjectConstructor' &&
+      /\/typescript\/lib\/lib\.es2015\.core\.d\.ts$/u.test(
+        normalizePath(declaration.getSourceFile().fileName),
+      ),
+  );
 }
 
 function pathMatches(path, suffix) {
