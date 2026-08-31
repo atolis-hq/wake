@@ -12,6 +12,7 @@ import {
   type EventProcessorHostRun,
   type ProcessorRunSerialiser,
 } from '@atolis-hq/eventing';
+import { createInMemoryProcessorRunSerialiser } from '@atolis-hq/eventing/memory';
 import { activityProjectionDefinitions } from '../activities/index.js';
 import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
 import { conversationProjection } from '../conversations/index.js';
@@ -22,7 +23,6 @@ import {
   workflowDefinitionsProjection,
   workflowsByWorkItemProjection,
 } from '../orchestration/index.js';
-import { createInMemoryProcessorRunSerialiser } from '../persistence/index.js';
 import {
   resourceCorrelationProjection,
   resourceProjection,

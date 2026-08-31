@@ -8,13 +8,13 @@ import {
   type EventEnvelope,
   type StreamRef,
 } from '@atolis-hq/eventing';
-import { expect, it, vi } from 'vitest';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   createInMemoryProcessorRunSerialiser,
-} from '../../../src/persistence/index.js';
-import { FakeClock } from '../../../test/e2e/support/world.js';
+} from '@atolis-hq/eventing/memory';
+import { expect, it, vi } from 'vitest';
+import { FakeClock } from './support/fake-clock.js';
 
 it('requires an explicit run serialiser at construction', () => {
   expect(BatchProcessorHost).toBeTypeOf('function');

@@ -1,15 +1,20 @@
-import { createEventData, WrongExpectedSequenceError, type EventData } from '@atolis-hq/eventing';
+import {
+  createEventData,
+  WrongExpectedSequenceError,
+  type EventData,
+  type EventingClock,
+  type StreamRef,
+} from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type Clock, type EntityRef } from '../../../src/kernel/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 
-class FixedClock implements Clock {
+class FixedClock implements EventingClock {
   now(): Date {
     return new Date('2026-07-30T12:30:00.000Z');
   }
 }
 
-const stream: EntityRef<'test', 'journal'> = { kind: 'test', id: 'journal' };
+const stream: StreamRef<'test', 'journal'> = { kind: 'test', id: 'journal' };
 
 function event(
   eventId: string,
@@ -75,7 +80,7 @@ describe('in-memory event journal', () => {
 
   it('reads a logical stream in sequence order', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
-    const other: EntityRef<'test', 'other'> = { kind: 'test', id: 'other' };
+    const other: StreamRef<'test', 'other'> = { kind: 'test', id: 'other' };
     await journal.appendToStream(stream, 0, [event('evt-1')]);
     await journal.appendToStream(other, 0, [
       createEventData({ ...event('evt-2'), eventId: 'evt-2' }),
@@ -130,7 +135,7 @@ describe('in-memory event journal', () => {
 
   it('treats event identity as opaque producer data across streams', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
-    const other: EntityRef<'test', 'other'> = { kind: 'test', id: 'other' };
+    const other: StreamRef<'test', 'other'> = { kind: 'test', id: 'other' };
     const draft = event('evt-1');
     await journal.appendToStream(stream, 0, [draft]);
 
@@ -154,7 +159,7 @@ describe('in-memory event journal', () => {
 
   it('uses the append stream as the authoritative stream for every event', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
-    const other: EntityRef<'test', 'other'> = { kind: 'test', id: 'other' };
+    const other: StreamRef<'test', 'other'> = { kind: 'test', id: 'other' };
     const draft = createEventData({ ...event('evt-2'), eventId: 'evt-2' });
 
     await journal.appendToStream(other, 0, [draft]);

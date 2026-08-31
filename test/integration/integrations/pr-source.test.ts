@@ -2,6 +2,12 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import {} from '../../support/identities.js';
 
 import { EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
 import { createPullRequestService } from '../../../src/activities/index.js';
 import {
   InboundTranslator,
@@ -10,12 +16,6 @@ import {
   createGitHubPullRequestSource,
   type GitHubPullRequestSourceClient,
 } from '../../../src/integrations/github/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-  createInMemoryProcessorRunSerialiser,
-} from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,

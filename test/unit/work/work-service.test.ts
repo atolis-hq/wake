@@ -1,6 +1,6 @@
 import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService, workItemStream } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';

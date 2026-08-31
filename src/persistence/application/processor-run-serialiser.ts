@@ -3,25 +3,6 @@ import { join } from 'node:path';
 import { acquireFileLock } from '../filesystem/file-lock.js';
 import { assertWellFormedUtf16 } from '../filesystem/storage-name.js';
 
-export function createInMemoryProcessorRunSerialiser(): ProcessorRunSerialiser {
-  const tails = new Map<string, Promise<unknown>>();
-  return async <Value>(consumer: string, signal: AbortSignal, operation: () => Promise<Value>) => {
-    const prior = tails.get(consumer) ?? Promise.resolve();
-    const current = prior
-      .catch(() => undefined)
-      .then(async () => {
-        throwIfAborted(signal);
-        return operation();
-      });
-    tails.set(consumer, current);
-    try {
-      return await current;
-    } finally {
-      if (tails.get(consumer) === current) tails.delete(consumer);
-    }
-  };
-}
-
 export function createFileProcessorRunSerialiser(dataRoot: string): ProcessorRunSerialiser {
   let acquireTail: Promise<void> = Promise.resolve();
   const acquire = async (path: string) => {

@@ -1,6 +1,6 @@
 import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect } from 'vitest';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { resId, workId } from '../../support/identities.js';

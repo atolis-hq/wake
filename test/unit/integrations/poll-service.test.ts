@@ -1,7 +1,7 @@
 import { createEventData } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { PollService } from '../../../src/integrations/application/poll-service.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 it('commits a provider cursor only after its evidence is durable', async () => {

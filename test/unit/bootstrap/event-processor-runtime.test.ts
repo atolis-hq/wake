@@ -4,14 +4,14 @@ import {
   createEventData,
   defineEventProcessor,
 } from '@atolis-hq/eventing';
-import { expect, it } from 'vitest';
-import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
-import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   createInMemoryProcessorRunSerialiser,
-} from '../../../src/persistence/index.js';
+} from '@atolis-hq/eventing/memory';
+import { expect, it } from 'vitest';
+import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 
 const clock = { now: () => new Date('2026-08-30T00:00:00.000Z') };
 

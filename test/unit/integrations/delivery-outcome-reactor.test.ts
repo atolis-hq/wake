@@ -4,6 +4,12 @@ import {
   EventProcessorHost,
   type ProcessorRunSerialiser,
 } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { copyFile, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,14 +17,7 @@ import { expect, it } from 'vitest';
 import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
-import {
-  createInMemoryProcessorRunSerialiser,
-  encode,
-  FileProjectionStore,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
+import { encode, FileProjectionStore } from '../../../src/persistence/index.js';
 
 const clock = { now: () => new Date('2026-08-09T00:00:00.000Z') };
 const unitSerialiseRun = createInMemoryProcessorRunSerialiser();

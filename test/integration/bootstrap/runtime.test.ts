@@ -12,6 +12,11 @@ import {
   createEventData,
   eventId,
 } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,11 +57,6 @@ import {
   workflowInstanceStream,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import {
   ResourceCorrelationRole,
   resourceCapability,

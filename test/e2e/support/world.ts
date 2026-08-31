@@ -8,6 +8,12 @@ import {
   type EventProcessor,
 } from '@atolis-hq/eventing';
 import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
+import {
   ActivityRegistry,
   createPullRequestService,
   activationId as parseActivationId,
@@ -44,12 +50,6 @@ import {
   type WorkflowDefinitionConfig,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
-import {
-  createInMemoryProcessorRunSerialiser,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
   createResourceLookup,

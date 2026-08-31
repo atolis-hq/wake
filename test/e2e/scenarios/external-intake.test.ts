@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { createEventData, EventProcessorHost } from '@atolis-hq/eventing';
 import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
+import {
   BuiltInAdapterId,
   InboundTranslator,
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
-import {
-  createInMemoryProcessorRunSerialiser,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-} from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';

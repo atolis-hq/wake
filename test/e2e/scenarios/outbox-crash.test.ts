@@ -1,3 +1,4 @@
+import { InMemoryCheckpointStore, InMemoryProjectionStore } from '@atolis-hq/eventing/memory';
 import { rm } from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -11,10 +12,6 @@ import {
   type ReconciliationResult,
 } from '../../../src/integrations/index.js';
 import { OrchestrationEventType } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import {
   createComposedMergeRoot,
   prepareComposedSafeMerge,

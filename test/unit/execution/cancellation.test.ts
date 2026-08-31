@@ -7,6 +7,7 @@ import {
   WrongExpectedSequenceError,
   type EventJournal,
 } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { activationId, activityName, ActivityRegistry } from '../../../src/activities/index.js';
 import {
   createExecutionService,
@@ -16,7 +17,6 @@ import {
   RunStatus,
 } from '../../../src/execution/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 import { executionFixture } from './support.js';
 

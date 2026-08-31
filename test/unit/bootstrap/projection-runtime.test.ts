@@ -11,6 +11,12 @@ import {
   type ProjectionDefinition,
   type ProjectionStore,
 } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
 import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
 import {
   createRuntimeProjectionSubscriptions as composeRuntimeProjectionSubscriptions,
@@ -23,10 +29,6 @@ import {
   FileCheckpointStore,
   FileEventJournal,
   FileProjectionStore,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-  createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 

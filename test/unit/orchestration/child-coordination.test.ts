@@ -1,4 +1,5 @@
 import { correlationId, type CommandContext, type EventJournal } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activationId, activityName, ActivityRegistry } from '../../../src/activities/index.js';
@@ -16,7 +17,6 @@ import {
   type GroupBudgetExhaustedView,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';

@@ -2,7 +2,8 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "@atolis-hq/eventing": ["./packages/eventing/src/index.ts"]
+      "@atolis-hq/eventing": ["./packages/eventing/src/index.ts"],
+      "@atolis-hq/eventing/memory": ["./packages/eventing/src/memory.ts"]
     },
     "types": ["node"]
   }

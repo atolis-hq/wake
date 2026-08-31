@@ -8,12 +8,13 @@ import {
   type StreamRef,
 } from '@atolis-hq/eventing';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import {
-  createRelation,
-  type Brand,
-  type EntityRef,
-  type RelationDefinition,
-} from '../../../src/kernel/index.js';
+
+type Brand<Value, Name extends string> = Value & { readonly __brand: Name };
+
+interface EntityRef<Kind extends string = string, Id extends string = string> {
+  readonly kind: Kind;
+  readonly id: Id;
+}
 
 function workDataInput() {
   return {
@@ -165,42 +166,5 @@ describe('event data validation', () => {
         },
       }),
     ).toThrow(`${metadata} id must not be empty`);
-  });
-});
-
-describe('entity relations', () => {
-  const definition = {
-    owner: 'work',
-    name: 'work.related-to',
-    fromKind: 'work-item',
-    toKind: 'work-item',
-  } satisfies RelationDefinition<'work.related-to'>;
-
-  it('creates a registered relation with matching entity kinds', () => {
-    expect(
-      createRelation(definition, {
-        relationId: 'rel-1',
-        from: { kind: 'work-item', id: 'work-1' },
-        to: { kind: 'work-item', id: 'work-2' },
-        establishedByEventId: 'evt-1',
-      }),
-    ).toEqual({
-      relationId: 'rel-1',
-      definition,
-      from: { kind: 'work-item', id: 'work-1' },
-      to: { kind: 'work-item', id: 'work-2' },
-      establishedByEventId: 'evt-1',
-    });
-  });
-
-  it('rejects entity kinds that do not match the registered definition', () => {
-    expect(() =>
-      createRelation(definition, {
-        relationId: 'rel-1',
-        from: { kind: 'resource', id: 'resource-1' },
-        to: { kind: 'work-item', id: 'work-2' },
-        establishedByEventId: 'evt-1',
-      }),
-    ).toThrow('Relation work.related-to requires resource to be work-item');
   });
 });

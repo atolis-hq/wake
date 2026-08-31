@@ -1,7 +1,7 @@
 import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
 import { conversationId, createConversationService } from '../../../src/conversations/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
 

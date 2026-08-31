@@ -1,4 +1,10 @@
 import { EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { createPullRequestService } from '../../../src/activities/index.js';
 import {
@@ -11,12 +17,6 @@ import {
   reconcileGitHubWakeLabels,
 } from '../../../src/integrations/github/index.js';
 import { PollService } from '../../../src/integrations/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-  createInMemoryProcessorRunSerialiser,
-} from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,

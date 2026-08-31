@@ -1,3 +1,4 @@
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
 import { activationId } from '../../../src/activities/index.js';
 import {
@@ -10,7 +11,6 @@ import {
   ExecutionEventType,
   runId,
 } from '../../../src/execution/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 const config = {

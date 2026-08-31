@@ -1,4 +1,5 @@
 import { correlationId, EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { createRunnerQuotaReporter } from '../../../src/bootstrap/runner-quota-reporter.js';
 import {
@@ -6,7 +7,6 @@ import {
   ControlStreamKind,
   createControlPlaneEventData,
 } from '../../../src/control-plane/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 
 it('preserves the generated command identity on durable runner quota pauses', async () => {

@@ -1,4 +1,5 @@
 import { correlationId, type EventEnvelope } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
 import {
   ActivityEventType,
@@ -12,7 +13,6 @@ import {
   TransitionTargetKind,
   type CompiledResourceTransition,
 } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { resourceCapability, resourceKind, resourceStream } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';

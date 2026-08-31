@@ -4,6 +4,11 @@ import {
   EventProcessorHost,
   type EventEnvelope,
 } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import {
@@ -25,11 +30,6 @@ import {
   workflowInstanceId,
   workflowInstanceStream,
 } from '../../../src/orchestration/index.js';
-import {
-  createInMemoryProcessorRunSerialiser,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-} from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
 

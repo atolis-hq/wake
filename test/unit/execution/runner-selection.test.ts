@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { workId } from '../../support/identities.js';
 
 import { createEventData, EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import {
   activationId,
   ActivityRegistry,
@@ -20,7 +21,6 @@ import {
   type RunView,
 } from '../../../src/execution/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {} from '../../../src/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 

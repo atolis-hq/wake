@@ -8,6 +8,11 @@ import {
   type EventProcessor,
   type EventProcessorHostRun,
 } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,10 +26,7 @@ import {
 } from '../../../src/control-plane/index.js';
 import {
   FileCheckpointStore,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
   createFileProcessorRunSerialiser,
-  createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
 
 interface LegacyProcessorHost {

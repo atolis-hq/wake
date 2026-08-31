@@ -9,14 +9,14 @@ import {
   type EventEnvelope,
   type StreamRef,
 } from '@atolis-hq/eventing';
-import { expect, it, vi } from 'vitest';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
   createInMemoryProcessorRunSerialiser,
-} from '../../../src/persistence/index.js';
-import { FakeClock } from '../../../test/e2e/support/world.js';
+} from '@atolis-hq/eventing/memory';
+import { expect, it, vi } from 'vitest';
+import { FakeClock } from './support/fake-clock.js';
 
 it('does not expose the legacy centralized projection runner', () => {
   expect(eventing).not.toHaveProperty('ProjectionRunner');

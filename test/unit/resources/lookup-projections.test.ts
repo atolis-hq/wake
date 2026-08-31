@@ -3,13 +3,13 @@ import {
   EventProcessorHost,
   ProjectionRebuilder,
 } from '@atolis-hq/eventing';
-import { describe, expect, it } from 'vitest';
 import {
   createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
+} from '@atolis-hq/eventing/memory';
+import { describe, expect, it } from 'vitest';
 import {
   externalKeyProjectionKey,
   resourcesByExternalKeyProjection,

@@ -9,6 +9,11 @@ import { FakeInboundTranslator } from '../../../src/integrations/fake/inbound-tr
 
 import type { CheckpointStore, EventJournal } from '@atolis-hq/eventing';
 import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
+import {
   conversationIdForWorkItem,
   createConversationService,
 } from '../../../src/conversations/index.js';
@@ -21,11 +26,6 @@ import {
 } from '../../../src/integrations/github/index.js';
 import { adapterId } from '../../../src/integrations/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
-import {
-  createInMemoryProcessorRunSerialiser,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-} from '../../../src/persistence/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,

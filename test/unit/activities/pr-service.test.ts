@@ -3,11 +3,11 @@ import { resourceCapability, resourceKind } from '../../../src/resources/index.j
 import { resId, workId } from '../../support/identities.js';
 
 import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import {
   createPullRequestService,
   decidePullRequestAuthority,
 } from '../../../src/activities/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';

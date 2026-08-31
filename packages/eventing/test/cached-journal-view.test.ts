@@ -5,9 +5,9 @@ import {
   JOURNAL_CHANGE_FALLBACK_MS,
   type StreamRef,
 } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
-import { FakeClock } from '../../../test/e2e/support/world.js';
+import { FakeClock } from './support/fake-clock.js';
 
 const stream: StreamRef<'counter', 'one'> = { kind: 'counter', id: 'one' };
 

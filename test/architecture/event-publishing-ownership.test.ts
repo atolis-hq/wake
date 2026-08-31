@@ -169,6 +169,10 @@ describe('event publishing ownership', () => {
         "import type { EventEnvelope } from '@atolis-hq/eventing';",
         `export const envelope: EventEnvelope = ${envelopeLiteral()};`,
       ].join('\n'),
+      'packages/eventing/src/memory/in-memory-event-journal.ts': [
+        "import type { EventEnvelope } from '../contracts/events.js';",
+        `export const envelope: EventEnvelope = ${envelopeLiteral()};`,
+      ].join('\n'),
       'src/test/support/event-envelope.ts': [
         "import { createEventData, type EventEnvelope } from '@atolis-hq/eventing';",
         `export const envelope: EventEnvelope = { ...${envelopeLiteral()}, event: createEventData(${eventInput()}) };`,

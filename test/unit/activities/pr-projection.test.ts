@@ -8,15 +8,15 @@ import {
   type EventEnvelope,
 } from '@atolis-hq/eventing';
 import {
-  activityProjectionDefinitions,
-  pullRequestProjection,
-} from '../../../src/activities/index.js';
-import {
   createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
+} from '@atolis-hq/eventing/memory';
+import {
+  activityProjectionDefinitions,
+  pullRequestProjection,
+} from '../../../src/activities/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 

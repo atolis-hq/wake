@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resId } from '../../support/identities.js';
 
 import { eventId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { MergeMethod } from '../../../src/activities/index.js';
 import { DeliveryService } from '../../../src/integrations/delivery/application/delivery-service.js';
 import type { DeliveryIntentView } from '../../../src/integrations/delivery/contracts/views.js';
@@ -12,7 +13,6 @@ import {
   DeliveryResultKind,
   DeliveryState,
 } from '../../../src/integrations/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {} from '../../../src/resources/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 

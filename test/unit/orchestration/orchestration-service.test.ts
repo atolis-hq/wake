@@ -1,6 +1,12 @@
 import { readFile } from 'node:fs/promises';
 
 import { correlationId, createProjectionProcessor, EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
@@ -14,12 +20,6 @@ import {
   createOrchestrationService,
   workflowDefinitionsProjection,
 } from '../../../src/orchestration/index.js';
-import {
-  createInMemoryProcessorRunSerialiser,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';

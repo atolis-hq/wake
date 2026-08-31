@@ -1,11 +1,11 @@
 import { EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
 import { createStatusPublishActivity } from '../../../src/bootstrap/status-publish-activity.js';
 import {
   DeliveryIntentEventType,
   createDeliveryIntentEventData,
 } from '../../../src/integrations/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { resourceKind, resourceStream } from '../../../src/resources/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { resId, workId } from '../../support/identities.js';

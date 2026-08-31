@@ -1,4 +1,5 @@
 import { type EventJournal } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { z } from 'zod';
 import { activationId } from '../../../src/activities/contracts/identifiers.js';
@@ -27,7 +28,6 @@ import {
   orchestrationGroupId,
   workflowInstanceId,
 } from '../../../src/orchestration/contracts/identifiers.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { BuiltInResourceKind } from '../../../src/resources/index.js';
 import {} from '../../../src/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';

@@ -7,6 +7,7 @@ import {
   type EventEnvelope,
   type ProcessorRunSerialiser,
 } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +16,6 @@ import { activationSchedulerSubscriptionConsumer } from '../../../src/control-pl
 import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
-  InMemoryEventJournal,
   acquireFileLock,
   createFileProcessorRunSerialiser,
   encodeProcessorConsumer,

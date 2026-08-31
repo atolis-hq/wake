@@ -3,6 +3,7 @@ import { expect, it } from 'vitest';
 import { workId } from '../../support/identities.js';
 import { configureIntakeRouting } from '../support/intake-routing.js';
 
+import { createInMemoryProcessorRunSerialiser } from '@atolis-hq/eventing/memory';
 import {
   BuiltInAdapterId,
   githubReviewObservation,
@@ -10,7 +11,6 @@ import {
   integrationStream,
 } from '../../../src/integrations/github/index.js';
 import type { WorkflowRouter } from '../../../src/integrations/index.js';
-import { createInMemoryProcessorRunSerialiser } from '../../../src/persistence/index.js';
 import {} from '../../../src/work/index.js';
 import { TestWorld } from '../support/world.js';
 

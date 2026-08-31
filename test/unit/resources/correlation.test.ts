@@ -1,5 +1,5 @@
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import type { resourceId } from '../../../src/resources/index.js';
 import { resourceCapability, resourceKind, resourceStream } from '../../../src/resources/index.js';
 import {} from '../../../src/work/index.js';

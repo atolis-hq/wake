@@ -1,4 +1,9 @@
 import { createEventData, EventActorKind, EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import { describe, expect, it, vi } from 'vitest';
 import {
   activationId,
@@ -10,11 +15,6 @@ import {
 } from '../../../src/activities/index.js';
 import { ArtifactRegistrationReactor } from '../../../src/integrations/index.js';
 import { workflowInstanceId, workflowInstanceStream } from '../../../src/orchestration/index.js';
-import {
-  createInMemoryProcessorRunSerialiser,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-} from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';

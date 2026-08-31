@@ -4,6 +4,12 @@ import {
   type EventJournal,
   type ProjectionStore,
 } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,12 +31,6 @@ import {
   workflowName,
   type WorkflowInstanceId,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-  createInMemoryProcessorRunSerialiser,
-} from '../../../src/persistence/index.js';
 import type { ResourceCapability, resourceId } from '../../../src/resources/index.js';
 import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { type WorkItemId } from '../../../src/work/index.js';

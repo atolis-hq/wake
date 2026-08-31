@@ -3,6 +3,11 @@ import { z } from 'zod';
 
 import { correlationId, type EventEnvelope } from '@atolis-hq/eventing';
 import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
+import {
   ActivityRegistry,
   activityName,
   agentActivityOutcomeKinds,
@@ -24,11 +29,6 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { workProjection } from '../../../src/work/index.js';
 import { resId, workId } from '../../support/identities.js';

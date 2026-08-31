@@ -6,6 +6,7 @@ import {
   EventSourceKind,
   type EventJournal,
 } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import {
   ExecutionEventType,
@@ -15,7 +16,6 @@ import {
   RunStatus,
 } from '../../../src/execution/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { executionFixture } from './support.js';
 
 it('exports RecoveryService for active Run reconciliation', () => {

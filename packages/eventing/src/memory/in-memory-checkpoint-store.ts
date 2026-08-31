@@ -1,4 +1,4 @@
-import type { CheckpointStore } from '@atolis-hq/eventing';
+import type { CheckpointStore } from '../store/checkpoint-store.js';
 
 export class InMemoryCheckpointStore implements CheckpointStore {
   private readonly values = new Map<string, number>();

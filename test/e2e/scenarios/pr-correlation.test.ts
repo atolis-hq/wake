@@ -6,6 +6,12 @@ import {
   createEventData,
   createProjectionProcessor,
 } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
 import { createPullRequestService, pullRequestProjection } from '../../../src/activities/index.js';
 import {
   BuiltInAdapterId,
@@ -13,12 +19,6 @@ import {
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-  createInMemoryProcessorRunSerialiser,
-} from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,

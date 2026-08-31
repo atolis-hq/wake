@@ -1,4 +1,5 @@
 import { EventProcessorHost, correlationId, createEventData } from '@atolis-hq/eventing';
+import { createInMemoryProcessorRunSerialiser } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -27,7 +28,6 @@ import {
   workflowInstanceStream,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import { createInMemoryProcessorRunSerialiser } from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
 import { TestWorld } from '../support/world.js';

@@ -1,4 +1,10 @@
 import { EventActorKind, correlationId } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,12 +23,6 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-  createInMemoryProcessorRunSerialiser,
-} from '../../../src/persistence/index.js';
 import { workId } from '../../support/identities.js';
 
 const scenario = { id: 'E2E-CONTROL-002' } as const;

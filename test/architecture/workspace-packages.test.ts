@@ -36,6 +36,15 @@ type PackageLock = {
 const readJson = async <Value>(path: string): Promise<Value> =>
   JSON.parse(await readFile(new URL(`../../${path}`, import.meta.url), 'utf8')) as Value;
 
+function expectEventingSourcePaths(sourceTsConfig: TsConfig): void {
+  expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing']).toEqual([
+    './packages/eventing/src/index.ts',
+  ]);
+  expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing/memory']).toEqual([
+    './packages/eventing/src/memory.ts',
+  ]);
+}
+
 describe('eventing workspace packages', () => {
   it('declares public, exact-versioned eventing package relationships', async () => {
     const [
@@ -73,8 +82,7 @@ describe('eventing workspace packages', () => {
     });
     expect(eventing.files).toEqual(expect.arrayContaining(['dist', 'README.md', 'LICENSE']));
     expect(filesystem.files).toEqual(expect.arrayContaining(['dist', 'README.md', 'LICENSE']));
-    expect(eventing.exports).toHaveProperty('.');
-    expect(eventing.exports).not.toHaveProperty('./memory');
+    expect(eventing.exports).toHaveProperty('./memory');
     expect(filesystem.exports).toHaveProperty('.');
     expect(eventing.scripts?.build).toBe('tsc --build tsconfig.json');
     expect(eventing.scripts?.['typecheck:test']).toBe('tsc --noEmit --project tsconfig.test.json');
@@ -97,9 +105,7 @@ describe('eventing workspace packages', () => {
     expect(filesystemTsConfig.references).toEqual([{ path: '../eventing' }]);
     expect(eventingTestTsConfig.compilerOptions?.noEmit).toBe(true);
     expect(eventingTestTsConfig.include).toEqual(['src/**/*.ts', 'test/**/*.ts']);
-    expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing']).toEqual([
-      './packages/eventing/src/index.ts',
-    ]);
+    expectEventingSourcePaths(sourceTsConfig);
     expect(lockfile.packages['node_modules/@atolis-hq/eventing']).toEqual({
       resolved: 'packages/eventing',
       link: true,
@@ -134,10 +140,15 @@ describe('eventing workspace packages', () => {
         types: './dist/index.d.ts',
         default: './dist/index.js',
       },
+      './memory': {
+        types: './dist/memory.d.ts',
+        default: './dist/memory.js',
+      },
     });
     expect(aliases).toContain("'./packages'");
     expect(aliases).toContain("'src/index.ts'");
     expect(sourceResolutionCheck).toContain('import.meta.resolve(manifest.name)');
+    expect(sourceResolutionCheck).toContain("import('@atolis-hq/eventing/memory')");
     for (const config of configs) expect(config).toContain('workspaceSourceAliases');
   });
 });

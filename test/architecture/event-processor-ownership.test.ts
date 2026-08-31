@@ -59,11 +59,10 @@ async function fixture(files: Readonly<Record<string, string>>): Promise<string>
     'packages/eventing/src/projections/projection-processor.ts':
       'export function createProjectionProcessor(value: unknown) { return value; }',
     'src/persistence/index.ts': [
-      "export { createFileProcessorRunSerialiser, createInMemoryProcessorRunSerialiser } from './application/processor-run-serialiser.js';",
+      "export { createFileProcessorRunSerialiser } from './application/processor-run-serialiser.js';",
     ].join('\n'),
     'src/persistence/application/processor-run-serialiser.ts': [
       'export function createFileProcessorRunSerialiser(value: unknown) { return value; }',
-      'export function createInMemoryProcessorRunSerialiser(value: unknown) { return value; }',
     ].join('\n'),
     'src/bootstrap/index.ts':
       "export { EventProcessorRuntime } from './event-processor-runtime.js';",

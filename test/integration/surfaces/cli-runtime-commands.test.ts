@@ -5,9 +5,9 @@ import {
   correlationId,
   eventId,
 } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it, vi } from 'vitest';
 import { createSurfaceApplications, type CompositionRoot } from '../../../src/bootstrap/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { runWakeCommand, type WakeCliApplications } from '../../../src/surfaces/cli/main.js';
 
 describe('Wake target CLI runtime commands', () => {

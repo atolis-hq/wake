@@ -1,12 +1,12 @@
 import { expect, it } from 'vitest';
 
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import {
   ControlEventType,
   controlPlaneStream,
   createControlPlaneEventData,
   createRunnerControlService,
 } from '../../../src/control-plane/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 
 it('writes durable manual pause and explicit resume facts for a configured runner', async () => {

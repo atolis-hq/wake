@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { workId } from '../../support/identities.js';
 
 import { correlationId, type CommandContext } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { ActivityRegistry, activityName } from '../../../src/activities/index.js';
 import {
   OrchestrationEventType,
@@ -17,7 +18,6 @@ import {
   workflowName,
   type OrchestrationService,
 } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 
 const occurredAt = '2026-07-30T12:00:00.000Z';

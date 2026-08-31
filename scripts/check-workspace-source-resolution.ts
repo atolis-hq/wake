@@ -22,6 +22,18 @@ for (const entry of readdirSync(packagesDirectory, { withFileTypes: true })) {
   packageCount += 1;
 }
 
+const memoryEntry = join(repoRoot, 'packages', 'eventing', 'src', 'memory.ts');
+const resolvedMemoryEntry = fileURLToPath(import.meta.resolve('@atolis-hq/eventing/memory'));
+if (resolve(resolvedMemoryEntry) !== resolve(memoryEntry)) {
+  throw new Error(
+    `@atolis-hq/eventing/memory resolved to ${resolvedMemoryEntry}; expected ${memoryEntry}`,
+  );
+}
+const memory = await import('@atolis-hq/eventing/memory');
+if (typeof memory.InMemoryEventJournal !== 'function') {
+  throw new Error('@atolis-hq/eventing/memory did not export InMemoryEventJournal');
+}
+
 const { main } = await import('../src/main.js');
 if (typeof main !== 'function') throw new Error('Wake source entry did not export main');
 

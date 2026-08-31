@@ -5,6 +5,11 @@ import {
   type CheckpointStore,
   type CommandContext,
 } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { ActivityEventType } from '../../../src/activities/index.js';
 import { type EntityRef } from '../../../src/kernel/index.js';
@@ -17,11 +22,6 @@ import {
   type CompiledResourceTransition,
   type ResourceTransitionEvidence,
 } from '../../../src/orchestration/index.js';
-import {
-  createInMemoryProcessorRunSerialiser,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-} from '../../../src/persistence/index.js';
 import { workItemId } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';

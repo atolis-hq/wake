@@ -1,4 +1,9 @@
 import { correlationId } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { ActivityRegistry, agentActivityDefinition } from '../../../src/activities/index.js';
 import {
@@ -16,11 +21,6 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import { workId } from '../../support/identities.js';
 import { FakeClock } from '../support/world.js';
 

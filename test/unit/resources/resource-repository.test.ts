@@ -1,6 +1,6 @@
 import { createEventData } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {
   ResourceEventType,
   ResourceRepository,

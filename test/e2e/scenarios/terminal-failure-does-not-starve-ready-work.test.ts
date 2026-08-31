@@ -4,6 +4,11 @@ import {
   correlationId,
   createEventData,
 } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
@@ -18,11 +23,6 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 import { defineScenario } from '../support/scenario.js';

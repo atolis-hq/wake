@@ -1,4 +1,9 @@
 import { correlationId } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
@@ -18,11 +23,6 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import {
   ResourceCorrelationRole,
   resourceCapability,

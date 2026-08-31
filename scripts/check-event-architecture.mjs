@@ -1116,7 +1116,7 @@ function inspectPublishingOwnership(context) {
         node,
         sourceRoot,
         'event-envelope-construction-owner',
-        'journal envelope metadata may only be constructed by Persistence journal adapters',
+        'journal envelope metadata may only be constructed by approved journal adapters',
         diagnostics,
       );
     if (
@@ -1514,6 +1514,7 @@ function isApprovedEnvelopeConstructionPath(relativePath) {
   if (pathMatches(relativePath, 'test/support/event-envelope.ts')) return true;
   return (
     /^persistence\/(?:filesystem|memory)\/[^/]*event-journal\.ts$/u.test(relativePath) ||
+    /^\.\.\/packages\/eventing\/src\/memory\/[^/]*event-journal\.ts$/u.test(relativePath) ||
     pathMatches(relativePath, 'persistence/filesystem/event-record-codec.ts')
   );
 }

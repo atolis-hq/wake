@@ -6,6 +6,11 @@ import {
   type CommandContext,
   type EventJournal,
 } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
@@ -25,11 +30,6 @@ import {
   isWorkflowInstanceStream,
   type OrchestrationService,
 } from '../../../src/orchestration/index.js';
-import {
-  createInMemoryProcessorRunSerialiser,
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-} from '../../../src/persistence/index.js';
 import { createWorkService, type WorkItemId } from '../../../src/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';

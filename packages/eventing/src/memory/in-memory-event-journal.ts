@@ -1,25 +1,22 @@
-import type {
-  EventData,
-  EventEnvelope,
-  EventJournal,
-  JournalChangeSignal,
-} from '@atolis-hq/eventing';
-import { InProcessJournalChangeSignal, WrongExpectedSequenceError } from '@atolis-hq/eventing';
-import type { Clock, EntityRef } from '../../kernel/index.js';
+import type { EventData, EventEnvelope, StreamRef } from '../contracts/events.js';
+import type { EventingClock } from '../runtime/clock.js';
+import { WrongExpectedSequenceError, type EventJournal } from '../store/event-journal.js';
+import { InProcessJournalChangeSignal } from '../subscriptions/in-process-journal-change-signal.js';
+import type { JournalChangeSignal } from '../subscriptions/journal-change-signal.js';
 
 export class InMemoryEventJournal implements EventJournal {
   private readonly streams = new Map<string, EventEnvelope[]>();
   private readonly events: EventEnvelope[] = [];
   private readonly changeSignalSource = new InProcessJournalChangeSignal();
 
-  constructor(private readonly clock: Clock) {}
+  constructor(private readonly clock: EventingClock) {}
 
   get changeSignal(): JournalChangeSignal {
     return this.changeSignalSource;
   }
 
   async appendToStream(
-    stream: EntityRef,
+    stream: StreamRef,
     expectedSequence: number,
     events: readonly EventData[],
   ): Promise<readonly EventEnvelope[]> {
@@ -50,7 +47,7 @@ export class InMemoryEventJournal implements EventJournal {
     return appended;
   }
 
-  async readStream(stream: EntityRef): Promise<readonly EventEnvelope[]> {
+  async readStream(stream: StreamRef): Promise<readonly EventEnvelope[]> {
     return [...(this.streams.get(streamKey(stream)) ?? [])];
   }
 
@@ -92,7 +89,7 @@ export class InMemoryEventJournal implements EventJournal {
   }
 }
 
-function streamKey(stream: EntityRef): string {
+function streamKey(stream: StreamRef): string {
   return `${stream.kind}:${stream.id}`;
 }
 
