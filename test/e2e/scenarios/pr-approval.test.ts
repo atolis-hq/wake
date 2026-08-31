@@ -19,14 +19,16 @@ it(`${scenario.id} emits one exact-revision provider-neutral approval intent`, a
 
   expect(await world.events('pr.approve-requested')).toEqual([
     expect.objectContaining({
-      eventId: expect.any(String),
-      source: { kind: 'internal', id: 'activities-pr' },
-      payload: expect.objectContaining({
-        activationId: expect.any(String),
-        resourceId: setup.primaryResourceId,
-        revision: 'revision-a',
-        body: 'Reviewed',
-        idempotencyKey: expect.any(String),
+      event: expect.objectContaining({
+        eventId: expect.any(String),
+        source: { kind: 'internal', id: 'activities-pr' },
+        payload: expect.objectContaining({
+          activationId: expect.any(String),
+          resourceId: setup.primaryResourceId,
+          revision: 'revision-a',
+          body: 'Reviewed',
+          idempotencyKey: expect.any(String),
+        }),
       }),
     }),
   ]);

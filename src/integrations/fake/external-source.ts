@@ -9,7 +9,6 @@ import {
 } from '../../kernel/index.js';
 import type { AdapterId } from '../contracts/identifiers.js';
 import type { ExternalEventSource, ProviderEventData } from '../contracts/intake.js';
-import { integrationStream } from '../contracts/streams.js';
 
 export const FakeEventType = {
   WorkObserved: 'fake.work-observed',
@@ -58,7 +57,6 @@ export class FakeExternalEventSource implements ExternalEventSource {
         causationId: causationId(`fake:${this.adapter}:${payload.key}`),
         actor: { kind: EventActorKind.Integration, id: this.adapter },
         source: { kind: EventSourceKind.Adapter, id: this.adapter },
-        stream: integrationStream(this.adapter),
       };
       return [
         { ...metadata, eventId: eventId(identity), eventType: FakeEventType.WorkObserved, payload },

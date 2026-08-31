@@ -16,13 +16,15 @@ it(`${mergeScenario.id} emits the configured method and remains waiting for deli
 
   expect(await world.events('pr.merge-requested')).toEqual([
     expect.objectContaining({
-      source: { kind: 'internal', id: 'activities-pr' },
-      payload: expect.objectContaining({
-        activationId: expect.any(String),
-        resourceId: setup.primaryResourceId,
-        revision: 'revision-a',
-        method: 'squash',
-        idempotencyKey: expect.any(String),
+      event: expect.objectContaining({
+        source: { kind: 'internal', id: 'activities-pr' },
+        payload: expect.objectContaining({
+          activationId: expect.any(String),
+          resourceId: setup.primaryResourceId,
+          revision: 'revision-a',
+          method: 'squash',
+          idempotencyKey: expect.any(String),
+        }),
       }),
     }),
   ]);
