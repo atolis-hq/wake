@@ -403,9 +403,16 @@ async function acquireFileLockWithWait(path: string, options: WithFileLockOption
   do {
     const lock = await acquireFileLock(path, options);
     if (lock.acquired || Date.now() >= deadline) return lock;
-    await delay(Math.min(retryIntervalMs, Math.max(0, deadline - Date.now())));
+    await delay(nextRetryDelay(retryIntervalMs, deadline - Date.now()));
   } while (Date.now() < deadline);
   return acquireFileLock(path, options);
+}
+
+function nextRetryDelay(retryIntervalMs: number, remainingMs: number): number {
+  if (retryIntervalMs <= 0 || remainingMs <= 0) return 0;
+  const maximumDelay = Math.max(1, Math.floor(retryIntervalMs));
+  const jitter = Number.parseInt(randomUUID().slice(0, 2), 16) % maximumDelay;
+  return Math.min(maximumDelay + jitter, remainingMs);
 }
 
 function delay(milliseconds: number): Promise<void> {

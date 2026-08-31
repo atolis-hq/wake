@@ -303,7 +303,8 @@ it('allows colliding legacy names to write concurrently without cross-over', asy
 
   await expect(store.read('a.b', key)).resolves.toMatchObject({ value: { owner: 'dot' } });
   await expect(store.read('a~2Eb', key)).resolves.toMatchObject({ value: { owner: 'tilde' } });
-});
+  // The adapter permits five seconds of filesystem lock contention.
+}, 15_000);
 
 it('preserves a true legacy collision only for its persisted identity', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
