@@ -364,7 +364,7 @@ function bindingNameContains(nameNode, name) {
 
 function collectPackageLoaderBindings(source) {
   const aliases = collectConstAliasDeclarations(source);
-  const { factories, namespaces } = collectCreateRequireImports(source);
+  const { factories, namespaces } = collectCreateRequireBindings(source);
   const loaders = new Set();
   const packageLoaders = { factories, namespaces, loaders };
 
@@ -541,7 +541,7 @@ function nearestLexicalBinding(identifier) {
   return undefined;
 }
 
-function collectCreateRequireImports(source) {
+function collectCreateRequireBindings(source) {
   const factories = new Set();
   const namespaces = new Set();
   for (const statement of source.statements) {
@@ -565,7 +565,49 @@ function collectCreateRequireImports(source) {
       }
     }
   }
+
+  function visit(node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer !== undefined &&
+      isConstVariableDeclaration(node) &&
+      isNodeModuleSpecifier(literalAwaitedImportSpecifier(node.initializer))
+    ) {
+      collectDynamicCreateRequireBindings(node, factories, namespaces);
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(source);
   return { factories, namespaces };
+}
+
+function collectDynamicCreateRequireBindings(declaration, factories, namespaces) {
+  if (ts.isIdentifier(declaration.name)) {
+    const binding = nearestLexicalBinding(declaration.name);
+    if (binding !== undefined) namespaces.add(binding);
+    return;
+  }
+  if (!ts.isObjectBindingPattern(declaration.name)) return;
+  for (const element of declaration.name.elements) {
+    if (!ts.isBindingElement(element) || !ts.isIdentifier(element.name)) continue;
+    if (bindingElementPropertyName(element) !== 'createRequire') continue;
+    const binding = nearestLexicalBinding(element.name);
+    if (binding !== undefined) factories.add(binding);
+  }
+}
+
+function literalAwaitedImportSpecifier(initializer) {
+  const awaited = unwrapPackageLoaderExpression(initializer);
+  if (!ts.isAwaitExpression(awaited)) return undefined;
+  const importExpression = unwrapPackageLoaderExpression(awaited.expression);
+  if (
+    !ts.isCallExpression(importExpression) ||
+    importExpression.expression.kind !== ts.SyntaxKind.ImportKeyword
+  ) {
+    return undefined;
+  }
+  return literalModuleSpecifier(importExpression.arguments[0]);
 }
 
 function isNodeModuleSpecifier(specifier) {
