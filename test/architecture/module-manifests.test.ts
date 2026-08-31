@@ -255,6 +255,73 @@ describe('module manifests', () => {
     }
   });
 
+  it('follows immutable package loader aliases without treating mutable or shadowed values as loaders', async () => {
+    const root = await workspaceBoundaryFixture({
+      'src/bootstrap/index.ts': [
+        "import { createRequire } from 'node:module';",
+        'const packageRequire = createRequire(import.meta.url);',
+        'const filesystemLoader = packageRequire;',
+        "export const loadFilesystem = () => filesystemLoader('@atolis-hq/eventing-filesystem');",
+      ].join('\n'),
+      'src/bootstrap/module.json': manifest('bootstrap', ['eventing-filesystem']),
+      'src/work/index.ts': [
+        "import { createRequire } from 'node:module';",
+        'const r = require;',
+        'const r2 = r;',
+        'const packageRequire = createRequire(import.meta.url);',
+        'const packageLoaderAlias = packageRequire;',
+        'const packageLoaderAliasTwo = packageLoaderAlias;',
+        "export const loadPrivateEventing = () => r('@atolis-hq/eventing/contracts/events.js');",
+        "export const loadPrivateEventingAlias = () => r2('@atolis-hq/eventing/dist/contracts/events.js');",
+        "export const loadPrivateFilesystem = () => packageLoaderAliasTwo('@atolis-hq/eventing-filesystem/src/index.js');",
+        "export const loadFilesystem = () => packageLoaderAliasTwo('@atolis-hq/eventing-filesystem');",
+      ].join('\n'),
+      'src/work/shadowed-loader-alias.ts': [
+        'const renamedLoader = require;',
+        "export const loadFromParameter = (renamedLoader: (target: string) => unknown) => renamedLoader('@atolis-hq/eventing/contracts/events.js');",
+        'export function loadFromLocal() {',
+        '  const renamedLoader = (target: string) => target;',
+        "  return renamedLoader('@atolis-hq/eventing/contracts/events.js');",
+        '}',
+      ].join('\n'),
+      'src/work/shadowed-require-alias.ts': [
+        'export const loadFromParameter = (require: (target: string) => unknown) => {',
+        '  const loader = require;',
+        "  return loader('@atolis-hq/eventing/contracts/events.js');",
+        '};',
+        'export function loadFromLocal() {',
+        '  const require = (target: string) => target;',
+        '  const loader = require;',
+        "  return loader('@atolis-hq/eventing/contracts/events.js');",
+        '}',
+      ].join('\n'),
+      'src/work/mutable-loader-alias.ts': [
+        'let mutableLoader = require;',
+        'mutableLoader = (target: string) => target;',
+        "export const loadUnknown = () => mutableLoader('@atolis-hq/eventing/contracts/events.js');",
+      ].join('\n'),
+      'src/work/cyclic-loader-alias.ts': [
+        'const first = second;',
+        'const second = first;',
+        "export const loadUnknown = () => second('@atolis-hq/eventing/contracts/events.js');",
+      ].join('\n'),
+      'src/work/module.json': manifest('work', ['eventing', 'eventing-filesystem']),
+      'packages/eventing/src/local.ts': 'export const local = true;',
+      'packages/eventing/src/allowed-require-alias-local.ts': [
+        'const localLoader = require;',
+        'const nestedLocalLoader = localLoader;',
+        "export const loadLocal = () => nestedLocalLoader('./local.js');",
+      ].join('\n'),
+    });
+
+    await expect(checker.checkModuleManifests(join(root, 'src'))).resolves.toEqual([
+      'work/index.ts: imports package-internal path @atolis-hq/eventing/contracts/events.js; import only a declared public package entry',
+      'work/index.ts: imports package-internal path @atolis-hq/eventing/dist/contracts/events.js; import only a declared public package entry',
+      'work/index.ts: imports package-internal path @atolis-hq/eventing-filesystem/src/index.js; import only a declared public package entry',
+      'work: imports @atolis-hq/eventing-filesystem but only bootstrap may compose filesystem adapters',
+    ]);
+  });
+
   it('rejects filesystem package source imports outside Eventing and Node', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-eventing-filesystem-'));
     fixtureRoots.push(root);

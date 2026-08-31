@@ -238,7 +238,7 @@ function workspacePackageForSpecifier(specifier) {
 function importedModuleSpecifiers(source) {
   ts.bindSourceFile(source, { target: ts.ScriptTarget.Latest });
   const imports = new Set();
-  const createRequire = collectCreateRequireBindings(source);
+  const loaders = collectPackageLoaderBindings(source);
 
   function addLiteralSpecifier(node) {
     const specifier = literalModuleSpecifier(node);
@@ -255,7 +255,7 @@ function importedModuleSpecifiers(source) {
     if (ts.isCallExpression(node)) {
       if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
         addLiteralSpecifier(node.arguments[0]);
-      } else if (isDirectRequireCall(node) || isCreateRequireCall(node, createRequire)) {
+      } else if (isDirectRequireCall(node) || isPackageLoaderCall(node, loaders)) {
         addLiteralSpecifier(node.arguments[0]);
       }
     }
@@ -272,11 +272,11 @@ function literalModuleSpecifier(node) {
 }
 
 function isDirectRequireCall(node) {
-  return (
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === 'require' &&
-    !isShadowed(node.expression, 'require')
-  );
+  return isUnshadowedRequireIdentifier(node.expression);
+}
+
+function isUnshadowedRequireIdentifier(node) {
+  return ts.isIdentifier(node) && node.text === 'require' && !isShadowed(node, 'require');
 }
 
 function isShadowed(node, name) {
@@ -357,37 +357,62 @@ function bindingNameContains(nameNode, name) {
   return false;
 }
 
-function collectCreateRequireBindings(source) {
-  const imports = collectCreateRequireImports(source);
+function collectPackageLoaderBindings(source) {
+  const createRequireImports = collectCreateRequireImports(source);
+  const aliases = collectConstAliasDeclarations(source);
   const bindings = new Set();
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const { binding, initializer } of aliases) {
+      if (bindings.has(binding)) continue;
+      if (
+        isUnshadowedRequireIdentifier(initializer) ||
+        isCreateRequireResult(initializer, createRequireImports) ||
+        (ts.isIdentifier(initializer) && bindings.has(nearestLexicalBinding(initializer)))
+      ) {
+        bindings.add(binding);
+        changed = true;
+      }
+    }
+  }
+
+  return { createRequireImports, bindings };
+}
+
+function collectConstAliasDeclarations(source) {
+  const aliases = [];
 
   function visit(node) {
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
       node.initializer !== undefined &&
-      ts.isCallExpression(node.initializer) &&
-      ts.isIdentifier(node.initializer.expression) &&
-      isConstVariableDeclaration(node) &&
-      imports.has(nearestLexicalBinding(node.initializer.expression))
+      isConstVariableDeclaration(node)
     ) {
-      bindings.add(nearestLexicalBinding(node.name));
+      const binding = nearestLexicalBinding(node.name);
+      if (binding !== undefined) aliases.push({ binding, initializer: node.initializer });
     }
     ts.forEachChild(node, visit);
   }
 
   visit(source);
-  return { imports, bindings };
+  return aliases;
 }
 
-function isCreateRequireCall(node, createRequire) {
+function isPackageLoaderCall(node, loaders) {
   if (ts.isIdentifier(node.expression)) {
-    return createRequire.bindings.has(nearestLexicalBinding(node.expression));
+    return loaders.bindings.has(nearestLexicalBinding(node.expression));
   }
+  return isCreateRequireResult(node.expression, loaders.createRequireImports);
+}
+
+function isCreateRequireResult(node, createRequireImports) {
   return (
-    ts.isCallExpression(node.expression) &&
-    ts.isIdentifier(node.expression.expression) &&
-    createRequire.imports.has(nearestLexicalBinding(node.expression.expression))
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    createRequireImports.has(nearestLexicalBinding(node.expression))
   );
 }
 
