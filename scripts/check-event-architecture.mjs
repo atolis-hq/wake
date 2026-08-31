@@ -128,7 +128,7 @@ function createAnalysisState() {
 
 function collectBindings(program, typeChecker, analysis) {
   const assignments = new Map();
-  const bindings = { analysis, assignments };
+  const bindings = { analysis, assignments, memberAssignments: new Map() };
 
   function visit(node) {
     if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
@@ -245,6 +245,14 @@ function collectAssignmentTarget(target, origins, bindings, typeChecker, assignm
     if (symbol !== undefined) addAssignment(assignments, symbol, { ...site, origins });
     return;
   }
+  if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
+    addMemberAssignment(bindings.memberAssignments, {
+      ...site,
+      origins,
+      target: unwrapped,
+    });
+    return;
+  }
   if (ts.isArrayLiteralExpression(unwrapped)) {
     for (const [index, element] of unwrapped.elements.entries()) {
       if (ts.isOmittedExpression(element)) continue;
@@ -316,6 +324,12 @@ function addAssignment(assignments, symbol, assignment) {
   const history = assignments.get(symbol);
   if (history === undefined) assignments.set(symbol, [assignment]);
   else history.push(assignment);
+}
+
+function addMemberAssignment(memberAssignments, assignment) {
+  const sourceAssignments = memberAssignments.get(assignment.sourceFile);
+  if (sourceAssignments === undefined) memberAssignments.set(assignment.sourceFile, [assignment]);
+  else sourceAssignments.push(assignment);
 }
 
 function assignmentAt(bindings, symbol, useNode) {
@@ -421,6 +435,38 @@ function inspectProcessorRuntimeReferences(
 ) {
   const reported = new Set();
 
+  for (const assignment of bindings.memberAssignments.get(sourceFile) ?? []) {
+    const kind = resolveAssignmentOrigins(
+      assignment,
+      [],
+      bindings,
+      typeChecker,
+      sourceRoot,
+      assignment.target,
+      new Set(),
+    );
+    if (
+      !isProcessorRuntimeKind(kind) ||
+      isApprovedProcessorRuntimeReference(kind, relativePath) ||
+      assignment.origins.some(({ expression }) =>
+        containsReportableDirectProcessorRuntimeReference(
+          expression,
+          bindings,
+          typeChecker,
+          sourceRoot,
+          relativePath,
+        ),
+      )
+    )
+      continue;
+    reportProcessorRuntimeReference(
+      { node: assignment.target, kind },
+      sourceRoot,
+      diagnostics,
+      reported,
+    );
+  }
+
   function visit(node) {
     const reference = protectedProcessorRuntimeReference(node, bindings, typeChecker, sourceRoot);
     if (
@@ -429,7 +475,13 @@ function inspectProcessorRuntimeReferences(
       !isApprovedProcessorRuntimeReference(reference.kind, relativePath)
     )
       reportProcessorRuntimeReference(reference, sourceRoot, diagnostics, reported);
-    const binding = protectedProcessorStructuralBinding(node, bindings, typeChecker, sourceRoot);
+    const binding = protectedProcessorStructuralBinding(
+      node,
+      bindings,
+      typeChecker,
+      sourceRoot,
+      relativePath,
+    );
     if (binding !== undefined && !isApprovedProcessorRuntimeReference(binding.kind, relativePath))
       reportProcessorRuntimeReference(binding, sourceRoot, diagnostics, reported);
     ts.forEachChild(node, visit);
@@ -457,7 +509,13 @@ function protectedProcessorRuntimeReference(node, bindings, typeChecker, sourceR
   return undefined;
 }
 
-function protectedProcessorStructuralBinding(node, bindings, typeChecker, sourceRoot) {
+function protectedProcessorStructuralBinding(
+  node,
+  bindings,
+  typeChecker,
+  sourceRoot,
+  relativePath,
+) {
   if (!ts.isIdentifier(node)) return undefined;
   const site = bindingSite(node);
   if (site === undefined) return undefined;
@@ -471,7 +529,13 @@ function protectedProcessorStructuralBinding(node, bindings, typeChecker, source
       ),
     ) ||
     assignment.origins.some(({ expression }) =>
-      containsDirectProcessorRuntimeReference(expression, typeChecker, sourceRoot),
+      containsReportableDirectProcessorRuntimeReference(
+        expression,
+        bindings,
+        typeChecker,
+        sourceRoot,
+        relativePath,
+      ),
     )
   )
     return undefined;
@@ -514,12 +578,27 @@ function bindingDeclarationSite(declaration) {
   return undefined;
 }
 
-function containsDirectProcessorRuntimeReference(node, typeChecker, sourceRoot) {
+function containsReportableDirectProcessorRuntimeReference(
+  node,
+  bindings,
+  typeChecker,
+  sourceRoot,
+  relativePath,
+) {
   let found = false;
   function visit(current) {
     if (found) return;
-    const symbol = resolveSymbol(typeChecker.getSymbolAtLocation(current), typeChecker);
-    if (isProcessorRuntimeKind(protectedSymbolKind(symbol, sourceRoot))) {
+    const reference = protectedProcessorRuntimeReference(
+      current,
+      bindings,
+      typeChecker,
+      sourceRoot,
+    );
+    if (
+      reference !== undefined &&
+      !isExcludedRuntimeReference(reference.node) &&
+      !isApprovedProcessorRuntimeReference(reference.kind, relativePath)
+    ) {
       found = true;
       return;
     }

@@ -383,6 +383,94 @@ describe('event processor ownership', () => {
     ]);
   });
 
+  it('rejects destructuring assignments that store protected symbols in member targets', async () => {
+    const root = await fixture({
+      'src/orchestration/application/member-assignment-targets.ts': [
+        "import * as Bootstrap from '../../bootstrap/index.js';",
+        "import * as Eventing from '../../eventing/index.js';",
+        "import * as Persistence from '../../persistence/index.js';",
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'class LocalRuntime { constructor(...args: unknown[]) { void args; } }',
+        'const localSerialiser = (value: unknown): unknown => value;',
+        'const holder = { Host: LocalHost, ComputedHost: LocalHost, Runtime: LocalRuntime, Serialiser: localSerialiser };',
+        '({ EventProcessorHost: holder.Host } = Eventing);',
+        "const hostSlot = 'ComputedHost' as const;",
+        '({ EventProcessorHost: holder[hostSlot] } = Eventing);',
+        '[holder.Host] = [Eventing.EventProcessorHost];',
+        '({ nested: [{ EventProcessorRuntime: holder.Runtime }] } = { nested: [Bootstrap] });',
+        '({ nested: [{ createFileProcessorRunSerialiser: holder.Serialiser }] } = { nested: [Persistence] });',
+        'export const values = [new holder.Host(), new holder.ComputedHost(), new holder.Runtime(), holder.Serialiser(1)];',
+      ].join('\n'),
+      'src/persistence/application/member-assignment-targets.ts': [
+        "import * as Eventing from '../../eventing/index.js';",
+        'const localFactory = (value: unknown): unknown => value;',
+        'const holders: [typeof Eventing.defineEventProcessor, typeof Eventing.defineEventProcessor] = [localFactory, localFactory];',
+        '({ defineEventProcessor: holders[0] } = Eventing);',
+        '([{ defineEventProcessor: holders[1] }] = [Eventing]);',
+        'export const values = [holders[0](1), holders[1](2)];',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-processor-host-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'orchestration/application/member-assignment-targets.ts:8:24',
+      'orchestration/application/member-assignment-targets.ts:10:24',
+      'orchestration/application/member-assignment-targets.ts:11:27',
+    ]);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[processor-registry-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual(['orchestration/application/member-assignment-targets.ts:12:38']);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[processor-serialiser-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual(['orchestration/application/member-assignment-targets.ts:13:49']);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'persistence/application/member-assignment-targets.ts:4:26',
+      'persistence/application/member-assignment-targets.ts:5:27',
+    ]);
+  });
+
+  it('does not reject member assignments from local or unprovable dynamic sources', async () => {
+    const root = await fixture({
+      'src/orchestration/application/local-member-assignment-targets.ts': [
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'const LocalEventing = { EventProcessorHost: LocalHost };',
+        'const holder: { Host: typeof LocalHost; ComputedHost: typeof LocalHost; Dynamic: unknown } = { Host: LocalHost, ComputedHost: LocalHost, Dynamic: undefined };',
+        '({ EventProcessorHost: holder.Host } = LocalEventing);',
+        "const hostSlot = 'ComputedHost' as const;",
+        '({ EventProcessorHost: holder[hostSlot] } = LocalEventing);',
+        'declare const dynamicKey: string;',
+        'const dynamicSource: Record<string, unknown> = LocalEventing;',
+        '({ [dynamicKey]: holder.Dynamic } = dynamicSource);',
+        'export const values = [new holder.Host(), new holder.ComputedHost(), holder.Dynamic];',
+      ].join('\n'),
+      'src/persistence/application/local-member-assignment-targets.ts': [
+        'const localFactory = (value: unknown): unknown => value;',
+        'const LocalEventing = { defineEventProcessor: localFactory };',
+        'const holders: [(value: unknown) => unknown] = [localFactory];',
+        '({ defineEventProcessor: holders[0] } = LocalEventing);',
+        'declare const dynamicKey: string;',
+        'const dynamicSource: Record<string, unknown> = LocalEventing;',
+        'const dynamicHolder: [unknown] = [undefined];',
+        '({ [dynamicKey]: dynamicHolder[0] } = dynamicSource);',
+        'export const values = [holders[0](1), dynamicHolder[0]];',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
   it('does not reject structural defaults and rest paths from unrelated local objects', async () => {
     const root = await fixture({
       'src/orchestration/application/local-structural-bindings.ts': [
