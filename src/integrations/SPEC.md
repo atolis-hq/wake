@@ -62,8 +62,10 @@ Integrations owns its observation, artifact, delivery, and provider event
 types, payload maps, stream references, selectors/decoders, and event-data
 factories. It appends immutable event data to the selected stream with expected
 sequence; it does not construct envelopes or a processor host. Its
-pending-delivery projection transparently reads legacy flat and interim nested
-stored records, then writes the delivery-owned canonical record.
+delivery outcome reactor keeps ProjectionStore-backed recovery state for pending
+confirmations. It is not a rebuildable Eventing projection: recovery decodes
+legacy flat and interim nested stored records, then writes the reactor-owned
+canonical pending-confirmations record.
 
 ## Ubiquitous language
 

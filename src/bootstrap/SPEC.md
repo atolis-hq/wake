@@ -19,8 +19,11 @@ Persistence semantics, or processor handlers.
 
 Bootstrap is the only composition root: it wires module event-data factories,
 Persistence adapters, Eventing subscriptions/checkpoints/projections, and the
-complete processor registry. It does not create domain event data on a module's
-behalf or bypass an owning module's stream and expected-sequence append path.
+complete processor registry. Composition activities may supply typed inputs to
+and invoke an owning module's public event-data factory, but Bootstrap never
+calls Kernel's `createEventData` or reproduces an owner's event mapping. The
+owner factory constructs the event data, and Bootstrap does not bypass that
+module's stream and expected-sequence append path.
 
 ## Runtime composition
 

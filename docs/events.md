@@ -92,8 +92,10 @@ choose outbound targets or workflow transitions.
   domain knowledge. Persistence records, loads, and signals changes without
   domain knowledge. Bootstrap composes the processor registry and module
   factories; only surfaces flatten an envelope for external transport.
-- The pending-delivery projection reads both legacy flat and interim nested
-  stored records, then writes its delivery-owned canonical record.
+- The delivery outcome reactor keeps ProjectionStore-backed recovery state for
+  pending confirmations. This is not a rebuildable Eventing projection: it
+  reads legacy flat and interim nested stored records during recovery, then
+  writes the reactor-owned canonical pending-confirmations record.
 
 `check-event-architecture` is a symbol-aware architecture gate. It enforces
 publishing and processor ownership, bounded imports, legacy-vocabulary bans,

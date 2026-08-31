@@ -50,9 +50,10 @@ Activities does not own:
 
 Activities owns its event types, payload map, stream references, selector and
 decoder, and `createActivityEventData` factory. It creates immutable event data
-without stream or journal metadata; the repository appends a non-empty batch to
-the owning stream with an expected sequence. Activities handles its own
-idempotency and conflicts; it does not construct envelopes or host processors.
+without stream or journal metadata; its services and handlers append non-empty
+batches through `EventJournal.appendToStream` with an expected sequence.
+Activities handles its own idempotency and conflicts; it does not construct
+envelopes or host processors.
 
 ## Ubiquitous language
 
