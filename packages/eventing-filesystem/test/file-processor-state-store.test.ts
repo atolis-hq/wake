@@ -171,6 +171,77 @@ it.each([
   },
 );
 
+it.each([
+  ['the canonical and legacy delivery path', deliveryProcessorStatePath],
+  ['the delivery fallback path', deliveryProcessorStateFallbackPath],
+])('rejects a misplaced foreign record at %s without changing it', async (_case, candidatePath) => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
+  const consumer = 'reactor:delivery-outcomes';
+  const key = 'pending-confirmations';
+  const path = candidatePath(root);
+  const raw = `${JSON.stringify({
+    namespace: 'other:pending',
+    key: 'other-key',
+    lastGlobalPosition: 0,
+    value: { events: [] },
+  })}\n`;
+  await mkdir(join(path, '..'), { recursive: true });
+  await writeFile(path, raw);
+  const store = new FileProcessorStateStore(root);
+
+  await expect(store.read(consumer, key)).rejects.toThrow('Invalid processor state record');
+  await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+
+  await expect(store.write({ consumer, key, value: { events: [] } })).rejects.toThrow(
+    'Invalid processor state record',
+  );
+  await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+
+  await expect(store.delete(consumer, key)).rejects.toThrow('Invalid processor state record');
+  await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+});
+
+it('preflights every candidate before a corrupt fallback can hide a current processor state', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
+  const consumer = 'reactor:delivery-outcomes';
+  const key = 'pending-confirmations';
+  const store = new FileProcessorStateStore(root);
+  await store.write({ consumer, key, value: { events: ['event-1'] } });
+  const currentPath = deliveryProcessorStatePath(root);
+  const currentRaw = await readFile(currentPath, 'utf8');
+  const fallbackPath = deliveryProcessorStateFallbackPath(root);
+  const corruptRaw = '{}\n';
+  await mkdir(join(fallbackPath, '..'), { recursive: true });
+  await writeFile(fallbackPath, corruptRaw);
+
+  await expect(store.read(consumer, key)).rejects.toThrow('Invalid processor state record');
+  await expect(store.write({ consumer, key, value: { events: ['event-2'] } })).rejects.toThrow(
+    'Invalid processor state record',
+  );
+  await expect(store.delete(consumer, key)).rejects.toThrow('Invalid processor state record');
+
+  await expect(readFile(currentPath, 'utf8')).resolves.toBe(currentRaw);
+  await expect(readFile(fallbackPath, 'utf8')).resolves.toBe(corruptRaw);
+});
+
+it('deletes every matching processor state candidate after a clean preflight', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
+  const consumer = 'reactor:delivery-outcomes';
+  const key = 'pending-confirmations';
+  const store = new FileProcessorStateStore(root);
+  await store.write({ consumer, key, value: { events: ['event-1'] } });
+  const currentPath = deliveryProcessorStatePath(root);
+  const fallbackPath = deliveryProcessorStateFallbackPath(root);
+  const currentRaw = await readFile(currentPath, 'utf8');
+  await mkdir(join(fallbackPath, '..'), { recursive: true });
+  await writeFile(fallbackPath, currentRaw);
+
+  await store.delete(consumer, key);
+
+  await expect(readFile(currentPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(readFile(fallbackPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
 it('serializes processor state under a long data root', async () => {
   const root = await mkdtemp(join(tmpdir(), `wake-processor-state-${'long-root-'.repeat(12)}`));
   const store = new FileProcessorStateStore(root);
@@ -234,13 +305,14 @@ it('allows colliding legacy names to write concurrently without cross-over', asy
   await expect(store.read('a~2Eb', key)).resolves.toMatchObject({ value: { owner: 'tilde' } });
 });
 
-it('reads and deletes a legacy record only for its persisted identity', async () => {
+it('preserves a true legacy collision only for its persisted identity', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
   const store = new FileProcessorStateStore(root);
   const key = 'pending-confirmations';
   const legacyConsumer = 'a~2Eb';
   const legacyNamespace = `${legacyConsumer}:pending`;
   const legacyPath = join(root, 'projections', encode(legacyNamespace), `${encode(key)}.json`);
+  expect(legacyPath).toBe(join(root, 'projections', encode('a.b:pending'), `${encode(key)}.json`));
   await mkdir(join(legacyPath, '..'), { recursive: true });
   await writeFile(
     legacyPath,
@@ -265,3 +337,21 @@ it('reads and deletes a legacy record only for its persisted identity', async ()
     value: { owner: 'legacy-tilde' },
   });
 });
+
+function deliveryProcessorStatePath(root: string): string {
+  return join(
+    root,
+    'projections',
+    encode('reactor:delivery-outcomes:pending'),
+    `${encode('pending-confirmations')}.json`,
+  );
+}
+
+function deliveryProcessorStateFallbackPath(root: string): string {
+  return join(
+    root,
+    'projections',
+    '%processor-state-reactor~3Adelivery-outcomes~3Apending',
+    '%processor-state-pending-confirmations.json',
+  );
+}

@@ -21,21 +21,23 @@ export class FileProcessorStateStore implements ProcessorStateStore {
 
   async read<Value>(consumer: string, key: string): Promise<StoredProcessorState<Value> | null> {
     const paths = this.paths(consumer, key);
-    for (const path of uniquePaths([paths.current, paths.isolated, paths.legacy])) {
-      const stored = await readCompatibleState(path);
-      if (matchesStateIdentity(stored, paths.namespace, key))
-        return { consumer, key, value: stored.value as Value };
-    }
+    const candidates = await this.readCandidates(paths);
+    const stored = candidates.find(({ state }) =>
+      matchesStateIdentity(state, paths.namespace, key),
+    )?.state;
+    if (stored !== undefined && stored !== null)
+      return { consumer, key, value: stored.value as Value };
     return null;
   }
 
   async write<Value>(state: StoredProcessorState<Value>): Promise<void> {
     const paths = this.paths(state.consumer, state.key);
-    await this.withStateLocks([paths.current, paths.isolated], async () => {
-      const current = await readCompatibleState(paths.current);
+    await this.withStateLocks(candidatePaths(paths), async () => {
+      const candidates = await this.readCandidates(paths);
+      const current = candidateState(candidates, paths.current);
       if (matchesStateIdentity(current, paths.namespace, state.key))
         return atomicJson(paths.current, compatibleRecord(paths.namespace, state));
-      const isolated = await readCompatibleState(paths.isolated);
+      const isolated = candidateState(candidates, paths.isolated);
       if (matchesStateIdentity(isolated, paths.namespace, state.key))
         return atomicJson(paths.isolated, compatibleRecord(paths.namespace, state));
       if (current === null)
@@ -48,10 +50,10 @@ export class FileProcessorStateStore implements ProcessorStateStore {
 
   async delete(consumer: string, key: string): Promise<void> {
     const paths = this.paths(consumer, key);
-    await this.withStateLocks([paths.current, paths.isolated, paths.legacy], async () => {
-      for (const path of uniquePaths([paths.current, paths.isolated, paths.legacy])) {
-        const stored = await readCompatibleState(path);
-        if (matchesStateIdentity(stored, paths.namespace, key)) await rm(path, { force: true });
+    await this.withStateLocks(candidatePaths(paths), async () => {
+      const candidates = await this.readCandidates(paths);
+      for (const { path, state } of candidates) {
+        if (matchesStateIdentity(state, paths.namespace, key)) await rm(path, { force: true });
       }
     });
   }
@@ -61,6 +63,7 @@ export class FileProcessorStateStore implements ProcessorStateStore {
     const currentNamespace = encodeProcessorStateName(namespace);
     const currentKey = encodeProcessorStateName(key);
     return {
+      key,
       namespace,
       current: processorStatePath(this.root, currentNamespace, currentKey),
       isolated: processorStatePath(
@@ -68,7 +71,7 @@ export class FileProcessorStateStore implements ProcessorStateStore {
         `%processor-state-${currentNamespace}`,
         `%processor-state-${currentKey}`,
       ),
-      legacy: processorStatePath(this.root, encode(namespace), encodeStateKey(key)),
+      legacy: legacyProcessorStatePath(this.root, namespace, key),
     };
   }
 
@@ -82,6 +85,19 @@ export class FileProcessorStateStore implements ProcessorStateStore {
       .map((path) => processorStateLockPath(this.root, path))
       .sort();
     return withLocks(locks, operation);
+  }
+
+  private async readCandidates(
+    paths: ProcessorStatePaths,
+  ): Promise<readonly ProcessorStateCandidate[]> {
+    const candidates = await Promise.all(
+      candidatePaths(paths).map(async (path) => ({ path, state: await readCompatibleState(path) })),
+    );
+    for (const { path, state } of candidates) {
+      if (state !== null)
+        assertCandidateProvenance(this.root, path, state, paths.namespace, paths.key);
+    }
+    return candidates;
   }
 }
 
@@ -100,6 +116,10 @@ function encodeProcessorStateName(value: string): string {
 
 function processorStatePath(root: string, namespace: string, key: string): string {
   return join(root, 'projections', namespace, `${key}.json`);
+}
+
+function legacyProcessorStatePath(root: string, namespace: string, key: string): string {
+  return processorStatePath(root, encode(namespace), encodeStateKey(key));
 }
 
 function processorStateLockPath(root: string, path: string): string {
@@ -174,8 +194,20 @@ function matchesStateIdentity(
   stored: CompatibleStateRecord | null,
   namespace: string,
   key: string,
-): stored is CompatibleStateRecord {
+): boolean {
   return stored?.namespace === namespace && stored.key === key;
+}
+
+function assertCandidateProvenance(
+  root: string,
+  path: string,
+  stored: CompatibleStateRecord,
+  namespace: string,
+  key: string,
+): void {
+  if (matchesStateIdentity(stored, namespace, key)) return;
+  if (legacyProcessorStatePath(root, stored.namespace, stored.key) === path) return;
+  throw invalidProcessorStateRecord(path);
 }
 
 function compatibleRecord<Value>(
@@ -189,9 +221,28 @@ function uniquePaths(paths: readonly string[]): readonly string[] {
   return [...new Set(paths)];
 }
 
+function candidatePaths(paths: ProcessorStatePaths): readonly string[] {
+  return uniquePaths([paths.current, paths.isolated, paths.legacy]);
+}
+
+function candidateState(
+  candidates: readonly ProcessorStateCandidate[],
+  path: string,
+): CompatibleStateRecord | null {
+  const candidate = candidates.find((value) => value.path === path);
+  if (candidate === undefined) throw new Error(`Missing processor state candidate for ${path}`);
+  return candidate.state;
+}
+
 interface ProcessorStatePaths {
+  readonly key: string;
   readonly namespace: string;
   readonly current: string;
   readonly isolated: string;
   readonly legacy: string;
+}
+
+interface ProcessorStateCandidate {
+  readonly path: string;
+  readonly state: CompatibleStateRecord | null;
 }

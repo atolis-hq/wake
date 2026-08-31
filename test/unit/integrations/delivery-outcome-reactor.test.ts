@@ -129,7 +129,12 @@ it('fails recovery before rewriting corrupt pending state or advancing its check
   const consumer = 'reactor:delivery-outcomes';
   const key = 'pending-confirmations';
   const path = join(root, 'projections', encode(`${consumer}:pending`), `${encode(key)}.json`);
-  const raw = `${JSON.stringify({ namespace: '', key, lastGlobalPosition: 0, value: { events: [] } })}\n`;
+  const raw = `${JSON.stringify({
+    namespace: 'other:pending',
+    key: 'other-key',
+    lastGlobalPosition: 0,
+    value: { events: [] },
+  })}\n`;
   await mkdir(join(path, '..'), { recursive: true });
   await writeFile(path, raw);
   const journal = new InMemoryEventJournal(clock);
