@@ -60,8 +60,8 @@ location. Adapters retain control
 | Module | Owns |
 | --- | --- |
 | `kernel` | Identifiers, relations, clocks, and universal contracts. |
-| `@atolis-hq/eventing` | Event envelopes, named processor definitions, hosting, catch-up, retry, health, projections, and in-memory adapters. |
-| `@atolis-hq/eventing-filesystem` | Filesystem journals, checkpoints, projections, locks, and keyed processor serialisers. |
+| `@atolis-hq/eventing` | Persistence-neutral envelopes, journal/state ports, processor definitions and runtime, projections, and in-memory adapters. |
+| `@atolis-hq/eventing-filesystem` | Node filesystem adapters for Eventing journals, checkpoints, read-model projections, processor state, locks, and keyed run serialisation. |
 | `work` | Work-item facts, lifecycle controls, and work projections. |
 | `resources` | External-resource facts and their correlation to work items. |
 | `conversations` | Canonical work-item conversation facts, entry origins, and rebuildable conversation views. |
@@ -74,9 +74,9 @@ location. Adapters retain control
 | `bootstrap` | Root configuration, paths, concrete adapter selection, the complete processor registry, and composition. |
 
 No domain module imports a provider client, filesystem implementation, or
-surface. Surfaces call public applications and views; they do not write facts
-directly. Bootstrap selects concrete infrastructure and connects the complete
-application graph.
+surface. Bounded modules use Eventing's public package surface; only Bootstrap
+selects filesystem adapters. Surfaces call public applications and views; they
+do not write facts directly. Bootstrap connects the complete application graph.
 
 ## Durable model
 
@@ -102,11 +102,15 @@ envelope model.
 No journal data migration or projection rebuild is required for that storage
 compatibility boundary.
 
-Projections are derived read models. The filesystem implementation stores the
-journal and projection/checkpoint data below the Wake home's `.wake/`
-directory, but consumers must treat the journal—not a projection file—as the
-source of truth. The production projection runtime rebuilds and updates the
-board, analytics, resource lookup, and module projections from that journal.
+Projections are derived read models. `ProjectionStore` stores their
+namespaced, position-tracked values and they may always be rebuilt from the
+journal. `ProcessorStateStore` is separate: it stores processor-owned recovery
+state, such as pending delivery confirmations, and is not rebuildable from a
+projection. The filesystem adapters store the journal, projection/checkpoint
+data, and processor state below the Wake home's `.wake/` directory, but
+consumers must treat the journal—not a projection file—as the source of truth.
+The production projection runtime rebuilds and updates the board, analytics,
+resource lookup, and module projections from that journal.
 
 Work-item identities are minted by Wake. Resources are separate durable facts
 and are correlated to work items through `resources`; provider locators do not
@@ -183,12 +187,15 @@ runtime.
 
 The symbol-aware `check-event-architecture` gate also enforces publishing and
 processor ownership, bounded imports, legacy-vocabulary bans, and manifest
-namespaces. The Eventing package hosts subscriptions, checkpoints, and
-projections without knowing domain facts; its filesystem package records, loads,
-and signals changes without knowing domain facts; Bootstrap composes both with
-module factories and the processor registry. Surfaces flatten an internal
-envelope only at their transport boundary to preserve existing API, CLI, and
-web shapes.
+namespaces. The Eventing package hosts subscriptions, checkpoints, projections,
+and processor-state ports without knowing domain facts; its filesystem package
+implements those ports with Node APIs without knowing domain facts; Bootstrap
+composes both with module factories and the processor registry. Production code
+uses only `@atolis-hq/eventing`, `@atolis-hq/eventing/memory`, and
+`@atolis-hq/eventing-filesystem` public exports—there is no current
+`src/eventing`/`src/persistence` compatibility surface or alternate delivery
+path. Surfaces flatten an internal envelope only at their transport boundary to
+preserve existing API, CLI, and web shapes.
 
 The current ports deliberately remain narrow. They match established event-store
 concepts without adding infrastructure: SQLite, Emmett, or Kurrent adapters can
@@ -199,6 +206,17 @@ Wake's compatibility, global-order, push-wake, checkpoint, and lock semantics.
 This keeps additions testable with durable fakes, makes production reachability
 provable through Bootstrap, and ensures a new transport or CLI does not change
 the meaning of existing workflow facts.
+
+## Workspace release topology
+
+The repository publishes three packages at the same version, in dependency
+order: `@atolis-hq/eventing`, `@atolis-hq/eventing-filesystem`, then
+`@atolis-hq/wake`. Eventing exposes contracts and runtime from its package root
+and in-memory adapters only from its `/memory` subpath. Eventing Filesystem
+exposes its adapter constructors only from its package root. Its JSONL journal
+and processor-state readers preserve existing Wake-home disk formats; that data
+compatibility does not introduce a migration package, a legacy source import,
+or a second runtime path.
 
 ## Configuration and extension
 

@@ -105,7 +105,7 @@ projections.
 
 ## Dependencies and system role
 
-- Kernel — projection definition, projection store, and event journal
+- Eventing — projection definition, projection store, and event journal
   conventions; how Resource lookup is registered, checkpointed, and rebuilt.
 - Resource (depends on it) — the aggregate whose accepted `resources.*` facts
   this component folds; Resource lookup never writes to a Resource stream.

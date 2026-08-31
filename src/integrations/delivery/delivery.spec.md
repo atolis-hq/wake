@@ -103,7 +103,7 @@ is addressed to one Resource and therefore one provider adapter.
 
 ## Dependencies and system role
 
-- Kernel — event journal append/read for the per-intent `delivery` stream.
+- Eventing — event journal append/read for the per-intent `delivery` stream.
 - Delivery Intent Projection — supplies the pending/ambiguous intents this
   component attempts, and in turn folds this component's own `delivery.*`
   facts back into each intent's view; the two form a closed read/write loop

@@ -1,5 +1,5 @@
 ---
-asOf: dd708e68
+asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ---
 
 # Execution — Module Specification
@@ -266,9 +266,10 @@ sequence; it does not construct envelope metadata or a processor host.
 
 ## Dependencies and system role
 
-- Kernel — event journal, envelope, projection registration, closed
-  vocabulary and branded-identity helpers, and command context conventions;
-  Execution's foundation for reading and appending its own streams.
+- Eventing — public event journal, envelope, processor, and command-context
+  contracts; Execution uses it to read and append its own streams without
+  constructing a host or filesystem adapter.
+- Kernel — closed-vocabulary and branded-identity helpers.
 - Activities (Execution depends on) — the `ActivityRegistry` that validates
   an Activation's input and resources and executes its handler; Execution
   supplies that handler an `ActivityExecutionContext` bound to a resolved

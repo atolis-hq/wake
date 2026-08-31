@@ -20,9 +20,12 @@ Bootstrap composes both.
 
 | Module | Purpose |
 | --- | --- |
-| [kernel](kernel/SPEC.md) | Stable universal primitives and ports every other module builds on. |
+| [kernel](kernel/SPEC.md) | Stable universal primitives every other module builds on. |
+| `@atolis-hq/eventing` | Persistence-neutral event contracts, ports, processor runtime, and in-memory adapters. |
+| `@atolis-hq/eventing-filesystem` | Node filesystem implementations of Eventing ports. |
 | [work](work/SPEC.md) | Durable WorkItem identity and lifecycle. |
 | [resources](resources/SPEC.md) | Canonical Resource identity, capabilities, and correlation to Work. |
+| [conversations](conversations/MODULE.md) | Canonical provider-neutral WorkItem discussion facts and projections. |
 | [activities](activities/SPEC.md) | The Activity contract and built-in specialist SDLC capabilities (agent execution, PR approve/merge). |
 | [orchestration](orchestration/SPEC.md) | Configured workflow interpretation and durable workflow instances. |
 | [execution](execution/SPEC.md) | Runs, dispatch, runners, workspaces, supervision, and recovery. |

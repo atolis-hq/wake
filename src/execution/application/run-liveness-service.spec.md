@@ -122,7 +122,7 @@ checkout.
 
 ## Dependencies and system role
 
-- Kernel — event envelope conventions and the Run stream's append
+- Eventing — event envelope conventions and the Run stream's append
   sequence this component reads before appending.
 - Run (co-owns the Run stream with) — this component's facts are folded by
   the Run aggregate's own fold; it does not duplicate that logic.

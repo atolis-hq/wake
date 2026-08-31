@@ -66,7 +66,7 @@ module's intake-rule vocabulary, applied by each provider's own translator.
 
 ## Dependencies and system role
 
-- Kernel — event journal read/append for evidence ingestion; this
+- Eventing — event journal read/append for evidence ingestion; this
   component's only dependency for the ingestion half of its role.
 - GitHub's provider definition and the fake provider's definition (both
   depend on this component) — each registers a `ProviderDefinition` that

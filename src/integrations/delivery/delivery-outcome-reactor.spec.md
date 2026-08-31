@@ -49,7 +49,8 @@ Orchestration, attempt delivery, or read the Delivery Intent Projection.
 
 ## Dependencies and system role
 
-- Kernel supplies the checkpoint store and event journal.
+- Eventing supplies the checkpoint store and event journal. Processor-owned
+  pending-confirmation recovery uses `ProcessorStateStore`, not `ProjectionStore`.
 - Delivery produces the `delivery.*` facts.
 - Orchestration supplies the waiting-state read and idempotent
   `acceptOutcome` command.

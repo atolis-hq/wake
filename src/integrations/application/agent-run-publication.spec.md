@@ -97,7 +97,7 @@ recorded fact.
   relationship.
 - Resources (this component depends on it) — `correlationsForWork`, to
   resolve the run's workflow's primary Resource and its own stream.
-- Kernel — event journal append/read and the checkpoint store this
+- Eventing — event journal append/read and the checkpoint store this
   component's replay loop uses.
 - Delivery Intent Projection (depends on this component) — folds the
   `agent-run.publish-requested` fact this component records into a

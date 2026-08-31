@@ -207,6 +207,8 @@ describe('eventing workspace packages', () => {
     expect(wake.scripts?.['check:workspace-packages']).toBe(
       'node scripts/check-workspace-packages.mjs',
     );
+    expect(packageCheck).toContain("const requiredArchiveFiles = ['README.md', 'LICENSE'];");
+    expect(packageCheck).toContain('archive is missing required package file');
     expect(packageCheck).toContain("['exec', '--offline', '--', 'wake', '--help']");
 
     const { stdout } = await execAsync('npm run check:workspace-packages', {

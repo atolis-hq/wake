@@ -1,5 +1,5 @@
 ---
-asOf: dd708e68
+asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ---
 
 # Activities ? Module Specification
@@ -168,8 +168,9 @@ envelopes or host processors.
 
 ## Dependencies and system role
 
-- Kernel ? event journal, envelope, closed-vocabulary, and branded-identifier
-  conventions Activities builds its own events and identifiers from.
+- Eventing — the public event-data, envelope, journal, and command-context
+  contracts Activities uses to append and decode its own facts.
+- Kernel — generic closed-vocabulary and branded-identifier conventions.
 - Resources (Activities depends on it) ? Activities reads `ResourceView` and
   correlation facts to resolve which Resource a PR command or Activity
   concerns; it never writes a resource-identity fact, only its own

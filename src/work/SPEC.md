@@ -1,5 +1,5 @@
 ---
-asOf: e5da36bf
+asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ---
 
 # Work — Module Specification
@@ -145,9 +145,9 @@ envelope metadata or a processor host.
 
 ## Dependencies and system role
 
-- Kernel — event journal, envelope, and command context conventions; Work's
-  only dependency, and the only thing it needs to append and rehydrate its
-  own streams.
+- Eventing — public journal, envelope, and command-context contracts; Work's
+  eventing dependency for appending and rehydrating its own streams.
+- Kernel — generic identity and relation vocabulary used by Work contracts.
 - Resources (depends on Work) — correlates an observed external resource to
   a `WorkItemId` it did not mint, anchoring provider-side identity to Wake
   identity.

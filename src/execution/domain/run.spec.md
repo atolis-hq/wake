@@ -110,7 +110,7 @@ aggregate itself is authoritative for:
 
 ## Dependencies and system role
 
-- Kernel — event envelope and stream-append conventions, including the
+- Eventing — event envelope and stream-append conventions, including the
   optimistic-concurrency sequence this aggregate's commands rely on.
 - Run projection (depends on Run) — reuses this aggregate's fold verbatim to
   build the queryable read model; Run does not depend back on it.

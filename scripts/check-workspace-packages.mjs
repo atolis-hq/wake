@@ -11,6 +11,7 @@ const packageLocations = [
   { directory: resolve(repoRoot, 'packages/eventing'), label: 'Eventing' },
   { directory: resolve(repoRoot, 'packages/eventing-filesystem'), label: 'Eventing filesystem' },
 ];
+const requiredArchiveFiles = ['README.md', 'LICENSE'];
 
 function fail(message) {
   throw new Error(message);
@@ -143,6 +144,9 @@ function verifyPackedEntries(manifest, packed, label) {
     fail(`${label} has no declared JavaScript or declaration dist entrypoints.`);
   for (const entry of entries) {
     if (!files.has(entry)) fail(`${label} archive is missing declared public entry ${entry}.`);
+  }
+  for (const file of requiredArchiveFiles) {
+    if (!files.has(file)) fail(`${label} archive is missing required package file ${file}.`);
   }
 }
 

@@ -191,7 +191,7 @@ Does not own:
   command's actual behaviour; this component only parses and routes to it.
 - Control-plane — the `HostBudget`/`HostResult` shapes `tick` and `start`
   share with this component.
-- Kernel — the `EventEnvelope`/`CommandContext` shapes the `audit` and
+- Eventing — the `EventEnvelope`/`CommandContext` shapes the `audit` and
   `correlate` primitives read and construct.
 - Resources — the `ResourceCorrelationRole` vocabulary the `correlate`
   primitive uses to fix the role it requests.

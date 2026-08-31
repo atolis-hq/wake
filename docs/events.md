@@ -89,14 +89,19 @@ choose outbound targets or workflow transitions.
   vocabulary, not magic strings or copied provider locators.
 - Register production projections in Bootstrap so replay and normal operation
   observe the same event sequence.
-- The Eventing package hosts durable subscriptions, checkpoints, and projections
-  without domain knowledge. Its filesystem package records, loads, and signals
-  changes without domain knowledge. Bootstrap composes the processor registry
-  and module factories; only surfaces flatten an envelope for external transport.
+- The Eventing package owns persistence-neutral envelopes, journals,
+  subscriptions, checkpoints, projections, processor-state ports, and in-memory
+  adapters without domain knowledge. Its filesystem package implements those
+  ports with Node APIs without domain knowledge. Bootstrap composes the
+  processor registry and module factories; only surfaces flatten an envelope
+  for external transport.
 - The delivery outcome reactor keeps ProcessorStateStore-backed recovery state for
-  pending confirmations. This is not a rebuildable Eventing projection: it
-  reads legacy flat and interim nested stored records during recovery, then
-  writes the reactor-owned canonical pending-confirmations record.
+  pending confirmations. This is not a rebuildable Eventing projection:
+  `ProjectionStore` remains exclusively for read models, while
+  `ProcessorStateStore` persists the reactor-owned canonical state. The
+  filesystem adapter accepts established stored representations so existing
+  Wake homes need no data migration; Wake has no legacy Eventing source import
+  or alternate delivery runtime.
 
 `check-event-architecture` is a symbol-aware architecture gate. It enforces
 publishing and processor ownership, bounded imports, legacy-vocabulary bans,

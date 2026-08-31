@@ -67,7 +67,7 @@ a full fold)
 
 ## Dependencies and system role
 
-- Kernel — event envelope conventions and the optimistic-concurrency check
+- Eventing — event envelope conventions and the optimistic-concurrency check
   on `journal.appendToStream` that resolves a true claim race to one winner.
 - Execution service (depends on) — the only caller: claims immediately
   before minting a new Run and appending `RunPreparationStarted`, and releases

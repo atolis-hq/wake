@@ -1,5 +1,5 @@
 ---
-asOf: e5da36bf
+asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ---
 
 # Resources — Module Specification
@@ -135,8 +135,9 @@ construct envelope metadata or a processor host.
 
 ## Dependencies and system role
 
-- Kernel — event journal, envelope, projection, and relation conventions;
-  Resources' foundation for its own stream and read models.
+- Eventing — public journal, envelope, and projection contracts; Resources'
+  foundation for its own stream and read models.
+- Kernel — generic relation and identity conventions.
 - Work (Resources depends on it) — supplies the `WorkItemId` identity and
   format that a correlation targets; Resources never mints or transitions a
   WorkItem.

@@ -82,7 +82,7 @@ read time from stored history, not by rewriting that history.
 
 ## Dependencies and system role
 
-- Kernel — event envelope decoding, the `ProjectionDefinition` contract, and
+- Eventing — event envelope decoding, the `ProjectionDefinition` contract, and
   the projection registration/rebuild machinery this view is registered
   into.
 - Runner Pause and Resume, and the bootstrap runner-quota reporter (both

@@ -44,7 +44,7 @@ discarding and rebuilding it from the event journal.
 
 ## Dependencies and system role
 
-- Kernel — the projection registration contract (selection, initial value,
+- Eventing — the projection registration contract (selection, initial value,
   and fold-forward `project` step) that production replay drives.
 - Run (depends on) — supplies the exact fold this projection reuses; a
   change to the aggregate's fold changes this projection's output

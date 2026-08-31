@@ -43,7 +43,7 @@ accepted facts, never a source of new events.
 
 - WorkflowInstance (depended on) — supplies the fold this projection
   re-applies; this component defines no folding rules of its own.
-- Kernel — the projection definition contract (`select`/`initial`/`project`)
+- Eventing — the projection definition contract (`select`/`initial`/`project`)
   this component implements, and the checkpointed projection store/runner
   that persists and rebuilds its value per key.
 - Orchestration's own event decoder and stream-kind guard — the boundary

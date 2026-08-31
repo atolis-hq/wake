@@ -1,5 +1,5 @@
 ---
-asOf: dd708e68
+asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ---
 
 # Orchestration — Module Specification
@@ -254,8 +254,9 @@ it does not construct envelope metadata or own durable subscriptions.
 
 ## Dependencies and system role
 
-- Kernel — event journal, envelope, closed-vocabulary, and command-context
-  conventions; every stream read and append goes through it.
+- Eventing — public journal, envelope, checkpoint, and processor contracts;
+  every stream read and append goes through it.
+- Kernel — closed-vocabulary and generic identity conventions.
 - Work (depends on: this module reads it) — a WorkflowInstance may only
   start for a WorkItem that exists and is open; a Signal's `auto` approval
   authority is accepted only when the WorkItem carries current auto-approval

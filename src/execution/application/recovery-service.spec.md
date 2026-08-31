@@ -92,7 +92,7 @@ the Execution service's concern once the Run is inactive.
 
 ## Dependencies and system role
 
-- Kernel — event envelope conventions and the Run stream's append sequence
+- Eventing — event envelope conventions and the Run stream's append sequence
   this component reads before appending.
 - Run (co-owns the Run stream with) — this component's facts are folded by
   the Run aggregate's own fold, including the terminal statuses it produces.

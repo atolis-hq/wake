@@ -1,5 +1,5 @@
 ---
-asOf: e5da36bf
+asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ---
 
 # Integrations — Module Specification
@@ -231,8 +231,11 @@ at a time.
 
 ## Dependencies and system role
 
-- Kernel — event journal, checkpoint store, envelope/stream conventions, and
-  closed-vocabulary helpers every component in this module builds on.
+- Eventing — public journal, checkpoint, envelope/stream, processor-state, and
+  processor contracts. The delivery outcome reactor uses `ProcessorStateStore`
+  for recovery and `ProjectionStore` only for its rebuildable delivery-intent
+  read model.
+- Kernel — closed-vocabulary and generic identity helpers.
 - Work (Integrations depends on it) — `work-admission` creates WorkItems,
   `work-conclusion` closes/cancels them, and both read correlation/current
   state; Integrations never writes `work.*` facts directly.
