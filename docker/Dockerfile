@@ -37,11 +37,14 @@ RUN echo "cursor cache bust: ${CURSOR_CACHE_BUST}" \
 
 WORKDIR /app
 COPY package*.json ./
+COPY packages/eventing/package.json packages/eventing/package.json
+COPY packages/eventing-filesystem/package.json packages/eventing-filesystem/package.json
 COPY src/surfaces/web/package.json src/surfaces/web/package.json
 RUN --mount=type=cache,target=/root/.npm \
   if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
 
-COPY tsconfig.json tsconfig.docker.json ./
+COPY tsconfig.json tsconfig.base.json tsconfig.app.json tsconfig.docker.json ./
+COPY packages/ packages/
 COPY scripts/embed-version.mjs scripts/embed-version.mjs
 COPY assets/ assets/
 COPY src/ src/

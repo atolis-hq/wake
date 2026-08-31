@@ -30,5 +30,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "scripts": {
+    "build": "tsc --build tsconfig.json"
   }
 }
