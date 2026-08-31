@@ -276,7 +276,12 @@ function isDirectRequireCall(node) {
 }
 
 function isUnshadowedRequireIdentifier(node) {
-  return ts.isIdentifier(node) && node.text === 'require' && !isShadowed(node, 'require');
+  const expression = unwrapPackageLoaderExpression(node);
+  return (
+    ts.isIdentifier(expression) &&
+    expression.text === 'require' &&
+    !isShadowed(expression, 'require')
+  );
 }
 
 function isShadowed(node, name) {
@@ -359,34 +364,32 @@ function bindingNameContains(nameNode, name) {
 
 function collectPackageLoaderBindings(source) {
   const aliases = collectConstAliasDeclarations(source);
-  const factories = collectCreateRequireImports(source);
+  const { factories, namespaces } = collectCreateRequireImports(source);
   const loaders = new Set();
+  const packageLoaders = { factories, namespaces, loaders };
 
-  propagateConstAliases(
-    factories,
-    aliases,
-    (initializer) =>
-      ts.isIdentifier(initializer) && factories.has(nearestLexicalBinding(initializer)),
+  propagateConstAliases(factories, aliases, (alias) =>
+    isCreateRequireFactory(alias, packageLoaders),
   );
-  propagateConstAliases(
-    loaders,
-    aliases,
-    (initializer) =>
+  propagateConstAliases(loaders, aliases, (alias) => {
+    const initializer = unwrapPackageLoaderExpression(alias.initializer);
+    return (
       isUnshadowedRequireIdentifier(initializer) ||
-      isCreateRequireResult(initializer, factories) ||
-      (ts.isIdentifier(initializer) && loaders.has(nearestLexicalBinding(initializer))),
-  );
+      isCreateRequireResult(initializer, packageLoaders) ||
+      (ts.isIdentifier(initializer) && loaders.has(nearestLexicalBinding(initializer)))
+    );
+  });
 
-  return { factories, loaders };
+  return packageLoaders;
 }
 
 function propagateConstAliases(bindings, aliases, isRecognizedInitializer) {
   let changed = true;
   while (changed) {
     changed = false;
-    for (const { binding, initializer } of aliases) {
-      if (bindings.has(binding) || !isRecognizedInitializer(initializer)) continue;
-      bindings.add(binding);
+    for (const alias of aliases) {
+      if (bindings.has(alias.binding) || !isRecognizedInitializer(alias)) continue;
+      bindings.add(alias.binding);
       changed = true;
     }
   }
@@ -398,12 +401,10 @@ function collectConstAliasDeclarations(source) {
   function visit(node) {
     if (
       ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
       node.initializer !== undefined &&
       isConstVariableDeclaration(node)
     ) {
-      const binding = nearestLexicalBinding(node.name);
-      if (binding !== undefined) aliases.push({ binding, initializer: node.initializer });
+      collectConstAliasBindings(node, aliases);
     }
     ts.forEachChild(node, visit);
   }
@@ -412,19 +413,83 @@ function collectConstAliasDeclarations(source) {
   return aliases;
 }
 
-function isPackageLoaderCall(node, packageLoaders) {
-  if (ts.isIdentifier(node.expression)) {
-    return packageLoaders.loaders.has(nearestLexicalBinding(node.expression));
+function collectConstAliasBindings(declaration, aliases) {
+  if (ts.isIdentifier(declaration.name)) {
+    const binding = nearestLexicalBinding(declaration.name);
+    if (binding !== undefined) aliases.push({ binding, initializer: declaration.initializer });
+    return;
   }
-  return isCreateRequireResult(node.expression, packageLoaders.factories);
+  if (!ts.isObjectBindingPattern(declaration.name)) return;
+  for (const element of declaration.name.elements) {
+    if (!ts.isBindingElement(element) || !ts.isIdentifier(element.name)) continue;
+    const binding = nearestLexicalBinding(element.name);
+    if (binding === undefined) continue;
+    aliases.push({
+      binding,
+      initializer: declaration.initializer,
+      propertyName: element.propertyName?.text ?? element.name.text,
+    });
+  }
 }
 
-function isCreateRequireResult(node, createRequireImports) {
+function isPackageLoaderCall(node, packageLoaders) {
+  const expression = unwrapPackageLoaderExpression(node.expression);
+  if (ts.isIdentifier(expression)) {
+    return packageLoaders.loaders.has(nearestLexicalBinding(expression));
+  }
+  return isCreateRequireResult(expression, packageLoaders);
+}
+
+function isCreateRequireResult(node, packageLoaders) {
+  const expression = unwrapPackageLoaderExpression(node);
   return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    createRequireImports.has(nearestLexicalBinding(node.expression))
+    ts.isCallExpression(expression) &&
+    isCreateRequireFactoryExpression(expression.expression, packageLoaders)
   );
+}
+
+function isCreateRequireFactory(alias, packageLoaders) {
+  const initializer = unwrapPackageLoaderExpression(alias.initializer);
+  return (
+    isCreateRequireFactoryExpression(initializer, packageLoaders) ||
+    (alias.propertyName === 'createRequire' &&
+      isNodeModuleNamespace(initializer, packageLoaders.namespaces))
+  );
+}
+
+function isCreateRequireFactoryExpression(node, packageLoaders) {
+  const expression = unwrapPackageLoaderExpression(node);
+  return (
+    (ts.isIdentifier(expression) &&
+      packageLoaders.factories.has(nearestLexicalBinding(expression))) ||
+    isNodeModuleCreateRequireProperty(expression, packageLoaders.namespaces)
+  );
+}
+
+function isNodeModuleCreateRequireProperty(node, namespaces) {
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    node.name.text === 'createRequire' &&
+    isNodeModuleNamespace(node.expression, namespaces)
+  );
+}
+
+function isNodeModuleNamespace(node, namespaces) {
+  const expression = unwrapPackageLoaderExpression(node);
+  return ts.isIdentifier(expression) && namespaces.has(nearestLexicalBinding(expression));
+}
+
+function unwrapPackageLoaderExpression(node) {
+  let expression = node;
+  while (
+    ts.isParenthesizedExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isSatisfiesExpression(expression) ||
+    ts.isNonNullExpression(expression)
+  ) {
+    expression = expression.expression;
+  }
+  return expression;
 }
 
 function isConstVariableDeclaration(declaration) {
@@ -446,22 +511,34 @@ function nearestLexicalBinding(identifier) {
 }
 
 function collectCreateRequireImports(source) {
-  const imports = new Set();
+  const factories = new Set();
+  const namespaces = new Set();
   for (const statement of source.statements) {
     if (
       !ts.isImportDeclaration(statement) ||
-      literalModuleSpecifier(statement.moduleSpecifier) !== 'node:module'
+      !isNodeModuleSpecifier(literalModuleSpecifier(statement.moduleSpecifier))
     )
       continue;
     const elements = statement.importClause?.namedBindings;
-    if (elements === undefined || !ts.isNamedImports(elements)) continue;
+    if (elements === undefined) continue;
+    if (ts.isNamespaceImport(elements)) {
+      const binding = nearestLexicalBinding(elements.name);
+      if (binding !== undefined) namespaces.add(binding);
+      continue;
+    }
+    if (!ts.isNamedImports(elements)) continue;
     for (const element of elements.elements) {
       if ((element.propertyName?.text ?? element.name.text) === 'createRequire') {
-        imports.add(nearestLexicalBinding(element.name));
+        const binding = nearestLexicalBinding(element.name);
+        if (binding !== undefined) factories.add(binding);
       }
     }
   }
-  return imports;
+  return { factories, namespaces };
+}
+
+function isNodeModuleSpecifier(specifier) {
+  return specifier === 'node:module' || specifier === 'module';
 }
 
 function relativePath(path) {
