@@ -3,9 +3,11 @@
   "compilerOptions": {
     "composite": true,
     "declarationMap": true,
+    "lib": ["ES2022", "DOM"],
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "types": ["node"]
   },
-  "files": [],
+  "include": ["src/**/*.ts"],
   "references": [{ "path": "../eventing" }]
 }

@@ -9,6 +9,10 @@ import {
   type EventProcessorHostRun,
 } from '@atolis-hq/eventing';
 import {
+  FileCheckpointStore,
+  createFileProcessorRunSerialiser,
+} from '@atolis-hq/eventing-filesystem';
+import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   createInMemoryProcessorRunSerialiser,
@@ -24,10 +28,6 @@ import {
   createActivationSchedulerSubscriber as createProcessorSubscriber,
   type ActivationScheduler,
 } from '../../../src/control-plane/index.js';
-import {
-  FileCheckpointStore,
-  createFileProcessorRunSerialiser,
-} from '../../../src/persistence/index.js';
 
 interface LegacyProcessorHost {
   start(processors: readonly EventProcessor[], signal?: AbortSignal): EventProcessorHostRun;

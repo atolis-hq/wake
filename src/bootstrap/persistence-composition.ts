@@ -4,13 +4,13 @@ import type {
   ProcessorRunSerialiser,
   ProjectionStore,
 } from '@atolis-hq/eventing';
-import type { Clock } from '../kernel/index.js';
 import {
   FileCheckpointStore,
   FileEventJournal,
   FileProjectionStore,
   createFileProcessorRunSerialiser,
-} from '../persistence/index.js';
+} from '@atolis-hq/eventing-filesystem';
+import type { Clock } from '../kernel/index.js';
 import type { WakePaths } from './paths.js';
 
 export interface PersistenceCompositionOptions {

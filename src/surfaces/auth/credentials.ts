@@ -1,7 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { withFileLock } from '../../persistence/index.js';
 
 export interface SurfaceCredentials {
   readonly accessKey: string;
@@ -19,6 +18,11 @@ export interface SurfacePairingGrant {
   readonly value: string;
   readonly expiresAt: string;
 }
+
+export type CredentialMutationSerialiser = <Value>(
+  lockPath: string,
+  operation: () => Promise<Value>,
+) => Promise<Value>;
 
 const pairingGrantLifetimeMs = 10 * 60 * 1000;
 const credentialLockName = 'surface-credentials.lock';
@@ -42,10 +46,11 @@ export async function loadOrCreateCredentials(wakeRoot: string): Promise<Surface
 export async function replaceAccessKey(
   wakeRoot: string,
   accessKey: string,
+  serialise: CredentialMutationSerialiser,
 ): Promise<SurfaceCredentials> {
   if (accessKey.trim() === '') throw new Error('UI access key must not be empty');
   const path = credentialsPath(wakeRoot);
-  return mutateCredentials(path, async () => {
+  return mutateCredentials(path, serialise, async () => {
     const current = await loadOrCreateCredentials(wakeRoot);
     const replacement: SurfaceCredentials = {
       ...current,
@@ -60,9 +65,10 @@ export async function replaceAccessKey(
 export async function createPairingGrant(
   wakeRoot: string,
   now = new Date(),
+  serialise: CredentialMutationSerialiser,
 ): Promise<SurfacePairingGrant> {
   const path = credentialsPath(wakeRoot);
-  return mutateCredentials(path, async () => {
+  return mutateCredentials(path, serialise, async () => {
     const current = await loadOrCreateCredentials(wakeRoot);
     const value = randomBytes(24).toString('base64url');
     const expiresAt = new Date(now.getTime() + pairingGrantLifetimeMs).toISOString();
@@ -81,9 +87,10 @@ export async function redeemPairingGrant(
   wakeRoot: string,
   value: string,
   now = new Date(),
+  serialise: CredentialMutationSerialiser,
 ): Promise<boolean> {
   const path = credentialsPath(wakeRoot);
-  return mutateCredentials(path, async () => {
+  return mutateCredentials(path, serialise, async () => {
     const current = await loadOrCreateCredentials(wakeRoot);
     const nowIso = now.toISOString();
     const hash = grantHash(value);
@@ -125,12 +132,10 @@ async function saveCredentials(path: string, credentials: SurfaceCredentials): P
 
 async function mutateCredentials<Result>(
   path: string,
+  serialise: CredentialMutationSerialiser,
   mutation: () => Promise<Result>,
 ): Promise<Result> {
-  return withFileLock(credentialLockPath(path), mutation, {
-    waitMs: 5_000,
-    retryIntervalMs: 10,
-  });
+  return serialise(credentialLockPath(path), mutation);
 }
 
 function credentialLockPath(credentials: string): string {

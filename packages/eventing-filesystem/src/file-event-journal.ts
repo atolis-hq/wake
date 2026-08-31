@@ -1,8 +1,10 @@
 import type {
   EventData,
   EventEnvelope,
+  EventingClock,
   EventJournal,
   JournalChangeSignal,
+  StreamRef,
 } from '@atolis-hq/eventing';
 import {
   decodeEventEnvelope,
@@ -13,7 +15,6 @@ import { randomUUID } from 'node:crypto';
 import { watch } from 'node:fs';
 import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Clock, EntityRef } from '../../kernel/index.js';
 import { decodeEventRecord, encodeEventRecord } from './event-record-codec.js';
 import { withFileLock } from './file-lock.js';
 
@@ -38,7 +39,7 @@ const createFileSystemWatcher: FileEventJournalWatcherFactory = async (directory
 export class FileEventJournal implements EventJournal {
   constructor(
     private readonly root: string,
-    private readonly clock: Clock,
+    private readonly clock: EventingClock,
     private readonly options: FileEventJournalOptions = {},
   ) {}
 
@@ -74,7 +75,7 @@ export class FileEventJournal implements EventJournal {
   private scanGeneration = 0;
 
   async appendToStream(
-    stream: EntityRef,
+    stream: StreamRef,
     expectedSequence: number,
     drafts: readonly EventData[],
   ): Promise<readonly EventEnvelope[]> {
@@ -139,7 +140,7 @@ export class FileEventJournal implements EventJournal {
   // the entire history. A missing or stale manifest degrades to scan()'s
   // full parse rather than to incorrect data. The next successful append
   // rebuilds the derived manifest.
-  async readStream(stream: EntityRef) {
+  async readStream(stream: StreamRef) {
     const streamKey = key(stream);
     const entries = await this.readEntriesForRead();
     if (this.cached !== undefined) {
@@ -311,7 +312,7 @@ export class FileEventJournal implements EventJournal {
     return join(this.root, 'events', 'index-manifest.json');
   }
 
-  private cachedEventsForStream(stream: EntityRef): readonly EventEnvelope[] {
+  private cachedEventsForStream(stream: StreamRef): readonly EventEnvelope[] {
     return this.cached?.eventsByStream.get(key(stream)) ?? [];
   }
 
@@ -573,7 +574,7 @@ function sameEntries(a: readonly FileStat[], b: readonly FileStat[]): boolean {
   );
 }
 
-const key = (stream: EntityRef) => `${stream.kind}:${stream.id}`;
+const key = (stream: StreamRef) => `${stream.kind}:${stream.id}`;
 
 function indexEventsByStream(
   events: readonly EventEnvelope[],

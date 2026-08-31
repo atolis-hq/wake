@@ -6,6 +6,7 @@ import {
   type ProcessorRunSerialiser,
   type ProjectionStore,
 } from '@atolis-hq/eventing';
+import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import { join } from 'node:path';
 import type { createPullRequestService } from '../activities/index.js';
 import {
@@ -55,7 +56,6 @@ import {
   workflowName,
   type createOrchestrationService,
 } from '../orchestration/index.js';
-import { withFileLock } from '../persistence/index.js';
 import {
   BuiltInResourceCapability,
   resourceId,

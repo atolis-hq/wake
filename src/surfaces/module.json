@@ -4,7 +4,6 @@
   "dependencies": [
     "kernel",
     "eventing",
-    "persistence",
     "work",
     "resources",
     "activities",

@@ -1,4 +1,5 @@
 import { EventActorKind, JOURNAL_CHANGE_FALLBACK_MS, correlationId } from '@atolis-hq/eventing';
+import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import type { FastifyInstance } from 'fastify';
 import { execFile as nodeExecFile, spawn } from 'node:child_process';
 import { access, copyFile, mkdir, writeFile as writeFileContent } from 'node:fs/promises';
@@ -157,8 +158,13 @@ export function createSurfaceCliApplications(
       async token(accessKey: string | undefined) {
         if (root.config.surfaces.web.auth.disabled)
           return 'UI authentication is disabled by surfaces.web.auth.disabled.';
-        if (accessKey !== undefined) await replaceAccessKey(root.paths.wakeRoot, accessKey);
-        const grant = await createPairingGrant(root.paths.wakeRoot);
+        if (accessKey !== undefined)
+          await replaceAccessKey(root.paths.wakeRoot, accessKey, serialiseCredentialMutation);
+        const grant = await createPairingGrant(
+          root.paths.wakeRoot,
+          undefined,
+          serialiseCredentialMutation,
+        );
         const localHost =
           root.config.surfaces.api.host === '0.0.0.0' ? 'localhost' : root.config.surfaces.api.host;
         const local = `http://${localHost}:${root.config.surfaces.api.port}/?grant=${encodeURIComponent(grant.value)}`;
@@ -429,7 +435,8 @@ function createHttpStarter(
       credentials: await loadOrCreateCredentials(root.paths.wakeRoot),
       auth: {
         disabled: root.config.surfaces.web.auth.disabled,
-        redeemGrant: (grant) => redeemPairingGrant(root.paths.wakeRoot, grant),
+        redeemGrant: (grant) =>
+          redeemPairingGrant(root.paths.wakeRoot, grant, undefined, serialiseCredentialMutation),
       },
       ...(assets === undefined ? {} : { assets }),
     });
@@ -444,6 +451,13 @@ function createHttpStarter(
       throw error;
     }
   };
+}
+
+function serialiseCredentialMutation<Value>(
+  lockPath: string,
+  operation: () => Promise<Value>,
+): Promise<Value> {
+  return withFileLock(lockPath, operation, { waitMs: 5_000, retryIntervalMs: 10 });
 }
 
 function createDockerCliForRoot(root: CompositionRoot): DockerCli {

@@ -1,8 +1,8 @@
+import { FileCheckpointStore } from '@atolis-hq/eventing-filesystem';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { FileCheckpointStore } from '../../../src/persistence/index.js';
 
 it('loads, advances, resets, and rejects checkpoint regression', async () => {
   const store = new FileCheckpointStore(await mkdtemp(join(tmpdir(), 'wake-checkpoints-')));

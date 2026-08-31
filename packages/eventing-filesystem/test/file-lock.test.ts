@@ -3,7 +3,7 @@ import { access, mkdir, mkdtemp, open, readdir, readFile, rm, writeFile } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { acquireFileLock, withFileLock } from '../../../src/persistence/index.js';
+import { acquireFileLock, withFileLock } from '../src/file-lock.js';
 
 const roots: string[] = [];
 
@@ -309,8 +309,7 @@ it('retries strict acquisition when last-owner cleanup removes its owner directo
       },
     };
   });
-  const { acquireFileLock: acquireAfterCleanup } =
-    await import('../../../src/persistence/index.js');
+  const { acquireFileLock: acquireAfterCleanup } = await import('../src/file-lock.js');
 
   const lock = await acquireAfterCleanup(path, { staleRequiresDeadProcess: true });
 
@@ -339,8 +338,8 @@ it(
       const child = spawn(
         process.execPath,
         [
-          join(process.cwd(), 'node_modules/tsx/dist/cli.mjs'),
-          'test/integration/persistence/file-lock-contender.ts',
+          join(process.cwd(), '..', '..', 'node_modules/tsx/dist/cli.mjs'),
+          'test/file-lock-contender.ts',
         ],
         {
           cwd: process.cwd(),

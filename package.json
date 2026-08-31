@@ -46,7 +46,7 @@
     "build:web": "npm --workspace @atolis-hq/wake-web run build",
     "test:web": "npm --workspace @atolis-hq/wake-web run test",
     "test:web:e2e": "npm --workspace @atolis-hq/wake-web run test:e2e",
-    "test:unit": "npm --workspace @atolis-hq/eventing test && npm run test:unit:wake",
+    "test:unit": "npm --workspace @atolis-hq/eventing test && npm --workspace @atolis-hq/eventing-filesystem test && npm run test:unit:wake",
     "test:unit:wake": "vitest run --config vitest.unit.config.ts",
     "test:architecture": "vitest run --config vitest.architecture.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",

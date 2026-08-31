@@ -2,16 +2,16 @@ import {
   cachedJournalView,
   createEventData,
   WrongExpectedSequenceError,
+  type StreamRef as EntityRef,
   type EventData,
 } from '@atolis-hq/eventing';
+import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
 import type * as FsPromises from 'node:fs/promises';
 import { appendFile, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { type EntityRef } from '../../../src/kernel/index.js';
-import { FileEventJournal } from '../../../src/persistence/index.js';
-import { FakeClock } from '../../e2e/support/world.js';
+import { FakeClock } from './support/fake-clock.js';
 
 const { readFileMock, renameMock, statMock } = vi.hoisted(() => ({
   readFileMock: vi.fn(),

@@ -30,9 +30,12 @@ interface ModuleManifest {
 
 type CheckModuleManifests = (root?: string) => Promise<readonly string[]>;
 
+type CheckEventingFilesystemPackage = (root?: string) => Promise<readonly string[]>;
+
 const checkerModulePath = '../../scripts/check-module-manifests.mjs';
 const checker = (await import(checkerModulePath)) as {
   readonly checkModuleManifests: CheckModuleManifests;
+  readonly checkEventingFilesystemPackage: CheckEventingFilesystemPackage;
 };
 const fixtureRoots: string[] = [];
 
@@ -86,6 +89,34 @@ describe('module manifests', () => {
 
     await expect(checker.checkModuleManifests(root)).resolves.toContain(
       'work: imports @atolis-hq/eventing but does not declare dependency eventing',
+    );
+  });
+
+  it('allows only Bootstrap to import the filesystem adapter package', async () => {
+    const root = await manifestFixture({
+      work: {
+        dependencies: ['eventing-filesystem'],
+        streams: [],
+        source:
+          "import { FileEventJournal } from '@atolis-hq/eventing-filesystem';\nexport { FileEventJournal };",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'work: imports @atolis-hq/eventing-filesystem but only bootstrap may compose filesystem adapters',
+    );
+  });
+
+  it('rejects filesystem package source imports outside Eventing and Node', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-eventing-filesystem-'));
+    fixtureRoots.push(root);
+    await writeFixture(
+      join(root, 'index.ts'),
+      "import { SystemClock } from '../../../src/kernel/index.js';\nexport { SystemClock };",
+    );
+
+    await expect(checker.checkEventingFilesystemPackage(root)).resolves.toContain(
+      'index.ts: imports ../../../src/kernel/index.js; eventing-filesystem may depend only on @atolis-hq/eventing, Node builtins, and local files',
     );
   });
 

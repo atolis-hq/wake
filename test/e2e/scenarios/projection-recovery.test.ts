@@ -4,16 +4,16 @@ import {
   EventProcessorHost,
   ProjectionRebuilder,
 } from '@atolis-hq/eventing';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { expect, it } from 'vitest';
 import {
   createFileProcessorRunSerialiser,
   FileCheckpointStore,
   FileEventJournal,
   FileProjectionStore,
-} from '../../../src/persistence/index.js';
+} from '@atolis-hq/eventing-filesystem';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { expect, it } from 'vitest';
 import { createWorkService, workProjection } from '../../../src/work/index.js';
 import { workId } from '../../support/identities.js';
 import { FakeClock } from '../support/world.js';

@@ -12,6 +12,11 @@ import {
   type ProjectionStore,
 } from '@atolis-hq/eventing';
 import {
+  FileCheckpointStore,
+  FileEventJournal,
+  FileProjectionStore,
+} from '@atolis-hq/eventing-filesystem';
+import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
@@ -25,11 +30,6 @@ import {
 import { resolveWakePaths } from '../../../src/bootstrap/paths.js';
 import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
 import { type EntityRef } from '../../../src/kernel/index.js';
-import {
-  FileCheckpointStore,
-  FileEventJournal,
-  FileProjectionStore,
-} from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 it('registers every runtime definition with its stable projection consumer', () => {

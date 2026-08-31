@@ -86,6 +86,8 @@ export default tseslint.config(
       'vitest.live-e2e.config.ts',
       'packages/eventing/test/**/*.ts',
       'packages/eventing/vitest.config.ts',
+      'packages/eventing-filesystem/test/**/*.ts',
+      'packages/eventing-filesystem/vitest.config.ts',
     ],
     extends: [tseslint.configs.disableTypeChecked],
   },
@@ -104,7 +106,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ['test/**/*.ts', 'packages/eventing/test/**/*.ts'],
+    files: [
+      'test/**/*.ts',
+      'packages/eventing/test/**/*.ts',
+      'packages/eventing-filesystem/test/**/*.ts',
+    ],
     plugins: { vitest },
     rules: {
       'max-lines': 'off',
@@ -179,7 +185,12 @@ export default tseslint.config(
   },
   eslintConfigPrettier,
   {
-    files: ['src/**/*.ts', 'test/**/*.ts', 'packages/eventing/src/**/*.ts'],
+    files: [
+      'src/**/*.ts',
+      'test/**/*.ts',
+      'packages/eventing/src/**/*.ts',
+      'packages/eventing-filesystem/src/**/*.ts',
+    ],
     plugins: { '@stylistic': stylistic },
     rules: {
       '@stylistic/lines-between-class-members': [

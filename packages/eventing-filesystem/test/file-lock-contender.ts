@@ -1,5 +1,5 @@
 import { access, appendFile, writeFile } from 'node:fs/promises';
-import { acquireFileLock } from '../../../src/persistence/index.js';
+import { acquireFileLock } from '../src/file-lock.js';
 
 const {
   WAKE_LOCK_PATH,

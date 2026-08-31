@@ -1,9 +1,9 @@
+import { FileProjectionStore } from '@atolis-hq/eventing-filesystem';
 import type * as FsPromises from 'node:fs/promises';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { FileProjectionStore } from '../../../src/persistence/index.js';
 
 const { readFileMock, statMock } = vi.hoisted(() => ({ readFileMock: vi.fn(), statMock: vi.fn() }));
 vi.mock('node:fs/promises', async (importOriginal) => {

@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { type ExternalEventSource, PollService } from '../../../src/integrations/github/index.js';
-import { FileEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 describe('PollService', () => {

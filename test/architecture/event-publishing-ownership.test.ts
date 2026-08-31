@@ -165,7 +165,7 @@ describe('event publishing ownership', () => {
         'export type ProcessorInput = EventEnvelope;',
         "export type ImportedProcessorInput = import('@atolis-hq/eventing').EventEnvelope;",
       ].join('\n'),
-      'src/persistence/filesystem/file-event-journal.ts': [
+      'packages/eventing-filesystem/src/file-event-journal.ts': [
         "import type { EventEnvelope } from '@atolis-hq/eventing';",
         `export const envelope: EventEnvelope = ${envelopeLiteral()};`,
       ].join('\n'),

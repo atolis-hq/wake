@@ -2,23 +2,20 @@ import {
   decodeEventEnvelope,
   entityRefSchema,
   eventDataSchema,
+  eventEnvelopeSchema,
   type EventEnvelope,
 } from '@atolis-hq/eventing';
-import { z } from 'zod';
-import { offsetIsoTimestampSchema } from '../../kernel/index.js';
 
 const flatEventRecordSchema = eventDataSchema
   .omit({ payload: true })
   .extend({
     stream: entityRefSchema,
-    payload: z.unknown(),
-    recordedAt: offsetIsoTimestampSchema,
-    sequence: z.number().int().positive(),
-    globalPosition: z.number().int().positive(),
+    payload: eventDataSchema.shape.payload,
+    recordedAt: eventEnvelopeSchema.shape.recordedAt,
+    sequence: eventEnvelopeSchema.shape.sequence,
+    globalPosition: eventEnvelopeSchema.shape.globalPosition,
   })
   .strict();
-
-type FlatEventRecord = z.output<typeof flatEventRecordSchema>;
 
 export function decodeEventRecord(value: unknown): EventEnvelope {
   const record = flatEventRecordSchema.parse(value);
@@ -43,7 +40,7 @@ export function decodeEventRecord(value: unknown): EventEnvelope {
 
 export function encodeEventRecord(envelope: EventEnvelope): string {
   const valid = decodeEventEnvelope(envelope);
-  const record: FlatEventRecord = {
+  const record = {
     eventId: valid.event.eventId,
     eventType: valid.event.eventType,
     schemaVersion: valid.event.schemaVersion,

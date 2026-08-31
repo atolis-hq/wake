@@ -1,3 +1,4 @@
+import { FileCheckpointStore } from '@atolis-hq/eventing-filesystem';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +18,6 @@ import type {
 import { createGitHubAdapterHealthRegistry } from '../../../../src/integrations/github/infrastructure/adapter-health-registry.js';
 import { watermarkCheckpoint } from '../../../../src/integrations/github/infrastructure/poll-watermark.js';
 import { createGitHubSource } from '../../../../src/integrations/github/infrastructure/source.js';
-import { FileCheckpointStore } from '../../../../src/persistence/index.js';
 
 it('defaults the provider-wide request concurrency limit to four', () => {
   const config = gitHubConfigSchema.parse({

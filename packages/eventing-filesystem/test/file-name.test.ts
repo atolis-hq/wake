@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { encode } from '../../../src/persistence/filesystem/file-projection-store.js';
+import { encode } from '../src/file-projection-store.js';
 
 it('uses filesystem-safe storage names without percent escapes', () => {
   expect(encode('projection:operator-board')).toBe('projection~3Aoperator-board');

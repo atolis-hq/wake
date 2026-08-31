@@ -4,23 +4,24 @@ import {
   EventProcessorReplayPolicy,
   createBatchEventProcessor,
   createEventData,
+  type StreamRef as EntityRef,
   type EventEnvelope,
   type ProcessorRunSerialiser,
 } from '@atolis-hq/eventing';
+import {
+  FileCheckpointStore,
+  createFileProcessorRunSerialiser,
+} from '@atolis-hq/eventing-filesystem';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { activationSchedulerSubscriptionConsumer } from '../../../src/control-plane/index.js';
-import { type EntityRef } from '../../../src/kernel/index.js';
-import {
-  FileCheckpointStore,
-  acquireFileLock,
-  createFileProcessorRunSerialiser,
-  encodeProcessorConsumer,
-} from '../../../src/persistence/index.js';
-import { FakeClock } from '../../e2e/support/world.js';
+import { acquireFileLock } from '../src/file-lock.js';
+import { encodeProcessorConsumer } from '../src/file-processor-run-serialiser.js';
+import { FakeClock } from './support/fake-clock.js';
+
+const activationSchedulerSubscriptionConsumer = 'activation-scheduler';
 
 it('excludes the same consumer across hosts for load, handling, and checkpointing', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-subscription-serialiser-'));

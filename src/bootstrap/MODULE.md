@@ -18,7 +18,7 @@ logic.
 
 Only Bootstrap knows the complete application graph. It constructs the one
 Eventing host, registers every resident projection, reactor, coordinator, and
-translator exactly once, and injects Persistence's concrete serialiser. The
+translator exactly once, and composes the Eventing filesystem adapters. The
 activation scheduler and projections use the same processor runtime while
 startup, fallback reconciliation, schedules, polling, delivery, and surface
 diagnostics remain explicit lanes.
@@ -45,7 +45,7 @@ facts.
 
 Select concrete adapters here and register processor definitions here. Domain
 and adapter modules may define processors but must not construct Eventing's
-host or Persistence's concrete serialisers.
+host or Eventing filesystem adapters.
 
 ## Scenarios
 

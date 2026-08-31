@@ -43,6 +43,9 @@ function expectEventingSourcePaths(sourceTsConfig: TsConfig): void {
   expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing/memory']).toEqual([
     './packages/eventing/src/memory.ts',
   ]);
+  expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing-filesystem']).toEqual([
+    './packages/eventing-filesystem/src/index.ts',
+  ]);
 }
 
 describe('eventing workspace packages', () => {
@@ -55,6 +58,7 @@ describe('eventing workspace packages', () => {
       appTsConfig,
       filesystemTsConfig,
       eventingTestTsConfig,
+      filesystemTestTsConfig,
       sourceTsConfig,
       lockfile,
     ] = await Promise.all([
@@ -65,6 +69,7 @@ describe('eventing workspace packages', () => {
       readJson<TsConfig>('tsconfig.app.json'),
       readJson<TsConfig>('packages/eventing-filesystem/tsconfig.json'),
       readJson<TsConfig>('packages/eventing/tsconfig.test.json'),
+      readJson<TsConfig>('packages/eventing-filesystem/tsconfig.test.json'),
       readJson<TsConfig>('tsconfig.source.json'),
       readJson<PackageLock>('package-lock.json'),
     ]);
@@ -103,8 +108,11 @@ describe('eventing workspace packages', () => {
       { path: './packages/eventing-filesystem' },
     ]);
     expect(filesystemTsConfig.references).toEqual([{ path: '../eventing' }]);
+    expect(filesystemTsConfig.include).toEqual(['src/**/*.ts']);
     expect(eventingTestTsConfig.compilerOptions?.noEmit).toBe(true);
     expect(eventingTestTsConfig.include).toEqual(['src/**/*.ts', 'test/**/*.ts']);
+    expect(filesystemTestTsConfig.compilerOptions?.noEmit).toBe(true);
+    expect(filesystemTestTsConfig.include).toEqual(['src/**/*.ts', 'test/**/*.ts']);
     expectEventingSourcePaths(sourceTsConfig);
     expect(lockfile.packages['node_modules/@atolis-hq/eventing']).toEqual({
       resolved: 'packages/eventing',

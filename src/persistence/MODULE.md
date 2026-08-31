@@ -2,33 +2,28 @@
 
 ## Purpose
 
-Filesystem implementations of Eventing storage ports and the processor-run
-serialisation port.
+Temporary ownership of the `persistence` configuration namespace while the
+remaining module cleanup is completed.
 
 ## Owns
 
-JSONL journal, projections, checkpoints, filesystem locks, the filesystem
-processor-run serialiser, and storage diagnostics.
+No Eventing filesystem adapter. Those adapters are owned by
+`@atolis-hq/eventing-filesystem`.
 
 ## Does not own
 
-Processor definitions, handlers, host lifecycle, domain policy, or
-composition. Eventing owns processor execution and projection adaptation;
-Bootstrap selects and wires the concrete adapters.
+Eventing filesystem storage, processor definitions, handlers, host lifecycle,
+domain policy, or composition.
 
 ## Invariants
 
-Depends only on Kernel and Eventing. Persistence stores opaque envelopes and
-does not decode domain payloads. It does not import bounded event contracts.
-Only the journal adapter assigns envelope metadata; producers supply
-`EventData` through `appendToStream`.
+It is not a compatibility barrel for moved adapters. Bootstrap imports the
+filesystem package directly when it composes durable Eventing storage.
 
 ## Public contracts
 
-`index.ts` is the only public entry. Persistence exports filesystem storage
-adapters and the filesystem keyed serialiser; it does not export a processor
-host or handler. Eventing exposes its in-memory adapters from its `memory`
-subpath.
+`index.ts` remains only until the module can be removed; it exports no moved
+filesystem adapter.
 
 ## Configuration
 
@@ -41,17 +36,14 @@ Persists envelopes without defining domain event or relation semantics.
 
 ## Failure and recovery
 
-Atomic writes and durable checkpoints make replay retryable. The file-backed
-serialiser holds a consumer lock across the caller's checkpoint-load,
-handler, and checkpoint-save operation. Projection rebuild locking and
-processor retry are Eventing policies, not Persistence handlers.
+Filesystem recovery and locking behavior belongs to the Eventing filesystem
+package. Projection rebuild locking and processor retry are Eventing policies.
 
 ## Extension rules
 
-Implement filesystem Eventing storage and serialisation ports here. Keep event
+Do not add filesystem adapters or compatibility exports here. Keep event
 selection, bounded event construction and decoding, handlers, and runtime
-lifecycle in their owning modules. Do not reintroduce draft vocabulary or a
-legacy journal `append` operation.
+lifecycle in their owning modules.
 
 ## Scenarios
 

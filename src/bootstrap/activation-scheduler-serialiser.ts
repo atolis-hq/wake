@@ -1,8 +1,8 @@
+import { createFileProcessorRunSerialiser } from '@atolis-hq/eventing-filesystem';
 import {
   activationSchedulerCriticalSectionConsumer,
   type ActivationSchedulerSerialiser,
 } from '../control-plane/index.js';
-import { createFileProcessorRunSerialiser } from '../persistence/index.js';
 
 const defaultSignal = new AbortController().signal;
 

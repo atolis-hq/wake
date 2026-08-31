@@ -28,7 +28,9 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc --build tsconfig.json"
+    "build": "tsc --build tsconfig.json",
+    "typecheck:test": "tsc --noEmit --project tsconfig.test.json",
+    "test": "npm run typecheck:test && vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@atolis-hq/eventing": "0.1.0"

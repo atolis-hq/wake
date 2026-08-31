@@ -19,7 +19,7 @@ describe('target test tiers', () => {
 
     expect(packageJson.scripts.test).toBe('npm run test:unit');
     expect(packageJson.scripts['test:unit']).toBe(
-      'npm --workspace @atolis-hq/eventing test && npm run test:unit:wake',
+      'npm --workspace @atolis-hq/eventing test && npm --workspace @atolis-hq/eventing-filesystem test && npm run test:unit:wake',
     );
     expect(packageJson.scripts['test:unit:wake']).toBe('vitest run --config vitest.unit.config.ts');
     expect(packageJson.scripts.verify).toContain('npm run check:specs');

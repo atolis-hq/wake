@@ -1,7 +1,7 @@
 import type { ProcessorRunSerialiser } from '@atolis-hq/eventing';
 import { join } from 'node:path';
-import { acquireFileLock } from '../filesystem/file-lock.js';
-import { assertWellFormedUtf16 } from '../filesystem/storage-name.js';
+import { acquireFileLock } from './file-lock.js';
+import { assertWellFormedUtf16 } from './storage-name.js';
 
 export function createFileProcessorRunSerialiser(dataRoot: string): ProcessorRunSerialiser {
   let acquireTail: Promise<void> = Promise.resolve();

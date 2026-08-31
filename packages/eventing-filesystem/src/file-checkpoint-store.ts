@@ -1,4 +1,5 @@
 import type { CheckpointStore } from '@atolis-hq/eventing';
+
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { atomicJson, encode } from './file-projection-store.js';

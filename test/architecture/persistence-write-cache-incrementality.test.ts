@@ -1,11 +1,11 @@
 import { createEventData } from '@atolis-hq/eventing';
+import { FileEventJournal, FileProjectionStore } from '@atolis-hq/eventing-filesystem';
 import type * as FsPromises from 'node:fs/promises';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { type EntityRef } from '../../src/kernel/index.js';
-import { FileEventJournal, FileProjectionStore } from '../../src/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 // journal-full-scan-boundaries.test.ts exempts src/persistence/** from the
