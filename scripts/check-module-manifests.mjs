@@ -358,27 +358,38 @@ function bindingNameContains(nameNode, name) {
 }
 
 function collectPackageLoaderBindings(source) {
-  const createRequireImports = collectCreateRequireImports(source);
   const aliases = collectConstAliasDeclarations(source);
-  const bindings = new Set();
+  const factories = collectCreateRequireImports(source);
+  const loaders = new Set();
 
+  propagateConstAliases(
+    factories,
+    aliases,
+    (initializer) =>
+      ts.isIdentifier(initializer) && factories.has(nearestLexicalBinding(initializer)),
+  );
+  propagateConstAliases(
+    loaders,
+    aliases,
+    (initializer) =>
+      isUnshadowedRequireIdentifier(initializer) ||
+      isCreateRequireResult(initializer, factories) ||
+      (ts.isIdentifier(initializer) && loaders.has(nearestLexicalBinding(initializer))),
+  );
+
+  return { factories, loaders };
+}
+
+function propagateConstAliases(bindings, aliases, isRecognizedInitializer) {
   let changed = true;
   while (changed) {
     changed = false;
     for (const { binding, initializer } of aliases) {
-      if (bindings.has(binding)) continue;
-      if (
-        isUnshadowedRequireIdentifier(initializer) ||
-        isCreateRequireResult(initializer, createRequireImports) ||
-        (ts.isIdentifier(initializer) && bindings.has(nearestLexicalBinding(initializer)))
-      ) {
-        bindings.add(binding);
-        changed = true;
-      }
+      if (bindings.has(binding) || !isRecognizedInitializer(initializer)) continue;
+      bindings.add(binding);
+      changed = true;
     }
   }
-
-  return { createRequireImports, bindings };
 }
 
 function collectConstAliasDeclarations(source) {
@@ -401,11 +412,11 @@ function collectConstAliasDeclarations(source) {
   return aliases;
 }
 
-function isPackageLoaderCall(node, loaders) {
+function isPackageLoaderCall(node, packageLoaders) {
   if (ts.isIdentifier(node.expression)) {
-    return loaders.bindings.has(nearestLexicalBinding(node.expression));
+    return packageLoaders.loaders.has(nearestLexicalBinding(node.expression));
   }
-  return isCreateRequireResult(node.expression, loaders.createRequireImports);
+  return isCreateRequireResult(node.expression, packageLoaders.factories);
 }
 
 function isCreateRequireResult(node, createRequireImports) {
