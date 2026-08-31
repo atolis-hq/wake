@@ -54,7 +54,7 @@ export async function checkEventArchitectureWithStats(root = 'src') {
     readEventNamespaceManifests(sourceRoot),
   ]);
   const files = [...wakeFiles, ...eventingFiles];
-  const program = ts.createProgram(files, {
+  const compilerOptions = {
     allowJs: false,
     exactOptionalPropertyTypes: true,
     module: ts.ModuleKind.NodeNext,
@@ -71,7 +71,14 @@ export async function checkEventArchitectureWithStats(root = 'src') {
     skipLibCheck: true,
     strict: true,
     target: ts.ScriptTarget.ES2022,
-  });
+  };
+  const eventingDeclarationEntry = hasEventingSource
+    ? undefined
+    : resolveEventingDeclarationEntry(sourceRoot, compilerOptions);
+  const program = ts.createProgram(
+    eventingDeclarationEntry === undefined ? files : [...files, eventingDeclarationEntry],
+    compilerOptions,
+  );
   const typeChecker = program.getTypeChecker();
   const analysis = createAnalysisState();
   const bindings = collectBindings(program, typeChecker, analysis);
@@ -420,7 +427,7 @@ function collectCanonicalSymbols(program, typeChecker, sourceRoot) {
   }
 
   for (const sourceFile of program.getSourceFiles())
-    if (!sourceFile.isDeclarationFile) visit(sourceFile);
+    if (isCanonicalDiscoveryFile(sourceFile, sourceRoot)) visit(sourceFile);
   return symbols;
 }
 
@@ -447,8 +454,26 @@ function collectCanonicalTypes(program, typeChecker, sourceRoot, canonicalSymbol
   }
 
   for (const sourceFile of program.getSourceFiles())
-    if (!sourceFile.isDeclarationFile) visit(sourceFile);
+    if (isCanonicalDiscoveryFile(sourceFile, sourceRoot)) visit(sourceFile);
   return types;
+}
+
+function resolveEventingDeclarationEntry(sourceRoot, compilerOptions) {
+  const containingFile = join(sourceRoot, '__eventing-architecture__.ts');
+  const resolution = ts.resolveModuleName(
+    '@atolis-hq/eventing',
+    containingFile,
+    compilerOptions,
+    ts.sys,
+  ).resolvedModule;
+  return resolution?.resolvedFileName;
+}
+
+function isCanonicalDiscoveryFile(sourceFile, sourceRoot) {
+  return (
+    !sourceFile.isDeclarationFile ||
+    isEventingPackagePath(normalizeSourcePath(sourceFile.fileName, sourceRoot))
+  );
 }
 
 function addCanonicalType(types, kind, type) {

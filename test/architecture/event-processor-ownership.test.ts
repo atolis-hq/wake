@@ -92,10 +92,26 @@ async function publishedDeclarationFixture(
       type: 'module',
       exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
     }),
-    'node_modules/@atolis-hq/eventing/dist/index.d.ts':
+    'node_modules/@atolis-hq/eventing/dist/index.d.ts': [
       "export { EventProcessorHost } from './runtime/event-processor-host.js';",
+      "export type { EventProcessorDefinition } from './subscriptions/event-processor.js';",
+    ].join('\n'),
     'node_modules/@atolis-hq/eventing/dist/runtime/event-processor-host.d.ts':
       'export declare class EventProcessorHost { constructor(...args: unknown[]); }',
+    'node_modules/@atolis-hq/eventing/dist/subscriptions/event-processor.d.ts': [
+      'export interface EventProcessorDefinition<Message> {',
+      '  readonly consumer: string;',
+      '  readonly name: string;',
+      '  readonly owner: string;',
+      '  readonly category: string;',
+      '  readonly replayPolicy: string;',
+      '  readonly select: (event: unknown) => Message | null;',
+      '  readonly handle: (message: Message, event: unknown, signal: AbortSignal) => Promise<void>;',
+      '}',
+      'type RegisteredEventProcessor = EventProcessorDefinition<any>;',
+      'export type EventProcessor = RegisteredEventProcessor;',
+      'export declare function defineEventProcessor<Message>(definition: EventProcessorDefinition<Message>): EventProcessor;',
+    ].join('\n'),
     ...files,
   };
   await Promise.all(
@@ -152,6 +168,29 @@ describe('event processor ownership', () => {
         .filter(({ message }) => message.includes('[event-processor-host-owner]'))
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual(['orchestration/application/illegal-published-host.ts:2:25']);
+  });
+
+  it('rejects structurally compatible Persistence processors using declarations only', async () => {
+    const root = await publishedDeclarationFixture({
+      'src/persistence/application/structural-published-processor.ts': [
+        'export const processor = {',
+        "  consumer: 'consumer',",
+        "  name: 'name',",
+        "  owner: 'owner',",
+        "  category: 'projection',",
+        "  replayPolicy: 'rebuildable',",
+        "  select: (_event: unknown) => 'message',",
+        '  handle: async (_message: string, _event: unknown, _signal: AbortSignal) => undefined,',
+        '};',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual(['persistence/application/structural-published-processor.ts:1:26']);
   });
 
   it('rejects host construction outside Eventing and Bootstrap', async () => {
