@@ -5,10 +5,17 @@
       "entry": [
         "src/*/index.ts",
         "test/**/*.test.ts",
-        "test/integration/persistence/file-lock-contender.ts",
         "test/integration/surfaces/fixtures/wait-forever-fixture.ts"
       ],
       "project": ["src/**/*.ts", "!src/surfaces/web/**", "test/**/*.ts"]
+    },
+    "packages/eventing": {
+      "entry": ["test/**/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "packages/eventing-filesystem": {
+      "entry": ["test/**/*.test.ts", "test/file-lock-contender.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
     },
     "src/surfaces/web": {
       "entry": ["e2e/*.spec.ts", "e2e/surface-fixture.ts"],

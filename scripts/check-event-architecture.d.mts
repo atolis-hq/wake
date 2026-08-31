@@ -12,6 +12,7 @@ export interface EventArchitectureAnalysis {
   readonly stats: EventArchitectureAnalysisStats;
 }
 
+/** Checks Wake source together with the Eventing workspace package roots. */
 export function checkEventArchitecture(
   root?: string,
 ): Promise<readonly EventArchitectureDiagnostic[]>;

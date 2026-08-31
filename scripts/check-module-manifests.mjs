@@ -5,11 +5,26 @@ import ts from 'typescript';
 
 import { discoverCatalogues } from './lib/contract-vocabulary-catalogues.mjs';
 
+const workspacePackages = [
+  {
+    name: '@atolis-hq/eventing',
+    logicalDependency: 'eventing',
+    publicEntries: new Set(['@atolis-hq/eventing', '@atolis-hq/eventing/memory']),
+    sourceRoot: 'packages/eventing/src',
+  },
+  {
+    name: '@atolis-hq/eventing-filesystem',
+    logicalDependency: 'eventing-filesystem',
+    publicEntries: new Set(['@atolis-hq/eventing-filesystem']),
+    sourceRoot: 'packages/eventing-filesystem/src',
+  },
+];
 const filesystemPackage = '@atolis-hq/eventing-filesystem';
-const workspacePackageDependencies = new Map([
-  ['@atolis-hq/eventing', 'eventing'],
-  [filesystemPackage, 'eventing-filesystem'],
-]);
+const workspacePackageDependencies = new Map(
+  workspacePackages.flatMap(({ logicalDependency, publicEntries }) =>
+    [...publicEntries].map((entry) => [entry, logicalDependency]),
+  ),
+);
 const workspaceLogicalDependencies = new Set(workspacePackageDependencies.values());
 
 export async function checkModuleManifests(root = 'src') {
@@ -87,8 +102,16 @@ export async function checkModuleManifests(root = 'src') {
       source,
     });
     const owner = cataloguePath.split('/')[0];
-    for (const packageName of importedWorkspacePackages(source)) {
-      const dependency = workspacePackageDependencies.get(packageName);
+    for (const packageName of importedModuleSpecifiers(source)) {
+      const workspacePackage = workspacePackageForSpecifier(packageName);
+      if (workspacePackage === undefined) continue;
+      if (!workspacePackage.publicEntries.has(packageName)) {
+        failures.push(
+          `${cataloguePath}: imports package-internal path ${packageName}; import only a declared public package entry`,
+        );
+        continue;
+      }
+      const dependency = workspacePackage.logicalDependency;
       if (packageName === filesystemPackage && owner !== 'bootstrap') {
         failures.push(
           `${owner}: imports ${filesystemPackage} but only bootstrap may compose filesystem adapters`,
@@ -140,11 +163,33 @@ export async function checkModuleManifests(root = 'src') {
     }
   }
 
-  failures.push(...(await checkEventingFilesystemPackage()));
+  const projectRoot = dirname(resolvedRoot);
+  failures.push(...(await checkEventingPackage(join(projectRoot, 'packages/eventing/src'))));
+  failures.push(
+    ...(await checkEventingFilesystemPackage(
+      join(projectRoot, 'packages/eventing-filesystem/src'),
+    )),
+  );
   return [...new Set(failures)];
 }
 
+export async function checkEventingPackage(root = 'packages/eventing/src') {
+  return checkWorkspacePackageSource(root, {
+    name: '@atolis-hq/eventing',
+    allowedExternalImports: new Set(['zod']),
+    permitsNodeBuiltins: false,
+  });
+}
+
 export async function checkEventingFilesystemPackage(root = 'packages/eventing-filesystem/src') {
+  return checkWorkspacePackageSource(root, {
+    name: filesystemPackage,
+    allowedExternalImports: new Set(['@atolis-hq/eventing']),
+    permitsNodeBuiltins: true,
+  });
+}
+
+async function checkWorkspacePackageSource(root, policy) {
   const resolvedRoot = resolve(root);
   let paths;
   try {
@@ -167,25 +212,24 @@ export async function checkEventingFilesystemPackage(root = 'packages/eventing-f
         ? resolve(dirname(path), packageName)
         : undefined;
       if (
-        (localImport !== undefined &&
-          (localImport === resolvedRoot || localImport.startsWith(`${resolvedRoot}${sep}`))) ||
-        packageName.startsWith('node:') ||
-        packageName === '@atolis-hq/eventing'
+        localImport !== undefined &&
+        (localImport === resolvedRoot || localImport.startsWith(`${resolvedRoot}${sep}`))
       )
         continue;
-      failures.push(
-        `${source.fileName}: imports ${packageName}; eventing-filesystem may depend only on @atolis-hq/eventing, Node builtins, and local files`,
-      );
+      if (policy.permitsNodeBuiltins && packageName.startsWith('node:')) continue;
+      if (policy.allowedExternalImports.has(packageName)) continue;
+      const detail = policy.permitsNodeBuiltins
+        ? 'eventing-filesystem may depend only on @atolis-hq/eventing, Node builtins, and local files'
+        : 'eventing may depend only on package dependencies and local files';
+      failures.push(`${source.fileName}: imports ${packageName}; ${detail}`);
     }
   }
   return failures;
 }
 
-function importedWorkspacePackages(source) {
-  return new Set(
-    [...importedModuleSpecifiers(source)].filter((packageName) =>
-      workspacePackageDependencies.has(packageName),
-    ),
+function workspacePackageForSpecifier(specifier) {
+  return workspacePackages.find(
+    ({ name }) => specifier === name || specifier.startsWith(`${name}/`),
   );
 }
 

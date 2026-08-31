@@ -92,7 +92,6 @@ async function fixture(
   const manifests = {
     kernel: [],
     bootstrap: [],
-    persistence: [],
     work: ['work.'],
     ...modules,
   };
@@ -458,6 +457,27 @@ describe('event publishing ownership', () => {
     expect(messages(diagnostics)).toContain('[event-envelope-construction-owner]');
   });
 
+  it('allows EventEnvelope construction only in Eventing filesystem journal adapters', async () => {
+    const root = await fixture({
+      'packages/eventing-filesystem/src/file-event-journal.ts': [
+        "import type { EventEnvelope } from '@atolis-hq/eventing';",
+        `export const envelope: EventEnvelope = ${envelopeLiteral()};`,
+      ].join('\n'),
+      'packages/eventing-filesystem/src/tuple-envelope.ts': [
+        "import type { EventEnvelope } from '@atolis-hq/eventing';",
+        `const [envelope]: readonly [EventEnvelope] = [${envelopeLiteral()}];`,
+        'export { envelope };',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-envelope-construction-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual(['../packages/eventing-filesystem/src/tuple-envelope.ts:2:47']);
+  });
+
   it('allows only the exact Eventing envelope decoder implementation to reshape envelopes', async () => {
     const root = await fixture({
       'src/control-plane/illegal-envelope.ts': [
@@ -746,10 +766,10 @@ describe('event publishing ownership', () => {
     );
   });
 
-  it('rejects bounded event contract imports in Persistence but permits them in Bootstrap', async () => {
+  it('rejects bounded event contract imports in Eventing but permits them in Bootstrap', async () => {
     const root = await fixture({
-      'src/persistence/illegal-event-type.ts':
-        "import type { WorkEventData as PersistedWorkEvent } from '../work/index.js'; export type Illegal = PersistedWorkEvent;",
+      'packages/eventing/src/illegal-event-type.ts':
+        "import type { WorkEventData as ImportedWorkEvent } from '../../../src/work/index.js'; export type Illegal = ImportedWorkEvent;",
       'src/bootstrap/allowed-event-type.ts':
         "import type { WorkEventData } from '../work/index.js'; export type Allowed = WorkEventData;",
     });
@@ -760,12 +780,12 @@ describe('event publishing ownership', () => {
     ).toHaveLength(1);
   });
 
-  it('rejects bounded import types and re-exports in Persistence', async () => {
+  it('rejects bounded import types and re-exports in Eventing', async () => {
     const root = await fixture({
-      'src/persistence/illegal-import-type.ts':
-        "export type Illegal = import('../work/index.js').WorkEventData;",
-      'src/persistence/illegal-re-export.ts':
-        "export type { WorkEventData } from '../work/index.js';",
+      'packages/eventing/src/illegal-import-type.ts':
+        "export type Illegal = import('../../../src/work/index.js').WorkEventData;",
+      'packages/eventing/src/illegal-re-export.ts':
+        "export type { WorkEventData } from '../../../src/work/index.js';",
     });
 
     const diagnostics = await checker.checkEventArchitecture(root);
@@ -774,15 +794,15 @@ describe('event publishing ownership', () => {
     ).toHaveLength(2);
   });
 
-  it('rejects direct bounded EventData construction in Bootstrap and Persistence', async () => {
+  it('rejects direct bounded EventData construction in Bootstrap and Eventing', async () => {
     const illegalEvent = `{ ...${eventInput()}, schemaVersion: 1 }`;
     const root = await fixture({
       'src/bootstrap/illegal-event.ts': [
         "import type { WorkEventData } from '../work/index.js';",
         `export const event: WorkEventData = ${illegalEvent};`,
       ].join('\n'),
-      'src/persistence/illegal-event.ts': [
-        "import type { WorkEventData } from '../work/index.js';",
+      'packages/eventing/src/illegal-event.ts': [
+        "import type { WorkEventData } from '../../../src/work/index.js';",
         `export const event: WorkEventData = ${illegalEvent};`,
       ].join('\n'),
     });

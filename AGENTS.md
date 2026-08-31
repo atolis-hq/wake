@@ -56,8 +56,9 @@ design notes do not describe the active implementation.
 
 | Module | Responsibility |
 | --- | --- |
-| `kernel` | Event envelopes, identifiers, relations, clocks, and storage contracts. |
-| `persistence` | Filesystem and in-memory journals, projections, checkpoints, and locks. |
+| `kernel` | Identifiers, relations, clocks, and universal contracts. |
+| `@atolis-hq/eventing` | Event envelopes, journals, processor runtime, and in-memory adapters. |
+| `@atolis-hq/eventing-filesystem` | Filesystem journals, projections, checkpoints, locks, and serialisers. |
 | `work` | Work-item facts and projections. |
 | `resources` | External-resource facts and work correlation. |
 | `activities` | Activity contracts and PR/review activities. |
@@ -66,7 +67,7 @@ design notes do not describe the active implementation.
 | `control-plane` | Intake, bounded advancement, selection, schedules, quotas, and hosts. |
 | `integrations` | Provider polling, translation, artifacts, and delivery. |
 | `surfaces` | CLI, API, and web presentation. |
-| `bootstrap` | Root config, paths, concrete composition, and production projections. |
+| `bootstrap` | Root config, paths, storage-package composition, and production projections. |
 
 Each module exposes only its `index.ts`. Bootstrap is the only place that knows
 the complete application graph; it composes concrete runners, providers,

@@ -32,9 +32,6 @@ describe('journal full-scan boundaries', () => {
   }, 30_000);
 
   it.each([
-    // Owns the journal and already gates full rescans behind a
-    // last-seen-position check.
-    'src/persistence/application/full-scan-fixture.ts',
     // Composition/wiring and CLI command handlers: startup and one-off
     // command volume, not a resident tick.
     'src/bootstrap/full-scan-fixture.ts',

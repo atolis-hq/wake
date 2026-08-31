@@ -6,7 +6,6 @@
     "kernel",
     "eventing",
     "eventing-filesystem",
-    "persistence",
     "work",
     "resources",
     "activities",

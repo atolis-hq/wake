@@ -59,9 +59,9 @@ location. Adapters retain control
 
 | Module | Owns |
 | --- | --- |
-| `kernel` | Event envelopes, identifiers, relations, clocks, and persistence contracts. |
-| `eventing` | Persistence-neutral named processor definitions, hosting, catch-up, retry, health, and projection adaptation. |
-| `persistence` | Filesystem and in-memory event journals, checkpoints, projections, locks, and keyed processor serialisers. |
+| `kernel` | Identifiers, relations, clocks, and universal contracts. |
+| `@atolis-hq/eventing` | Event envelopes, named processor definitions, hosting, catch-up, retry, health, projections, and in-memory adapters. |
+| `@atolis-hq/eventing-filesystem` | Filesystem journals, checkpoints, projections, locks, and keyed processor serialisers. |
 | `work` | Work-item facts, lifecycle controls, and work projections. |
 | `resources` | External-resource facts and their correlation to work items. |
 | `conversations` | Canonical work-item conversation facts, entry origins, and rebuildable conversation views. |
@@ -97,7 +97,8 @@ decoding persisted data. A selector returns `null` for another namespace and
 rejects malformed data in its own namespace.
 
 Filesystem storage preserves the established flat JSONL record through the
-Persistence codec, while the in-memory adapter keeps the nested envelope model.
+Eventing filesystem package codec, while the in-memory adapter keeps the nested
+envelope model.
 No journal data migration or projection rebuild is required for that storage
 compatibility boundary.
 
@@ -175,17 +176,19 @@ path around it:
   append another module's facts directly or infer lifecycle from UI state.
 
 Event processor ownership is enforced in the architecture checks: bounded
-modules may define selectors and handlers, Persistence may supply concrete
-serialisers, and only Bootstrap may construct the host and compose the full
-registry. No module maintains a parallel durable-subscription runtime.
+modules may define selectors and handlers, the Eventing filesystem package
+supplies concrete serialisers, and only Bootstrap may construct the host and
+compose the full registry. No module maintains a parallel durable-subscription
+runtime.
 
 The symbol-aware `check-event-architecture` gate also enforces publishing and
 processor ownership, bounded imports, legacy-vocabulary bans, and manifest
-namespaces. Eventing hosts subscriptions, checkpoints, and projections without
-knowing domain facts; Persistence records, loads, and signals changes without
-knowing domain facts; Bootstrap composes both with module factories and the
-processor registry. Surfaces flatten an internal envelope only at their
-transport boundary to preserve existing API, CLI, and web shapes.
+namespaces. The Eventing package hosts subscriptions, checkpoints, and
+projections without knowing domain facts; its filesystem package records, loads,
+and signals changes without knowing domain facts; Bootstrap composes both with
+module factories and the processor registry. Surfaces flatten an internal
+envelope only at their transport boundary to preserve existing API, CLI, and
+web shapes.
 
 The current ports deliberately remain narrow. They match established event-store
 concepts without adding infrastructure: SQLite, Emmett, or Kurrent adapters can

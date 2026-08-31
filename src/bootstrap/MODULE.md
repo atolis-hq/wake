@@ -11,7 +11,7 @@ Eventing processor registry, runtime supervision, and process hosts.
 
 ## Does not own
 
-Domain policy, provider payloads, Persistence semantics, or processor handler
+Domain policy, provider payloads, Eventing filesystem semantics, or processor handler
 logic.
 
 ## Invariants

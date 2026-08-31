@@ -23,7 +23,7 @@ const processorRuntimeNames = new Set([
 ]);
 const finiteTupleElementCap = 64;
 const handlerPropertyNames = new Set(['handle', 'handler']);
-const publishingInfrastructureModules = new Set(['bootstrap', 'eventing', 'persistence']);
+const publishingInfrastructureModules = new Set(['bootstrap', 'eventing']);
 const legacyDraftNames = new Set([
   'EventDraft',
   'EventDraftUnion',
@@ -47,13 +47,18 @@ export async function checkEventArchitectureWithStats(root = 'src') {
     : resolvedRoot;
   const projectRoot = dirname(sourceRoot);
   const eventingSourceRoot = join(projectRoot, 'packages/eventing/src');
-  const hasEventingSource = await directoryExists(eventingSourceRoot);
-  const [wakeFiles, eventingFiles, manifests] = await Promise.all([
+  const eventingFilesystemSourceRoot = join(projectRoot, 'packages/eventing-filesystem/src');
+  const [hasEventingSource, hasEventingFilesystemSource] = await Promise.all([
+    directoryExists(eventingSourceRoot),
+    directoryExists(eventingFilesystemSourceRoot),
+  ]);
+  const [wakeFiles, eventingFiles, eventingFilesystemFiles, manifests] = await Promise.all([
     typescriptFiles(sourceRoot),
     hasEventingSource ? typescriptFiles(eventingSourceRoot) : [],
+    hasEventingFilesystemSource ? typescriptFiles(eventingFilesystemSourceRoot) : [],
     readEventNamespaceManifests(sourceRoot),
   ]);
-  const files = [...wakeFiles, ...eventingFiles];
+  const files = [...wakeFiles, ...eventingFiles, ...eventingFilesystemFiles];
   const compilerOptions = {
     allowJs: false,
     exactOptionalPropertyTypes: true,
@@ -65,6 +70,13 @@ export async function checkEventArchitectureWithStats(root = 'src') {
       ? {
           paths: {
             '@atolis-hq/eventing': [join(projectRoot, 'packages/eventing/src/index.ts')],
+            ...(hasEventingFilesystemSource
+              ? {
+                  '@atolis-hq/eventing-filesystem': [
+                    join(projectRoot, 'packages/eventing-filesystem/src/index.ts'),
+                  ],
+                }
+              : {}),
           },
         }
       : {}),
@@ -93,7 +105,9 @@ export async function checkEventArchitectureWithStats(root = 'src') {
     const relativePath = normalizeSourcePath(file, sourceRoot);
     const moduleName = isEventingPackagePath(relativePath)
       ? 'eventing'
-      : relativePath.split('/')[0];
+      : isEventingFilesystemPackagePath(relativePath)
+        ? 'eventing-filesystem'
+        : relativePath.split('/')[0];
     inspectProcessorRuntimeReferences(
       sourceFile,
       bindings,
@@ -103,8 +117,8 @@ export async function checkEventArchitectureWithStats(root = 'src') {
       diagnostics,
       analysis,
     );
-    if (moduleName === 'persistence') {
-      inspectPersistenceProcessors(
+    if (moduleName === 'eventing-filesystem') {
+      inspectEventingFilesystemProcessors(
         sourceFile,
         bindings,
         typeChecker,
@@ -472,7 +486,8 @@ function resolveEventingDeclarationEntry(sourceRoot, compilerOptions) {
 function isCanonicalDiscoveryFile(sourceFile, sourceRoot) {
   return (
     !sourceFile.isDeclarationFile ||
-    isEventingPackagePath(normalizeSourcePath(sourceFile.fileName, sourceRoot))
+    isEventingPackagePath(normalizeSourcePath(sourceFile.fileName, sourceRoot)) ||
+    isEventingFilesystemPackagePath(normalizeSourcePath(sourceFile.fileName, sourceRoot))
   );
 }
 
@@ -868,8 +883,8 @@ function isApprovedProcessorRuntimeReference(kind, relativePath) {
     return isEventingPackagePath(relativePath) || relativePath.startsWith('bootstrap/');
   if (kind === 'registry') return relativePath.startsWith('bootstrap/');
   if (kind === 'serialiser')
-    return relativePath.startsWith('persistence/') || relativePath.startsWith('bootstrap/');
-  return kind === 'processor-factory' && !relativePath.startsWith('persistence/');
+    return isEventingFilesystemPackagePath(relativePath) || relativePath.startsWith('bootstrap/');
+  return kind === 'processor-factory' && !isEventingFilesystemPackagePath(relativePath);
 }
 
 function addProcessorRuntimeReferenceDiagnostic(reference, sourceRoot, diagnostics) {
@@ -894,15 +909,15 @@ function addProcessorRuntimeReferenceDiagnostic(reference, sourceRoot, diagnosti
       reference.node,
       sourceRoot,
       'processor-serialiser-owner',
-      'processor serialiser runtime references are restricted to persistence and bootstrap',
+      'processor serialiser runtime references are restricted to eventing-filesystem and bootstrap',
       diagnostics,
     );
   if (reference.kind === 'processor-factory')
     addDiagnostic(
       reference.node,
       sourceRoot,
-      'persistence-processor-handler',
-      'persistence may not define handlers for Eventing processors',
+      'eventing-filesystem-processor-handler',
+      'eventing-filesystem may not define handlers for Eventing processors',
       diagnostics,
     );
 }
@@ -915,7 +930,7 @@ function reportProcessorRuntimeReference(reference, sourceRoot, diagnostics, rep
   addProcessorRuntimeReferenceDiagnostic(reference, sourceRoot, diagnostics);
 }
 
-function inspectPersistenceProcessors(
+function inspectEventingFilesystemProcessors(
   sourceFile,
   bindings,
   typeChecker,
@@ -952,12 +967,12 @@ function inspectPersistenceProcessors(
       isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, analysis.canonicalTypes) &&
       !isLocallyShadowedProcessorFactoryArgument(node, bindings, typeChecker, sourceRoot)
     )
-      addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported);
+      addEventingFilesystemDiagnostic(node, sourceRoot, diagnostics, reported);
     if (
       (ts.isClassDeclaration(node) || ts.isClassExpression(node)) &&
       isProcessorDefinitionClass(node, typeChecker, analysis.canonicalTypes)
     )
-      addPersistenceDiagnostic(node.name ?? node, sourceRoot, diagnostics, reported);
+      addEventingFilesystemDiagnostic(node.name ?? node, sourceRoot, diagnostics, reported);
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
@@ -992,7 +1007,7 @@ function inspectLinkedHandlerProperties(
   if (ts.isObjectLiteralExpression(expression)) {
     for (const property of expression.properties) {
       if (handlerPropertyNames.has(propertyName(property.name, bindings, typeChecker)))
-        addPersistenceDiagnostic(property, sourceRoot, diagnostics, reported);
+        addEventingFilesystemDiagnostic(property, sourceRoot, diagnostics, reported);
     }
     return;
   }
@@ -1128,7 +1143,7 @@ function inspectPublishingOwnership(context) {
         node,
         sourceRoot,
         'bounded-event-data-construction',
-        'Bootstrap, Persistence, and Eventing must delegate bounded EventData construction to its owner',
+        'Bootstrap and Eventing must delegate bounded EventData construction to its owner',
         diagnostics,
       );
     if (ts.isIdentifier(node) && legacyDraftNames.has(node.text) && !isTestPath(relativePath))
@@ -1369,7 +1384,7 @@ function isEnvelopeTestHelperPath(relativePath) {
 
 function inspectBoundedEventImports(context) {
   const { sourceFile, typeChecker, moduleName } = context;
-  if (!['eventing', 'persistence'].includes(moduleName)) return;
+  if (moduleName !== 'eventing') return;
   for (const statement of sourceFile.statements) {
     if (ts.isImportDeclaration(statement) && statement.importClause !== undefined)
       for (const binding of importBindings(statement.importClause))
@@ -1448,7 +1463,7 @@ function addBoundedEventReferenceDiagnostic(node, symbolOrNode, context) {
     node,
     sourceRoot,
     'bounded-event-import-owner',
-    'Persistence and Eventing may not import or re-export bounded event contracts',
+    'Eventing may not import or re-export bounded event contracts',
     diagnostics,
   );
 }
@@ -1513,9 +1528,9 @@ function isApprovedEventDataFactoryPath(relativePath, moduleName, manifests) {
 function isApprovedEnvelopeConstructionPath(relativePath) {
   if (pathMatches(relativePath, 'test/support/event-envelope.ts')) return true;
   return (
-    /^persistence\/(?:filesystem|memory)\/[^/]*event-journal\.ts$/u.test(relativePath) ||
     /^\.\.\/packages\/eventing\/src\/memory\/[^/]*event-journal\.ts$/u.test(relativePath) ||
-    pathMatches(relativePath, 'persistence/filesystem/event-record-codec.ts')
+    /^\.\.\/packages\/eventing-filesystem\/src\/file-event-journal\.ts$/u.test(relativePath) ||
+    /^\.\.\/packages\/eventing-filesystem\/src\/event-record-codec\.ts$/u.test(relativePath)
   );
 }
 
@@ -2042,7 +2057,7 @@ function protectedSymbolKind(symbol, sourceRoot) {
     if (pathMatches(path, 'bootstrap/event-processor-runtime.ts') && registryNames.has(name))
       return 'registry';
     if (
-      pathMatches(path, 'persistence/application/processor-run-serialiser.ts') &&
+      eventingFilesystemModulePathMatches(path, 'file-processor-run-serialiser') &&
       serialiserNames.has(name)
     )
       return 'serialiser';
@@ -2088,11 +2103,27 @@ function eventingModulePathMatches(path, modulePath) {
   ].some((suffix) => pathMatches(path, suffix));
 }
 
+function eventingFilesystemModulePathMatches(path, modulePath) {
+  return [
+    `packages/eventing-filesystem/src/${modulePath}.ts`,
+    `packages/eventing-filesystem/dist/${modulePath}.d.ts`,
+    `node_modules/@atolis-hq/eventing-filesystem/dist/${modulePath}.d.ts`,
+  ].some((suffix) => pathMatches(path, suffix));
+}
+
 function isEventingPackagePath(path) {
   return (
     path.includes('/packages/eventing/src/') ||
     path.includes('/packages/eventing/dist/') ||
     path.includes('/node_modules/@atolis-hq/eventing/dist/')
+  );
+}
+
+function isEventingFilesystemPackagePath(path) {
+  return (
+    path.includes('/packages/eventing-filesystem/src/') ||
+    path.includes('/packages/eventing-filesystem/dist/') ||
+    path.includes('/node_modules/@atolis-hq/eventing-filesystem/dist/')
   );
 }
 
@@ -2203,7 +2234,7 @@ function selectAssignedExpression(expression, accessPath, bindings, typeChecker,
     : selectAssignedExpression(selected, tail, bindings, typeChecker, useNode, seen);
 }
 
-function addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported) {
+function addEventingFilesystemDiagnostic(node, sourceRoot, diagnostics, reported) {
   const sourceFile = node.getSourceFile();
   const key = `${sourceFile.fileName}:${node.getStart(sourceFile)}`;
   if (reported.has(key)) return;
@@ -2211,8 +2242,8 @@ function addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported) {
   addDiagnostic(
     node,
     sourceRoot,
-    'persistence-processor-handler',
-    'persistence may not define handlers for Eventing processors',
+    'eventing-filesystem-processor-handler',
+    'eventing-filesystem may not define handlers for Eventing processors',
     diagnostics,
   );
 }

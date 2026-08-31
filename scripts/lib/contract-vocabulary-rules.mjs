@@ -121,7 +121,7 @@ function allowsRegisteredLiterals(path) {
   const parts = normalized.split('/');
   const fileName = basename(normalized);
   if (fileName.endsWith('.corrupt-fixture.ts')) return true;
-  if (parts.includes('persistence')) return true;
+  if (parts.includes('eventing-filesystem')) return true;
   return (
     parts.includes('integrations') && /^.+-(?:decoder|translator|translation)\.ts$/.test(fileName)
   );

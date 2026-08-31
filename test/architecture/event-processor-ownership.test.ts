@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+﻿import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -58,10 +58,10 @@ async function fixture(files: Readonly<Record<string, string>>): Promise<string>
     ].join('\n'),
     'packages/eventing/src/projections/projection-processor.ts':
       'export function createProjectionProcessor(value: unknown) { return value; }',
-    'src/persistence/index.ts': [
-      "export { createFileProcessorRunSerialiser } from './application/processor-run-serialiser.js';",
+    'packages/eventing-filesystem/src/index.ts': [
+      "export { createFileProcessorRunSerialiser } from './file-processor-run-serialiser.js';",
     ].join('\n'),
-    'src/persistence/application/processor-run-serialiser.ts': [
+    'packages/eventing-filesystem/src/file-processor-run-serialiser.ts': [
       'export function createFileProcessorRunSerialiser(value: unknown) { return value; }',
     ].join('\n'),
     'src/bootstrap/index.ts':
@@ -86,6 +86,7 @@ async function publishedDeclarationFixture(
   const root = await mkdtemp(join(tmpdir(), 'wake-event-processor-published-'));
   roots.push(root);
   const stubs = {
+    'src/bootstrap/index.ts': 'export {};',
     'node_modules/@atolis-hq/eventing/package.json': JSON.stringify({
       name: '@atolis-hq/eventing',
       type: 'module',
@@ -169,9 +170,9 @@ describe('event processor ownership', () => {
     ).toEqual(['orchestration/application/illegal-published-host.ts:2:25']);
   });
 
-  it('rejects structurally compatible Persistence processors using declarations only', async () => {
+  it('rejects structurally compatible Eventing filesystem processors using declarations only', async () => {
     const root = await publishedDeclarationFixture({
-      'src/persistence/application/structural-published-processor.ts': [
+      'packages/eventing-filesystem/src/application/structural-published-processor.ts': [
         'export const processor = {',
         "  consumer: 'consumer',",
         "  name: 'name',",
@@ -187,9 +188,11 @@ describe('event processor ownership', () => {
     const diagnostics = await checker.checkEventArchitecture(root);
     expect(
       diagnostics
-        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .filter(({ message }) => message.includes('[eventing-filesystem-processor-handler]'))
         .map(({ message }) => message.split(' ')[0]),
-    ).toEqual(['persistence/application/structural-published-processor.ts:1:26']);
+    ).toEqual([
+      '../packages/eventing-filesystem/src/application/structural-published-processor.ts:1:26',
+    ]);
   });
 
   it('rejects host construction outside Eventing and Bootstrap', async () => {
@@ -204,10 +207,10 @@ describe('event processor ownership', () => {
     expect(messages(diagnostics)).toContain('[event-processor-host-owner]');
   });
 
-  it('rejects concrete processor serialisers outside Persistence and Bootstrap', async () => {
+  it('rejects concrete processor serialisers outside Eventing filesystem and Bootstrap', async () => {
     const root = await fixture({
       'src/integrations/github/application/illegal-serialiser.ts': [
-        "import { createFileProcessorRunSerialiser } from '../../../persistence/index.js';",
+        "import { createFileProcessorRunSerialiser } from '@atolis-hq/eventing-filesystem';",
         "export const serialise = createFileProcessorRunSerialiser('/tmp');",
       ].join('\n'),
     });
@@ -221,7 +224,7 @@ describe('event processor ownership', () => {
       'src/orchestration/application/types.ts': [
         "import type { EventProcessorHost } from '@atolis-hq/eventing';",
         "import type { EventProcessorRuntime } from '../../bootstrap/index.js';",
-        "import type { createFileProcessorRunSerialiser } from '../../persistence/index.js';",
+        "import type { createFileProcessorRunSerialiser } from '@atolis-hq/eventing-filesystem';",
         'export type RuntimeTypes = EventProcessorHost | EventProcessorRuntime | typeof createFileProcessorRunSerialiser;',
       ].join('\n'),
     });
@@ -234,7 +237,7 @@ describe('event processor ownership', () => {
       'src/orchestration/application/illegal-aliases.ts': [
         "import { EventProcessorHost as Host } from '@atolis-hq/eventing';",
         "import { EventProcessorRuntime as Runtime } from '../../bootstrap/index.js';",
-        "import { createFileProcessorRunSerialiser as serialiseFile } from '../../persistence/index.js';",
+        "import { createFileProcessorRunSerialiser as serialiseFile } from '@atolis-hq/eventing-filesystem';",
         'export const host = new Host({}, {}, () => undefined);',
         'const HostAlias = Host;',
         'export const chainedHost = new HostAlias({}, {}, () => undefined);',
@@ -328,7 +331,7 @@ describe('event processor ownership', () => {
         "import { EventProcessorHost } from '@atolis-hq/eventing';",
         "import * as Eventing from '@atolis-hq/eventing';",
         "import { EventProcessorRuntime } from '../../bootstrap/index.js';",
-        "import { createFileProcessorRunSerialiser } from '../../persistence/index.js';",
+        "import { createFileProcessorRunSerialiser } from '@atolis-hq/eventing-filesystem';",
         'const consume = (_value: unknown): void => undefined;',
         'consume(EventProcessorHost);',
         "const hostKey = 'EventProcessorHost' as const;",
@@ -338,7 +341,7 @@ describe('event processor ownership', () => {
         'const serialiser = createFileProcessorRunSerialiser;',
         'export { computedHost, namespacedHost, runtime, serialiser };',
       ].join('\n'),
-      'src/persistence/application/illegal-factory-references.ts': [
+      'packages/eventing-filesystem/src/application/illegal-factory-references.ts': [
         "import { defineEventProcessor } from '@atolis-hq/eventing';",
         'const consume = (_value: unknown): void => undefined;',
         'const stored = defineEventProcessor;',
@@ -364,7 +367,9 @@ describe('event processor ownership', () => {
       diagnostics.filter(({ message }) => message.includes('[processor-serialiser-owner]')),
     ).toHaveLength(1);
     expect(
-      diagnostics.filter(({ message }) => message.includes('[persistence-processor-handler]')),
+      diagnostics.filter(({ message }) =>
+        message.includes('[eventing-filesystem-processor-handler]'),
+      ),
     ).toHaveLength(2);
   });
 
@@ -393,7 +398,7 @@ describe('event processor ownership', () => {
         '  new namespaces[0].EventProcessorHost(),',
         '];',
       ].join('\n'),
-      'src/persistence/application/structural-factory-bindings.ts': [
+      'packages/eventing-filesystem/src/application/structural-factory-bindings.ts': [
         "import * as Eventing from '@atolis-hq/eventing';",
         'const localFactory = (value: unknown): unknown => value;',
         'const { defineEventProcessor = (value: unknown): unknown => value } = Eventing;',
@@ -434,16 +439,16 @@ describe('event processor ownership', () => {
     ]);
     expect(
       diagnostics
-        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .filter(({ message }) => message.includes('[eventing-filesystem-processor-handler]'))
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual([
-      'persistence/application/structural-factory-bindings.ts:3:9',
-      'persistence/application/structural-factory-bindings.ts:4:31',
-      'persistence/application/structural-factory-bindings.ts:6:23',
-      'persistence/application/structural-factory-bindings.ts:8:26',
-      'persistence/application/structural-factory-bindings.ts:10:18',
-      'persistence/application/structural-factory-bindings.ts:19:16',
-      'persistence/application/structural-factory-bindings.ts:20:3',
+      '../packages/eventing-filesystem/src/application/structural-factory-bindings.ts:3:9',
+      '../packages/eventing-filesystem/src/application/structural-factory-bindings.ts:4:31',
+      '../packages/eventing-filesystem/src/application/structural-factory-bindings.ts:6:23',
+      '../packages/eventing-filesystem/src/application/structural-factory-bindings.ts:8:26',
+      '../packages/eventing-filesystem/src/application/structural-factory-bindings.ts:10:18',
+      '../packages/eventing-filesystem/src/application/structural-factory-bindings.ts:19:16',
+      '../packages/eventing-filesystem/src/application/structural-factory-bindings.ts:20:3',
     ]);
   });
 
@@ -458,7 +463,7 @@ describe('event processor ownership', () => {
         '([{ EventProcessorHost: ArrayHost = LocalHost }] = [Eventing]);',
         'export const hosts = [new EventProcessorHost(), new ArrayHost()];',
       ].join('\n'),
-      'src/persistence/application/assignment-default-bindings.ts': [
+      'packages/eventing-filesystem/src/application/assignment-default-bindings.ts': [
         "import * as Eventing from '@atolis-hq/eventing';",
         'const localFactory = (value: unknown): unknown => value;',
         'let defineEventProcessor: typeof Eventing.defineEventProcessor = localFactory;',
@@ -480,11 +485,11 @@ describe('event processor ownership', () => {
     ]);
     expect(
       diagnostics
-        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .filter(({ message }) => message.includes('[eventing-filesystem-processor-handler]'))
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual([
-      'persistence/application/assignment-default-bindings.ts:4:4',
-      'persistence/application/assignment-default-bindings.ts:6:27',
+      '../packages/eventing-filesystem/src/application/assignment-default-bindings.ts:4:4',
+      '../packages/eventing-filesystem/src/application/assignment-default-bindings.ts:6:27',
     ]);
   });
 
@@ -493,7 +498,7 @@ describe('event processor ownership', () => {
       'src/orchestration/application/member-assignment-targets.ts': [
         "import * as Bootstrap from '../../bootstrap/index.js';",
         "import * as Eventing from '@atolis-hq/eventing';",
-        "import * as Persistence from '../../persistence/index.js';",
+        "import * as Filesystem from '@atolis-hq/eventing-filesystem';",
         'class LocalHost { constructor(...args: unknown[]) { void args; } }',
         'class LocalRuntime { constructor(...args: unknown[]) { void args; } }',
         'const localSerialiser = (value: unknown): unknown => value;',
@@ -503,10 +508,10 @@ describe('event processor ownership', () => {
         '({ EventProcessorHost: holder[hostSlot] } = Eventing);',
         '[holder.Host] = [Eventing.EventProcessorHost];',
         '({ nested: [{ EventProcessorRuntime: holder.Runtime }] } = { nested: [Bootstrap] });',
-        '({ nested: [{ createFileProcessorRunSerialiser: holder.Serialiser }] } = { nested: [Persistence] });',
+        '({ nested: [{ createFileProcessorRunSerialiser: holder.Serialiser }] } = { nested: [Filesystem] });',
         'export const values = [new holder.Host(), new holder.ComputedHost(), new holder.Runtime(), holder.Serialiser(1)];',
       ].join('\n'),
-      'src/persistence/application/member-assignment-targets.ts': [
+      'packages/eventing-filesystem/src/application/member-assignment-targets.ts': [
         "import * as Eventing from '@atolis-hq/eventing';",
         'const localFactory = (value: unknown): unknown => value;',
         'const holders: [typeof Eventing.defineEventProcessor, typeof Eventing.defineEventProcessor] = [localFactory, localFactory];',
@@ -538,11 +543,11 @@ describe('event processor ownership', () => {
     ).toEqual(['orchestration/application/member-assignment-targets.ts:13:49']);
     expect(
       diagnostics
-        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .filter(({ message }) => message.includes('[eventing-filesystem-processor-handler]'))
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual([
-      'persistence/application/member-assignment-targets.ts:4:26',
-      'persistence/application/member-assignment-targets.ts:5:27',
+      '../packages/eventing-filesystem/src/application/member-assignment-targets.ts:4:26',
+      '../packages/eventing-filesystem/src/application/member-assignment-targets.ts:5:27',
     ]);
   });
 
@@ -560,7 +565,7 @@ describe('event processor ownership', () => {
         '({ [dynamicKey]: holder.Dynamic } = dynamicSource);',
         'export const values = [new holder.Host(), new holder.ComputedHost(), holder.Dynamic];',
       ].join('\n'),
-      'src/persistence/application/local-member-assignment-targets.ts': [
+      'packages/eventing-filesystem/src/application/local-member-assignment-targets.ts': [
         'const localFactory = (value: unknown): unknown => value;',
         'const LocalEventing = { defineEventProcessor: localFactory };',
         'const holders: [(value: unknown) => unknown] = [localFactory];',
@@ -581,7 +586,7 @@ describe('event processor ownership', () => {
       'src/orchestration/application/member-rest-targets.ts': [
         "import * as Bootstrap from '../../bootstrap/index.js';",
         "import * as Eventing from '@atolis-hq/eventing';",
-        "import * as Persistence from '../../persistence/index.js';",
+        "import * as Filesystem from '@atolis-hq/eventing-filesystem';",
         'class LocalHost { constructor(...args: unknown[]) { void args; } }',
         'class LocalRuntime { constructor(...args: unknown[]) { void args; } }',
         'const localSerialiser = (value: unknown): unknown => value;',
@@ -593,10 +598,10 @@ describe('event processor ownership', () => {
         '({...holder.namespace} = Eventing);',
         '({ nested: { ...holder.registry } } = { nested: Bootstrap });',
         "const serialiserSlot = 'serialisers' as const;",
-        '({...holder[serialiserSlot]} = Persistence);',
+        '({...holder[serialiserSlot]} = Filesystem);',
         'export const values = [new holder.namespace.EventProcessorHost(), new holder.registry.EventProcessorRuntime(), holder.serialisers.createFileProcessorRunSerialiser(1)];',
       ].join('\n'),
-      'src/persistence/application/member-rest-targets.ts': [
+      'packages/eventing-filesystem/src/application/member-rest-targets.ts': [
         "import * as Eventing from '@atolis-hq/eventing';",
         'const localFactory = (value: unknown): unknown => value;',
         'const tupleNamespaces: [typeof Eventing] = [Eventing];',
@@ -615,8 +620,8 @@ describe('event processor ownership', () => {
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual([
       'orchestration/application/member-rest-targets.ts:12:6',
-      'persistence/application/member-rest-targets.ts:5:5',
-      'persistence/application/member-rest-targets.ts:7:5',
+      '../packages/eventing-filesystem/src/application/member-rest-targets.ts:5:5',
+      '../packages/eventing-filesystem/src/application/member-rest-targets.ts:7:5',
     ]);
     expect(
       diagnostics
@@ -630,17 +635,17 @@ describe('event processor ownership', () => {
     ).toEqual(['orchestration/application/member-rest-targets.ts:15:6']);
     expect(
       diagnostics
-        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .filter(({ message }) => message.includes('[eventing-filesystem-processor-handler]'))
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual([
-      'persistence/application/member-rest-targets.ts:5:5',
-      'persistence/application/member-rest-targets.ts:7:5',
+      '../packages/eventing-filesystem/src/application/member-rest-targets.ts:5:5',
+      '../packages/eventing-filesystem/src/application/member-rest-targets.ts:7:5',
     ]);
   });
 
   it('expands finite tuple spreads stored through member rest targets', async () => {
     const root = await fixture({
-      'src/persistence/application/finite-tuple-spread-member-rest.ts': [
+      'packages/eventing-filesystem/src/application/finite-tuple-spread-member-rest.ts': [
         "import * as Eventing from '@atolis-hq/eventing';",
         'const localFactory = (value: unknown): unknown => value;',
         'const LocalEventing = { defineEventProcessor: localFactory };',
@@ -665,26 +670,26 @@ describe('event processor ownership', () => {
         .filter(({ message }) => message.includes('[event-processor-host-owner]'))
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual([
-      'persistence/application/finite-tuple-spread-member-rest.ts:10:5',
-      'persistence/application/finite-tuple-spread-member-rest.ts:11:5',
-      'persistence/application/finite-tuple-spread-member-rest.ts:12:5',
-      'persistence/application/finite-tuple-spread-member-rest.ts:13:7',
+      '../packages/eventing-filesystem/src/application/finite-tuple-spread-member-rest.ts:10:5',
+      '../packages/eventing-filesystem/src/application/finite-tuple-spread-member-rest.ts:11:5',
+      '../packages/eventing-filesystem/src/application/finite-tuple-spread-member-rest.ts:12:5',
+      '../packages/eventing-filesystem/src/application/finite-tuple-spread-member-rest.ts:13:7',
     ]);
     expect(
       diagnostics
-        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .filter(({ message }) => message.includes('[eventing-filesystem-processor-handler]'))
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual([
-      'persistence/application/finite-tuple-spread-member-rest.ts:10:5',
-      'persistence/application/finite-tuple-spread-member-rest.ts:11:5',
-      'persistence/application/finite-tuple-spread-member-rest.ts:12:5',
-      'persistence/application/finite-tuple-spread-member-rest.ts:13:7',
+      '../packages/eventing-filesystem/src/application/finite-tuple-spread-member-rest.ts:10:5',
+      '../packages/eventing-filesystem/src/application/finite-tuple-spread-member-rest.ts:11:5',
+      '../packages/eventing-filesystem/src/application/finite-tuple-spread-member-rest.ts:12:5',
+      '../packages/eventing-filesystem/src/application/finite-tuple-spread-member-rest.ts:13:7',
     ]);
   });
 
   it('does not expand dynamic, cyclic, or unrelated local tuple spreads', async () => {
     const root = await fixture({
-      'src/persistence/application/unprovable-tuple-spread-member-rest.ts': [
+      'packages/eventing-filesystem/src/application/unprovable-tuple-spread-member-rest.ts': [
         "import * as Eventing from '@atolis-hq/eventing';",
         'const localFactory = (value: unknown): unknown => value;',
         'const LocalEventing = { EventProcessorHost: class {}, defineEventProcessor: localFactory };',
@@ -709,7 +714,7 @@ describe('event processor ownership', () => {
     const root = await fixture({
       'src/orchestration/application/type-only-tuple-origins.ts': [
         "import type { EventProcessorHost } from '@atolis-hq/eventing';",
-        "import type { createFileProcessorRunSerialiser } from '../../persistence/index.js';",
+        "import type { createFileProcessorRunSerialiser } from '@atolis-hq/eventing-filesystem';",
         'class LocalHost { constructor(...args: unknown[]) { void args; } }',
         'const localSerialiser = (value: unknown): unknown => value;',
         'const hostSources: [typeof EventProcessorHost] = [LocalHost];',
@@ -719,7 +724,7 @@ describe('event processor ownership', () => {
         '[...holder.serialisers] = serialiserSources;',
         'export const values = [new holder.hosts[0]!(), holder.serialisers[0]!(1)];',
       ].join('\n'),
-      'src/persistence/application/type-only-tuple-origins.ts': [
+      'packages/eventing-filesystem/src/application/type-only-tuple-origins.ts': [
         "import type { defineEventProcessor } from '@atolis-hq/eventing';",
         'const localFactory = (value: unknown): unknown => value;',
         'const factorySources: [typeof defineEventProcessor] = [localFactory];',
@@ -745,7 +750,7 @@ describe('event processor ownership', () => {
         '({...holder.dynamic} = dynamicSource);',
         'export const values = [new holder.namespace.EventProcessorHost(), holder.excludedNamespace, holder.dynamic];',
       ].join('\n'),
-      'src/persistence/application/local-member-rest-targets.ts': [
+      'packages/eventing-filesystem/src/application/local-member-rest-targets.ts': [
         'const localFactory = (value: unknown): unknown => value;',
         'const LocalEventing = { defineEventProcessor: localFactory };',
         'const holder = { namespaces: [] as Array<typeof LocalEventing>, dynamic: [] as Array<Record<string, unknown>> };',
@@ -774,7 +779,7 @@ describe('event processor ownership', () => {
         'const { EventProcessorHost: DefaultHost = LocalHost } = Absent;',
         'export const hosts = [new EventProcessorHost(), new RenamedHost(), new ComputedHost(), new LocalRest.EventProcessorHost(), new locals[0].EventProcessorHost(), new DefaultHost()];',
       ].join('\n'),
-      'src/persistence/application/local-structural-bindings.ts': [
+      'packages/eventing-filesystem/src/application/local-structural-bindings.ts': [
         'const localFactory = (value: unknown): unknown => value;',
         'const LocalEventing = { defineEventProcessor: localFactory };',
         'const { defineEventProcessor = (value: unknown): unknown => value } = LocalEventing;',
@@ -794,7 +799,7 @@ describe('event processor ownership', () => {
 
   it('does not treat an uncalled nested factory assignment as the origin of a later local call', async () => {
     const root = await fixture({
-      'src/persistence/application/nested-factory-reference.ts': [
+      'packages/eventing-filesystem/src/application/nested-factory-reference.ts': [
         "import { defineEventProcessor } from '@atolis-hq/eventing';",
         'const localFactory = (value: unknown): unknown => value;',
         'let Factory: typeof defineEventProcessor = localFactory;',
@@ -809,31 +814,26 @@ describe('event processor ownership', () => {
     const diagnostics = await checker.checkEventArchitecture(root);
     expect(
       diagnostics
-        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .filter(({ message }) => message.includes('[eventing-filesystem-processor-handler]'))
         .map(({ message }) => message.split(' ')[0]),
-    ).toEqual(['persistence/application/nested-factory-reference.ts:5:13']);
+    ).toEqual(['../packages/eventing-filesystem/src/application/nested-factory-reference.ts:5:13']);
   });
 
-  it('rejects processor handlers and host composition in Persistence', async () => {
+  it('rejects processor handlers in Eventing filesystem', async () => {
     const root = await fixture({
-      'src/persistence/application/illegal-processor.ts': [
+      'packages/eventing-filesystem/src/application/illegal-processor.ts': [
         "import { defineEventProcessor } from '@atolis-hq/eventing';",
         'export const processor = defineEventProcessor({ handle: async () => undefined });',
-      ].join('\n'),
-      'src/persistence/application/illegal-runtime.ts': [
-        "import { EventProcessorRuntime } from '../../bootstrap/index.js';",
-        'export const runtime = new EventProcessorRuntime({}, {}, () => undefined);',
       ].join('\n'),
     });
 
     const diagnostics = await checker.checkEventArchitecture(root);
-    expect(messages(diagnostics)).toContain('[persistence-processor-handler]');
-    expect(messages(diagnostics)).toContain('[processor-registry-owner]');
+    expect(messages(diagnostics)).toContain('[eventing-filesystem-processor-handler]');
   });
 
-  it('rejects computed, shorthand, and factory-linked handlers in Persistence', async () => {
+  it('rejects computed, shorthand, and factory-linked handlers in Eventing filesystem', async () => {
     const root = await fixture({
-      'src/persistence/application/computed-handler.ts': [
+      'packages/eventing-filesystem/src/application/computed-handler.ts': [
         "import { defineEventProcessor } from '@atolis-hq/eventing';",
         'const handle = async () => undefined;',
         'const handler = () => undefined;',
@@ -845,11 +845,13 @@ describe('event processor ownership', () => {
 
     const diagnostics = await checker.checkEventArchitecture(root);
     expect(
-      diagnostics.filter(({ message }) => message.includes('[persistence-processor-handler]')),
+      diagnostics.filter(({ message }) =>
+        message.includes('[eventing-filesystem-processor-handler]'),
+      ),
     ).not.toHaveLength(0);
   });
 
-  it('rejects structurally typed processor definition values in Persistence only', async () => {
+  it('rejects structurally typed processor definition values in Eventing filesystem only', async () => {
     const definition = [
       "import type { EventProcessorDefinition } from '@atolis-hq/eventing';",
       "const intermediate = { consumer: 'consumer', name: 'name', owner: 'owner', category: 'projection', replayPolicy: 'rebuildable', select: (_event: unknown) => 'message', handle: async (_message: string, _event: unknown, _signal: AbortSignal) => undefined };",
@@ -857,20 +859,22 @@ describe('event processor ownership', () => {
       "export const contextual: EventProcessorDefinition<string> = { consumer: 'contextual', name: 'name', owner: 'owner', category: 'projection', replayPolicy: 'rebuildable', select: (_event) => 'message', handle: async (_message, _event, _signal) => undefined };",
     ].join('\n');
     const root = await fixture({
-      'src/persistence/application/typed-definition.ts': definition,
+      'packages/eventing-filesystem/src/application/typed-definition.ts': definition,
       'src/orchestration/application/typed-definition.ts': definition,
     });
 
     const diagnostics = await checker.checkEventArchitecture(root);
     expect(
-      diagnostics.filter(({ message }) => message.includes('[persistence-processor-handler]')),
+      diagnostics.filter(({ message }) =>
+        message.includes('[eventing-filesystem-processor-handler]'),
+      ),
     ).toHaveLength(2);
     expect(messages(diagnostics)).not.toContain('orchestration/application/typed-definition.ts');
   });
 
   it('does not reject a complete but type-incompatible processor definition lookalike', async () => {
     const root = await fixture({
-      'src/persistence/application/incompatible-definition-lookalike.ts': [
+      'packages/eventing-filesystem/src/application/incompatible-definition-lookalike.ts': [
         'export const lookalike = {',
         '  consumer: 1,',
         '  name: 2,',
@@ -886,7 +890,7 @@ describe('event processor ownership', () => {
     await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
   });
 
-  it('rejects implementing and structurally assignable processor classes in Persistence only', async () => {
+  it('rejects implementing and structurally assignable processor classes in Eventing filesystem only', async () => {
     const implementingClass = [
       "import type { EventProcessorDefinition } from '@atolis-hq/eventing';",
       'export class StoredProcessor implements EventProcessorDefinition<string> {',
@@ -900,8 +904,8 @@ describe('event processor ownership', () => {
       '}',
     ].join('\n');
     const root = await fixture({
-      'src/persistence/application/processor-class.ts': implementingClass,
-      'src/persistence/application/processor-class-expression.ts': [
+      'packages/eventing-filesystem/src/application/processor-class.ts': implementingClass,
+      'packages/eventing-filesystem/src/application/processor-class-expression.ts': [
         'export const StoredProcessorExpression = class {',
         "  readonly consumer = 'consumer';",
         "  readonly name = 'name';",
@@ -912,7 +916,7 @@ describe('event processor ownership', () => {
         '  async handle(_message: string, _event: unknown, _signal: AbortSignal): Promise<void> {}',
         '};',
       ].join('\n'),
-      'src/persistence/application/incompatible-processor-class.ts': [
+      'packages/eventing-filesystem/src/application/incompatible-processor-class.ts': [
         'export class IncompatibleProcessor {',
         '  readonly consumer = 1;',
         '  readonly name = 2;',
@@ -929,11 +933,11 @@ describe('event processor ownership', () => {
     const diagnostics = await checker.checkEventArchitecture(root);
     expect(
       diagnostics
-        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .filter(({ message }) => message.includes('[eventing-filesystem-processor-handler]'))
         .map(({ message }) => message.split(' ')[0]),
     ).toEqual([
-      'persistence/application/processor-class-expression.ts:1:42',
-      'persistence/application/processor-class.ts:2:14',
+      '../packages/eventing-filesystem/src/application/processor-class-expression.ts:1:42',
+      '../packages/eventing-filesystem/src/application/processor-class.ts:2:14',
     ]);
     expect(messages(diagnostics)).not.toContain('incompatible-processor-class.ts');
     expect(messages(diagnostics)).not.toContain('orchestration/application/processor-class.ts');
@@ -941,7 +945,7 @@ describe('event processor ownership', () => {
 
   it('rejects a resolved Eventing processor factory and its linked handler', async () => {
     const root = await fixture({
-      'src/persistence/application/factory-handler.ts': [
+      'packages/eventing-filesystem/src/application/factory-handler.ts': [
         "import { defineEventProcessor as define } from '@atolis-hq/eventing';",
         'const handler = async () => undefined;',
         'const makeDefinition = () => ({ handle: handler });',
@@ -951,19 +955,19 @@ describe('event processor ownership', () => {
     });
 
     const diagnostics = await checker.checkEventArchitecture(root);
-    expect(messages(diagnostics)).toContain('[persistence-processor-handler]');
+    expect(messages(diagnostics)).toContain('[eventing-filesystem-processor-handler]');
   });
 
   it('reports linked processor handlers at their defining source file', async () => {
     const root = await fixture({
-      'src/persistence/support/definition.ts': [
+      'packages/eventing-filesystem/src/support/definition.ts': [
         'export const makeDefinition = () => ({',
         "  consumer: 'consumer', name: 'name', owner: 'owner', category: 'projection', replayPolicy: 'rebuildable',",
         "  select: (_event: unknown) => 'message',",
         '  handle: async (_message: string, _event: unknown, _signal: AbortSignal) => undefined,',
         '});',
       ].join('\n'),
-      'src/persistence/application/cross-file-handler.ts': [
+      'packages/eventing-filesystem/src/application/cross-file-handler.ts': [
         "import { defineEventProcessor } from '@atolis-hq/eventing';",
         "import { makeDefinition } from '../support/definition.js';",
         'export const processor = defineEventProcessor(makeDefinition());',
@@ -972,7 +976,7 @@ describe('event processor ownership', () => {
 
     const diagnostics = await checker.checkEventArchitecture(root);
     expect(messages(diagnostics)).toContain(
-      'persistence/support/definition.ts:4:3 [persistence-processor-handler]',
+      '../packages/eventing-filesystem/src/support/definition.ts',
     );
   });
 
@@ -1001,7 +1005,7 @@ describe('event processor ownership', () => {
     expect(analysis?.stats).toEqual({ originEdges: 37, uniqueOriginStates: 74 });
   });
 
-  it('permits unrelated local names and generic handler objects in Persistence', async () => {
+  it('permits unrelated local names and generic handler objects in Eventing filesystem', async () => {
     const root = await fixture({
       'src/orchestration/application/local-names.ts': [
         'class EventProcessorHost {}',
@@ -1011,7 +1015,7 @@ describe('event processor ownership', () => {
         'export const runtime = new EventProcessorRuntime();',
         'export const serialiser = createFileProcessorRunSerialiser();',
       ].join('\n'),
-      'src/persistence/application/generic-handler.ts': [
+      'packages/eventing-filesystem/src/application/generic-handler.ts': [
         'const handle = () => undefined;',
         'const handler = () => undefined;',
         "export const unrelated = [{ handle }, { handler }, { ['handle']: handler }];",

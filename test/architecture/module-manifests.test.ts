@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const modules = [
   'kernel',
-  'persistence',
   'work',
   'resources',
   'activities',
@@ -67,7 +66,7 @@ describe('module manifests', () => {
 
   it('accepts the extracted Eventing workspace package as a module dependency', async () => {
     const root = await manifestFixture({
-      persistence: {
+      bootstrap: {
         dependencies: ['eventing'],
         streams: [],
         source: "import type { EventJournal } from '@atolis-hq/eventing';",
@@ -104,6 +103,56 @@ describe('module manifests', () => {
 
     await expect(checker.checkModuleManifests(root)).resolves.toContain(
       'work: imports @atolis-hq/eventing-filesystem but only bootstrap may compose filesystem adapters',
+    );
+  });
+
+  it('allows Bootstrap to import the public filesystem adapter package entry', async () => {
+    const root = await manifestFixture({
+      bootstrap: {
+        dependencies: ['eventing-filesystem'],
+        streams: [],
+        source:
+          "import { FileEventJournal as Journal } from '@atolis-hq/eventing-filesystem';\nexport { Journal };",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toEqual([]);
+  });
+
+  it('rejects Eventing and filesystem package boundary escapes and package-internal Wake imports', async () => {
+    const root = await workspaceBoundaryFixture({
+      'src/bootstrap/index.ts': [
+        "import { FileEventJournal as Journal } from '@atolis-hq/eventing-filesystem';",
+        'export { Journal };',
+      ].join('\n'),
+      'src/bootstrap/module.json': manifest('bootstrap', ['eventing-filesystem']),
+      'src/work/internal-imports.ts': [
+        "import type { EventEnvelope as Envelope } from '@atolis-hq/eventing/contracts/events.js';",
+        "import * as Filesystem from '@atolis-hq/eventing-filesystem/src/index.js';",
+        "export type { EventEnvelope as ReExportedEnvelope } from '@atolis-hq/eventing/dist/contracts/events.js';",
+        'const { FileEventJournal } = Filesystem;',
+        'const [tupleEntry] = [FileEventJournal];',
+        'export type TupleEntry = typeof tupleEntry;',
+        'export type PublicEnvelope = Envelope;',
+      ].join('\n'),
+      'src/work/module.json': manifest('work', ['eventing']),
+      'packages/eventing/src/illegal-filesystem.ts':
+        "import { readFile } from 'node:fs/promises';\nexport { readFile };",
+      'packages/eventing/src/illegal-wake-import.ts':
+        "export { SystemClock } from '../../../src/kernel/index.js';",
+      'packages/eventing-filesystem/src/illegal-wake-import.ts':
+        "export { SystemClock } from '../../../src/kernel/index.js';",
+    });
+
+    await expect(checker.checkModuleManifests(join(root, 'src'))).resolves.toEqual(
+      expect.arrayContaining([
+        'illegal-filesystem.ts: imports node:fs/promises; eventing may depend only on package dependencies and local files',
+        'illegal-wake-import.ts: imports ../../../src/kernel/index.js; eventing may depend only on package dependencies and local files',
+        'illegal-wake-import.ts: imports ../../../src/kernel/index.js; eventing-filesystem may depend only on @atolis-hq/eventing, Node builtins, and local files',
+        'work/internal-imports.ts: imports package-internal path @atolis-hq/eventing/contracts/events.js; import only a declared public package entry',
+        'work/internal-imports.ts: imports package-internal path @atolis-hq/eventing-filesystem/src/index.js; import only a declared public package entry',
+        'work/internal-imports.ts: imports package-internal path @atolis-hq/eventing/dist/contracts/events.js; import only a declared public package entry',
+      ]),
     );
   });
 
@@ -310,6 +359,25 @@ async function manifestFixture(
     }),
   );
   return root;
+}
+
+async function workspaceBoundaryFixture(files: Readonly<Record<string, string>>): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'wake-workspace-boundaries-'));
+  fixtureRoots.push(root);
+  await Promise.all(
+    Object.entries(files).map(([path, source]) => writeFixture(join(root, path), source)),
+  );
+  return root;
+}
+
+function manifest(name: string, dependencies: readonly string[]): string {
+  return `${JSON.stringify({
+    name,
+    kind: 'domain',
+    dependencies,
+    publicEntry: './index.ts',
+    namespaces: { events: [], config: [], relations: [], streams: [] },
+  })}\n`;
 }
 
 async function writeFixture(path: string, source: string): Promise<void> {

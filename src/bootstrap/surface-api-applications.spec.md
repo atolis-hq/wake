@@ -177,7 +177,7 @@ for a single WorkItem (see the Work detail component).
 - Every composed module service (Work, Resources, Orchestration, Execution,
   Control-plane) — this component only reads their projections and calls
   their own command surfaces; it never folds events itself.
-- Persistence's projection store and event journal — read directly for
+- `@atolis-hq/eventing-filesystem`'s projection store and event journal — read directly for
   freshness metadata and for the raw events feed.
 - Surfaces (depends on this component) — defines the response shapes this
   component produces values for, and owns the configuration-redaction and

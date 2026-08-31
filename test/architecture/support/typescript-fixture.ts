@@ -16,6 +16,10 @@ export async function assertTypeScriptFixtureCompiles(root: string): Promise<voi
 
 function compilerOptions(root: string): ts.CompilerOptions {
   const eventingSourceEntry = join(resolve(root), 'packages/eventing/src/index.ts');
+  const eventingFilesystemSourceEntry = join(
+    resolve(root),
+    'packages/eventing-filesystem/src/index.ts',
+  );
   return {
     exactOptionalPropertyTypes: true,
     lib: ['lib.es2022.d.ts'],
@@ -24,8 +28,17 @@ function compilerOptions(root: string): ts.CompilerOptions {
     noEmit: true,
     noImplicitOverride: true,
     noUncheckedIndexedAccess: true,
-    ...(existsSync(eventingSourceEntry)
-      ? { paths: { '@atolis-hq/eventing': [eventingSourceEntry] } }
+    ...(existsSync(eventingSourceEntry) || existsSync(eventingFilesystemSourceEntry)
+      ? {
+          paths: {
+            ...(existsSync(eventingSourceEntry)
+              ? { '@atolis-hq/eventing': [eventingSourceEntry] }
+              : {}),
+            ...(existsSync(eventingFilesystemSourceEntry)
+              ? { '@atolis-hq/eventing-filesystem': [eventingFilesystemSourceEntry] }
+              : {}),
+          },
+        }
       : {}),
     skipLibCheck: true,
     strict: true,

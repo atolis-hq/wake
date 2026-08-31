@@ -1,7 +1,5 @@
 const modules = [
   'kernel',
-  'eventing',
-  'persistence',
   'conversations',
   'work',
   'resources',
@@ -15,26 +13,15 @@ const modules = [
 ];
 const dependencyMap = {
   kernel: [],
-  eventing: ['kernel'],
-  persistence: ['kernel', 'eventing'],
   conversations: ['kernel', 'work'],
   work: ['kernel'],
   resources: ['kernel', 'work'],
   activities: ['kernel', 'work', 'resources'],
-  orchestration: ['kernel', 'eventing', 'work', 'activities', 'execution'],
+  orchestration: ['kernel', 'work', 'activities', 'execution'],
   execution: ['kernel', 'work', 'resources', 'activities'],
-  'control-plane': [
-    'kernel',
-    'eventing',
-    'work',
-    'resources',
-    'activities',
-    'orchestration',
-    'execution',
-  ],
+  'control-plane': ['kernel', 'work', 'resources', 'activities', 'orchestration', 'execution'],
   integrations: [
     'kernel',
-    'eventing',
     'work',
     'resources',
     'activities',
@@ -44,8 +31,6 @@ const dependencyMap = {
   ],
   surfaces: [
     'kernel',
-    'eventing',
-    'persistence',
     'work',
     'resources',
     'activities',
@@ -57,8 +42,6 @@ const dependencyMap = {
   ],
   bootstrap: [
     'kernel',
-    'eventing',
-    'persistence',
     'work',
     'resources',
     'activities',
@@ -132,9 +115,21 @@ export default {
       name: 'filesystem-io-stays-in-adapters',
       severity: 'error',
       from: {
-        path: '^src/(?!persistence/|execution/infrastructure/(?:workspace/|transcripts\\.ts$)|bootstrap/|surfaces/web-host/)',
+        path: '^src/(?!execution/infrastructure/(?:workspace/|transcripts\\.ts$)|bootstrap/|surfaces/web-host/)',
       },
       to: { path: '^node:fs' },
+    },
+    {
+      name: 'eventing-has-no-filesystem-or-wake-dependencies',
+      severity: 'error',
+      from: { path: '^packages/eventing/src/' },
+      to: { path: '^(?:node:fs|src/)' },
+    },
+    {
+      name: 'eventing-filesystem-has-no-wake-dependencies',
+      severity: 'error',
+      from: { path: '^packages/eventing-filesystem/src/' },
+      to: { path: '^src/' },
     },
     {
       name: 'browser-imports-only-surface-transport-contracts',

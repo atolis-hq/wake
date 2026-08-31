@@ -17,8 +17,8 @@ non-empty batch with `appendToStream(stream, expectedSequence, events)`.
 and idempotency. The journal does not apply automatic retry or a general
 deduplication policy.
 
-The filesystem adapter writes the exact established flat JSONL record through
-the Persistence codec. The in-memory adapter holds the nested envelope model.
+The Eventing filesystem package writes the exact established flat JSONL record
+through its codec. The in-memory adapter holds the nested envelope model.
 Those representations are compatible reads of the same record, so no journal
 data migration or projection rebuild is required.
 
@@ -89,10 +89,10 @@ choose outbound targets or workflow transitions.
   vocabulary, not magic strings or copied provider locators.
 - Register production projections in Bootstrap so replay and normal operation
   observe the same event sequence.
-- Eventing hosts durable subscriptions, checkpoints, and projections without
-  domain knowledge. Persistence records, loads, and signals changes without
-  domain knowledge. Bootstrap composes the processor registry and module
-  factories; only surfaces flatten an envelope for external transport.
+- The Eventing package hosts durable subscriptions, checkpoints, and projections
+  without domain knowledge. Its filesystem package records, loads, and signals
+  changes without domain knowledge. Bootstrap composes the processor registry
+  and module factories; only surfaces flatten an envelope for external transport.
 - The delivery outcome reactor keeps ProcessorStateStore-backed recovery state for
   pending confirmations. This is not a rebuildable Eventing projection: it
   reads legacy flat and interim nested stored records during recovery, then

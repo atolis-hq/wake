@@ -8,9 +8,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { type EntityRef } from '../../src/kernel/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
-// journal-full-scan-boundaries.test.ts exempts src/persistence/** from the
-// readAll(0) syntax rule on the strength of a specific claim: the journal
-// and projection stores "already gate full rescans behind a last-seen-
+// The Eventing filesystem package owns the journal and projection stores. Its
+// adapters gate full rescans behind a last-seen-
 // position check", so a resident loop only pays the full-history cost when
 // the journal has actually moved. That claim is about runtime behavior, not
 // call-site syntax, so no ESLint rule can verify it — only exercising the
@@ -28,7 +27,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, readFile: readFileMock };
 });
 
-describe('persistence write-path cache incrementality', () => {
+describe('Eventing filesystem write-path cache incrementality', () => {
   it('FileEventJournal.appendToStream() does not force the next read to re-parse prior history', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-architecture-journal-'));
     const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };

@@ -15,10 +15,10 @@ only module that knows the complete graph.
 Bootstrap owns paths, configuration validation, adapter selection, projection
 composition, provider composition, process hosts, and the Eventing runtime
 registry. It does not own domain policy, provider payload contracts,
-Persistence semantics, or processor handlers.
+Eventing filesystem semantics, or processor handlers.
 
 Bootstrap is the only composition root: it wires module event-data factories,
-Persistence adapters, Eventing subscriptions/checkpoints/projections, and the
+Eventing filesystem adapters, Eventing subscriptions/checkpoints/projections, and the
 complete processor registry. Composition activities may supply typed inputs to
 and invoke an owning module's public event-data factory, but Bootstrap never
 calls Kernel's `createEventData` or reproduces an owner's event mapping. The
@@ -28,7 +28,7 @@ module's stream and expected-sequence append path.
 ## Runtime composition
 
 The composition root creates one `EventProcessorRuntime` with the journal,
-checkpoints, and injected Persistence serialiser. It registers every resident
+checkpoints, and injected Eventing filesystem serialiser. It registers every resident
 processor exactly once: provider translation, domain and integration reactors,
 agent publication, projections, and activation scheduling. The runtime starts
 one Eventing host over that explicit registry and provides unified health and
@@ -66,9 +66,9 @@ reconciliation diagnostics until a successful pass clears them.
 
 `index.ts` is the only public entry. Bounded modules define typed processors
 and handlers through their public contracts. They cannot construct
-`EventProcessorHost` or concrete processor serialisers. Persistence supplies
-storage and keyed serialisation only; Bootstrap alone composes the complete
-registry.
+`EventProcessorHost` or concrete processor serialisers. The Eventing filesystem
+package supplies storage and keyed serialisation only; Bootstrap alone composes
+the complete registry.
 
 ## Configuration and scenarios
 

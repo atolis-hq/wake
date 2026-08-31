@@ -38,7 +38,7 @@ describe('typed domain and application contract boundaries', () => {
   it.each([
     'src/work/contracts/allowed-fixture.ts',
     'src/integrations/github/application/allowed-fixture.ts',
-    'src/persistence/application/allowed-fixture.ts',
+    'src/bootstrap/allowed-fixture.ts',
     'test/unit/work/allowed-fixture.test.ts',
   ])('permits the exact %s boundary', async (filePath) => {
     await expect(restrictedRules(filePath)).resolves.toEqual([]);

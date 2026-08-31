@@ -329,15 +329,15 @@ pieces above are best read as a map, not a component table:
   schema boundary (`event-schema.ts`, `schema.ts`).
 - `ulid` — generates the random, sortable component of a minted identity in
   `UlidIdGenerator`.
-- Every other Wake module (`work`, `orchestration`, `execution`,
-  `resources`, `activities`, `control-plane`, `integrations`,
-  `persistence`) — depends on kernel for its event envelope, identifier
+- Every bounded Wake module (`work`, `orchestration`, `execution`,
+  `resources`, `activities`, `control-plane`, `integrations`) and the Eventing
+  workspace packages depend on Kernel for identifier
   branding, `EntityRef`, closed-vocabulary, and port types; each module
   defines its own event types and streams on top of these primitives.
   Kernel imports no Wake module in return; the dependency runs one way.
-- `persistence` (depends on kernel) — supplies the concrete backing
-  implementations of kernel's `EventJournal`, `ProjectionStore`, and
-  `CheckpointStore` ports that are wired in at composition time.
+- `@atolis-hq/eventing-filesystem` supplies concrete implementations of
+  Eventing's `EventJournal`, `ProjectionStore`, and `CheckpointStore` ports
+  that Bootstrap wires at composition time.
 
 ## Decisions, exclusions, and deferred capability
 

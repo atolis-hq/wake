@@ -196,5 +196,5 @@ describe('eventing workspace packages', () => {
       ]),
     );
     expect(filesystemFiles).toEqual(expect.arrayContaining(['dist/index.js', 'dist/index.d.ts']));
-  });
+  }, 15_000);
 });

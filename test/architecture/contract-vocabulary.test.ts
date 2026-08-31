@@ -381,7 +381,7 @@ describe('exact vocabulary permissions', () => {
       ].join('\n'),
       'src/integrations/github/infrastructure/event-decoder.ts':
         'export const eventType = `work.item-created`;',
-      'src/persistence/filesystem/event-record.ts': 'export const streamKind = `work-item`;',
+      'packages/eventing-filesystem/src/event-record.ts': 'export const streamKind = `work-item`;',
       'src/work/domain/event.corrupt-fixture.ts': 'export const decision = `review.approved`;',
     });
 
@@ -399,7 +399,7 @@ describe('exact vocabulary permissions', () => {
     expect(diagnostics).toHaveLength(3);
   });
 
-  it('permits exact integration, persistence, corrupt-fixture, and free-text boundaries', async () => {
+  it('permits exact integration, filesystem-package, corrupt-fixture, and free-text boundaries', async () => {
     const root = await fixture({
       'src/work/contracts/events.ts': eventCatalogue,
       'src/work/contracts/streams.ts': streamCatalogue,
@@ -410,7 +410,8 @@ describe('exact vocabulary permissions', () => {
         "export const value = 'review.approved';",
       'src/integrations/github/application/stream-translation.ts':
         "export const value = 'work-item';",
-      'src/persistence/filesystem/event-record.ts': "export const value = 'work.item-created';",
+      'packages/eventing-filesystem/src/event-record.ts':
+        "export const value = 'work.item-created';",
       'src/work/domain/event.corrupt-fixture.ts': "export const value = 'review.approved';",
       'src/work/domain/description.ts': "export const text = 'work.item-created was accepted';",
     });
