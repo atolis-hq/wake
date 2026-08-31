@@ -6,6 +6,7 @@ import {
   EventProcessorCategory,
   EventProcessorReplayPolicy,
   type EventProcessor,
+  type ProcessorRunSerialiser,
 } from '../../../eventing/index.js';
 import {
   brandedStringSchema,
@@ -121,7 +122,8 @@ export class DeliveryOutcomeReactor {
     private readonly journal: EventJournal,
     private readonly orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>,
     private readonly projections: ProjectionStore,
-    private readonly conversations?: Pick<ConversationService, 'recordRepresentation'>,
+    private readonly conversations: Pick<ConversationService, 'recordRepresentation'> | undefined,
+    private readonly serialiseRun: ProcessorRunSerialiser,
   ) {
     this.processor = defineEventProcessor({
       consumer: 'reactor:delivery-outcomes',
@@ -132,18 +134,30 @@ export class DeliveryOutcomeReactor {
       select(event) {
         return isResolvedDelivery(selectDeliveryEvent(event)) ? event : null;
       },
-      handle: async (event) => this.react(event),
+      // EventProcessorHost already holds this consumer's serialiser while
+      // invoking the handler. Acquiring it again here would deadlock.
+      handle: async (event) => this.reactWithinProcessor(event),
     });
   }
 
-  async react(event: EventEnvelope): Promise<void> {
+  react(event: EventEnvelope, signal = new AbortController().signal): Promise<void> {
+    return this.serialiseRun(this.processor.consumer, signal, () =>
+      this.reactWithinProcessor(event),
+    );
+  }
+
+  private async reactWithinProcessor(event: EventEnvelope): Promise<void> {
     const delivery = selectDeliveryEvent(event);
     if (!isResolvedDelivery(delivery)) return;
     const pending = projectPendingDeliveryOutcome(event, delivery);
     if ((await this.reconcile(pending)) === false) await this.savePendingEvent(pending);
   }
 
-  async reconcileOnce(): Promise<void> {
+  reconcileOnce(signal = new AbortController().signal): Promise<void> {
+    return this.serialiseRun(this.processor.consumer, signal, () => this.reconcilePendingOnce());
+  }
+
+  private async reconcilePendingOnce(): Promise<void> {
     const pending = new Map((await this.loadPending()).map((event) => [event.eventId, event]));
     for (const [id, event] of pending) {
       if ((await this.reconcile(event)) === true) pending.delete(id);

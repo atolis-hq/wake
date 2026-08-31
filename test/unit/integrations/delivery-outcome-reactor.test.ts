@@ -2,18 +2,38 @@ import { copyFile, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
+import { EventProcessorHost, type ProcessorRunSerialiser } from '../../../src/eventing/index.js';
 import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
 import { createEventData, eventId } from '../../../src/kernel/index.js';
 import {
+  createInMemoryProcessorRunSerialiser,
   encode,
   FileProjectionStore,
+  InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
 } from '../../../src/persistence/index.js';
 
 const clock = { now: () => new Date('2026-08-09T00:00:00.000Z') };
+const unitSerialiseRun = createInMemoryProcessorRunSerialiser();
+type DeliveryOutcomeReactorArguments = ConstructorParameters<typeof DeliveryOutcomeReactor>;
+
+function createReactor(
+  journal: DeliveryOutcomeReactorArguments[0],
+  orchestration: DeliveryOutcomeReactorArguments[1],
+  projections: DeliveryOutcomeReactorArguments[2],
+  conversations?: DeliveryOutcomeReactorArguments[3],
+) {
+  return new DeliveryOutcomeReactor(
+    journal,
+    orchestration,
+    projections,
+    conversations,
+    unitSerialiseRun,
+  );
+}
 
 interface StoredPendingDeliveryOutcome {
   readonly eventId: string;
@@ -24,7 +44,7 @@ interface StoredPendingDeliveryOutcome {
 }
 
 it('exposes its stable event processor identity', () => {
-  const reactor = new DeliveryOutcomeReactor({} as never, {} as never, {} as never);
+  const reactor = createReactor({} as never, {} as never, {} as never);
 
   expect(reactor).toMatchObject({
     processor: {
@@ -36,7 +56,7 @@ it('exposes its stable event processor identity', () => {
 });
 
 it('skips facts outside the delivery namespace', () => {
-  const reactor = new DeliveryOutcomeReactor({} as never, {} as never, {} as never);
+  const reactor = createReactor({} as never, {} as never, {} as never);
 
   expect(
     (reactor.processor as never as { select: (event: unknown) => unknown }).select({
@@ -56,7 +76,7 @@ it('normalizes a legacy flat pending projection when reconciliation leaves it pe
     join(directory, `${encode(key)}.json`),
   );
   const projections = new FileProjectionStore(root);
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     new InMemoryEventJournal(clock),
     {
       async get() {
@@ -174,7 +194,7 @@ it('projects live journal envelopes into canonical pending delivery records idem
     }),
   ]);
   const projections = new InMemoryProjectionStore();
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -221,6 +241,74 @@ it('projects live journal envelopes into canonical pending delivery records idem
   ]);
 });
 
+it('preserves a live processor outcome while pending reconciliation is in progress', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    confirmedEvent({ intentEventId: 'intent-1' }),
+  ]);
+  await journal.appendToStream(deliveryStream(eventId('intent-2')), 0, [
+    confirmedEvent({
+      intentEventId: 'intent-2',
+      workflowInstanceId: 'primary:work-2',
+      activationId: 'primary:work-2:activity:1',
+    }),
+  ]);
+  const reconciliationEntered = deferred<void>();
+  const releaseReconciliation = deferred<void>();
+  let blockReconciliation = false;
+  const projections = new InMemoryProjectionStore();
+  const baseSerialiseRun = createInMemoryProcessorRunSerialiser();
+  let serialisedCalls = 0;
+  const serialiseRun: ProcessorRunSerialiser = (consumer, signal, operation) => {
+    serialisedCalls += 1;
+    if (serialisedCalls === 2) releaseReconciliation.resolve();
+    return baseSerialiseRun(consumer, signal, operation);
+  };
+  const reactor = Reflect.construct(DeliveryOutcomeReactor, [
+    journal,
+    {
+      async get(id: string) {
+        if (blockReconciliation && id === 'primary:work-1') {
+          reconciliationEntered.resolve();
+          await releaseReconciliation.promise;
+        }
+        return {
+          pendingActivation: {
+            activationId:
+              id === 'primary:work-1' ? 'primary:work-1:activity:1' : 'primary:work-2:activity:1',
+            status: 'active',
+          },
+        } as never;
+      },
+      async acceptOutcome() {
+        throw new Error('An active activation must leave the delivery pending');
+      },
+    },
+    projections,
+    undefined,
+    serialiseRun,
+  ]) as DeliveryOutcomeReactor;
+  const events = await journal.readAll(0);
+  await reactor.react(events[0]!);
+  const host = new EventProcessorHost(journal, new InMemoryCheckpointStore(), serialiseRun);
+  serialisedCalls = 0;
+  blockReconciliation = true;
+
+  const reconciliation = reactor.reconcileOnce();
+  await reconciliationEntered.promise;
+  const livePass = host.runOnce(reactor.processor);
+  void livePass.then(() => releaseReconciliation.resolve());
+  await Promise.all([reconciliation, livePass]);
+
+  const stored = await projections.read<{
+    readonly events: readonly StoredPendingDeliveryOutcome[];
+  }>('reactor:delivery-outcomes:pending', 'pending-confirmations');
+  expect(stored?.value.events.map(({ eventId: id }) => id)).toEqual([
+    'intent-1:confirmed',
+    'intent-2:confirmed',
+  ]);
+});
+
 it('rewrites interim nested pending envelopes to canonical delivery records', async () => {
   const journal = new InMemoryEventJournal(clock);
   await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
@@ -234,7 +322,7 @@ it('rewrites interim nested pending envelopes to canonical delivery records', as
     lastGlobalPosition: 0,
     value: { events: [envelope!] },
   });
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -278,7 +366,7 @@ it('resolves an activation that is genuinely waiting on this delivery', async ()
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -312,7 +400,7 @@ it('catches up a matching confirmation that was checkpointed before its delivery
   ]);
   const accepted: unknown[] = [];
   let isWaiting = false;
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -351,7 +439,7 @@ it('catches up a confirmation when its delivery wait appears during reconciliati
   ]);
   const accepted: unknown[] = [];
   let reads = 0;
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -384,7 +472,7 @@ it('catches up a matching failure that was checkpointed before its delivery wait
   await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [failedEvent()]);
   const accepted: unknown[] = [];
   let isWaiting = false;
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -418,7 +506,7 @@ it('resolves a confirmed reconciliation for its matching delivery wait', async (
     reconciledConfirmedEvent(),
   ]);
   const accepted: unknown[] = [];
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -446,7 +534,7 @@ it('does not resolve a merely-still-open activation that never asked to wait on 
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -477,7 +565,7 @@ it('does not resolve a different activation even if it is waiting on an unrelate
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -506,7 +594,7 @@ it('continues delivery reconciliation when recording conversation provenance fai
     confirmedEvent({ intentEventId: 'intent-1' }),
   ]);
   const accepted: unknown[] = [];
-  const reactor = new DeliveryOutcomeReactor(
+  const reactor = createReactor(
     journal,
     {
       async get() {
@@ -544,3 +632,13 @@ it('continues delivery reconciliation when recording conversation provenance fai
 
   expect(accepted).toHaveLength(1);
 });
+
+function deferred<Value>() {
+  let resolve!: (value: Value | PromiseLike<Value>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}

@@ -99,7 +99,7 @@ export interface IntegrationRuntimeInput {
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
-  readonly subscriptionRunSerialiser?: ProcessorRunSerialiser;
+  readonly subscriptionRunSerialiser: ProcessorRunSerialiser;
   readonly processorRuntime: EventProcessorRuntime;
   readonly scheduleCheckpoints: ScheduleCheckpointStore;
   readonly decorateDeliveryAdapter?: (
@@ -255,6 +255,7 @@ export async function composeIntegrationRuntime(
     input.orchestration,
     input.projections,
     input.conversations,
+    input.subscriptionRunSerialiser,
   );
   // Only poll hits a rate-limited external API, so only this half of the
   // Tick needs a backing-off host; see bootstrap/surface-cli-applications.ts.
