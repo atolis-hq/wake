@@ -38,11 +38,12 @@ Use that module's `contracts/events.ts` as the exact catalogue and decoder:
 | `control-plane` | `control.` facts for control-plane coordination and runner quotas. |
 | `integrations` | Provider observations, artifact facts, and delivery intents/outcomes. GitHub-specific contracts live in `src/integrations/github/contracts/events.ts`. |
 
-## Current event catalogue
+## Event catalogue overview
 
-The following is the current Wake-owned catalogue. Event names are stable
-contracts; their exact payloads and permitted streams remain defined by the
-owning module's contract source.
+The following table highlights the principal stable Wake-owned events; it is
+an overview, not an exhaustive registry. The complete event names, exact
+payloads, and permitted streams are defined by each owning module's contract
+source linked by the ownership table above.
 
 | Owner | Event types |
 | --- | --- |
