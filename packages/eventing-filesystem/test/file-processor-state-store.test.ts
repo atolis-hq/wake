@@ -50,6 +50,98 @@ it.each([
   );
 });
 
+it.each([
+  ['an array', []],
+  ['an empty object', {}],
+  ['a missing namespace', { key: 'pending-confirmations', lastGlobalPosition: 0, value: {} }],
+  [
+    'a non-string namespace',
+    { namespace: 1, key: 'pending-confirmations', lastGlobalPosition: 0, value: {} },
+  ],
+  [
+    'a non-string key',
+    { namespace: 'reactor:delivery-outcomes:pending', key: 1, lastGlobalPosition: 0, value: {} },
+  ],
+  [
+    'a nonzero last global position',
+    {
+      namespace: 'reactor:delivery-outcomes:pending',
+      key: 'pending-confirmations',
+      lastGlobalPosition: 1,
+      value: {},
+    },
+  ],
+  [
+    'a non-number last global position',
+    {
+      namespace: 'reactor:delivery-outcomes:pending',
+      key: 'pending-confirmations',
+      lastGlobalPosition: '0',
+      value: {},
+    },
+  ],
+  [
+    'a missing value',
+    {
+      namespace: 'reactor:delivery-outcomes:pending',
+      key: 'pending-confirmations',
+      lastGlobalPosition: 0,
+    },
+  ],
+])(
+  'rejects corrupt canonical processor state with %s without changing its file',
+  async (_case, record) => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
+    const consumer = 'reactor:delivery-outcomes';
+    const key = 'pending-confirmations';
+    const path = join(root, 'projections', encode(`${consumer}:pending`), `${encode(key)}.json`);
+    const raw = `${JSON.stringify(record)}\n`;
+    await mkdir(join(path, '..'), { recursive: true });
+    await writeFile(path, raw);
+    const store = new FileProcessorStateStore(root);
+
+    await expect(store.read(consumer, key)).rejects.toThrow('Invalid processor state record');
+
+    await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+  },
+);
+
+it('does not overwrite or delete corrupt canonical processor state while considering collision fallbacks', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
+  const consumer = 'reactor:delivery-outcomes';
+  const key = 'pending-confirmations';
+  const path = join(root, 'projections', encode(`${consumer}:pending`), `${encode(key)}.json`);
+  const raw = '{}\n';
+  await mkdir(join(path, '..'), { recursive: true });
+  await writeFile(path, raw);
+  const store = new FileProcessorStateStore(root);
+
+  await expect(store.write({ consumer, key, value: { events: [] } })).rejects.toThrow(
+    'Invalid processor state record',
+  );
+  await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+
+  await expect(store.delete(consumer, key)).rejects.toThrow('Invalid processor state record');
+  await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+});
+
+it('serializes processor state under a long data root', async () => {
+  const root = await mkdtemp(join(tmpdir(), `wake-processor-state-${'long-root-'.repeat(12)}`));
+  const store = new FileProcessorStateStore(root);
+
+  await store.write({
+    consumer: 'reactor:delivery-outcomes',
+    key: 'pending-confirmations',
+    value: { events: ['event-1'] },
+  });
+
+  await expect(store.read('reactor:delivery-outcomes', 'pending-confirmations')).resolves.toEqual({
+    consumer: 'reactor:delivery-outcomes',
+    key: 'pending-confirmations',
+    value: { events: ['event-1'] },
+  });
+});
+
 it('keeps consumers whose old projection encodings collide isolated', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
   const store = new FileProcessorStateStore(root);

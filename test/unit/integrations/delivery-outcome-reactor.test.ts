@@ -13,7 +13,7 @@ import {
   InMemoryProcessorStateStore,
   InMemoryProjectionStore,
 } from '@atolis-hq/eventing/memory';
-import { copyFile, mkdir, mkdtemp } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
@@ -122,6 +122,46 @@ it('reads and normalizes legacy pending confirmation state from its exact existi
       },
     },
   ]);
+});
+
+it('fails recovery before rewriting corrupt pending state or advancing its checkpoint', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-corrupt-pending-delivery-'));
+  const consumer = 'reactor:delivery-outcomes';
+  const key = 'pending-confirmations';
+  const path = join(root, 'projections', encode(`${consumer}:pending`), `${encode(key)}.json`);
+  const raw = '{}\n';
+  await mkdir(join(path, '..'), { recursive: true });
+  await writeFile(path, raw);
+  const journal = new InMemoryEventJournal(clock);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    confirmedEvent({ intentEventId: 'intent-1' }),
+  ]);
+  const checkpoints = new InMemoryCheckpointStore();
+  let accepted = 0;
+  const reactor = createReactor(
+    journal,
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+        } as never;
+      },
+      async acceptOutcome() {
+        accepted += 1;
+        return {} as never;
+      },
+    },
+    new InMemoryProjectionStore(),
+    new FileProcessorStateStore(root),
+  );
+  const host = new EventProcessorHost(journal, checkpoints, unitSerialiseRun, clock);
+
+  await expect(reactor.reconcileOnce()).rejects.toThrow('Invalid processor state record');
+  await expect(host.runOnce(reactor.processor)).rejects.toThrow('Invalid processor state record');
+
+  expect(await checkpoints.load(consumer)).toBe(0);
+  expect(accepted).toBe(0);
+  await expect(readFile(path, 'utf8')).resolves.toBe(raw);
 });
 
 function confirmedEvent(overrides: {

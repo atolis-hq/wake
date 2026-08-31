@@ -1,5 +1,6 @@
 import type { ProcessorStateStore, StoredProcessorState } from '@atolis-hq/eventing';
 
+import { createHash } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withFileLock } from './file-lock.js';
@@ -104,7 +105,7 @@ function processorStateLockPath(root: string, path: string): string {
     root,
     'locks',
     'processor-state',
-    `${Buffer.from(path, 'utf8').toString('base64url')}.lock`,
+    `${createHash('sha256').update(path).digest('hex')}.lock`,
   );
 }
 
@@ -118,12 +119,37 @@ async function withLocks<Value>(
 }
 
 async function readCompatibleState(path: string): Promise<CompatibleStateRecord | null> {
+  let raw: string;
   try {
-    return JSON.parse(await readFile(path, 'utf8')) as CompatibleStateRecord;
+    raw = await readFile(path, 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
+  let stored: unknown;
+  try {
+    stored = JSON.parse(raw);
+  } catch {
+    throw invalidProcessorStateRecord(path);
+  }
+  if (!isCompatibleStateRecord(stored)) throw invalidProcessorStateRecord(path);
+  return stored;
+}
+
+function isCompatibleStateRecord(value: unknown): value is CompatibleStateRecord {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.namespace === 'string' &&
+    typeof record.key === 'string' &&
+    Number.isInteger(record.lastGlobalPosition) &&
+    record.lastGlobalPosition === 0 &&
+    Object.hasOwn(record, 'value')
+  );
+}
+
+function invalidProcessorStateRecord(path: string): Error {
+  return new Error(`Invalid processor state record at ${path}`);
 }
 
 function matchesStateIdentity(
