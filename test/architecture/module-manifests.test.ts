@@ -156,6 +156,71 @@ describe('module manifests', () => {
     );
   });
 
+  it('enforces literal dynamic and CommonJS package imports without rejecting package-local imports', async () => {
+    const root = await workspaceBoundaryFixture({
+      'src/bootstrap/index.ts': [
+        "export const loadFilesystem = () => import('@atolis-hq/eventing-filesystem');",
+      ].join('\n'),
+      'src/bootstrap/module.json': manifest('bootstrap', ['eventing-filesystem']),
+      'src/work/dynamic-imports.ts': [
+        "export const loadPrivateEventing = () => import('@atolis-hq/eventing/contracts/events.js');",
+        'export const loadTemplatePrivateEventing = () => import(`@atolis-hq/eventing/dist/contracts/events.js`);',
+        "export const loadFilesystem = () => import('@atolis-hq/eventing-filesystem');",
+        "export const loadPrivateFilesystem = () => require('@atolis-hq/eventing-filesystem/src/index.js');",
+      ].join('\n'),
+      'src/work/create-require-imports.ts': [
+        "import { createRequire } from 'node:module';",
+        'const packageRequire = createRequire(import.meta.url);',
+        "export const privateEventing = packageRequire('@atolis-hq/eventing/contracts/events.js');",
+        "export const privateEventingDirect = createRequire(import.meta.url)('@atolis-hq/eventing/dist/contracts/events.js');",
+      ].join('\n'),
+      'src/work/shadowed-create-require.ts': [
+        "import { createRequire } from 'node:module';",
+        'const packageRequire = createRequire(import.meta.url);',
+        "export const loadUnknown = (packageRequire: (target: string) => unknown) => packageRequire('@atolis-hq/eventing/contracts/events.js');",
+      ].join('\n'),
+      'src/work/nonliteral-dynamic-imports.ts': [
+        "const target = '@atolis-hq/eventing/contracts/events.js';",
+        'export const loadUnknown = () => import(target);',
+        'export const requireUnknown = () => require(target);',
+      ].join('\n'),
+      'src/work/local-create-require.ts': [
+        'const createRequire = () => (target: string) => target;',
+        "export const loadUnknown = () => createRequire()('@atolis-hq/eventing/contracts/events.js');",
+      ].join('\n'),
+      'src/work/module.json': manifest('work', ['eventing', 'eventing-filesystem']),
+      'packages/eventing/src/illegal-dynamic-wake-import.ts':
+        "export const loadKernel = () => import('../../../src/kernel/index.js');",
+      'packages/eventing-filesystem/src/illegal-require-wake-import.ts':
+        "export const loadKernel = () => require('../../../src/kernel/index.js');",
+      'packages/eventing/src/local.ts': 'export const local = true;',
+      'packages/eventing/src/allowed-dynamic-local.ts':
+        "export const loadLocal = () => import('./local.js');",
+    });
+
+    const failures = await checker.checkModuleManifests(join(root, 'src'));
+
+    expect(failures).toEqual(
+      expect.arrayContaining([
+        'work/dynamic-imports.ts: imports package-internal path @atolis-hq/eventing/contracts/events.js; import only a declared public package entry',
+        'work/dynamic-imports.ts: imports package-internal path @atolis-hq/eventing/dist/contracts/events.js; import only a declared public package entry',
+        'work: imports @atolis-hq/eventing-filesystem but only bootstrap may compose filesystem adapters',
+        'work/dynamic-imports.ts: imports package-internal path @atolis-hq/eventing-filesystem/src/index.js; import only a declared public package entry',
+        'work/create-require-imports.ts: imports package-internal path @atolis-hq/eventing/contracts/events.js; import only a declared public package entry',
+        'work/create-require-imports.ts: imports package-internal path @atolis-hq/eventing/dist/contracts/events.js; import only a declared public package entry',
+        'illegal-dynamic-wake-import.ts: imports ../../../src/kernel/index.js; eventing may depend only on package dependencies and local files',
+        'illegal-require-wake-import.ts: imports ../../../src/kernel/index.js; eventing-filesystem may depend only on @atolis-hq/eventing, Node builtins, and local files',
+      ]),
+    );
+    for (const path of [
+      'work/nonliteral-dynamic-imports.ts',
+      'work/local-create-require.ts',
+      'work/shadowed-create-require.ts',
+    ]) {
+      expect(failures).not.toEqual(expect.arrayContaining([expect.stringContaining(path)]));
+    }
+  });
+
   it('rejects filesystem package source imports outside Eventing and Node', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-eventing-filesystem-'));
     fixtureRoots.push(root);

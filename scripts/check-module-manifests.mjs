@@ -233,16 +233,101 @@ function workspacePackageForSpecifier(specifier) {
   );
 }
 
+// Computed import and require targets are intentionally ignored: only literal
+// specifiers can be checked without guessing at runtime values.
 function importedModuleSpecifiers(source) {
+  const imports = new Set();
+  const createRequire = collectCreateRequireBindings(source);
+
+  function addLiteralSpecifier(node) {
+    const specifier = literalModuleSpecifier(node);
+    if (specifier !== undefined) imports.add(specifier);
+  }
+
+  function visit(node) {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier !== undefined
+    ) {
+      addLiteralSpecifier(node.moduleSpecifier);
+    }
+    if (ts.isCallExpression(node)) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        addLiteralSpecifier(node.arguments[0]);
+      } else if (isDirectRequireCall(node) || isCreateRequireCall(node, createRequire)) {
+        addLiteralSpecifier(node.arguments[0]);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(source);
+  return imports;
+}
+
+function literalModuleSpecifier(node) {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  return undefined;
+}
+
+function isDirectRequireCall(node) {
+  return ts.isIdentifier(node.expression) && node.expression.text === 'require';
+}
+
+function collectCreateRequireBindings(source) {
+  const imports = collectCreateRequireImports(source);
+  const bindings = new Set();
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        ts.isIdentifier(declaration.name) &&
+        declaration.initializer !== undefined &&
+        ts.isCallExpression(declaration.initializer) &&
+        ts.isIdentifier(declaration.initializer.expression) &&
+        imports.has(declaration.initializer.expression.text)
+      ) {
+        bindings.add(declaration.name.text);
+      }
+    }
+  }
+  return { imports, bindings };
+}
+
+function isCreateRequireCall(node, createRequire) {
+  if (!isTopLevelExpression(node)) return false;
+  if (ts.isIdentifier(node.expression)) return createRequire.bindings.has(node.expression.text);
+  return (
+    ts.isCallExpression(node.expression) &&
+    ts.isIdentifier(node.expression.expression) &&
+    createRequire.imports.has(node.expression.expression.text)
+  );
+}
+
+function isTopLevelExpression(node) {
+  let current = node;
+  while (current.parent !== undefined && !ts.isSourceFile(current.parent)) {
+    current = current.parent;
+    if (ts.isFunctionLike(current) || ts.isClassLike(current) || ts.isBlock(current)) return false;
+  }
+  return ts.isVariableStatement(current) || ts.isExpressionStatement(current);
+}
+
+function collectCreateRequireImports(source) {
   const imports = new Set();
   for (const statement of source.statements) {
     if (
-      (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) &&
-      statement.moduleSpecifier !== undefined &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier !== undefined
-    ) {
-      imports.add(statement.moduleSpecifier.text);
+      !ts.isImportDeclaration(statement) ||
+      literalModuleSpecifier(statement.moduleSpecifier) !== 'node:module'
+    )
+      continue;
+    const elements = statement.importClause?.namedBindings;
+    if (elements === undefined || !ts.isNamedImports(elements)) continue;
+    for (const element of elements.elements) {
+      if ((element.propertyName?.text ?? element.name.text) === 'createRequire') {
+        imports.add(element.name.text);
+      }
     }
   }
   return imports;
