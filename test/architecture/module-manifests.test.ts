@@ -542,6 +542,86 @@ describe('module manifests', () => {
     ]);
   });
 
+  it('follows literal computed createRequire properties from trusted namespaces', async () => {
+    const root = await workspaceBoundaryFixture({
+      'src/bootstrap/index.ts': [
+        "import * as NodeModule from 'node:module';",
+        'const ModuleAlias = NodeModule;',
+        "const makeRequire = ModuleAlias['createRequire'];",
+        'const packageRequire = makeRequire(import.meta.url);',
+        'const filesystemLoader = packageRequire;',
+        "export const loadFilesystem = () => filesystemLoader('@atolis-hq/eventing-filesystem');",
+      ].join('\n'),
+      'src/bootstrap/module.json': manifest('bootstrap', ['eventing-filesystem']),
+      'src/work/index.ts': [
+        "import * as NodeModule from 'node:module';",
+        'const ModuleAlias = NodeModule;',
+        'const ModuleAliasTwo = ModuleAlias;',
+        "const stringFactory = ModuleAliasTwo['createRequire'];",
+        'const stringFactoryAlias = stringFactory;',
+        'const stringLoader = stringFactoryAlias(import.meta.url);',
+        'const stringLoaderAlias = stringLoader;',
+        'const templateFactory = NodeModule[`createRequire`];',
+        'const templateLoader = templateFactory(import.meta.url);',
+        'const templateLoaderAlias = templateLoader;',
+        "const { ['createRequire']: destructuredStringFactory } = ModuleAliasTwo;",
+        'const destructuredStringLoader = destructuredStringFactory(import.meta.url);',
+        'const destructuredStringLoaderAlias = destructuredStringLoader;',
+        'const { [`createRequire`]: destructuredTemplateFactory } = NodeModule;',
+        'const destructuredTemplateLoader = destructuredTemplateFactory(import.meta.url);',
+        'const destructuredTemplateLoaderAlias = destructuredTemplateLoader;',
+        "export const loadPrivateString = () => stringLoaderAlias('@atolis-hq/eventing/contracts/events.js');",
+        "export const loadPrivateTemplate = () => templateLoaderAlias('@atolis-hq/eventing-filesystem/src/index.js');",
+        "export const loadPrivateDestructured = () => destructuredStringLoaderAlias('@atolis-hq/eventing/dist/contracts/events.js');",
+        "export const loadFilesystem = () => destructuredTemplateLoaderAlias('@atolis-hq/eventing-filesystem');",
+      ].join('\n'),
+      'src/work/nonliteral-computed-property.ts': [
+        "import * as NodeModule from 'node:module';",
+        "const property = 'createRequire';",
+        'const factory = NodeModule[property];',
+        'const loader = factory(import.meta.url);',
+        "export const loadUnknown = () => loader('@atolis-hq/eventing/contracts/events.js');",
+      ].join('\n'),
+      'src/work/arbitrary-computed-property.ts': [
+        'const ModuleAlias = { createRequire: (base: string) => (target: string) => `${base}:${target}` };',
+        "const loader = ModuleAlias['createRequire'](import.meta.url);",
+        "export const loadUnknown = () => loader('@atolis-hq/eventing/contracts/events.js');",
+      ].join('\n'),
+      'src/work/mutable-computed-property.ts': [
+        "import * as NodeModule from 'node:module';",
+        'let ModuleAlias = NodeModule;',
+        'ModuleAlias = { createRequire: (base: string) => (target: string) => `${base}:${target}` };',
+        "const loader = ModuleAlias['createRequire'](import.meta.url);",
+        "export const loadUnknown = () => loader('@atolis-hq/eventing/contracts/events.js');",
+      ].join('\n'),
+      'src/work/shadowed-computed-property.ts': [
+        "import * as NodeModule from 'node:module';",
+        'const ModuleAlias = NodeModule;',
+        'export const loadFromParameter = (ModuleAlias: { createRequire: (base: string) => (target: string) => unknown }) => {',
+        "  const loader = ModuleAlias['createRequire'](import.meta.url);",
+        "  return loader('@atolis-hq/eventing/contracts/events.js');",
+        '};',
+      ].join('\n'),
+      'src/work/module.json': manifest('work', ['eventing', 'eventing-filesystem']),
+      'packages/eventing-filesystem/src/local.ts': 'export const local = true;',
+      'packages/eventing-filesystem/src/allowed-computed-property-local.ts': [
+        "import * as NodeModule from 'node:module';",
+        'const ModuleAlias = NodeModule;',
+        'const { [`createRequire`]: makeRequire } = ModuleAlias;',
+        'const localLoader = makeRequire(import.meta.url);',
+        'const localLoaderAlias = localLoader;',
+        "export const loadLocal = () => localLoaderAlias('./local.js');",
+      ].join('\n'),
+    });
+
+    await expect(checker.checkModuleManifests(join(root, 'src'))).resolves.toEqual([
+      'work/index.ts: imports package-internal path @atolis-hq/eventing/contracts/events.js; import only a declared public package entry',
+      'work/index.ts: imports package-internal path @atolis-hq/eventing-filesystem/src/index.js; import only a declared public package entry',
+      'work/index.ts: imports package-internal path @atolis-hq/eventing/dist/contracts/events.js; import only a declared public package entry',
+      'work: imports @atolis-hq/eventing-filesystem but only bootstrap may compose filesystem adapters',
+    ]);
+  });
+
   it('rejects filesystem package source imports outside Eventing and Node', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-eventing-filesystem-'));
     fixtureRoots.push(root);

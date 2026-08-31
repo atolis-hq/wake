@@ -430,9 +430,17 @@ function collectConstAliasBindings(declaration, aliases) {
     aliases.push({
       binding,
       initializer: declaration.initializer,
-      propertyName: element.propertyName?.text ?? element.name.text,
+      propertyName: bindingElementPropertyName(element),
     });
   }
+}
+
+function bindingElementPropertyName(element) {
+  if (element.propertyName === undefined) return staticPropertyName(element.name);
+  if (ts.isComputedPropertyName(element.propertyName)) {
+    return staticPropertyName(element.propertyName.expression);
+  }
+  return staticPropertyName(element.propertyName);
 }
 
 function isPackageLoaderCall(node, packageLoaders) {
@@ -470,11 +478,23 @@ function isCreateRequireFactoryExpression(node, packageLoaders) {
 }
 
 function isNodeModuleCreateRequireProperty(node, namespaces) {
-  return (
-    ts.isPropertyAccessExpression(node) &&
-    node.name.text === 'createRequire' &&
-    isNodeModuleNamespace(node.expression, namespaces)
-  );
+  const propertyName = ts.isPropertyAccessExpression(node)
+    ? staticPropertyName(node.name)
+    : ts.isElementAccessExpression(node)
+      ? staticPropertyName(node.argumentExpression)
+      : undefined;
+  return propertyName === 'createRequire' && isNodeModuleNamespace(node.expression, namespaces);
+}
+
+function staticPropertyName(node) {
+  if (
+    ts.isIdentifier(node) ||
+    ts.isStringLiteral(node) ||
+    ts.isNoSubstitutionTemplateLiteral(node)
+  ) {
+    return node.text;
+  }
+  return undefined;
 }
 
 function isNodeModuleNamespace(node, namespaces) {
