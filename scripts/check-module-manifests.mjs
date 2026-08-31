@@ -236,6 +236,7 @@ function workspacePackageForSpecifier(specifier) {
 // Computed import and require targets are intentionally ignored: only literal
 // specifiers can be checked without guessing at runtime values.
 function importedModuleSpecifiers(source) {
+  ts.bindSourceFile(source, { target: ts.ScriptTarget.Latest });
   const imports = new Set();
   const createRequire = collectCreateRequireBindings(source);
 
@@ -359,41 +360,53 @@ function bindingNameContains(nameNode, name) {
 function collectCreateRequireBindings(source) {
   const imports = collectCreateRequireImports(source);
   const bindings = new Set();
-  for (const statement of source.statements) {
-    if (!ts.isVariableStatement(statement)) continue;
-    if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      if (
-        ts.isIdentifier(declaration.name) &&
-        declaration.initializer !== undefined &&
-        ts.isCallExpression(declaration.initializer) &&
-        ts.isIdentifier(declaration.initializer.expression) &&
-        imports.has(declaration.initializer.expression.text)
-      ) {
-        bindings.add(declaration.name.text);
-      }
+
+  function visit(node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      isConstVariableDeclaration(node) &&
+      imports.has(nearestLexicalBinding(node.initializer.expression))
+    ) {
+      bindings.add(nearestLexicalBinding(node.name));
     }
+    ts.forEachChild(node, visit);
   }
+
+  visit(source);
   return { imports, bindings };
 }
 
 function isCreateRequireCall(node, createRequire) {
-  if (!isTopLevelExpression(node)) return false;
-  if (ts.isIdentifier(node.expression)) return createRequire.bindings.has(node.expression.text);
+  if (ts.isIdentifier(node.expression)) {
+    return createRequire.bindings.has(nearestLexicalBinding(node.expression));
+  }
   return (
     ts.isCallExpression(node.expression) &&
     ts.isIdentifier(node.expression.expression) &&
-    createRequire.imports.has(node.expression.expression.text)
+    createRequire.imports.has(nearestLexicalBinding(node.expression.expression))
   );
 }
 
-function isTopLevelExpression(node) {
-  let current = node;
-  while (current.parent !== undefined && !ts.isSourceFile(current.parent)) {
-    current = current.parent;
-    if (ts.isFunctionLike(current) || ts.isClassLike(current) || ts.isBlock(current)) return false;
+function isConstVariableDeclaration(declaration) {
+  return (declaration.parent.flags & ts.NodeFlags.Const) !== 0;
+}
+
+function nearestLexicalBinding(identifier) {
+  for (let current = identifier.parent; current !== undefined; current = current.parent) {
+    const binding = current.locals?.get(identifier.text);
+    if (binding !== undefined) return binding;
+    if (
+      (ts.isFunctionExpression(current) || ts.isClassExpression(current)) &&
+      current.name?.text === identifier.text
+    ) {
+      return current.name;
+    }
   }
-  return ts.isVariableStatement(current) || ts.isExpressionStatement(current);
+  return undefined;
 }
 
 function collectCreateRequireImports(source) {
@@ -408,7 +421,7 @@ function collectCreateRequireImports(source) {
     if (elements === undefined || !ts.isNamedImports(elements)) continue;
     for (const element of elements.elements) {
       if ((element.propertyName?.text ?? element.name.text) === 'createRequire') {
-        imports.add(element.name.text);
+        imports.add(nearestLexicalBinding(element.name));
       }
     }
   }
