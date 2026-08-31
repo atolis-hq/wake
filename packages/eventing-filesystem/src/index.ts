@@ -17,4 +17,6 @@ export {
 
 export { createFileProcessorRunSerialiser } from './file-processor-run-serialiser.js';
 
+export { FileProcessorStateStore } from './file-processor-state-store.js';
+
 export { FileProjectionStore } from './file-projection-store.js';

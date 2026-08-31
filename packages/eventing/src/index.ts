@@ -10,6 +10,8 @@ export { causationId, correlationId, eventId } from './contracts/identifiers.js'
 
 export type { CausationId, CorrelationId, EventId } from './contracts/identifiers.js';
 
+export * from './contracts/processor-state-store.js';
+
 export * from './projections/projection-processor.js';
 
 export * from './projections/projection-store.js';

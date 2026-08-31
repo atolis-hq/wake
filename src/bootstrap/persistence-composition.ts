@@ -2,11 +2,13 @@ import type {
   CheckpointStore,
   EventJournal,
   ProcessorRunSerialiser,
+  ProcessorStateStore,
   ProjectionStore,
 } from '@atolis-hq/eventing';
 import {
   FileCheckpointStore,
   FileEventJournal,
+  FileProcessorStateStore,
   FileProjectionStore,
   createFileProcessorRunSerialiser,
 } from '@atolis-hq/eventing-filesystem';
@@ -17,6 +19,7 @@ export interface PersistenceCompositionOptions {
   readonly journal?: EventJournal;
   readonly projections?: ProjectionStore;
   readonly checkpoints?: CheckpointStore;
+  readonly processorState?: ProcessorStateStore;
   readonly decorateJournal?: (journal: EventJournal) => EventJournal;
   readonly decorateProjections?: (projections: ProjectionStore) => ProjectionStore;
   readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
@@ -27,6 +30,7 @@ export interface PersistenceComposition {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
+  readonly processorState: ProcessorStateStore;
   readonly subscriptionRunSerialiser: ProcessorRunSerialiser;
 }
 
@@ -81,6 +85,7 @@ export function composePersistence(
     checkpoints: (options.decorateCheckpoints ?? identity)(
       options.checkpoints ?? new FileCheckpointStore(paths.dataRoot),
     ),
+    processorState: options.processorState ?? new FileProcessorStateStore(paths.dataRoot),
     subscriptionRunSerialiser,
   };
 }

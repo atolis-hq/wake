@@ -12,9 +12,13 @@ export function assertWellFormedUtf16(value: string, label: string): void {
   }
 }
 
-export function encodeCheckpointStorageName(consumer: string): string {
-  assertWellFormedUtf16(consumer, 'Storage name');
-  if (consumer.length === 0 || /[\\/]/.test(consumer))
+export function assertStorageName(value: string): void {
+  assertWellFormedUtf16(value, 'Storage name');
+  if (value.length === 0 || /[\\/]/.test(value))
     throw new Error('Storage name must not contain path separators');
+}
+
+export function encodeCheckpointStorageName(consumer: string): string {
+  assertStorageName(consumer);
   return Buffer.from(consumer, 'utf8').toString('base64url');
 }

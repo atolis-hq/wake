@@ -14,6 +14,7 @@ import {
   type EventJournal,
   type EventProcessor,
   type ProcessorRunSerialiser,
+  type ProcessorStateStore,
   type ProjectionStore,
 } from '@atolis-hq/eventing';
 import { z } from 'zod';
@@ -36,7 +37,7 @@ import type { DeliveryIntentView } from '../contracts/views.js';
 import { DeliveryIntentKind, DeliveryResultKind } from '../contracts/vocabulary.js';
 
 const deliveryResultSignalKind = 'delivery-result';
-const pendingNamespace = 'reactor:delivery-outcomes:pending';
+const pendingConsumer = 'reactor:delivery-outcomes';
 const pendingKey = 'pending-confirmations';
 
 type PendingDeliveryOutcome =
@@ -119,6 +120,7 @@ export class DeliveryOutcomeReactor {
     private readonly journal: EventJournal,
     private readonly orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>,
     private readonly projections: ProjectionStore,
+    private readonly processorState: ProcessorStateStore,
     private readonly conversations: Pick<ConversationService, 'recordRepresentation'> | undefined,
     private readonly serialiseRun: ProcessorRunSerialiser,
   ) {
@@ -235,16 +237,15 @@ export class DeliveryOutcomeReactor {
   }
 
   private async loadPending(): Promise<readonly PendingDeliveryOutcome[]> {
-    const stored = await this.projections.read<unknown>(pendingNamespace, pendingKey);
+    const stored = await this.processorState.read<unknown>(pendingConsumer, pendingKey);
     if (stored === null) return [];
     return pendingConfirmationsSchema.parse(stored.value).events.map(decodePendingOutcome);
   }
 
   private async savePending(events: readonly PendingDeliveryOutcome[]): Promise<void> {
-    await this.projections.write<PendingConfirmations>({
-      namespace: pendingNamespace,
+    await this.processorState.write<PendingConfirmations>({
+      consumer: pendingConsumer,
       key: pendingKey,
-      lastGlobalPosition: 0,
       value: { events },
     });
   }

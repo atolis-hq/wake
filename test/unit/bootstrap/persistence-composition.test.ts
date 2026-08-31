@@ -4,7 +4,9 @@ import {
   type EventData,
   type EventEnvelope,
   type EventJournal,
+  type ProcessorStateStore,
 } from '@atolis-hq/eventing';
+import { InMemoryProcessorStateStore } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { resolveWakePaths } from '../../../src/bootstrap/index.js';
 import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
@@ -35,6 +37,15 @@ it('serializes appends shared by resident runtime loops', async () => {
     }),
   ]);
   expect(expectedSequences).toEqual([0, 1]);
+});
+
+it('keeps injected processor recovery state separate from projections', () => {
+  const processorState: ProcessorStateStore = new InMemoryProcessorStateStore();
+  const persistence = composePersistence(resolveWakePaths('C:/wake-home'), new FakeClock(), {
+    processorState,
+  });
+
+  expect(persistence.processorState).toBe(processorState);
 });
 
 const stream: EntityRef<'test', 'serialization'> = { kind: 'test', id: 'serialization' };

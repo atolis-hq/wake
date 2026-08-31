@@ -4,6 +4,7 @@ import {
   type EventJournal,
   type EventProcessor,
   type ProcessorRunSerialiser,
+  type ProcessorStateStore,
   type ProjectionStore,
 } from '@atolis-hq/eventing';
 import { withFileLock } from '@atolis-hq/eventing-filesystem';
@@ -87,6 +88,7 @@ export interface IntegrationRuntimeInput {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
+  readonly processorState: ProcessorStateStore;
   readonly resources: ReturnType<typeof createResourceService>;
   readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly pullRequests: ReturnType<typeof createPullRequestService>;
@@ -254,6 +256,7 @@ export async function composeIntegrationRuntime(
     input.journal,
     input.orchestration,
     input.projections,
+    input.processorState,
     input.conversations,
     input.subscriptionRunSerialiser,
   );

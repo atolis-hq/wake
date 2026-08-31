@@ -2,6 +2,7 @@ import {
   type CheckpointStore,
   type EventJournal,
   type ProcessorRunSerialiser,
+  type ProcessorStateStore,
   type ProjectionStore,
 } from '@atolis-hq/eventing';
 import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
@@ -74,6 +75,7 @@ export interface CompositionRootOptions {
   readonly journal?: EventJournal;
   readonly projections?: ProjectionStore;
   readonly checkpoints?: CheckpointStore;
+  readonly processorState?: ProcessorStateStore;
   readonly activities?: ActivityRegistry;
   readonly clock?: Clock;
   readonly transcriptStore?: TranscriptStore;
@@ -104,6 +106,7 @@ export interface CompositionRoot {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
+  readonly processorState: ProcessorStateStore;
   readonly activities: ActivityRegistry;
   readonly work: ReturnType<typeof createWorkService>;
   readonly conversations: ReturnType<typeof createConversationService>;
@@ -151,11 +154,8 @@ export async function createCompositionRoot(
   const maintenance = createUpdateMaintenanceLease(paths.wakeRoot);
   const clock = options.clock ?? new SystemClock();
   const ids = new UlidIdGenerator();
-  const { journal, projections, checkpoints, subscriptionRunSerialiser } = composePersistence(
-    paths,
-    clock,
-    options,
-  );
+  const { journal, projections, checkpoints, processorState, subscriptionRunSerialiser } =
+    composePersistence(paths, clock, options);
   const processorRuntime = new EventProcessorRuntime(
     journal,
     checkpoints,
@@ -301,6 +301,7 @@ export async function createCompositionRoot(
     journal,
     projections,
     checkpoints,
+    processorState,
     resources,
     lookup,
     pullRequests,
@@ -335,6 +336,7 @@ export async function createCompositionRoot(
     journal,
     projections,
     checkpoints,
+    processorState,
     activities,
     work,
     conversations,

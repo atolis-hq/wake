@@ -2,11 +2,13 @@ import {
   correlationId,
   type CheckpointStore,
   type EventJournal,
+  type ProcessorStateStore,
   type ProjectionStore,
 } from '@atolis-hq/eventing';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
+  InMemoryProcessorStateStore,
   InMemoryProjectionStore,
   createInMemoryProcessorRunSerialiser,
 } from '@atolis-hq/eventing/memory';
@@ -63,6 +65,7 @@ export interface ComposedMergeRootOptions {
   readonly journal?: EventJournal;
   readonly projections?: ProjectionStore;
   readonly checkpoints?: CheckpointStore;
+  readonly processorState?: ProcessorStateStore;
 }
 
 /** Creates the production composition graph used by delivery E2E scenarios. */
@@ -104,6 +107,7 @@ export async function createComposedMergeRoot(
     journal: options.journal ?? new InMemoryEventJournal(clock),
     projections: options.projections ?? new InMemoryProjectionStore(),
     checkpoints: options.checkpoints ?? new InMemoryCheckpointStore(),
+    processorState: options.processorState ?? new InMemoryProcessorStateStore(),
     subscriptionRunSerialiser: createInMemoryProcessorRunSerialiser(),
     decorateDeliveryAdapter: () => options.provider,
   });

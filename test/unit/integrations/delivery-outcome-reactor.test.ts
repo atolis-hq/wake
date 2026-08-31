@@ -3,12 +3,14 @@ import {
   eventId,
   EventProcessorHost,
   type ProcessorRunSerialiser,
+  type ProcessorStateStore,
 } from '@atolis-hq/eventing';
-import { FileProjectionStore } from '@atolis-hq/eventing-filesystem';
+import { FileProcessorStateStore } from '@atolis-hq/eventing-filesystem';
 import {
   createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
+  InMemoryProcessorStateStore,
   InMemoryProjectionStore,
 } from '@atolis-hq/eventing/memory';
 import { copyFile, mkdir, mkdtemp } from 'node:fs/promises';
@@ -29,12 +31,14 @@ function createReactor(
   journal: DeliveryOutcomeReactorArguments[0],
   orchestration: DeliveryOutcomeReactorArguments[1],
   projections: DeliveryOutcomeReactorArguments[2],
-  conversations?: DeliveryOutcomeReactorArguments[3],
+  states: ProcessorStateStore = new InMemoryProcessorStateStore(),
+  conversations?: DeliveryOutcomeReactorArguments[4],
 ) {
   return new DeliveryOutcomeReactor(
     journal,
     orchestration,
     projections,
+    states,
     conversations,
     unitSerialiseRun,
   );
@@ -70,7 +74,7 @@ it('skips facts outside the delivery namespace', () => {
   ).toBeNull();
 });
 
-it('normalizes a legacy flat pending projection when reconciliation leaves it pending', async () => {
+it('reads and normalizes legacy pending confirmation state from its exact existing file', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-legacy-pending-delivery-'));
   const namespace = 'reactor:delivery-outcomes:pending';
   const key = 'pending-confirmations';
@@ -80,7 +84,7 @@ it('normalizes a legacy flat pending projection when reconciliation leaves it pe
     join(process.cwd(), 'test', 'fixtures', 'projections', 'legacy-flat-pending-delivery.json'),
     join(directory, `${encode(key)}.json`),
   );
-  const projections = new FileProjectionStore(root);
+  const states = new FileProcessorStateStore(root);
   const reactor = createReactor(
     new InMemoryEventJournal(clock),
     {
@@ -93,14 +97,15 @@ it('normalizes a legacy flat pending projection when reconciliation leaves it pe
         throw new Error('An active activation must leave the delivery pending');
       },
     },
-    projections,
+    new InMemoryProjectionStore(),
+    states,
   );
 
   await reactor.reconcileOnce();
 
-  const stored = await projections.read<{
+  const stored = await states.read<{
     readonly events: readonly StoredPendingDeliveryOutcome[];
-  }>(namespace, key);
+  }>('reactor:delivery-outcomes', key);
   expect(stored?.value.events).toEqual([
     {
       eventId: 'intent-1:confirmed',
@@ -199,6 +204,7 @@ it('projects live journal envelopes into canonical pending delivery records idem
     }),
   ]);
   const projections = new InMemoryProjectionStore();
+  const states = new InMemoryProcessorStateStore();
   const reactor = createReactor(
     journal,
     {
@@ -212,6 +218,7 @@ it('projects live journal envelopes into canonical pending delivery records idem
       },
     },
     projections,
+    states,
   );
   const events = await journal.readAll(0);
 
@@ -219,9 +226,9 @@ it('projects live journal envelopes into canonical pending delivery records idem
   await reactor.react(events[1]!);
   await reactor.react(events[0]!);
 
-  const stored = await projections.read<{
+  const stored = await states.read<{
     readonly events: readonly StoredPendingDeliveryOutcome[];
-  }>('reactor:delivery-outcomes:pending', 'pending-confirmations');
+  }>('reactor:delivery-outcomes', 'pending-confirmations');
   expect(stored?.value.events).toEqual([
     {
       eventId: 'intent-1:confirmed',
@@ -246,6 +253,39 @@ it('projects live journal envelopes into canonical pending delivery records idem
   ]);
 });
 
+it('keeps pending confirmation recovery state out of delivery intent projections', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    confirmedEvent({ intentEventId: 'intent-1' }),
+  ]);
+  const projections = new InMemoryProjectionStore();
+  const states = new InMemoryProcessorStateStore();
+  const reactor = createReactor(
+    journal,
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+        } as never;
+      },
+      async acceptOutcome() {
+        throw new Error('An active activation must leave the delivery pending');
+      },
+    },
+    projections,
+    states,
+  );
+
+  await reactor.react((await journal.readAll(0))[0]!);
+
+  await expect(
+    states.read('reactor:delivery-outcomes', 'pending-confirmations'),
+  ).resolves.not.toBeNull();
+  await expect(
+    projections.read('reactor:delivery-outcomes:pending', 'pending-confirmations'),
+  ).resolves.toBeNull();
+});
+
 it('preserves a live processor outcome while pending reconciliation is in progress', async () => {
   const journal = new InMemoryEventJournal(clock);
   await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
@@ -262,6 +302,7 @@ it('preserves a live processor outcome while pending reconciliation is in progre
   const releaseReconciliation = deferred<void>();
   let blockReconciliation = false;
   const projections = new InMemoryProjectionStore();
+  const states = new InMemoryProcessorStateStore();
   const baseSerialiseRun = createInMemoryProcessorRunSerialiser();
   let serialisedCalls = 0;
   const serialiseRun: ProcessorRunSerialiser = (consumer, signal, operation) => {
@@ -290,6 +331,7 @@ it('preserves a live processor outcome while pending reconciliation is in progre
       },
     },
     projections,
+    states,
     undefined,
     serialiseRun,
   ]) as DeliveryOutcomeReactor;
@@ -305,9 +347,9 @@ it('preserves a live processor outcome while pending reconciliation is in progre
   void livePass.then(() => releaseReconciliation.resolve());
   await Promise.all([reconciliation, livePass]);
 
-  const stored = await projections.read<{
+  const stored = await states.read<{
     readonly events: readonly StoredPendingDeliveryOutcome[];
-  }>('reactor:delivery-outcomes:pending', 'pending-confirmations');
+  }>('reactor:delivery-outcomes', 'pending-confirmations');
   expect(stored?.value.events.map(({ eventId: id }) => id)).toEqual([
     'intent-1:confirmed',
     'intent-2:confirmed',
@@ -321,10 +363,10 @@ it('rewrites interim nested pending envelopes to canonical delivery records', as
   ]);
   const [envelope] = await journal.readAll(0);
   const projections = new InMemoryProjectionStore();
-  await projections.write({
-    namespace: 'reactor:delivery-outcomes:pending',
+  const states = new InMemoryProcessorStateStore();
+  await states.write({
+    consumer: 'reactor:delivery-outcomes',
     key: 'pending-confirmations',
-    lastGlobalPosition: 0,
     value: { events: [envelope!] },
   });
   const reactor = createReactor(
@@ -340,13 +382,14 @@ it('rewrites interim nested pending envelopes to canonical delivery records', as
       },
     },
     projections,
+    states,
   );
 
   await reactor.reconcileOnce();
 
-  const stored = await projections.read<{
+  const stored = await states.read<{
     readonly events: readonly StoredPendingDeliveryOutcome[];
-  }>('reactor:delivery-outcomes:pending', 'pending-confirmations');
+  }>('reactor:delivery-outcomes', 'pending-confirmations');
   expect(stored?.value.events).toEqual([
     {
       eventId: 'intent-1:confirmed',
@@ -630,6 +673,7 @@ it('continues delivery reconciliation when recording conversation provenance fai
       read: async () => null,
       write: async () => undefined,
     } as never,
+    new InMemoryProcessorStateStore(),
     { recordRepresentation: async () => Promise.reject(new Error('conversation unavailable')) },
   );
 
