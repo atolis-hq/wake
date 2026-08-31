@@ -25,14 +25,16 @@ function resolveBuildVersion() {
 
 const buildVersion = resolveBuildVersion();
 const source = readFileSync(versionModulePath, 'utf8');
-const updated = source.replace(
-  /export const wakeVersion = (?:['"][^'"]+['"]|resolveWakeVersion\(\));/,
-  `export const wakeVersion = ${JSON.stringify(buildVersion)};`,
-);
+const wakeVersionExport = /export const wakeVersion = (?:['"][^'"]+['"]|resolveWakeVersion\(\));/;
 
-if (updated === source) {
+if (!wakeVersionExport.test(source)) {
   throw new Error(`Could not find wakeVersion export in ${versionModulePath}`);
 }
 
-writeFileSync(versionModulePath, updated);
+const updated = source.replace(
+  wakeVersionExport,
+  `export const wakeVersion = ${JSON.stringify(buildVersion)};`,
+);
+
+if (updated !== source) writeFileSync(versionModulePath, updated);
 console.log(`Embedded Wake version ${buildVersion} (src)`);

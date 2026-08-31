@@ -33,7 +33,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc --build --force tsconfig.json && node scripts/embed-version.mjs && node scripts/check-cli-entrypoint.mjs",
+    "build": "tsc --build tsconfig.json && node scripts/embed-version.mjs && node scripts/check-cli-entrypoint.mjs",
     "prepack": "npm run build && npm run build:web",
     "test": "npm run test:unit",
     "test:fast": "npm run test:unit",

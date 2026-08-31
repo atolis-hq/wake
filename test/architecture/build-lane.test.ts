@@ -9,6 +9,7 @@ describe('target build lane', () => {
     };
 
     expect(packageJson.scripts.build).toContain('tsconfig.json');
+    expect(packageJson.scripts.build).not.toContain('--force');
     expect(packageJson.scripts.build).not.toContain('archive/' + 'legacy');
   });
 
