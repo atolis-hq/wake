@@ -44,7 +44,9 @@ describe('target test tiers', () => {
     expect(e2e).toContain("exclude: ['test/e2e/scenarios/live-*.test.ts']");
     expect(live).toContain("include: ['test/e2e/scenarios/live-*.test.ts']");
     expect(workflow).toContain('fast-verify:');
-    expect(workflow).toContain('npm run verify && npm run test:architecture && npm run knip');
+    expect(workflow).toContain(
+      'npm run verify && npm run test:architecture && npm run check:workspace-packages && npm run knip',
+    );
     expect(workflow).toContain('integration:');
     expect(workflow).toContain('npm run test:integration');
     expect(workflow).toContain('e2e:');
