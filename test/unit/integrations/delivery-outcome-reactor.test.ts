@@ -18,6 +18,7 @@ import {
 
 const clock = { now: () => new Date('2026-08-09T00:00:00.000Z') };
 const unitSerialiseRun = createInMemoryProcessorRunSerialiser();
+
 type DeliveryOutcomeReactorArguments = ConstructorParameters<typeof DeliveryOutcomeReactor>;
 
 function createReactor(
