@@ -16,6 +16,12 @@ const processorFactoryNames = new Set([
   'createBatchEventProcessor',
   'createProjectionProcessor',
 ]);
+const processorRuntimeNames = new Set([
+  ...hostNames,
+  ...registryNames,
+  ...serialiserNames,
+  ...processorFactoryNames,
+]);
 const handlerPropertyNames = new Set(['handle', 'handler']);
 const publishingInfrastructureModules = new Set(['bootstrap', 'eventing', 'persistence']);
 const legacyDraftNames = new Set([
@@ -135,7 +141,11 @@ function collectBindings(program, typeChecker, analysis) {
         assignmentSite(node),
       );
     }
-    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      !isWithinOuterAssignmentTarget(node)
+    )
       collectAssignmentTarget(
         node.left,
         [{ expression: node.right, accessPath: [] }],
@@ -216,6 +226,20 @@ function collectBindingAssignments(pattern, origins, bindings, typeChecker, assi
 
 function collectAssignmentTarget(target, origins, bindings, typeChecker, assignments, site) {
   const unwrapped = unwrapExpression(target);
+  if (
+    ts.isBinaryExpression(unwrapped) &&
+    unwrapped.operatorToken.kind === ts.SyntaxKind.EqualsToken
+  ) {
+    collectAssignmentTarget(
+      unwrapped.left,
+      withDefaultOrigin(origins, unwrapped.right),
+      bindings,
+      typeChecker,
+      assignments,
+      site,
+    );
+    return;
+  }
   if (ts.isIdentifier(unwrapped)) {
     const symbol = typeChecker.getSymbolAtLocation(unwrapped);
     if (symbol !== undefined) addAssignment(assignments, symbol, { ...site, origins });
@@ -264,13 +288,28 @@ function collectAssignmentTarget(target, origins, bindings, typeChecker, assignm
     if (propertyTarget !== undefined)
       collectAssignmentTarget(
         propertyTarget,
-        appendOriginAccess(origins, { kind: 'property', name }),
+        withDefaultOrigin(
+          appendOriginAccess(origins, { kind: 'property', name }),
+          ts.isShorthandPropertyAssignment(property)
+            ? property.objectAssignmentInitializer
+            : undefined,
+        ),
         bindings,
         typeChecker,
         assignments,
         site,
       );
   }
+}
+
+function isWithinOuterAssignmentTarget(node) {
+  for (let current = node.parent; current !== undefined; current = current.parent) {
+    if (ts.isVariableDeclaration(current)) return false;
+    if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+      return node.pos >= current.left.pos && node.end <= current.left.end;
+    if (ts.isStatement(current)) return false;
+  }
+  return false;
 }
 
 function addAssignment(assignments, symbol, assignment) {
@@ -290,6 +329,15 @@ function assignmentAt(bindings, symbol, useNode) {
       current = assignment;
   }
   return current;
+}
+
+function assignmentAtSite(bindings, symbol, site) {
+  if (symbol === undefined) return undefined;
+  const history = bindings.assignments.get(symbol);
+  return history?.find(
+    (candidate) =>
+      candidate.sourceFile === site.getSourceFile() && candidate.position === site.getEnd(),
+  );
 }
 
 function appendOriginAccess(origins, selector) {
@@ -371,6 +419,8 @@ function inspectProcessorRuntimeReferences(
   relativePath,
   diagnostics,
 ) {
+  const reported = new Set();
+
   function visit(node) {
     const reference = protectedProcessorRuntimeReference(node, bindings, typeChecker, sourceRoot);
     if (
@@ -378,7 +428,10 @@ function inspectProcessorRuntimeReferences(
       !isExcludedRuntimeReference(reference.node) &&
       !isApprovedProcessorRuntimeReference(reference.kind, relativePath)
     )
-      addProcessorRuntimeReferenceDiagnostic(reference, sourceRoot, diagnostics);
+      reportProcessorRuntimeReference(reference, sourceRoot, diagnostics, reported);
+    const binding = protectedProcessorStructuralBinding(node, bindings, typeChecker, sourceRoot);
+    if (binding !== undefined && !isApprovedProcessorRuntimeReference(binding.kind, relativePath))
+      reportProcessorRuntimeReference(binding, sourceRoot, diagnostics, reported);
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
@@ -395,7 +448,85 @@ function protectedProcessorRuntimeReference(node, bindings, typeChecker, sourceR
     const kind = protectedSymbolKind(symbol, sourceRoot);
     return isProcessorRuntimeKind(kind) ? { node, kind } : undefined;
   }
+  if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+    const direct = resolveSymbol(expressionSymbol(node, bindings, typeChecker), typeChecker);
+    if (isProcessorRuntimeKind(protectedSymbolKind(direct, sourceRoot))) return undefined;
+    const kind = resolveStructuralDeclarationAccessKind(node, bindings, typeChecker, sourceRoot);
+    return isProcessorRuntimeKind(kind) ? { node, kind } : undefined;
+  }
   return undefined;
+}
+
+function protectedProcessorStructuralBinding(node, bindings, typeChecker, sourceRoot) {
+  if (!ts.isIdentifier(node)) return undefined;
+  const site = bindingSite(node);
+  if (site === undefined) return undefined;
+  const symbol = typeChecker.getSymbolAtLocation(node);
+  const assignment = assignmentAtSite(bindings, symbol, site);
+  if (
+    assignment === undefined ||
+    !assignment.origins.some(({ accessPath }) =>
+      accessPath.some(
+        (selector) => selector.kind === 'property' && processorRuntimeNames.has(selector.name),
+      ),
+    ) ||
+    assignment.origins.some(({ expression }) =>
+      containsDirectProcessorRuntimeReference(expression, typeChecker, sourceRoot),
+    )
+  )
+    return undefined;
+  const kind = resolveAssignmentOrigins(
+    assignment,
+    [],
+    bindings,
+    typeChecker,
+    sourceRoot,
+    site,
+    new Set(),
+  );
+  return isProcessorRuntimeKind(kind) ? { node, kind } : undefined;
+}
+
+function resolveStructuralDeclarationAccessKind(node, bindings, typeChecker, sourceRoot) {
+  const access = aliasedAccess(node, bindings, typeChecker);
+  if (access === undefined) return undefined;
+  const symbol = typeChecker.getSymbolAtLocation(access.base);
+  const declarationSite = bindingDeclarationSite(symbol?.valueDeclaration);
+  if (declarationSite === undefined) return undefined;
+  const assignment = assignmentAtSite(bindings, symbol, declarationSite);
+  if (assignment === undefined) return undefined;
+  return resolveAssignmentOrigins(
+    assignment,
+    access.accessPath,
+    bindings,
+    typeChecker,
+    sourceRoot,
+    node,
+    new Set([symbol]),
+  );
+}
+
+function bindingDeclarationSite(declaration) {
+  for (let current = declaration; current !== undefined; current = current.parent) {
+    if (ts.isVariableDeclaration(current)) return current;
+    if (ts.isStatement(current)) return undefined;
+  }
+  return undefined;
+}
+
+function containsDirectProcessorRuntimeReference(node, typeChecker, sourceRoot) {
+  let found = false;
+  function visit(current) {
+    if (found) return;
+    const symbol = resolveSymbol(typeChecker.getSymbolAtLocation(current), typeChecker);
+    if (isProcessorRuntimeKind(protectedSymbolKind(symbol, sourceRoot))) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  }
+  visit(node);
+  return found;
 }
 
 function isProcessorRuntimeKind(kind) {
@@ -406,6 +537,13 @@ function isExcludedRuntimeReference(node) {
   if (isWithinImport(node) || isWithinTypePosition(node) || isTypeOnlyExportReference(node))
     return true;
   const parent = node.parent;
+  if (
+    (ts.isBindingElement(parent) && parent.propertyName === node) ||
+    (ts.isPropertyAssignment(parent) &&
+      parent.name === node &&
+      isWithinOuterAssignmentTarget(parent))
+  )
+    return true;
   return (
     (ts.isFunctionDeclaration(parent) ||
       ts.isFunctionExpression(parent) ||
@@ -461,6 +599,14 @@ function addProcessorRuntimeReferenceDiagnostic(reference, sourceRoot, diagnosti
       'persistence may not define handlers for Eventing processors',
       diagnostics,
     );
+}
+
+function reportProcessorRuntimeReference(reference, sourceRoot, diagnostics, reported) {
+  const sourceFile = reference.node.getSourceFile();
+  const key = `${reference.kind}:${sourceFile.fileName}:${reference.node.getStart(sourceFile)}`;
+  if (reported.has(key)) return;
+  reported.add(key);
+  addProcessorRuntimeReferenceDiagnostic(reference, sourceRoot, diagnostics);
 }
 
 function inspectPersistenceProcessors(
@@ -728,8 +874,13 @@ function bindingSite(node) {
   for (let current = node.parent; current !== undefined; current = current.parent) {
     if (ts.isVariableDeclaration(current))
       return node.pos >= current.name.pos && node.end <= current.name.end ? current : undefined;
-    if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+    if (
+      ts.isBinaryExpression(current) &&
+      current.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
+      if (isWithinOuterAssignmentTarget(current)) continue;
       return node.pos >= current.left.pos && node.end <= current.left.end ? current : undefined;
+    }
     if (ts.isStatement(current)) return undefined;
   }
   return undefined;

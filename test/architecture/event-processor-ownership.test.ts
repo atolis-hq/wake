@@ -263,6 +263,159 @@ describe('event processor ownership', () => {
     ).toHaveLength(2);
   });
 
+  it('rejects protected processor bindings carried through structural defaults and rest paths', async () => {
+    const root = await fixture({
+      'src/orchestration/application/structural-host-bindings.ts': [
+        "import * as Eventing from '../../eventing/index.js';",
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'const { EventProcessorHost = class {} } = Eventing;',
+        'const { EventProcessorHost: RenamedHost = LocalHost } = Eventing;',
+        "const hostKey = 'EventProcessorHost' as const;",
+        'const { [hostKey]: ComputedHost = LocalHost } = Eventing;',
+        'let AssignedHost: typeof Eventing.EventProcessorHost = LocalHost;',
+        '({ EventProcessorHost: AssignedHost = LocalHost } = Eventing);',
+        'let ComputedAssignedHost: typeof Eventing.EventProcessorHost = LocalHost;',
+        '({ [hostKey]: ComputedAssignedHost = LocalHost } = Eventing);',
+        'const { ...EventingRest } = Eventing;',
+        'const [...namespaces]: [typeof Eventing] = [Eventing];',
+        'export const hosts = [',
+        '  new EventProcessorHost(),',
+        '  new RenamedHost(),',
+        '  new ComputedHost(),',
+        '  new AssignedHost(),',
+        '  new ComputedAssignedHost(),',
+        '  new EventingRest.EventProcessorHost(),',
+        '  new namespaces[0].EventProcessorHost(),',
+        '];',
+      ].join('\n'),
+      'src/persistence/application/structural-factory-bindings.ts': [
+        "import * as Eventing from '../../eventing/index.js';",
+        'const localFactory = (value: unknown): unknown => value;',
+        'const { defineEventProcessor = (value: unknown): unknown => value } = Eventing;',
+        'const { defineEventProcessor: RenamedFactory = localFactory } = Eventing;',
+        "const factoryKey = 'defineEventProcessor' as const;",
+        'const { [factoryKey]: ComputedFactory = localFactory } = Eventing;',
+        'let AssignedFactory: typeof Eventing.defineEventProcessor = localFactory;',
+        '({ defineEventProcessor: AssignedFactory = localFactory } = Eventing);',
+        'let ComputedAssignedFactory: typeof Eventing.defineEventProcessor = localFactory;',
+        '({ [factoryKey]: ComputedAssignedFactory = localFactory } = Eventing);',
+        'const { ...EventingRest } = Eventing;',
+        'const [...namespaces]: [typeof Eventing] = [Eventing];',
+        'export const definitions = [',
+        '  defineEventProcessor(1),',
+        '  RenamedFactory(2),',
+        '  ComputedFactory(3),',
+        '  AssignedFactory(4),',
+        '  ComputedAssignedFactory(5),',
+        '  EventingRest.defineEventProcessor(6),',
+        "  namespaces[0]['defineEventProcessor'](7),",
+        '];',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-processor-host-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'orchestration/application/structural-host-bindings.ts:3:9',
+      'orchestration/application/structural-host-bindings.ts:4:29',
+      'orchestration/application/structural-host-bindings.ts:6:20',
+      'orchestration/application/structural-host-bindings.ts:8:24',
+      'orchestration/application/structural-host-bindings.ts:10:15',
+      'orchestration/application/structural-host-bindings.ts:19:20',
+      'orchestration/application/structural-host-bindings.ts:20:21',
+    ]);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'persistence/application/structural-factory-bindings.ts:3:9',
+      'persistence/application/structural-factory-bindings.ts:4:31',
+      'persistence/application/structural-factory-bindings.ts:6:23',
+      'persistence/application/structural-factory-bindings.ts:8:26',
+      'persistence/application/structural-factory-bindings.ts:10:18',
+      'persistence/application/structural-factory-bindings.ts:19:16',
+      'persistence/application/structural-factory-bindings.ts:20:3',
+    ]);
+  });
+
+  it('rejects shorthand and nested-array assignment defaults at their bound targets', async () => {
+    const root = await fixture({
+      'src/orchestration/application/assignment-default-bindings.ts': [
+        "import * as Eventing from '../../eventing/index.js';",
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'let EventProcessorHost: typeof Eventing.EventProcessorHost = LocalHost;',
+        '({ EventProcessorHost = LocalHost } = Eventing);',
+        'let ArrayHost: typeof Eventing.EventProcessorHost = LocalHost;',
+        '([{ EventProcessorHost: ArrayHost = LocalHost }] = [Eventing]);',
+        'export const hosts = [new EventProcessorHost(), new ArrayHost()];',
+      ].join('\n'),
+      'src/persistence/application/assignment-default-bindings.ts': [
+        "import * as Eventing from '../../eventing/index.js';",
+        'const localFactory = (value: unknown): unknown => value;',
+        'let defineEventProcessor: typeof Eventing.defineEventProcessor = localFactory;',
+        '({ defineEventProcessor = localFactory } = Eventing);',
+        'let ArrayFactory: typeof Eventing.defineEventProcessor = localFactory;',
+        '([{ defineEventProcessor: ArrayFactory = localFactory }] = [Eventing]);',
+        'export const values = [defineEventProcessor(1), ArrayFactory(2)];',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-processor-host-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'orchestration/application/assignment-default-bindings.ts:4:4',
+      'orchestration/application/assignment-default-bindings.ts:6:25',
+    ]);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'persistence/application/assignment-default-bindings.ts:4:4',
+      'persistence/application/assignment-default-bindings.ts:6:27',
+    ]);
+  });
+
+  it('does not reject structural defaults and rest paths from unrelated local objects', async () => {
+    const root = await fixture({
+      'src/orchestration/application/local-structural-bindings.ts': [
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'const LocalEventing = { EventProcessorHost: LocalHost };',
+        'const { EventProcessorHost = class {} } = LocalEventing;',
+        'const { EventProcessorHost: RenamedHost = LocalHost } = LocalEventing;',
+        "const hostKey = 'EventProcessorHost' as const;",
+        'const { [hostKey]: ComputedHost = LocalHost } = LocalEventing;',
+        'const { ...LocalRest } = LocalEventing;',
+        'const [...locals]: [typeof LocalEventing] = [LocalEventing];',
+        'const Absent: { EventProcessorHost?: undefined } = {};',
+        'const { EventProcessorHost: DefaultHost = LocalHost } = Absent;',
+        'export const hosts = [new EventProcessorHost(), new RenamedHost(), new ComputedHost(), new LocalRest.EventProcessorHost(), new locals[0].EventProcessorHost(), new DefaultHost()];',
+      ].join('\n'),
+      'src/persistence/application/local-structural-bindings.ts': [
+        'const localFactory = (value: unknown): unknown => value;',
+        'const LocalEventing = { defineEventProcessor: localFactory };',
+        'const { defineEventProcessor = (value: unknown): unknown => value } = LocalEventing;',
+        'const { defineEventProcessor: RenamedFactory = localFactory } = LocalEventing;',
+        "const factoryKey = 'defineEventProcessor' as const;",
+        'const { [factoryKey]: ComputedFactory = localFactory } = LocalEventing;',
+        'const { ...LocalRest } = LocalEventing;',
+        'const [...locals]: [typeof LocalEventing] = [LocalEventing];',
+        'const Absent: { defineEventProcessor?: undefined } = {};',
+        'const { defineEventProcessor: DefaultFactory = localFactory } = Absent;',
+        'export const values = [defineEventProcessor(1), RenamedFactory(2), ComputedFactory(3), LocalRest.defineEventProcessor(4), locals[0].defineEventProcessor(5), DefaultFactory(6)];',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
   it('does not treat an uncalled nested factory assignment as the origin of a later local call', async () => {
     const root = await fixture({
       'src/persistence/application/nested-factory-reference.ts': [
