@@ -63,14 +63,15 @@ identity.
   a repository with no watermark uses the provider's bounded bootstrap query.
   The watermark advances only after every event data from a complete repository
   query has been durably appended. Any failed query leaves it unchanged, so
-  the next poll replays the overlap and stable provider event ids deduplicate it.
+  the next poll replays the overlap and the polling persistence boundary
+  deduplicates stable provider event ids against durable evidence.
   A pull-request query failure must not prevent available issue/comment evidence
   from being returned, but it still leaves that repository's watermark unchanged
   and emits an operator-visible partial-poll failure. An
   issue or pull-request event data whose event id is unchanged since this
   process's last poll of that same external key MUST also be omitted, as a
-  same-process perf optimization on top of the journal's own idempotency —
-  neither omission is a correctness dependency, and both reset on restart.
+  same-process performance optimization on top of durable polling-boundary
+  deduplication. The cache resets on restart without affecting correctness.
 - A pull request's checks state MUST be `unknown` when check evidence could
   not be fetched this poll. When evidence was fetched, checks state MUST be
   `failing` if any check or status failed, else `pending` if any is still
