@@ -197,4 +197,23 @@ describe('eventing workspace packages', () => {
     );
     expect(filesystemFiles).toEqual(expect.arrayContaining(['dist/index.js', 'dist/index.d.ts']));
   }, 15_000);
+
+  it('installs all public workspace archives and runs Wake through the packed CLI', async () => {
+    const [wake, packageCheck] = await Promise.all([
+      readJson<PackageManifest>('package.json'),
+      readFile(new URL('../../scripts/check-workspace-packages.mjs', import.meta.url), 'utf8'),
+    ]);
+
+    expect(wake.scripts?.['check:workspace-packages']).toBe(
+      'node scripts/check-workspace-packages.mjs',
+    );
+    expect(packageCheck).toContain("['exec', '--offline', '--', 'wake', '--help']");
+
+    const { stdout } = await execAsync('npm run check:workspace-packages', {
+      cwd: new URL('../../', import.meta.url),
+      timeout: 120_000,
+    });
+
+    expect(stdout).toContain('Workspace package archive check passed');
+  }, 150_000);
 });

@@ -19,7 +19,7 @@
     },
     "src/surfaces/web": {
       "entry": ["e2e/*.spec.ts", "e2e/surface-fixture.ts"],
-      "project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}", "e2e/**/*.ts", "*.config.ts"]
+      "project": ["src/**/*.{js,ts,tsx}", "test/**/*.{ts,tsx}", "e2e/**/*.ts", "*.config.ts"]
     }
   }
 }

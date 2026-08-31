@@ -23,6 +23,7 @@ jobs:
               - 'docker/**'
               - 'package.json'
               - 'package-lock.json'
+              - 'packages/**'
               - 'assets/**'
               - 'dependency-cruiser.config.mjs'
               - 'eslint.config.js'
@@ -48,7 +49,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Run fast verification and unused-code checks
-        run: npm run verify && npm run knip
+        run: npm run verify && npm run test:architecture && npm run knip
       - name: Diagnose formatting failure
         if: failure()
         run: |
@@ -159,9 +160,25 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - name: Set public workspace versions from tag
+        env:
+          WAKE_VERSION: ${{ needs.tag.outputs.version }}
+        run: |
+          npm --workspace @atolis-hq/eventing version "$WAKE_VERSION" --no-git-tag-version --ignore-scripts
+          npm --workspace @atolis-hq/eventing-filesystem version "$WAKE_VERSION" --no-git-tag-version --ignore-scripts
+          npm version "$WAKE_VERSION" --workspaces=false --no-git-tag-version --ignore-scripts
+          npm --workspace @atolis-hq/eventing-filesystem pkg set dependencies.@atolis-hq/eventing="$WAKE_VERSION"
+          npm pkg set dependencies.@atolis-hq/eventing="$WAKE_VERSION" dependencies.@atolis-hq/eventing-filesystem="$WAKE_VERSION"
+          npm install --package-lock-only --ignore-scripts
+      - name: Verify public package archives
+        run: npm run check:workspace-packages
         env:
           WAKE_BUILD_TAG: ${{ needs.tag.outputs.version }}
-      - name: Set version from tag
-        run: npm version ${{ needs.tag.outputs.version }} --no-git-tag-version
-      - run: npm publish --access public --provenance
+      - name: Publish Eventing
+        run: npm --workspace @atolis-hq/eventing publish --access public --provenance
+      - name: Publish Eventing filesystem
+        run: npm --workspace @atolis-hq/eventing-filesystem publish --access public --provenance
+      - name: Publish Wake
+        run: npm publish --workspaces=false --access public --provenance
+        env:
+          WAKE_BUILD_TAG: ${{ needs.tag.outputs.version }}

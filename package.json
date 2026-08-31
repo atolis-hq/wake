@@ -35,6 +35,7 @@
   "scripts": {
     "build": "tsc --build tsconfig.json && node scripts/embed-version.mjs && node scripts/check-cli-entrypoint.mjs",
     "prepack": "npm run build && npm run build:web",
+    "check:workspace-packages": "node scripts/check-workspace-packages.mjs",
     "test": "npm run test:unit",
     "test:fast": "npm run test:unit",
     "check:catalogue": "node scripts/check-functional-catalogue.mjs",
