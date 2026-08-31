@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "vitest.config.ts"],
+  "exclude": ["dist/**", "node_modules/**", "src/surfaces/web/**"]
+}

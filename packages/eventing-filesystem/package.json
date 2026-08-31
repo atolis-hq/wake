@@ -1,0 +1,33 @@
+{
+  "name": "@atolis-hq/eventing-filesystem",
+  "version": "0.1.0",
+  "description": "Filesystem-backed event journal for Wake",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atolis-hq/wake.git"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@atolis-hq/eventing": "0.1.0"
+  }
+}

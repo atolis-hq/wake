@@ -140,7 +140,7 @@ export class DeliveryOutcomeReactor {
     });
   }
 
-  react(event: EventEnvelope, signal = new AbortController().signal): Promise<void> {
+  react(event: EventEnvelope, signal: AbortSignal = new AbortController().signal): Promise<void> {
     return this.serialiseRun(this.processor.consumer, signal, () =>
       this.reactWithinProcessor(event),
     );
@@ -153,7 +153,7 @@ export class DeliveryOutcomeReactor {
     if ((await this.reconcile(pending)) === false) await this.savePendingEvent(pending);
   }
 
-  reconcileOnce(signal = new AbortController().signal): Promise<void> {
+  reconcileOnce(signal: AbortSignal = new AbortController().signal): Promise<void> {
     return this.serialiseRun(this.processor.consumer, signal, () => this.reconcilePendingOnce());
   }
 

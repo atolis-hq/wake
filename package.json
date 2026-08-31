@@ -9,6 +9,7 @@
   },
   "type": "module",
   "workspaces": [
+    "packages/*",
     "src/surfaces/web"
   ],
   "bin": {
@@ -32,7 +33,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/embed-version.mjs && node scripts/check-cli-entrypoint.mjs",
+    "build": "tsc --build --force tsconfig.json && node scripts/embed-version.mjs && node scripts/check-cli-entrypoint.mjs",
     "prepack": "npm run build && npm run build:web",
     "test": "npm run test:unit",
     "test:fast": "npm run test:unit",
@@ -71,6 +72,8 @@
     "*.{ts,tsx,js,mjs,cjs,json,yaml,yml,css,html}": "prettier --write"
   },
   "dependencies": {
+    "@atolis-hq/eventing": "0.1.0",
+    "@atolis-hq/eventing-filesystem": "0.1.0",
     "@fastify/rate-limit": "^11.2.0",
     "@fastify/secure-session": "^8.3.0",
     "@octokit/rest": "^22.0.0",
