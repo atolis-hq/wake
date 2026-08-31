@@ -1,8 +1,10 @@
 import type { ProjectionStore, StoredProjection } from '@atolis-hq/eventing';
+import type { Dirent } from 'node:fs';
 
 import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { writeFileAtomically } from './atomic-write.js';
+import { isCompatibleProcessorStateRecord } from './processor-state-record.js';
 
 export class FileProjectionStore implements ProjectionStore {
   constructor(private readonly root: string) {}
@@ -98,14 +100,39 @@ export class FileProjectionStore implements ProjectionStore {
   }
 
   async clear(namespace?: string): Promise<void> {
-    await rm(
-      namespace === undefined
-        ? join(this.root, 'projections')
-        : join(this.root, 'projections', encode(namespace)),
-      { recursive: true, force: true },
-    );
+    if (namespace === undefined) await this.clearAllProjectionFiles();
+    else
+      await rm(join(this.root, 'projections', encode(namespace)), { recursive: true, force: true });
     if (namespace === undefined) this.listCache.clear();
     else this.listCache.delete(namespace);
+  }
+
+  private async clearAllProjectionFiles(): Promise<void> {
+    const root = join(this.root, 'projections');
+    let namespaces: Dirent[];
+    try {
+      namespaces = await readdir(root, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    await Promise.all(
+      namespaces.map(async (namespace) => {
+        const directory = join(root, namespace.name);
+        if (!namespace.isDirectory()) {
+          await rm(directory, { recursive: true, force: true });
+          return;
+        }
+        const entries = await readdir(directory, { withFileTypes: true });
+        await Promise.all(
+          entries.map(async (entry) => {
+            const path = join(directory, entry.name);
+            if (entry.isFile() && (await isProcessorStateFile(path))) return;
+            await rm(path, { recursive: true, force: true });
+          }),
+        );
+      }),
+    );
   }
 
   private path(namespace: string, key: string): string {
@@ -152,4 +179,14 @@ export function encode(value: string): string {
 
 export async function atomicJson(path: string, value: unknown): Promise<void> {
   await writeFileAtomically(path, `${JSON.stringify(value)}\n`);
+}
+
+async function isProcessorStateFile(path: string): Promise<boolean> {
+  try {
+    return isCompatibleProcessorStateRecord(JSON.parse(await readFile(path, 'utf8')));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    if (error instanceof SyntaxError) return false;
+    throw error;
+  }
 }

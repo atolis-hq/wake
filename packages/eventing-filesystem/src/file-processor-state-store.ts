@@ -5,14 +5,11 @@ import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withFileLock } from './file-lock.js';
 import { atomicJson, encode } from './file-projection-store.js';
+import {
+  isCompatibleProcessorStateRecord,
+  type CompatibleProcessorStateRecord,
+} from './processor-state-record.js';
 import { assertStorageName } from './storage-name.js';
-
-interface CompatibleStateRecord {
-  readonly namespace: string;
-  readonly key: string;
-  readonly lastGlobalPosition: number;
-  readonly value: unknown;
-}
 
 const pendingNamespaceSuffix = ':pending';
 
@@ -140,7 +137,7 @@ async function withLocks<Value>(
   return withFileLock(path, () => withLocks(rest, operation), { waitMs: 5_000 });
 }
 
-async function readCompatibleState(path: string): Promise<CompatibleStateRecord | null> {
+async function readCompatibleState(path: string): Promise<CompatibleProcessorStateRecord | null> {
   let raw: string;
   try {
     raw = await readFile(path, 'utf8');
@@ -154,36 +151,8 @@ async function readCompatibleState(path: string): Promise<CompatibleStateRecord 
   } catch (error) {
     throw invalidProcessorStateRecord(path, error);
   }
-  if (!isCompatibleStateRecord(stored)) throw invalidProcessorStateRecord(path);
+  if (!isCompatibleProcessorStateRecord(stored)) throw invalidProcessorStateRecord(path);
   return stored;
-}
-
-function isCompatibleStateRecord(value: unknown): value is CompatibleStateRecord {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.namespace === 'string' &&
-    typeof record.key === 'string' &&
-    isProcessorStateNamespace(record.namespace) &&
-    isStorageName(record.key) &&
-    Number.isInteger(record.lastGlobalPosition) &&
-    record.lastGlobalPosition === 0 &&
-    Object.hasOwn(record, 'value')
-  );
-}
-
-function isProcessorStateNamespace(namespace: string): boolean {
-  if (!namespace.endsWith(pendingNamespaceSuffix)) return false;
-  return isStorageName(namespace.slice(0, -pendingNamespaceSuffix.length));
-}
-
-function isStorageName(value: string): boolean {
-  try {
-    assertStorageName(value);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function invalidProcessorStateRecord(path: string, cause?: unknown): Error {
@@ -191,7 +160,7 @@ function invalidProcessorStateRecord(path: string, cause?: unknown): Error {
 }
 
 function matchesStateIdentity(
-  stored: CompatibleStateRecord | null,
+  stored: CompatibleProcessorStateRecord | null,
   namespace: string,
   key: string,
 ): boolean {
@@ -201,7 +170,7 @@ function matchesStateIdentity(
 function assertCandidateProvenance(
   root: string,
   path: string,
-  stored: CompatibleStateRecord,
+  stored: CompatibleProcessorStateRecord,
   namespace: string,
   key: string,
 ): void {
@@ -213,7 +182,7 @@ function assertCandidateProvenance(
 function compatibleRecord<Value>(
   namespace: string,
   state: StoredProcessorState<Value>,
-): CompatibleStateRecord {
+): CompatibleProcessorStateRecord {
   return { namespace, key: state.key, lastGlobalPosition: 0, value: state.value };
 }
 
@@ -228,7 +197,7 @@ function candidatePaths(paths: ProcessorStatePaths): readonly string[] {
 function candidateState(
   candidates: readonly ProcessorStateCandidate[],
   path: string,
-): CompatibleStateRecord | null {
+): CompatibleProcessorStateRecord | null {
   const candidate = candidates.find((value) => value.path === path);
   if (candidate === undefined) throw new Error(`Missing processor state candidate for ${path}`);
   return candidate.state;
@@ -244,5 +213,5 @@ interface ProcessorStatePaths {
 
 interface ProcessorStateCandidate {
   readonly path: string;
-  readonly state: CompatibleStateRecord | null;
+  readonly state: CompatibleProcessorStateRecord | null;
 }

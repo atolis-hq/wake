@@ -164,6 +164,32 @@ export function eventingAdapterContract(name: string, factory: EventingAdapterFa
       });
     });
 
+    it('clears rebuildable projections without clearing processor-owned state', async () => {
+      await usingHarness(factory, async ({ projections, processorState }) => {
+        await projections.write({
+          namespace: 'contract',
+          key: 'one',
+          lastGlobalPosition: 3,
+          value: { value: 'projection' },
+        });
+        await processorState.write({
+          consumer: 'consumer:projection-rebuild',
+          key: 'pending',
+          value: { eventIds: ['event-1'] },
+        });
+        await projections.clear();
+
+        await expect(projections.read('contract', 'one')).resolves.toBeNull();
+        await expect(
+          processorState.read('consumer:projection-rebuild', 'pending'),
+        ).resolves.toEqual({
+          consumer: 'consumer:projection-rebuild',
+          key: 'pending',
+          value: { eventIds: ['event-1'] },
+        });
+      });
+    });
+
     it('persists, clones, isolates, and deletes processor-owned state', async () => {
       await usingHarness(factory, async ({ processorState }) => {
         const input = { events: [{ id: 'event-1' }] };
