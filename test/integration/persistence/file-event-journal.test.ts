@@ -110,6 +110,38 @@ it('leaves the authoritative segment unchanged when an atomic batch commit fails
   expect(journal.changeSignal.revision()).toBe(revision);
 });
 
+it('reclaims only stale event-segment temp files while holding the append lock', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-stale-segment-temp-'));
+  const eventsDirectory = join(root, 'events');
+  await mkdir(eventsDirectory, { recursive: true });
+  const stale = join(
+    eventsDirectory,
+    '2026-07-30~00000000000000000002.jsonl.1234.1753876800000.123e4567-e89b-42d3-a456-426614174000.tmp',
+  );
+  const unrelated = join(eventsDirectory, 'operator-notes.tmp');
+  await writeFile(stale, '{"partial":"uncommitted segment"}\n', 'utf8');
+  await writeFile(unrelated, 'keep me', 'utf8');
+  const stream: EntityRef<'test', 'cleanup'> = { kind: 'test', id: 'cleanup' };
+  const journal = new FileEventJournal(root, new FakeClock());
+
+  await journal.appendToStream(stream, 0, [
+    createEventData({
+      eventId: 'event-cleanup',
+      eventType: 'test.changed',
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      correlationId: 'correlation-cleanup',
+      causationId: 'command-cleanup',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {},
+    }),
+  ]);
+
+  await expect(readFile(stale, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(readFile(unrelated, 'utf8')).resolves.toBe('keep me');
+  await expect(journal.readAll(0)).resolves.toHaveLength(1);
+});
+
 it('requires events, appends batches in sequence, and leaves the tail unchanged on rejected appends', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-append-to-stream-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };

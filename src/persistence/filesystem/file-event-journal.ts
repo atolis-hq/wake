@@ -83,6 +83,7 @@ export class FileEventJournal implements EventJournal {
     return withFileLock(
       join(this.root, 'locks', 'event-journal.lock'),
       async () => {
+        await reclaimStaleSegmentTemps(join(this.root, 'events'));
         const current = await this.scan();
         const streamEvents = this.cachedEventsForStream(stream);
         if (streamEvents.length !== expectedSequence)
@@ -634,4 +635,22 @@ async function writeSegmentAtomically(path: string, contents: string): Promise<v
   } finally {
     await rm(temporary, { force: true });
   }
+}
+
+const staleSegmentTempName =
+  /^\d{4}-\d{2}-\d{2}(?:~\d{20})?\.jsonl\.\d+\.\d+\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/;
+
+async function reclaimStaleSegmentTemps(directory: string): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && staleSegmentTempName.test(entry.name))
+      .map((entry) => rm(join(directory, entry.name), { force: true }).catch(() => undefined)),
+  );
 }
