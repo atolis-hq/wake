@@ -29,8 +29,12 @@ export class PollService {
     if (drafts.length === 0) return;
     const stream = integrationStream(GitHubAdapter);
     const existing = await this.journal.readStream(stream);
-    const existingEventIds = new Set(existing.map((event) => event.event.eventId));
-    const newDrafts = drafts.filter((draft) => !existingEventIds.has(draft.eventId));
+    const seenEventIds = new Set(existing.map((event) => event.event.eventId));
+    const newDrafts = drafts.filter((draft) => {
+      if (seenEventIds.has(draft.eventId)) return false;
+      seenEventIds.add(draft.eventId);
+      return true;
+    });
     if (newDrafts.length === 0) return;
     await this.journal.appendToStream(stream, existing.length, newDrafts);
   }

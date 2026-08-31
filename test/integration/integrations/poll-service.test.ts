@@ -90,6 +90,35 @@ describe('PollService', () => {
     expect(await delegate.readAll(0)).toHaveLength(2);
   });
 
+  it('deduplicates identical GitHub evidence within one poll batch', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const draft = createEventData({
+      eventId: 'github:duplicate-in-batch',
+      eventType: 'integration.github.work-observed',
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      correlationId: 'github:duplicate-in-batch',
+      causationId: 'github:duplicate-in-batch',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      payload: {
+        externalKey: 'owner/repo#duplicate',
+        kind: 'issue' as const,
+        title: 'Duplicate',
+        body: '',
+        state: 'open' as const,
+        revision: 'revision-1',
+        actor: { id: 'octocat', kind: 'human' as const },
+        raw: {},
+      },
+    });
+
+    await new PollService(journal, { poll: async () => [draft, draft] }).pollOnce(
+      new AbortController().signal,
+    );
+
+    await expect(journal.readAll(0)).resolves.toHaveLength(1);
+  });
+
   it('persists GitHub evidence through the strict file journal without adding stream to EventData', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-github-poll-file-journal-'));
     const journal = new FileEventJournal(root, new FakeClock());
