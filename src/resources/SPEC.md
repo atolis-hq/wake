@@ -1,5 +1,5 @@
 ---
-asOf: dbbcd8aa
+asOf: e5da36bf
 ---
 
 # Resources — Module Specification
@@ -85,10 +85,12 @@ construct envelope metadata or a processor host.
   silently dropped or silently overwriting the existing primary.
 - Secondary correlations are not limited to one per Resource.
 - Repeating a correlation command with the same generated event data returns
-  the established correlation without another append. Reusing that event id
-  for different correlation data is rejected by Resources before appending;
-  this service-level replay check is required because the journal records
-  every accepted batch.
+  the established correlation without another append. Resources uses expected
+  sequence as a bounded compare-and-swap: after one sequence conflict it
+  reloads and reevaluates exact replay and a competing primary correlation
+  before retrying at most once. A nonmatching repeated event id or unreconciled
+  conflict is rejected by the owning service; the journal records every
+  accepted batch.
 
 ## Event catalogue
 

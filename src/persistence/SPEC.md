@@ -1,5 +1,5 @@
 ---
-asOf: dbbcd8aa
+asOf: e5da36bf
 ---
 
 # Persistence - Module Specification
@@ -46,6 +46,11 @@ renamed JSONL segment. The first segment for a day retains the established daily
 name; later same-day segments use the first global position in their suffixed
 name, preserving deterministic global order without mutating an existing
 segment. The in-memory adapter preserves the same append and ordering contract.
+
+Before a file-backed append, while holding the journal lock, the journal
+best-effort reclaims only stale temporary files whose names match its own
+atomically written JSONL segment pattern. This cleanup recovers interrupted
+writes without treating a temporary file as a fact or removing unrelated files.
 
 The filesystem codec preserves the exact established flat JSONL record while
 the in-memory adapter stores the nested `EventEnvelope<EventData>` model. Both

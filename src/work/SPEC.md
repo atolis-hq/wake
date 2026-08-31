@@ -1,5 +1,5 @@
 ---
-asOf: dbbcd8aa
+asOf: e5da36bf
 ---
 
 # Work — Module Specification
@@ -92,9 +92,11 @@ envelope metadata or a processor host.
   `(to, relation)` pair against a WorkItem more than once MUST NOT duplicate
   it in that WorkItem's related-items view.
 - Repeating a command with the same generated work event data returns the
-  current WorkItem view without another append. Reusing that event id for
-  different event data is rejected by Work before appending; this service-level
-  replay check is required because the journal records every accepted batch.
+  current WorkItem view without another append. Work uses expected sequence as
+  a bounded compare-and-swap: on a sequence conflict it reloads once and
+  returns only an exact concurrent replay, otherwise preserving the conflict
+  for its caller. Reusing that event id for different event data is rejected
+  by Work before appending; the journal records every accepted batch.
 
 ## Event catalogue
 

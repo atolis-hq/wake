@@ -1,5 +1,5 @@
 ---
-asOf: dbbcd8aa
+asOf: e5da36bf
 ---
 
 # Integrations — Module Specification
@@ -107,9 +107,10 @@ at a time.
 ## Core policies, invariants, and behaviours
 
 - The polling persistence boundary filters event ids already present on a
-  provider's own `integration` stream before appending. Repeated evidence
-  therefore does not record twice or retrigger translation after restart; the
-  source-local observation cache is only a performance optimization.
+  provider's own `integration` stream and duplicates within the fetched batch
+  before appending. Repeated evidence therefore does not record twice or
+  retrigger translation after restart; the source-local observation cache is
+  only a performance optimization.
 - With no intake rules configured, every observation MUST be admitted with
   no tags. With rules configured, an observation MUST be admitted only if at
   least one rule matches, and MUST collect the union of every matched rule's
