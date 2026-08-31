@@ -1,7 +1,13 @@
+import { isDeepStrictEqual } from 'node:util';
 import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
 import { createWorkEventData } from '../contracts/event-factory.js';
-import { WorkEventType, type WorkEventData, type WorkEventPayloads } from '../contracts/events.js';
+import {
+  WorkEventType,
+  type WorkEvent,
+  type WorkEventData,
+  type WorkEventPayloads,
+} from '../contracts/events.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
 import type { WorkItemView } from '../contracts/views.js';
 import { WorkStatus } from '../contracts/vocabulary.js';
@@ -108,6 +114,8 @@ async function changeWorkItem(
   requireOpen = true,
 ): Promise<WorkItemView> {
   const loaded = await repository.load(workItemId);
+  const replayed = replayedWorkChange(loaded.events, loaded.view, draft, workItemId);
+  if (replayed !== undefined) return replayed;
   if (!allowMissing && loaded.view === null)
     throw new Error(`WorkItem ${workItemId} does not exist`);
   if (loaded.view !== null && loaded.view.deleted) {
@@ -120,6 +128,20 @@ async function changeWorkItem(
   const result = await repository.load(workItemId);
   if (result.view === null) throw new Error(`WorkItem ${workItemId} was not created`);
   return result.view;
+}
+
+function replayedWorkChange(
+  events: readonly WorkEvent[],
+  view: WorkItemView | null,
+  draft: WorkEventData,
+  workItemId: WorkItemId,
+): WorkItemView | undefined {
+  const prior = events.find((event) => event.event.eventId === draft.eventId);
+  if (prior === undefined) return undefined;
+  if (!isDeepStrictEqual(prior.event, draft))
+    throw new Error(`Work event id ${draft.eventId} has already been used with different content`);
+  if (view === null) throw new Error(`WorkItem ${workItemId} was not created`);
+  return view;
 }
 
 // Operator consent is a durable sibling of freeze/unfreeze. Setting it to the value it

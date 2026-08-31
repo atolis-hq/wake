@@ -6,7 +6,6 @@ import { expect, it, vi } from 'vitest';
 import {
   cachedJournalView,
   createEventData,
-  EventIdConflictError,
   WrongExpectedSequenceError,
   type EntityRef,
   type EventData,
@@ -14,12 +13,17 @@ import {
 import { FileEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
-const { readFileMock, statMock } = vi.hoisted(() => ({ readFileMock: vi.fn(), statMock: vi.fn() }));
+const { readFileMock, renameMock, statMock } = vi.hoisted(() => ({
+  readFileMock: vi.fn(),
+  renameMock: vi.fn(),
+  statMock: vi.fn(),
+}));
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof FsPromises>();
   readFileMock.mockImplementation(actual.readFile);
+  renameMock.mockImplementation(actual.rename);
   statMock.mockImplementation(actual.stat);
-  return { ...actual, readFile: readFileMock, stat: statMock };
+  return { ...actual, readFile: readFileMock, rename: renameMock, stat: statMock };
 });
 
 it('loads the current flat JSONL record as a nested in-memory envelope', async () => {
@@ -76,6 +80,36 @@ it('writes newly appended envelopes with the exact legacy flat JSONL shape and k
   expect(JSON.parse(jsonl)).not.toHaveProperty('event');
 });
 
+it('leaves the authoritative segment unchanged when an atomic batch commit fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-atomic-batch-'));
+  const stream: EntityRef<'test', 'atomic'> = { kind: 'test', id: 'atomic' };
+  const event = (eventId: string) =>
+    createEventData({
+      eventId,
+      eventType: 'test.changed',
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      correlationId: 'correlation-atomic',
+      causationId: eventId,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: { eventId },
+    });
+  const journal = new FileEventJournal(root, new FakeClock());
+  await journal.appendToStream(stream, 0, [event('event-1')]);
+  const segment = join(root, 'events', '2026-07-30.jsonl');
+  const before = await readFile(segment, 'utf8');
+  const revision = journal.changeSignal.revision();
+
+  renameMock.mockRejectedValueOnce(new Error('simulated atomic commit failure'));
+
+  await expect(
+    journal.appendToStream(stream, 1, [event('event-2'), event('event-3')]),
+  ).rejects.toThrow('simulated atomic commit failure');
+  expect(await readFile(segment, 'utf8')).toBe(before);
+  expect(await new FileEventJournal(root, new FakeClock()).readAll(0)).toHaveLength(1);
+  expect(journal.changeSignal.revision()).toBe(revision);
+});
+
 it('requires events, appends batches in sequence, and leaves the tail unchanged on rejected appends', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-append-to-stream-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
@@ -129,7 +163,7 @@ it('reopens the journal and continues stream sequence and global position', asyn
   expect((await reopened.readAll(0)).length).toBe(2);
 });
 
-it('returns an existing idempotent event while appending only new events in a mixed batch', async () => {
+it('appends every event in a complete batch even when producer event identities repeat', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-mixed-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
@@ -146,14 +180,15 @@ it('returns an existing idempotent event while appending only new events in a mi
   const journal = new FileEventJournal(root, new FakeClock());
   await journal.appendToStream(stream, 0, [draft('event-1')]);
   const result = await journal.appendToStream(stream, 1, [draft('event-1'), draft('event-2')]);
-  expect(result.map((event) => event.globalPosition)).toEqual([1, 2]);
+  expect(result.map((event) => event.globalPosition)).toEqual([2, 3]);
   expect((await journal.readAll(0)).map((event) => event.event.eventId)).toEqual([
+    'event-1',
     'event-1',
     'event-2',
   ]);
 });
 
-it('rejects an otherwise identical event id replayed to another stream without notifying', async () => {
+it('treats event identity as opaque producer data across streams', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-cross-stream-replay-'));
   const streamA: EntityRef<'test', 'a'> = { kind: 'test', id: 'a' };
   const streamB: EntityRef<'test', 'b'> = { kind: 'test', id: 'b' };
@@ -169,14 +204,9 @@ it('rejects an otherwise identical event id replayed to another stream without n
   });
   const journal = new FileEventJournal(root, new FakeClock());
   await journal.appendToStream(streamA, 0, [draft]);
-  const revision = journal.changeSignal.revision();
+  await journal.appendToStream(streamB, 0, [draft]);
 
-  await expect(journal.appendToStream(streamB, 0, [draft])).rejects.toBeInstanceOf(
-    EventIdConflictError,
-  );
-
-  expect(await journal.readStream(streamB)).toEqual([]);
-  expect(journal.changeSignal.revision()).toBe(revision);
+  expect(await journal.readStream(streamB)).toHaveLength(1);
 });
 
 it('round-trips every strict offset-ISO timestamp accepted by draft construction', async () => {
@@ -763,21 +793,8 @@ it('notifies changeSignal after a real write, and wakes multiple subscribers off
     await journal.appendToStream(stream, 2, [draft('event-3', 3)]);
     await Promise.all([firstWait, secondWait]);
 
-    // Idempotently resubmitting the same already-recorded draft is a no-op
-    // write and must not fire changeSignal.
-    let wokeOnReplay = false;
-    const replayWait = journal.changeSignal
-      .waitForChange(firstController.signal, 1_000)
-      .then(() => {
-        wokeOnReplay = true;
-      });
-    await journal.appendToStream(stream, 2, [draft('event-3', 3)]);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(wokeOnReplay).toBe(false);
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    await replayWait;
-    expect(wokeOnReplay).toBe(true);
+    await journal.appendToStream(stream, 3, [draft('event-3', 3)]);
+    expect(journal.changeSignal.revision()).toBe(initialRevision + 3);
   } finally {
     vi.useRealTimers();
   }

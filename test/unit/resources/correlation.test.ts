@@ -109,6 +109,23 @@ describe('Resource correlations', () => {
     ).toHaveLength(1);
   });
 
+  it('rejects reuse of a command event identity with different Resource data', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createTestResourceServices(journal).resources;
+    const resource = resId('identity-conflict');
+    await service.discover(discovery(resource), context('command-1'));
+    await service.correlate(resource, workId('one'), 'primary', context('command-2'));
+
+    await expect(
+      service.correlate(resource, workId('two'), 'primary', context('command-2')),
+    ).rejects.toThrow('has already been used with different content');
+    expect(
+      (await journal.readStream(resourceStream(resource))).filter(
+        (event) => event.event.eventType === 'resources.work-correlation-established',
+      ),
+    ).toHaveLength(1);
+  });
+
   it('rejects a second primary WorkItem correlation and records conflict evidence', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const service = createTestResourceServices(journal).resources;

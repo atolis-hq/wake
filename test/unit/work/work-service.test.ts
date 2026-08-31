@@ -60,6 +60,18 @@ describe('WorkService', () => {
     expect(await journal.readStream(workItemStream(workId('1')))).toHaveLength(1);
   });
 
+  it('rejects reuse of a command event identity with different Work data', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createWorkService(journal);
+    const workItemId = workId('identity-conflict');
+    await service.create({ workItemId, objective: 'Original objective' }, context);
+
+    await expect(
+      service.create({ workItemId, objective: 'Different objective' }, context),
+    ).rejects.toThrow('has already been used with different content');
+    expect(await journal.readStream(workItemStream(workItemId))).toHaveLength(1);
+  });
+
   it('rejects lifecycle changes after work is closed', async () => {
     const service = createWorkService(new InMemoryEventJournal(new FakeClock()));
     const work1 = workId('1');

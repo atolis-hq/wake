@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { DiscoverResource } from '../contracts/commands.js';
@@ -200,6 +201,22 @@ async function correlateResource(
 ): Promise<ResourceCorrelationView> {
   const loaded = await repository.load(resourceId);
   if (loaded.resource === null) throw new Error(`Resource ${resourceId} does not exist`);
+  const draft = resourceDraft(context, {
+    eventType: ResourceEventType.WorkCorrelationEstablished,
+    payload: { workItemId, role, provenance },
+  });
+  const prior = loaded.resource.events.find((event) => event.event.eventId === draft.eventId);
+  if (prior !== undefined) {
+    if (!isDeepStrictEqual(prior.event, draft))
+      throw new Error(
+        `Resource event id ${draft.eventId} has already been used with different content`,
+      );
+    const correlation = loaded.resource.correlations.find(
+      (candidate) => candidate.workItemId === workItemId && candidate.role === role,
+    );
+    if (correlation === undefined) throw new Error('Resource correlation was not established');
+    return correlation;
+  }
   const primary = loaded.resource.correlations.find(
     (correlation) => correlation.role === ResourceCorrelationRole.Primary,
   );
@@ -218,14 +235,7 @@ async function correlateResource(
     );
     throw new Error(`Resource ${resourceId} already has a primary WorkItem correlation`);
   }
-  await appendResourceEvent(
-    repository,
-    resourceId,
-    resourceDraft(context, {
-      eventType: ResourceEventType.WorkCorrelationEstablished,
-      payload: { workItemId, role, provenance },
-    }),
-  );
+  await appendResourceEvent(repository, resourceId, draft);
   const correlation = (await repository.load(resourceId)).resource?.correlations.find(
     (candidate) => candidate.workItemId === workItemId && candidate.role === role,
   );

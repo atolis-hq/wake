@@ -12,6 +12,7 @@ import { foldWorkItem } from '../domain/work-item.js';
 
 export interface LoadedWorkItem {
   readonly sequence: number;
+  readonly events: readonly WorkEvent[];
   readonly view: WorkItemView | null;
 }
 
@@ -21,7 +22,7 @@ export class WorkRepository {
   async load(workItemId: WorkItemId): Promise<LoadedWorkItem> {
     const events = await this.journal.readStream(workItemStream(workItemId));
     const owned = events.map(selectWorkEvent).filter((event) => event !== null);
-    return { sequence: events.length, view: foldWorkItem(owned) };
+    return { sequence: events.length, events: owned, view: foldWorkItem(owned) };
   }
 
   async append(

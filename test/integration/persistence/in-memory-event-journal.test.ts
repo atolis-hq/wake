@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createEventData,
-  EventIdConflictError,
   WrongExpectedSequenceError,
   type Clock,
   type EntityRef,
@@ -122,40 +121,40 @@ describe('in-memory event journal', () => {
     expect((await journal.readLatest(3, 1)).map(({ event }) => event.eventId)).toEqual(['evt-2']);
   });
 
-  it('returns the prior append for a repeated event id instead of duplicating it', async () => {
+  it('checks expected sequence before considering producer-chosen event identity', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
     const draft = event('evt-1');
-    const first = await journal.appendToStream(stream, 0, [draft]);
+    await journal.appendToStream(stream, 0, [draft]);
 
-    const repeated = await journal.appendToStream(stream, 0, [draft]);
+    await expect(journal.appendToStream(stream, 0, [draft])).rejects.toBeInstanceOf(
+      WrongExpectedSequenceError,
+    );
 
-    expect(repeated).toEqual(first);
     expect(await journal.readAll(0)).toHaveLength(1);
   });
 
-  it('rejects an otherwise identical event id replayed to another stream without notifying', async () => {
+  it('treats event identity as opaque producer data across streams', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
     const other: EntityRef<'test', 'other'> = { kind: 'test', id: 'other' };
     const draft = event('evt-1');
     await journal.appendToStream(stream, 0, [draft]);
-    const revision = journal.changeSignal.revision();
 
-    await expect(journal.appendToStream(other, 0, [draft])).rejects.toBeInstanceOf(
-      EventIdConflictError,
-    );
+    await journal.appendToStream(other, 0, [draft]);
 
-    expect(await journal.readStream(other)).toEqual([]);
-    expect(journal.changeSignal.revision()).toBe(revision);
+    expect(await journal.readStream(other)).toHaveLength(1);
   });
 
-  it('rejects an event id reused with different content', async () => {
+  it('appends a complete batch even when producer event identities repeat', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
     await journal.appendToStream(stream, 0, [event('evt-1')]);
 
-    await expect(
-      journal.appendToStream(stream, 1, [event('evt-1', 'test.changed')]),
-    ).rejects.toThrow('Event id evt-1 has already been used with different content');
-    expect(await journal.readAll(0)).toHaveLength(1);
+    const appended = await journal.appendToStream(stream, 1, [
+      event('evt-1'),
+      event('evt-1', 'test.changed', { changed: true }),
+    ]);
+
+    expect(appended.map(({ sequence }) => sequence)).toEqual([2, 3]);
+    expect(await journal.readAll(0)).toHaveLength(3);
   });
 
   it('uses the append stream as the authoritative stream for every event', async () => {
@@ -170,18 +169,6 @@ describe('in-memory event journal', () => {
     ]);
   });
 
-  it('rejects an event id reused with different content in the same batch', async () => {
-    const journal = new InMemoryEventJournal(new FixedClock());
-
-    await expect(
-      journal.appendToStream(stream, 0, [
-        event('evt-1'),
-        event('evt-1', 'test.changed', { changed: true }),
-      ]),
-    ).rejects.toThrow('Event id evt-1 is repeated with different content in one append');
-    expect(await journal.readAll(0)).toEqual([]);
-  });
-
   describe('changeSignal', () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -191,7 +178,7 @@ describe('in-memory event journal', () => {
       vi.useRealTimers();
     });
 
-    it('notifies only when append actually records a new event, not on an idempotent replay', async () => {
+    it('notifies only after a successful append', async () => {
       const journal = new InMemoryEventJournal(new FixedClock());
       const controller = new AbortController();
       const initialRevision = journal.changeSignal.revision();
@@ -216,18 +203,8 @@ describe('in-memory event journal', () => {
       );
       expect(journal.changeSignal.revision()).toBe(initialRevision + 1);
 
-      let wokeAgain = false;
-      const secondWait = journal.changeSignal.waitForChange(controller.signal, 1_000).then(() => {
-        wokeAgain = true;
-      });
-      // Resubmitting the exact same already-recorded draft is a no-op append.
-      await journal.appendToStream(stream, 0, [event('evt-1')]);
-      await vi.advanceTimersByTimeAsync(1);
-      expect(wokeAgain).toBe(false);
-
-      await vi.advanceTimersByTimeAsync(1_000);
-      await secondWait;
-      expect(wokeAgain).toBe(true);
+      await journal.appendToStream(stream, 2, [event('evt-1')]);
+      expect(journal.changeSignal.revision()).toBe(initialRevision + 2);
     });
 
     it('wakes multiple independent subscribers off one append, each catching up to their own checkpoint', async () => {

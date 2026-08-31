@@ -1,7 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { watch } from 'node:fs';
-import { appendFile, mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 import type {
   Clock,
   EntityRef,
@@ -12,7 +12,6 @@ import type {
 } from '../../kernel/index.js';
 import {
   decodeEventEnvelope,
-  EventIdConflictError,
   InProcessJournalChangeSignal,
   WrongExpectedSequenceError,
 } from '../../kernel/index.js';
@@ -85,64 +84,53 @@ export class FileEventJournal implements EventJournal {
       join(this.root, 'locks', 'event-journal.lock'),
       async () => {
         const current = await this.scan();
-        const byId = new Map(current.map((envelope) => [envelope.event.eventId, envelope]));
-        const batchIds = new Set<string>();
-        for (const draft of drafts) {
-          if (batchIds.has(draft.eventId))
-            throw new Error(`Event id ${draft.eventId} is repeated in one append`);
-          batchIds.add(draft.eventId);
-        }
-        const existing = drafts.map((draft) => byId.get(draft.eventId));
-        for (const [index, event] of existing.entries())
-          if (event !== undefined && !sameDraft(event, drafts[index]!, stream))
-            throw new EventIdConflictError(
-              `Event id ${event.event.eventId} has already been used with different content`,
-            );
-        if (drafts.length > 0 && existing.every(isDefined)) return existing.filter(isDefined);
         const streamEvents = this.cachedEventsForStream(stream);
         if (streamEvents.length !== expectedSequence)
           throw new WrongExpectedSequenceError(
             `Expected sequence ${expectedSequence} for ${key(stream)}, actual ${streamEvents.length}`,
           );
         const recordedAt = this.clock.now().toISOString();
-        let newCount = 0;
-        const envelopes = drafts.map((draft, index): EventEnvelope => {
-          const prior = existing[index];
-          if (prior !== undefined) return prior;
-          newCount += 1;
-          return {
-            event: draft,
-            stream,
-            recordedAt,
-            sequence: streamEvents.length + newCount,
-            globalPosition: current.length + newCount,
-          };
-        });
+        const envelopes = drafts.map((draft, index): EventEnvelope => ({
+          event: draft,
+          stream,
+          recordedAt,
+          sequence: streamEvents.length + index + 1,
+          globalPosition: current.length + index + 1,
+        }));
         const finalizedEnvelopes = envelopes.map((event) => decodeEventEnvelope(event));
-        const newEnvelopes = finalizedEnvelopes.filter(
-          (envelope) => !byId.has(envelope.event.eventId),
+        const directory = join(this.root, 'events');
+        await mkdir(directory, { recursive: true });
+        const file = await this.nextSegmentFile(directory, recordedAt, current.length + 1);
+        await writeSegmentAtomically(
+          join(directory, file),
+          finalizedEnvelopes.map(encodeEventRecord).join('\n') + '\n',
         );
-        if (newEnvelopes.length > 0) {
-          const directory = join(this.root, 'events');
-          await mkdir(directory, { recursive: true });
-          const day = recordedAt.slice(0, 10);
-          const file = `${day}.jsonl`;
-          await appendFile(
-            join(directory, file),
-            newEnvelopes.map(encodeEventRecord).join('\n') + '\n',
-            'utf8',
-          );
-          await this.extendCache(file, current, newEnvelopes);
-          // The manifest is derived data. The event append is authoritative, so
-          // an index-write failure must not turn a successfully recorded event
-          // into a failed append.
-          await this.persistManifest().catch(() => undefined);
-          this.changeSignalSource.notify();
-        }
+        await this.extendCache(file, current, finalizedEnvelopes);
+        // The manifest is derived data. The event append is authoritative, so
+        // an index-write failure must not turn a successfully recorded event
+        // into a failed append.
+        await this.persistManifest().catch(() => undefined);
+        this.changeSignalSource.notify();
         return finalizedEnvelopes;
       },
       { waitMs: 5_000, retryIntervalMs: 25 },
     );
+  }
+
+  private async nextSegmentFile(
+    directory: string,
+    recordedAt: string,
+    firstGlobalPosition: number,
+  ): Promise<string> {
+    const day = recordedAt.slice(0, 10);
+    const daily = `${day}.jsonl`;
+    try {
+      await stat(join(directory, daily));
+      return `${day}~${String(firstGlobalPosition).padStart(20, '0')}.jsonl`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return daily;
+      throw error;
+    }
   }
 
   // Reads via the persisted per-segment manifest when the in-memory cache is
@@ -366,7 +354,7 @@ export class FileEventJournal implements EventJournal {
     let files: string[];
     try {
       files = (await readdir(directory))
-        .filter((file) => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(file))
+        .filter((file) => /^\d{4}-\d{2}-\d{2}(?:~\d{20})?\.jsonl$/.test(file))
         .sort();
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
@@ -600,9 +588,6 @@ function indexEventsByStream(
   return indexed;
 }
 
-const sameDraft = (event: EventEnvelope, draft: EventData, stream: EntityRef) =>
-  key(event.stream) === key(stream) && isDeepStrictEqual(event.event, draft);
-
 function validateEnvelope(event: EventEnvelope, expectedPosition: number): void {
   if (event.globalPosition !== expectedPosition) throw new Error('Invalid event envelope position');
 }
@@ -611,10 +596,6 @@ function eventContext(input: unknown): string {
   if (typeof input !== 'object' || input === null || !('eventId' in input)) return '';
   const eventId = input.eventId;
   return typeof eventId === 'string' && eventId.length > 0 ? ` event ${eventId}` : '';
-}
-
-function isDefined<Value>(value: Value | undefined): value is Value {
-  return value !== undefined;
 }
 
 async function waitForEventsAfter(
@@ -636,5 +617,21 @@ async function waitForEventsAfter(
   } finally {
     waiting.abort();
     signal.removeEventListener('abort', abort);
+  }
+}
+
+async function writeSegmentAtomically(path: string, contents: string): Promise<void> {
+  const temporary = `${path}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+  try {
+    const handle = await open(temporary, 'wx');
+    try {
+      await handle.writeFile(contents, 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true });
   }
 }

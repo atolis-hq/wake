@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from 'node:util';
 import type {
   Clock,
   EntityRef,
@@ -7,21 +6,11 @@ import type {
   EventJournal,
   JournalChangeSignal,
 } from '../../kernel/index.js';
-import {
-  EventIdConflictError,
-  InProcessJournalChangeSignal,
-  WrongExpectedSequenceError,
-} from '../../kernel/index.js';
-
-interface IndexedEvent {
-  readonly draft: EventData;
-  readonly envelope: EventEnvelope;
-}
+import { InProcessJournalChangeSignal, WrongExpectedSequenceError } from '../../kernel/index.js';
 
 export class InMemoryEventJournal implements EventJournal {
   private readonly streams = new Map<string, EventEnvelope[]>();
   private readonly events: EventEnvelope[] = [];
-  private readonly eventIds = new Map<string, IndexedEvent>();
   private readonly changeSignalSource = new InProcessJournalChangeSignal();
 
   constructor(private readonly clock: Clock) {}
@@ -36,14 +25,6 @@ export class InMemoryEventJournal implements EventJournal {
     events: readonly EventData[],
   ): Promise<readonly EventEnvelope[]> {
     if (events.length === 0) throw new Error('appendToStream requires at least one event');
-    validateBatch(stream, events);
-    const existingEvents = events.map((draft) => this.eventIds.get(draft.eventId));
-    this.rejectChangedEventIds(stream, events, existingEvents);
-
-    if (events.length > 0 && existingEvents.every((event) => event !== undefined)) {
-      return existingEvents.map((event) => event.envelope);
-    }
-
     const streamEvents = this.streams.get(streamKey(stream)) ?? [];
     if (streamEvents.length !== expectedSequence) {
       throw new WrongExpectedSequenceError(
@@ -53,13 +34,7 @@ export class InMemoryEventJournal implements EventJournal {
 
     const recordedAt = this.clock.now().toISOString();
     const appended: EventEnvelope[] = [];
-    let newCount = 0;
-    for (const [index, draft] of events.entries()) {
-      const prior = existingEvents[index];
-      if (prior !== undefined) {
-        appended.push(prior.envelope);
-        continue;
-      }
+    for (const draft of events) {
       const envelope: EventEnvelope = {
         event: draft,
         stream,
@@ -69,12 +44,10 @@ export class InMemoryEventJournal implements EventJournal {
       };
       streamEvents.push(envelope);
       this.events.push(envelope);
-      this.eventIds.set(draft.eventId, { draft, envelope });
       appended.push(envelope);
-      newCount += 1;
     }
     this.streams.set(streamKey(stream), streamEvents);
-    if (newCount > 0) this.changeSignalSource.notify();
+    this.changeSignalSource.notify();
     return appended;
   }
 
@@ -118,45 +91,10 @@ export class InMemoryEventJournal implements EventJournal {
       fallbackMs,
     );
   }
-
-  private rejectChangedEventIds(
-    stream: EntityRef,
-    drafts: readonly EventData[],
-    existingEvents: readonly (IndexedEvent | undefined)[],
-  ): void {
-    for (const [index, draft] of drafts.entries()) {
-      const existing = existingEvents[index];
-      if (
-        existing !== undefined &&
-        (streamKey(existing.envelope.stream) !== streamKey(stream) ||
-          !isDeepStrictEqual(existing.draft, draft))
-      ) {
-        throw new EventIdConflictError(
-          `Event id ${draft.eventId} has already been used with different content`,
-        );
-      }
-    }
-  }
 }
 
 function streamKey(stream: EntityRef): string {
   return `${stream.kind}:${stream.id}`;
-}
-
-function validateBatch(_stream: EntityRef, drafts: readonly EventData[]): void {
-  const eventIds = new Map<string, EventData>();
-  for (const draft of drafts) {
-    const prior = eventIds.get(draft.eventId);
-    if (prior !== undefined) {
-      if (!isDeepStrictEqual(prior, draft)) {
-        throw new Error(
-          `Event id ${draft.eventId} is repeated with different content in one append`,
-        );
-      }
-      throw new Error(`Event id ${draft.eventId} is repeated in one append`);
-    }
-    eventIds.set(draft.eventId, draft);
-  }
 }
 
 async function waitForEventsAfter(
