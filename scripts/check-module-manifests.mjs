@@ -436,11 +436,11 @@ function collectConstAliasBindings(declaration, aliases) {
 }
 
 function bindingElementPropertyName(element) {
-  if (element.propertyName === undefined) return staticPropertyName(element.name);
+  if (element.propertyName === undefined) return staticBindingPropertyName(element.name);
   if (ts.isComputedPropertyName(element.propertyName)) {
-    return staticPropertyName(element.propertyName.expression);
+    return staticComputedPropertyName(element.propertyName.expression);
   }
-  return staticPropertyName(element.propertyName);
+  return staticBindingPropertyName(element.propertyName);
 }
 
 function isPackageLoaderCall(node, packageLoaders) {
@@ -479,21 +479,24 @@ function isCreateRequireFactoryExpression(node, packageLoaders) {
 
 function isNodeModuleCreateRequireProperty(node, namespaces) {
   const propertyName = ts.isPropertyAccessExpression(node)
-    ? staticPropertyName(node.name)
+    ? staticPropertyAccessName(node.name)
     : ts.isElementAccessExpression(node)
-      ? staticPropertyName(node.argumentExpression)
+      ? staticComputedPropertyName(node.argumentExpression)
       : undefined;
   return propertyName === 'createRequire' && isNodeModuleNamespace(node.expression, namespaces);
 }
 
-function staticPropertyName(node) {
-  if (
-    ts.isIdentifier(node) ||
-    ts.isStringLiteral(node) ||
-    ts.isNoSubstitutionTemplateLiteral(node)
-  ) {
-    return node.text;
-  }
+function staticPropertyAccessName(node) {
+  if (ts.isIdentifier(node)) return node.text;
+  return undefined;
+}
+
+function staticBindingPropertyName(node) {
+  return staticPropertyAccessName(node) ?? staticComputedPropertyName(node);
+}
+
+function staticComputedPropertyName(node) {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   return undefined;
 }
 

@@ -622,6 +622,33 @@ describe('module manifests', () => {
     ]);
   });
 
+  it('does not treat identifier computed createRequire keys as static properties', async () => {
+    const root = await workspaceBoundaryFixture({
+      'src/work/index.ts': [
+        "import * as NodeModule from 'node:module';",
+        "const createRequire = 'createRequire';",
+        'const computedElementFactory = NodeModule[createRequire];',
+        'const computedElementLoader = computedElementFactory(import.meta.url);',
+        'const { [createRequire]: computedBindingFactory } = NodeModule;',
+        'const computedBindingLoader = computedBindingFactory(import.meta.url);',
+        'const dotFactory = NodeModule.createRequire;',
+        'const dotLoader = dotFactory(import.meta.url);',
+        'const { createRequire: destructuredFactory } = NodeModule;',
+        'const destructuredLoader = destructuredFactory(import.meta.url);',
+        "export const loadUnknownElement = () => computedElementLoader('@atolis-hq/eventing/contracts/events.js');",
+        "export const loadUnknownBinding = () => computedBindingLoader('@atolis-hq/eventing-filesystem/src/index.js');",
+        "export const loadPrivateDot = () => dotLoader('@atolis-hq/eventing/dist/contracts/events.js');",
+        "export const loadFilesystem = () => destructuredLoader('@atolis-hq/eventing-filesystem');",
+      ].join('\n'),
+      'src/work/module.json': manifest('work', ['eventing', 'eventing-filesystem']),
+    });
+
+    await expect(checker.checkModuleManifests(join(root, 'src'))).resolves.toEqual([
+      'work/index.ts: imports package-internal path @atolis-hq/eventing/dist/contracts/events.js; import only a declared public package entry',
+      'work: imports @atolis-hq/eventing-filesystem but only bootstrap may compose filesystem adapters',
+    ]);
+  });
+
   it('rejects filesystem package source imports outside Eventing and Node', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-eventing-filesystem-'));
     fixtureRoots.push(root);
