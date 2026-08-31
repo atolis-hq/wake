@@ -471,6 +471,95 @@ describe('event processor ownership', () => {
     await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
   });
 
+  it('rejects member rest targets that store protected structural values', async () => {
+    const root = await fixture({
+      'src/orchestration/application/member-rest-targets.ts': [
+        "import * as Bootstrap from '../../bootstrap/index.js';",
+        "import * as Eventing from '../../eventing/index.js';",
+        "import * as Persistence from '../../persistence/index.js';",
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'class LocalRuntime { constructor(...args: unknown[]) { void args; } }',
+        'const localSerialiser = (value: unknown): unknown => value;',
+        'const holder = {',
+        '  namespace: { EventProcessorHost: LocalHost },',
+        '  registry: { EventProcessorRuntime: LocalRuntime },',
+        '  serialisers: { createFileProcessorRunSerialiser: localSerialiser },',
+        '};',
+        '({...holder.namespace} = Eventing);',
+        '({ nested: { ...holder.registry } } = { nested: Bootstrap });',
+        "const serialiserSlot = 'serialisers' as const;",
+        '({...holder[serialiserSlot]} = Persistence);',
+        'export const values = [new holder.namespace.EventProcessorHost(), new holder.registry.EventProcessorRuntime(), holder.serialisers.createFileProcessorRunSerialiser(1)];',
+      ].join('\n'),
+      'src/persistence/application/member-rest-targets.ts': [
+        "import * as Eventing from '../../eventing/index.js';",
+        'const localFactory = (value: unknown): unknown => value;',
+        'const tupleNamespaces: [typeof Eventing] = [Eventing];',
+        'const holder = { namespaces: [] as Array<{ defineEventProcessor: typeof localFactory }>, tupleNamespaces: [] as Array<{ defineEventProcessor: typeof localFactory }> };',
+        '[...holder.namespaces] = [Eventing];',
+        "const tupleSlot = 'tupleNamespaces' as const;",
+        '[...holder[tupleSlot]] = tupleNamespaces;',
+        'export const definitions = [holder.namespaces[0]!.defineEventProcessor(1), holder.tupleNamespaces[0]!.defineEventProcessor(2)];',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-processor-host-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'orchestration/application/member-rest-targets.ts:12:6',
+      'persistence/application/member-rest-targets.ts:5:5',
+      'persistence/application/member-rest-targets.ts:7:5',
+    ]);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[processor-registry-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual(['orchestration/application/member-rest-targets.ts:13:17']);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[processor-serialiser-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual(['orchestration/application/member-rest-targets.ts:15:6']);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'persistence/application/member-rest-targets.ts:5:5',
+      'persistence/application/member-rest-targets.ts:7:5',
+    ]);
+  });
+
+  it('does not reject excluded, local, or unprovable member rest values', async () => {
+    const root = await fixture({
+      'src/orchestration/application/local-member-rest-targets.ts': [
+        "import * as Eventing from '../../eventing/index.js';",
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'const LocalEventing = { EventProcessorHost: LocalHost };',
+        'const holder = { namespace: { EventProcessorHost: LocalHost }, excludedNamespace: {}, dynamic: {} as Record<string, unknown> };',
+        '({...holder.namespace} = LocalEventing);',
+        '({ EventProcessorHost: {}, ...holder.excludedNamespace } = Eventing);',
+        'declare const dynamicSource: Record<string, unknown>;',
+        '({...holder.dynamic} = dynamicSource);',
+        'export const values = [new holder.namespace.EventProcessorHost(), holder.excludedNamespace, holder.dynamic];',
+      ].join('\n'),
+      'src/persistence/application/local-member-rest-targets.ts': [
+        'const localFactory = (value: unknown): unknown => value;',
+        'const LocalEventing = { defineEventProcessor: localFactory };',
+        'const holder = { namespaces: [] as Array<typeof LocalEventing>, dynamic: [] as Array<Record<string, unknown>> };',
+        '[...holder.namespaces] = [LocalEventing];',
+        'declare const dynamicNamespaces: Array<Record<string, unknown>>;',
+        '[...holder.dynamic] = dynamicNamespaces;',
+        'export const values = [holder.namespaces[0]!.defineEventProcessor(1), holder.dynamic];',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
   it('does not reject structural defaults and rest paths from unrelated local objects', async () => {
     const root = await fixture({
       'src/orchestration/application/local-structural-bindings.ts': [

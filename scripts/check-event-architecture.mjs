@@ -436,35 +436,35 @@ function inspectProcessorRuntimeReferences(
   const reported = new Set();
 
   for (const assignment of bindings.memberAssignments.get(sourceFile) ?? []) {
-    const kind = resolveAssignmentOrigins(
+    const kinds = resolveMemberAssignmentKinds(
       assignment,
-      [],
       bindings,
       typeChecker,
       sourceRoot,
       assignment.target,
-      new Set(),
     );
-    if (
-      !isProcessorRuntimeKind(kind) ||
-      isApprovedProcessorRuntimeReference(kind, relativePath) ||
-      assignment.origins.some(({ expression }) =>
-        containsReportableDirectProcessorRuntimeReference(
-          expression,
-          bindings,
-          typeChecker,
-          sourceRoot,
-          relativePath,
-        ),
+    for (const kind of kinds) {
+      if (
+        isApprovedProcessorRuntimeReference(kind, relativePath) ||
+        assignment.origins.some(({ expression }) =>
+          containsReportableDirectProcessorRuntimeReference(
+            expression,
+            bindings,
+            typeChecker,
+            sourceRoot,
+            relativePath,
+            kind,
+          ),
+        )
       )
-    )
-      continue;
-    reportProcessorRuntimeReference(
-      { node: assignment.target, kind },
-      sourceRoot,
-      diagnostics,
-      reported,
-    );
+        continue;
+      reportProcessorRuntimeReference(
+        { node: assignment.target, kind },
+        sourceRoot,
+        diagnostics,
+        reported,
+      );
+    }
   }
 
   function visit(node) {
@@ -487,6 +487,121 @@ function inspectProcessorRuntimeReferences(
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
+}
+
+function resolveMemberAssignmentKinds(assignment, bindings, typeChecker, sourceRoot, useNode) {
+  const kinds = new Set();
+  addProcessorRuntimeKind(
+    kinds,
+    resolveAssignmentOrigins(assignment, [], bindings, typeChecker, sourceRoot, useNode, new Set()),
+  );
+  for (const origin of assignment.origins) {
+    const rest = origin.accessPath.at(-1);
+    if (rest?.kind === 'object-rest') {
+      for (const name of processorRuntimeNames)
+        addProcessorRuntimeKind(
+          kinds,
+          resolveAccessPathKind(
+            origin.expression,
+            [...origin.accessPath, { kind: 'property', name }],
+            bindings,
+            typeChecker,
+            sourceRoot,
+            useNode,
+            new Set(),
+          ),
+        );
+      continue;
+    }
+    if (rest?.kind !== 'array-rest') continue;
+    for (const index of finiteArrayRestRelativeIndices(
+      origin.expression,
+      origin.accessPath.slice(0, -1),
+      rest.start,
+      bindings,
+      typeChecker,
+    )) {
+      const elementPath = [...origin.accessPath, { kind: 'index', index }];
+      addProcessorRuntimeKind(
+        kinds,
+        resolveAccessPathKind(
+          origin.expression,
+          elementPath,
+          bindings,
+          typeChecker,
+          sourceRoot,
+          useNode,
+          new Set(),
+        ),
+      );
+      for (const name of processorRuntimeNames)
+        addProcessorRuntimeKind(
+          kinds,
+          resolveAccessPathKind(
+            origin.expression,
+            [...elementPath, { kind: 'property', name }],
+            bindings,
+            typeChecker,
+            sourceRoot,
+            useNode,
+            new Set(),
+          ),
+        );
+    }
+  }
+  return kinds;
+}
+
+function addProcessorRuntimeKind(kinds, kind) {
+  if (isProcessorRuntimeKind(kind)) kinds.add(kind);
+}
+
+function finiteArrayRestRelativeIndices(expression, prefix, start, bindings, typeChecker) {
+  const literal = selectedLiteralAtStaticPath(expression, prefix, bindings, typeChecker);
+  if (literal !== undefined && ts.isArrayLiteralExpression(literal)) {
+    const firstSpread = literal.elements.findIndex(ts.isSpreadElement);
+    const stableLength = firstSpread === -1 ? literal.elements.length : firstSpread;
+    return literal.elements
+      .map((element, index) => ({ element, index }))
+      .filter(
+        ({ element, index }) =>
+          index >= start && index < stableLength && !ts.isOmittedExpression(element),
+      )
+      .map(({ index }) => index - start);
+  }
+  const type = typeAtStaticPath(expression, prefix, typeChecker);
+  if (type === undefined || !typeChecker.isTupleType(type)) return [];
+  return type
+    .getProperties()
+    .map(({ name }) => name)
+    .filter((name) => /^(?:0|[1-9]\d*)$/u.test(name))
+    .map(Number)
+    .filter((index) => index >= start)
+    .map((index) => index - start)
+    .sort((left, right) => left - right);
+}
+
+function selectedLiteralAtStaticPath(expression, accessPath, bindings, typeChecker) {
+  let selected = unwrapExpression(expression);
+  for (const selector of accessPath) {
+    const next = selectedLiteralExpression(selected, selector, bindings, typeChecker);
+    if (next === undefined) return undefined;
+    selected = unwrapExpression(next);
+  }
+  return selected;
+}
+
+function typeAtStaticPath(expression, accessPath, typeChecker) {
+  let type = typeChecker.getTypeAtLocation(expression);
+  for (const selector of accessPath) {
+    if (selector.kind !== 'property' && selector.kind !== 'index') return undefined;
+    const symbol = type.getProperty(
+      selector.kind === 'property' ? selector.name : String(selector.index),
+    );
+    if (symbol === undefined) return undefined;
+    type = typeChecker.getTypeOfSymbolAtLocation(symbol, expression);
+  }
+  return type;
 }
 
 function protectedProcessorRuntimeReference(node, bindings, typeChecker, sourceRoot) {
@@ -527,15 +642,6 @@ function protectedProcessorStructuralBinding(
       accessPath.some(
         (selector) => selector.kind === 'property' && processorRuntimeNames.has(selector.name),
       ),
-    ) ||
-    assignment.origins.some(({ expression }) =>
-      containsReportableDirectProcessorRuntimeReference(
-        expression,
-        bindings,
-        typeChecker,
-        sourceRoot,
-        relativePath,
-      ),
     )
   )
     return undefined;
@@ -548,7 +654,21 @@ function protectedProcessorStructuralBinding(
     site,
     new Set(),
   );
-  return isProcessorRuntimeKind(kind) ? { node, kind } : undefined;
+  if (
+    !isProcessorRuntimeKind(kind) ||
+    assignment.origins.some(({ expression }) =>
+      containsReportableDirectProcessorRuntimeReference(
+        expression,
+        bindings,
+        typeChecker,
+        sourceRoot,
+        relativePath,
+        kind,
+      ),
+    )
+  )
+    return undefined;
+  return { node, kind };
 }
 
 function resolveStructuralDeclarationAccessKind(node, bindings, typeChecker, sourceRoot) {
@@ -584,6 +704,7 @@ function containsReportableDirectProcessorRuntimeReference(
   typeChecker,
   sourceRoot,
   relativePath,
+  expectedKind,
 ) {
   let found = false;
   function visit(current) {
@@ -596,6 +717,7 @@ function containsReportableDirectProcessorRuntimeReference(
     );
     if (
       reference !== undefined &&
+      reference.kind === expectedKind &&
       !isExcludedRuntimeReference(reference.node) &&
       !isApprovedProcessorRuntimeReference(reference.kind, relativePath)
     ) {
