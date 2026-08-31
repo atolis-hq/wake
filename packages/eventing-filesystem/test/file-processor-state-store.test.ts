@@ -125,6 +125,52 @@ it('does not overwrite or delete corrupt canonical processor state while conside
   await expect(readFile(path, 'utf8')).resolves.toBe(raw);
 });
 
+it.each([
+  ['an empty namespace', '', 'pending-confirmations'],
+  ['a namespace without the pending suffix', 'reactor:delivery-outcomes', 'pending-confirmations'],
+  [
+    'a namespace with a path separator',
+    'reactor/delivery-outcomes:pending',
+    'pending-confirmations',
+  ],
+  ['an ill-formed namespace', '\uD800:pending', 'pending-confirmations'],
+  ['an empty key', 'reactor:delivery-outcomes:pending', ''],
+  ['a key with a path separator', 'reactor:delivery-outcomes:pending', 'pending/confirmations'],
+  ['an ill-formed key', 'reactor:delivery-outcomes:pending', '\uD800'],
+])(
+  'rejects an invalid persisted processor state identity with %s without changing its file',
+  async (_case, namespace, key) => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
+    const consumer = 'reactor:delivery-outcomes';
+    const requestedKey = 'pending-confirmations';
+    const path = join(
+      root,
+      'projections',
+      encode(`${consumer}:pending`),
+      `${encode(requestedKey)}.json`,
+    );
+    const raw = `${JSON.stringify({ namespace, key, lastGlobalPosition: 0, value: { events: [] } })}\n`;
+    await mkdir(join(path, '..'), { recursive: true });
+    await writeFile(path, raw);
+    const store = new FileProcessorStateStore(root);
+
+    await expect(store.read(consumer, requestedKey)).rejects.toThrow(
+      'Invalid processor state record',
+    );
+    await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+
+    await expect(
+      store.write({ consumer, key: requestedKey, value: { events: [] } }),
+    ).rejects.toThrow('Invalid processor state record');
+    await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+
+    await expect(store.delete(consumer, requestedKey)).rejects.toThrow(
+      'Invalid processor state record',
+    );
+    await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+  },
+);
+
 it('serializes processor state under a long data root', async () => {
   const root = await mkdtemp(join(tmpdir(), `wake-processor-state-${'long-root-'.repeat(12)}`));
   const store = new FileProcessorStateStore(root);

@@ -14,6 +14,8 @@ interface CompatibleStateRecord {
   readonly value: unknown;
 }
 
+const pendingNamespaceSuffix = ':pending';
+
 export class FileProcessorStateStore implements ProcessorStateStore {
   constructor(private readonly root: string) {}
 
@@ -72,7 +74,7 @@ export class FileProcessorStateStore implements ProcessorStateStore {
 
   private namespace(consumer: string): string {
     assertStorageName(consumer);
-    return `${consumer}:pending`;
+    return `${consumer}${pendingNamespaceSuffix}`;
   }
 
   private async withStateLocks<Value>(paths: readonly string[], operation: () => Promise<Value>) {
@@ -129,8 +131,8 @@ async function readCompatibleState(path: string): Promise<CompatibleStateRecord 
   let stored: unknown;
   try {
     stored = JSON.parse(raw);
-  } catch {
-    throw invalidProcessorStateRecord(path);
+  } catch (error) {
+    throw invalidProcessorStateRecord(path, error);
   }
   if (!isCompatibleStateRecord(stored)) throw invalidProcessorStateRecord(path);
   return stored;
@@ -142,14 +144,30 @@ function isCompatibleStateRecord(value: unknown): value is CompatibleStateRecord
   return (
     typeof record.namespace === 'string' &&
     typeof record.key === 'string' &&
+    isProcessorStateNamespace(record.namespace) &&
+    isStorageName(record.key) &&
     Number.isInteger(record.lastGlobalPosition) &&
     record.lastGlobalPosition === 0 &&
     Object.hasOwn(record, 'value')
   );
 }
 
-function invalidProcessorStateRecord(path: string): Error {
-  return new Error(`Invalid processor state record at ${path}`);
+function isProcessorStateNamespace(namespace: string): boolean {
+  if (!namespace.endsWith(pendingNamespaceSuffix)) return false;
+  return isStorageName(namespace.slice(0, -pendingNamespaceSuffix.length));
+}
+
+function isStorageName(value: string): boolean {
+  try {
+    assertStorageName(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function invalidProcessorStateRecord(path: string, cause?: unknown): Error {
+  return new Error(`Invalid processor state record at ${path}`, { cause });
 }
 
 function matchesStateIdentity(
