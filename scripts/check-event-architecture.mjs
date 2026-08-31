@@ -22,6 +22,7 @@ const processorRuntimeNames = new Set([
   ...serialiserNames,
   ...processorFactoryNames,
 ]);
+const finiteTupleElementCap = 64;
 const handlerPropertyNames = new Set(['handle', 'handler']);
 const publishingInfrastructureModules = new Set(['bootstrap', 'eventing', 'persistence']);
 const legacyDraftNames = new Set([
@@ -118,6 +119,7 @@ export async function checkEventArchitectureWithStats(root = 'src') {
 
 function createAnalysisState() {
   return {
+    finiteArrayMemo: new Map(),
     memo: new Map(),
     nodeIds: new WeakMap(),
     nextNodeId: 1,
@@ -514,39 +516,45 @@ function resolveMemberAssignmentKinds(assignment, bindings, typeChecker, sourceR
       continue;
     }
     if (rest?.kind !== 'array-rest') continue;
-    for (const index of finiteArrayRestRelativeIndices(
+    for (const element of finiteArrayRestElements(
       origin.expression,
       origin.accessPath.slice(0, -1),
       rest.start,
       bindings,
       typeChecker,
     )) {
-      const elementPath = [...origin.accessPath, { kind: 'index', index }];
-      addProcessorRuntimeKind(
-        kinds,
-        resolveAccessPathKind(
-          origin.expression,
-          elementPath,
+      const directKind = resolveAccessPathKind(
+        element.expression,
+        element.accessPath,
+        bindings,
+        typeChecker,
+        sourceRoot,
+        useNode,
+        new Set(),
+      );
+      addProcessorRuntimeKind(kinds, directKind);
+      if (directKind === undefined && element.exactTupleElement)
+        addProcessorRuntimeKind(
+          kinds,
+          protectedKindFromExactType(element.type, undefined, typeChecker, sourceRoot),
+        );
+      for (const name of processorRuntimeNames) {
+        const propertyKind = resolveAccessPathKind(
+          element.expression,
+          [...element.accessPath, { kind: 'property', name }],
           bindings,
           typeChecker,
           sourceRoot,
           useNode,
           new Set(),
-        ),
-      );
-      for (const name of processorRuntimeNames)
-        addProcessorRuntimeKind(
-          kinds,
-          resolveAccessPathKind(
-            origin.expression,
-            [...elementPath, { kind: 'property', name }],
-            bindings,
-            typeChecker,
-            sourceRoot,
-            useNode,
-            new Set(),
-          ),
         );
+        addProcessorRuntimeKind(kinds, propertyKind);
+        if (propertyKind === undefined && element.exactTupleElement)
+          addProcessorRuntimeKind(
+            kinds,
+            protectedKindFromExactType(element.type, name, typeChecker, sourceRoot),
+          );
+      }
     }
   }
   return kinds;
@@ -556,29 +564,90 @@ function addProcessorRuntimeKind(kinds, kind) {
   if (isProcessorRuntimeKind(kind)) kinds.add(kind);
 }
 
-function finiteArrayRestRelativeIndices(expression, prefix, start, bindings, typeChecker) {
+function protectedKindFromExactType(type, propertyName, typeChecker, sourceRoot) {
+  const symbol = propertyName === undefined ? type.getSymbol() : type.getProperty(propertyName);
+  return protectedSymbolKind(resolveSymbol(symbol, typeChecker), sourceRoot);
+}
+
+function finiteArrayRestElements(expression, prefix, start, bindings, typeChecker) {
+  const expansion = finiteArrayElements(expression, prefix, bindings, typeChecker, new Set());
+  return expansion.elements.slice(start).filter((element) => element !== undefined);
+}
+
+function finiteArrayElements(expression, prefix, bindings, typeChecker, activeStates) {
+  const stateKey = `finite-array:${nodeId(expression, bindings.analysis)}:${serializeAccessPath(prefix)}`;
+  const cached = bindings.analysis.finiteArrayMemo.get(stateKey);
+  if (cached !== undefined) return cached;
+  if (activeStates.has(stateKey)) return { complete: false, elements: [] };
+  activeStates.add(stateKey);
   const literal = selectedLiteralAtStaticPath(expression, prefix, bindings, typeChecker);
-  if (literal !== undefined && ts.isArrayLiteralExpression(literal)) {
-    const firstSpread = literal.elements.findIndex(ts.isSpreadElement);
-    const stableLength = firstSpread === -1 ? literal.elements.length : firstSpread;
-    return literal.elements
-      .map((element, index) => ({ element, index }))
-      .filter(
-        ({ element, index }) =>
-          index >= start && index < stableLength && !ts.isOmittedExpression(element),
-      )
-      .map(({ index }) => index - start);
+  const expansion =
+    literal !== undefined && ts.isArrayLiteralExpression(literal)
+      ? finiteArrayLiteralElements(literal, bindings, typeChecker, activeStates)
+      : finiteTupleElements(expression, prefix, typeChecker);
+  activeStates.delete(stateKey);
+  bindings.analysis.finiteArrayMemo.set(stateKey, expansion);
+  return expansion;
+}
+
+function finiteArrayLiteralElements(literal, bindings, typeChecker, activeStates) {
+  const elements = [];
+  for (const literalElement of literal.elements) {
+    if (elements.length >= finiteTupleElementCap)
+      return { complete: false, elements: elements.slice(0, finiteTupleElementCap) };
+    if (ts.isOmittedExpression(literalElement)) {
+      elements.push(undefined);
+      continue;
+    }
+    if (!ts.isSpreadElement(literalElement)) {
+      elements.push({
+        accessPath: [],
+        exactTupleElement: false,
+        expression: literalElement,
+        type: typeChecker.getTypeAtLocation(literalElement),
+      });
+      continue;
+    }
+    const spread = finiteArrayElements(
+      literalElement.expression,
+      [],
+      bindings,
+      typeChecker,
+      activeStates,
+    );
+    const remaining = finiteTupleElementCap - elements.length;
+    elements.push(...spread.elements.slice(0, remaining));
+    if (!spread.complete || spread.elements.length > remaining)
+      return { complete: false, elements };
   }
+  return { complete: true, elements };
+}
+
+function finiteTupleElements(expression, prefix, typeChecker) {
   const type = typeAtStaticPath(expression, prefix, typeChecker);
-  if (type === undefined || !typeChecker.isTupleType(type)) return [];
-  return type
-    .getProperties()
-    .map(({ name }) => name)
-    .filter((name) => /^(?:0|[1-9]\d*)$/u.test(name))
-    .map(Number)
-    .filter((index) => index >= start)
-    .map((index) => index - start)
-    .sort((left, right) => left - right);
+  if (type === undefined || !typeChecker.isTupleType(type))
+    return { complete: false, elements: [] };
+  const lengthSymbol = type.getProperty('length');
+  if (lengthSymbol === undefined) return { complete: false, elements: [] };
+  const lengthType = typeChecker.getTypeOfSymbolAtLocation(lengthSymbol, expression);
+  if ((lengthType.flags & ts.TypeFlags.NumberLiteral) === 0)
+    return { complete: false, elements: [] };
+  const length = lengthType.value;
+  if (!Number.isSafeInteger(length) || length < 0 || length > finiteTupleElementCap)
+    return { complete: false, elements: [] };
+  const elements = [];
+  for (let index = 0; index < length; index += 1) {
+    const symbol = type.getProperty(String(index));
+    if (symbol === undefined || (symbol.flags & ts.SymbolFlags.Optional) !== 0)
+      return { complete: false, elements: [] };
+    elements.push({
+      accessPath: [...prefix, { kind: 'index', index }],
+      exactTupleElement: true,
+      expression,
+      type: typeChecker.getTypeOfSymbolAtLocation(symbol, expression),
+    });
+  }
+  return { complete: true, elements };
 }
 
 function selectedLiteralAtStaticPath(expression, accessPath, bindings, typeChecker) {

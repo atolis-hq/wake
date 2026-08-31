@@ -533,6 +533,73 @@ describe('event processor ownership', () => {
     ]);
   });
 
+  it('expands finite tuple spreads stored through member rest targets', async () => {
+    const root = await fixture({
+      'src/persistence/application/finite-tuple-spread-member-rest.ts': [
+        "import * as Eventing from '../../eventing/index.js';",
+        'const localFactory = (value: unknown): unknown => value;',
+        'const LocalEventing = { defineEventProcessor: localFactory };',
+        'const sources: [typeof Eventing] = [Eventing];',
+        'const tupleHolder = { tuples: [Eventing] as [typeof Eventing] };',
+        "const tupleSlot = 'tuples' as const;",
+        'const before: [typeof LocalEventing] = [LocalEventing];',
+        'const after: [typeof LocalEventing] = [LocalEventing];',
+        'const holder = { namespaces: [] as Array<{ defineEventProcessor: typeof localFactory }>, nested: [] as Array<{ defineEventProcessor: typeof localFactory }>, computed: [] as Array<{ defineEventProcessor: typeof localFactory }>, offset: [] as Array<{ defineEventProcessor: typeof localFactory }> };',
+        '[...holder.namespaces] = [...sources];',
+        '[...holder.nested] = [...[...sources]];',
+        '[...holder.computed] = [...tupleHolder[tupleSlot]];',
+        '[, ...holder.offset] = [...before, ...sources, ...after];',
+        'export const values = [holder.namespaces[0]!.defineEventProcessor(1), holder.nested[0]!.defineEventProcessor(2), holder.computed[0]!.defineEventProcessor(3), holder.offset[0]!.defineEventProcessor(4)];',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(diagnostics).toHaveLength(8);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-processor-host-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'persistence/application/finite-tuple-spread-member-rest.ts:10:5',
+      'persistence/application/finite-tuple-spread-member-rest.ts:11:5',
+      'persistence/application/finite-tuple-spread-member-rest.ts:12:5',
+      'persistence/application/finite-tuple-spread-member-rest.ts:13:7',
+    ]);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[persistence-processor-handler]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'persistence/application/finite-tuple-spread-member-rest.ts:10:5',
+      'persistence/application/finite-tuple-spread-member-rest.ts:11:5',
+      'persistence/application/finite-tuple-spread-member-rest.ts:12:5',
+      'persistence/application/finite-tuple-spread-member-rest.ts:13:7',
+    ]);
+  });
+
+  it('does not expand dynamic, cyclic, or unrelated local tuple spreads', async () => {
+    const root = await fixture({
+      'src/persistence/application/unprovable-tuple-spread-member-rest.ts': [
+        "import * as Eventing from '../../eventing/index.js';",
+        'const localFactory = (value: unknown): unknown => value;',
+        'const LocalEventing = { EventProcessorHost: class {}, defineEventProcessor: localFactory };',
+        'const localSources: [typeof LocalEventing] = [LocalEventing];',
+        'declare const dynamicSources: Array<typeof Eventing>;',
+        'declare const readonlySources: readonly (typeof Eventing)[];',
+        'type CyclicTuple = [CyclicTuple];',
+        'declare const cyclicSources: CyclicTuple;',
+        'const holder = { local: [] as Array<typeof LocalEventing>, dynamic: [] as Array<typeof LocalEventing>, readonly: [] as Array<typeof LocalEventing>, cyclic: [] as unknown[] };',
+        '[...holder.local] = [...localSources];',
+        '[...holder.dynamic] = [...dynamicSources];',
+        '[...holder.readonly] = [...readonlySources];',
+        '[...holder.cyclic] = [...cyclicSources];',
+        'export const values = [holder.local[0]!.defineEventProcessor(1), holder.dynamic, holder.readonly, holder.cyclic];',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
   it('does not reject excluded, local, or unprovable member rest values', async () => {
     const root = await fixture({
       'src/orchestration/application/local-member-rest-targets.ts': [
