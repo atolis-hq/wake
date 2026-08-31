@@ -368,6 +368,9 @@ function collectPackageLoaderBindings(source) {
   const loaders = new Set();
   const packageLoaders = { factories, namespaces, loaders };
 
+  propagateConstAliases(namespaces, aliases, (alias) =>
+    isNodeModuleNamespaceAlias(alias, namespaces),
+  );
   propagateConstAliases(factories, aliases, (alias) =>
     isCreateRequireFactory(alias, packageLoaders),
   );
@@ -477,6 +480,11 @@ function isNodeModuleCreateRequireProperty(node, namespaces) {
 function isNodeModuleNamespace(node, namespaces) {
   const expression = unwrapPackageLoaderExpression(node);
   return ts.isIdentifier(expression) && namespaces.has(nearestLexicalBinding(expression));
+}
+
+function isNodeModuleNamespaceAlias(alias, namespaces) {
+  if (alias.propertyName !== undefined) return false;
+  return isNodeModuleNamespace(alias.initializer, namespaces);
 }
 
 function unwrapPackageLoaderExpression(node) {
