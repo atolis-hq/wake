@@ -147,6 +147,19 @@ describe('eventing workspace packages', () => {
     });
   });
 
+  it('builds the Docker application through Eventing project references', async () => {
+    const [wake, dockerTsConfig] = await Promise.all([
+      readJson<PackageManifest>('package.json'),
+      readJson<TsConfig>('tsconfig.docker.json'),
+    ]);
+
+    expect(dockerTsConfig.references).toEqual([
+      { path: './packages/eventing' },
+      { path: './packages/eventing-filesystem' },
+    ]);
+    expect(wake.scripts?.['build:docker']).toContain('tsc --build tsconfig.docker.json');
+  });
+
   it('keeps published exports on dist while source tools use workspace aliases', async () => {
     const [eventing, aliases, sourceResolutionCheck, configs] = await Promise.all([
       readJson<PackageManifest>('packages/eventing/package.json'),

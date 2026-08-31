@@ -2,6 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+interface PackageManifest {
+  readonly scripts?: Record<string, string>;
+}
+
+interface TsConfig {
+  readonly references?: readonly { readonly path: string }[];
+}
+
 describe('source Docker build context', () => {
   it('includes only inputs copied by the source Dockerfile', async () => {
     const [ignore, dockerfile] = await Promise.all([
@@ -33,5 +41,22 @@ describe('source Docker build context', () => {
       'COPY tsconfig.json tsconfig.base.json tsconfig.app.json tsconfig.docker.json ./',
     );
     expect(dockerfile).toContain('COPY packages/ packages/');
+  });
+
+  it('builds copied package sources through Docker project references', async () => {
+    const [manifest, dockerTsConfig] = await Promise.all([
+      readFile(join(process.cwd(), 'package.json'), 'utf8').then(
+        (raw) => JSON.parse(raw) as PackageManifest,
+      ),
+      readFile(join(process.cwd(), 'tsconfig.docker.json'), 'utf8').then(
+        (raw) => JSON.parse(raw) as TsConfig,
+      ),
+    ]);
+
+    expect(manifest.scripts?.['build:docker']).toContain('tsc --build tsconfig.docker.json');
+    expect(dockerTsConfig.references).toEqual([
+      { path: './packages/eventing' },
+      { path: './packages/eventing-filesystem' },
+    ]);
   });
 });

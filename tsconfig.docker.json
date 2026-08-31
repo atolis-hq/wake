@@ -6,5 +6,6 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["test/**", "src/surfaces/web/**", "dist/**"]
+  "exclude": ["test/**", "src/surfaces/web/**", "dist/**"],
+  "references": [{ "path": "./packages/eventing" }, { "path": "./packages/eventing-filesystem" }]
 }

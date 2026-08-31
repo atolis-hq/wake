@@ -1,8 +1,8 @@
 import type { EventData, EventEnvelope, StreamRef } from '../contracts/events.js';
 import type { EventingClock } from '../runtime/clock.js';
 import { WrongExpectedSequenceError, type EventJournal } from '../store/event-journal.js';
-import { InProcessJournalChangeSignal } from '../subscriptions/in-process-journal-change-signal.js';
 import type { JournalChangeSignal } from '../subscriptions/journal-change-signal.js';
+import { InProcessJournalChangeSignal } from './in-process-journal-change-signal.js';
 
 export class InMemoryEventJournal implements EventJournal {
   private readonly streams = new Map<string, EventEnvelope[]>();

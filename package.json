@@ -43,7 +43,7 @@
     "check:specs": "node scripts/check-specs.mjs",
     "check:specs:report": "node scripts/report-spec-drift.mjs",
     "lint:architecture": "node scripts/check-module-manifests.mjs && node scripts/check-contract-vocabulary.mjs && node scripts/check-event-architecture.mjs && depcruise --config dependency-cruiser.config.mjs src packages",
-    "build:docker": "tsc -p tsconfig.docker.json && node scripts/embed-version.mjs && npm run build:web",
+    "build:docker": "tsc --build tsconfig.docker.json && node scripts/embed-version.mjs && npm run build:web",
     "build:web": "npm --workspace @atolis-hq/wake-web run build",
     "test:web": "npm --workspace @atolis-hq/wake-web run test",
     "test:web:e2e": "npm --workspace @atolis-hq/wake-web run test:e2e",

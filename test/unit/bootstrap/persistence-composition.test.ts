@@ -1,12 +1,14 @@
 import {
   createEventData,
-  InProcessJournalChangeSignal,
   type EventData,
   type EventEnvelope,
   type EventJournal,
   type ProcessorStateStore,
 } from '@atolis-hq/eventing';
-import { InMemoryProcessorStateStore } from '@atolis-hq/eventing/memory';
+import {
+  InMemoryProcessorStateStore,
+  InProcessJournalChangeSignal,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { resolveWakePaths } from '../../../src/bootstrap/index.js';
 import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';

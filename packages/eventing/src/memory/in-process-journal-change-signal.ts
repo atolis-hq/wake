@@ -1,4 +1,4 @@
-import type { JournalChangeSignal } from './journal-change-signal.js';
+import type { JournalChangeSignal } from '../subscriptions/journal-change-signal.js';
 
 export class InProcessJournalChangeSignal implements JournalChangeSignal {
   private waiters: Array<() => void> = [];
@@ -32,7 +32,7 @@ export class InProcessJournalChangeSignal implements JournalChangeSignal {
         settled = true;
         clearTimeout(timer);
         signal.removeEventListener('abort', done);
-        // Must drop this waiter here too, not just in notify() — otherwise
+        // Must drop this waiter here too, not just in notify() - otherwise
         // every timeout/abort leaks an entry into `waiters` forever.
         this.waiters = this.waiters.filter((waiter) => waiter !== done);
         resolve();

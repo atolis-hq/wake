@@ -744,6 +744,17 @@ describe('module manifests', () => {
     );
   });
 
+  it('allows filesystem package source to consume the public Eventing memory adapter entry', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-eventing-filesystem-'));
+    fixtureRoots.push(root);
+    await writeFixture(
+      join(root, 'index.ts'),
+      "import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';\nexport { InProcessJournalChangeSignal };",
+    );
+
+    await expect(checker.checkEventingFilesystemPackage(root)).resolves.toEqual([]);
+  });
+
   it('rejects duplicate stream ownership', async () => {
     const root = await manifestFixture({
       work: {

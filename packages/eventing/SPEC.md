@@ -52,8 +52,9 @@ configuration, bounded-module policy, or Bootstrap composition.
 ## Public surface and dependencies
 
 The supported entry points are the package root for contracts and runtime, and
-`@atolis-hq/eventing/memory` for in-memory adapters. Package internals are not
-public API. Eventing depends only on `zod`; filesystem implementations belong
+`@atolis-hq/eventing/memory` for in-memory adapters, including the in-process
+journal change signal. Package internals are not public API. Eventing depends
+only on `zod`; filesystem implementations belong
 to `@atolis-hq/eventing-filesystem`, while Wake Bootstrap selects concrete
 adapters and composes its registry.
 

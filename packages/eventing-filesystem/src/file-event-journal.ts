@@ -6,11 +6,8 @@ import type {
   JournalChangeSignal,
   StreamRef,
 } from '@atolis-hq/eventing';
-import {
-  decodeEventEnvelope,
-  InProcessJournalChangeSignal,
-  WrongExpectedSequenceError,
-} from '@atolis-hq/eventing';
+import { decodeEventEnvelope, WrongExpectedSequenceError } from '@atolis-hq/eventing';
+import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
 import { watch } from 'node:fs';
 import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';

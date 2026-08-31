@@ -27,6 +27,7 @@ import {
   InMemoryEventJournal,
   InMemoryProcessorStateStore,
   InMemoryProjectionStore,
+  InProcessJournalChangeSignal,
 } from '@atolis-hq/eventing/memory';
 ```
 

@@ -1,8 +1,5 @@
-import {
-  createEventData,
-  InProcessJournalChangeSignal,
-  type EventJournal,
-} from '@atolis-hq/eventing';
+import { createEventData, type EventJournal } from '@atolis-hq/eventing';
+import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
 import { expect, expectTypeOf, it } from 'vitest';
 import {
   activationId,

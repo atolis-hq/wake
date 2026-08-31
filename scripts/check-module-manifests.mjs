@@ -184,7 +184,7 @@ export async function checkEventingPackage(root = 'packages/eventing/src') {
 export async function checkEventingFilesystemPackage(root = 'packages/eventing-filesystem/src') {
   return checkWorkspacePackageSource(root, {
     name: filesystemPackage,
-    allowedExternalImports: new Set(['@atolis-hq/eventing']),
+    allowedExternalImports: new Set(['@atolis-hq/eventing', '@atolis-hq/eventing/memory']),
     permitsNodeBuiltins: true,
   });
 }

@@ -1,4 +1,4 @@
-import { InProcessJournalChangeSignal } from '@atolis-hq/eventing';
+import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 beforeEach(() => {

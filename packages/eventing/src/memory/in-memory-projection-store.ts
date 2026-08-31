@@ -3,7 +3,9 @@ import type { ProjectionStore, StoredProjection } from '../projections/projectio
 export class InMemoryProjectionStore implements ProjectionStore {
   private readonly values = new Map<string, StoredProjection>();
   async read<Value>(namespace: string, key: string): Promise<StoredProjection<Value> | null> {
-    return (this.values.get(`${namespace}\0${key}`) as StoredProjection<Value> | undefined) ?? null;
+    const projection = this.values.get(`${namespace}\0${key}`) as
+      StoredProjection<Value> | undefined;
+    return projection === undefined ? null : structuredClone(projection);
   }
 
   async write<Value>(projection: StoredProjection<Value>): Promise<void> {

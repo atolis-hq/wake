@@ -1,11 +1,10 @@
 import {
   cachedJournalView,
   createEventData,
-  InProcessJournalChangeSignal,
   JOURNAL_CHANGE_FALLBACK_MS,
   type StreamRef,
 } from '@atolis-hq/eventing';
-import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
+import { InMemoryEventJournal, InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
 import { FakeClock } from './support/fake-clock.js';
 
