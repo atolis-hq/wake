@@ -1,5 +1,5 @@
 ---
-asOf: dd708e68
+asOf: dbbcd8aa
 ---
 
 # Bootstrap - Module Specification
@@ -32,7 +32,9 @@ checkpoints, and injected Persistence serialiser. It registers every resident
 processor exactly once: provider translation, domain and integration reactors,
 agent publication, projections, and activation scheduling. The runtime starts
 one Eventing host over that explicit registry and provides unified health and
-lag reporting.
+lag reporting. Bootstrap gives the delivery outcome reactor that same required
+serialiser, so direct reconciliation and processor delivery cannot concurrently
+change its persisted pending-confirmations recovery state.
 
 The runtime's one-shot catch-up and through-position barriers are explicit
 freshness boundaries. Projection rebuilds use the same consumer serialiser as

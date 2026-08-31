@@ -1,5 +1,5 @@
 ---
-asOf: dd708e68
+asOf: dbbcd8aa
 ---
 
 # Resources — Module Specification
@@ -84,6 +84,11 @@ construct envelope metadata or a processor host.
   rejected and MUST be recorded as a distinct conflict fact rather than
   silently dropped or silently overwriting the existing primary.
 - Secondary correlations are not limited to one per Resource.
+- Repeating a correlation command with the same generated event data returns
+  the established correlation without another append. Reusing that event id
+  for different correlation data is rejected by Resources before appending;
+  this service-level replay check is required because the journal records
+  every accepted batch.
 
 ## Event catalogue
 

@@ -1,5 +1,5 @@
 ---
-asOf: dd708e68
+asOf: dbbcd8aa
 ---
 
 # Kernel — Module Specification
@@ -133,20 +133,11 @@ Kernel does not own:
 the caller supplies the stream separately from immutable event data.
 `expectedSequence` is optimistic concurrency: a module decides whether to
 retry, report, or otherwise resolve a conflict. The journal does not provide
-automatic retry or a broad content-deduplication policy. It does provide exact
-idempotent replay for a producer-chosen `eventId`:
-
-- A previously recorded `eventId` submitted on the same stream with identical
-  event data is a no-op and returns its recorded envelope. A batch made only
-  of such repeats succeeds without checking `expectedSequence`.
-- The same `eventId` with different event data or a different stream is an
-  `EventIdConflictError`; a batch may not repeat an `eventId` within itself.
-- A batch mixing previously recorded and new event data validates
-  `expectedSequence` against the current stream. It records only the new
-  entries and returns envelopes in the submitted order.
-
-Modules own the choice of event identity and whether a command is safe to
-retry; the exact replay rule does not infer a broader idempotency policy.
+automatic retry, event-id conflict detection, or content deduplication. Every
+accepted batch is recorded in order, including event data with an event id that
+already appears in the journal. Modules own the choice of event identity and
+must inspect their own stream or polling boundary to decide whether a replay is
+safe to suppress before appending.
 
 **Reading**
 
@@ -361,9 +352,9 @@ pieces above are best read as a map, not a component table:
   derive event identity from it. Deriving a deterministic `eventId` from a
   command's own identity — the mechanism that lets a whole command's
   acceptance be idempotent by the command's own identity — is left to each
-  module's aggregate. The journal's narrow contribution is exact replay: a
-  resubmitted identical `eventId` and event data on the same stream returns
-  the recorded envelope; different content or stream conflicts.
+  module's aggregate. The journal preserves every accepted append, so the
+  owning module must detect a repeated command identity before appending when
+  it needs command-level idempotency.
 - `IdGenerator` does not track or reserve prefixes across modules; avoiding
   a prefix collision between two modules' identity kinds is a naming
   convention the modules themselves are expected to follow, not an

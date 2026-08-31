@@ -1,5 +1,5 @@
 ---
-asOf: dd708e68
+asOf: dbbcd8aa
 ---
 
 # Work — Module Specification
@@ -91,6 +91,10 @@ envelope metadata or a processor host.
 - A relation between two WorkItems MUST be idempotent: recording the same
   `(to, relation)` pair against a WorkItem more than once MUST NOT duplicate
   it in that WorkItem's related-items view.
+- Repeating a command with the same generated work event data returns the
+  current WorkItem view without another append. Reusing that event id for
+  different event data is rejected by Work before appending; this service-level
+  replay check is required because the journal records every accepted batch.
 
 ## Event catalogue
 

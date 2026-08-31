@@ -1,5 +1,5 @@
 ---
-asOf: dd708e68
+asOf: dbbcd8aa
 ---
 
 # Integrations — Module Specification
@@ -65,7 +65,9 @@ sequence; it does not construct envelopes or a processor host. Its
 delivery outcome reactor keeps ProjectionStore-backed recovery state for pending
 confirmations. It is not a rebuildable Eventing projection: recovery decodes
 legacy flat and interim nested stored records, then writes the reactor-owned
-canonical pending-confirmations record.
+canonical pending-confirmations record. Its processor delivery and explicit
+reconciliation share one injected serialiser, so only one may change that state
+at a time.
 
 ## Ubiquitous language
 
@@ -104,9 +106,10 @@ canonical pending-confirmations record.
 
 ## Core policies, invariants, and behaviours
 
-- Polled evidence MUST be appended to a provider's own `integration` stream
-  only for event ids not already present on that stream; the same evidence
-  never records twice no matter how many times a provider re-reports it.
+- The polling persistence boundary filters event ids already present on a
+  provider's own `integration` stream before appending. Repeated evidence
+  therefore does not record twice or retrigger translation after restart; the
+  source-local observation cache is only a performance optimization.
 - With no intake rules configured, every observation MUST be admitted with
   no tags. With rules configured, an observation MUST be admitted only if at
   least one rule matches, and MUST collect the union of every matched rule's

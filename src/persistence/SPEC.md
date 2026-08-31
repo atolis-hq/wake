@@ -1,5 +1,5 @@
 ---
-asOf: dd708e68
+asOf: dbbcd8aa
 ---
 
 # Persistence - Module Specification
@@ -33,8 +33,19 @@ adapters and composes them.
 Filesystem and in-memory adapters have equivalent observable behavior.
 Persistence validates only the common Kernel envelope shape and treats domain
 payloads as opaque. Global positions are assigned once at append and are never
-reassigned by replay or rebuild. Retried writes are idempotent according to
-each storage port's contract.
+reassigned by replay or rebuild. A rejected expected-sequence append records
+none of its batch and leaves recovery to the caller.
+
+Journal adapters do not deduplicate event ids or return prior envelopes for a
+repeated append. They record every non-empty batch that satisfies its expected
+sequence; owning modules make replay and command-idempotency decisions before
+calling `appendToStream`.
+
+The filesystem journal writes each accepted batch as a durable, atomically
+renamed JSONL segment. The first segment for a day retains the established daily
+name; later same-day segments use the first global position in their suffixed
+name, preserving deterministic global order without mutating an existing
+segment. The in-memory adapter preserves the same append and ordering contract.
 
 The filesystem codec preserves the exact established flat JSONL record while
 the in-memory adapter stores the nested `EventEnvelope<EventData>` model. Both
