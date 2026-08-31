@@ -62,8 +62,9 @@ Integrations owns its observation, artifact, delivery, and provider event
 types, payload maps, stream references, selectors/decoders, and event-data
 factories. It appends immutable event data to the selected stream with expected
 sequence; it does not construct envelopes or a processor host. Its
-delivery outcome reactor keeps ProjectionStore-backed recovery state for pending
-confirmations. It is not a rebuildable Eventing projection: recovery decodes
+delivery outcome reactor keeps ProcessorStateStore-backed recovery state for
+pending confirmations and uses ProjectionStore for the delivery-intent read
+model. It is not a rebuildable Eventing projection: recovery decodes
 legacy flat and interim nested stored records, then writes the reactor-owned
 canonical pending-confirmations record. Its processor delivery and explicit
 reconciliation share one injected serialiser, so only one may change that state
