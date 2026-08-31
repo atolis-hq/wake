@@ -133,11 +133,20 @@ Kernel does not own:
 the caller supplies the stream separately from immutable event data.
 `expectedSequence` is optimistic concurrency: a module decides whether to
 retry, report, or otherwise resolve a conflict. The journal does not provide
-automatic retry or a general deduplication policy.
+automatic retry or a broad content-deduplication policy. It does provide exact
+idempotent replay for a producer-chosen `eventId`:
 
-- The module supplies an event identity as part of event data and owns its
-  idempotency policy. The append contract only records an accepted batch or
-  rejects it without recording any of that batch.
+- A previously recorded `eventId` submitted on the same stream with identical
+  event data is a no-op and returns its recorded envelope. A batch made only
+  of such repeats succeeds without checking `expectedSequence`.
+- The same `eventId` with different event data or a different stream is an
+  `EventIdConflictError`; a batch may not repeat an `eventId` within itself.
+- A batch mixing previously recorded and new event data validates
+  `expectedSequence` against the current stream. It records only the new
+  entries and returns envelopes in the submitted order.
+
+Modules own the choice of event identity and whether a command is safe to
+retry; the exact replay rule does not infer a broader idempotency policy.
 
 **Reading**
 
@@ -352,9 +361,9 @@ pieces above are best read as a map, not a component table:
   derive event identity from it. Deriving a deterministic `eventId` from a
   command's own identity — the mechanism that lets a whole command's
   acceptance be idempotent by the command's own identity — is left to each
-  module's aggregate; kernel's contribution is guaranteeing that the
-  journal treats a resubmitted `eventId` and content pair as a no-op once
-  that derivation has been made.
+  module's aggregate. The journal's narrow contribution is exact replay: a
+  resubmitted identical `eventId` and event data on the same stream returns
+  the recorded envelope; different content or stream conflicts.
 - `IdGenerator` does not track or reserve prefixes across modules; avoiding
   a prefix collision between two modules' identity kinds is a naming
   convention the modules themselves are expected to follow, not an

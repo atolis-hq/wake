@@ -38,9 +38,12 @@ Surfaces does not own:
   acceptable lifecycle state, how a workflow advances. Those decisions are
   made by the domain module a route or command delegates to; Surfaces only
   forwards that module's own accept/reject result.
-- Storage or event persistence: Surfaces never appends to or reads directly
-  from an event journal, store, or projection table. It calls a public
-  application or view.
+- Storage or event persistence: normal surface queries use the
+  Bootstrap-composed facade's projections and read models; a surface never
+  appends to a journal or reconstructs a domain event. The explicit CLI audit
+  and diagnostic applications are read-only exceptions: Bootstrap gives those
+  facades journal access to inspect recorded envelopes and flatten their
+  transport output.
 - Composition: Surfaces defines the interfaces a concrete facade must
   satisfy (`ApiApplications`, `WakeCliApplications`); Bootstrap is the only
   place that builds and supplies that facade.
@@ -50,10 +53,12 @@ Surfaces does not own:
 
 ## Event transport boundary
 
-Surfaces does not publish or reconstruct events. Where a public API, CLI, or
-web transport exposes an event, it flattens the internal envelope only at that
-boundary to preserve the external response shape; stream and journal metadata
-remain derived from the recorded envelope.
+Surfaces does not publish or reconstruct events. Bootstrap composes the API and
+CLI facades: ordinary responses present projections/read models, while explicit
+audit and diagnostic CLI paths may read recorded envelopes. Where a public API,
+CLI, or web transport exposes one, it flattens that envelope only at the
+transport boundary to preserve the external response shape; stream and journal
+metadata remain derived from the recorded envelope.
 
 ## Ubiquitous language
 

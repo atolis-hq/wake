@@ -122,8 +122,9 @@ from `.wake/update-ledger.json` before retrying.
 
 Read the target module's `MODULE.md`, `module.json`, public `index.ts`, and
 current `SPEC.md` before changing it. Each bounded module owns its event types,
-payloads, stream references, decoder, and draft factory. The journal is
-authoritative; projections are rebuildable read models registered in Bootstrap.
+payload map, stream references, selector/decoder, and `create<Owner>EventData`
+factory. The journal is authoritative; projections are rebuildable read models
+registered in Bootstrap.
 
 Use durable fakes and the composed Bootstrap graph for E2E work. Do not import
 another module's internals or make a surface reconstruct an event. Reference
