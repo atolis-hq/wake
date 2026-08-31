@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import ts from 'typescript';
@@ -12,7 +12,6 @@ const serialiserNames = new Set([
 ]);
 const processorFactoryNames = new Set([
   'defineEventProcessor',
-  'defineBatchEventProcessor',
   'createBatchEventProcessor',
   'createProjectionProcessor',
 ]);
@@ -46,10 +45,15 @@ export async function checkEventArchitectureWithStats(root = 'src') {
   const sourceRoot = (await directoryExists(join(resolvedRoot, 'src')))
     ? join(resolvedRoot, 'src')
     : resolvedRoot;
-  const [files, manifests] = await Promise.all([
+  const projectRoot = dirname(sourceRoot);
+  const eventingSourceRoot = join(projectRoot, 'packages/eventing/src');
+  const hasEventingSource = await directoryExists(eventingSourceRoot);
+  const [wakeFiles, eventingFiles, manifests] = await Promise.all([
     typescriptFiles(sourceRoot),
+    hasEventingSource ? typescriptFiles(eventingSourceRoot) : [],
     readEventNamespaceManifests(sourceRoot),
   ]);
+  const files = [...wakeFiles, ...eventingFiles];
   const program = ts.createProgram(files, {
     allowJs: false,
     exactOptionalPropertyTypes: true,
@@ -57,6 +61,13 @@ export async function checkEventArchitectureWithStats(root = 'src') {
     moduleResolution: ts.ModuleResolutionKind.NodeNext,
     noImplicitOverride: true,
     noUncheckedIndexedAccess: true,
+    ...(hasEventingSource
+      ? {
+          paths: {
+            '@atolis-hq/eventing': [join(projectRoot, 'packages/eventing/src/index.ts')],
+          },
+        }
+      : {}),
     skipLibCheck: true,
     strict: true,
     target: ts.ScriptTarget.ES2022,
@@ -73,7 +84,9 @@ export async function checkEventArchitectureWithStats(root = 'src') {
     const sourceFile = program.getSourceFile(file);
     if (sourceFile === undefined) continue;
     const relativePath = normalizeSourcePath(file, sourceRoot);
-    const moduleName = relativePath.split('/')[0];
+    const moduleName = isEventingPackagePath(relativePath)
+      ? 'eventing'
+      : relativePath.split('/')[0];
     inspectProcessorRuntimeReferences(
       sourceFile,
       bindings,
@@ -167,9 +180,16 @@ function collectBindings(program, typeChecker, analysis) {
 
 function assignmentSite(node) {
   return {
+    container: containingFunction(node),
     position: node.getEnd(),
     sourceFile: node.getSourceFile(),
   };
+}
+
+function containingFunction(node) {
+  for (let current = node.parent; current !== undefined; current = current.parent)
+    if (ts.isFunctionLike(current)) return current;
+  return undefined;
 }
 
 function collectBindingAssignments(pattern, origins, bindings, typeChecker, assignments, site) {
@@ -341,10 +361,20 @@ function assignmentAt(bindings, symbol, useNode) {
   const usePosition = useNode.getStart(useSource);
   let current;
   for (const assignment of history) {
-    if (assignment.sourceFile !== useSource || assignment.position <= usePosition)
+    if (
+      (assignment.sourceFile !== useSource || assignment.position <= usePosition) &&
+      assignmentContainerIncludesUse(assignment.container, useNode)
+    )
       current = assignment;
   }
   return current;
+}
+
+function assignmentContainerIncludesUse(container, useNode) {
+  if (container === undefined) return true;
+  for (let current = useNode; current !== undefined; current = current.parent)
+    if (current === container) return true;
+  return false;
 }
 
 function assignmentAtSite(bindings, symbol, site) {
@@ -810,7 +840,7 @@ function isExcludedRuntimeReference(node) {
 
 function isApprovedProcessorRuntimeReference(kind, relativePath) {
   if (kind === 'host')
-    return relativePath.startsWith('eventing/') || relativePath.startsWith('bootstrap/');
+    return isEventingPackagePath(relativePath) || relativePath.startsWith('bootstrap/');
   if (kind === 'registry') return relativePath.startsWith('bootstrap/');
   if (kind === 'serialiser')
     return relativePath.startsWith('persistence/') || relativePath.startsWith('bootstrap/');
@@ -894,7 +924,8 @@ function inspectPersistenceProcessors(
     }
     if (
       ts.isObjectLiteralExpression(node) &&
-      isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, analysis.canonicalTypes)
+      isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, analysis.canonicalTypes) &&
+      !isLocallyShadowedProcessorFactoryArgument(node, bindings, typeChecker, sourceRoot)
     )
       addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported);
     if (
@@ -905,6 +936,18 @@ function inspectPersistenceProcessors(
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
+}
+
+function isLocallyShadowedProcessorFactoryArgument(node, bindings, typeChecker, sourceRoot) {
+  const call = node.parent;
+  if (!ts.isCallExpression(call) || !call.arguments.includes(node)) return false;
+  const symbol = expressionSymbol(call.expression, bindings, typeChecker);
+  const assignment = symbol === undefined ? undefined : assignmentAt(bindings, symbol, call);
+  return (
+    assignment !== undefined &&
+    resolveProtectedKind(call.expression, bindings, typeChecker, sourceRoot, call) !==
+      'processor-factory'
+  );
 }
 
 function inspectLinkedHandlerProperties(
@@ -1116,7 +1159,7 @@ function inspectEventDataFactoryBinding(node, context) {
     node,
     context.sourceRoot,
     'event-data-factory-owner',
-    'Kernel createEventData runtime references are restricted to direct, manifest-owned factory calls',
+    'Eventing createEventData runtime references are restricted to direct, manifest-owned factory calls',
     context.diagnostics,
   );
 }
@@ -1141,14 +1184,17 @@ function inspectEventDataFactoryReference(node, context) {
   const { bindings, typeChecker, sourceRoot } = context;
   const reference = eventDataFactoryReference(node, bindings, typeChecker, sourceRoot);
   if (reference === undefined || isExcludedFactoryReference(reference, context)) return;
-  if (isKernelTestPath(context.relativePath) || isEnvelopeTestHelperPath(context.relativePath))
+  if (
+    isEventingContractTestPath(context.relativePath) ||
+    isEnvelopeTestHelperPath(context.relativePath)
+  )
     return;
   if (isAllowedOwnerFactoryCall(reference, context)) return;
   addDiagnostic(
     reference,
     context.sourceRoot,
     'event-data-factory-owner',
-    'Kernel createEventData runtime references are restricted to direct, manifest-owned factory calls',
+    'Eventing createEventData runtime references are restricted to direct, manifest-owned factory calls',
     context.diagnostics,
   );
 }
@@ -1181,7 +1227,8 @@ function isExcludedFactoryReference(node, context) {
   if (ts.isExportSpecifier(parent) && parent.name === node && parent.propertyName !== undefined)
     return true;
   if (
-    context.moduleName === 'kernel' &&
+    context.moduleName === 'eventing' &&
+    isEventingPackagePath(context.relativePath) &&
     (ts.isExportSpecifier(parent) || ts.isExportDeclaration(parent))
   )
     return true;
@@ -1432,7 +1479,8 @@ function isEventContractPath(path) {
 }
 
 function isApprovedEventDataFactoryPath(relativePath, moduleName, manifests) {
-  if (isKernelTestPath(relativePath) || isEnvelopeTestHelperPath(relativePath)) return true;
+  if (isEventingContractTestPath(relativePath) || isEnvelopeTestHelperPath(relativePath))
+    return true;
   if ((manifests.get(moduleName)?.length ?? 0) === 0) return false;
   return /\/contracts\/[^/]*event-factory\.(?:cts|mts|tsx?)$/u.test(relativePath);
 }
@@ -1447,7 +1495,7 @@ function isApprovedEnvelopeConstructionPath(relativePath) {
 
 function isApprovedEnvelopeConstruction(node, relativePath, typeChecker, sourceRoot) {
   if (isApprovedEnvelopeConstructionPath(relativePath)) return true;
-  if (!pathMatches(relativePath, 'kernel/contracts/event-schema.ts')) return false;
+  if (!eventingModulePathMatches(relativePath, 'contracts/event-schema')) return false;
   for (let current = node.parent; current !== undefined; current = current.parent) {
     if (
       (ts.isFunctionDeclaration(current) || ts.isFunctionExpression(current)) &&
@@ -1470,10 +1518,10 @@ function isConstructionExpression(node, bindings, typeChecker, sourceRoot) {
   );
 }
 
-function isKernelTestPath(relativePath) {
+function isEventingContractTestPath(relativePath) {
   return (
-    /^test\/unit\/kernel\/.*\.test\.(?:cts|mts|tsx?)$/u.test(relativePath) ||
-    /^unit\/kernel\/.*\.test\.(?:cts|mts|tsx?)$/u.test(relativePath)
+    /^test\/unit\/eventing\/.*\.test\.(?:cts|mts|tsx?)$/u.test(relativePath) ||
+    /^unit\/eventing\/.*\.test\.(?:cts|mts|tsx?)$/u.test(relativePath)
   );
 }
 
@@ -1963,7 +2011,7 @@ function protectedSymbolKind(symbol, sourceRoot) {
   for (const declaration of symbol.declarations ?? []) {
     const path = normalizeSourcePath(declaration.getSourceFile().fileName, sourceRoot);
     const name = symbol.name;
-    if (pathMatches(path, 'eventing/application/event-processor-host.ts') && hostNames.has(name))
+    if (eventingModulePathMatches(path, 'runtime/event-processor-host') && hostNames.has(name))
       return 'host';
     if (pathMatches(path, 'bootstrap/event-processor-runtime.ts') && registryNames.has(name))
       return 'registry';
@@ -1973,37 +2021,53 @@ function protectedSymbolKind(symbol, sourceRoot) {
     )
       return 'serialiser';
     if (
-      pathMatches(path, 'eventing/contracts/event-processor.ts') &&
+      eventingModulePathMatches(path, 'subscriptions/event-processor') &&
       processorFactoryNames.has(name)
     )
       return 'processor-factory';
     if (
-      pathMatches(path, 'eventing/contracts/event-processor.ts') &&
+      eventingModulePathMatches(path, 'subscriptions/event-processor') &&
       name === 'EventProcessorDefinition'
     )
       return 'processor-definition';
     if (
-      pathMatches(path, 'eventing/contracts/event-processor.ts') &&
+      eventingModulePathMatches(path, 'subscriptions/event-processor') &&
       name === 'BatchEventProcessorDefinition'
     )
       return 'batch-processor-definition';
     if (
-      pathMatches(path, 'eventing/application/projection-processor.ts') &&
+      eventingModulePathMatches(path, 'projections/projection-processor') &&
       processorFactoryNames.has(name)
     )
       return 'processor-factory';
-    if (pathMatches(path, 'kernel/domain/event-envelope.ts') && name === 'createEventData')
+    if (eventingModulePathMatches(path, 'contracts/event-envelope') && name === 'createEventData')
       return 'event-data-factory';
-    if (pathMatches(path, 'kernel/contracts/events.ts') && name === 'EventData')
+    if (eventingModulePathMatches(path, 'contracts/events') && name === 'EventData')
       return 'event-data';
-    if (pathMatches(path, 'kernel/contracts/events.ts') && name === 'EventEnvelope')
+    if (eventingModulePathMatches(path, 'contracts/events') && name === 'EventEnvelope')
       return 'event-envelope';
-    if (pathMatches(path, 'kernel/contracts/event-schema.ts') && name === 'decodeEventEnvelope')
+    if (eventingModulePathMatches(path, 'contracts/event-schema') && name === 'decodeEventEnvelope')
       return 'event-envelope-decoder';
-    if (pathMatches(path, 'kernel/contracts/event-journal.ts') && name === 'EventJournal')
+    if (eventingModulePathMatches(path, 'store/event-journal') && name === 'EventJournal')
       return 'event-journal';
   }
   return undefined;
+}
+
+function eventingModulePathMatches(path, modulePath) {
+  return [
+    `packages/eventing/src/${modulePath}.ts`,
+    `packages/eventing/dist/${modulePath}.d.ts`,
+    `node_modules/@atolis-hq/eventing/dist/${modulePath}.d.ts`,
+  ].some((suffix) => pathMatches(path, suffix));
+}
+
+function isEventingPackagePath(path) {
+  return (
+    path.includes('/packages/eventing/src/') ||
+    path.includes('/packages/eventing/dist/') ||
+    path.includes('/node_modules/@atolis-hq/eventing/dist/')
+  );
 }
 
 function isCanonicalObjectAssignSymbol(symbol) {

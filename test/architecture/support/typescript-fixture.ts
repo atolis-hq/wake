@@ -1,30 +1,37 @@
+import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import ts from 'typescript';
 
-const compilerOptions: ts.CompilerOptions = {
-  exactOptionalPropertyTypes: true,
-  lib: ['lib.es2022.d.ts'],
-  module: ts.ModuleKind.NodeNext,
-  moduleResolution: ts.ModuleResolutionKind.NodeNext,
-  noEmit: true,
-  noImplicitOverride: true,
-  noUncheckedIndexedAccess: true,
-  skipLibCheck: true,
-  strict: true,
-  target: ts.ScriptTarget.ES2022,
-  types: ['node'],
-};
-
 export async function assertTypeScriptFixtureCompiles(root: string): Promise<void> {
   const sourceRoot = resolve(root, 'src');
-  const program = ts.createProgram(await typescriptFiles(sourceRoot), compilerOptions);
+  const program = ts.createProgram(await typescriptFiles(sourceRoot), compilerOptions(root));
   const diagnostics = ts.getPreEmitDiagnostics(program);
   if (diagnostics.length === 0) return;
 
   const messages = diagnostics.map((diagnostic) => formatDiagnostic(diagnostic, sourceRoot));
   throw new Error(`Fixture has TypeScript diagnostics:\n${messages.join('\n')}`);
+}
+
+function compilerOptions(root: string): ts.CompilerOptions {
+  const eventingSourceEntry = join(resolve(root), 'packages/eventing/src/index.ts');
+  return {
+    exactOptionalPropertyTypes: true,
+    lib: ['lib.es2022.d.ts'],
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    noEmit: true,
+    noImplicitOverride: true,
+    noUncheckedIndexedAccess: true,
+    ...(existsSync(eventingSourceEntry)
+      ? { paths: { '@atolis-hq/eventing': [eventingSourceEntry] } }
+      : {}),
+    skipLibCheck: true,
+    strict: true,
+    target: ts.ScriptTarget.ES2022,
+    types: ['node'],
+  };
 }
 
 function formatDiagnostic(diagnostic: ts.Diagnostic, sourceRoot: string): string {
