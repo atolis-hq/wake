@@ -271,7 +271,89 @@ function literalModuleSpecifier(node) {
 }
 
 function isDirectRequireCall(node) {
-  return ts.isIdentifier(node.expression) && node.expression.text === 'require';
+  return (
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === 'require' &&
+    !isShadowed(node.expression, 'require')
+  );
+}
+
+function isShadowed(node, name) {
+  for (let current = node.parent; current !== undefined; current = current.parent) {
+    if (scopeDeclaresName(current, name)) return true;
+  }
+  return false;
+}
+
+function scopeDeclaresName(scope, name) {
+  if (ts.isFunctionLike(scope)) {
+    return (
+      scope.parameters.some((parameter) => bindingNameContains(parameter.name, name)) ||
+      (ts.isFunctionExpression(scope) && scope.name !== undefined && scope.name.text === name)
+    );
+  }
+  if (ts.isCatchClause(scope)) {
+    return (
+      scope.variableDeclaration !== undefined &&
+      bindingNameContains(scope.variableDeclaration.name, name)
+    );
+  }
+  if (ts.isForStatement(scope)) return forInitializerDeclaresName(scope.initializer, name);
+  if (ts.isForInStatement(scope) || ts.isForOfStatement(scope)) {
+    return forInitializerDeclaresName(scope.initializer, name);
+  }
+  if (ts.isSourceFile(scope) || ts.isBlock(scope) || ts.isModuleBlock(scope)) {
+    return scope.statements.some((statement) => statementDeclaresName(statement, name));
+  }
+  if (ts.isClassLike(scope) && scope.name !== undefined) return scope.name.text === name;
+  return false;
+}
+
+function forInitializerDeclaresName(initializer, name) {
+  if (initializer === undefined || !ts.isVariableDeclarationList(initializer)) return false;
+  return initializer.declarations.some((declaration) =>
+    bindingNameContains(declaration.name, name),
+  );
+}
+
+function statementDeclaresName(statement, name) {
+  if (ts.isVariableStatement(statement)) {
+    return statement.declarationList.declarations.some((declaration) =>
+      bindingNameContains(declaration.name, name),
+    );
+  }
+  if (ts.isImportDeclaration(statement)) return importDeclarationBindsName(statement, name);
+  if (ts.isImportEqualsDeclaration(statement)) return statement.name.text === name;
+  if (
+    (ts.isFunctionDeclaration(statement) ||
+      ts.isClassDeclaration(statement) ||
+      ts.isEnumDeclaration(statement) ||
+      ts.isModuleDeclaration(statement)) &&
+    statement.name !== undefined
+  ) {
+    return statement.name.text === name;
+  }
+  return false;
+}
+
+function importDeclarationBindsName(statement, name) {
+  const clause = statement.importClause;
+  if (clause === undefined) return false;
+  if (clause.name?.text === name) return true;
+  const bindings = clause.namedBindings;
+  if (bindings === undefined) return false;
+  if (ts.isNamespaceImport(bindings)) return bindings.name.text === name;
+  return bindings.elements.some((element) => element.name.text === name);
+}
+
+function bindingNameContains(nameNode, name) {
+  if (ts.isIdentifier(nameNode)) return nameNode.text === name;
+  if (ts.isObjectBindingPattern(nameNode) || ts.isArrayBindingPattern(nameNode)) {
+    return nameNode.elements.some(
+      (element) => ts.isBindingElement(element) && bindingNameContains(element.name, name),
+    );
+  }
+  return false;
 }
 
 function collectCreateRequireBindings(source) {

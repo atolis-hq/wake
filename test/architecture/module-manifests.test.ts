@@ -179,6 +179,22 @@ describe('module manifests', () => {
         'const packageRequire = createRequire(import.meta.url);',
         "export const loadUnknown = (packageRequire: (target: string) => unknown) => packageRequire('@atolis-hq/eventing/contracts/events.js');",
       ].join('\n'),
+      'src/work/shadowed-direct-require.ts': [
+        "export const loadUnknown = (require: (target: string) => unknown) => require('@atolis-hq/eventing/contracts/events.js');",
+      ].join('\n'),
+      'src/work/local-direct-require.ts': [
+        'export function loadUnknown() {',
+        '  const require = (target: string) => target;',
+        "  return require('@atolis-hq/eventing/contracts/events.js');",
+        '}',
+      ].join('\n'),
+      'src/work/method-named-require.ts': [
+        'export class Loader {',
+        '  require() {',
+        "    return require('@atolis-hq/eventing/contracts/events.js');",
+        '  }',
+        '}',
+      ].join('\n'),
       'src/work/nonliteral-dynamic-imports.ts': [
         "const target = '@atolis-hq/eventing/contracts/events.js';",
         'export const loadUnknown = () => import(target);',
@@ -208,6 +224,7 @@ describe('module manifests', () => {
         'work/dynamic-imports.ts: imports package-internal path @atolis-hq/eventing-filesystem/src/index.js; import only a declared public package entry',
         'work/create-require-imports.ts: imports package-internal path @atolis-hq/eventing/contracts/events.js; import only a declared public package entry',
         'work/create-require-imports.ts: imports package-internal path @atolis-hq/eventing/dist/contracts/events.js; import only a declared public package entry',
+        'work/method-named-require.ts: imports package-internal path @atolis-hq/eventing/contracts/events.js; import only a declared public package entry',
         'illegal-dynamic-wake-import.ts: imports ../../../src/kernel/index.js; eventing may depend only on package dependencies and local files',
         'illegal-require-wake-import.ts: imports ../../../src/kernel/index.js; eventing-filesystem may depend only on @atolis-hq/eventing, Node builtins, and local files',
       ]),
@@ -216,6 +233,8 @@ describe('module manifests', () => {
       'work/nonliteral-dynamic-imports.ts',
       'work/local-create-require.ts',
       'work/shadowed-create-require.ts',
+      'work/shadowed-direct-require.ts',
+      'work/local-direct-require.ts',
     ]) {
       expect(failures).not.toEqual(expect.arrayContaining([expect.stringContaining(path)]));
     }
