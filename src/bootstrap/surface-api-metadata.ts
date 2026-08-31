@@ -1,4 +1,4 @@
-import type { EventJournal, StoredProjection } from '../kernel/index.js';
+import type { EventJournal, StoredProjection } from '@atolis-hq/eventing';
 import type { ResponseMeta } from '../surfaces/index.js';
 
 export function sampledMeta(asOf: string): ResponseMeta {

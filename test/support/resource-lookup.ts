@@ -1,4 +1,4 @@
-import type { EventJournal } from '../../src/kernel/index.js';
+import type { EventJournal } from '@atolis-hq/eventing';
 import { InMemoryProjectionStore } from '../../src/persistence/index.js';
 import { createResourceLookup, createResourceService } from '../../src/resources/index.js';
 

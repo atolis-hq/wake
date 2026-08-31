@@ -1,4 +1,4 @@
-import type { EventJournal, StoredProjection } from '../kernel/index.js';
+import type { EventJournal, StoredProjection } from '@atolis-hq/eventing';
 import type { ApiCollectionPage, CollectionQuery, ResponseMeta } from '../surfaces/index.js';
 import { projectionMeta } from './surface-api-metadata.js';
 

@@ -62,6 +62,18 @@ describe('module manifests', () => {
     await expect(checker.checkModuleManifests()).resolves.toEqual([]);
   });
 
+  it('accepts the extracted Eventing workspace package as a module dependency', async () => {
+    const root = await manifestFixture({
+      persistence: {
+        dependencies: ['eventing'],
+        streams: [],
+        source: '',
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toEqual([]);
+  });
+
   it('rejects duplicate stream ownership', async () => {
     const root = await manifestFixture({
       work: {
@@ -207,6 +219,7 @@ async function manifestFixture(
     Record<
       string,
       {
+        readonly dependencies?: readonly string[];
         readonly streams: readonly string[];
         readonly events?: readonly string[];
         readonly source: string;
@@ -226,7 +239,7 @@ async function manifestFixture(
       const manifest = {
         name,
         kind: 'domain',
-        dependencies: [],
+        dependencies: fixture.dependencies ?? [],
         publicEntry: './index.ts',
         namespaces: {
           events: fixture.events ?? [],

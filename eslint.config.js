@@ -10,7 +10,7 @@ const fullJournalRescanRule = {
     'CallExpression[callee.property.name="readAll"][arguments.0.type="Literal"][arguments.0.value=0]',
   message:
     'readAll(0) re-derives the full event history on every call. Route it through ' +
-    'cachedJournalView() (src/persistence) so a resident loop only pays that cost ' +
+    'cachedJournalView() (@atolis-hq/eventing) so a resident loop only pays that cost ' +
     'when the journal has actually moved since the last call.',
 };
 
@@ -19,6 +19,7 @@ export default tseslint.config(
     ignores: [
       'coverage/**',
       'dist/**',
+      'packages/*/dist/**',
       'archive/legacy/**',
       'node_modules/**',
       '.wake/**',
@@ -83,6 +84,8 @@ export default tseslint.config(
       'vitest.integration.config.ts',
       'vitest.e2e.config.ts',
       'vitest.live-e2e.config.ts',
+      'packages/eventing/test/**/*.ts',
+      'packages/eventing/vitest.config.ts',
     ],
     extends: [tseslint.configs.disableTypeChecked],
   },
@@ -101,7 +104,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['test/**/*.ts'],
+    files: ['test/**/*.ts', 'packages/eventing/test/**/*.ts'],
     plugins: { vitest },
     rules: {
       'max-lines': 'off',
@@ -176,7 +179,7 @@ export default tseslint.config(
   },
   eslintConfigPrettier,
   {
-    files: ['src/**/*.ts', 'test/**/*.ts'],
+    files: ['src/**/*.ts', 'test/**/*.ts', 'packages/eventing/src/**/*.ts'],
     plugins: { '@stylistic': stylistic },
     rules: {
       '@stylistic/lines-between-class-members': [

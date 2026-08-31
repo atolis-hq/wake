@@ -1,3 +1,8 @@
+import {
+  createEventData,
+  InProcessJournalChangeSignal,
+  type EventJournal,
+} from '@atolis-hq/eventing';
 import { expect, expectTypeOf, it } from 'vitest';
 import {
   activationId,
@@ -10,11 +15,6 @@ import {
   claimDecision,
   type PullRequestDecision,
 } from '../../../src/activities/pr/decision-claim.js';
-import {
-  createEventData,
-  InProcessJournalChangeSignal,
-  type EventJournal,
-} from '../../../src/kernel/index.js';
 import { signalName } from '../../../src/orchestration/contracts/identifiers.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';

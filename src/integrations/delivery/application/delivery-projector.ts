@@ -1,5 +1,5 @@
-﻿import { ActivityEventType, selectActivityEvent } from '../../../activities/index.js';
-import { type EventEnvelope, type ProjectionDefinition } from '../../../kernel/index.js';
+﻿import { type EventEnvelope, type ProjectionDefinition } from '@atolis-hq/eventing';
+import { ActivityEventType, selectActivityEvent } from '../../../activities/index.js';
 import { IntegrationStreamKind } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
 import { DeliveryIntentEventType, selectDeliveryIntentEvent } from '../contracts/intents.js';

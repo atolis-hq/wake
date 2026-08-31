@@ -1,15 +1,15 @@
-import { expect, it, vi } from 'vitest';
 import {
   cachedJournalView,
   createEventData,
   InProcessJournalChangeSignal,
   JOURNAL_CHANGE_FALLBACK_MS,
-  type EntityRef,
-} from '../../../src/kernel/index.js';
+  type StreamRef,
+} from '@atolis-hq/eventing';
+import { expect, it, vi } from 'vitest';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
-import { FakeClock } from '../../e2e/support/world.js';
+import { FakeClock } from '../../../test/e2e/support/world.js';
 
-const stream: EntityRef<'counter', 'one'> = { kind: 'counter', id: 'one' };
+const stream: StreamRef<'counter', 'one'> = { kind: 'counter', id: 'one' };
 
 function draft(eventId: string) {
   return createEventData({

@@ -1,4 +1,4 @@
-import type { ProjectionDefinition } from '../../kernel/index.js';
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { ResourceEventType, selectResourceEvent, type ResourceEvent } from '../contracts/events.js';
 import type { ResourceCorrelationView, ResourceView } from '../contracts/views.js';
 import { ResourceCorrelationRole } from '../contracts/vocabulary.js';

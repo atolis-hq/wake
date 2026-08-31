@@ -1,16 +1,18 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { expect, it } from 'vitest';
-import { activationSchedulerSubscriptionConsumer } from '../../../src/control-plane/index.js';
 import {
   EventProcessorCategory,
   EventProcessorHost,
   EventProcessorReplayPolicy,
   createBatchEventProcessor,
+  createEventData,
+  type EventEnvelope,
   type ProcessorRunSerialiser,
-} from '../../../src/eventing/index.js';
-import { createEventData, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
+} from '@atolis-hq/eventing';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { expect, it } from 'vitest';
+import { activationSchedulerSubscriptionConsumer } from '../../../src/control-plane/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
   InMemoryEventJournal,
@@ -271,7 +273,7 @@ class BatchProcessorHost {
     checkpoints: FileCheckpointStore,
     serialiseRun: ProcessorRunSerialiser,
   ) {
-    this.host = new EventProcessorHost(journal, checkpoints, serialiseRun);
+    this.host = new EventProcessorHost(journal, checkpoints, serialiseRun, new FakeClock());
   }
 
   start(subscriptions: readonly BatchSubscription[], signal?: AbortSignal) {

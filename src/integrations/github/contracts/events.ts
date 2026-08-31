@@ -1,3 +1,10 @@
+import {
+  eventDataSchema,
+  eventEnvelopeSchema,
+  type EventDataUnion,
+  type EventEnvelope,
+  type EventUnion,
+} from '@atolis-hq/eventing';
 import { z } from 'zod';
 import {
   ProviderPermission,
@@ -7,14 +14,7 @@ import {
   ReviewerAuthorizationSource,
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
-import {
-  brandedStringSchema,
-  eventDataSchema,
-  eventEnvelopeSchema,
-  type EventDataUnion,
-  type EventEnvelope,
-  type EventUnion,
-} from '../../../kernel/index.js';
+import { brandedStringSchema } from '../../../kernel/index.js';
 import { resourceId, type ResourceId } from '../../../resources/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
 import { adapterId } from '../../contracts/identifiers.js';

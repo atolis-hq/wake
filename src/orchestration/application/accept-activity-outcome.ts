@@ -1,5 +1,5 @@
+import type { CommandContext } from '@atolis-hq/eventing';
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
-import type { CommandContext } from '../../kernel/index.js';
 import { orchestrationActivityOutcome } from '../contracts/activity-outcome.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import { acceptActivityOutcome as decideActivityOutcome } from '../domain/interpreter.js';

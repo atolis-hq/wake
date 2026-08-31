@@ -1,8 +1,8 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import {} from '../../support/identities.js';
 
+import { EventProcessorHost } from '@atolis-hq/eventing';
 import { createPullRequestService } from '../../../src/activities/index.js';
-import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   InboundTranslator,
   PollService,
@@ -545,6 +545,7 @@ async function processInbound(
     journal,
     checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   ).runOnce(translator.processor);
 }
 

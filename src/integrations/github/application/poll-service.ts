@@ -1,5 +1,5 @@
-import type { EventJournal } from '../../../kernel/index.js';
-import { EventSourceKind } from '../../../kernel/index.js';
+import type { EventJournal } from '@atolis-hq/eventing';
+import { EventSourceKind } from '@atolis-hq/eventing';
 import { integrationStream } from '../../contracts/streams.js';
 import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';

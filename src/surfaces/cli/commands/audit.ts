@@ -1,4 +1,4 @@
-import type { EventEnvelope } from '../../../kernel/index.js';
+import type { EventEnvelope } from '@atolis-hq/eventing';
 
 export interface AuditJournal {
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;

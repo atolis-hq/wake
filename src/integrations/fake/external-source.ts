@@ -1,12 +1,12 @@
-import type { ReviewActorKind } from '../../activities/index.js';
-import { PullRequestCheckState } from '../../activities/index.js';
 import {
   causationId,
   correlationId,
   EventActorKind,
   eventId,
   EventSourceKind,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import type { ReviewActorKind } from '../../activities/index.js';
+import { PullRequestCheckState } from '../../activities/index.js';
 import type { AdapterId } from '../contracts/identifiers.js';
 import type { ExternalEventSource, ProviderEventData } from '../contracts/intake.js';
 

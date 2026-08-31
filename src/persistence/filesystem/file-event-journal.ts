@@ -1,20 +1,19 @@
-import { randomUUID } from 'node:crypto';
-import { watch } from 'node:fs';
-import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import type {
-  Clock,
-  EntityRef,
   EventData,
   EventEnvelope,
   EventJournal,
   JournalChangeSignal,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
 import {
   decodeEventEnvelope,
   InProcessJournalChangeSignal,
   WrongExpectedSequenceError,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { randomUUID } from 'node:crypto';
+import { watch } from 'node:fs';
+import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { Clock, EntityRef } from '../../kernel/index.js';
 import { decodeEventRecord, encodeEventRecord } from './event-record-codec.js';
 import { withFileLock } from './file-lock.js';
 

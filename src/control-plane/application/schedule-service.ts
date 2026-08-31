@@ -1,4 +1,5 @@
-import { correlationId, type CommandContext, type IdGenerator } from '../../kernel/index.js';
+import { correlationId, type CommandContext } from '@atolis-hq/eventing';
+import { type IdGenerator } from '../../kernel/index.js';
 import type { StartWorkflowInstance } from '../../orchestration/index.js';
 import {
   orchestrationGroupId,

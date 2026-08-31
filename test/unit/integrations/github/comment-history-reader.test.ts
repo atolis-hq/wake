@@ -1,3 +1,4 @@
+import { correlationId, createEventData, eventId, type EventData } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { adapterId } from '../../../../src/integrations/contracts/identifiers.js';
 import { createCommentHistoryReader } from '../../../../src/integrations/github/application/comment-history-reader.js';
@@ -10,13 +11,7 @@ import {
   deliveryStream,
   integrationStream,
 } from '../../../../src/integrations/index.js';
-import {
-  correlationId,
-  createEventData,
-  eventId,
-  type EntityRef,
-  type EventData,
-} from '../../../../src/kernel/index.js';
+import { type EntityRef } from '../../../../src/kernel/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,

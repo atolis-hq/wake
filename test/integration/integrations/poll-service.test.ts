@@ -1,13 +1,10 @@
+import { createEventData } from '@atolis-hq/eventing';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import {
-  createEventData,
-  type ExternalEventSource,
-  PollService,
-} from '../../../src/integrations/github/index.js';
+import { type ExternalEventSource, PollService } from '../../../src/integrations/github/index.js';
 import { FileEventJournal, InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 

@@ -1,7 +1,8 @@
+import type { CheckpointStore, EventJournal } from '@atolis-hq/eventing';
 import type { PullRequestService } from '../../activities/index.js';
 import type { ConversationService } from '../../conversations/index.js';
 import type { RunRepository } from '../../execution/index.js';
-import type { CheckpointStore, Clock, EventJournal, IdGenerator } from '../../kernel/index.js';
+import type { Clock, IdGenerator } from '../../kernel/index.js';
 import type {
   OrchestrationService,
   WorkflowCandidate,

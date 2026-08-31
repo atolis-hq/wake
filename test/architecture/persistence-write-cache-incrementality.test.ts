@@ -1,9 +1,10 @@
+import { createEventData } from '@atolis-hq/eventing';
 import type * as FsPromises from 'node:fs/promises';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createEventData, type EntityRef } from '../../src/kernel/index.js';
+import { type EntityRef } from '../../src/kernel/index.js';
 import { FileEventJournal, FileProjectionStore } from '../../src/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 

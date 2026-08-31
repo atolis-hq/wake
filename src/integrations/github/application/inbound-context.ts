@@ -1,4 +1,4 @@
-import { correlationId, EventActorKind, type CommandContext } from '../../../kernel/index.js';
+import { correlationId, EventActorKind, type CommandContext } from '@atolis-hq/eventing';
 import type { GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
 

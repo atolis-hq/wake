@@ -1,6 +1,11 @@
+import {
+  createEventData,
+  eventId,
+  EventProcessorHost,
+  type EventEnvelope,
+} from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
-import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   ExecutionEventType,
   runId,
@@ -8,12 +13,7 @@ import {
   runStream,
   type RunRepository,
 } from '../../../src/execution/index.js';
-import {
-  createEventData,
-  eventId,
-  type EntityRef,
-  type EventEnvelope,
-} from '../../../src/kernel/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowName,
@@ -79,7 +79,12 @@ it('ignores facts outside the configured watch event types through its processor
     },
     () => ['review.requested'],
   );
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
 
   await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({
     eventCount: 1,
@@ -318,7 +323,12 @@ it('keeps its checkpoint unchanged until every watch request succeeds', async ()
     },
     () => ['review.requested'],
   );
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
 
   await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected request failure');
   expect(await checkpoints.load('reactor:orchestration.watch')).toBe(0);
@@ -439,7 +449,12 @@ it('replays the identical child request after checkpoint persistence fails', asy
     },
     () => ['review.requested'],
   );
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
 
   await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected checkpoint failure');
   expect(await durable.load('reactor:orchestration.watch')).toBe(0);

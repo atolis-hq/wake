@@ -3,7 +3,7 @@ import {
   EventActorKind,
   EventSourceKind,
   type CommandContext,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
 import { createResourceEventData } from '../contracts/event-factory.js';
 import {
   ResourceEventType,

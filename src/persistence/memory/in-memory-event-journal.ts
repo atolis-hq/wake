@@ -1,12 +1,11 @@
 import type {
-  Clock,
-  EntityRef,
   EventData,
   EventEnvelope,
   EventJournal,
   JournalChangeSignal,
-} from '../../kernel/index.js';
-import { InProcessJournalChangeSignal, WrongExpectedSequenceError } from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { InProcessJournalChangeSignal, WrongExpectedSequenceError } from '@atolis-hq/eventing';
+import type { Clock, EntityRef } from '../../kernel/index.js';
 
 export class InMemoryEventJournal implements EventJournal {
   private readonly streams = new Map<string, EventEnvelope[]>();

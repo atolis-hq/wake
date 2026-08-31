@@ -4,7 +4,7 @@ import {
   EventSourceKind,
   type CommandContext,
   type EventJournal,
-} from '../../../kernel/index.js';
+} from '@atolis-hq/eventing';
 import { deliveryStream, IntegrationStreamKind } from '../../contracts/streams.js';
 import type { ExternalDeliveryAdapter } from '../contracts/config.js';
 import {

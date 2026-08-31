@@ -1,16 +1,14 @@
 import {
+  correlationId,
   defineEventProcessor,
+  EventActorKind,
   EventProcessorCategory,
   EventProcessorReplayPolicy,
-} from '../../eventing/index.js';
-import { type RunRepository } from '../../execution/index.js';
-import {
-  correlationId,
-  EventActorKind,
   type CheckpointStore,
   type CommandContext,
   type EventJournal,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { type RunRepository } from '../../execution/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import {
   OrchestrationEventType,

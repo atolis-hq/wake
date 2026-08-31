@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
+import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
-import type { CommandContext, EventJournal, ProjectionStore } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';

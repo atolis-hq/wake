@@ -1,5 +1,6 @@
+import type { ProjectionStore } from '@atolis-hq/eventing';
 import type { TranscriptStore } from '../execution/index.js';
-import type { Clock, ProjectionStore } from '../kernel/index.js';
+import type { Clock } from '../kernel/index.js';
 import { WorkStatus, type WorkItemView } from '../work/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 

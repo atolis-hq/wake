@@ -1,16 +1,15 @@
-import type { EventData, EventEnvelope } from './events.js';
-import type { EntityRef } from './identifiers.js';
-import type { JournalChangeSignal } from './journal-change-signal.js';
+import type { EventData, EventEnvelope, StreamRef } from '../contracts/events.js';
+import type { JournalChangeSignal } from '../subscriptions/journal-change-signal.js';
 
 export class WrongExpectedSequenceError extends Error {}
 
 export interface EventJournal {
   appendToStream(
-    stream: EntityRef,
+    stream: StreamRef,
     expectedSequence: number,
     events: readonly EventData[],
   ): Promise<readonly EventEnvelope[]>;
-  readStream(stream: EntityRef): Promise<readonly EventEnvelope[]>;
+  readStream(stream: StreamRef): Promise<readonly EventEnvelope[]>;
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;
   readLatest?(beforeGlobalPosition?: number, limit?: number): Promise<readonly EventEnvelope[]>;
   // Cheap enough to call on every tick: implementations must answer this

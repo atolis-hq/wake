@@ -1,9 +1,5 @@
+import { cachedJournalView, type CachedJournalView, type EventJournal } from '@atolis-hq/eventing';
 import type { ActivationId } from '../../activities/index.js';
-import {
-  cachedJournalView,
-  type CachedJournalView,
-  type EventJournal,
-} from '../../kernel/index.js';
 import {
   decodeRunExecutionEvent,
   type RunExecutionEvent,

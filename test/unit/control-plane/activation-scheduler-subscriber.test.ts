@@ -1,3 +1,13 @@
+import {
+  EventActorKind,
+  EventProcessorCategory,
+  EventProcessorHost,
+  EventProcessorReplayPolicy,
+  EventSourceKind,
+  createEventData,
+  type EventProcessor,
+  type EventProcessorHostRun,
+} from '@atolis-hq/eventing';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,14 +19,6 @@ import {
   createActivationSchedulerSubscriber as createProcessorSubscriber,
   type ActivationScheduler,
 } from '../../../src/control-plane/index.js';
-import {
-  EventProcessorCategory,
-  EventProcessorHost,
-  EventProcessorReplayPolicy,
-  type EventProcessor,
-  type EventProcessorHostRun,
-} from '../../../src/eventing/index.js';
-import { EventActorKind, EventSourceKind, createEventData } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
   InMemoryCheckpointStore,
@@ -141,7 +143,7 @@ describe('ActivationSchedulerSubscriber', () => {
       },
     };
     const subscriber = createActivationSchedulerSubscriber(
-      new EventProcessorHost(journal, checkpoint, createFileProcessorRunSerialiser(root)),
+      new EventProcessorHost(journal, checkpoint, createFileProcessorRunSerialiser(root), clock),
       scheduler,
       { fallbackMs: 60_000 },
     );
@@ -329,7 +331,8 @@ describe('ActivationSchedulerSubscriber', () => {
   });
 
   it('reports startup reconciliation failure even when an empty durable host is healthy', async () => {
-    const journal = new InMemoryEventJournal({ now: () => new Date('2026-08-29T00:00:00.000Z') });
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
     const schedulerFailure = new Error('startup scheduler failed');
     const scheduler: ActivationScheduler = {
       runOnce: vi.fn(async () => {
@@ -341,6 +344,7 @@ describe('ActivationSchedulerSubscriber', () => {
         journal,
         new InMemoryCheckpointStore(),
         createInMemoryProcessorRunSerialiser(),
+        clock,
       ),
       scheduler,
       { fallbackMs: 60_000 },
@@ -442,7 +446,7 @@ describe('ActivationSchedulerSubscriber', () => {
       runOnce: vi.fn(async () => ({ kind: 'no-work' as const })),
     };
     const subscriber = createActivationSchedulerSubscriber(
-      new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser()),
+      new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser(), clock),
       scheduler,
       { fallbackMs: 60_000 },
     );
@@ -496,7 +500,7 @@ describe('ActivationSchedulerSubscriber', () => {
       }),
     };
     const subscriber = createActivationSchedulerSubscriber(
-      new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser()),
+      new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser(), clock),
       scheduler,
       { fallbackMs: 60_000 },
     );

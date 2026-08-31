@@ -1,3 +1,4 @@
+import { eventId, type EventId } from '@atolis-hq/eventing';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   BuiltInAdapterId,
@@ -14,7 +15,6 @@ import {
   selectGitHubAdapterEvent,
   type DeliveryEventDataInput,
 } from '../../../src/integrations/github/index.js';
-import { eventId, type EventId } from '../../../src/kernel/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
 import { resId } from '../../support/identities.js';

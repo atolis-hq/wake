@@ -1,6 +1,8 @@
-import type { EventActor, EventData, EventSource } from '../contracts/events.js';
-import { causationId, correlationId, eventId } from '../contracts/identifiers.js';
-import { offsetIsoTimestampSchema } from '../contracts/schema.js';
+import { z } from 'zod';
+import type { EventActor, EventData, EventSource } from './events.js';
+import { causationId, correlationId, eventId } from './identifiers.js';
+
+const offsetIsoTimestampSchema = z.iso.datetime({ offset: true });
 
 export interface EventDataInput<Type extends string, Payload> {
   readonly eventId: string;

@@ -1,3 +1,4 @@
+import { EventActorKind, correlationId } from '@atolis-hq/eventing';
 import { execFile } from 'node:child_process';
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,7 +12,6 @@ import {
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
 import { RunStatus } from '../../../src/execution/index.js';
-import { EventActorKind, correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

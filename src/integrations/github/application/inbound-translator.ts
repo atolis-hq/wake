@@ -1,5 +1,16 @@
 /* eslint-disable max-lines */
 import {
+  correlationId,
+  defineEventProcessor,
+  EventActorKind,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  EventSourceKind,
+  WrongExpectedSequenceError,
+  type EventJournal,
+  type EventProcessor,
+} from '@atolis-hq/eventing';
+import {
   ActivityEventType,
   createPullRequestService,
   selectActivityEvent,
@@ -11,22 +22,8 @@ import {
   ConversationOriginKind,
   type ConversationService,
 } from '../../../conversations/index.js';
-import {
-  defineEventProcessor,
-  EventProcessorCategory,
-  EventProcessorReplayPolicy,
-  type EventProcessor,
-} from '../../../eventing/index.js';
 import type { RunRepository } from '../../../execution/index.js';
-import {
-  correlationId,
-  EventActorKind,
-  EventSourceKind,
-  UlidIdGenerator,
-  WrongExpectedSequenceError,
-  type EventJournal,
-  type IdGenerator,
-} from '../../../kernel/index.js';
+import { UlidIdGenerator, type IdGenerator } from '../../../kernel/index.js';
 import type { OrchestrationService } from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {

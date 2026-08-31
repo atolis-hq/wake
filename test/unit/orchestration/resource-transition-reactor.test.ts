@@ -1,13 +1,13 @@
-import { expect, it } from 'vitest';
-import { ActivityEventType } from '../../../src/activities/index.js';
-import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   createEventData,
   eventId,
+  EventProcessorHost,
   type CheckpointStore,
   type CommandContext,
-  type EntityRef,
-} from '../../../src/kernel/index.js';
+} from '@atolis-hq/eventing';
+import { expect, it } from 'vitest';
+import { ActivityEventType } from '../../../src/activities/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   createResourceTransitionReactor,
   OrchestrationEventType,
@@ -73,7 +73,12 @@ it('ignores unrelated facts through its processor selector', async () => {
     },
     evidence(async () => null),
   );
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
 
   await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({
     eventCount: 1,
@@ -275,6 +280,7 @@ it('delegates bounded checkpoint progress to the event processor host', async ()
     journal,
     trackingCheckpoints,
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
 
   await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 2 });
@@ -311,7 +317,12 @@ it('catches up more than one batch through the eventing barrier', async () => {
     },
     evidence(async () => null),
   );
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
 
   await expect(host.runThrough(reactor.processor, 101)).resolves.toMatchObject({ eventCount: 101 });
   expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(101);
@@ -378,7 +389,12 @@ it('serializes an overlapping processor pass and catch-up barrier through checkp
       fact === undefined ? null : { transition, evidenceId: fact.event.eventId },
     ),
   );
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
 
   const runnerBatch = host.runOnce(reactor.processor);
   await firstSave;
@@ -423,7 +439,12 @@ it('does not advance after a failed reaction and reuses its command context on r
     },
     evidence(async () => ({ transition, evidenceId: 'evidence-1' })),
   );
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
 
   await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected transition failure');
   expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(0);
@@ -475,7 +496,12 @@ it('does not advance after a checkpoint failure and reuses its command context o
     },
     evidence(async () => ({ transition, evidenceId: 'evidence-1' })),
   );
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
 
   await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected checkpoint failure');
   expect(await durable.load('reactor:orchestration.resource-transition')).toBe(0);

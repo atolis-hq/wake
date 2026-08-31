@@ -1,4 +1,4 @@
-import { createEventData, type EventDataInput } from '../../kernel/index.js';
+import { createEventData, type EventDataInput } from '@atolis-hq/eventing';
 import { ControlEventType, type ControlEventData, type ControlEventPayloads } from './events.js';
 
 export type ControlPlaneEventDataInput = {

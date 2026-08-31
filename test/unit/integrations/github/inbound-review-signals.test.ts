@@ -1,3 +1,4 @@
+import { causationId, correlationId, eventId } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -14,7 +15,6 @@ import {
   type GitHubAdapterEventOf,
 } from '../../../../src/integrations/github/contracts/events.js';
 import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
-import { causationId, correlationId, eventId } from '../../../../src/kernel/index.js';
 import {
   OperatorRetryIneligibleError,
   signalName,

@@ -1,4 +1,4 @@
-import type { EventJournal, ProjectionDefinition, ProjectionStore } from '../../kernel/index.js';
+import type { EventJournal, ProjectionDefinition, ProjectionStore } from '@atolis-hq/eventing';
 import type { WorkItemId } from '../../work/index.js';
 import { ResourceEventType, selectResourceEvent } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';

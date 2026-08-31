@@ -1,11 +1,7 @@
+import { correlationId, type CommandContext, type EventJournal } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activationId, activityName, ActivityRegistry } from '../../../src/activities/index.js';
-import {
-  correlationId,
-  type CommandContext,
-  type EventJournal,
-} from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   signalName,

@@ -1,3 +1,4 @@
+import { correlationId, EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { createRunnerQuotaReporter } from '../../../src/bootstrap/runner-quota-reporter.js';
 import {
@@ -5,7 +6,6 @@ import {
   ControlStreamKind,
   createControlPlaneEventData,
 } from '../../../src/control-plane/index.js';
-import { correlationId, EventActorKind, EventSourceKind } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 

@@ -1,6 +1,6 @@
+import { createEventData } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { PollService } from '../../../src/integrations/application/poll-service.js';
-import { createEventData } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 

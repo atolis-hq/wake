@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { brandedStringSchema, type EntityRef, type EventData } from '../../kernel/index.js';
+import { type EventData } from '@atolis-hq/eventing';
+import { brandedStringSchema, type EntityRef } from '../../kernel/index.js';
 import type { MergeMethod } from '../pr/vocabulary.js';
 import { activationId } from './identifiers.js';
 

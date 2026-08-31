@@ -1,5 +1,5 @@
+import type { CommandContext } from '@atolis-hq/eventing';
 import { ActivityEventType, selectActivityEvent } from '../../activities/index.js';
-import type { CommandContext } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { CompiledResourceTransition, TransitionTarget } from '../contracts/config.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';

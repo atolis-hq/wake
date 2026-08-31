@@ -1,4 +1,4 @@
-import { EventSourceKind, type EventEnvelope, type EventJournal } from '../../kernel/index.js';
+import { EventSourceKind, type EventEnvelope, type EventJournal } from '@atolis-hq/eventing';
 import { createActivityEventData } from '../contracts/event-factory.js';
 import {
   ActivityEventType,

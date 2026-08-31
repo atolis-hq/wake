@@ -1,10 +1,9 @@
 import { readFile } from 'node:fs/promises';
 
+import { correlationId, createProjectionProcessor, EventProcessorHost } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
-import { createProjectionProcessor, EventProcessorHost } from '../../../src/eventing/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -96,6 +95,7 @@ it('persists instances and accepts outcomes idempotently', async () => {
     journal,
     new InMemoryCheckpointStore(),
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   ).runOnce(createProjectionProcessor(workflowDefinitionsProjection, projections));
   const changedDefinition = compileWorkflow(
     'default',

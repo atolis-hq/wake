@@ -1,11 +1,11 @@
-import { z } from 'zod';
 import {
   decodeEventEnvelope,
   entityRefSchema,
   eventDataSchema,
-  offsetIsoTimestampSchema,
   type EventEnvelope,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { offsetIsoTimestampSchema } from '../../kernel/index.js';
 
 const flatEventRecordSchema = eventDataSchema
   .omit({ payload: true })

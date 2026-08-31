@@ -1,15 +1,15 @@
+import {
+  cachedJournalView,
+  createEventData,
+  WrongExpectedSequenceError,
+  type EventData,
+} from '@atolis-hq/eventing';
 import type * as FsPromises from 'node:fs/promises';
 import { appendFile, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import {
-  cachedJournalView,
-  createEventData,
-  WrongExpectedSequenceError,
-  type EntityRef,
-  type EventData,
-} from '../../../src/kernel/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import { FileEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 

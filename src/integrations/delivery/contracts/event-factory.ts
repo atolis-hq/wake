@@ -1,4 +1,4 @@
-import { createEventData, type EventDataInput } from '../../../kernel/index.js';
+import { createEventData, type EventDataInput } from '@atolis-hq/eventing';
 import { DeliveryEventType, type DeliveryEventData, type DeliveryEventPayloads } from './events.js';
 import {
   DeliveryIntentEventType,

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   EventActorKind,
   EventSourceKind,
@@ -6,7 +5,8 @@ import {
   type EventJournal,
   type ProjectionDefinition,
   type ProjectionStore,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { createHash } from 'node:crypto';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { createOrchestrationEventData } from '../contracts/event-factory.js';

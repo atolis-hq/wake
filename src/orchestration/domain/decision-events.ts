@@ -1,5 +1,5 @@
+import { EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import { activationId, type ActivityName } from '../../activities/index.js';
-import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import {
   createOrchestrationEventData,
   type OrchestrationEventDataInput,

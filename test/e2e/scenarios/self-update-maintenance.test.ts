@@ -1,3 +1,9 @@
+import {
+  EventActorKind,
+  EventSourceKind,
+  correlationId,
+  createEventData,
+} from '@atolis-hq/eventing';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,12 +24,6 @@ import {
 } from '../../../src/bootstrap/index.js';
 import { createSelfUpdateQuiescePort } from '../../../src/bootstrap/surface-cli-applications.js';
 import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
-import {
-  EventActorKind,
-  EventSourceKind,
-  correlationId,
-  createEventData,
-} from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

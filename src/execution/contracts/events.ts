@@ -1,3 +1,10 @@
+import {
+  eventDataSchema,
+  eventEnvelopeSchema,
+  type EventDataUnion,
+  type EventEnvelope,
+  type EventUnion,
+} from '@atolis-hq/eventing';
 import { z } from 'zod';
 import {
   activationId,
@@ -11,15 +18,7 @@ import {
   type ActivityOutcome,
   type ActivityWorkflowInstanceId,
 } from '../../activities/index.js';
-import {
-  brandedStringSchema,
-  eventDataSchema,
-  eventEnvelopeSchema,
-  offsetIsoTimestampSchema,
-  type EventDataUnion,
-  type EventEnvelope,
-  type EventUnion,
-} from '../../kernel/index.js';
+import { brandedStringSchema, offsetIsoTimestampSchema } from '../../kernel/index.js';
 import { runId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
 import type { ExecutionFailure, RecordedRunnerResult, RecoveredRunResult } from './results.js';

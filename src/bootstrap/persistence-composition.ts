@@ -1,5 +1,10 @@
-import type { ProcessorRunSerialiser } from '../eventing/index.js';
-import type { CheckpointStore, Clock, EventJournal, ProjectionStore } from '../kernel/index.js';
+import type {
+  CheckpointStore,
+  EventJournal,
+  ProcessorRunSerialiser,
+  ProjectionStore,
+} from '@atolis-hq/eventing';
+import type { Clock } from '../kernel/index.js';
 import {
   FileCheckpointStore,
   FileEventJournal,

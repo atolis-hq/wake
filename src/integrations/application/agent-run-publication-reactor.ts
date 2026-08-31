@@ -1,17 +1,19 @@
+import {
+  defineEventProcessor,
+  EventActorKind,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  EventSourceKind,
+  type EventJournal,
+  type EventProcessor,
+} from '@atolis-hq/eventing';
 import { BuiltInActivityName } from '../../activities/index.js';
 import {
   conversationIdForWorkItem,
   ConversationOriginKind,
   type ConversationService,
 } from '../../conversations/index.js';
-import {
-  defineEventProcessor,
-  EventProcessorCategory,
-  EventProcessorReplayPolicy,
-  type EventProcessor,
-} from '../../eventing/index.js';
 import { RunStatus, type RunRepository } from '../../execution/index.js';
-import { EventActorKind, EventSourceKind, type EventJournal } from '../../kernel/index.js';
 import {
   ApprovalAuthorityKind,
   isApprovalAwaitingSignalKind,

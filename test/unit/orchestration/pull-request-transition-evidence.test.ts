@@ -1,3 +1,4 @@
+import { correlationId, type EventEnvelope } from '@atolis-hq/eventing';
 import { describe, expect, it } from 'vitest';
 import {
   ActivityEventType,
@@ -6,7 +7,6 @@ import {
   PullRequestState,
   type PullRequestService,
 } from '../../../src/activities/index.js';
-import { correlationId, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
   createPullRequestTransitionEvidence,
   TransitionTargetKind,

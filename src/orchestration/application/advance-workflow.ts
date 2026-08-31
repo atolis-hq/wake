@@ -1,5 +1,5 @@
+import { EventSourceKind, type CommandContext } from '@atolis-hq/eventing';
 import type { ActivationId, selectActivityEvent } from '../../activities/index.js';
-import { EventSourceKind, type CommandContext } from '../../kernel/index.js';
 import type { TransitionTarget } from '../contracts/config.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';

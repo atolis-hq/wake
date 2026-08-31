@@ -1,4 +1,4 @@
-import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext, type EventJournal } from '@atolis-hq/eventing';
 import type {
   AssociateConversationResource,
   CreateConversation,

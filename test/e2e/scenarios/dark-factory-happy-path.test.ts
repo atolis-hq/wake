@@ -1,3 +1,4 @@
+import { correlationId, createEventData, eventId } from '@atolis-hq/eventing';
 import { expect } from 'vitest';
 import { z } from 'zod';
 import { activityName, createAgentActivity } from '../../../src/activities/index.js';
@@ -8,7 +9,6 @@ import {
   DeliveryIntentEventType,
   deliveryStream,
 } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventData, eventId } from '../../../src/kernel/index.js';
 import { watchId, workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import { WatchGateVerdictSignal } from '../../../src/orchestration/index.js';
 import { resourceKind, resourceStream, type ResourceId } from '../../../src/resources/index.js';

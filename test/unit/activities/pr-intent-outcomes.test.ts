@@ -8,15 +8,15 @@ import {
 import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
-import { activationId, createPullRequestMergeActivity } from '../../../src/activities/index.js';
-import { mergeDenied } from '../../../src/activities/pr/event-data.js';
-import { appendIntentOnce } from '../../../src/activities/pr/intent.js';
 import {
   correlationId,
   InProcessJournalChangeSignal,
   WrongExpectedSequenceError,
   type EventJournal,
-} from '../../../src/kernel/index.js';
+} from '@atolis-hq/eventing';
+import { activationId, createPullRequestMergeActivity } from '../../../src/activities/index.js';
+import { mergeDenied } from '../../../src/activities/pr/event-data.js';
+import { appendIntentOnce } from '../../../src/activities/pr/intent.js';
 import {} from '../../../src/resources/index.js';
 import type { workItemId } from '../../../src/work/index.js';
 import { workItemStream } from '../../../src/work/index.js';

@@ -1,3 +1,4 @@
+import { EventActorKind, EventSourceKind, createEventData } from '@atolis-hq/eventing';
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +18,6 @@ import {
   runId,
   runStream,
 } from '../../../src/execution/index.js';
-import { EventActorKind, EventSourceKind, createEventData } from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { workId } from '../../support/identities.js';
 import { defineScenario } from '../support/scenario.js';

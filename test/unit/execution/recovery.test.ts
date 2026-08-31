@@ -1,5 +1,11 @@
 import { expect, it } from 'vitest';
 
+import {
+  createEventData,
+  EventActorKind,
+  EventSourceKind,
+  type EventJournal,
+} from '@atolis-hq/eventing';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import {
   ExecutionEventType,
@@ -8,12 +14,6 @@ import {
   RunRepository,
   RunStatus,
 } from '../../../src/execution/index.js';
-import {
-  createEventData,
-  EventActorKind,
-  EventSourceKind,
-  type EventJournal,
-} from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { executionFixture } from './support.js';

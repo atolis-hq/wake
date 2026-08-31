@@ -1,6 +1,4 @@
-import { z } from 'zod';
 import {
-  brandedStringSchema,
   eventDataSchema,
   eventEnvelopeSchema,
   eventId,
@@ -8,7 +6,9 @@ import {
   type EventEnvelope,
   type EventId,
   type EventUnion,
-} from '../../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { brandedStringSchema } from '../../../kernel/index.js';
 import { IntegrationStreamKind, type DeliveryStreamRef } from '../../contracts/streams.js';
 import { DeliveryResultKind } from './vocabulary.js';
 

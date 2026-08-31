@@ -1,9 +1,9 @@
+import { EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import {
   PullRequestState,
   ReviewActorKind,
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
-import { EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
 import { createGitHubEventData } from '../contracts/event-factory.js';

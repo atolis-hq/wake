@@ -1,10 +1,10 @@
+import type { EventDataUnion, EventUnion } from '@atolis-hq/eventing';
 import type {
   ActivationId,
   ActivityName,
   ActivityOutcome,
   ActivityOutcomeKind,
 } from '../../activities/index.js';
-import type { EventDataUnion, EventUnion } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
 import type {

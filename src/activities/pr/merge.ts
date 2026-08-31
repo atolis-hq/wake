@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import { MergeMethod } from './vocabulary.js';
 
-import type { EventJournal } from '../../kernel/index.js';
+import type { EventJournal } from '@atolis-hq/eventing';
 import { BuiltInResourceCapability, resourceStream } from '../../resources/index.js';
 import { workItemStream } from '../../work/index.js';
 import type {

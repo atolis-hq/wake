@@ -1,12 +1,15 @@
 import { expect, it } from 'vitest';
 import { resId, workId } from '../../support/identities.js';
 
+import {
+  EventProcessorHost,
+  createEventData,
+  createProjectionProcessor,
+} from '@atolis-hq/eventing';
 import { createPullRequestService, pullRequestProjection } from '../../../src/activities/index.js';
-import { EventProcessorHost, createProjectionProcessor } from '../../../src/eventing/index.js';
 import {
   BuiltInAdapterId,
   InboundTranslator,
-  createEventData,
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
@@ -66,6 +69,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
     journal,
     checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   ).runOnce(createProjectionProcessor(pullRequestProjection, projectionStore));
   const resource = await lookup.resourceIdForExternalKey({
     adapter: 'github',
@@ -178,6 +182,7 @@ function processInbound(
     journal,
     checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   ).runOnce(translator.processor);
 }
 

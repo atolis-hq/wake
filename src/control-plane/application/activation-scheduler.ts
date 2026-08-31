@@ -1,6 +1,7 @@
 /* eslint-disable complexity, max-lines-per-function */
+import { correlationId, EventActorKind } from '@atolis-hq/eventing';
 import { RunStatus } from '../../execution/index.js';
-import { correlationId, EventActorKind, type Clock } from '../../kernel/index.js';
+import { type Clock } from '../../kernel/index.js';
 import { isAmbiguityResolutionBlock, WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import { WorkStatus } from '../../work/index.js';

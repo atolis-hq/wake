@@ -1,5 +1,5 @@
+import type { CommandContext } from '@atolis-hq/eventing';
 import type { ConversationService } from '../../conversations/index.js';
-import type { CommandContext } from '../../kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

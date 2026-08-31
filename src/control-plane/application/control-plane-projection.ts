@@ -1,4 +1,4 @@
-import type { EventEnvelope, EventJournal, ProjectionDefinition } from '../../kernel/index.js';
+import type { EventEnvelope, EventJournal, ProjectionDefinition } from '@atolis-hq/eventing';
 import { ControlEventType, selectControlEvent, type ControlEvent } from '../contracts/events.js';
 import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
 

@@ -3,6 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 
+import type { ProcessorRunSerialiser } from '@atolis-hq/eventing';
+import {
+  createEventData,
+  type CheckpointStore,
+  type EventJournal,
+  type ProjectionDefinition,
+  type ProjectionStore,
+} from '@atolis-hq/eventing';
 import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
 import {
   createRuntimeProjectionSubscriptions as composeRuntimeProjectionSubscriptions,
@@ -10,15 +18,7 @@ import {
 } from '../../../src/bootstrap/index.js';
 import { resolveWakePaths } from '../../../src/bootstrap/paths.js';
 import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
-import type { ProcessorRunSerialiser } from '../../../src/eventing/index.js';
-import {
-  createEventData,
-  type CheckpointStore,
-  type EntityRef,
-  type EventJournal,
-  type ProjectionDefinition,
-  type ProjectionStore,
-} from '../../../src/kernel/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   FileCheckpointStore,
   FileEventJournal,
@@ -286,7 +286,12 @@ function createRuntimeProjectionSubscriptions(
   serialiseRun: ProcessorRunSerialiser = createInMemoryProcessorRunSerialiser(),
   definitions = runtimeProjectionDefinitions,
 ) {
-  const processorRuntime = new EventProcessorRuntime(journal, checkpoints, serialiseRun);
+  const processorRuntime = new EventProcessorRuntime(
+    journal,
+    checkpoints,
+    serialiseRun,
+    new FakeClock(),
+  );
   const subscriptions = composeRuntimeProjectionSubscriptions(
     journal,
     projections,

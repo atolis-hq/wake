@@ -1,3 +1,9 @@
+import {
+  EventActorKind,
+  EventSourceKind,
+  correlationId,
+  createEventData,
+} from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
@@ -7,12 +13,6 @@ import {
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
 import { DeliveryIntentEventType } from '../../../src/integrations/index.js';
-import {
-  EventActorKind,
-  EventSourceKind,
-  correlationId,
-  createEventData,
-} from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

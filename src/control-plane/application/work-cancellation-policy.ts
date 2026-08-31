@@ -1,11 +1,6 @@
+import { EventActorKind, correlationId, type CommandContext } from '@atolis-hq/eventing';
 import { ExecutionCancellationReason, type ActiveRunCancellation } from '../../execution/index.js';
-import {
-  EventActorKind,
-  correlationId,
-  type Clock,
-  type CommandContext,
-  type IdGenerator,
-} from '../../kernel/index.js';
+import { type Clock, type IdGenerator } from '../../kernel/index.js';
 import type { WorkflowInstanceView } from '../../orchestration/index.js';
 import type { WorkItemId, WorkItemView } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';

@@ -7,7 +7,7 @@ import {
 } from '../contracts/vocabulary.js';
 import { PullRequestDenialCode } from './vocabulary.js';
 
-import { type EventJournal } from '../../kernel/index.js';
+import { type EventJournal } from '@atolis-hq/eventing';
 import {
   ResourceCorrelationRole,
   resourceId,

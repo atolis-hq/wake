@@ -4,7 +4,8 @@
     "composite": true,
     "declarationMap": true,
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "lib": ["ES2022", "DOM"]
   },
-  "files": []
+  "include": ["src/**/*.ts"]
 }

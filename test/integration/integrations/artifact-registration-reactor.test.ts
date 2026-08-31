@@ -1,3 +1,4 @@
+import { createEventData, EventActorKind, EventProcessorHost } from '@atolis-hq/eventing';
 import { describe, expect, it, vi } from 'vitest';
 import {
   activationId,
@@ -7,9 +8,7 @@ import {
   BuiltInActivityName,
   createAgentActivity,
 } from '../../../src/activities/index.js';
-import { EventProcessorHost } from '../../../src/eventing/index.js';
 import { ArtifactRegistrationReactor } from '../../../src/integrations/index.js';
-import { createEventData, EventActorKind } from '../../../src/kernel/index.js';
 import { workflowInstanceId, workflowInstanceStream } from '../../../src/orchestration/index.js';
 import {
   createInMemoryProcessorRunSerialiser,
@@ -41,6 +40,7 @@ describe('ArtifactRegistrationReactor', () => {
       journal,
       checkpoints,
       createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     );
     await journal.appendToStream({ kind: 'test', id: 'unrelated' }, 0, [
       createEventData({
@@ -69,6 +69,7 @@ describe('ArtifactRegistrationReactor', () => {
       journal,
       checkpoints,
       createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact');
@@ -145,6 +146,7 @@ describe('ArtifactRegistrationReactor', () => {
       journal,
       checkpoints,
       createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact-raw');
@@ -242,6 +244,7 @@ DONE`;
       journal,
       checkpoints,
       createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact-missing');
@@ -316,6 +319,7 @@ DONE`;
       journal,
       checkpoints,
       createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact-ambiguous');

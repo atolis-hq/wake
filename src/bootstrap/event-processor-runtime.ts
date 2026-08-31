@@ -1,3 +1,4 @@
+import type { CheckpointStore, EventJournal } from '@atolis-hq/eventing';
 import {
   EventProcessorHealthStatus,
   EventProcessorHost,
@@ -5,9 +6,9 @@ import {
   type EventProcessorHealth,
   type EventProcessorHostOptions,
   type EventProcessorHostRun,
+  type EventingClock,
   type ProcessorRunSerialiser,
-} from '../eventing/index.js';
-import type { CheckpointStore, EventJournal } from '../kernel/index.js';
+} from '@atolis-hq/eventing';
 
 /**
  * Bootstrap's single registry for every deployed event processor. It owns
@@ -22,9 +23,10 @@ export class EventProcessorRuntime {
     private readonly journal: EventJournal,
     private readonly checkpoints: CheckpointStore,
     serialiseRun: ProcessorRunSerialiser,
+    clock: EventingClock,
     options: EventProcessorHostOptions = {},
   ) {
-    this.host = new EventProcessorHost(journal, checkpoints, serialiseRun, options);
+    this.host = new EventProcessorHost(journal, checkpoints, serialiseRun, clock, options);
   }
 
   get processors(): readonly EventProcessor[] {

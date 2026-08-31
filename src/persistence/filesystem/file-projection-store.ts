@@ -1,7 +1,7 @@
+import type { ProjectionStore, StoredProjection } from '@atolis-hq/eventing';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { ProjectionStore, StoredProjection } from '../../kernel/index.js';
 
 export class FileProjectionStore implements ProjectionStore {
   constructor(private readonly root: string) {}

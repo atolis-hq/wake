@@ -1,12 +1,13 @@
-import type { CheckpointStore, Clock, EventJournal } from '../../kernel/index.js';
-import { SystemClock } from '../../kernel/index.js';
-import { type EventProcessor } from '../contracts/event-processor.js';
-import type { ProcessorRunSerialiser } from '../contracts/processor-run-serialiser.js';
+import type { CheckpointStore } from '../store/checkpoint-store.js';
+import type { EventJournal } from '../store/event-journal.js';
+import { type EventProcessor } from '../subscriptions/event-processor.js';
+import type { EventingClock } from './clock.js';
 import {
   EventProcessorHealthStatus,
   ProcessorHealthRegistry,
   type EventProcessorHealth,
 } from './processor-health.js';
+import type { ProcessorRunSerialiser } from './processor-run-serialiser.js';
 import {
   assertDistinctProcessorConsumers,
   assertNonNegativeSafeInteger,
@@ -21,7 +22,6 @@ const maximumTimerDelayMs = 2_147_483_647;
 export interface EventProcessorHostOptions {
   readonly fallbackMs?: number;
   readonly retryBackoff?: (consecutiveFailures: number, signal: AbortSignal) => Promise<void>;
-  readonly clock?: Clock;
 }
 
 export interface EventProcessorHostRun {
@@ -42,20 +42,18 @@ export class EventProcessorHost {
     signal: AbortSignal,
   ) => Promise<void>;
 
-  private readonly clock: Clock;
-
   private readonly healthRegistry: ProcessorHealthRegistry;
 
   constructor(
     private readonly journal: EventJournal,
     private readonly checkpoints: CheckpointStore,
     private readonly serialiseRun: ProcessorRunSerialiser,
+    clock: EventingClock,
     options: EventProcessorHostOptions = {},
   ) {
     this.fallbackMs = options.fallbackMs ?? defaultFallbackMs;
     this.retryBackoff = options.retryBackoff ?? defaultRetryBackoff;
-    this.clock = options.clock ?? new SystemClock();
-    this.healthRegistry = new ProcessorHealthRegistry(journal, this.clock);
+    this.healthRegistry = new ProcessorHealthRegistry(journal, clock);
     assertPositiveSafeInteger(this.fallbackMs, 'Processor fallback', maximumTimerDelayMs);
     if (typeof this.retryBackoff !== 'function')
       throw new Error('Processor retry backoff must be a function');

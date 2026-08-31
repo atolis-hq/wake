@@ -1,11 +1,6 @@
+import { createEventData, WrongExpectedSequenceError, type EventData } from '@atolis-hq/eventing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createEventData,
-  WrongExpectedSequenceError,
-  type Clock,
-  type EntityRef,
-  type EventData,
-} from '../../../src/kernel/index.js';
+import { type Clock, type EntityRef } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 
 class FixedClock implements Clock {

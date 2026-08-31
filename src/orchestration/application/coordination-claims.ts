@@ -1,4 +1,4 @@
-import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext, type EventJournal } from '@atolis-hq/eventing';
 import type { WorkItemId } from '../../work/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { createOrchestrationEventData } from '../contracts/event-factory.js';

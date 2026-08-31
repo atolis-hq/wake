@@ -1,3 +1,10 @@
+import {
+  correlationId,
+  createEventData,
+  EventActorKind,
+  eventId,
+  EventSourceKind,
+} from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { PullRequestCheckState } from '../../../../src/activities/index.js';
 import {
@@ -14,13 +21,6 @@ import {
   DeliveryIntentEventType,
   deliveryStream,
 } from '../../../../src/integrations/index.js';
-import {
-  correlationId,
-  createEventData,
-  EventActorKind,
-  eventId,
-  EventSourceKind,
-} from '../../../../src/kernel/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,

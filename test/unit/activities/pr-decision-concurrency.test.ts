@@ -8,6 +8,7 @@ import {
 import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
+import type { EventData, EventJournal } from '@atolis-hq/eventing';
 import {
   activationId,
   createPullRequestMergeActivity,
@@ -15,7 +16,6 @@ import {
   type PullRequestService,
 } from '../../../src/activities/index.js';
 import { appendIntentOnce } from '../../../src/activities/pr/intent.js';
-import type { EventData, EventJournal } from '../../../src/kernel/index.js';
 import { type ResourceView } from '../../../src/resources/index.js';
 import {} from '../../../src/work/index.js';
 import { TestWorld } from '../../e2e/support/world.js';

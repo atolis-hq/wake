@@ -1,18 +1,17 @@
 import {
+  EventActorKind,
+  EventSourceKind,
+  correlationId,
+  type EventJournal,
+} from '@atolis-hq/eventing';
+import {
   ControlEventType,
   ControlStreamKind,
   controlPlaneStream,
   createControlPlaneEventData,
   resolveRunnerQuotaResumeAt,
 } from '../control-plane/index.js';
-import {
-  EventActorKind,
-  EventSourceKind,
-  correlationId,
-  type Clock,
-  type EventJournal,
-  type IdGenerator,
-} from '../kernel/index.js';
+import { type Clock, type IdGenerator } from '../kernel/index.js';
 
 export function createRunnerQuotaReporter(journal: EventJournal, clock: Clock, ids: IdGenerator) {
   return async ({

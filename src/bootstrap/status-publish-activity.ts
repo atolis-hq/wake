@@ -1,3 +1,4 @@
+import { EventActorKind, EventSourceKind, type EventJournal } from '@atolis-hq/eventing';
 import { z } from 'zod';
 import {
   ActivityExecutionKind,
@@ -6,7 +7,6 @@ import {
   type ActivityDefinition,
 } from '../activities/index.js';
 import { createDeliveryIntentEventData, DeliveryIntentEventType } from '../integrations/index.js';
-import { EventActorKind, EventSourceKind, type EventJournal } from '../kernel/index.js';
 import { resourceStream } from '../resources/index.js';
 
 export function createStatusPublishActivity(

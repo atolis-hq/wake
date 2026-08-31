@@ -1,13 +1,13 @@
+import {
+  correlationId,
+  createProjectionProcessor,
+  EventProcessorHost,
+  ProjectionRebuilder,
+} from '@atolis-hq/eventing';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import {
-  createProjectionProcessor,
-  EventProcessorHost,
-  ProjectionRebuilder,
-} from '../../../src/eventing/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   createFileProcessorRunSerialiser,
   FileCheckpointStore,
@@ -37,7 +37,7 @@ it(`${scenario.id} rebuilds projections without changing journal bytes`, async (
   const checkpoints = new FileCheckpointStore(root);
   const serialiseRun = createFileProcessorRunSerialiser(root);
   const subscription = createProjectionProcessor(workProjection, projections);
-  const host = new EventProcessorHost(journal, checkpoints, serialiseRun);
+  const host = new EventProcessorHost(journal, checkpoints, serialiseRun, new FakeClock());
   await host.runOnce(subscription);
   const eventPath = join(root, 'events', '2026-07-30.jsonl');
   const before = await readFile(eventPath, 'utf8');

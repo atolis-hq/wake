@@ -1,5 +1,5 @@
+import { correlationId } from '@atolis-hq/eventing';
 import { expect } from 'vitest';
-import { correlationId } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';

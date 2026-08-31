@@ -1,11 +1,11 @@
-import { z } from 'zod';
 import {
   eventDataSchema,
   eventEnvelopeSchema,
   type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
 import { ControlStreamKind, type ControlStreamRef } from './streams.js';
 
 export const ControlEventType = {

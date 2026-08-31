@@ -1,4 +1,4 @@
-import { WrongExpectedSequenceError } from '../../kernel/index.js';
+import { WrongExpectedSequenceError } from '@atolis-hq/eventing';
 
 /** Recover a competing append only when the caller's durable intent is now visible. */
 export async function appendWithIntentRecovery<View>(input: {

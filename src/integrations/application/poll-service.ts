@@ -1,4 +1,4 @@
-import type { EventJournal } from '../../kernel/index.js';
+import type { EventJournal } from '@atolis-hq/eventing';
 import type { ProviderInstance } from '../contracts/provider.js';
 import { integrationStream } from '../contracts/streams.js';
 

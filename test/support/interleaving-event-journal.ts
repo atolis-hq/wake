@@ -1,10 +1,10 @@
 import type {
-  EntityRef,
   EventData,
   EventEnvelope,
   EventJournal,
   JournalChangeSignal,
-} from '../../src/kernel/index.js';
+} from '@atolis-hq/eventing';
+import type { EntityRef } from '../../src/kernel/index.js';
 
 export class InterleavingEventJournal implements EventJournal {
   private waiting = 0;

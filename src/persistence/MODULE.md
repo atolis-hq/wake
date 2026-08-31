@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Filesystem and in-memory implementations of Kernel storage ports and the
-Eventing processor-run serialisation port.
+Filesystem and in-memory implementations of Eventing storage ports and the
+processor-run serialisation port.
 
 ## Owns
 
@@ -48,7 +48,7 @@ processor retry are Eventing policies, not Persistence handlers.
 
 ## Extension rules
 
-Implement Kernel ports and the Eventing serialisation port here. Keep event
+Implement Eventing storage and serialisation ports here. Keep event
 selection, bounded event construction and decoding, handlers, and runtime
 lifecycle in their owning modules. Do not reintroduce draft vocabulary or a
 legacy journal `append` operation.

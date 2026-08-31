@@ -1,9 +1,5 @@
-import {
-  EventActorKind,
-  EventSourceKind,
-  WrongExpectedSequenceError,
-  type Clock,
-} from '../../kernel/index.js';
+import { EventActorKind, EventSourceKind, WrongExpectedSequenceError } from '@atolis-hq/eventing';
+import { type Clock } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import { createExecutionEventData } from '../contracts/event-factory.js';
 import {

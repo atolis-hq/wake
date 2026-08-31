@@ -1,10 +1,10 @@
-import type { z } from 'zod';
 import {
   type EventData,
   type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import type { z } from 'zod';
 import { type ResourceId, type ResourceStreamRef } from '../../resources/index.js';
 import { type WorkItemId, type WorkItemStreamRef } from '../../work/index.js';
 import type { PullRequestActivityOutcome, PullRequestTarget } from '../pr/contracts.js';

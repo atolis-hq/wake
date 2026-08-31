@@ -1,3 +1,4 @@
+import { type EventJournal } from '@atolis-hq/eventing';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { z } from 'zod';
 import { activationId } from '../../../src/activities/contracts/identifiers.js';
@@ -22,7 +23,6 @@ import {
   type ExecutionAttemptContext,
   type WorkspaceProvider,
 } from '../../../src/execution/index.js';
-import { type EventJournal } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

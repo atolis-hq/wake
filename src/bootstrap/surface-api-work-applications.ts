@@ -1,3 +1,4 @@
+import { correlationId, EventActorKind } from '@atolis-hq/eventing';
 import { pullRequestProjection, type PullRequestView } from '../activities/index.js';
 import {
   conversationIdForWorkItem,
@@ -9,7 +10,6 @@ import {
   runsByWorkflowInstanceProjection,
   type RunView,
 } from '../execution/index.js';
-import { correlationId, EventActorKind } from '../kernel/index.js';
 import {
   ApprovalAuthorityKind,
   GroupBudgetExtensionIneligibleError,

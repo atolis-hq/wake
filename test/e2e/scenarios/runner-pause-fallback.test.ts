@@ -1,3 +1,4 @@
+import { correlationId } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { ActivityRegistry, agentActivityDefinition } from '../../../src/activities/index.js';
 import {
@@ -10,7 +11,6 @@ import {
   controlPlaneStream,
   createControlPlaneEventData,
 } from '../../../src/control-plane/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

@@ -1,19 +1,22 @@
-import { expect, it } from 'vitest';
-import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
 import {
   EventProcessorCategory,
   EventProcessorReplayPolicy,
+  createEventData,
   defineEventProcessor,
-} from '../../../src/eventing/index.js';
-import { createEventData, type EntityRef } from '../../../src/kernel/index.js';
+} from '@atolis-hq/eventing';
+import { expect, it } from 'vitest';
+import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
 
+const clock = { now: () => new Date('2026-08-30T00:00:00.000Z') };
+
 it('hosts every registered processor once and reports its durable position health', async () => {
-  const journal = new InMemoryEventJournal({ now: () => new Date('2026-08-30T00:00:00.000Z') });
+  const journal = new InMemoryEventJournal(clock);
   const checkpoints = new InMemoryCheckpointStore();
   await appendFact(journal);
   const handled: string[] = [];
@@ -21,6 +24,7 @@ it('hosts every registered processor once and reports its durable position healt
     journal,
     checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    clock,
   );
   const first = processor('reactor:one', 'reactor-one', async () => {
     handled.push('one');
@@ -57,7 +61,7 @@ it('hosts every registered processor once and reports its durable position healt
 });
 
 it('keeps a degraded processor supervised without stopping a healthy sibling', async () => {
-  const journal = new InMemoryEventJournal({ now: () => new Date('2026-08-30T00:00:00.000Z') });
+  const journal = new InMemoryEventJournal(clock);
   const checkpoints = new InMemoryCheckpointStore();
   await appendFact(journal);
   let healthy = false;
@@ -65,6 +69,7 @@ it('keeps a degraded processor supervised without stopping a healthy sibling', a
     journal,
     checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    clock,
     {
       retryBackoff: async (_failures, signal) =>
         new Promise<void>((resolve) =>
@@ -94,9 +99,10 @@ it('keeps a degraded processor supervised without stopping a healthy sibling', a
 
 it('returns the active common host instead of starting the registry twice', async () => {
   const runtime = new EventProcessorRuntime(
-    new InMemoryEventJournal({ now: () => new Date('2026-08-30T00:00:00.000Z') }),
+    new InMemoryEventJournal(clock),
     new InMemoryCheckpointStore(),
     createInMemoryProcessorRunSerialiser(),
+    clock,
   );
   runtime.register([processor('reactor:waiting', 'waiting', async () => undefined)]);
 

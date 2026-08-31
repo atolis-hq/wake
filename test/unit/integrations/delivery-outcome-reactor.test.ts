@@ -1,12 +1,16 @@
+import {
+  createEventData,
+  eventId,
+  EventProcessorHost,
+  type ProcessorRunSerialiser,
+} from '@atolis-hq/eventing';
 import { copyFile, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { EventProcessorHost, type ProcessorRunSerialiser } from '../../../src/eventing/index.js';
 import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
-import { createEventData, eventId } from '../../../src/kernel/index.js';
 import {
   createInMemoryProcessorRunSerialiser,
   encode,
@@ -291,7 +295,7 @@ it('preserves a live processor outcome while pending reconciliation is in progre
   ]) as DeliveryOutcomeReactor;
   const events = await journal.readAll(0);
   await reactor.react(events[0]!);
-  const host = new EventProcessorHost(journal, new InMemoryCheckpointStore(), serialiseRun);
+  const host = new EventProcessorHost(journal, new InMemoryCheckpointStore(), serialiseRun, clock);
   serialisedCalls = 0;
   blockReconciliation = true;
 

@@ -1,4 +1,13 @@
 import {
+  correlationId,
+  createEventData,
+  createProjectionProcessor,
+  EventProcessorHost,
+  type EventData,
+  type EventEnvelope,
+  type EventProcessor,
+} from '@atolis-hq/eventing';
+import {
   ActivityRegistry,
   createPullRequestService,
   activationId as parseActivationId,
@@ -11,11 +20,6 @@ import {
   type AdvanceResult,
 } from '../../../src/control-plane/index.js';
 import {
-  createProjectionProcessor,
-  EventProcessorHost,
-  type EventProcessor,
-} from '../../../src/eventing/index.js';
-import {
   createExecutionService,
   createRecoveryCoordinator,
   ExecutionCancellationReason,
@@ -24,15 +28,7 @@ import {
   type ExternalExecutionInspector,
   type RunView,
 } from '../../../src/execution/index.js';
-import {
-  correlationId,
-  createEventData,
-  type Clock,
-  type EntityRef,
-  type EventData,
-  type EventEnvelope,
-  type IdGenerator,
-} from '../../../src/kernel/index.js';
+import { type Clock, type EntityRef, type IdGenerator } from '../../../src/kernel/index.js';
 import {
   compileWorkflow,
   createOrchestrationService,
@@ -122,6 +118,7 @@ export class TestWorld {
     this.journal,
     this.checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    this.clock,
   );
 
   private readonly definitionProjectionSubscription = createProjectionProcessor(
@@ -187,6 +184,7 @@ export class TestWorld {
     this.journal,
     this.checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    this.clock,
   );
 
   constructor() {

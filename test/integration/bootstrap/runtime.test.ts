@@ -1,3 +1,17 @@
+import type {
+  CheckpointStore,
+  EventJournal,
+  ProcessorRunSerialiser,
+  ProjectionStore,
+} from '@atolis-hq/eventing';
+import {
+  EventActorKind,
+  EventSourceKind,
+  causationId,
+  correlationId,
+  createEventData,
+  eventId,
+} from '@atolis-hq/eventing';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,7 +33,6 @@ import {
   ControlStreamKind,
   activationSchedulerSubscriptionConsumer,
 } from '../../../src/control-plane/index.js';
-import type { ProcessorRunSerialiser } from '../../../src/eventing/index.js';
 import {
   ExecutionEventType,
   TranscriptStore,
@@ -32,15 +45,6 @@ import {
   issueObservation,
 } from '../../../src/integrations/github/infrastructure/issue-source.js';
 import { DeliveryIntentEventType, integrationStream } from '../../../src/integrations/index.js';
-import type { CheckpointStore, EventJournal, ProjectionStore } from '../../../src/kernel/index.js';
-import {
-  EventActorKind,
-  EventSourceKind,
-  causationId,
-  correlationId,
-  createEventData,
-  eventId,
-} from '../../../src/kernel/index.js';
 import {
   OrchestrationEventType,
   orchestrationGroupId,

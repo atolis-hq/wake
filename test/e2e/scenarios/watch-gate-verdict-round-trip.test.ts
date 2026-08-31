@@ -1,3 +1,4 @@
+import { EventProcessorHost, correlationId, createEventData } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -5,7 +6,6 @@ import {
   ReviewActorKind,
   activityName,
 } from '../../../src/activities/index.js';
-import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   ExecutionEventType,
   RunRepository,
@@ -20,7 +20,6 @@ import {
   InboundTranslator,
   integrationStream,
 } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventData } from '../../../src/kernel/index.js';
 import {
   OrchestrationEventType,
   WatchGateVerdictSignal,
@@ -333,6 +332,7 @@ function processInbound(translator: InboundTranslator, world: TestWorld) {
     world.journal,
     world.checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    world.clock,
   ).runOnce(translator.processor);
 }
 

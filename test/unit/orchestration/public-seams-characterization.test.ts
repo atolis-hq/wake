@@ -2,8 +2,8 @@ import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { workId } from '../../support/identities.js';
 
+import { correlationId, type CommandContext } from '@atolis-hq/eventing';
 import { ActivityRegistry, activityName } from '../../../src/activities/index.js';
-import { correlationId, type CommandContext } from '../../../src/kernel/index.js';
 import {
   OrchestrationEventType,
   compileWorkflow,

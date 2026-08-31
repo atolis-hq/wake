@@ -1,17 +1,17 @@
-import { expect, it } from 'vitest';
-import { z } from 'zod';
-import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
-import { createAdvanceOnce } from '../../../src/control-plane/index.js';
-import { EventProcessorHost } from '../../../src/eventing/index.js';
-import { createExecutionService } from '../../../src/execution/index.js';
 import {
   correlationId,
   createEventData,
   eventId,
+  EventProcessorHost,
   type CommandContext,
-  type EntityRef,
   type EventJournal,
-} from '../../../src/kernel/index.js';
+} from '@atolis-hq/eventing';
+import { expect, it } from 'vitest';
+import { z } from 'zod';
+import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
+import { createAdvanceOnce } from '../../../src/control-plane/index.js';
+import { createExecutionService } from '../../../src/execution/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   signalName,
@@ -200,6 +200,7 @@ it('retries the same durable child claim after a crash before checkpointing the 
     journal,
     checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
   await expect(firstHost.runOnce(first.processor)).rejects.toThrow('injected start crash');
   expect(await checkpoints.load('reactor:orchestration.watch')).toBe(0);
@@ -211,6 +212,7 @@ it('retries the same durable child claim after a crash before checkpointing the 
     journal,
     checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
   await restartedHost.runOnce(restarted.processor);
   expect(await checkpoints.load('reactor:orchestration.watch')).toBeGreaterThanOrEqual(

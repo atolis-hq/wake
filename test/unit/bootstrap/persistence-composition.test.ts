@@ -1,14 +1,14 @@
-import { expect, it } from 'vitest';
-import { resolveWakePaths } from '../../../src/bootstrap/index.js';
-import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
 import {
   createEventData,
   InProcessJournalChangeSignal,
-  type EntityRef,
   type EventData,
   type EventEnvelope,
   type EventJournal,
-} from '../../../src/kernel/index.js';
+} from '@atolis-hq/eventing';
+import { expect, it } from 'vitest';
+import { resolveWakePaths } from '../../../src/bootstrap/index.js';
+import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 it('serializes appends shared by resident runtime loops', async () => {

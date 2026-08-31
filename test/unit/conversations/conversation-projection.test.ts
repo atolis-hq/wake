@@ -1,10 +1,10 @@
+import { createEventData } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import {
   conversationId,
   conversationProjection,
   conversationStream,
 } from '../../../src/conversations/index.js';
-import { createEventData } from '../../../src/kernel/index.js';
 import { workId } from '../../support/identities.js';
 
 it('projects entries by conversation stream', () => {

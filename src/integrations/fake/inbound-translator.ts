@@ -1,3 +1,13 @@
+import type { EventEnvelope } from '@atolis-hq/eventing';
+import {
+  correlationId,
+  defineEventProcessor,
+  EventActorKind,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  type CommandContext,
+  type EventProcessor,
+} from '@atolis-hq/eventing';
 import { z } from 'zod';
 import {
   PullRequestCheckState,
@@ -5,14 +15,6 @@ import {
   ReviewActorKind,
   ReviewerAuthorizationSource,
 } from '../../activities/index.js';
-import {
-  defineEventProcessor,
-  EventProcessorCategory,
-  EventProcessorReplayPolicy,
-  type EventProcessor,
-} from '../../eventing/index.js';
-import type { EventEnvelope } from '../../kernel/index.js';
-import { correlationId, EventActorKind, type CommandContext } from '../../kernel/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,

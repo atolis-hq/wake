@@ -1,5 +1,5 @@
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { ExecutionEventType } from '../execution/index.js';
-import type { ProjectionDefinition } from '../kernel/index.js';
 import { WorkEventType } from '../work/index.js';
 
 export interface AnalyticsProjectionView {

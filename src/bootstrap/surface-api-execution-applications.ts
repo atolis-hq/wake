@@ -1,10 +1,10 @@
+import { correlationId, EventActorKind } from '@atolis-hq/eventing';
 import {
   ControlStreamKind,
   ineligibleRunners,
   type ControlPlaneView,
 } from '../control-plane/index.js';
 import { ExecutionFailureCode, RunStatus, type RunView } from '../execution/index.js';
-import { correlationId, EventActorKind } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';

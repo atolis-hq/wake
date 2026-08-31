@@ -1,3 +1,4 @@
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { ActivityOutcomeKind } from '../activities/index.js';
 import {
   agentTokenUsage,
@@ -6,7 +7,6 @@ import {
   selectRunExecutionEvent,
   type RunExecutionEventData,
 } from '../execution/index.js';
-import type { ProjectionDefinition } from '../kernel/index.js';
 import {
   isApprovalAwaitingSignalKind,
   OrchestrationEventType,

@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { resId, workId } from '../../support/identities.js';
 
 import {
+  createEventData,
+  createProjectionProcessor,
+  EventProcessorHost,
+  type EventEnvelope,
+} from '@atolis-hq/eventing';
+import {
   activityProjectionDefinitions,
   pullRequestProjection,
 } from '../../../src/activities/index.js';
-import { createProjectionProcessor, EventProcessorHost } from '../../../src/eventing/index.js';
-import { createEventData, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
   createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
@@ -91,6 +95,7 @@ describe('pullRequestProjection', () => {
       journal,
       new InMemoryCheckpointStore(),
       createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     );
 
     expect(activityProjectionDefinitions.map((definition) => definition.name)).toContain(

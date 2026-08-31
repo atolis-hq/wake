@@ -2,7 +2,7 @@ import {
   EventProcessorCategory,
   EventProcessorReplayPolicy,
   type EventProcessor,
-} from '../contracts/event-processor.js';
+} from '../subscriptions/event-processor.js';
 
 export const maximumProcessorBatchSize = 10_000;
 

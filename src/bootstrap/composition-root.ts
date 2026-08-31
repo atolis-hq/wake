@@ -1,3 +1,9 @@
+import {
+  type CheckpointStore,
+  type EventJournal,
+  type ProcessorRunSerialiser,
+  type ProjectionStore,
+} from '@atolis-hq/eventing';
 import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
 import {
   DispatchPolicy,
@@ -13,7 +19,6 @@ import {
   type ScheduleCheckpointStore,
 } from '../control-plane/index.js';
 import { createConversationService } from '../conversations/index.js';
-import { type ProcessorRunSerialiser } from '../eventing/index.js';
 import {
   ExecutionCancellationReason,
   ExternalExecutionState,
@@ -37,14 +42,7 @@ import type {
   ProviderCompositionFailure,
   ProviderInstance,
 } from '../integrations/index.js';
-import {
-  SystemClock,
-  UlidIdGenerator,
-  type CheckpointStore,
-  type Clock,
-  type EventJournal,
-  type ProjectionStore,
-} from '../kernel/index.js';
+import { SystemClock, UlidIdGenerator, type Clock } from '../kernel/index.js';
 import { compileWorkflow, createOrchestrationService } from '../orchestration/index.js';
 import {
   createResourceLookup,
@@ -162,6 +160,7 @@ export async function createCompositionRoot(
     journal,
     checkpoints,
     subscriptionRunSerialiser,
+    clock,
   );
   const work = createWorkService(journal);
   const conversations = createConversationService(journal);

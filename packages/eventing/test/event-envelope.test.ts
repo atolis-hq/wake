@@ -1,14 +1,17 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   createEventData,
-  createRelation,
-  type Brand,
-  type EntityRef,
   type EventData,
   type EventDataInput,
   type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
+  type StreamRef,
+} from '@atolis-hq/eventing';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import {
+  createRelation,
+  type Brand,
+  type EntityRef,
   type RelationDefinition,
 } from '../../../src/kernel/index.js';
 
@@ -43,7 +46,7 @@ describe('event envelope', () => {
   it('maps each event type to its exact payload and envelope stream', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
 
-    type WorkStream = EntityRef<'work-item', WorkItemId>;
+    type WorkStream = StreamRef<'work-item', WorkItemId>;
 
     interface WorkEventPayloads {
       readonly 'work.item-created': { readonly objective: string };
@@ -55,7 +58,7 @@ describe('event envelope', () => {
     type WorkEventData = EventDataUnion<WorkEventPayloads>;
 
     expectTypeOf<WorkEvent>().toEqualTypeOf<
-      EventEnvelope<EventDataUnion<WorkEventPayloads>, EntityRef<'work-item', WorkItemId>>
+      EventEnvelope<EventDataUnion<WorkEventPayloads>, StreamRef<'work-item', WorkItemId>>
     >();
     expectTypeOf<Extract<WorkEventData, { eventType: 'work.item-closed' }>>().toEqualTypeOf<
       EventData<'work.item-closed', { readonly reason: string }>
@@ -81,7 +84,7 @@ describe('event envelope', () => {
     const workItemId = 'work-1' as WorkItemId;
 
     const data = createEventData(workDataInput());
-    const envelope: EventEnvelope<typeof data, EntityRef<'work-item', WorkItemId>> = {
+    const envelope: EventEnvelope<typeof data, StreamRef<'work-item', WorkItemId>> = {
       event: data,
       stream: { kind: 'work-item', id: workItemId },
       recordedAt: '2026-07-30T12:00:01.000Z',

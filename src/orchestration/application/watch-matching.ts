@@ -1,9 +1,9 @@
+import type { CommandContext } from '@atolis-hq/eventing';
 import {
   ActivityEventType,
   PullRequestCheckState,
   selectActivityEvent,
 } from '../../activities/index.js';
-import type { CommandContext } from '../../kernel/index.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import type { StartWorkflow } from './start-workflow.js';
 

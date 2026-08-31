@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
+import { correlationId } from '@atolis-hq/eventing';
 import {
   createPullRequestService,
   decidePullRequestAuthority,
 } from '../../../src/activities/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';

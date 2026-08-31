@@ -1,4 +1,4 @@
-import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
+import { EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import { createOrchestrationEventData } from '../contracts/event-factory.js';
 import type {
   ChildCoordinationEventData,

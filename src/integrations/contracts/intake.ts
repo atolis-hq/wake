@@ -1,5 +1,4 @@
-import type { EventProcessor } from '../../eventing/index.js';
-import type { EventData } from '../../kernel/index.js';
+import type { EventData, EventProcessor } from '@atolis-hq/eventing';
 
 export type ProviderEventData = EventData<string, unknown>;
 

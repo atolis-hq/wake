@@ -1,10 +1,10 @@
-import { isDeepStrictEqual } from 'node:util';
 import {
   EventSourceKind,
   WrongExpectedSequenceError,
   type CommandContext,
   type EventJournal,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { isDeepStrictEqual } from 'node:util';
 import type { WorkItemId } from '../../work/index.js';
 import type { DiscoverResource } from '../contracts/commands.js';
 import { createResourceEventData } from '../contracts/event-factory.js';

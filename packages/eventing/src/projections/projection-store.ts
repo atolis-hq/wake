@@ -1,4 +1,4 @@
-import type { EventEnvelope } from './events.js';
+import type { EventEnvelope } from '../contracts/events.js';
 
 export interface StoredProjection<Value = unknown> {
   readonly namespace: string;

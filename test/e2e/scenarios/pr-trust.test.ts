@@ -1,11 +1,10 @@
+import { createEventData, EventProcessorHost } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
-import { EventProcessorHost } from '../../../src/eventing/index.js';
 import { workId } from '../../support/identities.js';
 import { configureIntakeRouting } from '../support/intake-routing.js';
 
 import {
   BuiltInAdapterId,
-  createEventData,
   githubReviewObservation,
   InboundTranslator,
   integrationStream,
@@ -52,6 +51,7 @@ function processInbound(translator: InboundTranslator, world: TestWorld) {
     world.journal,
     world.checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    world.clock,
   ).runOnce(translator.processor);
 }
 

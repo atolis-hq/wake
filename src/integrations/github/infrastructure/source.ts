@@ -1,4 +1,4 @@
-import type { CheckpointStore } from '../../../kernel/index.js';
+import type { CheckpointStore } from '@atolis-hq/eventing';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ExternalEventSource } from '../../contracts/intake.js';
 import { gitHubIssueQueryFilters } from '../application/intake-policy.js';

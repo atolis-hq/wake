@@ -1,3 +1,4 @@
+import { createEventData } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../../src/activities/index.js';
@@ -8,7 +9,6 @@ import {
   runStream,
 } from '../../../../src/execution/index.js';
 import { applyWatchGateVerdictSignal } from '../../../../src/integrations/github/application/inbound-watch-gate-signals.js';
-import { createEventData } from '../../../../src/kernel/index.js';
 import { workflowName } from '../../../../src/orchestration/index.js';
 import { TestWorld } from '../../../e2e/support/world.js';
 

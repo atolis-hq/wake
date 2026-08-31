@@ -1,4 +1,4 @@
-import type { JournalChangeSignal } from '../contracts/journal-change-signal.js';
+import type { JournalChangeSignal } from './journal-change-signal.js';
 
 export class InProcessJournalChangeSignal implements JournalChangeSignal {
   private waiters: Array<() => void> = [];

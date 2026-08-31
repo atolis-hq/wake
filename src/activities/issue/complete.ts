@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { EventActorKind, EventSourceKind, type EventJournal } from '../../kernel/index.js';
+import { EventActorKind, EventSourceKind, type EventJournal } from '@atolis-hq/eventing';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,

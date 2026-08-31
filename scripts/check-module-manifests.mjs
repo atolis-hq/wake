@@ -5,6 +5,8 @@ import ts from 'typescript';
 
 import { discoverCatalogues } from './lib/contract-vocabulary-catalogues.mjs';
 
+const workspacePackageDependencies = new Set(['eventing']);
+
 export async function checkModuleManifests(root = 'src') {
   const resolvedRoot = resolve(root);
   const modules = (await readdir(resolvedRoot, { withFileTypes: true }))
@@ -32,7 +34,8 @@ export async function checkModuleManifests(root = 'src') {
 
   for (const [name, manifest] of manifests) {
     for (const dependency of manifest.dependencies ?? []) {
-      if (!manifests.has(dependency)) failures.push(`${name}: unknown dependency ${dependency}`);
+      if (!manifests.has(dependency) && !workspacePackageDependencies.has(dependency))
+        failures.push(`${name}: unknown dependency ${dependency}`);
       if (dependency === name) failures.push(`${name}: cannot depend on itself`);
     }
   }

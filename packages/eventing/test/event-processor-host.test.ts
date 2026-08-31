@@ -1,18 +1,20 @@
-import { expect, it, vi } from 'vitest';
 import {
   EventProcessorCategory,
   EventProcessorHost,
   EventProcessorReplayPolicy,
   createBatchEventProcessor,
+  createEventData,
   defineEventProcessor,
-} from '../../../src/eventing/index.js';
-import { createEventData, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
+  type EventEnvelope,
+  type StreamRef,
+} from '@atolis-hq/eventing';
+import { expect, it, vi } from 'vitest';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
-import { FakeClock } from '../../e2e/support/world.js';
+import { FakeClock } from '../../../test/e2e/support/world.js';
 
 it('requires an explicit run serialiser at construction', () => {
   expect(BatchProcessorHost).toBeTypeOf('function');
@@ -461,7 +463,12 @@ it('runs through an explicit target without checkpointing past it', async () => 
   const journal = new InMemoryEventJournal(new FakeClock());
   await appendFacts(journal, 3);
   const checkpoints = new InMemoryCheckpointStore();
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
   const handled: number[][] = [];
 
   const result = await host.runThrough(
@@ -489,6 +496,7 @@ it('retries an initial checkpoint load failure without stopping the resident pro
     journal,
     new FailFirstLoadCheckpointStore(),
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
     { retryBackoff: async () => retryObserved.resolve() },
   );
   const run = host.start([
@@ -513,6 +521,7 @@ it('publishes a healthy head and bounds both error name and message', async () =
     journal,
     new InMemoryCheckpointStore(),
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
     {
       retryBackoff: async () => {
         retryObserved.resolve();
@@ -564,6 +573,7 @@ it('retries a health head read failure without stopping its sibling', async () =
     journal,
     new InMemoryCheckpointStore(),
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
     { retryBackoff: async () => retryObserved.resolve() },
   );
   const run = host.start([
@@ -597,7 +607,12 @@ it('does not invoke a batch handler or checkpoint after cancellation during a ga
   const checkpoints = new InMemoryCheckpointStore();
   const controller = new AbortController();
   let handled = false;
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
   const pass = host.runOnce(
     batchProcessor({
       consumer: 'gated-cancel',
@@ -617,7 +632,7 @@ it('does not invoke a batch handler or checkpoint after cancellation during a ga
 });
 
 async function appendFacts(journal: InMemoryEventJournal, count: number): Promise<void> {
-  const stream: EntityRef<'subscription-test', 'one'> = { kind: 'subscription-test', id: 'one' };
+  const stream: StreamRef<'subscription-test', 'one'> = { kind: 'subscription-test', id: 'one' };
   for (let index = 0; index < count; index += 1) {
     await journal.appendToStream(stream, index, [
       createEventData({
@@ -682,9 +697,15 @@ class BatchProcessorHost {
     journal: InMemoryEventJournal,
     checkpoints: InMemoryCheckpointStore,
     serialiseRun: ReturnType<typeof createInMemoryProcessorRunSerialiser>,
-    options?: ConstructorParameters<typeof EventProcessorHost>[3],
+    options?: ConstructorParameters<typeof EventProcessorHost>[4],
   ) {
-    this.host = new EventProcessorHost(journal, checkpoints, serialiseRun, options);
+    this.host = new EventProcessorHost(
+      journal,
+      checkpoints,
+      serialiseRun,
+      new FakeClock(),
+      options,
+    );
   }
 
   start(subscriptions: readonly BatchSubscription[], signal?: AbortSignal) {

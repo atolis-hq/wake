@@ -1,5 +1,5 @@
+import type { ProcessorRunSerialiser } from '@atolis-hq/eventing';
 import { join } from 'node:path';
-import type { ProcessorRunSerialiser } from '../../eventing/index.js';
 import { acquireFileLock } from '../filesystem/file-lock.js';
 import { assertWellFormedUtf16 } from '../filesystem/storage-name.js';
 

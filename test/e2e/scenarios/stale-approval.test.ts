@@ -3,13 +3,13 @@ import { workflowName } from '../../../src/orchestration/contracts/identifiers.j
 import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
+import { createEventData } from '@atolis-hq/eventing';
 import {
   createPullRequestMergeAuthorityGate,
   decidePullRequestAuthority,
   pullRequestProjection,
   type PullRequestAuthorityInput,
 } from '../../../src/activities/index.js';
-import { createEventData } from '../../../src/kernel/index.js';
 import type { resourceId } from '../../../src/resources/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import {} from '../../../src/work/index.js';

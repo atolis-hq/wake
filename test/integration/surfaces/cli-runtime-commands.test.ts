@@ -1,12 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createSurfaceApplications, type CompositionRoot } from '../../../src/bootstrap/index.js';
 import {
   EventActorKind,
   EventSourceKind,
   causationId,
   correlationId,
   eventId,
-} from '../../../src/kernel/index.js';
+} from '@atolis-hq/eventing';
+import { describe, expect, it, vi } from 'vitest';
+import { createSurfaceApplications, type CompositionRoot } from '../../../src/bootstrap/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { runWakeCommand, type WakeCliApplications } from '../../../src/surfaces/cli/main.js';
 

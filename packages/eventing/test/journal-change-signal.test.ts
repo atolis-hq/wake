@@ -1,5 +1,5 @@
+import { InProcessJournalChangeSignal } from '@atolis-hq/eventing';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { InProcessJournalChangeSignal } from '../../../src/kernel/index.js';
 
 beforeEach(() => {
   vi.useFakeTimers();

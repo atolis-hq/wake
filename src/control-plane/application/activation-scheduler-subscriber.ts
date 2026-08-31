@@ -4,7 +4,7 @@ import {
   EventProcessorReplayPolicy,
   createBatchEventProcessor,
   type EventProcessor,
-} from '../../eventing/index.js';
+} from '@atolis-hq/eventing';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import type { ActivationScheduler } from './activation-scheduler.js';

@@ -1,4 +1,5 @@
-import { createEventData, type EntityRef, type EventEnvelope } from '../../src/kernel/index.js';
+import { createEventData, type EventEnvelope } from '@atolis-hq/eventing';
+import { type EntityRef } from '../../src/kernel/index.js';
 
 export function eventEnvelope<Type extends string, Payload, Stream extends EntityRef>(
   eventType: Type,

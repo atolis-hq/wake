@@ -1,8 +1,8 @@
+import { createEventData } from '@atolis-hq/eventing';
 import { expect, it, vi } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import { RunRepository } from '../../../src/execution/application/run-repository.js';
 import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
-import { createEventData } from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';

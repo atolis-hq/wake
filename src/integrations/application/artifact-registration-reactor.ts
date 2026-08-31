@@ -1,19 +1,17 @@
-import { reportedArtifactSchema } from '../../activities/index.js';
-import {
-  defineEventProcessor,
-  EventProcessorCategory,
-  EventProcessorReplayPolicy,
-  type EventProcessor,
-} from '../../eventing/index.js';
 import {
   cachedJournalView,
+  defineEventProcessor,
   EventActorKind,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
   EventSourceKind,
   type CachedJournalView,
   type EventEnvelope,
   type EventJournal,
-  type IdGenerator,
-} from '../../kernel/index.js';
+  type EventProcessor,
+} from '@atolis-hq/eventing';
+import { reportedArtifactSchema } from '../../activities/index.js';
+import { type IdGenerator } from '../../kernel/index.js';
 import {
   OrchestrationEventType,
   selectWorkflowOrchestrationEvent,

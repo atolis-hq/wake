@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
 import {
   EventProcessorCategory,
   EventProcessorReplayPolicy,
   defineEventProcessor,
-} from '../../../src/eventing/index.js';
+} from '@atolis-hq/eventing';
+import { describe, expect, it } from 'vitest';
 import { DurableFakeDeliveryProvider } from '../../../src/integrations/fake/durable-delivery-provider.js';
 import {
   ProviderRegistry,

@@ -1,4 +1,5 @@
 /* eslint-disable complexity, max-lines-per-function */
+import type { CommandContext } from '@atolis-hq/eventing';
 import {
   ActivityFailureCode,
   ActivityOutcomeKind,
@@ -12,7 +13,6 @@ import {
   RunStatus,
   WorkspaceMode,
 } from '../../execution/index.js';
-import type { CommandContext } from '../../kernel/index.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
 import { WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';

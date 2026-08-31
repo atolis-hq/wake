@@ -1,3 +1,4 @@
+import { EventActorKind, JOURNAL_CHANGE_FALLBACK_MS, correlationId } from '@atolis-hq/eventing';
 import type { FastifyInstance } from 'fastify';
 import { execFile as nodeExecFile, spawn } from 'node:child_process';
 import { access, copyFile, mkdir, writeFile as writeFileContent } from 'node:fs/promises';
@@ -19,7 +20,6 @@ import {
   isActiveRunStatus,
   loadPromptTemplate,
 } from '../execution/index.js';
-import { EventActorKind, JOURNAL_CHANGE_FALLBACK_MS, correlationId } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
   DockerProcessError,

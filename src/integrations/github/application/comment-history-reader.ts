@@ -1,4 +1,4 @@
-import type { EventEnvelope, EventJournal } from '../../../kernel/index.js';
+import type { EventEnvelope, EventJournal } from '@atolis-hq/eventing';
 import { ResourceCorrelationRole, type ResourceService } from '../../../resources/index.js';
 import type { WorkItemId } from '../../../work/index.js';
 import { adapterId } from '../../contracts/identifiers.js';

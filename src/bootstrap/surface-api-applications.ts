@@ -1,10 +1,10 @@
+import type { EventEnvelope, EventJournal } from '@atolis-hq/eventing';
 import {
   ActivationSchedulerSubscriptionStatus,
   ControlStreamKind,
   type ActivationSchedulerSubscriptionHealthStatus,
 } from '../control-plane/index.js';
 import { type RunStatus } from '../execution/index.js';
-import type { EventEnvelope, EventJournal } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
 import {

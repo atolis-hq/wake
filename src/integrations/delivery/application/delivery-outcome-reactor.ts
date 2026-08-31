@@ -1,28 +1,25 @@
-import { z } from 'zod';
-import { activationId, ActivityOutcomeKind } from '../../../activities/index.js';
-import { type ConversationService } from '../../../conversations/index.js';
 import {
-  defineEventProcessor,
-  EventProcessorCategory,
-  EventProcessorReplayPolicy,
-  type EventProcessor,
-  type ProcessorRunSerialiser,
-} from '../../../eventing/index.js';
-import {
-  brandedStringSchema,
   correlationId,
+  defineEventProcessor,
   entityRefSchema,
   EventActorKind,
   eventDataSchema,
   eventEnvelopeSchema,
   eventId,
-  offsetIsoTimestampSchema,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
   type CorrelationId,
   type EventEnvelope,
   type EventId,
   type EventJournal,
+  type EventProcessor,
+  type ProcessorRunSerialiser,
   type ProjectionStore,
-} from '../../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { activationId, ActivityOutcomeKind } from '../../../activities/index.js';
+import { type ConversationService } from '../../../conversations/index.js';
+import { brandedStringSchema, offsetIsoTimestampSchema } from '../../../kernel/index.js';
 import {
   ActivityActivationStatus,
   workflowInstanceId,

@@ -1,7 +1,8 @@
 /* eslint-disable max-lines */
+import type { CommandContext, EventJournal } from '@atolis-hq/eventing';
+import { correlationId, EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import type { ActivityOutcome, ActivityRegistry } from '../../activities/index.js';
-import type { Clock, CommandContext, EventJournal } from '../../kernel/index.js';
-import { correlationId, EventActorKind, EventSourceKind } from '../../kernel/index.js';
+import type { Clock } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import type { RecoveryCoordinator } from '../contracts/control-plane.js';
 import {

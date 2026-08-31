@@ -1,4 +1,5 @@
 /* eslint-disable max-lines */
+import type { EventJournal } from '@atolis-hq/eventing';
 import {
   ActivityOutcomeKind,
   ReviewActorKind,
@@ -8,7 +9,7 @@ import {
   isReviewAuthorized,
   type PullRequestService,
 } from '../../../activities/index.js';
-import type { EventJournal, IdGenerator } from '../../../kernel/index.js';
+import type { IdGenerator } from '../../../kernel/index.js';
 import {
   ApprovalAuthorityKind,
   isGroupBudgetExtensionEligible,

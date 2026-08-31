@@ -1,5 +1,6 @@
+import { type EventJournal } from '@atolis-hq/eventing';
 import { type ActivityExecutionContext, type ActivityRegistry } from '../../activities/index.js';
-import { type Clock, type EventJournal, type IdGenerator } from '../../kernel/index.js';
+import { type Clock, type IdGenerator } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type RunExecutionEventData } from '../contracts/events.js';

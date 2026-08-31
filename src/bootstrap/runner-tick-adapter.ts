@@ -1,9 +1,9 @@
+import { EventProcessorCategory, type EventProcessor } from '@atolis-hq/eventing';
 import type {
   ActivationSchedulerSubscriber,
   AdvanceOnce,
   RunnerPipeline,
 } from '../control-plane/index.js';
-import { EventProcessorCategory, type EventProcessor } from '../eventing/index.js';
 
 export interface RunnerTickRuntime {
   readonly runnerPipeline: RunnerPipeline;

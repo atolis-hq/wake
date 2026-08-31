@@ -1,17 +1,14 @@
-import type {
-  CheckpointStore,
-  EventEnvelope,
-  EventJournal,
-  ProjectionDefinition,
-  ProjectionStore,
-} from '../../kernel/index.js';
+import type { EventEnvelope } from '../contracts/events.js';
+import type { ProcessorRunSerialiser } from '../runtime/processor-run-serialiser.js';
+import type { CheckpointStore } from '../store/checkpoint-store.js';
+import type { EventJournal } from '../store/event-journal.js';
 import {
   defineEventProcessor,
   EventProcessorCategory,
   EventProcessorReplayPolicy,
   type EventProcessor,
-} from '../contracts/event-processor.js';
-import type { ProcessorRunSerialiser } from '../contracts/processor-run-serialiser.js';
+} from '../subscriptions/event-processor.js';
+import type { ProjectionDefinition, ProjectionStore } from './projection-store.js';
 
 const projectionBatchSize = 100;
 

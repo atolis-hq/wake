@@ -1,4 +1,4 @@
-import type { EventEnvelope } from '../../../src/kernel/index.js';
+import type { EventEnvelope } from '@atolis-hq/eventing';
 
 export function formatTrace(events: readonly EventEnvelope[]): string {
   return events

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
+import { createEventData } from '@atolis-hq/eventing';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   activationId,
@@ -10,7 +11,6 @@ import {
   type PullRequestDenialCode,
   selectActivityEvent,
 } from '../../../src/activities/index.js';
-import { createEventData } from '../../../src/kernel/index.js';
 import { signalName } from '../../../src/orchestration/contracts/identifiers.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { workItemStream } from '../../../src/work/index.js';

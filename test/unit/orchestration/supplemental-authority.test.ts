@@ -1,5 +1,5 @@
+import { EventActorKind } from '@atolis-hq/eventing';
 import { describe, expect, it } from 'vitest';
-import { EventActorKind } from '../../../src/kernel/index.js';
 import { isAuthorisedActor } from '../../../src/orchestration/domain/supplemental-policy.js';
 import { ApprovalAuthorityKind } from '../../../src/orchestration/index.js';
 

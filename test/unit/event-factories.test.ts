@@ -1,3 +1,4 @@
+import { eventId } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import {
   activationId,
@@ -19,7 +20,6 @@ import {
   createDeliveryEventData,
   DeliveryEventType,
 } from '../../src/integrations/index.js';
-import { eventId } from '../../src/kernel/index.js';
 import {
   childOrchestrationGroupStreamId,
   createOrchestrationEventData,

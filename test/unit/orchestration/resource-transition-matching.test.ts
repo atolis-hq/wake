@@ -1,3 +1,4 @@
+import { correlationId, type CommandContext } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -6,7 +7,6 @@ import {
   ActivityRegistry,
   PullRequestState,
 } from '../../../src/activities/index.js';
-import { correlationId, type CommandContext } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

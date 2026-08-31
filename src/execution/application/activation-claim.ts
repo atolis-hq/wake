@@ -1,10 +1,6 @@
+import { EventActorKind, EventSourceKind, type EventJournal } from '@atolis-hq/eventing';
 import type { ActivationId } from '../../activities/index.js';
-import {
-  EventActorKind,
-  EventSourceKind,
-  type Clock,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { type Clock } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import { createExecutionEventData } from '../contracts/event-factory.js';
 import {

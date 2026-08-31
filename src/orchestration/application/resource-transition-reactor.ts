@@ -1,9 +1,11 @@
 import {
+  correlationId,
   defineEventProcessor,
+  EventActorKind,
   EventProcessorCategory,
   EventProcessorReplayPolicy,
-} from '../../eventing/index.js';
-import { correlationId, EventActorKind, type CommandContext } from '../../kernel/index.js';
+  type CommandContext,
+} from '@atolis-hq/eventing';
 import type { TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';

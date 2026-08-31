@@ -1,4 +1,4 @@
-import type { ProjectionDefinition } from '../../kernel/index.js';
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { selectWorkEvent, WorkEventType } from '../contracts/events.js';
 import type { WorkItemView } from '../contracts/views.js';
 import { WorkStatus } from '../contracts/vocabulary.js';

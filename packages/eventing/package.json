@@ -1,7 +1,7 @@
 {
   "name": "@atolis-hq/eventing",
   "version": "0.1.0",
-  "description": "Event contracts and in-memory event journal for Wake",
+  "description": "Persistence-neutral event contracts and processor runtime for Wake",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -14,10 +14,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./memory": {
-      "types": "./dist/memory.d.ts",
-      "default": "./dist/memory.js"
     }
   },
   "files": [
@@ -32,6 +28,10 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc --build tsconfig.json"
+    "build": "tsc --build tsconfig.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "zod": "^4.1.5"
   }
 }

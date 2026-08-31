@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { EventProcessorHost } from '../../../src/eventing/index.js';
+import { createEventData, EventProcessorHost } from '@atolis-hq/eventing';
 import {
   BuiltInAdapterId,
-  createEventData,
   InboundTranslator,
   integrationStream,
   type ExternalWorkObservedPayload,
@@ -65,12 +64,14 @@ describe(`${scenario.id} ${scenario.title}`, () => {
       journal,
       checkpoints,
       createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     ).runOnce(translator.processor);
     await checkpoints.reset('reactor:integration.github.inbound');
     await new EventProcessorHost(
       journal,
       checkpoints,
       createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     ).runOnce(translator.processor);
 
     const resourceIdValue = await lookup.resourceIdForExternalKey({

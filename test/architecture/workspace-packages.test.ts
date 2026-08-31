@@ -58,9 +58,10 @@ describe('eventing workspace packages', () => {
     expect(eventing.files).toEqual(expect.arrayContaining(['dist', 'README.md', 'LICENSE']));
     expect(filesystem.files).toEqual(expect.arrayContaining(['dist', 'README.md', 'LICENSE']));
     expect(eventing.exports).toHaveProperty('.');
-    expect(eventing.exports).toHaveProperty('./memory');
+    expect(eventing.exports).not.toHaveProperty('./memory');
     expect(filesystem.exports).toHaveProperty('.');
     expect(eventing.scripts?.build).toBe('tsc --build tsconfig.json');
+    expect(eventing.scripts?.test).toBe('vitest run --config vitest.config.ts');
     expect(filesystem.scripts?.build).toBe('tsc --build tsconfig.json');
     expect(filesystem.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);
     expect(wake.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);

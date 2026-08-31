@@ -1,4 +1,4 @@
-import type { ProjectionStore, StoredProjection } from '../../kernel/index.js';
+import type { ProjectionStore, StoredProjection } from '@atolis-hq/eventing';
 
 export class InMemoryProjectionStore implements ProjectionStore {
   private readonly values = new Map<string, StoredProjection>();

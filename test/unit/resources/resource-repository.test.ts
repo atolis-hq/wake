@@ -1,5 +1,5 @@
+import { createEventData } from '@atolis-hq/eventing';
 import { expect, it, vi } from 'vitest';
-import { createEventData } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {
   ResourceEventType,

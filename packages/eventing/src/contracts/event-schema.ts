@@ -1,7 +1,23 @@
 import { z } from 'zod';
 import { EventActorKind, EventSourceKind, type EventEnvelope } from './events.js';
 import { causationId, correlationId, eventId } from './identifiers.js';
-import { brandedStringSchema, offsetIsoTimestampSchema } from './schema.js';
+
+const offsetIsoTimestampSchema = z.iso.datetime({ offset: true });
+
+function brandedStringSchema<Output extends string>(construct: (value: string) => Output) {
+  return z.string().transform((value, context) => {
+    try {
+      return construct(value);
+    } catch (error) {
+      context.addIssue({
+        code: 'custom',
+        input: value,
+        message: error instanceof Error ? error.message : 'Invalid branded string',
+      });
+      return z.NEVER;
+    }
+  });
+}
 
 const nonEmptyString = z.string().refine((value) => value.trim().length > 0, {
   message: 'must not be empty',

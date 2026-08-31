@@ -1,3 +1,9 @@
+import {
+  correlationId,
+  type CheckpointStore,
+  type EventJournal,
+  type ProjectionStore,
+} from '@atolis-hq/eventing';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,13 +18,7 @@ import {
   type CompositionRoot,
 } from '../../../src/bootstrap/index.js';
 import type { ExternalDeliveryAdapter } from '../../../src/integrations/index.js';
-import {
-  correlationId,
-  type CheckpointStore,
-  type Clock,
-  type EventJournal,
-  type ProjectionStore,
-} from '../../../src/kernel/index.js';
+import { type Clock } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

@@ -1,6 +1,9 @@
-import { activityProjectionDefinitions } from '../activities/index.js';
-import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
-import { conversationProjection } from '../conversations/index.js';
+import type {
+  CheckpointStore,
+  EventJournal,
+  ProjectionDefinition,
+  ProjectionStore,
+} from '@atolis-hq/eventing';
 import {
   ProjectionRebuilder,
   createProjectionProcessor,
@@ -8,15 +11,12 @@ import {
   type EventProcessorHealth,
   type EventProcessorHostRun,
   type ProcessorRunSerialiser,
-} from '../eventing/index.js';
+} from '@atolis-hq/eventing';
+import { activityProjectionDefinitions } from '../activities/index.js';
+import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
+import { conversationProjection } from '../conversations/index.js';
 import { executionProjection, runsByWorkflowInstanceProjection } from '../execution/index.js';
 import { deliveryProjectionDefinitions, type DeliveryIntentView } from '../integrations/index.js';
-import type {
-  CheckpointStore,
-  EventJournal,
-  ProjectionDefinition,
-  ProjectionStore,
-} from '../kernel/index.js';
 import {
   orchestrationProjection,
   workflowDefinitionsProjection,

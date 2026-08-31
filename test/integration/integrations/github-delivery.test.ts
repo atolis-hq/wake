@@ -1,3 +1,4 @@
+import { eventId } from '@atolis-hq/eventing';
 import { describe, expect, it, vi } from 'vitest';
 import { MergeMethod } from '../../../src/activities/index.js';
 import { translateGitHubOutbound } from '../../../src/integrations/github/application/outbound-translator.js';
@@ -8,7 +9,6 @@ import {
   DeliveryState,
 } from '../../../src/integrations/github/index.js';
 import { createGitHubDelivery } from '../../../src/integrations/github/infrastructure/delivery.js';
-import { eventId } from '../../../src/kernel/index.js';
 import { BuiltInResourceKind } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
 

@@ -1,3 +1,4 @@
+import { causationId, correlationId, eventId, type EventEnvelope } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import {
   ControlEventType,
@@ -5,12 +6,6 @@ import {
   decodeControlEvent,
   selectControlEvent,
 } from '../../../src/control-plane/index.js';
-import {
-  causationId,
-  correlationId,
-  eventId,
-  type EventEnvelope,
-} from '../../../src/kernel/index.js';
 
 const envelope = (eventType: string, payload: unknown): EventEnvelope => ({
   event: {

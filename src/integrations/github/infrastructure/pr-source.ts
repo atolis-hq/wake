@@ -1,3 +1,4 @@
+import { EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import { createHash } from 'node:crypto';
 import {
   PullRequestCheckState,
@@ -5,7 +6,6 @@ import {
   ReviewActorKind,
   type PullRequestCheckState as PullRequestCheckStateValue,
 } from '../../../activities/index.js';
-import { EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
 import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';

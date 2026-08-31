@@ -1,3 +1,4 @@
+import type { EventJournal } from '@atolis-hq/eventing';
 import {
   PullRequestCheckState,
   type AgentContextComment,
@@ -9,7 +10,6 @@ import {
   type ConversationEntryView,
   type ConversationService,
 } from '../../../conversations/index.js';
-import type { EventJournal } from '../../../kernel/index.js';
 import {
   BuiltInResourceKind,
   ResourceCorrelationRole,

@@ -1,4 +1,4 @@
-import { EventSourceKind, type CommandContext } from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext } from '@atolis-hq/eventing';
 import {
   createActivityEventData,
   type ActivityEventDataInput,

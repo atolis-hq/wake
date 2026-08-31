@@ -1,5 +1,5 @@
+import { EventActorKind, type EventActor } from '@atolis-hq/eventing';
 import { ActivityOutcomeKind } from '../../activities/index.js';
-import { EventActorKind, type EventActor } from '../../kernel/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type {
   SupplementalActivityRequest,

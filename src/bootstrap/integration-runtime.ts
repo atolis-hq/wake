@@ -1,3 +1,11 @@
+import {
+  EventActorKind,
+  type CheckpointStore,
+  type EventJournal,
+  type EventProcessor,
+  type ProcessorRunSerialiser,
+  type ProjectionStore,
+} from '@atolis-hq/eventing';
 import { join } from 'node:path';
 import type { createPullRequestService } from '../activities/index.js';
 import {
@@ -12,7 +20,6 @@ import {
   type createControlPlaneService,
 } from '../control-plane/index.js';
 import type { createConversationService } from '../conversations/index.js';
-import { type EventProcessor, type ProcessorRunSerialiser } from '../eventing/index.js';
 import {
   RunRepository,
   createRuntimeMemoryProfile,
@@ -37,14 +44,7 @@ import {
   type ProviderInstance,
   type WorkflowRouter,
 } from '../integrations/index.js';
-import {
-  EventActorKind,
-  type CheckpointStore,
-  type Clock,
-  type EventJournal,
-  type ProjectionStore,
-  type UlidIdGenerator,
-} from '../kernel/index.js';
+import { type Clock, type UlidIdGenerator } from '../kernel/index.js';
 import {
   compileWorkflowSelectors,
   createPullRequestTransitionEvidence,

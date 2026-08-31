@@ -1,5 +1,5 @@
+import { correlationId } from '@atolis-hq/eventing';
 import { describe, expect, it } from 'vitest';
-import { correlationId } from '../../../src/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService, workItemStream } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';

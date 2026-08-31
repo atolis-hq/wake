@@ -1,3 +1,4 @@
+import { InProcessJournalChangeSignal } from '@atolis-hq/eventing';
 import { expect, it, vi } from 'vitest';
 import {
   createOneShotRunnerAdvance,
@@ -11,7 +12,6 @@ import {
 } from '../../../src/bootstrap/surface-cli-applications.js';
 import { createRunnerPipeline, ResidentHost, TickHost } from '../../../src/control-plane/index.js';
 import { RunStatus } from '../../../src/execution/index.js';
-import { InProcessJournalChangeSignal } from '../../../src/kernel/index.js';
 
 const testProcessorRuntime = {
   processors: [],

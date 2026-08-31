@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { brandedStringSchema, eventDataSchema, eventEnvelopeSchema } from '../../kernel/index.js';
+import { eventDataSchema, eventEnvelopeSchema } from '@atolis-hq/eventing';
+import { brandedStringSchema } from '../../kernel/index.js';
 import { ResourceStreamKind, resourceId } from '../../resources/index.js';
 import { WorkStreamKind, workItemId } from '../../work/index.js';
 import {

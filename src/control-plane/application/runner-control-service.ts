@@ -3,11 +3,10 @@ import {
   EventSourceKind,
   WrongExpectedSequenceError,
   correlationId,
-  type Clock,
   type EventEnvelope,
   type EventJournal,
-  type IdGenerator,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { type Clock, type IdGenerator } from '../../kernel/index.js';
 import { createControlPlaneEventData } from '../contracts/event-factory.js';
 import { ControlEventType, selectControlEvent } from '../contracts/events.js';
 import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';

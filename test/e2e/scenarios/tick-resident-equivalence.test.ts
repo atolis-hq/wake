@@ -1,3 +1,4 @@
+import { EventActorKind, correlationId } from '@atolis-hq/eventing';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +11,6 @@ import {
 } from '../../../src/bootstrap/index.js';
 import { ExecutionEventType } from '../../../src/execution/index.js';
 import { DeliveryEventType } from '../../../src/integrations/index.js';
-import { EventActorKind, correlationId } from '../../../src/kernel/index.js';
 import {
   OrchestrationEventType,
   orchestrationGroupId,

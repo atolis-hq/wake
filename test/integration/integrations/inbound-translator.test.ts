@@ -1,26 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
+import { createEventData, EventProcessorHost, type EventProcessor } from '@atolis-hq/eventing';
 import { activityName, ActivityOutcomeKind } from '../../../src/activities/index.js';
-import { EventProcessorHost, type EventProcessor } from '../../../src/eventing/index.js';
 import { RunRepository } from '../../../src/execution/index.js';
 import { FakeEventType } from '../../../src/integrations/fake/external-source.js';
 import { FakeInboundTranslator } from '../../../src/integrations/fake/inbound-translator.js';
 
+import type { CheckpointStore, EventJournal } from '@atolis-hq/eventing';
 import {
   conversationIdForWorkItem,
   createConversationService,
 } from '../../../src/conversations/index.js';
 import {
   BuiltInAdapterId,
-  createEventData,
   GitHubEventType,
   InboundTranslator,
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
 import { adapterId } from '../../../src/integrations/index.js';
-import type { CheckpointStore, EventJournal } from '../../../src/kernel/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
 import {
   createInMemoryProcessorRunSerialiser,
@@ -90,6 +89,7 @@ describe('InboundTranslator', () => {
       journal,
       checkpoints,
       createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     );
     const pass = await host.runOnce(translator.processor);
 
@@ -989,6 +989,7 @@ async function processInbound(
     journal,
     checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   ).runOnce(translator.processor);
 }
 

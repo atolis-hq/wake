@@ -1,10 +1,10 @@
+import { causationId, correlationId, eventId } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import {
   ControlEventType,
   controlPlaneProjection,
   controlPlaneStream,
 } from '../../../src/control-plane/index.js';
-import { causationId, correlationId, eventId } from '../../../src/kernel/index.js';
 
 const event = (eventType: string, payload: unknown, globalPosition: number) => ({
   event: {

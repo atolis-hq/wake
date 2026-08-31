@@ -1,5 +1,5 @@
+import { createEventData } from '@atolis-hq/eventing';
 import { describe, expect, it } from 'vitest';
-import { createEventData } from '../../../src/kernel/index.js';
 import {
   decodeWorkEvent,
   foldWorkItem,

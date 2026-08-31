@@ -1,5 +1,5 @@
-import type { EventJournal } from '../contracts/event-journal.js';
 import type { EventEnvelope } from '../contracts/events.js';
+import type { EventJournal } from '../store/event-journal.js';
 
 export const JOURNAL_CHANGE_FALLBACK_MS = 30_000;
 
@@ -13,8 +13,8 @@ export interface CachedJournalView<Value> {
 // Same durable position boundary used by projection subscriptions,
 // generalized for callers that want a materialized view rather than an
 // incremental batch. Depends only on the EventJournal port, not on any
-// concrete persistence implementation, so it lives in kernel rather than
-// persistence — domain and adapter modules may call it directly.
+// concrete persistence implementation, so it lives in Eventing rather than
+// Persistence; domain and adapter modules may call it directly.
 export function cachedJournalView<Value>(
   journal: Pick<EventJournal, 'readAll' | 'latestGlobalPosition'>,
   derive: (events: readonly EventEnvelope[]) => Value | Promise<Value>,

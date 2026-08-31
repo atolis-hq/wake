@@ -1,4 +1,4 @@
-import { EventActorKind } from '../../kernel/index.js';
+import { EventActorKind } from '@atolis-hq/eventing';
 import { ExecutionEventType, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
 import { ExecutionFailureCode, isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';

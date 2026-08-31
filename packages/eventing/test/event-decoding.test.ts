@@ -1,5 +1,5 @@
+import { decodeEventEnvelope } from '@atolis-hq/eventing';
 import { describe, expect, it } from 'vitest';
-import { decodeEventEnvelope } from '../../../src/kernel/index.js';
 
 const validEnvelope = {
   event: {

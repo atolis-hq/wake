@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { eventDataSchema, eventEnvelopeSchema, type EventEnvelope } from '@atolis-hq/eventing';
 import {
   activationId,
   ActivityEventType,
@@ -9,12 +10,7 @@ import {
   PullRequestState,
 } from '../../activities/index.js';
 import { WorkspaceMode } from '../../execution/index.js';
-import {
-  brandedStringSchema,
-  eventDataSchema,
-  eventEnvelopeSchema,
-  type EventEnvelope,
-} from '../../kernel/index.js';
+import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId } from '../../work/index.js';
 import {
   orchestrationActivityOutcome,

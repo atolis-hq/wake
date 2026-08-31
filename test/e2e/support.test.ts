@@ -1,5 +1,5 @@
+import { createEventData, type EventEnvelope } from '@atolis-hq/eventing';
 import { describe, expect, it } from 'vitest';
-import { createEventData, type EventEnvelope } from '../../src/kernel/index.js';
 import { workItemStream } from '../../src/work/index.js';
 import { workId } from '../support/identities.js';
 import { FaultInjector, InjectedFaultError } from './support/faults.js';

@@ -1,7 +1,7 @@
+import { correlationId } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

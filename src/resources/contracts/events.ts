@@ -1,12 +1,12 @@
-import { z } from 'zod';
 import {
-  brandedStringSchema,
   eventDataSchema,
   eventEnvelopeSchema,
   type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId, type WorkItemId } from '../../work/index.js';
 import {
   resourceCapability,

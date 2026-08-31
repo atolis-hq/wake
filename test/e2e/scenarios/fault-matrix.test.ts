@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { correlationId, type EventEnvelope } from '@atolis-hq/eventing';
 import {
   ActivityRegistry,
   activityName,
@@ -16,7 +17,7 @@ import {
 import type { Runner, RunnerRequest } from '../../../src/execution/index.js';
 import { DurableFakeDeliveryProvider } from '../../../src/integrations/fake/durable-delivery-provider.js';
 import { DeliveryIntentEventType } from '../../../src/integrations/index.js';
-import { correlationId, type Clock, type EventEnvelope } from '../../../src/kernel/index.js';
+import { type Clock } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   watchId,

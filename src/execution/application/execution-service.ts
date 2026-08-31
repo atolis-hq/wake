@@ -1,11 +1,12 @@
 /* eslint-disable max-lines */
 
+import { type EventJournal } from '@atolis-hq/eventing';
 import {
   ActivityExecutionKind,
   type ActivityRegistry,
   type ResourceRequirement,
 } from '../../activities/index.js';
-import { type Clock, type EventJournal } from '../../kernel/index.js';
+import { type Clock } from '../../kernel/index.js';
 import type { ResourceView } from '../../resources/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';

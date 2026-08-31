@@ -142,6 +142,6 @@ export function faultInjectingDeliveryAdapter(
     },
   };
 }
+import type { CheckpointStore, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
 import type { ScheduleCheckpointStore } from '../../../src/control-plane/index.js';
 import type { ExternalDeliveryAdapter } from '../../../src/integrations/index.js';
-import type { CheckpointStore, EventJournal, ProjectionStore } from '../../../src/kernel/index.js';

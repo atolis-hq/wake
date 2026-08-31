@@ -1,16 +1,16 @@
-import type { Clock, EventJournal } from '../../kernel/index.js';
-import { defineClosedVocabulary } from '../../kernel/index.js';
-import { type EventProcessor } from '../contracts/event-processor.js';
+import type { EventJournal } from '../store/event-journal.js';
+import { type EventProcessor } from '../subscriptions/event-processor.js';
+import type { EventingClock } from './clock.js';
 
 const maximumErrorLength = 1_000;
 
-export const EventProcessorHealthStatus = defineClosedVocabulary({
+export const EventProcessorHealthStatus = {
   Starting: 'starting',
   CatchingUp: 'catching-up',
   Healthy: 'healthy',
   Degraded: 'degraded',
   Stopped: 'stopped',
-} as const);
+} as const;
 
 export type EventProcessorHealthStatus =
   (typeof EventProcessorHealthStatus)[keyof typeof EventProcessorHealthStatus];
@@ -40,7 +40,7 @@ export class ProcessorHealthRegistry {
 
   constructor(
     private readonly journal: EventJournal,
-    private readonly clock: Clock,
+    private readonly clock: EventingClock,
   ) {}
 
   get(consumer: string): EventProcessorHealth | undefined {

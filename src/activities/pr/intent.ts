@@ -3,7 +3,7 @@ import {
   EventActorKind,
   type EventJournal,
   WrongExpectedSequenceError,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
 import type { ResourceStreamRef } from '../../resources/index.js';
 import type { WorkItemStreamRef } from '../../work/index.js';
 import type { ActivityFactEventData } from '../contracts/events.js';

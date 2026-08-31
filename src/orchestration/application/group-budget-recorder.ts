@@ -2,7 +2,7 @@ import {
   type CommandContext,
   type EventJournal,
   WrongExpectedSequenceError,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import type {
   ChildCoordinationMetadata,

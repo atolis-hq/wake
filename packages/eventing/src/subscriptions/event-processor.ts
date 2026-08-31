@@ -1,22 +1,23 @@
-import type { EventEnvelope } from '../../kernel/index.js';
-import { defineClosedVocabulary, type ValueOf } from '../../kernel/index.js';
+import type { EventEnvelope } from '../contracts/events.js';
 
-export const EventProcessorCategory = defineClosedVocabulary({
+export const EventProcessorCategory = {
   Projection: 'projection',
   Reactor: 'reactor',
   Coordinator: 'coordinator',
   Translator: 'translator',
-} as const);
+} as const;
 
-export type EventProcessorCategory = ValueOf<typeof EventProcessorCategory>;
+export type EventProcessorCategory =
+  (typeof EventProcessorCategory)[keyof typeof EventProcessorCategory];
 
-export const EventProcessorReplayPolicy = defineClosedVocabulary({
+export const EventProcessorReplayPolicy = {
   Rebuildable: 'rebuildable',
   Idempotent: 'idempotent',
   Disabled: 'disabled',
-} as const);
+} as const;
 
-export type EventProcessorReplayPolicy = ValueOf<typeof EventProcessorReplayPolicy>;
+export type EventProcessorReplayPolicy =
+  (typeof EventProcessorReplayPolicy)[keyof typeof EventProcessorReplayPolicy];
 
 export interface EventProcessorDefinition<Message> {
   /** Stable checkpoint and serialisation identity. Handlers must be idempotent. */

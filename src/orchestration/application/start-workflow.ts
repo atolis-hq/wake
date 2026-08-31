@@ -1,4 +1,4 @@
-import { EventSourceKind, type CommandContext } from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext } from '@atolis-hq/eventing';
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import { OrchestrationEventType } from '../contracts/events.js';

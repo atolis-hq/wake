@@ -1,6 +1,6 @@
+import { EventProcessorHost } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { createPullRequestService } from '../../../src/activities/index.js';
-import { EventProcessorHost } from '../../../src/eventing/index.js';
 import {
   GitHubEventType,
   InboundTranslator,
@@ -281,6 +281,7 @@ it('flows a tracked PR review from GitHub source polling through Activities acce
     journal,
     checkpoints,
     createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   ).runOnce(translator.processor);
 
   expect((await journal.readAll(0)).map((event) => event.event.eventType)).toContain(

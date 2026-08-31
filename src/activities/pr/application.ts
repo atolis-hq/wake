@@ -1,4 +1,4 @@
-import { type CommandContext, type EventJournal } from '../../kernel/index.js';
+import { type CommandContext, type EventJournal } from '@atolis-hq/eventing';
 import {
   resourceStream,
   type ResourceService,

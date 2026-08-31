@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
 import {
   createProjectionProcessor,
   EventProcessorHost,
   ProjectionRebuilder,
-} from '../../../src/eventing/index.js';
+} from '@atolis-hq/eventing';
+import { describe, expect, it } from 'vitest';
 import {
   createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
@@ -99,7 +99,7 @@ function createWorld() {
     resources: createResourceService(journal, lookup),
     lookup,
     projections,
-    projectionHost: new EventProcessorHost(journal, checkpoints, serialiseRun),
+    projectionHost: new EventProcessorHost(journal, checkpoints, serialiseRun, new FakeClock()),
     rebuilder: new ProjectionRebuilder(journal, projections, checkpoints, serialiseRun),
   };
 }

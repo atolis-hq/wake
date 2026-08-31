@@ -1,3 +1,4 @@
+import { correlationId } from '@atolis-hq/eventing';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
@@ -12,7 +13,6 @@ import {
   createSurfaceApplications,
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,

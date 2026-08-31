@@ -1,4 +1,4 @@
-import { EventActorKind } from '../../kernel/index.js';
+import { EventActorKind } from '@atolis-hq/eventing';
 import type { WorkItemId } from '../../work/index.js';
 import type { PullRequestService } from './application.js';
 

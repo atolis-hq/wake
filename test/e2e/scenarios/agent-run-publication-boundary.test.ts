@@ -1,3 +1,4 @@
+import { correlationId, createEventData } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
@@ -10,7 +11,6 @@ import {
 import { AgentRunPublicationReactor } from '../../../src/integrations/application/agent-run-publication-reactor.js';
 import { projectDeliveries } from '../../../src/integrations/delivery/application/delivery-projector.js';
 import { BuiltInAdapterId } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventData } from '../../../src/kernel/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';

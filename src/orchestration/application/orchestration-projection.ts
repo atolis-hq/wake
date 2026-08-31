@@ -1,4 +1,4 @@
-import type { ProjectionDefinition } from '../../kernel/index.js';
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { selectWorkflowOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType, type WorkflowOrchestrationEvent } from '../contracts/events.js';
 import { isWorkflowInstanceStream } from '../contracts/streams.js';

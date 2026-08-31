@@ -1,3 +1,4 @@
+import type { EventJournal } from '@atolis-hq/eventing';
 import {
   ActivityRegistry,
   type AgentContextReader,
@@ -9,7 +10,6 @@ import {
   type createPullRequestService,
 } from '../activities/index.js';
 import { loadPromptTemplate, renderPromptTemplate } from '../execution/index.js';
-import type { EventJournal } from '../kernel/index.js';
 import type { createResourceService } from '../resources/index.js';
 import { createStatusPublishActivity } from './status-publish-activity.js';
 

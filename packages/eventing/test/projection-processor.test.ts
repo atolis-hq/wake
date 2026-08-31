@@ -1,20 +1,22 @@
-import { expect, it, vi } from 'vitest';
-import * as eventing from '../../../src/eventing/index.js';
+import * as eventing from '@atolis-hq/eventing';
 import {
   EventProcessorHost,
   ProjectionRebuilder,
   applyProjectionBatch,
+  createEventData,
   createProjectionProcessor,
   projectionConsumer,
-} from '../../../src/eventing/index.js';
-import { createEventData, type EntityRef, type EventEnvelope } from '../../../src/kernel/index.js';
+  type EventEnvelope,
+  type StreamRef,
+} from '@atolis-hq/eventing';
+import { expect, it, vi } from 'vitest';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
   createInMemoryProcessorRunSerialiser,
 } from '../../../src/persistence/index.js';
-import { FakeClock } from '../../e2e/support/world.js';
+import { FakeClock } from '../../../test/e2e/support/world.js';
 
 it('does not expose the legacy centralized projection runner', () => {
   expect(eventing).not.toHaveProperty('ProjectionRunner');
@@ -31,7 +33,7 @@ it('creates a bounded durable subscription that applies projection batches', asy
   const definition = projectionDefinition('subscription-counts');
   const subscription = createProjectionProcessor(definition, projections);
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream: EntityRef<'counter', 'subscription'> = { kind: 'counter', id: 'subscription' };
+  const stream: StreamRef<'counter', 'subscription'> = { kind: 'counter', id: 'subscription' };
   await appendCountedEvent(journal, stream, 0, 'subscription-event');
 
   expect(subscription.consumer).toBe('projection:subscription-counts');
@@ -43,7 +45,7 @@ it('creates a bounded durable subscription that applies projection batches', asy
 
 it('does not fold a duplicate projection batch twice', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream: EntityRef<'counter', 'duplicate'> = { kind: 'counter', id: 'duplicate' };
+  const stream: StreamRef<'counter', 'duplicate'> = { kind: 'counter', id: 'duplicate' };
   await appendCountedEvent(journal, stream, 0, 'duplicate-event');
   const projections = new InMemoryProjectionStore();
   const definition = projectionDefinition('duplicate-counts');
@@ -60,7 +62,7 @@ it('does not fold a duplicate projection batch twice', async () => {
 
 it('does not write when a projection does not select an event', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream: EntityRef<'counter', 'unselected'> = { kind: 'counter', id: 'unselected' };
+  const stream: StreamRef<'counter', 'unselected'> = { kind: 'counter', id: 'unselected' };
   await appendCountedEvent(journal, stream, 0, 'unselected-event');
   const projections = new InMemoryProjectionStore();
 
@@ -103,7 +105,12 @@ it('replays after a checkpoint failure without folding the projection twice', as
   await appendCountedEvent(journal, stream, 0, 'checkpoint-event');
   const projections = new InMemoryProjectionStore();
   const checkpoints = new FailOnceCheckpointStore();
-  const host = new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser());
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
   const subscription = createProjectionProcessor(
     projectionDefinition('checkpoint-counts'),
     projections,
@@ -121,7 +128,7 @@ it('blocks a rebuild behind a same-consumer live pass while a sibling projection
   const projections = new InMemoryProjectionStore();
   const checkpoints = new InMemoryCheckpointStore();
   const serialiseRun = createInMemoryProcessorRunSerialiser();
-  const host = new EventProcessorHost(journal, checkpoints, serialiseRun);
+  const host = new EventProcessorHost(journal, checkpoints, serialiseRun, new FakeClock());
   const primary = projectionDefinition('locked-counts');
   const sibling = projectionDefinition('sibling-counts');
   const subscription = createProjectionProcessor(primary, projections);

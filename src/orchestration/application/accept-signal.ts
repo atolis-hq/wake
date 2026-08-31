@@ -1,4 +1,4 @@
-import type { CommandContext } from '../../kernel/index.js';
+import type { CommandContext } from '@atolis-hq/eventing';
 import type { WorkService } from '../../work/index.js';
 import type { OrchestrationSignal, SignalExpectation } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';

@@ -1,13 +1,13 @@
-import { z } from 'zod';
-import { activationId } from '../../activities/index.js';
 import {
-  brandedStringSchema,
   eventDataSchema,
   eventEnvelopeSchema,
   type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { activationId } from '../../activities/index.js';
+import { brandedStringSchema } from '../../kernel/index.js';
 import { workflowInstanceId } from '../../orchestration/index.js';
 import { resourceKind, type ResourceKind } from '../../resources/index.js';
 import {
