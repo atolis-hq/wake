@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { mkdir, open, readdir, readFile, rm, rmdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { syncParentDirectory } from './atomic-write.js';
 
 export interface FileLockMetadata {
   readonly pid: number;
@@ -257,6 +258,7 @@ async function createOwnerRecord(path: string, metadata: FileLockMetadata): Prom
   } finally {
     await handle.close();
   }
+  await syncParentDirectory(dirname(path));
 }
 
 async function ownerBlocksAcquisition(

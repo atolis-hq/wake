@@ -11,10 +11,10 @@ import {
   InProcessJournalChangeSignal,
   WrongExpectedSequenceError,
 } from '@atolis-hq/eventing';
-import { randomUUID } from 'node:crypto';
 import { watch } from 'node:fs';
-import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { writeFileAtomically } from './atomic-write.js';
 import { decodeEventRecord, encodeEventRecord } from './event-record-codec.js';
 import { withFileLock } from './file-lock.js';
 
@@ -323,7 +323,7 @@ export class FileEventJournal implements EventJournal {
   private async persistManifest(): Promise<void> {
     if (this.cached === undefined) return;
     const manifest: PersistedIndex = { segments: this.cached.segments };
-    await writeFile(this.manifestPath(), JSON.stringify(manifest), 'utf8');
+    await writeFileAtomically(this.manifestPath(), JSON.stringify(manifest));
   }
 
   private async loadManifest(): Promise<PersistedIndex | undefined> {
@@ -622,19 +622,7 @@ async function waitForEventsAfter(
 }
 
 async function writeSegmentAtomically(path: string, contents: string): Promise<void> {
-  const temporary = `${path}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
-  try {
-    const handle = await open(temporary, 'wx');
-    try {
-      await handle.writeFile(contents, 'utf8');
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await rename(temporary, path);
-  } finally {
-    await rm(temporary, { force: true });
-  }
+  await writeFileAtomically(path, contents);
 }
 
 const staleSegmentTempName =

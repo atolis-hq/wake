@@ -1,4 +1,6 @@
+import { exec } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 
@@ -33,8 +35,27 @@ type PackageLock = {
   >;
 };
 
+interface PackedFile {
+  readonly path: string;
+}
+
+interface PackedPackage {
+  readonly files: readonly PackedFile[];
+}
+
+const execAsync = promisify(exec);
+
 const readJson = async <Value>(path: string): Promise<Value> =>
   JSON.parse(await readFile(new URL(`../../${path}`, import.meta.url), 'utf8')) as Value;
+
+async function packedFiles(workspace: string): Promise<readonly string[]> {
+  const { stdout } = await execAsync(`npm pack --dry-run --json --workspace ${workspace}`, {
+    cwd: new URL('../../', import.meta.url),
+  });
+  const json = stdout.slice(stdout.indexOf('['));
+  const packed = JSON.parse(json) as readonly PackedPackage[];
+  return packed[0]?.files.map((file) => file.path) ?? [];
+}
 
 function expectEventingSourcePaths(sourceTsConfig: TsConfig): void {
   expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing']).toEqual([
@@ -90,11 +111,13 @@ describe('eventing workspace packages', () => {
     expect(eventing.exports).toHaveProperty('./memory');
     expect(filesystem.exports).toHaveProperty('.');
     expect(eventing.scripts?.build).toBe('tsc --build tsconfig.json');
+    expect(eventing.scripts?.prepack).toBe('npm run build');
     expect(eventing.scripts?.['typecheck:test']).toBe('tsc --noEmit --project tsconfig.test.json');
     expect(eventing.scripts?.test).toBe(
       'npm run typecheck:test && vitest run --config vitest.config.ts',
     );
     expect(filesystem.scripts?.build).toBe('tsc --build tsconfig.json');
+    expect(filesystem.scripts?.prepack).toBe('npm run build');
     expect(filesystem.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);
     expect(wake.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);
     expect(wake.dependencies?.['@atolis-hq/eventing-filesystem']).toBe(filesystem.version);
@@ -158,5 +181,20 @@ describe('eventing workspace packages', () => {
     expect(sourceResolutionCheck).toContain('import.meta.resolve(manifest.name)');
     expect(sourceResolutionCheck).toContain("import('@atolis-hq/eventing/memory')");
     for (const config of configs) expect(config).toContain('workspaceSourceAliases');
+  });
+
+  it('builds public dist entrypoints into package archives', async () => {
+    const eventingFiles = await packedFiles('@atolis-hq/eventing');
+    const filesystemFiles = await packedFiles('@atolis-hq/eventing-filesystem');
+
+    expect(eventingFiles).toEqual(
+      expect.arrayContaining([
+        'dist/index.js',
+        'dist/index.d.ts',
+        'dist/memory.js',
+        'dist/memory.d.ts',
+      ]),
+    );
+    expect(filesystemFiles).toEqual(expect.arrayContaining(['dist/index.js', 'dist/index.d.ts']));
   });
 });
