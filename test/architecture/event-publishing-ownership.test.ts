@@ -228,6 +228,40 @@ describe('event publishing ownership', () => {
     ).toHaveLength(7);
   });
 
+  it('rejects default and rest bindings that expose the Kernel factory', async () => {
+    const root = await fixture({
+      'src/bootstrap/illegal-default-rest.ts': [
+        "import { createEventData } from '../kernel/index.js';",
+        "import * as Kernel from '../kernel/index.js';",
+        'const local = (value: unknown) => value;',
+        'const [fromDefault = createEventData]: [(typeof createEventData)?] = [];',
+        'const [...factories]: [typeof createEventData] = [createEventData];',
+        'const partial: Partial<typeof Kernel> = {};',
+        'const { createEventData: fromObjectDefault = Kernel.createEventData } = partial;',
+        'const { ...kernel } = Kernel;',
+        'let assignedFactories = [local];',
+        '[...assignedFactories] = [createEventData];',
+        'let assignedKernel = { createEventData: local };',
+        '({ ...assignedKernel } = Kernel);',
+        'declare const index: number;',
+        'declare const property: string;',
+        `export const defaulted = fromDefault(${eventInput()});`,
+        `export const arrayRest = factories[0](${eventInput()});`,
+        `export const objectDefault = fromObjectDefault(${eventInput()});`,
+        `export const objectRest = kernel.createEventData(${eventInput()});`,
+        `export const assignedArrayRest = assignedFactories[0](${eventInput()});`,
+        `export const assignedObjectRest = assignedKernel.createEventData(${eventInput()});`,
+        `export const dynamicArrayRest = factories[index](${eventInput()});`,
+        `export const dynamicObjectRest = kernel[property](${eventInput()});`,
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[event-data-factory-owner]')),
+    ).toHaveLength(6);
+  });
+
   it('does not reject same-name local symbols or dynamic computed properties', async () => {
     const root = await fixture({
       'src/bootstrap/foreign-symbols.ts': [
@@ -264,6 +298,34 @@ describe('event publishing ownership', () => {
         '  fromAssignment({ sequence: 3 }),',
         '  fromNested({ sequence: 4 }),',
         '  fromComputed({ sequence: 5 }),',
+        '];',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
+  it('does not reject default and rest bindings of unrelated local functions', async () => {
+    const root = await fixture({
+      'src/bootstrap/local-default-rest.ts': [
+        'const createEventData = (value: unknown) => value;',
+        'const [fromDefault = createEventData]: [(typeof createEventData)?] = [];',
+        'const [...factories]: [typeof createEventData] = [createEventData];',
+        'const partial: { createEventData?: typeof createEventData } = {};',
+        'const { createEventData: fromObjectDefault = createEventData } = partial;',
+        'const source = { createEventData };',
+        'const { ...local } = source;',
+        'let assignedFactories = [(value: unknown) => value];',
+        '[...assignedFactories] = [createEventData];',
+        'let assignedLocal = { createEventData: (value: unknown) => value };',
+        '({ ...assignedLocal } = source);',
+        'export const values = [',
+        '  fromDefault({ sequence: 1 }),',
+        '  factories[0]({ sequence: 2 }),',
+        '  fromObjectDefault({ sequence: 3 }),',
+        '  local.createEventData({ sequence: 4 }),',
+        '  assignedFactories[0]({ sequence: 5 }),',
+        '  assignedLocal.createEventData({ sequence: 6 }),',
         '];',
       ].join('\n'),
     });

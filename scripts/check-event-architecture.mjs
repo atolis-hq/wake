@@ -118,15 +118,20 @@ function collectBindings(program, typeChecker) {
     if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
       collectBindingAssignments(
         node.name,
-        node.initializer,
-        [],
+        [{ expression: node.initializer, accessPath: [] }],
         bindings,
         typeChecker,
         assignments,
       );
     }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken)
-      collectAssignmentTarget(node.left, node.right, [], bindings, typeChecker, assignments);
+      collectAssignmentTarget(
+        node.left,
+        [{ expression: node.right, accessPath: [] }],
+        bindings,
+        typeChecker,
+        assignments,
+      );
     ts.forEachChild(node, visit);
   }
 
@@ -136,28 +141,32 @@ function collectBindings(program, typeChecker) {
   return bindings;
 }
 
-function collectBindingAssignments(
-  pattern,
-  expression,
-  accessPath,
-  bindings,
-  typeChecker,
-  assignments,
-) {
+function collectBindingAssignments(pattern, origins, bindings, typeChecker, assignments) {
   if (ts.isIdentifier(pattern)) {
     const symbol = typeChecker.getSymbolAtLocation(pattern);
-    if (symbol !== undefined) assignments.set(symbol, { expression, accessPath });
+    if (symbol !== undefined) assignments.set(symbol, { origins });
     return;
   }
   if (ts.isObjectBindingPattern(pattern)) {
+    const excluded = [];
     for (const element of pattern.elements) {
-      if (element.dotDotDotToken !== undefined) continue;
+      if (element.dotDotDotToken !== undefined) {
+        collectBindingAssignments(
+          element.name,
+          appendOriginAccess(origins, { kind: 'object-rest', excluded: [...excluded] }),
+          bindings,
+          typeChecker,
+          assignments,
+        );
+        continue;
+      }
       const name = bindingPropertyName(element, bindings, typeChecker);
       if (name === undefined) continue;
+      excluded.push(name);
+      const selectedOrigins = appendOriginAccess(origins, { kind: 'property', name });
       collectBindingAssignments(
         element.name,
-        expression,
-        [...accessPath, { kind: 'property', name }],
+        withDefaultOrigin(selectedOrigins, element.initializer),
         bindings,
         typeChecker,
         assignments,
@@ -167,11 +176,15 @@ function collectBindingAssignments(
   }
   if (ts.isArrayBindingPattern(pattern))
     for (const [index, element] of pattern.elements.entries()) {
-      if (!ts.isBindingElement(element) || element.dotDotDotToken !== undefined) continue;
+      if (!ts.isBindingElement(element)) continue;
+      const selector =
+        element.dotDotDotToken === undefined
+          ? { kind: 'index', index }
+          : { kind: 'array-rest', start: index };
+      const selectedOrigins = appendOriginAccess(origins, selector);
       collectBindingAssignments(
         element.name,
-        expression,
-        [...accessPath, { kind: 'index', index }],
+        withDefaultOrigin(selectedOrigins, element.initializer),
         bindings,
         typeChecker,
         assignments,
@@ -179,27 +192,23 @@ function collectBindingAssignments(
     }
 }
 
-function collectAssignmentTarget(
-  target,
-  expression,
-  accessPath,
-  bindings,
-  typeChecker,
-  assignments,
-) {
+function collectAssignmentTarget(target, origins, bindings, typeChecker, assignments) {
   const unwrapped = unwrapExpression(target);
   if (ts.isIdentifier(unwrapped)) {
     const symbol = typeChecker.getSymbolAtLocation(unwrapped);
-    if (symbol !== undefined) assignments.set(symbol, { expression, accessPath });
+    if (symbol !== undefined) assignments.set(symbol, { origins });
     return;
   }
   if (ts.isArrayLiteralExpression(unwrapped)) {
     for (const [index, element] of unwrapped.elements.entries()) {
-      if (ts.isOmittedExpression(element) || ts.isSpreadElement(element)) continue;
+      if (ts.isOmittedExpression(element)) continue;
+      const elementTarget = ts.isSpreadElement(element) ? element.expression : element;
+      const selector = ts.isSpreadElement(element)
+        ? { kind: 'array-rest', start: index }
+        : { kind: 'index', index };
       collectAssignmentTarget(
-        element,
-        expression,
-        [...accessPath, { kind: 'index', index }],
+        elementTarget,
+        appendOriginAccess(origins, selector),
         bindings,
         typeChecker,
         assignments,
@@ -208,10 +217,21 @@ function collectAssignmentTarget(
     return;
   }
   if (!ts.isObjectLiteralExpression(unwrapped)) return;
+  const excluded = [];
   for (const property of unwrapped.properties) {
-    if (ts.isSpreadAssignment(property)) continue;
+    if (ts.isSpreadAssignment(property)) {
+      collectAssignmentTarget(
+        property.expression,
+        appendOriginAccess(origins, { kind: 'object-rest', excluded: [...excluded] }),
+        bindings,
+        typeChecker,
+        assignments,
+      );
+      continue;
+    }
     const name = propertyName(property.name, bindings, typeChecker);
     if (name === undefined) continue;
+    excluded.push(name);
     const propertyTarget = ts.isShorthandPropertyAssignment(property)
       ? property.name
       : ts.isPropertyAssignment(property)
@@ -220,13 +240,25 @@ function collectAssignmentTarget(
     if (propertyTarget !== undefined)
       collectAssignmentTarget(
         propertyTarget,
-        expression,
-        [...accessPath, { kind: 'property', name }],
+        appendOriginAccess(origins, { kind: 'property', name }),
         bindings,
         typeChecker,
         assignments,
       );
   }
+}
+
+function appendOriginAccess(origins, selector) {
+  return origins.map(({ expression, accessPath }) => ({
+    expression,
+    accessPath: [...accessPath, selector],
+  }));
+}
+
+function withDefaultOrigin(origins, initializer) {
+  return initializer === undefined
+    ? origins
+    : [...origins, { expression: initializer, accessPath: [] }];
 }
 
 function bindingPropertyName(element, bindings, typeChecker) {
@@ -359,18 +391,19 @@ function inspectLinkedHandlerProperties(
   if (ts.isIdentifier(expression)) {
     const symbol = typeChecker.getSymbolAtLocation(expression);
     const assignment = symbol === undefined ? undefined : bindings.assignments.get(symbol);
-    if (assignment !== undefined && assignment.accessPath.length === 0)
-      inspectLinkedHandlerProperties(
-        assignment.expression,
-        bindings,
-        typeChecker,
-        sourceRoot,
-        sourceFile,
-        relativePath,
-        diagnostics,
-        reported,
-        seen,
-      );
+    for (const origin of assignment?.origins ?? [])
+      if (origin.accessPath.length === 0)
+        inspectLinkedHandlerProperties(
+          origin.expression,
+          bindings,
+          typeChecker,
+          sourceRoot,
+          sourceFile,
+          relativePath,
+          diagnostics,
+          reported,
+          seen,
+        );
     return;
   }
   if (ts.isCallExpression(expression)) {
@@ -819,6 +852,14 @@ function isEventJournalMemberSymbol(symbol, typeChecker, sourceRoot) {
 
 function resolveProtectedKind(expression, bindings, typeChecker, sourceRoot, seen = new Set()) {
   const unwrapped = unwrapExpression(expression);
+  const aliasedAccessKind = resolveAliasedAccessKind(
+    unwrapped,
+    bindings,
+    typeChecker,
+    sourceRoot,
+    seen,
+  );
+  if (aliasedAccessKind !== undefined) return aliasedAccessKind;
   const symbol = expressionSymbol(unwrapped, bindings, typeChecker);
   if (symbol === undefined || seen.has(symbol)) return undefined;
   seen.add(symbol);
@@ -828,14 +869,77 @@ function resolveProtectedKind(expression, bindings, typeChecker, sourceRoot, see
   const assignment = bindings.assignments.get(symbol) ?? bindings.assignments.get(resolved);
   return assignment === undefined
     ? undefined
-    : resolveAccessPathKind(
-        assignment.expression,
-        assignment.accessPath,
-        bindings,
-        typeChecker,
-        sourceRoot,
-        seen,
-      );
+    : resolveAssignmentOrigins(assignment, [], bindings, typeChecker, sourceRoot, seen);
+}
+
+function resolveAliasedAccessKind(expression, bindings, typeChecker, sourceRoot, seen) {
+  const access = aliasedAccess(expression, bindings, typeChecker);
+  if (access === undefined) return undefined;
+  const symbol = typeChecker.getSymbolAtLocation(access.base);
+  const resolved = resolveSymbol(symbol, typeChecker);
+  const assignment = bindings.assignments.get(symbol) ?? bindings.assignments.get(resolved);
+  if (symbol === undefined || assignment === undefined || seen.has(symbol)) return undefined;
+  const branchSeen = new Set(seen);
+  branchSeen.add(symbol);
+  return resolveAssignmentOrigins(
+    assignment,
+    access.accessPath,
+    bindings,
+    typeChecker,
+    sourceRoot,
+    branchSeen,
+  );
+}
+
+function aliasedAccess(expression, bindings, typeChecker) {
+  const accessPath = [];
+  let current = expression;
+  while (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
+    if (ts.isPropertyAccessExpression(current)) {
+      accessPath.unshift({ kind: 'property', name: current.name.text });
+      current = unwrapExpression(current.expression);
+      continue;
+    }
+    const selector = staticAccessSelector(current.argumentExpression, bindings, typeChecker);
+    if (selector === undefined) return undefined;
+    accessPath.unshift(selector);
+    current = unwrapExpression(current.expression);
+  }
+  return ts.isIdentifier(current) && accessPath.length > 0
+    ? { base: current, accessPath }
+    : undefined;
+}
+
+function staticAccessSelector(node, bindings, typeChecker) {
+  const expression = node === undefined ? undefined : unwrapExpression(node);
+  if (expression !== undefined && ts.isNumericLiteral(expression)) {
+    const index = Number(expression.text);
+    return Number.isSafeInteger(index) && index >= 0 ? { kind: 'index', index } : undefined;
+  }
+  const name = staticString(expression, bindings, typeChecker);
+  return name === undefined ? undefined : { kind: 'property', name };
+}
+
+function resolveAssignmentOrigins(
+  assignment,
+  appendedPath,
+  bindings,
+  typeChecker,
+  sourceRoot,
+  seen,
+) {
+  for (const origin of assignment.origins) {
+    const kind = resolveAccessPathKind(
+      origin.expression,
+      [...origin.accessPath, ...appendedPath],
+      bindings,
+      typeChecker,
+      sourceRoot,
+      new Set(seen),
+    );
+    if (kind !== undefined) return kind;
+  }
+  return undefined;
 }
 
 function resolveAccessPathKind(expression, accessPath, bindings, typeChecker, sourceRoot, seen) {
@@ -848,17 +952,29 @@ function resolveAccessPathKind(expression, accessPath, bindings, typeChecker, so
     const assignment =
       bindings.assignments.get(sourceSymbol) ?? bindings.assignments.get(resolvedSource);
     if (sourceSymbol !== undefined && assignment !== undefined && !seen.has(sourceSymbol)) {
-      seen.add(sourceSymbol);
-      return resolveAccessPathKind(
-        assignment.expression,
-        [...assignment.accessPath, ...accessPath],
+      const branchSeen = new Set(seen);
+      branchSeen.add(sourceSymbol);
+      return resolveAssignmentOrigins(
+        assignment,
+        accessPath,
         bindings,
         typeChecker,
         sourceRoot,
-        seen,
+        branchSeen,
       );
     }
   }
+  const normalizedPath = normalizeRestAccess(accessPath);
+  if (normalizedPath === undefined) return undefined;
+  if (normalizedPath !== accessPath)
+    return resolveAccessPathKind(
+      unwrapped,
+      normalizedPath,
+      bindings,
+      typeChecker,
+      sourceRoot,
+      seen,
+    );
   const [head, ...tail] = accessPath;
   const selected = selectedLiteralExpression(unwrapped, head, bindings, typeChecker);
   if (selected !== undefined)
@@ -873,14 +989,20 @@ function resolveAccessPathKind(expression, accessPath, bindings, typeChecker, so
   const assignment = bindings.assignments.get(symbol) ?? bindings.assignments.get(resolved);
   return assignment === undefined
     ? undefined
-    : resolveAccessPathKind(
-        assignment.expression,
-        [...assignment.accessPath, ...tail],
-        bindings,
-        typeChecker,
-        sourceRoot,
-        seen,
-      );
+    : resolveAssignmentOrigins(assignment, tail, bindings, typeChecker, sourceRoot, seen);
+}
+
+function normalizeRestAccess(accessPath) {
+  const [head, next, ...tail] = accessPath;
+  if (head.kind === 'array-rest') {
+    if (next?.kind !== 'index') return undefined;
+    return [{ kind: 'index', index: head.start + next.index }, ...tail];
+  }
+  if (head.kind === 'object-rest') {
+    if (next?.kind !== 'property' || head.excluded.includes(next.name)) return undefined;
+    return [next, ...tail];
+  }
+  return accessPath;
 }
 
 function selectedLiteralExpression(expression, selector, bindings, typeChecker) {
@@ -1024,14 +1146,24 @@ function staticString(node, bindings, typeChecker, seen = new Set()) {
   seen.add(symbol);
   const assignment = bindings.assignments.get(symbol);
   if (assignment === undefined) return undefined;
-  const selected = selectAssignedExpression(
-    assignment.expression,
-    assignment.accessPath,
-    bindings,
-    typeChecker,
-    seen,
-  );
-  return selected === undefined ? undefined : staticString(selected, bindings, typeChecker, seen);
+  const values = [];
+  for (const origin of assignment.origins) {
+    const branchSeen = new Set(seen);
+    const selected = selectAssignedExpression(
+      origin.expression,
+      origin.accessPath,
+      bindings,
+      typeChecker,
+      branchSeen,
+    );
+    const value =
+      selected === undefined
+        ? undefined
+        : staticString(selected, bindings, typeChecker, branchSeen);
+    if (value === undefined) return undefined;
+    values.push(value);
+  }
+  return values.length > 0 && values.every((value) => value === values[0]) ? values[0] : undefined;
 }
 
 function selectAssignedExpression(expression, accessPath, bindings, typeChecker, seen) {
@@ -1040,11 +1172,12 @@ function selectAssignedExpression(expression, accessPath, bindings, typeChecker,
   if (ts.isIdentifier(unwrapped)) {
     const symbol = typeChecker.getSymbolAtLocation(unwrapped);
     const assignment = symbol === undefined ? undefined : bindings.assignments.get(symbol);
-    if (symbol !== undefined && assignment !== undefined && !seen.has(symbol)) {
+    if (symbol !== undefined && assignment?.origins.length === 1 && !seen.has(symbol)) {
       seen.add(symbol);
+      const [origin] = assignment.origins;
       return selectAssignedExpression(
-        assignment.expression,
-        [...assignment.accessPath, ...accessPath],
+        origin.expression,
+        [...origin.accessPath, ...accessPath],
         bindings,
         typeChecker,
         seen,
