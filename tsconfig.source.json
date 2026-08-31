@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@atolis-hq/eventing": ["./packages/eventing/src/index.ts"]
+    },
+    "types": ["node"]
+  }
+}

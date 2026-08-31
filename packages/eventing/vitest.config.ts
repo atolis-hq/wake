@@ -1,12 +1,8 @@
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { workspaceSourceAliases } from '../../vitest.workspace-aliases.js';
 
 export default defineConfig({
-  resolve: {
-    alias: {
-      '@atolis-hq/eventing': fileURLToPath(new URL('./src/index.ts', import.meta.url)),
-    },
-  },
+  resolve: { alias: workspaceSourceAliases },
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],

@@ -1,7 +1,7 @@
 {
   "name": "execution",
   "kind": "domain",
-  "dependencies": ["kernel", "work", "resources", "activities"],
+  "dependencies": ["kernel", "eventing", "work", "resources", "activities"],
   "publicEntry": "./index.ts",
   "namespaces": {
     "events": ["execution."],

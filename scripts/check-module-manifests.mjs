@@ -5,7 +5,8 @@ import ts from 'typescript';
 
 import { discoverCatalogues } from './lib/contract-vocabulary-catalogues.mjs';
 
-const workspacePackageDependencies = new Set(['eventing']);
+const workspacePackageDependencies = new Map([['@atolis-hq/eventing', 'eventing']]);
+const workspaceLogicalDependencies = new Set(workspacePackageDependencies.values());
 
 export async function checkModuleManifests(root = 'src') {
   const resolvedRoot = resolve(root);
@@ -34,7 +35,7 @@ export async function checkModuleManifests(root = 'src') {
 
   for (const [name, manifest] of manifests) {
     for (const dependency of manifest.dependencies ?? []) {
-      if (!manifests.has(dependency) && !workspacePackageDependencies.has(dependency))
+      if (!manifests.has(dependency) && !workspaceLogicalDependencies.has(dependency))
         failures.push(`${name}: unknown dependency ${dependency}`);
       if (dependency === name) failures.push(`${name}: cannot depend on itself`);
     }
@@ -70,16 +71,29 @@ export async function checkModuleManifests(root = 'src') {
   for (const path of await typescriptFiles(resolvedRoot)) {
     const text = await readFile(path, 'utf8');
     const cataloguePath = relative(resolvedRoot, path).split(sep).join('/');
+    const source = ts.createSourceFile(
+      cataloguePath,
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
     sourceDetails.push({
       path: cataloguePath,
-      source: ts.createSourceFile(
-        cataloguePath,
-        text,
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TS,
-      ),
+      source,
     });
+    const owner = cataloguePath.split('/')[0];
+    for (const packageName of importedWorkspacePackages(source)) {
+      const dependency = workspacePackageDependencies.get(packageName);
+      if (
+        dependency !== undefined &&
+        !(manifests.get(owner)?.dependencies ?? []).includes(dependency)
+      ) {
+        failures.push(
+          `${owner}: imports ${packageName} but does not declare dependency ${dependency}`,
+        );
+      }
+    }
   }
 
   const discovery = discoverCatalogues(sourceDetails, new Set(['stream-literals']));
@@ -118,6 +132,21 @@ export async function checkModuleManifests(root = 'src') {
   }
 
   return [...new Set(failures)];
+}
+
+function importedWorkspacePackages(source) {
+  const imports = new Set();
+  for (const statement of source.statements) {
+    if (
+      (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) &&
+      statement.moduleSpecifier !== undefined &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      workspacePackageDependencies.has(statement.moduleSpecifier.text)
+    ) {
+      imports.add(statement.moduleSpecifier.text);
+    }
+  }
+  return imports;
 }
 
 function relativePath(path) {

@@ -18,11 +18,16 @@ describe('target test tiers', () => {
     ]);
 
     expect(packageJson.scripts.test).toBe('npm run test:unit');
+    expect(packageJson.scripts['test:unit']).toBe(
+      'npm --workspace @atolis-hq/eventing test && npm run test:unit:wake',
+    );
+    expect(packageJson.scripts['test:unit:wake']).toBe('vitest run --config vitest.unit.config.ts');
     expect(packageJson.scripts.verify).toContain('npm run check:specs');
     expect(packageJson.scripts['check:specs:report']).toBe('node scripts/report-spec-drift.mjs');
     expect(packageJson.scripts.verify).toContain('npm run check:specs:report');
     expect(packageJson.scripts.verify).toContain('npm run build');
     expect(packageJson.scripts.verify).toContain('npm run test:unit');
+    expect(packageJson.scripts.verify).toContain('npm run check:source-resolution');
     expect(packageJson.scripts).toHaveProperty('verify:ci');
     expect(packageJson.scripts['verify:ci']).toContain('npm run test:architecture');
     expect(packageJson.scripts['verify:ci']).toContain('npm run test:integration');
@@ -47,5 +52,18 @@ describe('target test tiers', () => {
     expect(workflow).toContain('web:');
     expect(workflow).toContain('npm run test:web');
     expect(workflow.match(/cache: npm/g) ?? []).toHaveLength(5);
+
+    for (const command of [
+      'start',
+      'tick',
+      'ui',
+      'e2e:github-fake',
+      'smoke',
+      'smoke:claude',
+      'smoke:codex',
+      'smoke:cursor',
+    ]) {
+      expect(packageJson.scripts[command]).toContain('--tsconfig tsconfig.source.json');
+    }
   });
 });

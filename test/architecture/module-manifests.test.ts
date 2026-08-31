@@ -67,11 +67,26 @@ describe('module manifests', () => {
       persistence: {
         dependencies: ['eventing'],
         streams: [],
-        source: '',
+        source: "import type { EventJournal } from '@atolis-hq/eventing';",
       },
     });
 
     await expect(checker.checkModuleManifests(root)).resolves.toEqual([]);
+  });
+
+  it('requires modules importing Eventing to declare the logical dependency', async () => {
+    const root = await manifestFixture({
+      work: {
+        dependencies: [],
+        streams: [],
+        source:
+          "import type { EventData } from '@atolis-hq/eventing';\nexport type WorkEvent = EventData;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'work: imports @atolis-hq/eventing but does not declare dependency eventing',
+    );
   });
 
   it('rejects duplicate stream ownership', async () => {

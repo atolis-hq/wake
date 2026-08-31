@@ -82,7 +82,7 @@ it('does not write when a projection does not select an event', async () => {
 
 it('does not mutate a projection batch when its signal is already aborted', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream: EntityRef<'counter', 'aborted'> = { kind: 'counter', id: 'aborted' };
+  const stream: StreamRef<'counter', 'aborted'> = { kind: 'counter', id: 'aborted' };
   await appendCountedEvent(journal, stream, 0, 'aborted-event');
   const projections = new InMemoryProjectionStore();
   const controller = new AbortController();
@@ -101,7 +101,7 @@ it('does not mutate a projection batch when its signal is already aborted', asyn
 
 it('replays after a checkpoint failure without folding the projection twice', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream: EntityRef<'counter', 'checkpoint'> = { kind: 'counter', id: 'checkpoint' };
+  const stream: StreamRef<'counter', 'checkpoint'> = { kind: 'counter', id: 'checkpoint' };
   await appendCountedEvent(journal, stream, 0, 'checkpoint-event');
   const projections = new InMemoryProjectionStore();
   const checkpoints = new FailOnceCheckpointStore();
@@ -123,7 +123,7 @@ it('replays after a checkpoint failure without folding the projection twice', as
 
 it('blocks a rebuild behind a same-consumer live pass while a sibling projection progresses', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream: EntityRef<'counter', 'locking'> = { kind: 'counter', id: 'locking' };
+  const stream: StreamRef<'counter', 'locking'> = { kind: 'counter', id: 'locking' };
   await appendCountedEvent(journal, stream, 0, 'locking-event');
   const projections = new InMemoryProjectionStore();
   const checkpoints = new InMemoryCheckpointStore();
@@ -162,7 +162,7 @@ it('blocks a rebuild behind a same-consumer live pass while a sibling projection
 
 it('rebuilds bounded batches through the journal head and advances its checkpoint', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream: EntityRef<'counter', 'head'> = { kind: 'counter', id: 'head' };
+  const stream: StreamRef<'counter', 'head'> = { kind: 'counter', id: 'head' };
   for (let index = 0; index < 101; index++)
     await appendCountedEvent(journal, stream, index, `head-event-${index}`);
   const projections = new InMemoryProjectionStore();
@@ -185,7 +185,7 @@ it('rebuilds bounded batches through the journal head and advances its checkpoin
 
 it('rebuilds through an append that lands after a short read snapshot', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream: EntityRef<'counter', 'rebuild-race'> = { kind: 'counter', id: 'rebuild-race' };
+  const stream: StreamRef<'counter', 'rebuild-race'> = { kind: 'counter', id: 'rebuild-race' };
   await appendCountedEvent(journal, stream, 0, 'rebuild-race-first');
   let appendedAfterSnapshot = false;
   const snapshottingJournal = {
@@ -226,7 +226,7 @@ function projectionDefinition(name: string) {
 
 async function appendCountedEvent(
   journal: InMemoryEventJournal,
-  stream: EntityRef,
+  stream: StreamRef,
   expectedSequence: number,
   eventId: string,
 ): Promise<void> {

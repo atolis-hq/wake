@@ -14,6 +14,11 @@ type PackageManifest = {
 };
 
 type TsConfig = {
+  readonly compilerOptions?: {
+    readonly noEmit?: boolean;
+    readonly paths?: Record<string, readonly string[]>;
+  };
+  readonly include?: readonly string[];
   readonly references?: readonly { readonly path: string }[];
 };
 
@@ -33,16 +38,27 @@ const readJson = async <Value>(path: string): Promise<Value> =>
 
 describe('eventing workspace packages', () => {
   it('declares public, exact-versioned eventing package relationships', async () => {
-    const [wake, eventing, filesystem, rootTsConfig, appTsConfig, filesystemTsConfig, lockfile] =
-      await Promise.all([
-        readJson<PackageManifest>('package.json'),
-        readJson<PackageManifest>('packages/eventing/package.json'),
-        readJson<PackageManifest>('packages/eventing-filesystem/package.json'),
-        readJson<TsConfig>('tsconfig.json'),
-        readJson<TsConfig>('tsconfig.app.json'),
-        readJson<TsConfig>('packages/eventing-filesystem/tsconfig.json'),
-        readJson<PackageLock>('package-lock.json'),
-      ]);
+    const [
+      wake,
+      eventing,
+      filesystem,
+      rootTsConfig,
+      appTsConfig,
+      filesystemTsConfig,
+      eventingTestTsConfig,
+      sourceTsConfig,
+      lockfile,
+    ] = await Promise.all([
+      readJson<PackageManifest>('package.json'),
+      readJson<PackageManifest>('packages/eventing/package.json'),
+      readJson<PackageManifest>('packages/eventing-filesystem/package.json'),
+      readJson<TsConfig>('tsconfig.json'),
+      readJson<TsConfig>('tsconfig.app.json'),
+      readJson<TsConfig>('packages/eventing-filesystem/tsconfig.json'),
+      readJson<TsConfig>('packages/eventing/tsconfig.test.json'),
+      readJson<TsConfig>('tsconfig.source.json'),
+      readJson<PackageLock>('package-lock.json'),
+    ]);
 
     expect(wake.workspaces).toEqual(expect.arrayContaining(['packages/*', 'src/surfaces/web']));
     expect(eventing).toMatchObject({
@@ -61,7 +77,10 @@ describe('eventing workspace packages', () => {
     expect(eventing.exports).not.toHaveProperty('./memory');
     expect(filesystem.exports).toHaveProperty('.');
     expect(eventing.scripts?.build).toBe('tsc --build tsconfig.json');
-    expect(eventing.scripts?.test).toBe('vitest run --config vitest.config.ts');
+    expect(eventing.scripts?.['typecheck:test']).toBe('tsc --noEmit --project tsconfig.test.json');
+    expect(eventing.scripts?.test).toBe(
+      'npm run typecheck:test && vitest run --config vitest.config.ts',
+    );
     expect(filesystem.scripts?.build).toBe('tsc --build tsconfig.json');
     expect(filesystem.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);
     expect(wake.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);
@@ -76,6 +95,11 @@ describe('eventing workspace packages', () => {
       { path: './packages/eventing-filesystem' },
     ]);
     expect(filesystemTsConfig.references).toEqual([{ path: '../eventing' }]);
+    expect(eventingTestTsConfig.compilerOptions?.noEmit).toBe(true);
+    expect(eventingTestTsConfig.include).toEqual(['src/**/*.ts', 'test/**/*.ts']);
+    expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing']).toEqual([
+      './packages/eventing/src/index.ts',
+    ]);
     expect(lockfile.packages['node_modules/@atolis-hq/eventing']).toEqual({
       resolved: 'packages/eventing',
       link: true,
@@ -84,5 +108,36 @@ describe('eventing workspace packages', () => {
       resolved: 'packages/eventing-filesystem',
       link: true,
     });
+  });
+
+  it('keeps published exports on dist while source tools use workspace aliases', async () => {
+    const [eventing, aliases, sourceResolutionCheck, configs] = await Promise.all([
+      readJson<PackageManifest>('packages/eventing/package.json'),
+      readFile(new URL('../../vitest.workspace-aliases.ts', import.meta.url), 'utf8'),
+      readFile(
+        new URL('../../scripts/check-workspace-source-resolution.ts', import.meta.url),
+        'utf8',
+      ),
+      Promise.all(
+        [
+          'vitest.unit.config.ts',
+          'vitest.architecture.config.ts',
+          'vitest.integration.config.ts',
+          'vitest.e2e.config.ts',
+          'vitest.live-e2e.config.ts',
+        ].map((path) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')),
+      ),
+    ]);
+
+    expect(eventing.exports).toEqual({
+      '.': {
+        types: './dist/index.d.ts',
+        default: './dist/index.js',
+      },
+    });
+    expect(aliases).toContain("'./packages'");
+    expect(aliases).toContain("'src/index.ts'");
+    expect(sourceResolutionCheck).toContain('import.meta.resolve(manifest.name)');
+    for (const config of configs) expect(config).toContain('workspaceSourceAliases');
   });
 });

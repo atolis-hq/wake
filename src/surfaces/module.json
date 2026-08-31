@@ -3,6 +3,7 @@
   "kind": "surface",
   "dependencies": [
     "kernel",
+    "eventing",
     "persistence",
     "work",
     "resources",

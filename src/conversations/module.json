@@ -1,7 +1,7 @@
 {
   "name": "conversations",
   "kind": "domain",
-  "dependencies": ["kernel", "work"],
+  "dependencies": ["kernel", "eventing", "work"],
   "publicEntry": "./index.ts",
   "namespaces": {
     "events": ["conversation."],
