@@ -600,6 +600,33 @@ describe('event processor ownership', () => {
     await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
   });
 
+  it('does not infer runtime processor origins from type-only tuple annotations', async () => {
+    const root = await fixture({
+      'src/orchestration/application/type-only-tuple-origins.ts': [
+        "import type { EventProcessorHost } from '../../eventing/index.js';",
+        "import type { createFileProcessorRunSerialiser } from '../../persistence/index.js';",
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'const localSerialiser = (value: unknown): unknown => value;',
+        'const hostSources: [typeof EventProcessorHost] = [LocalHost];',
+        'const serialiserSources: [typeof createFileProcessorRunSerialiser] = [localSerialiser];',
+        'const holder = { hosts: [] as Array<typeof LocalHost>, serialisers: [] as Array<typeof localSerialiser> };',
+        '[...holder.hosts] = hostSources;',
+        '[...holder.serialisers] = serialiserSources;',
+        'export const values = [new holder.hosts[0]!(), holder.serialisers[0]!(1)];',
+      ].join('\n'),
+      'src/persistence/application/type-only-tuple-origins.ts': [
+        "import type { defineEventProcessor } from '../../eventing/index.js';",
+        'const localFactory = (value: unknown): unknown => value;',
+        'const factorySources: [typeof defineEventProcessor] = [localFactory];',
+        'const holder = { factories: [] as Array<typeof localFactory> };',
+        '[...holder.factories] = factorySources;',
+        'export const value = holder.factories[0]!(1);',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
   it('does not reject excluded, local, or unprovable member rest values', async () => {
     const root = await fixture({
       'src/orchestration/application/local-member-rest-targets.ts': [

@@ -533,11 +533,6 @@ function resolveMemberAssignmentKinds(assignment, bindings, typeChecker, sourceR
         new Set(),
       );
       addProcessorRuntimeKind(kinds, directKind);
-      if (directKind === undefined && element.exactTupleElement)
-        addProcessorRuntimeKind(
-          kinds,
-          protectedKindFromExactType(element.type, undefined, typeChecker, sourceRoot),
-        );
       for (const name of processorRuntimeNames) {
         const propertyKind = resolveAccessPathKind(
           element.expression,
@@ -549,11 +544,6 @@ function resolveMemberAssignmentKinds(assignment, bindings, typeChecker, sourceR
           new Set(),
         );
         addProcessorRuntimeKind(kinds, propertyKind);
-        if (propertyKind === undefined && element.exactTupleElement)
-          addProcessorRuntimeKind(
-            kinds,
-            protectedKindFromExactType(element.type, name, typeChecker, sourceRoot),
-          );
       }
     }
   }
@@ -562,11 +552,6 @@ function resolveMemberAssignmentKinds(assignment, bindings, typeChecker, sourceR
 
 function addProcessorRuntimeKind(kinds, kind) {
   if (isProcessorRuntimeKind(kind)) kinds.add(kind);
-}
-
-function protectedKindFromExactType(type, propertyName, typeChecker, sourceRoot) {
-  const symbol = propertyName === undefined ? type.getSymbol() : type.getProperty(propertyName);
-  return protectedSymbolKind(resolveSymbol(symbol, typeChecker), sourceRoot);
 }
 
 function finiteArrayRestElements(expression, prefix, start, bindings, typeChecker) {
@@ -602,9 +587,7 @@ function finiteArrayLiteralElements(literal, bindings, typeChecker, activeStates
     if (!ts.isSpreadElement(literalElement)) {
       elements.push({
         accessPath: [],
-        exactTupleElement: false,
         expression: literalElement,
-        type: typeChecker.getTypeAtLocation(literalElement),
       });
       continue;
     }
@@ -642,9 +625,7 @@ function finiteTupleElements(expression, prefix, typeChecker) {
       return { complete: false, elements: [] };
     elements.push({
       accessPath: [...prefix, { kind: 'index', index }],
-      exactTupleElement: true,
       expression,
-      type: typeChecker.getTypeOfSymbolAtLocation(symbol, expression),
     });
   }
   return { complete: true, elements };
@@ -1816,6 +1797,27 @@ function resolveAccessPathKindUncached(
       return resolveAssignmentOrigins(
         assignment,
         accessPath,
+        bindings,
+        typeChecker,
+        sourceRoot,
+        useNode,
+        branchSeen,
+      );
+    }
+  }
+  const access = aliasedAccess(unwrapped, bindings, typeChecker);
+  if (access !== undefined) {
+    const sourceSymbol = typeChecker.getSymbolAtLocation(access.base);
+    const resolvedSource = resolveSymbol(sourceSymbol, typeChecker);
+    const assignment =
+      assignmentAt(bindings, sourceSymbol, useNode) ??
+      assignmentAt(bindings, resolvedSource, useNode);
+    if (sourceSymbol !== undefined && assignment !== undefined && !seen.has(sourceSymbol)) {
+      const branchSeen = new Set(seen);
+      branchSeen.add(sourceSymbol);
+      return resolveAssignmentOrigins(
+        assignment,
+        [...access.accessPath, ...accessPath],
         bindings,
         typeChecker,
         sourceRoot,
