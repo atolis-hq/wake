@@ -215,13 +215,14 @@ embedding and CLI-entrypoint checks. Focused package builds remain available
 through workspace scripts. Docker copies the package manifests and sources
 before dependency installation and uses the same project-reference build.
 
-Wake is already published to npm. To avoid adding a bundler or shipping broken
-workspace links, Eventing and its filesystem adapter are publishable packages
-from the first extracted release. The release job assigns the same semantic
-version to all three packages and publishes them in dependency order:
-Eventing, Eventing Filesystem, then Wake. Local installs use npm workspace
-links. Package dependency ranges are rewritten or validated against the release
-version by a small deterministic release check.
+Wake is already published to npm. To avoid adding a bundler, private registry,
+or broken workspace links, Eventing and its filesystem adapter are public `0.x`
+packages from the first extracted release. Their manifests explicitly set
+public npm access. The release job assigns the same semantic version to all
+three packages and publishes them in dependency order: Eventing, Eventing
+Filesystem, then Wake. Local installs use npm workspace links. Package
+dependency ranges are rewritten or validated against the release version by a
+small deterministic release check.
 
 The existing web workspace and its build remain unchanged apart from the root
 workspace list.
