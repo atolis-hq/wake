@@ -1,5 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
-import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
+import {
+  EventSourceKind,
+  WrongExpectedSequenceError,
+  type CommandContext,
+  type EventJournal,
+} from '../../kernel/index.js';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
 import { createWorkEventData } from '../contracts/event-factory.js';
 import {
@@ -116,18 +121,42 @@ async function changeWorkItem(
   const loaded = await repository.load(workItemId);
   const replayed = replayedWorkChange(loaded.events, loaded.view, draft, workItemId);
   if (replayed !== undefined) return replayed;
-  if (!allowMissing && loaded.view === null)
-    throw new Error(`WorkItem ${workItemId} does not exist`);
-  if (loaded.view !== null && loaded.view.deleted) {
-    throw new Error(`WorkItem ${workItemId} is deleted`);
-  }
-  if (requireOpen && loaded.view !== null && loaded.view.state !== WorkStatus.Open) {
-    throw new Error(`WorkItem ${workItemId} is ${loaded.view.state}`);
-  }
-  await repository.append(workItemId, loaded.sequence, [draft]);
+  assertWorkChangeAllowed(loaded.view, workItemId, allowMissing, requireOpen);
+  const concurrentReplay = await appendWorkChange(repository, workItemId, loaded.sequence, draft);
+  if (concurrentReplay !== undefined) return concurrentReplay;
   const result = await repository.load(workItemId);
   if (result.view === null) throw new Error(`WorkItem ${workItemId} was not created`);
   return result.view;
+}
+
+function assertWorkChangeAllowed(
+  view: WorkItemView | null,
+  workItemId: WorkItemId,
+  allowMissing: boolean,
+  requireOpen: boolean,
+): void {
+  if (!allowMissing && view === null) throw new Error(`WorkItem ${workItemId} does not exist`);
+  if (view?.deleted === true) throw new Error(`WorkItem ${workItemId} is deleted`);
+  if (requireOpen && view !== null && view.state !== WorkStatus.Open)
+    throw new Error(`WorkItem ${workItemId} is ${view.state}`);
+}
+
+async function appendWorkChange(
+  repository: WorkRepository,
+  workItemId: WorkItemId,
+  expectedSequence: number,
+  draft: WorkEventData,
+): Promise<WorkItemView | undefined> {
+  try {
+    await repository.append(workItemId, expectedSequence, [draft]);
+    return undefined;
+  } catch (error) {
+    if (!(error instanceof WrongExpectedSequenceError)) throw error;
+    const concurrent = await repository.load(workItemId);
+    const replayed = replayedWorkChange(concurrent.events, concurrent.view, draft, workItemId);
+    if (replayed !== undefined) return replayed;
+    throw error;
+  }
 }
 
 function replayedWorkChange(

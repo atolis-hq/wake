@@ -1,10 +1,16 @@
 import { isDeepStrictEqual } from 'node:util';
-import { EventSourceKind, type CommandContext, type EventJournal } from '../../kernel/index.js';
+import {
+  EventSourceKind,
+  WrongExpectedSequenceError,
+  type CommandContext,
+  type EventJournal,
+} from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { DiscoverResource } from '../contracts/commands.js';
 import { createResourceEventData } from '../contracts/event-factory.js';
 import {
   ResourceEventType,
+  type ResourceEvent,
   type ResourceEventData,
   type ResourceEventPayloads,
 } from '../contracts/events.js';
@@ -199,48 +205,76 @@ async function correlateResource(
   context: CommandContext,
   provenance: CorrelationProvenance = ResourceCorrelationProvenance.ProviderObserved,
 ): Promise<ResourceCorrelationView> {
-  const loaded = await repository.load(resourceId);
-  if (loaded.resource === null) throw new Error(`Resource ${resourceId} does not exist`);
   const draft = resourceDraft(context, {
     eventType: ResourceEventType.WorkCorrelationEstablished,
     payload: { workItemId, role, provenance },
   });
-  const prior = loaded.resource.events.find((event) => event.event.eventId === draft.eventId);
-  if (prior !== undefined) {
-    if (!isDeepStrictEqual(prior.event, draft))
-      throw new Error(
-        `Resource event id ${draft.eventId} has already been used with different content`,
-      );
-    const correlation = loaded.resource.correlations.find(
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const loaded = await repository.load(resourceId);
+    if (loaded.resource === null) throw new Error(`Resource ${resourceId} does not exist`);
+    const replayed = replayedResourceCorrelation(
+      loaded.resource.events,
+      loaded.resource.correlations,
+      draft,
+      workItemId,
+      role,
+    );
+    if (replayed !== undefined) return replayed;
+    const primary = conflictingPrimary(loaded.resource.correlations, workItemId, role);
+    if (primary !== undefined) {
+      await repository.append(resourceId, loaded.sequence, [
+        resourceDraft(context, {
+          eventType: ResourceEventType.WorkCorrelationConflicted,
+          payload: { workItemId, existingWorkItemId: primary.workItemId },
+        }),
+      ]);
+      throw new Error(`Resource ${resourceId} already has a primary WorkItem correlation`);
+    }
+    try {
+      await repository.append(resourceId, loaded.sequence, [draft]);
+    } catch (error) {
+      if (attempt === 0 && error instanceof WrongExpectedSequenceError) continue;
+      throw error;
+    }
+    const correlation = (await repository.load(resourceId)).resource?.correlations.find(
       (candidate) => candidate.workItemId === workItemId && candidate.role === role,
     );
     if (correlation === undefined) throw new Error('Resource correlation was not established');
     return correlation;
   }
-  const primary = loaded.resource.correlations.find(
-    (correlation) => correlation.role === ResourceCorrelationRole.Primary,
-  );
-  if (
-    role === ResourceCorrelationRole.Primary &&
-    primary !== undefined &&
-    primary.workItemId !== workItemId
-  ) {
-    await appendResourceEvent(
-      repository,
-      resourceId,
-      resourceDraft(context, {
-        eventType: ResourceEventType.WorkCorrelationConflicted,
-        payload: { workItemId, existingWorkItemId: primary.workItemId },
-      }),
+  throw new Error('Resource correlation concurrency reconciliation was exhausted');
+}
+
+function replayedResourceCorrelation(
+  events: readonly ResourceEvent[],
+  correlations: readonly ResourceCorrelationView[],
+  draft: ResourceEventData,
+  workItemId: WorkItemId,
+  role: typeof ResourceCorrelationRole.Primary | typeof ResourceCorrelationRole.Secondary,
+): ResourceCorrelationView | undefined {
+  const prior = events.find((event) => event.event.eventId === draft.eventId);
+  if (prior === undefined) return undefined;
+  if (!isDeepStrictEqual(prior.event, draft))
+    throw new Error(
+      `Resource event id ${draft.eventId} has already been used with different content`,
     );
-    throw new Error(`Resource ${resourceId} already has a primary WorkItem correlation`);
-  }
-  await appendResourceEvent(repository, resourceId, draft);
-  const correlation = (await repository.load(resourceId)).resource?.correlations.find(
+  const correlation = correlations.find(
     (candidate) => candidate.workItemId === workItemId && candidate.role === role,
   );
   if (correlation === undefined) throw new Error('Resource correlation was not established');
   return correlation;
+}
+
+function conflictingPrimary(
+  correlations: readonly ResourceCorrelationView[],
+  workItemId: WorkItemId,
+  role: typeof ResourceCorrelationRole.Primary | typeof ResourceCorrelationRole.Secondary,
+): ResourceCorrelationView | undefined {
+  if (role !== ResourceCorrelationRole.Primary) return undefined;
+  return correlations.find(
+    (correlation) =>
+      correlation.role === ResourceCorrelationRole.Primary && correlation.workItemId !== workItemId,
+  );
 }
 
 async function appendResourceEvent(

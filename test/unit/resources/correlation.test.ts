@@ -5,6 +5,7 @@ import { resourceCapability, resourceKind, resourceStream } from '../../../src/r
 import {} from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { resId, workId } from '../../support/identities.js';
+import { InterleavingEventJournal } from '../../support/interleaving-event-journal.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
 
 const context = (commandId: string) => ({
@@ -107,6 +108,69 @@ describe('Resource correlations', () => {
         (event) => event.event.eventType === 'resources.work-correlation-established',
       ),
     ).toHaveLength(1);
+  });
+
+  it('treats concurrent identical correlations as one idempotent Resource change', async () => {
+    const inner = new InMemoryEventJournal(new FakeClock());
+    const service = createTestResourceServices(
+      new InterleavingEventJournal(
+        inner,
+        (events) => events[0]?.eventType === 'resources.work-correlation-established',
+      ),
+    ).resources;
+    const resource = resId('concurrent-replay');
+    await service.discover(discovery(resource), context('discover'));
+
+    const results = await Promise.all([
+      service.correlate(resource, workId('one'), 'primary', context('correlate')),
+      service.correlate(resource, workId('one'), 'primary', context('correlate')),
+    ]);
+
+    expect(results).toEqual([
+      expect.objectContaining({ workItemId: workId('one'), role: 'primary' }),
+      expect.objectContaining({ workItemId: workId('one'), role: 'primary' }),
+    ]);
+    expect(
+      (await inner.readStream(resourceStream(resource))).filter(
+        (event) => event.event.eventType === 'resources.work-correlation-established',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('records the mandated conflict when primary correlations race', async () => {
+    const inner = new InMemoryEventJournal(new FakeClock());
+    const service = createTestResourceServices(
+      new InterleavingEventJournal(
+        inner,
+        (events) => events[0]?.eventType === 'resources.work-correlation-established',
+      ),
+    ).resources;
+    const resource = resId('concurrent-primary');
+    await service.discover(discovery(resource), context('discover'));
+
+    const results = await Promise.allSettled([
+      service.correlate(resource, workId('one'), 'primary', context('correlate-one')),
+      service.correlate(resource, workId('two'), 'primary', context('correlate-two')),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({ message: expect.stringContaining('primary') }),
+      }),
+    ]);
+    const events = await inner.readStream(resourceStream(resource));
+    expect(
+      events.filter((event) => event.event.eventType === 'resources.work-correlation-established'),
+    ).toHaveLength(1);
+    const winner = results.find((result) => result.status === 'fulfilled')?.value.workItemId;
+    const loser = winner === workId('one') ? workId('two') : workId('one');
+    expect(events.at(-1)).toMatchObject({
+      event: {
+        eventType: 'resources.work-correlation-conflicted',
+        payload: { workItemId: loser, existingWorkItemId: winner },
+      },
+    });
   });
 
   it('rejects reuse of a command event identity with different Resource data', async () => {
