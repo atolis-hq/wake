@@ -25,31 +25,16 @@ const legacyDraftNames = new Set([
   'createEventDraft',
   'eventDraftSchema',
 ]);
-const eventDataPropertyNames = new Set([
-  'eventId',
-  'eventType',
-  'schemaVersion',
-  'occurredAt',
-  'correlationId',
-  'causationId',
-  'actor',
-  'source',
-  'payload',
-]);
-const envelopePropertyNames = new Set([
-  'event',
-  'stream',
-  'recordedAt',
-  'sequence',
-  'globalPosition',
-]);
-
 /**
  * Enforce event processor and publishing ownership through TypeScript symbols.
  * Imports, namespace members, re-exports, and local aliases resolve to their
  * declarations, leaving unrelated local symbols and dynamic properties alone.
  */
 export async function checkEventArchitecture(root = 'src') {
+  return (await checkEventArchitectureWithStats(root)).diagnostics;
+}
+
+export async function checkEventArchitectureWithStats(root = 'src') {
   const resolvedRoot = resolve(root);
   const sourceRoot = (await directoryExists(join(resolvedRoot, 'src')))
     ? join(resolvedRoot, 'src')
@@ -60,14 +45,20 @@ export async function checkEventArchitecture(root = 'src') {
   ]);
   const program = ts.createProgram(files, {
     allowJs: false,
+    exactOptionalPropertyTypes: true,
     module: ts.ModuleKind.NodeNext,
     moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    noImplicitOverride: true,
+    noUncheckedIndexedAccess: true,
     skipLibCheck: true,
+    strict: true,
     target: ts.ScriptTarget.ES2022,
   });
   const typeChecker = program.getTypeChecker();
-  const bindings = collectBindings(program, typeChecker);
+  const analysis = createAnalysisState();
+  const bindings = collectBindings(program, typeChecker, analysis);
   const canonicalSymbols = collectCanonicalSymbols(program, typeChecker, sourceRoot);
+  analysis.canonicalSymbols = canonicalSymbols;
   const diagnostics = [];
 
   for (const file of files) {
@@ -83,6 +74,7 @@ export async function checkEventArchitecture(root = 'src') {
       moduleName,
       relativePath,
       diagnostics,
+      analysis,
     );
     if (moduleName === 'persistence') {
       inspectPersistenceProcessors(
@@ -92,6 +84,7 @@ export async function checkEventArchitecture(root = 'src') {
         sourceRoot,
         relativePath,
         diagnostics,
+        analysis,
       );
     }
     inspectPublishingOwnership({
@@ -104,15 +97,32 @@ export async function checkEventArchitecture(root = 'src') {
       manifests,
       canonicalSymbols,
       diagnostics,
+      analysis,
     });
   }
 
-  return diagnostics;
+  return {
+    diagnostics,
+    stats: {
+      originEdges: analysis.originEdges.size,
+      uniqueOriginStates: analysis.originStates.size,
+    },
+  };
 }
 
-function collectBindings(program, typeChecker) {
+function createAnalysisState() {
+  return {
+    memo: new Map(),
+    nodeIds: new WeakMap(),
+    nextNodeId: 1,
+    originEdges: new Set(),
+    originStates: new Set(),
+  };
+}
+
+function collectBindings(program, typeChecker, analysis) {
   const assignments = new Map();
-  const bindings = { assignments };
+  const bindings = { analysis, assignments };
 
   function visit(node) {
     if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
@@ -122,6 +132,7 @@ function collectBindings(program, typeChecker) {
         bindings,
         typeChecker,
         assignments,
+        assignmentSite(node),
       );
     }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken)
@@ -131,6 +142,7 @@ function collectBindings(program, typeChecker) {
         bindings,
         typeChecker,
         assignments,
+        assignmentSite(node),
       );
     ts.forEachChild(node, visit);
   }
@@ -141,10 +153,17 @@ function collectBindings(program, typeChecker) {
   return bindings;
 }
 
-function collectBindingAssignments(pattern, origins, bindings, typeChecker, assignments) {
+function assignmentSite(node) {
+  return {
+    position: node.getEnd(),
+    sourceFile: node.getSourceFile(),
+  };
+}
+
+function collectBindingAssignments(pattern, origins, bindings, typeChecker, assignments, site) {
   if (ts.isIdentifier(pattern)) {
     const symbol = typeChecker.getSymbolAtLocation(pattern);
-    if (symbol !== undefined) assignments.set(symbol, { origins });
+    if (symbol !== undefined) addAssignment(assignments, symbol, { ...site, origins });
     return;
   }
   if (ts.isObjectBindingPattern(pattern)) {
@@ -157,6 +176,7 @@ function collectBindingAssignments(pattern, origins, bindings, typeChecker, assi
           bindings,
           typeChecker,
           assignments,
+          site,
         );
         continue;
       }
@@ -170,6 +190,7 @@ function collectBindingAssignments(pattern, origins, bindings, typeChecker, assi
         bindings,
         typeChecker,
         assignments,
+        site,
       );
     }
     return;
@@ -188,15 +209,16 @@ function collectBindingAssignments(pattern, origins, bindings, typeChecker, assi
         bindings,
         typeChecker,
         assignments,
+        site,
       );
     }
 }
 
-function collectAssignmentTarget(target, origins, bindings, typeChecker, assignments) {
+function collectAssignmentTarget(target, origins, bindings, typeChecker, assignments, site) {
   const unwrapped = unwrapExpression(target);
   if (ts.isIdentifier(unwrapped)) {
     const symbol = typeChecker.getSymbolAtLocation(unwrapped);
-    if (symbol !== undefined) assignments.set(symbol, { origins });
+    if (symbol !== undefined) addAssignment(assignments, symbol, { ...site, origins });
     return;
   }
   if (ts.isArrayLiteralExpression(unwrapped)) {
@@ -212,6 +234,7 @@ function collectAssignmentTarget(target, origins, bindings, typeChecker, assignm
         bindings,
         typeChecker,
         assignments,
+        site,
       );
     }
     return;
@@ -226,6 +249,7 @@ function collectAssignmentTarget(target, origins, bindings, typeChecker, assignm
         bindings,
         typeChecker,
         assignments,
+        site,
       );
       continue;
     }
@@ -244,8 +268,28 @@ function collectAssignmentTarget(target, origins, bindings, typeChecker, assignm
         bindings,
         typeChecker,
         assignments,
+        site,
       );
   }
+}
+
+function addAssignment(assignments, symbol, assignment) {
+  const history = assignments.get(symbol);
+  if (history === undefined) assignments.set(symbol, [assignment]);
+  else history.push(assignment);
+}
+
+function assignmentAt(bindings, symbol, useNode) {
+  const history = bindings.assignments.get(symbol);
+  if (history === undefined) return undefined;
+  const useSource = useNode.getSourceFile();
+  const usePosition = useNode.getStart(useSource);
+  let current;
+  for (const assignment of history) {
+    if (assignment.sourceFile !== useSource || assignment.position <= usePosition)
+      current = assignment;
+  }
+  return current;
 }
 
 function appendOriginAccess(origins, selector) {
@@ -300,18 +344,16 @@ function inspectRuntimeConstruction(
       const kind = resolveProtectedKind(node.expression, bindings, typeChecker, sourceRoot);
       if (kind === 'host' && !['eventing', 'bootstrap'].includes(moduleName))
         addDiagnostic(
-          sourceFile,
           node,
-          relativePath,
+          sourceRoot,
           'event-processor-host-owner',
           'EventProcessorHost may only be constructed by eventing or bootstrap',
           diagnostics,
         );
       if (kind === 'registry' && moduleName !== 'bootstrap')
         addDiagnostic(
-          sourceFile,
           node,
-          relativePath,
+          sourceRoot,
           'processor-registry-owner',
           'the complete EventProcessorRuntime may only be composed by bootstrap',
           diagnostics,
@@ -321,9 +363,8 @@ function inspectRuntimeConstruction(
       const kind = resolveProtectedKind(node.expression, bindings, typeChecker, sourceRoot);
       if (kind === 'serialiser' && !['persistence', 'bootstrap'].includes(moduleName))
         addDiagnostic(
-          sourceFile,
           node,
-          relativePath,
+          sourceRoot,
           'processor-serialiser-owner',
           'concrete processor serialisers may only be constructed by persistence or bootstrap',
           diagnostics,
@@ -341,13 +382,14 @@ function inspectPersistenceProcessors(
   sourceRoot,
   relativePath,
   diagnostics,
+  analysis,
 ) {
   const reported = new Set();
   function visit(node) {
     if (ts.isCallExpression(node)) {
       const kind = resolveProtectedKind(node.expression, bindings, typeChecker, sourceRoot);
       if (kind === 'processor-factory') {
-        addPersistenceDiagnostic(sourceFile, node, relativePath, diagnostics, reported);
+        addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported);
         for (const argument of node.arguments)
           inspectLinkedHandlerProperties(
             argument,
@@ -362,6 +404,11 @@ function inspectPersistenceProcessors(
           );
       }
     }
+    if (
+      ts.isObjectLiteralExpression(node) &&
+      isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, analysis.canonicalSymbols)
+    )
+      addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported);
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
@@ -384,13 +431,14 @@ function inspectLinkedHandlerProperties(
   if (ts.isObjectLiteralExpression(expression)) {
     for (const property of expression.properties) {
       if (handlerPropertyNames.has(propertyName(property.name, bindings, typeChecker)))
-        addPersistenceDiagnostic(sourceFile, property, relativePath, diagnostics, reported);
+        addPersistenceDiagnostic(property, sourceRoot, diagnostics, reported);
     }
     return;
   }
   if (ts.isIdentifier(expression)) {
     const symbol = typeChecker.getSymbolAtLocation(expression);
-    const assignment = symbol === undefined ? undefined : bindings.assignments.get(symbol);
+    const assignment =
+      symbol === undefined ? undefined : assignmentAt(bindings, symbol, expression);
     for (const origin of assignment?.origins ?? [])
       if (origin.accessPath.length === 0)
         inspectLinkedHandlerProperties(
@@ -475,24 +523,10 @@ function inspectPublishingOwnership(context) {
 
   function visit(node) {
     if (ts.isCallExpression(node)) {
-      const kind = resolveProtectedKind(node.expression, bindings, typeChecker, sourceRoot);
-      if (
-        kind === 'event-data-factory' &&
-        !isApprovedEventDataFactoryPath(relativePath, moduleName, manifests)
-      )
-        addDiagnostic(
-          sourceFile,
-          node,
-          relativePath,
-          'event-data-factory-owner',
-          'Kernel createEventData may only be called by an owning event factory or Kernel test helper',
-          diagnostics,
-        );
       if (isLegacyJournalAppendCall(node, bindings, typeChecker, sourceRoot))
         addDiagnostic(
-          sourceFile,
           node,
-          relativePath,
+          sourceRoot,
           'legacy-event-journal-append',
           'EventJournal.append is legacy; publish EventData with appendToStream',
           diagnostics,
@@ -504,22 +538,23 @@ function inspectPublishingOwnership(context) {
       isEventJournalMember(node, typeChecker, sourceRoot)
     )
       addDiagnostic(
-        sourceFile,
         node,
-        relativePath,
+        sourceRoot,
         'legacy-event-journal-append',
         'EventJournal must not declare the legacy append method',
         diagnostics,
       );
+    inspectEventDataFactoryReference(node, context);
+    inspectEventDataFactoryBinding(node, context);
     if (
       ts.isObjectLiteralExpression(node) &&
+      moduleName !== 'kernel' &&
       isEventEnvelopeConstruction(node, typeChecker, sourceRoot, canonicalSymbols) &&
       !isApprovedEnvelopeConstructionPath(relativePath)
     )
       addDiagnostic(
-        sourceFile,
         node,
-        relativePath,
+        sourceRoot,
         'event-envelope-construction-owner',
         'journal envelope metadata may only be constructed by Persistence journal adapters',
         diagnostics,
@@ -530,18 +565,16 @@ function inspectPublishingOwnership(context) {
       isBoundedEventDataConstruction(node, typeChecker, sourceRoot, manifests, canonicalSymbols)
     )
       addDiagnostic(
-        sourceFile,
         node,
-        relativePath,
+        sourceRoot,
         'bounded-event-data-construction',
         'Bootstrap, Persistence, and Eventing must delegate bounded EventData construction to its owner',
         diagnostics,
       );
     if (ts.isIdentifier(node) && legacyDraftNames.has(node.text) && !isTestPath(relativePath))
       addDiagnostic(
-        sourceFile,
         node,
-        relativePath,
+        sourceRoot,
         'legacy-event-draft-symbol',
         `${node.text} is legacy production vocabulary; use EventData`,
         diagnostics,
@@ -549,6 +582,220 @@ function inspectPublishingOwnership(context) {
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
+}
+
+function inspectEventDataFactoryBinding(node, context) {
+  if (!ts.isIdentifier(node)) return;
+  const site = bindingSite(node);
+  if (site === undefined) return;
+  const symbol = context.typeChecker.getSymbolAtLocation(node);
+  const history = context.bindings.assignments.get(symbol);
+  const assignment = history?.find(
+    (candidate) =>
+      candidate.sourceFile === site.getSourceFile() && candidate.position === site.getEnd(),
+  );
+  if (assignment === undefined) return;
+  if (
+    !assignment.origins.some(({ accessPath }) =>
+      accessPath.some(
+        (selector) => selector.kind === 'property' && selector.name === 'createEventData',
+      ),
+    )
+  )
+    return;
+  if (
+    assignment.origins.some(({ expression }) =>
+      containsDirectFactoryReference(expression, context.typeChecker, context.sourceRoot),
+    ) ||
+    containsDirectFactoryReference(site.name ?? site.left, context.typeChecker, context.sourceRoot)
+  )
+    return;
+  const kind = resolveAssignmentOrigins(
+    assignment,
+    [],
+    context.bindings,
+    context.typeChecker,
+    context.sourceRoot,
+    site,
+    new Set(),
+  );
+  if (kind !== 'event-data-factory') return;
+  addDiagnostic(
+    node,
+    context.sourceRoot,
+    'event-data-factory-owner',
+    'Kernel createEventData runtime references are restricted to direct, manifest-owned factory calls',
+    context.diagnostics,
+  );
+}
+
+function bindingSite(node) {
+  for (let current = node.parent; current !== undefined; current = current.parent) {
+    if (ts.isVariableDeclaration(current))
+      return node.pos >= current.name.pos && node.end <= current.name.end ? current : undefined;
+    if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+      return node.pos >= current.left.pos && node.end <= current.left.end ? current : undefined;
+    if (ts.isStatement(current)) return undefined;
+  }
+  return undefined;
+}
+
+function inspectEventDataFactoryReference(node, context) {
+  const { bindings, typeChecker, sourceRoot } = context;
+  const reference = eventDataFactoryReference(node, bindings, typeChecker, sourceRoot);
+  if (reference === undefined || isExcludedFactoryReference(reference, context)) return;
+  if (isKernelTestPath(context.relativePath) || isEnvelopeTestHelperPath(context.relativePath))
+    return;
+  if (isAllowedOwnerFactoryCall(reference, context)) return;
+  addDiagnostic(
+    reference,
+    context.sourceRoot,
+    'event-data-factory-owner',
+    'Kernel createEventData runtime references are restricted to direct, manifest-owned factory calls',
+    context.diagnostics,
+  );
+}
+
+function eventDataFactoryReference(node, bindings, typeChecker, sourceRoot) {
+  if (ts.isIdentifier(node)) {
+    const symbol = resolveSymbol(typeChecker.getSymbolAtLocation(node), typeChecker);
+    return protectedSymbolKind(symbol, sourceRoot) === 'event-data-factory' ? node : undefined;
+  }
+  if (ts.isElementAccessExpression(node)) {
+    const symbol = resolveSymbol(expressionSymbol(node, bindings, typeChecker), typeChecker);
+    if (protectedSymbolKind(symbol, sourceRoot) === 'event-data-factory') return node;
+  }
+  if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+    const direct = resolveSymbol(expressionSymbol(node, bindings, typeChecker), typeChecker);
+    if (protectedSymbolKind(direct, sourceRoot) !== undefined) return undefined;
+    if (
+      resolveProtectedKind(node, bindings, typeChecker, sourceRoot) === 'event-data-factory' &&
+      !aliasedAccessHasDirectFactoryOrigin(node, bindings, typeChecker, sourceRoot)
+    )
+      return node;
+  }
+  return undefined;
+}
+
+function isExcludedFactoryReference(node, context) {
+  if (isWithinImport(node) || isWithinTypePosition(node)) return true;
+  if (isTypeOnlyExportReference(node)) return true;
+  const parent = node.parent;
+  if (ts.isExportSpecifier(parent) && parent.name === node && parent.propertyName !== undefined)
+    return true;
+  if (
+    context.moduleName === 'kernel' &&
+    (ts.isExportSpecifier(parent) || ts.isExportDeclaration(parent))
+  )
+    return true;
+  if (
+    (ts.isFunctionDeclaration(parent) ||
+      ts.isFunctionExpression(parent) ||
+      ts.isMethodDeclaration(parent) ||
+      ts.isVariableDeclaration(parent) ||
+      ts.isClassDeclaration(parent) ||
+      ts.isInterfaceDeclaration(parent) ||
+      ts.isTypeAliasDeclaration(parent)) &&
+    parent.name === node
+  )
+    return true;
+  return false;
+}
+
+function aliasedAccessHasDirectFactoryOrigin(node, bindings, typeChecker, sourceRoot) {
+  const access = aliasedAccess(node, bindings, typeChecker);
+  if (access === undefined) return false;
+  const symbol = typeChecker.getSymbolAtLocation(access.base);
+  const resolved = resolveSymbol(symbol, typeChecker);
+  const assignment = assignmentAt(bindings, symbol, node) ?? assignmentAt(bindings, resolved, node);
+  return assignment?.origins.some(({ expression }) =>
+    containsDirectFactoryReference(expression, typeChecker, sourceRoot),
+  );
+}
+
+function containsDirectFactoryReference(node, typeChecker, sourceRoot) {
+  let found = false;
+  function visit(current) {
+    if (found) return;
+    if (ts.isIdentifier(current)) {
+      const symbol = resolveSymbol(typeChecker.getSymbolAtLocation(current), typeChecker);
+      if (protectedSymbolKind(symbol, sourceRoot) === 'event-data-factory') {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(current, visit);
+  }
+  visit(node);
+  return found;
+}
+
+function isWithinImport(node) {
+  for (let current = node; current !== undefined; current = current.parent) {
+    if (ts.isImportDeclaration(current) || ts.isImportEqualsDeclaration(current)) return true;
+    if (ts.isStatement(current)) return false;
+  }
+  return false;
+}
+
+function isWithinTypePosition(node) {
+  for (let current = node.parent; current !== undefined; current = current.parent) {
+    if (ts.isTypeNode(current)) return true;
+    if (ts.isExpression(current) || ts.isStatement(current)) return false;
+  }
+  return false;
+}
+
+function isTypeOnlyExportReference(node) {
+  const specifier = ts.isExportSpecifier(node.parent) ? node.parent : undefined;
+  if (specifier === undefined) return false;
+  if (specifier?.isTypeOnly === true) return true;
+  const declaration = specifier.parent.parent;
+  return ts.isExportDeclaration(declaration) && declaration.isTypeOnly;
+}
+
+function isAllowedOwnerFactoryCall(reference, context) {
+  const expression = referenceExpression(reference);
+  const parent = expression.parent;
+  if (!ts.isCallExpression(parent) || unwrapExpression(parent.expression) !== expression)
+    return false;
+  if (!isApprovedEventDataFactoryPath(context.relativePath, context.moduleName, context.manifests))
+    return false;
+  const eventTypes = eventTypeLiteralValues(parent.arguments[0], context.typeChecker);
+  const namespaces = context.manifests.get(context.moduleName) ?? [];
+  return (
+    eventTypes.length > 0 &&
+    eventTypes.every((eventType) => namespaces.some((namespace) => eventType.startsWith(namespace)))
+  );
+}
+
+function referenceExpression(reference) {
+  const parent = reference.parent;
+  if (ts.isPropertyAccessExpression(parent) && parent.name === reference) return parent;
+  return reference;
+}
+
+function eventTypeLiteralValues(node, typeChecker) {
+  if (node === undefined) return [];
+  const type = typeChecker.getTypeAtLocation(node);
+  const property = type.getProperty('eventType');
+  if (property === undefined) return [];
+  const eventType = typeChecker.getTypeOfSymbolAtLocation(property, node);
+  return stringLiteralValues(eventType);
+}
+
+function stringLiteralValues(type) {
+  const members = type.isUnion() ? type.types : [type];
+  const values = [];
+  for (const member of members) {
+    if ((member.flags & ts.TypeFlags.StringLiteral) === 0) return [];
+    values.push(member.value);
+  }
+  return [...new Set(values)];
+}
+
+function isEnvelopeTestHelperPath(relativePath) {
+  return pathMatches(relativePath, 'test/support/event-envelope.ts');
 }
 
 function inspectBoundedEventImports(context) {
@@ -623,15 +870,14 @@ function moduleExportSymbol(moduleSpecifier, name, typeChecker) {
 }
 
 function addBoundedEventReferenceDiagnostic(node, symbolOrNode, context) {
-  const { sourceFile, typeChecker, sourceRoot, relativePath, manifests, diagnostics } = context;
+  const { typeChecker, sourceRoot, manifests, diagnostics } = context;
   if (symbolOrNode === undefined) return;
   const symbol =
     'kind' in symbolOrNode ? typeChecker.getSymbolAtLocation(symbolOrNode) : symbolOrNode;
   if (!isBoundedEventContractSymbol(symbol, typeChecker, sourceRoot, manifests)) return;
   addDiagnostic(
-    sourceFile,
     node,
-    relativePath,
+    sourceRoot,
     'bounded-event-import-owner',
     'Persistence and Eventing may not import or re-export bounded event contracts',
     diagnostics,
@@ -678,7 +924,7 @@ function boundedEventOwnerForSymbol(symbol, sourceRoot, manifests) {
 }
 
 function isEventContractPath(path) {
-  const file = basename(path);
+  const file = basename(path).replace(/\.(?:cts|mts|tsx?)$/u, '.ts');
   return (
     file === 'events.ts' ||
     file.endsWith('-events.ts') ||
@@ -689,10 +935,9 @@ function isEventContractPath(path) {
 }
 
 function isApprovedEventDataFactoryPath(relativePath, moduleName, manifests) {
-  if (isKernelTestPath(relativePath) || pathMatches(relativePath, 'test/support/event-envelope.ts'))
-    return true;
+  if (isKernelTestPath(relativePath) || isEnvelopeTestHelperPath(relativePath)) return true;
   if ((manifests.get(moduleName)?.length ?? 0) === 0) return false;
-  return /\/contracts\/[^/]*event-factory\.ts$/u.test(relativePath);
+  return /\/contracts\/[^/]*event-factory\.(?:cts|mts|tsx?)$/u.test(relativePath);
 }
 
 function isApprovedEnvelopeConstructionPath(relativePath) {
@@ -705,8 +950,8 @@ function isApprovedEnvelopeConstructionPath(relativePath) {
 
 function isKernelTestPath(relativePath) {
   return (
-    /^test\/unit\/kernel\/.*\.test\.ts$/u.test(relativePath) ||
-    /^unit\/kernel\/.*\.test\.ts$/u.test(relativePath)
+    /^test\/unit\/kernel\/.*\.test\.(?:cts|mts|tsx?)$/u.test(relativePath) ||
+    /^unit\/kernel\/.*\.test\.(?:cts|mts|tsx?)$/u.test(relativePath)
   );
 }
 
@@ -714,19 +959,48 @@ function isTestPath(relativePath) {
   return (
     relativePath.startsWith('test/') ||
     relativePath.includes('/test/') ||
-    relativePath.endsWith('.test.ts')
+    /\.test\.(?:cts|mts|tsx?)$/u.test(relativePath)
   );
 }
 
 function isEventEnvelopeConstruction(node, typeChecker, sourceRoot, canonicalSymbols) {
+  if (isEventEnvelopeDecoderInput(node, typeChecker, sourceRoot)) return false;
   const contextualType = typeChecker.getContextualType(node);
   if (typeContainsProtectedKind(contextualType, 'event-envelope', typeChecker, sourceRoot))
     return true;
-  if (!hasObjectProperties(node, envelopePropertyNames, typeChecker)) return false;
   const envelopeSymbol = canonicalSymbols.get('event-envelope');
   if (envelopeSymbol === undefined) return false;
   const envelopeType = typeChecker.getDeclaredTypeOfSymbol(envelopeSymbol);
-  return typeChecker.isTypeAssignableTo(typeChecker.getTypeAtLocation(node), envelopeType);
+  const nodeType = typeChecker.getTypeAtLocation(node);
+  return (
+    isStructurallyCompatibleObject(nodeType, envelopeType, node, typeChecker) ||
+    isEventEnvelopeShape(nodeType, canonicalSymbols, typeChecker, node)
+  );
+}
+
+function isEventEnvelopeShape(type, canonicalSymbols, typeChecker, location) {
+  const envelopeSymbol = canonicalSymbols.get('event-envelope');
+  const eventDataSymbol = canonicalSymbols.get('event-data');
+  if (envelopeSymbol === undefined || eventDataSymbol === undefined) return false;
+  const envelopeType = typeChecker.getDeclaredTypeOfSymbol(envelopeSymbol);
+  if (!hasRequiredTargetProperties(type, envelopeType)) return false;
+  const eventProperty = type.getProperty('event');
+  if (eventProperty === undefined) return false;
+  const eventType = typeChecker.getTypeOfSymbolAtLocation(eventProperty, location);
+  return hasRequiredTargetProperties(
+    eventType,
+    typeChecker.getDeclaredTypeOfSymbol(eventDataSymbol),
+  );
+}
+
+function isEventEnvelopeDecoderInput(node, typeChecker, sourceRoot) {
+  const parent = node.parent;
+  if (!ts.isCallExpression(parent) || !parent.arguments.includes(node)) return false;
+  const symbol = resolveSymbol(
+    typeChecker.getSymbolAtLocation(unwrapExpression(parent.expression)),
+    typeChecker,
+  );
+  return protectedSymbolKind(symbol, sourceRoot) === 'event-envelope-decoder';
 }
 
 function isBoundedEventDataConstruction(
@@ -739,17 +1013,87 @@ function isBoundedEventDataConstruction(
   const eventDataSymbol = canonicalSymbols.get('event-data');
   if (eventDataSymbol === undefined) return false;
   const eventDataType = typeChecker.getDeclaredTypeOfSymbol(eventDataSymbol);
-  if (!typeChecker.isTypeAssignableTo(typeChecker.getTypeAtLocation(node), eventDataType))
-    return false;
+  const nodeType = typeChecker.getTypeAtLocation(node);
+  if (!hasRequiredTargetProperties(nodeType, eventDataType)) return false;
   const contextualType = typeChecker.getContextualType(node);
   if (
     typeContainsProtectedKind(contextualType, 'event-data', typeChecker, sourceRoot) &&
     boundedEventOwnerForType(contextualType, typeChecker, sourceRoot, manifests) !== undefined
   )
     return true;
-  if (!hasObjectProperties(node, eventDataPropertyNames, typeChecker)) return false;
-  const eventType = objectLiteralStringProperty(node, 'eventType', typeChecker);
-  return eventType !== undefined && ownerForEventType(eventType, manifests) !== undefined;
+  const eventTypeProperty = nodeType.getProperty('eventType');
+  if (eventTypeProperty === undefined) return false;
+  const eventTypes = stringLiteralValues(
+    typeChecker.getTypeOfSymbolAtLocation(eventTypeProperty, node),
+  );
+  return eventTypes.some((eventType) => ownerForEventType(eventType, manifests) !== undefined);
+}
+
+function isProcessorDefinitionConstruction(node, typeChecker, sourceRoot, canonicalSymbols) {
+  const contextualType = typeChecker.getContextualType(node);
+  if (
+    typeContainsProtectedKind(contextualType, 'processor-definition', typeChecker, sourceRoot) ||
+    typeContainsProtectedKind(contextualType, 'batch-processor-definition', typeChecker, sourceRoot)
+  )
+    return true;
+  const sourceType = typeChecker.getTypeAtLocation(node);
+  for (const kind of ['processor-definition', 'batch-processor-definition']) {
+    const symbol = canonicalSymbols.get(kind);
+    if (symbol === undefined) continue;
+    const targetType = typeChecker.getDeclaredTypeOfSymbol(symbol);
+    if (hasRequiredTargetProperties(sourceType, targetType)) return true;
+  }
+  return false;
+}
+
+function isStructurallyCompatibleObject(
+  sourceType,
+  targetType,
+  location,
+  typeChecker,
+  seen = new Set(),
+) {
+  if (typeChecker.isTypeAssignableTo(sourceType, targetType)) return true;
+  const key = `${sourceType.id}:${targetType.id}`;
+  if (seen.has(key)) return true;
+  seen.add(key);
+  for (const targetProperty of typeChecker.getPropertiesOfType(targetType)) {
+    if ((targetProperty.flags & ts.SymbolFlags.Optional) !== 0) continue;
+    const sourceProperty = sourceType.getProperty(targetProperty.name);
+    if (sourceProperty === undefined) return false;
+    const sourcePropertyType = typeChecker.getTypeOfSymbolAtLocation(sourceProperty, location);
+    const targetLocation =
+      targetProperty.valueDeclaration ?? targetProperty.declarations?.[0] ?? location;
+    const declaredTargetType = typeChecker.getTypeOfSymbolAtLocation(
+      targetProperty,
+      targetLocation,
+    );
+    const targetPropertyType =
+      typeChecker.getBaseConstraintOfType(declaredTargetType) ?? declaredTargetType;
+    if (typeChecker.isTypeAssignableTo(sourcePropertyType, targetPropertyType)) continue;
+    if (
+      (sourcePropertyType.flags & ts.TypeFlags.Object) !== 0 &&
+      (targetPropertyType.flags & ts.TypeFlags.Object) !== 0 &&
+      isStructurallyCompatibleObject(
+        sourcePropertyType,
+        targetPropertyType,
+        location,
+        typeChecker,
+        seen,
+      )
+    )
+      continue;
+    return false;
+  }
+  return true;
+}
+
+function hasRequiredTargetProperties(sourceType, targetType) {
+  for (const targetProperty of targetType.getProperties()) {
+    if ((targetProperty.flags & ts.SymbolFlags.Optional) !== 0) continue;
+    if (sourceType.getProperty(targetProperty.name) === undefined) return false;
+  }
+  return true;
 }
 
 function boundedEventOwnerForType(type, typeChecker, sourceRoot, manifests, seen = new Set()) {
@@ -787,28 +1131,6 @@ function typeContainsProtectedKind(type, kind, typeChecker, sourceRoot, seen = n
       typeContainsProtectedKind(member, kind, typeChecker, sourceRoot, seen),
     );
   return false;
-}
-
-function hasObjectProperties(node, expected, typeChecker) {
-  const names = new Set();
-  for (const property of node.properties) {
-    if (ts.isSpreadAssignment(property)) continue;
-    const name = propertyName(property.name, { assignments: new Map() }, typeChecker);
-    if (name !== undefined) names.add(name);
-  }
-  return [...expected].every((name) => names.has(name));
-}
-
-function objectLiteralStringProperty(node, expectedName, typeChecker) {
-  for (const property of node.properties) {
-    if (!ts.isPropertyAssignment(property)) continue;
-    if (literalPropertyName(property.name) !== expectedName) continue;
-    const value = staticString(property.initializer, { assignments: new Map() }, typeChecker);
-    if (value !== undefined) return value;
-    const type = typeChecker.getTypeAtLocation(property.initializer);
-    if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) return type.value;
-  }
-  return undefined;
 }
 
 function isLegacyJournalAppendCall(node, bindings, typeChecker, sourceRoot) {
@@ -850,13 +1172,21 @@ function isEventJournalMemberSymbol(symbol, typeChecker, sourceRoot) {
   return false;
 }
 
-function resolveProtectedKind(expression, bindings, typeChecker, sourceRoot, seen = new Set()) {
+function resolveProtectedKind(
+  expression,
+  bindings,
+  typeChecker,
+  sourceRoot,
+  useNode = expression,
+  seen = new Set(),
+) {
   const unwrapped = unwrapExpression(expression);
   const aliasedAccessKind = resolveAliasedAccessKind(
     unwrapped,
     bindings,
     typeChecker,
     sourceRoot,
+    useNode,
     seen,
   );
   if (aliasedAccessKind !== undefined) return aliasedAccessKind;
@@ -866,18 +1196,20 @@ function resolveProtectedKind(expression, bindings, typeChecker, sourceRoot, see
   const resolved = resolveSymbol(symbol, typeChecker);
   const kind = protectedSymbolKind(resolved, sourceRoot);
   if (kind !== undefined) return kind;
-  const assignment = bindings.assignments.get(symbol) ?? bindings.assignments.get(resolved);
+  const assignment =
+    assignmentAt(bindings, symbol, useNode) ?? assignmentAt(bindings, resolved, useNode);
   return assignment === undefined
     ? undefined
-    : resolveAssignmentOrigins(assignment, [], bindings, typeChecker, sourceRoot, seen);
+    : resolveAssignmentOrigins(assignment, [], bindings, typeChecker, sourceRoot, useNode, seen);
 }
 
-function resolveAliasedAccessKind(expression, bindings, typeChecker, sourceRoot, seen) {
+function resolveAliasedAccessKind(expression, bindings, typeChecker, sourceRoot, useNode, seen) {
   const access = aliasedAccess(expression, bindings, typeChecker);
   if (access === undefined) return undefined;
   const symbol = typeChecker.getSymbolAtLocation(access.base);
   const resolved = resolveSymbol(symbol, typeChecker);
-  const assignment = bindings.assignments.get(symbol) ?? bindings.assignments.get(resolved);
+  const assignment =
+    assignmentAt(bindings, symbol, useNode) ?? assignmentAt(bindings, resolved, useNode);
   if (symbol === undefined || assignment === undefined || seen.has(symbol)) return undefined;
   const branchSeen = new Set(seen);
   branchSeen.add(symbol);
@@ -887,6 +1219,7 @@ function resolveAliasedAccessKind(expression, bindings, typeChecker, sourceRoot,
     bindings,
     typeChecker,
     sourceRoot,
+    useNode,
     branchSeen,
   );
 }
@@ -926,15 +1259,21 @@ function resolveAssignmentOrigins(
   bindings,
   typeChecker,
   sourceRoot,
+  useNode,
   seen,
 ) {
+  const parentKey = `assignment:${nodeId(assignment.sourceFile, bindings.analysis)}:${assignment.position}:${serializeAccessPath(appendedPath)}:${usePositionKey(useNode, bindings.analysis)}`;
   for (const origin of assignment.origins) {
+    const path = [...origin.accessPath, ...appendedPath];
+    const childKey = originStateKey(origin.expression, path, useNode, bindings.analysis);
+    bindings.analysis.originEdges.add(`${parentKey}->${childKey}`);
     const kind = resolveAccessPathKind(
       origin.expression,
-      [...origin.accessPath, ...appendedPath],
+      path,
       bindings,
       typeChecker,
       sourceRoot,
+      useNode,
       new Set(seen),
     );
     if (kind !== undefined) return kind;
@@ -942,15 +1281,50 @@ function resolveAssignmentOrigins(
   return undefined;
 }
 
-function resolveAccessPathKind(expression, accessPath, bindings, typeChecker, sourceRoot, seen) {
+function resolveAccessPathKind(
+  expression,
+  accessPath,
+  bindings,
+  typeChecker,
+  sourceRoot,
+  useNode,
+  seen,
+) {
+  const stateKey = originStateKey(expression, accessPath, useNode, bindings.analysis);
+  bindings.analysis.originStates.add(stateKey);
+  if (bindings.analysis.memo.has(stateKey)) return bindings.analysis.memo.get(stateKey);
+  bindings.analysis.memo.set(stateKey, undefined);
+  const result = resolveAccessPathKindUncached(
+    expression,
+    accessPath,
+    bindings,
+    typeChecker,
+    sourceRoot,
+    useNode,
+    seen,
+  );
+  bindings.analysis.memo.set(stateKey, result);
+  return result;
+}
+
+function resolveAccessPathKindUncached(
+  expression,
+  accessPath,
+  bindings,
+  typeChecker,
+  sourceRoot,
+  useNode,
+  seen,
+) {
   if (accessPath.length === 0)
-    return resolveProtectedKind(expression, bindings, typeChecker, sourceRoot, seen);
+    return resolveProtectedKind(expression, bindings, typeChecker, sourceRoot, useNode, seen);
   const unwrapped = unwrapExpression(expression);
   if (ts.isIdentifier(unwrapped)) {
     const sourceSymbol = typeChecker.getSymbolAtLocation(unwrapped);
     const resolvedSource = resolveSymbol(sourceSymbol, typeChecker);
     const assignment =
-      bindings.assignments.get(sourceSymbol) ?? bindings.assignments.get(resolvedSource);
+      assignmentAt(bindings, sourceSymbol, useNode) ??
+      assignmentAt(bindings, resolvedSource, useNode);
     if (sourceSymbol !== undefined && assignment !== undefined && !seen.has(sourceSymbol)) {
       const branchSeen = new Set(seen);
       branchSeen.add(sourceSymbol);
@@ -960,6 +1334,7 @@ function resolveAccessPathKind(expression, accessPath, bindings, typeChecker, so
         bindings,
         typeChecker,
         sourceRoot,
+        useNode,
         branchSeen,
       );
     }
@@ -973,12 +1348,13 @@ function resolveAccessPathKind(expression, accessPath, bindings, typeChecker, so
       bindings,
       typeChecker,
       sourceRoot,
+      useNode,
       seen,
     );
   const [head, ...tail] = accessPath;
   const selected = selectedLiteralExpression(unwrapped, head, bindings, typeChecker);
   if (selected !== undefined)
-    return resolveAccessPathKind(selected, tail, bindings, typeChecker, sourceRoot, seen);
+    return resolveAccessPathKind(selected, tail, bindings, typeChecker, sourceRoot, useNode, seen);
   const name = head.kind === 'property' ? head.name : String(head.index);
   const symbol = typeChecker.getTypeAtLocation(unwrapped).getProperty(name);
   if (symbol === undefined || seen.has(symbol)) return undefined;
@@ -986,10 +1362,41 @@ function resolveAccessPathKind(expression, accessPath, bindings, typeChecker, so
   const resolved = resolveSymbol(symbol, typeChecker);
   const kind = protectedSymbolKind(resolved, sourceRoot);
   if (tail.length === 0 && kind !== undefined) return kind;
-  const assignment = bindings.assignments.get(symbol) ?? bindings.assignments.get(resolved);
+  const assignment =
+    assignmentAt(bindings, symbol, useNode) ?? assignmentAt(bindings, resolved, useNode);
   return assignment === undefined
     ? undefined
-    : resolveAssignmentOrigins(assignment, tail, bindings, typeChecker, sourceRoot, seen);
+    : resolveAssignmentOrigins(assignment, tail, bindings, typeChecker, sourceRoot, useNode, seen);
+}
+
+function originStateKey(expression, accessPath, useNode, analysis) {
+  return `${nodeId(expression, analysis)}:${serializeAccessPath(accessPath)}:${usePositionKey(useNode, analysis)}`;
+}
+
+function usePositionKey(node, analysis) {
+  const sourceFile = node.getSourceFile();
+  return `${nodeId(sourceFile, analysis)}@${node.getStart(sourceFile)}`;
+}
+
+function nodeId(node, analysis) {
+  let id = analysis.nodeIds.get(node);
+  if (id === undefined) {
+    id = analysis.nextNodeId;
+    analysis.nextNodeId += 1;
+    analysis.nodeIds.set(node, id);
+  }
+  return id;
+}
+
+function serializeAccessPath(accessPath) {
+  return accessPath
+    .map((selector) => {
+      if (selector.kind === 'property') return `p:${selector.name}`;
+      if (selector.kind === 'index') return `i:${selector.index}`;
+      if (selector.kind === 'array-rest') return `ar:${selector.start}`;
+      return `or:${selector.excluded.join(',')}`;
+    })
+    .join('/');
 }
 
 function normalizeRestAccess(accessPath) {
@@ -1083,6 +1490,16 @@ function protectedSymbolKind(symbol, sourceRoot) {
     )
       return 'processor-factory';
     if (
+      pathMatches(path, 'eventing/contracts/event-processor.ts') &&
+      name === 'EventProcessorDefinition'
+    )
+      return 'processor-definition';
+    if (
+      pathMatches(path, 'eventing/contracts/event-processor.ts') &&
+      name === 'BatchEventProcessorDefinition'
+    )
+      return 'batch-processor-definition';
+    if (
       pathMatches(path, 'eventing/application/projection-processor.ts') &&
       processorFactoryNames.has(name)
     )
@@ -1093,6 +1510,8 @@ function protectedSymbolKind(symbol, sourceRoot) {
       return 'event-data';
     if (pathMatches(path, 'kernel/contracts/events.ts') && name === 'EventEnvelope')
       return 'event-envelope';
+    if (pathMatches(path, 'kernel/contracts/event-schema.ts') && name === 'decodeEventEnvelope')
+      return 'event-envelope-decoder';
     if (pathMatches(path, 'kernel/contracts/event-journal.ts') && name === 'EventJournal')
       return 'event-journal';
   }
@@ -1144,7 +1563,7 @@ function staticString(node, bindings, typeChecker, seen = new Set()) {
   const symbol = typeChecker.getSymbolAtLocation(expression);
   if (symbol === undefined || seen.has(symbol)) return undefined;
   seen.add(symbol);
-  const assignment = bindings.assignments.get(symbol);
+  const assignment = assignmentAt(bindings, symbol, node);
   if (assignment === undefined) return undefined;
   const values = [];
   for (const origin of assignment.origins) {
@@ -1154,6 +1573,7 @@ function staticString(node, bindings, typeChecker, seen = new Set()) {
       origin.accessPath,
       bindings,
       typeChecker,
+      node,
       branchSeen,
     );
     const value =
@@ -1166,12 +1586,12 @@ function staticString(node, bindings, typeChecker, seen = new Set()) {
   return values.length > 0 && values.every((value) => value === values[0]) ? values[0] : undefined;
 }
 
-function selectAssignedExpression(expression, accessPath, bindings, typeChecker, seen) {
+function selectAssignedExpression(expression, accessPath, bindings, typeChecker, useNode, seen) {
   if (accessPath.length === 0) return expression;
   const unwrapped = unwrapExpression(expression);
   if (ts.isIdentifier(unwrapped)) {
     const symbol = typeChecker.getSymbolAtLocation(unwrapped);
-    const assignment = symbol === undefined ? undefined : bindings.assignments.get(symbol);
+    const assignment = symbol === undefined ? undefined : assignmentAt(bindings, symbol, useNode);
     if (symbol !== undefined && assignment?.origins.length === 1 && !seen.has(symbol)) {
       seen.add(symbol);
       const [origin] = assignment.origins;
@@ -1180,6 +1600,7 @@ function selectAssignedExpression(expression, accessPath, bindings, typeChecker,
         [...origin.accessPath, ...accessPath],
         bindings,
         typeChecker,
+        useNode,
         seen,
       );
     }
@@ -1188,25 +1609,29 @@ function selectAssignedExpression(expression, accessPath, bindings, typeChecker,
   const selected = selectedLiteralExpression(unwrapped, head, bindings, typeChecker);
   return selected === undefined
     ? undefined
-    : selectAssignedExpression(selected, tail, bindings, typeChecker, seen);
+    : selectAssignedExpression(selected, tail, bindings, typeChecker, useNode, seen);
 }
 
-function addPersistenceDiagnostic(sourceFile, node, relativePath, diagnostics, reported) {
-  const key = node.getStart(sourceFile);
+function addPersistenceDiagnostic(node, sourceRoot, diagnostics, reported) {
+  const sourceFile = node.getSourceFile();
+  const key = `${sourceFile.fileName}:${node.getStart(sourceFile)}`;
   if (reported.has(key)) return;
   reported.add(key);
   addDiagnostic(
-    sourceFile,
     node,
-    relativePath,
+    sourceRoot,
     'persistence-processor-handler',
     'persistence may not define handlers for Eventing processors',
     diagnostics,
   );
 }
 
-function addDiagnostic(sourceFile, node, relativePath, rule, detail, diagnostics) {
-  const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+function addDiagnostic(node, sourceRoot, rule, detail, diagnostics) {
+  const nodeSourceFile = node.getSourceFile();
+  const { line, character } = nodeSourceFile.getLineAndCharacterOfPosition(
+    node.getStart(nodeSourceFile),
+  );
+  const relativePath = normalizeSourcePath(nodeSourceFile.fileName, sourceRoot);
   diagnostics.push({ message: `${relativePath}:${line + 1}:${character + 1} [${rule}] ${detail}` });
 }
 
@@ -1250,7 +1675,12 @@ async function typescriptFiles(directory) {
     if (entry.name === 'node_modules' || entry.name === 'dist') continue;
     const path = join(directory, entry.name);
     if (entry.isDirectory()) files.push(...(await typescriptFiles(path)));
-    else if (entry.isFile() && entry.name.endsWith('.ts')) files.push(path);
+    else if (
+      entry.isFile() &&
+      /\.(?:cts|mts|tsx?)$/u.test(entry.name) &&
+      !/\.d\.(?:cts|mts|ts)$/u.test(entry.name)
+    )
+      files.push(path);
   }
   return files.sort();
 }

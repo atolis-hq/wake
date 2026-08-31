@@ -4,14 +4,24 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { assertTypeScriptFixtureCompiles } from './support/typescript-fixture.js';
+
 interface Diagnostic {
   readonly message: string;
 }
 
 type CheckEventArchitecture = (root: string) => Promise<readonly Diagnostic[]>;
 
+interface AnalysisStats {
+  readonly originEdges: number;
+  readonly uniqueOriginStates: number;
+}
+
 const checker = (await import('../../scripts/check-event-architecture.mjs')) as {
   readonly checkEventArchitecture: CheckEventArchitecture;
+  readonly checkEventArchitectureWithStats?: (
+    root: string,
+  ) => Promise<{ readonly diagnostics: readonly Diagnostic[]; readonly stats: AnalysisStats }>;
 };
 const roots: string[] = [];
 
@@ -27,10 +37,22 @@ async function fixture(files: Readonly<Record<string, string>>): Promise<string>
       "export { EventProcessorHost } from './application/event-processor-host.js';",
       "export { EventProcessorRuntime } from './application/event-processor-runtime.js';",
       "export { defineEventProcessor, defineBatchEventProcessor } from './contracts/event-processor.js';",
+      "export type { EventProcessorDefinition } from './contracts/event-processor.js';",
     ].join('\n'),
-    'src/eventing/application/event-processor-host.ts': 'export class EventProcessorHost {}',
-    'src/eventing/application/event-processor-runtime.ts': 'export class EventProcessorRuntime {}',
+    'src/eventing/application/event-processor-host.ts':
+      'export class EventProcessorHost { constructor(...args: unknown[]) { void args; } }',
+    'src/eventing/application/event-processor-runtime.ts':
+      'export class EventProcessorRuntime { constructor(...args: unknown[]) { void args; } }',
     'src/eventing/contracts/event-processor.ts': [
+      'export interface EventProcessorDefinition<Message> {',
+      '  readonly consumer: string;',
+      '  readonly name: string;',
+      '  readonly owner: string;',
+      '  readonly category: string;',
+      '  readonly replayPolicy: string;',
+      '  readonly select: (event: unknown) => Message | null;',
+      '  readonly handle: (message: Message, event: unknown, signal: AbortSignal) => Promise<void>;',
+      '}',
       'export function defineEventProcessor(value: unknown) { return value; }',
       'export function defineBatchEventProcessor(value: unknown) { return value; }',
     ].join('\n'),
@@ -45,7 +67,8 @@ async function fixture(files: Readonly<Record<string, string>>): Promise<string>
     ].join('\n'),
     'src/bootstrap/index.ts':
       "export { EventProcessorRuntime } from './event-processor-runtime.js';",
-    'src/bootstrap/event-processor-runtime.ts': 'export class EventProcessorRuntime {}',
+    'src/bootstrap/event-processor-runtime.ts':
+      'export class EventProcessorRuntime { constructor(...args: unknown[]) { void args; } }',
   };
   await Promise.all(
     Object.entries({ ...runtimeStubs, ...files }).map(async ([path, source]) => {
@@ -54,6 +77,7 @@ async function fixture(files: Readonly<Record<string, string>>): Promise<string>
       await writeFile(target, source, 'utf8');
     }),
   );
+  await assertTypeScriptFixtureCompiles(root);
   return root;
 }
 
@@ -66,7 +90,7 @@ describe('event processor ownership', () => {
     const root = await fixture({
       'src/orchestration/application/illegal-host.ts': [
         "import { EventProcessorHost } from '../../eventing/index.js';",
-        'export const host = new EventProcessorHost(journal, checkpoints, serialise);',
+        'export const host = new EventProcessorHost({}, {}, () => undefined);',
       ].join('\n'),
     });
 
@@ -78,7 +102,7 @@ describe('event processor ownership', () => {
     const root = await fixture({
       'src/integrations/github/application/illegal-serialiser.ts': [
         "import { createFileProcessorRunSerialiser } from '../../../persistence/index.js';",
-        'export const serialise = createFileProcessorRunSerialiser(root);',
+        "export const serialise = createFileProcessorRunSerialiser('/tmp');",
       ].join('\n'),
     });
 
@@ -104,15 +128,15 @@ describe('event processor ownership', () => {
         "import { EventProcessorHost as Host } from '../../eventing/index.js';",
         "import { EventProcessorRuntime as Runtime } from '../../bootstrap/index.js';",
         "import { createFileProcessorRunSerialiser as serialiseFile } from '../../persistence/index.js';",
-        'export const host = new Host(journal, checkpoints, serialise);',
+        'export const host = new Host({}, {}, () => undefined);',
         'const HostAlias = Host;',
-        'export const chainedHost = new HostAlias(journal, checkpoints, serialise);',
-        'export const runtime = new Runtime(journal, checkpoints, serialise);',
+        'export const chainedHost = new HostAlias({}, {}, () => undefined);',
+        'export const runtime = new Runtime({}, {}, () => undefined);',
         'const RuntimeAlias = Runtime;',
-        'export const chainedRuntime = new RuntimeAlias(journal, checkpoints, serialise);',
-        'export const serialiser = serialiseFile(root);',
+        'export const chainedRuntime = new RuntimeAlias({}, {}, () => undefined);',
+        "export const serialiser = serialiseFile('/tmp');",
         'const serialiserAlias = serialiseFile;',
-        'export const chainedSerialiser = serialiserAlias(root);',
+        "export const chainedSerialiser = serialiserAlias('/tmp');",
       ].join('\n'),
     });
 
@@ -120,6 +144,33 @@ describe('event processor ownership', () => {
     expect(messages(diagnostics)).toContain('[event-processor-host-owner]');
     expect(messages(diagnostics)).toContain('[processor-registry-owner]');
     expect(messages(diagnostics)).toContain('[processor-serialiser-owner]');
+  });
+
+  it('resolves processor aliases at each construction site instead of using the final assignment', async () => {
+    const root = await fixture({
+      'src/orchestration/application/flow-aware-host.ts': [
+        "import { EventProcessorHost } from '../../eventing/index.js';",
+        'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+        'let First: typeof EventProcessorHost = EventProcessorHost;',
+        'export const firstProtected = new First();',
+        'First = LocalHost;',
+        'export const firstLocal = new First();',
+        'let Second: typeof EventProcessorHost = LocalHost;',
+        'export const secondLocal = new Second();',
+        'Second = EventProcessorHost;',
+        'export const secondProtected = new Second();',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-processor-host-owner]'))
+        .map(({ message }) => message.split(' ')[0]),
+    ).toEqual([
+      'orchestration/application/flow-aware-host.ts:4:31',
+      'orchestration/application/flow-aware-host.ts:10:32',
+    ]);
   });
 
   it('rejects processor handlers and host composition in Persistence', async () => {
@@ -130,7 +181,7 @@ describe('event processor ownership', () => {
       ].join('\n'),
       'src/persistence/application/illegal-runtime.ts': [
         "import { EventProcessorRuntime } from '../../bootstrap/index.js';",
-        'export const runtime = new EventProcessorRuntime(journal, checkpoints, serialise);',
+        'export const runtime = new EventProcessorRuntime({}, {}, () => undefined);',
       ].join('\n'),
     });
 
@@ -157,6 +208,25 @@ describe('event processor ownership', () => {
     ).not.toHaveLength(0);
   });
 
+  it('rejects structurally typed processor definition values in Persistence only', async () => {
+    const definition = [
+      "import type { EventProcessorDefinition } from '../../eventing/index.js';",
+      "const intermediate = { consumer: 'consumer', name: 'name', owner: 'owner', category: 'projection', replayPolicy: 'rebuildable', select: (_event: unknown) => 'message', handle: async (_message: string, _event: unknown, _signal: AbortSignal) => undefined };",
+      'export const assigned: EventProcessorDefinition<string> = intermediate;',
+      "export const contextual: EventProcessorDefinition<string> = { consumer: 'contextual', name: 'name', owner: 'owner', category: 'projection', replayPolicy: 'rebuildable', select: (_event) => 'message', handle: async (_message, _event, _signal) => undefined };",
+    ].join('\n');
+    const root = await fixture({
+      'src/persistence/application/typed-definition.ts': definition,
+      'src/orchestration/application/typed-definition.ts': definition,
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[persistence-processor-handler]')),
+    ).toHaveLength(2);
+    expect(messages(diagnostics)).not.toContain('orchestration/application/typed-definition.ts');
+  });
+
   it('rejects a resolved Eventing processor factory and its linked handler', async () => {
     const root = await fixture({
       'src/persistence/application/factory-handler.ts': [
@@ -172,6 +242,53 @@ describe('event processor ownership', () => {
     expect(messages(diagnostics)).toContain('[persistence-processor-handler]');
   });
 
+  it('reports linked processor handlers at their defining source file', async () => {
+    const root = await fixture({
+      'src/persistence/support/definition.ts': [
+        'export const makeDefinition = () => ({',
+        "  consumer: 'consumer', name: 'name', owner: 'owner', category: 'projection', replayPolicy: 'rebuildable',",
+        "  select: (_event: unknown) => 'message',",
+        '  handle: async (_message: string, _event: unknown, _signal: AbortSignal) => undefined,',
+        '});',
+      ].join('\n'),
+      'src/persistence/application/cross-file-handler.ts': [
+        "import { defineEventProcessor } from '../../eventing/index.js';",
+        "import { makeDefinition } from '../support/definition.js';",
+        'export const processor = defineEventProcessor(makeDefinition());',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(messages(diagnostics)).toContain(
+      'persistence/support/definition.ts:4:3 [persistence-processor-handler]',
+    );
+  });
+
+  it('memoizes a depth-18 default/rest origin graph', async () => {
+    const chain = [
+      "import { EventProcessorHost } from '../../eventing/index.js';",
+      'class LocalHost { constructor(...args: unknown[]) { void args; } }',
+      'const seed: [typeof EventProcessorHost] = [EventProcessorHost];',
+    ];
+    let prior = 'seed';
+    for (let depth = 1; depth <= 18; depth += 1) {
+      chain.push(
+        `const [candidate${depth} = LocalHost]: [(typeof EventProcessorHost)?] = ${prior};`,
+        `const [...level${depth}]: [typeof EventProcessorHost] = [candidate${depth}];`,
+      );
+      prior = `level${depth}`;
+    }
+    chain.push(`export const host = new ${prior}[0]!();`);
+    const root = await fixture({
+      'src/orchestration/application/deep-origin-graph.ts': chain.join('\n'),
+    });
+
+    expect(checker.checkEventArchitectureWithStats).toBeTypeOf('function');
+    const analysis = await checker.checkEventArchitectureWithStats?.(root);
+    expect(analysis?.diagnostics).toHaveLength(1);
+    expect(analysis?.stats).toEqual({ originEdges: 37, uniqueOriginStates: 74 });
+  });
+
   it('permits unrelated local names and generic handler objects in Persistence', async () => {
     const root = await fixture({
       'src/orchestration/application/local-names.ts': [
@@ -185,7 +302,7 @@ describe('event processor ownership', () => {
       'src/persistence/application/generic-handler.ts': [
         'const handle = () => undefined;',
         'const handler = () => undefined;',
-        "export const unrelated = { handle, handler, ['handle']: handler };",
+        "export const unrelated = [{ handle }, { handler }, { ['handle']: handler }];",
       ].join('\n'),
     });
 
@@ -195,12 +312,12 @@ describe('event processor ownership', () => {
   it('permits definitions in bounded modules and composition in Bootstrap', async () => {
     const root = await fixture({
       'src/orchestration/application/processor.ts': [
-        "import { defineEventProcessor } from '../../../eventing/index.js';",
+        "import { defineEventProcessor } from '../../eventing/index.js';",
         'export const processor = defineEventProcessor({ handle: async () => undefined });',
       ].join('\n'),
       'src/bootstrap/composition-root.ts': [
         "import { EventProcessorRuntime } from '../eventing/index.js';",
-        'export const runtime = new EventProcessorRuntime(journal, checkpoints, serialise);',
+        'export const runtime = new EventProcessorRuntime({}, {}, () => undefined);',
       ].join('\n'),
     });
 

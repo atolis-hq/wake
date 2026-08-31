@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { assertTypeScriptFixtureCompiles } from './support/typescript-fixture.js';
+
 interface Diagnostic {
   readonly message: string;
 }
@@ -38,16 +40,16 @@ async function fixture(
       '}',
     ].join('\n'),
     'src/kernel/contracts/events.ts': [
-      'export interface EventData {',
+      'export interface EventData<Type extends string = string, Payload = unknown> {',
       '  readonly eventId: string;',
-      '  readonly eventType: string;',
+      '  readonly eventType: Type;',
       '  readonly schemaVersion: 1;',
       '  readonly occurredAt: string;',
       '  readonly correlationId: string;',
       '  readonly causationId: string;',
       '  readonly actor: { readonly kind: string; readonly id: string };',
       '  readonly source: { readonly kind: string; readonly id: string };',
-      '  readonly payload: unknown;',
+      '  readonly payload: Payload;',
       '}',
       'export interface EventEnvelope {',
       '  readonly event: EventData;',
@@ -110,6 +112,7 @@ async function fixture(
       );
     }),
   ]);
+  await assertTypeScriptFixtureCompiles(root);
   return root;
 }
 
@@ -194,7 +197,107 @@ describe('event publishing ownership', () => {
     const diagnostics = await checker.checkEventArchitecture(root);
     expect(
       diagnostics.filter(({ message }) => message.includes('[event-data-factory-owner]')),
-    ).toHaveLength(5);
+    ).toHaveLength(6);
+  });
+
+  it('requires every owner-factory event type to match its manifest namespace', async () => {
+    const root = await fixture(
+      {
+        'src/work/contracts/wrong-event-factory.ts': [
+          "import { createEventData, type EventData } from '../../kernel/index.js';",
+          "type WrongInput = Omit<EventData<'resources.observed'>, 'schemaVersion'>;",
+          'declare const wrong: WrongInput;',
+          'export const invalid = createEventData(wrong);',
+        ].join('\n'),
+        'src/work/contracts/owned-event-factory.ts': [
+          "import { createEventData, type EventData } from '../../kernel/index.js';",
+          "type OwnedInput = Omit<EventData<'work.created' | 'work.closed'>, 'schemaVersion'>;",
+          'declare const owned: OwnedInput;',
+          'export const valid = createEventData(owned);',
+        ].join('\n'),
+        'src/integrations/github/contracts/github-event-factory.ts': [
+          "import { createEventData, type EventData } from '../../../kernel/index.js';",
+          "type IntegrationInput = Omit<EventData<'integration.github.observed'>, 'schemaVersion'>;",
+          'declare const input: IntegrationInput;',
+          'export const valid = createEventData(input);',
+        ].join('\n'),
+      },
+      { integrations: ['integration.'], resources: ['resources.'] },
+    );
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[event-data-factory-owner]')),
+    ).toHaveLength(1);
+    expect(messages(diagnostics)).toContain('work/contracts/wrong-event-factory.ts:4');
+  });
+
+  it('rejects every indirect runtime reference to the Kernel factory', async () => {
+    const root = await fixture({
+      'src/bootstrap/indirect-factory-references.ts': [
+        "import { createEventData, type EventData } from '../kernel/index.js';",
+        "type Input = Omit<EventData<'work.created'>, 'schemaVersion'>;",
+        'declare const input: Input;',
+        'createEventData.call(undefined, input);',
+        'createEventData.apply(undefined, [input]);',
+        'const bound = createEventData.bind(undefined);',
+        'const inputs: Input[] = [input];',
+        'inputs.map(createEventData);',
+        'Reflect.apply(createEventData, undefined, [input]);',
+        'const assigned = createEventData;',
+        'export { createEventData as leaked };',
+        'export const values = [bound(input), assigned(input)];',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[event-data-factory-owner]')),
+    ).toHaveLength(7);
+  });
+
+  it('does not reject indirect references to an unrelated local same-name function', async () => {
+    const root = await fixture({
+      'src/bootstrap/local-indirect-references.ts': [
+        'const createEventData = (value: unknown) => value;',
+        'const input = { value: 1 };',
+        'createEventData.call(undefined, input);',
+        'createEventData.apply(undefined, [input]);',
+        'const bound = createEventData.bind(undefined);',
+        'const inputs = [input];',
+        'inputs.map(createEventData);',
+        'Reflect.apply(createEventData, undefined, [input]);',
+        'const assigned = createEventData;',
+        'export { createEventData as leaked };',
+        'export const values = [bound(input), assigned(input)];',
+      ].join('\n'),
+    });
+
+    await expect(checker.checkEventArchitecture(root)).resolves.toEqual([]);
+  });
+
+  it('reports protected assignment sources without blaming calls after local reassignment', async () => {
+    const root = await fixture({
+      'src/bootstrap/flow-aware-factory.ts': [
+        "import { createEventData, type EventData } from '../kernel/index.js';",
+        'const local: typeof createEventData = (input) => ({ ...input, schemaVersion: 1 });',
+        'let first: typeof createEventData = createEventData;',
+        "first({} as Omit<EventData<'work.created'>, 'schemaVersion'>);",
+        'first = local;',
+        "first({} as Omit<EventData<'work.created'>, 'schemaVersion'>);",
+        'let second: typeof createEventData = local;',
+        "second({} as Omit<EventData<'work.created'>, 'schemaVersion'>);",
+        'second = createEventData;',
+        "second({} as Omit<EventData<'work.created'>, 'schemaVersion'>);",
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics
+        .filter(({ message }) => message.includes('[event-data-factory-owner]'))
+        .map(({ message }) => message.split(':').slice(0, 2).join(':')),
+    ).toEqual(['bootstrap/flow-aware-factory.ts:3', 'bootstrap/flow-aware-factory.ts:9']);
   });
 
   it('rejects declaration and assignment destructuring aliases of the Kernel factory', async () => {
@@ -204,9 +307,9 @@ describe('event publishing ownership', () => {
         "import * as Kernel from '../kernel/index.js';",
         'const [fromArray] = [createEventData];',
         'const { createEventData: fromObject } = Kernel;',
-        'let fromArrayAssignment = (value: unknown) => value;',
+        'let fromArrayAssignment: typeof createEventData = (input) => ({ ...input, schemaVersion: 1 });',
         '[fromArrayAssignment] = [createEventData];',
-        'let fromObjectAssignment = (value: unknown) => value;',
+        'let fromObjectAssignment: typeof createEventData = (input) => ({ ...input, schemaVersion: 1 });',
         '({ createEventData: fromObjectAssignment } = Kernel);',
         'const { nested: { factory: fromNested } } = { nested: { factory: createEventData } };',
         'const [[fromNestedArray]] = [[createEventData]];',
@@ -233,26 +336,26 @@ describe('event publishing ownership', () => {
       'src/bootstrap/illegal-default-rest.ts': [
         "import { createEventData } from '../kernel/index.js';",
         "import * as Kernel from '../kernel/index.js';",
-        'const local = (value: unknown) => value;',
+        'const local: typeof createEventData = (input) => ({ ...input, schemaVersion: 1 });',
         'const [fromDefault = createEventData]: [(typeof createEventData)?] = [];',
         'const [...factories]: [typeof createEventData] = [createEventData];',
         'const partial: Partial<typeof Kernel> = {};',
         'const { createEventData: fromObjectDefault = Kernel.createEventData } = partial;',
         'const { ...kernel } = Kernel;',
-        'let assignedFactories = [local];',
+        'let assignedFactories: Array<typeof createEventData> = [local];',
         '[...assignedFactories] = [createEventData];',
-        'let assignedKernel = { createEventData: local };',
+        'let assignedKernel: typeof Kernel = { createEventData: local };',
         '({ ...assignedKernel } = Kernel);',
         'declare const index: number;',
         'declare const property: string;',
         `export const defaulted = fromDefault(${eventInput()});`,
-        `export const arrayRest = factories[0](${eventInput()});`,
+        `export const arrayRest = factories[0]!(${eventInput()});`,
         `export const objectDefault = fromObjectDefault(${eventInput()});`,
         `export const objectRest = kernel.createEventData(${eventInput()});`,
-        `export const assignedArrayRest = assignedFactories[0](${eventInput()});`,
+        `export const assignedArrayRest = assignedFactories[0]!(${eventInput()});`,
         `export const assignedObjectRest = assignedKernel.createEventData(${eventInput()});`,
-        `export const dynamicArrayRest = factories[index](${eventInput()});`,
-        `export const dynamicObjectRest = kernel[property](${eventInput()});`,
+        `export const dynamicArrayRest = factories[index]!(${eventInput()});`,
+        `export const dynamicObjectRest = Kernel[property as keyof typeof Kernel](${eventInput()});`,
       ].join('\n'),
     });
 
@@ -274,7 +377,7 @@ describe('event publishing ownership', () => {
         'export const local = createEventData({ sequence: 1 });',
         'export const envelope: EventEnvelope = { sequence: 1 };',
         'journal.append(local);',
-        `export const dynamic = Kernel[property](${eventInput()});`,
+        `export const dynamic = Kernel[property as keyof typeof Kernel](${eventInput()});`,
       ].join('\n'),
     });
 
@@ -321,10 +424,10 @@ describe('event publishing ownership', () => {
         '({ ...assignedLocal } = source);',
         'export const values = [',
         '  fromDefault({ sequence: 1 }),',
-        '  factories[0]({ sequence: 2 }),',
+        '  factories[0]!({ sequence: 2 }),',
         '  fromObjectDefault({ sequence: 3 }),',
         '  local.createEventData({ sequence: 4 }),',
-        '  assignedFactories[0]({ sequence: 5 }),',
+        '  assignedFactories[0]!({ sequence: 5 }),',
         '  assignedLocal.createEventData({ sequence: 6 }),',
         '];',
       ].join('\n'),
@@ -343,6 +446,57 @@ describe('event publishing ownership', () => {
 
     const diagnostics = await checker.checkEventArchitecture(root);
     expect(messages(diagnostics)).toContain('[event-envelope-construction-owner]');
+  });
+
+  it('rejects structurally assignable envelope and bounded event literals assembled with spreads', async () => {
+    const root = await fixture({
+      'src/bootstrap/spread-construction.ts': [
+        "import type { EventEnvelope } from '../kernel/index.js';",
+        "import type { WorkEventData } from '../work/index.js';",
+        'const event = {',
+        "  eventId: 'event-1', eventType: 'kernel.test', schemaVersion: 1 as const,",
+        "  occurredAt: '2026-08-31T12:00:00.000Z', correlationId: 'correlation-1', causationId: 'causation-1',",
+        "  actor: { kind: 'system', id: 'test' }, source: { kind: 'internal', id: 'test' }, payload: {},",
+        '};',
+        'const metadata = {',
+        "  stream: { kind: 'work', id: 'work-1' }, recordedAt: '2026-08-31T12:00:01.000Z',",
+        '  sequence: 1, globalPosition: 1,',
+        '};',
+        'const envelopeCandidate = { event, ...metadata };',
+        'export const envelope: EventEnvelope = envelopeCandidate;',
+        'const eventHeader = {',
+        "  eventId: 'event-2', occurredAt: '2026-08-31T12:00:00.000Z', correlationId: 'correlation-2', causationId: 'causation-2',",
+        "  actor: { kind: 'system', id: 'test' }, source: { kind: 'internal', id: 'test' },",
+        '};',
+        "const eventCandidate = { ...eventHeader, eventType: 'work.created' as const, schemaVersion: 1 as const, payload: { id: 'work-1' } };",
+        'export const workEvent: WorkEventData = eventCandidate;',
+        'const coincidental = { ...metadata, event: { payload: null } };',
+        'export { coincidental };',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[event-envelope-construction-owner]')),
+    ).toHaveLength(1);
+    expect(
+      diagnostics.filter(({ message }) => message.includes('[bounded-event-data-construction]')),
+    ).toHaveLength(1);
+  });
+
+  it('inspects runtime ownership in .mts source files', async () => {
+    const root = await fixture({
+      'src/bootstrap/illegal-factory.mts': [
+        "import { createEventData, type EventData } from '../kernel/index.js';",
+        "declare const input: Omit<EventData<'work.created'>, 'schemaVersion'>;",
+        'export const event = createEventData(input);',
+      ].join('\n'),
+    });
+
+    const diagnostics = await checker.checkEventArchitecture(root);
+    expect(messages(diagnostics)).toContain(
+      'bootstrap/illegal-factory.mts:3:22 [event-data-factory-owner]',
+    );
   });
 
   it('rejects legacy EventJournal append and draft vocabulary without matching unrelated append methods', async () => {
@@ -379,6 +533,13 @@ describe('event publishing ownership', () => {
 
   it('reports only statically resolved EventJournal append calls', async () => {
     const root = await fixture({
+      'src/kernel/contracts/event-journal.ts': [
+        "import type { EventData, EventEnvelope } from './events.js';",
+        'export interface EventJournal {',
+        '  append(events: readonly EventData[]): Promise<readonly EventEnvelope[]>;',
+        '  appendToStream(stream: unknown, sequence: number, events: readonly EventData[]): Promise<readonly EventEnvelope[]>;',
+        '}',
+      ].join('\n'),
       'src/bootstrap/legacy-append-calls.ts': [
         "import type { EventJournal } from '../kernel/index.js';",
         'declare const journal: EventJournal;',
@@ -387,10 +548,11 @@ describe('event publishing ownership', () => {
         'journal[property]([]);',
         'const unrelated = { append: (value: unknown) => value };',
         'unrelated.append([]);',
-        'const values = Object.assign([], { append: (value: unknown) => value });',
+        'const values = { append: (value: unknown) => value };',
         'values.append([]);',
         "const dynamic: string = 'append';",
-        'values[dynamic]?.([]);',
+        'const dynamicValues: Record<string, (value: unknown) => unknown> = values;',
+        'dynamicValues[dynamic]?.([]);',
       ].join('\n'),
     });
 
@@ -398,10 +560,11 @@ describe('event publishing ownership', () => {
     const appendDiagnostics = diagnostics.filter(({ message }) =>
       message.includes('[legacy-event-journal-append]'),
     );
-    expect(appendDiagnostics).toHaveLength(2);
+    expect(appendDiagnostics).toHaveLength(3);
     expect(appendDiagnostics.map(({ message }) => message.split(' ')[0])).toEqual([
       'bootstrap/legacy-append-calls.ts:3:1',
       'bootstrap/legacy-append-calls.ts:5:1',
+      'kernel/contracts/event-journal.ts:3:3',
     ]);
   });
 
