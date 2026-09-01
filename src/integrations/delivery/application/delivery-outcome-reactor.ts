@@ -37,7 +37,9 @@ import type { DeliveryIntentView } from '../contracts/views.js';
 import { DeliveryIntentKind, DeliveryResultKind } from '../contracts/vocabulary.js';
 
 const deliveryResultSignalKind = 'delivery-result';
-const pendingConsumer = 'reactor:delivery-outcomes';
+
+export const DeliveryOutcomeProcessorConsumer = 'reactor:delivery-outcomes';
+const pendingConsumer = DeliveryOutcomeProcessorConsumer;
 const pendingKey = 'pending-confirmations';
 
 type PendingDeliveryOutcome =

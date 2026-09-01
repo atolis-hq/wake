@@ -1,13 +1,26 @@
 import type { ProjectionStore, StoredProjection } from '@atolis-hq/eventing';
-import type { Dirent } from 'node:fs';
 
 import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { writeFileAtomically } from './atomic-write.js';
-import { isCompatibleProcessorStateRecord } from './processor-state-record.js';
+import { processorStateDirectoryNames } from './processor-state-paths.js';
+import { encodeStorageName } from './storage-name.js';
+
+export interface FileProjectionStoreOptions {
+  readonly protectedProcessorStateConsumers?: readonly string[];
+}
 
 export class FileProjectionStore implements ProjectionStore {
-  constructor(private readonly root: string) {}
+  private readonly protectedDirectories: ReadonlySet<string>;
+
+  constructor(
+    private readonly root: string,
+    options: FileProjectionStoreOptions = {},
+  ) {
+    this.protectedDirectories = new Set(
+      (options.protectedProcessorStateConsumers ?? []).flatMap(processorStateDirectoryNames),
+    );
+  }
 
   private readonly listCache = new Map<string, CachedProjectionDirectory>();
 
@@ -100,37 +113,27 @@ export class FileProjectionStore implements ProjectionStore {
   }
 
   async clear(namespace?: string): Promise<void> {
-    if (namespace === undefined) await this.clearAllProjectionFiles();
-    else
+    if (namespace === undefined) await this.clearAllProjectionDirectories();
+    else if (!this.protectedDirectories.has(encode(namespace)))
       await rm(join(this.root, 'projections', encode(namespace)), { recursive: true, force: true });
     if (namespace === undefined) this.listCache.clear();
     else this.listCache.delete(namespace);
   }
 
-  private async clearAllProjectionFiles(): Promise<void> {
+  private async clearAllProjectionDirectories(): Promise<void> {
     const root = join(this.root, 'projections');
-    let namespaces: Dirent[];
+    let namespaces: string[];
     try {
-      namespaces = await readdir(root, { withFileTypes: true });
+      namespaces = await readdir(root);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
       throw error;
     }
     await Promise.all(
       namespaces.map(async (namespace) => {
-        const directory = join(root, namespace.name);
-        if (!namespace.isDirectory()) {
-          await rm(directory, { recursive: true, force: true });
-          return;
-        }
-        const entries = await readdir(directory, { withFileTypes: true });
-        await Promise.all(
-          entries.map(async (entry) => {
-            const path = join(directory, entry.name);
-            if (entry.isFile() && (await isProcessorStateFile(path))) return;
-            await rm(path, { recursive: true, force: true });
-          }),
-        );
+        const directory = join(root, namespace);
+        if (this.protectedDirectories.has(namespace)) return;
+        await rm(directory, { recursive: true, force: true });
       }),
     );
   }
@@ -172,21 +175,9 @@ function sameProjectionFiles(
 }
 
 export function encode(value: string): string {
-  if (value.length === 0 || /[\\/]/.test(value))
-    throw new Error('Storage name must not contain path separators');
-  return encodeURIComponent(value).replace(/%/g, '~').replace(/\./g, '~2E');
+  return encodeStorageName(value);
 }
 
 export async function atomicJson(path: string, value: unknown): Promise<void> {
   await writeFileAtomically(path, `${JSON.stringify(value)}\n`);
-}
-
-async function isProcessorStateFile(path: string): Promise<boolean> {
-  try {
-    return isCompatibleProcessorStateRecord(JSON.parse(await readFile(path, 'utf8')));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    if (error instanceof SyntaxError) return false;
-    throw error;
-  }
 }

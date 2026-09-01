@@ -20,6 +20,19 @@ filesystem operations.
 
 `FileProjectionStore` is exclusively for rebuildable Eventing read models.
 `FileProcessorStateStore` persists processor-owned recovery state separately.
+When processor state uses established compatible paths beneath `projections/`,
+pass each state consumer to `FileProjectionStore` so a projection rebuild
+reserves its current, legacy, and collision-isolated directories:
+
+```ts
+const projections = new FileProjectionStore(dataRoot, {
+  protectedProcessorStateConsumers: ['reactor:delivery-outcomes'],
+});
+const processorState = new FileProcessorStateStore(dataRoot);
+```
+
+This is structural path ownership; projection clearing never infers state from
+record contents. Wake Bootstrap supplies its known processor consumers.
 The adapter reads established Wake-home records without a data migration, but
 does not supply a legacy source import, a compatibility package, or a second
 runtime path. All supported imports come from

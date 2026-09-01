@@ -39,6 +39,10 @@ service.
   written atomically under their consumer/key identity. Established compatible
   locations and record representations remain readable so a Wake home needs no
   migration.
+- A filesystem projection store configured with processor-state consumers MUST
+  reserve those consumers' current, legacy, and collision-isolated compatible
+  directories during scoped or unscoped clear operations. It MUST use path
+  ownership, not persisted record contents, to decide what to retain.
 - Locks and atomic writes MUST prevent a partially written record becoming a
   successful durable result. Run serialisation MUST prevent concurrent passes
   for the same consumer.

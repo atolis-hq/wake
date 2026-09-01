@@ -4,14 +4,13 @@ import { createHash } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withFileLock } from './file-lock.js';
-import { atomicJson, encode } from './file-projection-store.js';
+import { atomicJson } from './file-projection-store.js';
+import { processorStatePaths, type ProcessorStatePaths } from './processor-state-paths.js';
 import {
   isCompatibleProcessorStateRecord,
   type CompatibleProcessorStateRecord,
 } from './processor-state-record.js';
-import { assertStorageName } from './storage-name.js';
-
-const pendingNamespaceSuffix = ':pending';
+import { encodeStorageName } from './storage-name.js';
 
 export class FileProcessorStateStore implements ProcessorStateStore {
   constructor(private readonly root: string) {}
@@ -56,25 +55,7 @@ export class FileProcessorStateStore implements ProcessorStateStore {
   }
 
   private paths(consumer: string, key: string): ProcessorStatePaths {
-    const namespace = this.namespace(consumer);
-    const currentNamespace = encodeProcessorStateName(namespace);
-    const currentKey = encodeProcessorStateName(key);
-    return {
-      key,
-      namespace,
-      current: processorStatePath(this.root, currentNamespace, currentKey),
-      isolated: processorStatePath(
-        this.root,
-        `%processor-state-${currentNamespace}`,
-        `%processor-state-${currentKey}`,
-      ),
-      legacy: legacyProcessorStatePath(this.root, namespace, key),
-    };
-  }
-
-  private namespace(consumer: string): string {
-    assertStorageName(consumer);
-    return `${consumer}${pendingNamespaceSuffix}`;
+    return processorStatePaths(this.root, consumer, key);
   }
 
   private async withStateLocks<Value>(paths: readonly string[], operation: () => Promise<Value>) {
@@ -98,25 +79,8 @@ export class FileProcessorStateStore implements ProcessorStateStore {
   }
 }
 
-function encodeStateKey(key: string): string {
-  assertStorageName(key);
-  return encode(key);
-}
-
-function encodeProcessorStateName(value: string): string {
-  assertStorageName(value);
-  return encodeURIComponent(value)
-    .replace(/~/g, '%7E')
-    .replace(/%(?!7E)/g, '~')
-    .replace(/\./g, '~2E');
-}
-
-function processorStatePath(root: string, namespace: string, key: string): string {
-  return join(root, 'projections', namespace, `${key}.json`);
-}
-
 function legacyProcessorStatePath(root: string, namespace: string, key: string): string {
-  return processorStatePath(root, encode(namespace), encodeStateKey(key));
+  return join(root, 'projections', encodeStorageName(namespace), `${encodeStorageName(key)}.json`);
 }
 
 function processorStateLockPath(root: string, path: string): string {
@@ -201,14 +165,6 @@ function candidateState(
   const candidate = candidates.find((value) => value.path === path);
   if (candidate === undefined) throw new Error(`Missing processor state candidate for ${path}`);
   return candidate.state;
-}
-
-interface ProcessorStatePaths {
-  readonly key: string;
-  readonly namespace: string;
-  readonly current: string;
-  readonly isolated: string;
-  readonly legacy: string;
 }
 
 interface ProcessorStateCandidate {

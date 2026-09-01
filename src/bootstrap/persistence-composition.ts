@@ -12,6 +12,7 @@ import {
   FileProjectionStore,
   createFileProcessorRunSerialiser,
 } from '@atolis-hq/eventing-filesystem';
+import { DeliveryOutcomeProcessorConsumer } from '../integrations/index.js';
 import type { Clock } from '../kernel/index.js';
 import type { WakePaths } from './paths.js';
 
@@ -80,7 +81,10 @@ export function composePersistence(
       ),
     ),
     projections: (options.decorateProjections ?? identity)(
-      options.projections ?? new FileProjectionStore(paths.dataRoot),
+      options.projections ??
+        new FileProjectionStore(paths.dataRoot, {
+          protectedProcessorStateConsumers: [DeliveryOutcomeProcessorConsumer],
+        }),
     ),
     checkpoints: (options.decorateCheckpoints ?? identity)(
       options.checkpoints ?? new FileCheckpointStore(paths.dataRoot),

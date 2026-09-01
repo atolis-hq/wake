@@ -9,9 +9,13 @@ import {
   InMemoryProcessorStateStore,
   InProcessJournalChangeSignal,
 } from '@atolis-hq/eventing/memory';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { resolveWakePaths } from '../../../src/bootstrap/index.js';
 import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
+import { DeliveryOutcomeProcessorConsumer } from '../../../src/integrations/index.js';
 import { type EntityRef } from '../../../src/kernel/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -48,6 +52,30 @@ it('keeps injected processor recovery state separate from projections', () => {
   });
 
   expect(persistence.processorState).toBe(processorState);
+});
+
+it('reserves delivery recovery state while clearing filesystem projections', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-persistence-composition-'));
+  try {
+    const persistence = composePersistence(resolveWakePaths(root), new FakeClock(), {});
+    await persistence.processorState.write({
+      consumer: DeliveryOutcomeProcessorConsumer,
+      key: 'pending-confirmations',
+      value: { events: ['event-1'] },
+    });
+
+    await persistence.projections.clear();
+
+    await expect(
+      persistence.processorState.read(DeliveryOutcomeProcessorConsumer, 'pending-confirmations'),
+    ).resolves.toEqual({
+      consumer: DeliveryOutcomeProcessorConsumer,
+      key: 'pending-confirmations',
+      value: { events: ['event-1'] },
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 const stream: EntityRef<'test', 'serialization'> = { kind: 'test', id: 'serialization' };

@@ -1,9 +1,10 @@
-import { FileProjectionStore } from '@atolis-hq/eventing-filesystem';
+import { FileProcessorStateStore, FileProjectionStore } from '@atolis-hq/eventing-filesystem';
 import type * as FsPromises from 'node:fs/promises';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
+import { encode } from '../src/file-projection-store.js';
 
 const { readFileMock, statMock } = vi.hoisted(() => ({ readFileMock: vi.fn(), statMock: vi.fn() }));
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -85,4 +86,91 @@ it('refreshes a cached namespace after another store atomically writes it', asyn
     { key: 'work:1', value: { n: 1 } },
     { key: 'work:2', value: { n: 2 } },
   ]);
+});
+
+const deliveryOutcomeConsumer = 'reactor:delivery-outcomes';
+const pendingNamespace = `${deliveryOutcomeConsumer}:pending`;
+
+function stores(root: string) {
+  return {
+    projections: new FileProjectionStore(root, {
+      protectedProcessorStateConsumers: [deliveryOutcomeConsumer],
+    }),
+    processorState: new FileProcessorStateStore(root),
+  };
+}
+
+it('does not delete protected processor state when clearing its legacy namespace', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-protected-state-'));
+  const { projections, processorState } = stores(root);
+  await processorState.write({
+    consumer: deliveryOutcomeConsumer,
+    key: 'pending-confirmations',
+    value: { events: ['event-1'] },
+  });
+
+  await projections.clear(pendingNamespace);
+
+  await expect(
+    processorState.read(deliveryOutcomeConsumer, 'pending-confirmations'),
+  ).resolves.toEqual({
+    consumer: deliveryOutcomeConsumer,
+    key: 'pending-confirmations',
+    value: { events: ['event-1'] },
+  });
+});
+
+it('does not delete corrupt processor state when clearing every projection', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-protected-state-'));
+  const { projections } = stores(root);
+  const path = join(root, 'projections', encode(pendingNamespace), 'pending-confirmations.json');
+  const raw = '{}\n';
+  await mkdir(join(path, '..'), { recursive: true });
+  await writeFile(path, raw);
+
+  await projections.clear();
+
+  await expect(readFile(path, 'utf8')).resolves.toBe(raw);
+});
+
+it('clears an unprotected projection that has a processor-state-shaped record', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-protected-state-'));
+  const { projections } = stores(root);
+  await projections.write({
+    namespace: 'other:pending',
+    key: 'pending-confirmations',
+    lastGlobalPosition: 0,
+    value: { events: ['event-1'] },
+  });
+
+  await projections.clear();
+
+  await expect(projections.read('other:pending', 'pending-confirmations')).resolves.toBeNull();
+});
+
+it('clears rebuildable projections while retaining protected processor state', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-protected-state-'));
+  const { projections, processorState } = stores(root);
+  await projections.write({
+    namespace: 'work',
+    key: 'work:1',
+    lastGlobalPosition: 1,
+    value: { n: 1 },
+  });
+  await processorState.write({
+    consumer: deliveryOutcomeConsumer,
+    key: 'pending-confirmations',
+    value: { events: ['event-1'] },
+  });
+
+  await projections.clear();
+
+  await expect(projections.read('work', 'work:1')).resolves.toBeNull();
+  await expect(
+    processorState.read(deliveryOutcomeConsumer, 'pending-confirmations'),
+  ).resolves.toEqual({
+    consumer: deliveryOutcomeConsumer,
+    key: 'pending-confirmations',
+    value: { events: ['event-1'] },
+  });
 });

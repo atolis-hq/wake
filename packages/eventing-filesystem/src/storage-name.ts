@@ -18,6 +18,11 @@ export function assertStorageName(value: string): void {
     throw new Error('Storage name must not contain path separators');
 }
 
+export function encodeStorageName(value: string): string {
+  assertStorageName(value);
+  return encodeURIComponent(value).replace(/%/g, '~').replace(/\./g, '~2E');
+}
+
 export function encodeCheckpointStorageName(consumer: string): string {
   assertStorageName(consumer);
   return Buffer.from(consumer, 'utf8').toString('base64url');
