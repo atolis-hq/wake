@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mainTs = resolve(repoRoot, 'src', 'main.ts');
+const sourceTsConfig = resolve(repoRoot, 'tsconfig.source.json');
 
 if (!existsSync(mainTs)) {
   console.error(
@@ -22,10 +23,14 @@ if (!existsSync(mainTs)) {
 
 const tsxCli = resolve(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
-const result = spawnSync(process.execPath, [tsxCli, mainTs, ...process.argv.slice(2)], {
-  stdio: 'inherit',
-  shell: false,
-});
+const result = spawnSync(
+  process.execPath,
+  [tsxCli, '--tsconfig', sourceTsConfig, mainTs, ...process.argv.slice(2)],
+  {
+    stdio: 'inherit',
+    shell: false,
+  },
+);
 
 if (result.error) {
   console.error(result.error.message);

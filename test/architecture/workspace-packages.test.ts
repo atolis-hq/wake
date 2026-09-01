@@ -258,6 +258,26 @@ describe('eventing workspace packages', () => {
     for (const config of configs) expect(config).toContain('workspaceSourceAliases');
   });
 
+  it('prepares package entrypoints before running clean-checkout tools', async () => {
+    const [launcher, wake, webVitestConfig, packageCheck] = await Promise.all([
+      readFile(new URL('../../bin/wake-dev.js', import.meta.url), 'utf8'),
+      readJson<PackageManifest>('package.json'),
+      readFile(new URL('../../src/surfaces/web/vitest.config.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../../scripts/check-workspace-packages.mjs', import.meta.url), 'utf8'),
+    ]);
+
+    expect(launcher).toContain("'--tsconfig', sourceTsConfig");
+    expect(wake.scripts?.['build:eventing-packages']).toBe(
+      'tsc --build packages/eventing-filesystem/tsconfig.json',
+    );
+    expect(wake.scripts?.['build:web']).toContain('npm run build:eventing-packages');
+    expect(wake.scripts?.['test:web']).toContain('npm run build:eventing-packages');
+    expect(webVitestConfig).toContain('maxWorkers: 4');
+    expect(packageCheck).toContain("['install', '--ignore-scripts', '--no-audit', '--no-fund']");
+    expect(packageCheck).not.toContain("['install', '--offline'");
+    expect(packageCheck).toContain("['exec', '--offline', '--', 'wake', '--help']");
+  });
+
   it('builds public dist entrypoints into package archives', async () => {
     const eventingFiles = await packedFiles('@atolis-hq/eventing');
     const filesystemFiles = await packedFiles('@atolis-hq/eventing-filesystem');
@@ -288,11 +308,11 @@ describe('eventing workspace packages', () => {
 
     const { stdout } = await execAsync('npm run check:workspace-packages', {
       cwd: new URL('../../', import.meta.url),
-      timeout: 120_000,
+      timeout: 300_000,
     });
 
     expect(stdout).toContain('Workspace package archive check passed');
-  }, 150_000);
+  }, 330_000);
 
   it('cleans stale generated files before packaging public Eventing packages', async () => {
     for (const workspace of ['eventing', 'eventing-filesystem']) {
