@@ -1,5 +1,5 @@
 import { exec } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
@@ -110,13 +110,15 @@ describe('eventing workspace packages', () => {
     expect(filesystem.files).toEqual(expect.arrayContaining(['dist', 'README.md', 'LICENSE']));
     expect(eventing.exports).toHaveProperty('./memory');
     expect(filesystem.exports).toHaveProperty('.');
-    expect(eventing.scripts?.build).toBe('tsc --build tsconfig.json');
+    expect(eventing.scripts?.clean).toBe('node scripts/clean-dist.mjs');
+    expect(eventing.scripts?.build).toBe('npm run clean && tsc --build --force tsconfig.json');
     expect(eventing.scripts?.prepack).toBe('npm run build');
     expect(eventing.scripts?.['typecheck:test']).toBe('tsc --noEmit --project tsconfig.test.json');
     expect(eventing.scripts?.test).toBe(
       'npm run typecheck:test && vitest run --config vitest.config.ts',
     );
-    expect(filesystem.scripts?.build).toBe('tsc --build tsconfig.json');
+    expect(filesystem.scripts?.clean).toBe('node scripts/clean-dist.mjs');
+    expect(filesystem.scripts?.build).toBe('npm run clean && tsc --build --force tsconfig.json');
     expect(filesystem.scripts?.prepack).toBe('npm run build');
     expect(filesystem.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);
     expect(wake.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);
@@ -231,4 +233,24 @@ describe('eventing workspace packages', () => {
 
     expect(stdout).toContain('Workspace package archive check passed');
   }, 150_000);
+
+  it('cleans stale generated files before packaging public Eventing packages', async () => {
+    for (const workspace of ['eventing', 'eventing-filesystem']) {
+      const staleOutput = new URL(
+        `../../packages/${workspace}/dist/stale-package-artifact.js`,
+        import.meta.url,
+      );
+      await writeFile(staleOutput, 'export const stale = true;\n');
+
+      try {
+        await execAsync(`npm run build --workspace @atolis-hq/${workspace}`, {
+          cwd: new URL('../../', import.meta.url),
+          timeout: 30_000,
+        });
+        await expect(access(staleOutput)).rejects.toThrow();
+      } finally {
+        await rm(staleOutput, { force: true });
+      }
+    }
+  }, 45_000);
 });

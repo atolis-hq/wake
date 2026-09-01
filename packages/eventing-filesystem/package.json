@@ -28,7 +28,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc --build tsconfig.json",
+    "clean": "node scripts/clean-dist.mjs",
+    "build": "npm run clean && tsc --build --force tsconfig.json",
     "prepack": "npm run build",
     "typecheck:test": "tsc --noEmit --project tsconfig.test.json",
     "test": "npm run typecheck:test && vitest run --config vitest.config.ts"

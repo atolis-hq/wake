@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,8 +8,16 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const packageLocations = [
   { directory: repoRoot, label: 'Wake' },
-  { directory: resolve(repoRoot, 'packages/eventing'), label: 'Eventing' },
-  { directory: resolve(repoRoot, 'packages/eventing-filesystem'), label: 'Eventing filesystem' },
+  {
+    directory: resolve(repoRoot, 'packages/eventing'),
+    label: 'Eventing',
+    verifySourceOutputs: true,
+  },
+  {
+    directory: resolve(repoRoot, 'packages/eventing-filesystem'),
+    label: 'Eventing filesystem',
+    verifySourceOutputs: true,
+  },
 ];
 const requiredArchiveFiles = ['README.md', 'LICENSE'];
 
@@ -111,6 +119,27 @@ function publicDistEntries(manifest) {
     .filter((entry) => entry.startsWith('dist/') && /\.(?:js|d\.ts)$/u.test(entry));
 }
 
+async function sourceFiles(directory, relativeDirectory = '') {
+  const entries = await readdir(resolve(directory, relativeDirectory), { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const relativePath = `${relativeDirectory}${entry.name}`;
+      if (entry.isDirectory()) return sourceFiles(directory, `${relativePath}/`);
+      return entry.isFile() ? [relativePath] : [];
+    }),
+  );
+  return files.flat();
+}
+
+async function expectedArchiveFiles(directory) {
+  const outputs = (await sourceFiles(resolve(directory, 'src'))).flatMap((file) => {
+    if (!file.endsWith('.ts') || file.endsWith('.d.ts')) return [];
+    const output = file.slice(0, -3);
+    return [`dist/${output}.js`, `dist/${output}.d.ts`, `dist/${output}.d.ts.map`];
+  });
+  return new Set(['package.json', ...requiredArchiveFiles, ...outputs]);
+}
+
 function parsePackOutput(output, label) {
   let jsonStart = output.lastIndexOf('[');
   while (jsonStart >= 0) {
@@ -129,7 +158,7 @@ function parsePackOutput(output, label) {
   fail(`${label} npm pack did not return archive JSON metadata.`);
 }
 
-function verifyPackedEntries(manifest, packed, label) {
+async function verifyPackedEntries(manifest, packed, directory, label, verifySourceOutputs) {
   if (packed.name !== manifest.name || packed.version !== manifest.version) {
     fail(`${label} npm pack metadata does not match its package manifest.`);
   }
@@ -147,6 +176,15 @@ function verifyPackedEntries(manifest, packed, label) {
   }
   for (const file of requiredArchiveFiles) {
     if (!files.has(file)) fail(`${label} archive is missing required package file ${file}.`);
+  }
+
+  if (verifySourceOutputs) {
+    const expectedFiles = await expectedArchiveFiles(directory);
+    for (const file of files) {
+      if (!expectedFiles.has(file)) {
+        fail(`${label} archive contains unexpected package artifact ${file}.`);
+      }
+    }
   }
 }
 
@@ -225,7 +263,13 @@ async function main() {
         (await runNpm(['pack', '--dry-run', '--json'], location.directory)).stdout,
         location.label,
       );
-      verifyPackedEntries(manifest, dryRun, location.label);
+      await verifyPackedEntries(
+        manifest,
+        dryRun,
+        location.directory,
+        location.label,
+        location.verifySourceOutputs,
+      );
 
       const packed = parsePackOutput(
         (
@@ -236,7 +280,13 @@ async function main() {
         ).stdout,
         location.label,
       );
-      verifyPackedEntries(manifest, packed, location.label);
+      await verifyPackedEntries(
+        manifest,
+        packed,
+        location.directory,
+        location.label,
+        location.verifySourceOutputs,
+      );
       const archive = archivePath(packed, archiveDirectory, location.label);
       if (!(await stat(archive)).isFile())
         fail(`${location.label} archive was not written: ${archive}`);
