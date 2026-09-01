@@ -1,5 +1,5 @@
 ---
-asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
+asOf: 6e394e8258d688f3d98220d995cc0c38093b7745
 ---
 
 # Bootstrap - Module Specification
@@ -24,6 +24,11 @@ and invoke an owning module's public event-data factory, but Bootstrap never
 calls Kernel's `createEventData` or reproduces an owner's event mapping. The
 owner factory constructs the event data, and Bootstrap does not bypass that
 module's stream and expected-sequence append path.
+
+When Bootstrap composes filesystem storage, it declares the delivery outcome
+reactor's recovery consumer to `FileProjectionStore`. This reserves that
+consumer's current, legacy, and collision-isolated compatible paths, so a
+scoped or full projection clear cannot delete processor recovery state.
 
 ## Runtime composition
 

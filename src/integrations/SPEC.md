@@ -1,5 +1,5 @@
 ---
-asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
+asOf: 6e394e8258d688f3d98220d995cc0c38093b7745
 ---
 
 # Integrations — Module Specification
@@ -69,6 +69,11 @@ legacy flat and interim nested stored records, then writes the reactor-owned
 canonical pending-confirmations record. Its processor delivery and explicit
 reconciliation share one injected serialiser, so only one may change that state
 at a time.
+
+The delivery outcome reactor exports its recovery consumer identity for
+Bootstrap composition. Bootstrap uses that identity to reserve the established
+filesystem paths for this processor state while clearing rebuildable
+projections; the reactor itself remains storage-port only.
 
 ## Ubiquitous language
 
