@@ -194,6 +194,25 @@ it('reads and lists a legacy literal-tilde projection', async () => {
   ]);
 });
 
+it('clears a corrupted current projection so it can be rebuilt', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-corrupt-current-'));
+  const store = new FileProjectionStore(root);
+  const namespace = 'work';
+  const key = 'work:1';
+  const path = join(
+    root,
+    'projections',
+    `%projection-${encode(namespace)}`,
+    `%projection-${encode(key)}.json`,
+  );
+  await store.write({ namespace, key, lastGlobalPosition: 1, value: { n: 1 } });
+  await writeFile(path, '{corrupted');
+
+  await store.clear(namespace);
+
+  await expect(readFile(path, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
 const deliveryOutcomeConsumer = 'reactor:delivery-outcomes';
 const pendingNamespace = `${deliveryOutcomeConsumer}:pending`;
 

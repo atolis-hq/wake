@@ -102,15 +102,22 @@ export class FileProjectionStore implements ProjectionStore {
 
   async clear(namespace?: string): Promise<void> {
     if (namespace === undefined) await this.clearAllProjectionDirectories();
-    else
-      await Promise.all(
-        projectionDirectories(this.root, namespace).map(async (directory) => {
-          if (this.protectedDirectories.has(directoryName(directory))) return;
-          await clearProjectionDirectory(directory, namespace);
-        }),
-      );
+    else await this.clearProjectionNamespace(namespace);
     if (namespace === undefined) this.listCache.clear();
     else this.listCache.delete(namespace);
+  }
+
+  private async clearProjectionNamespace(namespace: string): Promise<void> {
+    const [currentDirectory, ...legacyDirectories] = projectionDirectories(this.root, namespace);
+    // The versioned directory belongs exclusively to this namespace, unlike a
+    // legacy directory that can collide with another namespace's spelling.
+    await rm(currentDirectory!, { recursive: true, force: true });
+    await Promise.all(
+      legacyDirectories.map(async (directory) => {
+        if (this.protectedDirectories.has(directoryName(directory))) return;
+        await clearProjectionDirectory(directory, namespace);
+      }),
+    );
   }
 
   private async clearAllProjectionDirectories(): Promise<void> {

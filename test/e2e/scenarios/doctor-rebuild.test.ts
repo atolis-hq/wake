@@ -23,7 +23,13 @@ describe(`${scenario.id}: doctor rebuild`, () => {
       (await readdir(eventsRoot)).find((file) => file.endsWith('.jsonl')) ?? 'missing.jsonl',
     );
     const journalBytes = await readFile(eventPath);
-    const projectionPath = join(world.wakeRoot, '.wake', 'projections', 'work', 'global.json');
+    const projectionPaths = await projectionRecordPaths(
+      join(world.wakeRoot, '.wake', 'projections'),
+      'work',
+    );
+    expect(projectionPaths).toHaveLength(1);
+    const projectionPath = projectionPaths[0];
+    if (projectionPath === undefined) throw new Error('Expected one work projection record');
     await writeFile(projectionPath, '{corrupted');
     const output: string[] = [];
 
@@ -103,3 +109,35 @@ surfaces: {}
     });
   });
 });
+
+async function projectionRecordPaths(root: string, namespace: string): Promise<readonly string[]> {
+  const paths: string[] = [];
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) {
+      paths.push(...(await projectionRecordPaths(path, namespace)));
+    } else if (entry.isFile() && entry.name.endsWith('.json')) {
+      const record = JSON.parse(await readFile(path, 'utf8')) as unknown;
+      if (isStoredProjection(record) && record.namespace === namespace) paths.push(path);
+    }
+  }
+  return paths;
+}
+
+function isStoredProjection(value: unknown): value is {
+  readonly namespace: string;
+  readonly key: string;
+  readonly lastGlobalPosition: number;
+} {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'namespace' in value &&
+    typeof value.namespace === 'string' &&
+    'key' in value &&
+    typeof value.key === 'string' &&
+    'lastGlobalPosition' in value &&
+    typeof value.lastGlobalPosition === 'number' &&
+    'value' in value
+  );
+}
