@@ -30,8 +30,10 @@ it('quiesces active runs before rebuilding projections and releases its maintena
   let activeRunChecks = 0;
   const application = createProjectionRebuildApplication({
     maintenance: {
-      runExclusive: async (tag, retryFailed, operation) => {
-        trace.push(`acquire-and-pause:${tag}:${retryFailed}`);
+      runExclusive: async (tag, recovery, operation) => {
+        trace.push(
+          `acquire-and-pause:${tag}:${recovery.retrySameTagFailure}:${recovery.replaceDifferentTagFailure}`,
+        );
         return operation({ attemptId: 'rebuild-attempt', tag: 'projection-rebuild' });
       },
       clear: async (attemptId) => {
@@ -50,7 +52,7 @@ it('quiesces active runs before rebuilding projections and releases its maintena
   await application.rebuild();
 
   expect(trace).toEqual([
-    'acquire-and-pause:projection-rebuild:true',
+    'acquire-and-pause:projection-rebuild:true:false',
     'drain',
     'rebuild',
     'clear:rebuild-attempt',

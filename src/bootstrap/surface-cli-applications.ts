@@ -72,6 +72,7 @@ import {
 import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
 import { createUpdateLedger } from './update-ledger.js';
+import type { MaintenanceLeaseRecoveryOptions } from './update-maintenance-lease.js';
 import { resolveWakeVersion, wakeVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
@@ -84,7 +85,7 @@ export interface ProjectionRebuildLease {
 export interface ProjectionRebuildMaintenancePort {
   runExclusive<Value>(
     tag: string,
-    retryFailed: boolean,
+    recovery: MaintenanceLeaseRecoveryOptions,
     operation: (lease: ProjectionRebuildLease) => Promise<Value>,
   ): Promise<Value>;
   clear(attemptId?: string): Promise<void>;
@@ -105,16 +106,20 @@ export function createProjectionRebuildApplication(input: ProjectionRebuildAppli
 } {
   return {
     async rebuild() {
-      await input.maintenance.runExclusive(projectionRebuildMaintenanceTag, true, async (lease) => {
-        if (lease.tag !== projectionRebuildMaintenanceTag)
-          throw new Error(`Projection rebuild is blocked by active maintenance: ${lease.tag}`);
-        try {
-          await waitForActiveRuns({ activeRunIds: input.activeRunIds, sleep: input.sleep });
-          await input.rebuild();
-        } finally {
-          await input.maintenance.clear(lease.attemptId);
-        }
-      });
+      await input.maintenance.runExclusive(
+        projectionRebuildMaintenanceTag,
+        { retrySameTagFailure: true, replaceDifferentTagFailure: false },
+        async (lease) => {
+          if (lease.tag !== projectionRebuildMaintenanceTag)
+            throw new Error(`Projection rebuild is blocked by active maintenance: ${lease.tag}`);
+          try {
+            await waitForActiveRuns({ activeRunIds: input.activeRunIds, sleep: input.sleep });
+            await input.rebuild();
+          } finally {
+            await input.maintenance.clear(lease.attemptId);
+          }
+        },
+      );
     },
   };
 }
@@ -586,8 +591,8 @@ async function activeExecutionRunIds(root: CompositionRoot): Promise<readonly st
 export function createSelfUpdateQuiescePort(root: CompositionRoot): SelfUpdateQuiescePort {
   return {
     acquire: (tag, retryFailed) => root.maintenance.acquire(tag, retryFailed),
-    exclusive: (tag, retryFailed, operation) =>
-      root.maintenance.runExclusive(tag, retryFailed, operation),
+    exclusive: (tag, recovery, operation) =>
+      root.maintenance.runExclusive(tag, recovery, operation),
     activeRuns: () => activeExecutionRuns(root),
     requestMaintenanceCancellation: async (runIds) => {
       for (const runId of runIds)

@@ -159,6 +159,30 @@ describe('update maintenance lease', () => {
     });
   });
 
+  it('retains a failed foreign lease when exclusive recovery forbids replacing it', async () => {
+    const root = await createRoot(roots);
+    let attempt = 0;
+    const lease = createUpdateMaintenanceLease(
+      root,
+      () => '2026-08-11T10:00:00.000Z',
+      () => `attempt-${++attempt}`,
+    );
+    const failedSelfUpdate = await lease.acquire('self-update');
+    const failedSelfUpdateState = await lease.fail(
+      new Error('self-update failed'),
+      failedSelfUpdate.attemptId,
+    );
+
+    const observed = await lease.runExclusive(
+      'projection-rebuild',
+      { retrySameTagFailure: true, replaceDifferentTagFailure: false },
+      async (state) => state,
+    );
+
+    expect(observed).toEqual(failedSelfUpdateState);
+    expect(await lease.read()).toEqual(failedSelfUpdateState);
+  });
+
   it('recovers a persisted updating attempt once, marks it bad, then applies a newer candidate once', async () => {
     const root = await createRoot(roots);
     const maintenance = createUpdateMaintenanceLease(root, () => '2026-08-11T10:00:00.000Z');
@@ -291,8 +315,11 @@ function exclusivePersistedQuiesce(maintenance: ReturnType<typeof createUpdateMa
     ...persistedQuiesce(maintenance),
     exclusive: <Value>(
       tag: string,
-      retryFailed: boolean,
+      recovery: {
+        readonly retrySameTagFailure: boolean;
+        readonly replaceDifferentTagFailure: boolean;
+      },
       operation: (state: Awaited<ReturnType<typeof maintenance.acquire>>) => Promise<Value>,
-    ) => maintenance.runExclusive(tag, retryFailed, operation),
+    ) => maintenance.runExclusive(tag, recovery, operation),
   };
 }
