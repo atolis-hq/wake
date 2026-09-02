@@ -1,0 +1,6 @@
+pre-commit:
+  jobs:
+    - name: format staged files
+      glob: '*.{ts,tsx,js,mjs,cjs,json,yaml,yml,css,html}'
+      run: node node_modules/prettier/bin/prettier.cjs --write {staged_files}
+      stage_fixed: true
