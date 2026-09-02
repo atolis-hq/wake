@@ -276,6 +276,11 @@ describe('eventing workspace packages', () => {
     expect(packageCheck).toContain("['install', '--ignore-scripts', '--no-audit', '--no-fund']");
     expect(packageCheck).not.toContain("['install', '--offline'");
     expect(packageCheck).toContain("['exec', '--offline', '--', 'wake', '--help']");
+    expect(wake.scripts?.['check:workspace-packages']).toBe(
+      'node scripts/check-workspace-packages.mjs',
+    );
+    expect(packageCheck).toContain("const requiredArchiveFiles = ['README.md', 'LICENSE'];");
+    expect(packageCheck).toContain('archive is missing required package file');
   });
 
   it('builds public dist entrypoints into package archives', async () => {
@@ -292,27 +297,6 @@ describe('eventing workspace packages', () => {
     );
     expect(filesystemFiles).toEqual(expect.arrayContaining(['dist/index.js', 'dist/index.d.ts']));
   }, 15_000);
-
-  it('installs all public workspace archives and runs Wake through the packed CLI', async () => {
-    const [wake, packageCheck] = await Promise.all([
-      readJson<PackageManifest>('package.json'),
-      readFile(new URL('../../scripts/check-workspace-packages.mjs', import.meta.url), 'utf8'),
-    ]);
-
-    expect(wake.scripts?.['check:workspace-packages']).toBe(
-      'node scripts/check-workspace-packages.mjs',
-    );
-    expect(packageCheck).toContain("const requiredArchiveFiles = ['README.md', 'LICENSE'];");
-    expect(packageCheck).toContain('archive is missing required package file');
-    expect(packageCheck).toContain("['exec', '--offline', '--', 'wake', '--help']");
-
-    const { stdout } = await execAsync('npm run check:workspace-packages', {
-      cwd: new URL('../../', import.meta.url),
-      timeout: 300_000,
-    });
-
-    expect(stdout).toContain('Workspace package archive check passed');
-  }, 330_000);
 
   it('cleans stale generated files before packaging public Eventing packages', async () => {
     for (const workspace of ['eventing', 'eventing-filesystem']) {

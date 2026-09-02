@@ -42,10 +42,13 @@ describe('release packaging', () => {
   it('publishes the three public packages at one version in dependency order', async () => {
     const workflow = await readRepositoryFile('.github/workflows/ci-cd.yml');
 
-    expect(workflow).toContain(
-      'run: npm run verify && npm run test:architecture && npm run check:workspace-packages && npm run knip',
-    );
+    expect(workflow).toContain('run: npm run verify');
+    expect(workflow).toContain('run: npm run test:architecture');
+    expect(workflow).toContain('run: npm run knip');
     expect(workflow).toContain('npm run check:workspace-packages');
+    expect(workflow).toContain(
+      'needs: [fast-verify, architecture, package-contract, knip, integration, e2e, web, docker-smoke]',
+    );
     expect(workflow).toContain('WAKE_VERSION: ${{ needs.tag.outputs.version }}');
     expect(workflow).toContain(
       'npm version "$WAKE_VERSION" --workspaces=false --no-git-tag-version --ignore-scripts',
