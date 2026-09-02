@@ -32,12 +32,19 @@ export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
     startedAt: creationEvent.payload.startedAt,
     ...(startedFromPreparation ? {} : { executionStartedAt: creationEvent.payload.startedAt }),
     ...(creationEvent.payload.runner === undefined ? {} : { runner: creationEvent.payload.runner }),
+    ...creationWorkspace(creationEvent),
   };
   for (const event of events.slice(1)) applyRunEvent(state, event.event);
   return state;
 }
 
 type RunEventData = RunExecutionEvent['event'];
+
+function creationWorkspace(event: RunEventData): Pick<RunView, 'workspace'> {
+  if (event.eventType !== ExecutionEventType.RunStarted || event.payload.workspace === undefined)
+    return {};
+  return { workspace: event.payload.workspace };
+}
 
 function applyRunEvent(state: RunView, event: RunEventData): void {
   if (!isActiveRunStatus(state.status)) {

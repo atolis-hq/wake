@@ -93,6 +93,48 @@ it('ignores facts outside the configured watch event types through its processor
   expect(matched).toBe(0);
 });
 
+it('advances past an unrecognized orchestration event outside the configured watch event types', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  await journal.appendToStream(watchStream, 0, [
+    createEventData({
+      eventId: 'unrecognized-orchestration-watch-fact',
+      eventType: 'orchestration.unrecognized',
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      correlationId: 'corr-1',
+      causationId: 'cause-1',
+      actor: { kind: 'integration', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {},
+    }),
+  ]);
+  let matched = 0;
+  const reactor = createWatchReactor(
+    {
+      async listWatchMatches() {
+        matched += 1;
+        return [];
+      },
+      async requestChild() {},
+      async rejectCausalActivation() {},
+    },
+    () => ['review.requested'],
+  );
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
+
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({
+    eventCount: 1,
+    handledCount: 0,
+  });
+  expect(matched).toBe(0);
+  expect(await checkpoints.load('reactor:orchestration.watch')).toBe(1);
+});
+
 const watchStream: EntityRef<'test', 'watch-reactor'> = {
   kind: 'test',
   id: 'watch-reactor',

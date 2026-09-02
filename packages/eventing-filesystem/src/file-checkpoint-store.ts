@@ -2,8 +2,8 @@ import type { CheckpointStore } from '@atolis-hq/eventing';
 
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { atomicJson, encode } from './file-projection-store.js';
-import { encodeCheckpointStorageName } from './storage-name.js';
+import { atomicJson } from './file-projection-store.js';
+import { encodeCheckpointStorageName, encodeLegacyStorageName } from './storage-name.js';
 
 interface CheckpointRecord {
   readonly consumer: string;
@@ -54,7 +54,7 @@ export class FileCheckpointStore implements CheckpointStore {
   }
 
   private legacyPath(consumer: string) {
-    return join(this.root, 'checkpoints', `${encode(consumer)}.json`);
+    return join(this.root, 'checkpoints', `${encodeLegacyStorageName(consumer)}.json`);
   }
 
   private async loadPath(consumer: string, path: string): Promise<number> {

@@ -64,6 +64,7 @@ export class InMemoryEventJournal implements EventJournal {
     beforeGlobalPosition = this.events.length + 1,
     limit = Number.POSITIVE_INFINITY,
   ): Promise<readonly EventEnvelope[]> {
+    if (beforeGlobalPosition <= 0 || limit <= 0) return [];
     return this.events
       .slice(0, beforeGlobalPosition - 1)
       .slice(-limit)

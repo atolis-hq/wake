@@ -121,6 +121,30 @@ describe('in-memory event journal', () => {
     expect((await journal.readLatest(3, 1)).map(({ event }) => event.eventId)).toEqual(['evt-2']);
   });
 
+  it('returns no latest events before a non-positive global position', async () => {
+    const journal = new InMemoryEventJournal(new FixedClock()) as InMemoryEventJournal & {
+      readLatest(
+        before?: number,
+        limit?: number,
+      ): Promise<readonly { readonly event: { readonly eventId: string } }[]>;
+    };
+    await journal.appendToStream(stream, 0, [event('evt-1'), event('evt-2')]);
+
+    await expect(journal.readLatest(0)).resolves.toEqual([]);
+  });
+
+  it('returns no latest events when the limit is non-positive', async () => {
+    const journal = new InMemoryEventJournal(new FixedClock()) as InMemoryEventJournal & {
+      readLatest(
+        before?: number,
+        limit?: number,
+      ): Promise<readonly { readonly event: { readonly eventId: string } }[]>;
+    };
+    await journal.appendToStream(stream, 0, [event('evt-1')]);
+
+    await expect(journal.readLatest(undefined, 0)).resolves.toEqual([]);
+  });
+
   it('checks expected sequence before considering producer-chosen event identity', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
     const draft = event('evt-1');

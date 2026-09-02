@@ -57,6 +57,18 @@ it('reads a legacy checkpoint and writes subsequent progress to its v2 path', as
   ).resolves.toContain('"globalPosition":5');
 });
 
+it('reads a legacy checkpoint whose consumer contains a literal tilde', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-checkpoints-'));
+  const checkpointDirectory = join(root, 'checkpoints');
+  await mkdir(checkpointDirectory, { recursive: true });
+  await writeFile(
+    join(checkpointDirectory, 'legacy~24consumer.json'),
+    `${JSON.stringify({ consumer: 'legacy~24consumer', globalPosition: 4 })}\n`,
+  );
+
+  await expect(new FileCheckpointStore(root).load('legacy~24consumer')).resolves.toBe(4);
+});
+
 it('treats a foreign legacy collision as absent and resets only its owner record', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-checkpoints-'));
   const checkpointDirectory = join(root, 'checkpoints');

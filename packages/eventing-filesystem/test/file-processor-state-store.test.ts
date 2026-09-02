@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { encode } from '../src/file-projection-store.js';
+import { encodeLegacyStorageName } from '../src/storage-name.js';
 
 it('atomically round-trips and deletes processor state at its compatible projection path', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-processor-state-'));
@@ -312,8 +313,20 @@ it('preserves a true legacy collision only for its persisted identity', async ()
   const key = 'pending-confirmations';
   const legacyConsumer = 'a~2Eb';
   const legacyNamespace = `${legacyConsumer}:pending`;
-  const legacyPath = join(root, 'projections', encode(legacyNamespace), `${encode(key)}.json`);
-  expect(legacyPath).toBe(join(root, 'projections', encode('a.b:pending'), `${encode(key)}.json`));
+  const legacyPath = join(
+    root,
+    'projections',
+    encodeLegacyStorageName(legacyNamespace),
+    `${encodeLegacyStorageName(key)}.json`,
+  );
+  expect(legacyPath).toBe(
+    join(
+      root,
+      'projections',
+      encodeLegacyStorageName('a.b:pending'),
+      `${encodeLegacyStorageName(key)}.json`,
+    ),
+  );
   await mkdir(join(legacyPath, '..'), { recursive: true });
   await writeFile(
     legacyPath,

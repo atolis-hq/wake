@@ -195,6 +195,56 @@ it('reopens the journal and continues stream sequence and global position', asyn
   expect((await reopened.readAll(0)).length).toBe(2);
 });
 
+it('returns no latest events before a non-positive global position', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-read-latest-before-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const journal = new FileEventJournal(root, new FakeClock());
+  await journal.appendToStream(stream, 0, [
+    createEventData({
+      eventId: 'event-1',
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'event-1',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: { objective: 'ship' },
+    }),
+    createEventData({
+      eventId: 'event-2',
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'event-2',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: { objective: 'ship' },
+    }),
+  ]);
+
+  await expect(journal.readLatest(0)).resolves.toEqual([]);
+});
+
+it('returns no latest events when the limit is non-positive', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-read-latest-limit-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const journal = new FileEventJournal(root, new FakeClock());
+  await journal.appendToStream(stream, 0, [
+    createEventData({
+      eventId: 'event-1',
+      eventType: 'work.item-created',
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'event-1',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: { objective: 'ship' },
+    }),
+  ]);
+
+  await expect(journal.readLatest(undefined, 0)).resolves.toEqual([]);
+});
+
 it('appends every event in a complete batch even when producer event identities repeat', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-mixed-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };

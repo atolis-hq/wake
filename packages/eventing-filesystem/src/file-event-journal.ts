@@ -191,6 +191,8 @@ export class FileEventJournal implements EventJournal {
   }
 
   async readLatest(beforeGlobalPosition?: number, limit = Number.POSITIVE_INFINITY) {
+    if (beforeGlobalPosition !== undefined && beforeGlobalPosition <= 0) return [];
+    if (limit <= 0) return [];
     const events = await this.scan(await this.readEntriesForRead());
     const before = beforeGlobalPosition ?? events.length + 1;
     return events

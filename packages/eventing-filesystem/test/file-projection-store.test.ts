@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { encode } from '../src/file-projection-store.js';
+import { encodeLegacyStorageName } from '../src/storage-name.js';
 
 const { readFileMock, statMock } = vi.hoisted(() => ({ readFileMock: vi.fn(), statMock: vi.fn() }));
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -59,9 +60,9 @@ it('does not re-read namespace files on a second list() when nothing changed', a
 
   const second = await store.list('work');
   expect(readFileMock.mock.calls.length).toBe(firstCallCount);
-  // Only the namespace directory is probed for an external atomic write;
+  // Both canonical candidate directories are probed for external atomic writes;
   // the two projection files themselves are not restatted.
-  expect(statMock.mock.calls.length).toBe(firstStatCallCount + 1);
+  expect(statMock.mock.calls.length).toBe(firstStatCallCount + 2);
   expect(second).toHaveLength(2);
 
   // A write patches the cache with the in-memory value being written, so the
@@ -85,6 +86,111 @@ it('refreshes a cached namespace after another store atomically writes it', asyn
   expect(await reader.list('work')).toMatchObject([
     { key: 'work:1', value: { n: 1 } },
     { key: 'work:2', value: { n: 2 } },
+  ]);
+});
+
+it('isolates a canonical key from a colliding legacy projection without overwriting it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-key-collision-'));
+  const namespace = 'work';
+  const legacy = {
+    namespace,
+    key: 'a~2Eb',
+    lastGlobalPosition: 1,
+    value: { owner: 'legacy-tilde' },
+  };
+  const legacyPath = join(
+    root,
+    'projections',
+    encodeLegacyStorageName(namespace),
+    `${encodeLegacyStorageName(legacy.key)}.json`,
+  );
+  await mkdir(join(legacyPath, '..'), { recursive: true });
+  await writeFile(legacyPath, `${JSON.stringify(legacy)}\n`);
+  const store = new FileProjectionStore(root);
+
+  await store.write({
+    namespace,
+    key: 'a.b',
+    lastGlobalPosition: 2,
+    value: { owner: 'canonical-dot' },
+  });
+
+  await expect(store.read(namespace, 'a.b')).resolves.toMatchObject({
+    value: { owner: 'canonical-dot' },
+  });
+  await expect(store.read(namespace, legacy.key)).resolves.toMatchObject({
+    value: { owner: 'legacy-tilde' },
+  });
+  await expect(readFile(legacyPath, 'utf8')).resolves.toBe(`${JSON.stringify(legacy)}\n`);
+  await expect(store.list(namespace)).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ key: 'a.b', value: { owner: 'canonical-dot' } }),
+      expect.objectContaining({ key: legacy.key, value: { owner: 'legacy-tilde' } }),
+    ]),
+  );
+});
+
+it('isolates a canonical namespace from a colliding legacy namespace and clears only its records', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-namespace-collision-'));
+  const legacy = {
+    namespace: 'a~2Eb',
+    key: 'legacy-key',
+    lastGlobalPosition: 1,
+    value: { owner: 'legacy-tilde' },
+  };
+  const legacyPath = join(
+    root,
+    'projections',
+    encodeLegacyStorageName(legacy.namespace),
+    `${encodeLegacyStorageName(legacy.key)}.json`,
+  );
+  await mkdir(join(legacyPath, '..'), { recursive: true });
+  await writeFile(legacyPath, `${JSON.stringify(legacy)}\n`);
+  const store = new FileProjectionStore(root);
+
+  await store.write({
+    namespace: 'a.b',
+    key: 'canonical-key',
+    lastGlobalPosition: 2,
+    value: { owner: 'canonical-dot' },
+  });
+
+  await expect(store.list('a.b')).resolves.toEqual([
+    expect.objectContaining({ key: 'canonical-key', value: { owner: 'canonical-dot' } }),
+  ]);
+  await expect(store.list(legacy.namespace)).resolves.toEqual([
+    expect.objectContaining({ key: legacy.key, value: { owner: 'legacy-tilde' } }),
+  ]);
+  await store.clear('a.b');
+
+  await expect(store.read('a.b', 'canonical-key')).resolves.toBeNull();
+  await expect(store.read(legacy.namespace, legacy.key)).resolves.toMatchObject({
+    value: { owner: 'legacy-tilde' },
+  });
+  await expect(readFile(legacyPath, 'utf8')).resolves.toBe(`${JSON.stringify(legacy)}\n`);
+});
+
+it('reads and lists a legacy literal-tilde projection', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projections-legacy-tilde-'));
+  const projection = {
+    namespace: 'work',
+    key: 'item~24',
+    lastGlobalPosition: 1,
+    value: { owner: 'legacy-tilde' },
+  };
+  const path = join(
+    root,
+    'projections',
+    encodeLegacyStorageName(projection.namespace),
+    `${encodeLegacyStorageName(projection.key)}.json`,
+  );
+  await mkdir(join(path, '..'), { recursive: true });
+  await writeFile(path, `${JSON.stringify(projection)}\n`);
+  const store = new FileProjectionStore(root);
+
+  await expect(store.read(projection.namespace, projection.key)).resolves.toMatchObject(projection);
+  await expect(store.list(projection.namespace)).resolves.toEqual([
+    expect.objectContaining(projection),
   ]);
 });
 

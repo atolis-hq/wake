@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { assertStorageName, encodeStorageName } from './storage-name.js';
+import { assertStorageName, encodeLegacyStorageName, encodeStorageName } from './storage-name.js';
 
 const pendingNamespaceSuffix = ':pending';
 
@@ -17,8 +17,8 @@ export function processorStatePaths(
   key: string,
 ): ProcessorStatePaths {
   const namespace = processorStateNamespace(consumer);
-  const currentNamespace = encodeProcessorStateName(namespace);
-  const currentKey = encodeProcessorStateName(key);
+  const currentNamespace = encodeStorageName(namespace);
+  const currentKey = encodeStorageName(key);
   return {
     key,
     namespace,
@@ -28,27 +28,23 @@ export function processorStatePaths(
       `%processor-state-${currentNamespace}`,
       `%processor-state-${currentKey}`,
     ),
-    legacy: processorStatePath(root, encodeStorageName(namespace), encodeStorageName(key)),
+    legacy: processorStatePath(
+      root,
+      encodeLegacyStorageName(namespace),
+      encodeLegacyStorageName(key),
+    ),
   };
 }
 
 export function processorStateDirectoryNames(consumer: string): readonly string[] {
   const namespace = processorStateNamespace(consumer);
-  const current = encodeProcessorStateName(namespace);
-  return [...new Set([current, `%processor-state-${current}`, encodeStorageName(namespace)])];
+  const current = encodeStorageName(namespace);
+  return [...new Set([current, `%processor-state-${current}`, encodeLegacyStorageName(namespace)])];
 }
 
 function processorStateNamespace(consumer: string): string {
   assertStorageName(consumer);
   return `${consumer}${pendingNamespaceSuffix}`;
-}
-
-function encodeProcessorStateName(value: string): string {
-  assertStorageName(value);
-  return encodeURIComponent(value)
-    .replace(/~/g, '%7E')
-    .replace(/%(?!7E)/g, '~')
-    .replace(/\./g, '~2E');
 }
 
 function processorStatePath(root: string, namespace: string, key: string): string {

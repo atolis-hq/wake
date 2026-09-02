@@ -1,7 +1,5 @@
 import {
-  correlationId,
   defineEventProcessor,
-  EventActorKind,
   EventProcessorCategory,
   EventProcessorReplayPolicy,
   type CommandContext,
@@ -10,6 +8,7 @@ import type { TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
+import { reactorCommandContext } from './reactor-command-context.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 import type { ResourceTransitionMatch } from './resource-transition-matching.js';
 
@@ -69,16 +68,11 @@ export function createResourceTransitionReactor(
           ? event
           : null;
       },
-      handle: async (event) => react(event, commandContext(event)),
+      handle: async (event) =>
+        react(
+          event,
+          reactorCommandContext(event, 'resource-transition', 'resource-transition-reactor'),
+        ),
     }),
-  };
-}
-
-function commandContext(event: PersistedEvent): CommandContext {
-  return {
-    commandId: `${event.event.eventId}:resource-transition`,
-    correlationId: correlationId(event.event.correlationId),
-    occurredAt: event.event.occurredAt,
-    actor: { kind: EventActorKind.System, id: 'resource-transition-reactor' },
   };
 }

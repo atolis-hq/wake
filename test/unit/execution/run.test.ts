@@ -154,6 +154,26 @@ it('sets both start times for historical run-started streams', () => {
   });
 });
 
+it('projects the workspace from a historical run-started stream', () => {
+  const started = eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T12:00:00.000Z',
+      workspace: { mode: WorkspaceMode.Branch, path: 'C:\\repo', branch: 'wake/work-1' },
+    },
+    runStream(runId('run-1')),
+  );
+
+  expect(foldRun([started])).toMatchObject({
+    workspace: { mode: WorkspaceMode.Branch, path: 'C:\\repo', branch: 'wake/work-1' },
+  });
+});
+
 it('folds a failure directly after preparation', () => {
   const stream = runStream(runId('run-1'));
   const preparation = eventEnvelope(

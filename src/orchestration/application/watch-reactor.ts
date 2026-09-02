@@ -1,7 +1,5 @@
 import {
-  correlationId,
   defineEventProcessor,
-  EventActorKind,
   EventProcessorCategory,
   EventProcessorReplayPolicy,
   type CheckpointStore,
@@ -23,6 +21,7 @@ import {
 } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import { ApprovalAuthorityKind } from '../contracts/vocabulary.js';
+import { reactorCommandContext } from './reactor-command-context.js';
 import { resolveTriggerWorkflowInstanceId } from './trigger-workflow-instance.js';
 
 type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
@@ -87,10 +86,12 @@ export function createWatchReactor(
       category: EventProcessorCategory.Reactor,
       replayPolicy: EventProcessorReplayPolicy.Idempotent,
       select(event) {
+        if (!watchEventTypes().includes(event.event.eventType)) return null;
         selectOrchestrationEvent(event);
-        return watchEventTypes().includes(event.event.eventType) ? event : null;
+        return event;
       },
-      handle: async (event) => react(event, commandContext(event)),
+      handle: async (event) =>
+        react(event, reactorCommandContext(event, ApprovalAuthorityKind.Watch, 'watch-reactor')),
     }),
   };
 }
@@ -120,7 +121,7 @@ export function createWatchReconciler(
       );
       let reconciled = 0;
       for (const event of events) {
-        const context = commandContext(event);
+        const context = reactorCommandContext(event, ApprovalAuthorityKind.Watch, 'watch-reactor');
         const matches = (
           await Promise.all(
             (await orchestration.listWatchMatches(event, context)).map(async (match) => {
@@ -209,15 +210,6 @@ async function hasDurableWatchOutcome(
       owned.event.payload.requestId === requestId
     );
   });
-}
-
-function commandContext(event: PersistedEvent): CommandContext {
-  return {
-    commandId: `${event.event.eventId}:watch`,
-    correlationId: correlationId(event.event.correlationId),
-    occurredAt: event.event.occurredAt,
-    actor: { kind: EventActorKind.System, id: 'watch-reactor' },
-  };
 }
 
 function orchestrationCausalCycleId(event: OrchestrationEvent | null): string | undefined {

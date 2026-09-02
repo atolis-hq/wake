@@ -1,20 +1,14 @@
-import {
-  correlationId,
-  EventActorKind,
-  EventSourceKind,
-  type CommandContext,
-} from '@atolis-hq/eventing';
-import { createResourceEventData } from '../contracts/event-factory.js';
-import {
-  ResourceEventType,
-  type ResourceEvent,
-  type ResourceEventData,
-  type ResourceEventPayloads,
-} from '../contracts/events.js';
+import { correlationId, EventActorKind, type CommandContext } from '@atolis-hq/eventing';
+import { ResourceEventType, type ResourceEvent } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';
 import type { ResourceCorrelationView } from '../contracts/views.js';
 import type { ResourceExternalOutcome } from '../contracts/vocabulary.js';
 import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
+import {
+  appendResourceEvent,
+  resourceDraft,
+  type ResourceDraftInput,
+} from './resource-event-support.js';
 import type { ResourceRepository } from './resource-repository.js';
 
 export async function observeExternalOutcome(
@@ -160,32 +154,4 @@ function retryAttempts(events: readonly ResourceEvent[]): number {
       attempts = Math.max(attempts, event.event.payload.attemptCount);
   }
   return attempts;
-}
-
-async function appendResourceEvent(
-  repository: ResourceRepository,
-  resourceId: ResourceId,
-  draft: ResourceEventData,
-): Promise<void> {
-  const loaded = await repository.load(resourceId);
-  await repository.append(resourceId, loaded.sequence, [draft]);
-}
-
-type ResourceDraftInput = {
-  [Type in keyof ResourceEventPayloads]: {
-    readonly eventType: Type;
-    readonly payload: ResourceEventPayloads[Type];
-  };
-}[keyof ResourceEventPayloads];
-
-function resourceDraft(context: CommandContext, input: ResourceDraftInput): ResourceEventData {
-  return createResourceEventData({
-    eventId: `${context.commandId}:${input.eventType}`,
-    occurredAt: context.occurredAt,
-    correlationId: context.correlationId,
-    causationId: context.commandId,
-    actor: context.actor,
-    source: { kind: EventSourceKind.Internal, id: 'resource-service' },
-    ...input,
-  });
 }
