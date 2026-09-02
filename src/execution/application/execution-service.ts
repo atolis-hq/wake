@@ -58,6 +58,7 @@ export function createExecutionService(
     closed: false,
     shutdown: undefined,
     attempts: new Set(),
+    cancellations: new Set(),
     workers: new Map(),
   };
   const runtime = {
@@ -105,23 +106,47 @@ function startAttempt(
 
 async function shutdownExecution(runtime: ExecutionRuntime): Promise<void> {
   runtime.lifecycle.closed = true;
-  await Promise.allSettled([...runtime.lifecycle.attempts]);
-  const workers = [...runtime.lifecycle.workers.entries()];
-  await Promise.allSettled(
-    workers.map(([currentRunId]) =>
-      requestCancellation(
-        runtime.repository,
-        runtime.dependencies.clock,
-        runId(currentRunId),
-        ExecutionCancellationReason.Shutdown,
-        runtime.active,
-      ),
-    ),
-  );
-  for (const [, worker] of workers)
-    if (!worker.controller.signal.aborted)
-      worker.controller.abort(ExecutionCancellationReason.Shutdown);
-  await Promise.allSettled(workers.map(([, worker]) => worker.completion));
+  while (
+    runtime.lifecycle.attempts.size > 0 ||
+    runtime.lifecycle.cancellations.size > 0 ||
+    runtime.lifecycle.workers.size > 0
+  ) {
+    const attempts = [...runtime.lifecycle.attempts];
+    const pendingCancellations = [...runtime.lifecycle.cancellations];
+    const workers = [...runtime.lifecycle.workers.values()];
+    const controllers = [...runtime.active.entries()];
+    const cancellations = controllers.map(([currentRunId]) =>
+      beginShutdownCancellation(runtime, runId(currentRunId)),
+    );
+    for (const [, controller] of controllers)
+      if (!controller.signal.aborted) controller.abort(ExecutionCancellationReason.Shutdown);
+    await Promise.allSettled([
+      ...attempts,
+      ...workers.map(({ completion }) => completion),
+      ...pendingCancellations,
+      ...cancellations,
+    ]);
+  }
+}
+
+function beginShutdownCancellation(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+): Promise<void> {
+  const pending = requestCancellation(
+    runtime.repository,
+    runtime.dependencies.clock,
+    currentRunId,
+    ExecutionCancellationReason.Shutdown,
+    runtime.active,
+  )
+    .then(
+      () => undefined,
+      () => undefined,
+    )
+    .finally(() => runtime.lifecycle.cancellations.delete(pending));
+  runtime.lifecycle.cancellations.add(pending);
+  return pending;
 }
 
 // Prepares the durable Run before workspace acquisition, then hands invocation to the detached worker.
@@ -167,10 +192,9 @@ async function attemptExecution(
     });
     runtime.localAttempts.add(currentRunId);
     renewal = renewWhileActive(runtime, currentRunId, owner);
+    const controller = createExecutionController(runtime, currentRunId);
     if (definition.executionKind !== ActivityExecutionKind.Deterministic) {
       const prepared = (await runtime.repository.load(currentRunId)).view!;
-      const controller = new AbortController();
-      runtime.active.set(currentRunId, controller);
       const detachedAttempt = {
         activation,
         context,
@@ -182,15 +206,25 @@ async function attemptExecution(
         reportRunnerStarted,
         controller,
       };
-      const worker = continueDetachedAttemptOnNextTurn(runtime, detachedAttempt);
-      runtime.lifecycle.workers.set(currentRunId, { controller, completion: worker });
+      const worker = trackExecutionWorker(
+        runtime,
+        currentRunId,
+        controller,
+        continueDetachedAttemptOnNextTurn(runtime, detachedAttempt),
+      );
       void worker.catch(() => {
         reportRunnerStarted();
         // The worker has already attempted durable settlement; never leak its rejection.
       });
       return prepared;
     }
-    lease = await acquireAttemptWorkspace(runtime, activation, context, currentRunId);
+    lease = await acquireAttemptWorkspace(
+      runtime,
+      activation,
+      context,
+      currentRunId,
+      controller.signal,
+    );
     const executionStartedAt = await startRun({
       dependencies: runLifecycleDependencies(runtime),
       runId: currentRunId,
@@ -206,19 +240,24 @@ async function attemptExecution(
       await cleanupRun(runtime, currentRunId, activation, context, { lease });
       return (await runtime.repository.load(currentRunId)).view!;
     }
-    const completion = completeRun(
+    const completion = trackExecutionWorker(
       runtime,
       currentRunId,
-      activation,
-      context,
-      executionStartedAt,
-      runner,
-      resume.sessionId,
-      resume.startedAt,
-      resume.usageBaseline,
-      lease,
-      renewal,
-      reportRunnerStarted,
+      controller,
+      completeRun(
+        runtime,
+        currentRunId,
+        activation,
+        context,
+        executionStartedAt,
+        runner,
+        resume.sessionId,
+        resume.startedAt,
+        resume.usageBaseline,
+        lease,
+        renewal,
+        reportRunnerStarted,
+      ),
     );
     void completion.catch(() => {
       reportRunnerStarted();
@@ -259,9 +298,35 @@ function continueDetachedAttemptOnNextTurn(
       } finally {
         runtime.active.delete(attempt.currentRunId);
         runtime.localAttempts.delete(attempt.currentRunId);
-        runtime.lifecycle.workers.delete(attempt.currentRunId);
       }
     });
+}
+
+function createExecutionController(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+): AbortController {
+  const controller = new AbortController();
+  runtime.active.set(currentRunId, controller);
+  if (runtime.lifecycle.closed) {
+    void beginShutdownCancellation(runtime, currentRunId);
+    controller.abort(ExecutionCancellationReason.Shutdown);
+  }
+  return controller;
+}
+
+function trackExecutionWorker<T>(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  controller: AbortController,
+  completion: Promise<T>,
+): Promise<T> {
+  const tracked = completion.finally(() => {
+    if (runtime.lifecycle.workers.get(currentRunId)?.completion === tracked)
+      runtime.lifecycle.workers.delete(currentRunId);
+  });
+  runtime.lifecycle.workers.set(currentRunId, { controller, completion: tracked });
+  return tracked;
 }
 
 async function continueDetachedAttempt(

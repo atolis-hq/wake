@@ -442,6 +442,224 @@ describe('ExecutionService', () => {
     ).rejects.toThrow('Execution service is shut down');
   });
 
+  it('shutdown aborts and drains deterministic workspace acquisition', async () => {
+    const acquireEntered = deferred<void>();
+    const acquireAborted = deferred<void>();
+    const releaseAcquire = deferred<void>();
+    const clock = new FakeClock();
+    const registry = new ActivityRegistry();
+    registry.register({
+      name: activityName('deterministic-acquire-shutdown'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: { execute: async () => ({ kind: 'done' }) },
+    });
+    const service = createExecutionService(
+      new InMemoryEventJournal(clock),
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      {
+        clock,
+        ids: new SequentialIds(),
+        workspaces: {
+          async acquire(request) {
+            acquireEntered.resolve();
+            await new Promise<void>((resolve) => {
+              if (request.signal.aborted) resolve();
+              else request.signal.addEventListener('abort', () => resolve(), { once: true });
+            });
+            acquireAborted.resolve();
+            await releaseAcquire.promise;
+            throw request.signal.reason;
+          },
+        },
+      },
+    );
+    const attempt = service.attempt(
+      {
+        ...activation,
+        activity: activityName('deterministic-acquire-shutdown'),
+        execution: { workspace: 'read-only' as const },
+      },
+      { ...context, resources: [repositoryResource()] },
+    );
+    await acquireEntered.promise;
+    let shutdownSettled = false;
+
+    const shutdown = service.shutdown().then(() => {
+      shutdownSettled = true;
+    });
+    await acquireAborted.promise;
+    await Promise.resolve();
+    const drainedBeforeAcquireSettled = shutdownSettled;
+    releaseAcquire.resolve();
+    await shutdown;
+
+    expect(drainedBeforeAcquireSettled).toBe(false);
+    await expect(attempt).resolves.toMatchObject({
+      status: RunStatus.Cancelled,
+      cancellation: { reason: 'shutdown' },
+    });
+  });
+
+  it('owns shutdown cancellation when deterministic preparation completes after the first snapshot', async () => {
+    const clock = new FakeClock();
+    const base = new InMemoryEventJournal(clock);
+    const preparationAppendEntered = deferred<void>();
+    const releasePreparationAppend = deferred<void>();
+    const journal: EventJournal = {
+      async appendToStream(stream, expectedSequence, events) {
+        if (events.some((event) => event.eventType === ExecutionEventType.RunPreparationStarted)) {
+          preparationAppendEntered.resolve();
+          await releasePreparationAppend.promise;
+        }
+        return base.appendToStream(stream, expectedSequence, events);
+      },
+      readStream: base.readStream.bind(base),
+      readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
+      readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
+    };
+    const registry = new ActivityRegistry();
+    registry.register({
+      name: activityName('deterministic-late-prepare-shutdown'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: { execute: async () => ({ kind: 'done' }) },
+    });
+    let acquisitionStarted = false;
+    const service = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      {
+        clock,
+        ids: new SequentialIds(),
+        workspaces: {
+          async acquire() {
+            acquisitionStarted = true;
+            throw new Error('workspace acquisition should not start');
+          },
+        },
+      },
+    );
+    const attempt = service.attempt(
+      {
+        ...activation,
+        activity: activityName('deterministic-late-prepare-shutdown'),
+        execution: { workspace: 'read-only' as const },
+      },
+      { ...context, resources: [repositoryResource()] },
+    );
+    await preparationAppendEntered.promise;
+
+    const shutdown = service.shutdown();
+    releasePreparationAppend.resolve();
+    await shutdown;
+
+    await expect(attempt).resolves.toMatchObject({
+      status: RunStatus.Cancelled,
+      cancellation: { reason: 'shutdown' },
+    });
+    expect(acquisitionStarted).toBe(false);
+  });
+
+  it('shutdown aborts a deterministic handler before cancellation persistence and drains completion', async () => {
+    const clock = new FakeClock();
+    const base = new InMemoryEventJournal(clock);
+    const cancellationAppendEntered = deferred<void>();
+    const releaseCancellationAppend = deferred<void>();
+    const journal: EventJournal = {
+      async appendToStream(stream, expectedSequence, events) {
+        if (
+          events.some((event) => event.eventType === ExecutionEventType.RunCancellationRequested)
+        ) {
+          cancellationAppendEntered.resolve();
+          await releaseCancellationAppend.promise;
+        }
+        return base.appendToStream(stream, expectedSequence, events);
+      },
+      readStream: base.readStream.bind(base),
+      readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
+      readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
+    };
+    const handlerEntered = deferred<void>();
+    const handlerAborted = deferred<void>();
+    const releaseHandler = deferred<void>();
+    let signalAborted = false;
+    const registry = new ActivityRegistry();
+    registry.register({
+      name: activityName('deterministic-handler-shutdown'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: {
+        async execute(_invocation, executionContext) {
+          handlerEntered.resolve();
+          await new Promise<void>((resolve) => {
+            executionContext.signal.addEventListener(
+              'abort',
+              () => {
+                signalAborted = true;
+                handlerAborted.resolve();
+                resolve();
+              },
+              { once: true },
+            );
+          });
+          await releaseHandler.promise;
+          throw executionContext.signal.reason;
+        },
+      },
+    });
+    const service = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      { clock, ids: new SequentialIds() },
+    );
+
+    const started = await service.attempt(
+      { ...activation, activity: activityName('deterministic-handler-shutdown') },
+      context,
+    );
+    await handlerEntered.promise;
+    let shutdownSettled = false;
+    const shutdown = service.shutdown().then(() => {
+      shutdownSettled = true;
+    });
+    await cancellationAppendEntered.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const abortedBeforeCancellationPersisted = signalAborted;
+    releaseCancellationAppend.resolve();
+    await handlerAborted.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const drainedBeforeHandlerSettled = shutdownSettled;
+    releaseHandler.resolve();
+    await shutdown;
+
+    expect(started.status).toBe(RunStatus.Started);
+    expect(abortedBeforeCancellationPersisted).toBe(true);
+    expect(drainedBeforeHandlerSettled).toBe(false);
+    expect((await service.list())[0]).toMatchObject({
+      status: RunStatus.Cancelled,
+      cancellation: { reason: 'shutdown' },
+    });
+  });
+
   it('stops detached lease renewal before a recovery load that fails', async () => {
     vi.useFakeTimers();
     try {
