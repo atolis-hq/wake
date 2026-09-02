@@ -42,7 +42,7 @@ export interface ExecutionLifecycle {
   closed: boolean;
   shutdown: Promise<void> | undefined;
   readonly attempts: Set<Promise<unknown>>;
-  readonly cancellations: Set<Promise<void>>;
+  readonly cancellations: Map<string, Promise<boolean>>;
   readonly workers: Map<
     string,
     { readonly controller: AbortController; readonly completion: Promise<unknown> }

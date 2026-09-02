@@ -58,7 +58,7 @@ export function createExecutionService(
     closed: false,
     shutdown: undefined,
     attempts: new Set(),
-    cancellations: new Set(),
+    cancellations: new Map(),
     workers: new Map(),
   };
   const runtime = {
@@ -112,7 +112,7 @@ async function shutdownExecution(runtime: ExecutionRuntime): Promise<void> {
     runtime.lifecycle.workers.size > 0
   ) {
     const attempts = [...runtime.lifecycle.attempts];
-    const pendingCancellations = [...runtime.lifecycle.cancellations];
+    const pendingCancellations = [...runtime.lifecycle.cancellations.values()];
     const workers = [...runtime.lifecycle.workers.values()];
     const controllers = [...runtime.active.entries()];
     const cancellations = controllers.map(([currentRunId]) =>
@@ -132,20 +132,20 @@ async function shutdownExecution(runtime: ExecutionRuntime): Promise<void> {
 function beginShutdownCancellation(
   runtime: ExecutionRuntime,
   currentRunId: ReturnType<typeof runId>,
-): Promise<void> {
+): Promise<boolean> {
+  const existing = runtime.lifecycle.cancellations.get(currentRunId);
+  if (existing !== undefined) return existing;
   const pending = requestCancellation(
     runtime.repository,
     runtime.dependencies.clock,
     currentRunId,
     ExecutionCancellationReason.Shutdown,
     runtime.active,
-  )
-    .then(
-      () => undefined,
-      () => undefined,
-    )
-    .finally(() => runtime.lifecycle.cancellations.delete(pending));
-  runtime.lifecycle.cancellations.add(pending);
+  ).then(
+    () => true,
+    () => false,
+  );
+  runtime.lifecycle.cancellations.set(currentRunId, pending);
   return pending;
 }
 
@@ -324,6 +324,7 @@ function trackExecutionWorker<T>(
   const tracked = completion.finally(() => {
     if (runtime.lifecycle.workers.get(currentRunId)?.completion === tracked)
       runtime.lifecycle.workers.delete(currentRunId);
+    runtime.lifecycle.cancellations.delete(currentRunId);
   });
   runtime.lifecycle.workers.set(currentRunId, { controller, completion: tracked });
   return tracked;
@@ -458,6 +459,8 @@ async function recoverFailedAttempt(
     throw error;
   } finally {
     await renewal?.stop();
+    await runtime.lifecycle.cancellations.get(currentRunId);
+    runtime.lifecycle.cancellations.delete(currentRunId);
   }
 }
 
@@ -537,6 +540,7 @@ async function settleRunFailure(
   context: ExecutionAttemptContext,
   error: unknown,
 ): Promise<void> {
+  await runtime.lifecycle.cancellations.get(currentRunId);
   const run = await recordRunFailure({
     dependencies: runLifecycleDependencies(runtime),
     runId: currentRunId,
@@ -628,6 +632,7 @@ async function cleanupRun(
         // A cleanup diagnostic must not make an already-finished run fatal.
       }
     } finally {
+      runtime.lifecycle.cancellations.delete(currentRunId);
       if (options.preserveLocalAttempt !== true) runtime.localAttempts.delete(currentRunId);
     }
   }
