@@ -17,10 +17,11 @@
 - Modify: `src/orchestration/domain/workflow-instance.ts`
 - Test: `test/unit/orchestration/orchestration-projection.test.ts`
 
-- [ ] Add a failing regression using the historical flattened `{ events, view }` value and a current envelope.
-- [ ] Verify the test fails with the reproduced `eventType` error.
-- [ ] Add a domain single-event continuation operation, change the canonical projection value to current folded state, and continue legacy values from their stored folded view.
-- [ ] Verify focused orchestration projection and service tests pass.
+- [ ] Add a failing regression proving the canonical projection stores only the folded workflow view.
+- [ ] Verify the test fails while the projection still stores decoded event history.
+- [ ] Add a domain single-event continuation operation and change the canonical projection value to current folded state without a legacy union or upcaster.
+- [ ] Update every projection reader and scenario fixture to consume the canonical value directly.
+- [ ] Verify focused orchestration projection, API, E2E, and rebuild-command tests pass.
 
 ### Task 2: Bound scheduler execution lifetime
 

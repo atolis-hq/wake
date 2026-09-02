@@ -9,13 +9,13 @@ must expose its actual error without creating a hot filesystem retry loop.
 ## Projection compatibility
 
 The orchestration projection will stop persisting decoded event history. Its
-stored value will contain only the current folded workflow view. Existing
-values in the historical `{ events, view }` shape will be accepted: the first
-new event will continue from the already-folded `view` and write the canonical
-shape. The domain fold will expose a single-event continuation operation so
-the projection does not duplicate transition policy. Rebuilding remains the
-general recovery mechanism for absent or corrupt projection data; no
-authoritative journal migration is required.
+stored value will contain only the current folded workflow view. The domain
+fold will expose a single-event continuation operation so the projection does
+not duplicate transition policy. Historical projection values are not read or
+upcast: operators stop the resident runtime and run
+`wake validate-state --rebuild-projections` once when upgrading. The command
+clears derived projection data, resets its processor checkpoints, and replays
+the authoritative journal. No authoritative journal migration is required.
 
 ## Dispatch lifetime
 
