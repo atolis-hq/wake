@@ -5,7 +5,10 @@ import {
   type ActivationSchedulerSubscriptionHealthStatus,
 } from '../control-plane/index.js';
 import { type RunStatus } from '../execution/index.js';
-import type { WorkflowInstanceView } from '../orchestration/index.js';
+import {
+  workflowInstanceProjectionView,
+  type StoredWorkflowInstanceProjectionValue,
+} from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
 import {
   ApiCommandStatus,
@@ -186,10 +189,11 @@ function createOrchestrationApplications(root: CompositionRoot, now: () => strin
   return {
     async list(query: Parameters<ApiApplications['orchestration']['list']>[0]) {
       const stored = (
-        await root.projections.list<{ readonly view: WorkflowInstanceView | null }>('orchestration')
-      ).flatMap((entry) =>
-        entry.value.view === null ? [] : [{ ...entry, value: entry.value.view }],
-      );
+        await root.projections.list<StoredWorkflowInstanceProjectionValue>('orchestration')
+      ).flatMap((entry) => {
+        const view = workflowInstanceProjectionView(entry.value);
+        return view === null ? [] : [{ ...entry, value: view }];
+      });
       const filtered = stored.filter(
         (entry) => query.state === undefined || entry.value.status === query.state,
       );

@@ -44,6 +44,27 @@ export function foldWorkflowInstance(
   return immutableWorkflowInstanceView(state);
 }
 
+/** Applies one decoded journal event to an already-folded workflow view. */
+export function continueWorkflowInstance(
+  previous: WorkflowInstanceView | null,
+  event: WorkflowOrchestrationEvent,
+): WorkflowInstanceView | null {
+  if (previous === null) return foldWorkflowInstance([event]);
+  const state: MutableWorkflowInstance = {
+    ...previous,
+    repeatCounts: { ...previous.repeatCounts },
+    retryCounts: { ...previous.retryCounts },
+    supplementalQueue: [...previous.supplementalQueue],
+    acceptedSignalIds: [...previous.acceptedSignalIds],
+    operatorRetryCommandIds: [...previous.operatorRetryCommandIds],
+    acceptedOutcomes: [...previous.acceptedOutcomes],
+    acceptedChildCompletionIds: [...previous.acceptedChildCompletionIds],
+    causalRejectionIds: [...previous.causalRejectionIds],
+  };
+  applyWorkflowInstanceEvent(state, event.event);
+  return immutableWorkflowInstanceView(state);
+}
+
 function optionalChildFields(
   payload: Extract<
     WorkflowOrchestrationEvent['event'],

@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
 import { createExecutionApplications } from '../../../src/bootstrap/surface-api-execution-applications.js';
+import { workId } from '../../support/identities.js';
 
 it('presents preparation and execution runs as active with their distinct timestamps', async () => {
   const startedAt = '2026-08-16T12:00:00.000Z';
@@ -161,4 +162,40 @@ it('accepts a validated operator-declared success into its workflow', async () =
     }),
   ).resolves.toMatchObject({ idempotencyKey: 'operator-1', status: 'completed' });
   expect(calls).toEqual(['resolve:succeeded', 'accept:workflow-1:done']);
+});
+
+it('looks up a run transcript work item from the canonical orchestration projection value', async () => {
+  const calls: unknown[][] = [];
+  const runId = 'run-canonical-workflow';
+  const workflowInstanceId = 'workflow-canonical-workflow';
+  const workflowWorkItemId = workId('canonical-workflow');
+  const applications = createExecutionApplications(
+    {
+      projections: {
+        read: async (namespace: string) => {
+          if (namespace === 'execution')
+            return {
+              value: {
+                view: { runId, workflowInstanceId },
+              },
+            };
+          if (namespace === 'orchestration') return { value: { workItemId: workflowWorkItemId } };
+          return null;
+        },
+      },
+      transcriptStore: {
+        groupForRun: async (...input: unknown[]) => {
+          calls.push(input);
+          return undefined;
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-09-02T12:00:00.000Z',
+  );
+  const transcript = applications.transcript;
+  if (transcript === undefined) throw new Error('Expected transcript application');
+
+  await transcript(runId);
+
+  expect(calls).toEqual([[workflowWorkItemId, runId]]);
 });

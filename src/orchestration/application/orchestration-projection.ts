@@ -1,31 +1,49 @@
 import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { selectWorkflowOrchestrationEvent } from '../contracts/event-decoder.js';
-import { OrchestrationEventType, type WorkflowOrchestrationEvent } from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import { isWorkflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { foldWorkflowInstance } from '../domain/workflow-instance.js';
+import { continueWorkflowInstance } from '../domain/workflow-instance.js';
 
-type ProjectionValue = {
-  readonly events: readonly WorkflowOrchestrationEvent[];
+export type WorkflowInstanceProjectionValue = WorkflowInstanceView | null;
+
+type LegacyWorkflowInstanceProjectionValue = {
+  readonly events: readonly unknown[];
   readonly view: WorkflowInstanceView | null;
 };
 
-export const orchestrationProjection: ProjectionDefinition<ProjectionValue> = {
-  name: 'orchestration',
-  select(event) {
-    const owned = selectWorkflowOrchestrationEvent(event);
-    return owned !== null && isWorkflowInstanceStream(owned.stream)
-      ? { key: owned.stream.id }
-      : null;
-  },
-  initial: () => ({ events: [], view: null }),
-  project(previous, event) {
-    const owned = selectWorkflowOrchestrationEvent(event);
-    if (owned === null || !isWorkflowInstanceStream(owned.stream)) return previous;
-    const events = [...previous.events, owned];
-    return { events, view: foldWorkflowInstance(events) };
-  },
-};
+export type StoredWorkflowInstanceProjectionValue =
+  WorkflowInstanceProjectionValue | LegacyWorkflowInstanceProjectionValue;
+
+/** Reads the canonical view while tolerating the pre-envelope projection shape. */
+export function workflowInstanceProjectionView(
+  value: StoredWorkflowInstanceProjectionValue,
+): WorkflowInstanceProjectionValue {
+  return isLegacyWorkflowInstanceProjectionValue(value) ? value.view : value;
+}
+
+export const orchestrationProjection: ProjectionDefinition<StoredWorkflowInstanceProjectionValue> =
+  {
+    name: 'orchestration',
+    select(event) {
+      const owned = selectWorkflowOrchestrationEvent(event);
+      return owned !== null && isWorkflowInstanceStream(owned.stream)
+        ? { key: owned.stream.id }
+        : null;
+    },
+    initial: () => null,
+    project(previous, event) {
+      const owned = selectWorkflowOrchestrationEvent(event);
+      if (owned === null || !isWorkflowInstanceStream(owned.stream)) return previous;
+      return continueWorkflowInstance(workflowInstanceProjectionView(previous), owned);
+    },
+  };
+
+function isLegacyWorkflowInstanceProjectionValue(
+  value: StoredWorkflowInstanceProjectionValue,
+): value is LegacyWorkflowInstanceProjectionValue {
+  return value !== null && 'events' in value && 'view' in value;
+}
 
 /** Workflow-instance membership keyed by its owning work item for scoped readers. */
 export const workflowsByWorkItemProjection: ProjectionDefinition<
