@@ -23,7 +23,7 @@
 - [ ] Update every projection reader and scenario fixture to consume the canonical value directly.
 - [ ] Verify focused orchestration projection, API, E2E, and rebuild-command tests pass.
 
-### Task 2: Make stopped rebuild operationally safe
+### Task 2: Make projection rebuild self-quiescing
 
 **Files:**
 - Modify: `src/bootstrap/surface-cli-applications.ts`
@@ -31,11 +31,12 @@
 - Modify: `docs/architecture.md`
 - Modify: `docs/events.md`
 
-- [ ] Add a failing test proving top-level sandbox `wake stop` waits for active runs and then stops the configured sandbox container.
-- [ ] Verify the existing implementation only closes servers owned by its short-lived command process.
-- [ ] Stop the sandbox after active runs drain; preserve non-sandbox behavior.
-- [ ] Document `wake stop`, host-side `wake validate-state --rebuild-projections --no-sandbox`, then `wake sandbox up`.
-- [ ] Verify focused stop and runtime-command tests pass.
+- [ ] Add failing tests proving projection rebuild acquires maintenance, drains active runs, rebuilds, and releases maintenance in order.
+- [ ] Prove rebuild failure still releases an owned projection-rebuild lease and a foreign maintenance lease blocks the operation.
+- [ ] Compose the existing maintenance lease and journal-backed active-run query into `validate-state --rebuild-projections`.
+- [ ] Revert sandbox-stop behavior introduced solely for this migration path.
+- [ ] Document the single self-quiescing `wake validate-state --rebuild-projections` upgrade command.
+- [ ] Verify focused validation, maintenance, and runtime-command tests pass.
 
 ### Task 3: Bound scheduler execution lifetime
 
