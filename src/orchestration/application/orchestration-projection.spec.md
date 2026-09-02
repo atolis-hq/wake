@@ -13,11 +13,11 @@ Orchestration repository).
 ## Responsibilities and boundaries
 
 This component owns keying incoming events to the WorkflowInstance they
-belong to, accumulating each instance's own event list, and re-deriving its
-`WorkflowInstanceView` by the same fold the WorkflowInstance aggregate
-defines. It does not own the fold's rules — those belong to WorkflowInstance
-— and it does not decide anything: it is a pure re-application of already-
-accepted facts, never a source of new events.
+belong to and storing the current `WorkflowInstanceView | null` directly. It
+advances that view one decoded event at a time through the WorkflowInstance
+domain continuation operation. It does not own transition rules — those
+belong to WorkflowInstance — and it does not decide anything: it is a pure
+re-application of already-accepted facts, never a source of new events.
 
 ## Core policies, invariants, and behaviours
 
@@ -27,22 +27,30 @@ accepted facts, never a source of new events.
   another module, is not selected and does not affect any key.
 - The projection's key MUST be the workflow-instance stream's own id;
   events for different WorkflowInstances never affect each other's value.
-- Each key's value MUST be the full ordered list of that instance's own
-  decoded events plus the view folded from them; the value is not a partial
-  or incremental summary independent of that list.
-- The folded view MUST be re-derived by applying the WorkflowInstance
-  aggregate's own fold to the accumulated event list on every update, not by
-  this component maintaining independent state-transition logic.
+- Each key's value MUST be only the current `WorkflowInstanceView | null`;
+  this projection MUST NOT persist an event list or another wrapper around
+  that view.
+- The initial value MUST be `null`. A decoded event MUST advance the prior
+  value through WorkflowInstance's domain continuation operation, which uses
+  the aggregate's own transition policy rather than this component maintaining
+  independent state-transition logic.
 - Rebuilding this projection from the full event journal MUST reproduce the
   same `WorkflowInstanceView` per WorkflowInstance as continuous incremental
-  application, since both paths are the same fold applied to the same
-  ordered facts — this projection carries no state that is not derivable
-  from `orchestration.*` facts alone.
+  application, since both paths apply the same ordered facts through the same
+  WorkflowInstance policy — this projection carries no state that is not
+  derivable from `orchestration.*` facts alone.
+- This projection-shape upgrade is not backward-compatible with the retired
+  `{ events, view }` values. When upgrading an existing Wake home, operators
+  MUST stop the resident with `wake stop`, run
+  `wake validate-state --rebuild-projections`, then start the resident again.
+  The rebuild replaces projection and checkpoint data from the authoritative
+  journal; it does not modify journal records.
 
 ## Dependencies and system role
 
-- WorkflowInstance (depended on) — supplies the fold this projection
-  re-applies; this component defines no folding rules of its own.
+- WorkflowInstance (depended on) — supplies initial folding and the
+  single-event continuation policy this projection re-applies; this component
+  defines no transition rules of its own.
 - Eventing — the projection definition contract (`select`/`initial`/`project`)
   this component implements, and the checkpointed projection store/runner
   that persists and rebuilds its value per key.
