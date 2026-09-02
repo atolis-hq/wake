@@ -914,7 +914,7 @@ describe('target composition root', () => {
       namespace: 'orchestration',
       key: 'workflow-transcript',
       lastGlobalPosition: 0,
-      value: { view: { workItemId: 'work-transcript' } },
+      value: { workItemId: 'work-transcript' },
     });
 
     await expect(
@@ -959,7 +959,7 @@ describe('target composition root', () => {
       namespace: 'orchestration',
       key: 'workflow-session',
       lastGlobalPosition: 0,
-      value: { view: { workItemId: 'work-session' } },
+      value: { workItemId: 'work-session' },
     });
 
     await expect(

@@ -168,7 +168,7 @@ describe('surface transcript applications', () => {
                     },
                   },
                 }
-              : { value: { view: { workItemId: 'work-1' } } },
+              : { value: { workItemId: 'work-1' } },
           list: async (stream: string) =>
             stream === 'execution'
               ? [
@@ -237,7 +237,7 @@ describe('surface transcript applications', () => {
             if (stream === 'workflows-by-work-item' && key === workItemId)
               return { value: ['workflow-1'] };
             if (stream === 'orchestration' && key === 'workflow-1')
-              return { value: { view: { workflowInstanceId: 'workflow-1', workItemId } } };
+              return { value: { workflowInstanceId: 'workflow-1', workItemId } };
             if (stream === 'runs-by-workflow-instance' && key === 'workflow-1')
               return { value: ['run-1'] };
             if (stream === 'execution' && key === 'run-1')
