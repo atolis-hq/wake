@@ -241,6 +241,75 @@ it('bounds and sanitizes processor errors in health diagnostics', async () => {
   expect(check?.detail).not.toContain('\n');
 });
 
+it('redacts credentials from processor health errors', async () => {
+  const applications = createSurfaceApiApplications(
+    {
+      paths: { wakeRoot: tmpdir() },
+      config: {},
+      providers: [],
+      activationSchedulerSubscriber: { health: () => undefined },
+      processorRuntime: {
+        processors: [{ consumer: 'projection:work' }],
+        health: async () => [
+          {
+            consumer: 'projection:work',
+            status: 'degraded',
+            checkpoint: 12,
+            consecutiveFailures: 1,
+            lastError: new Error(
+              'Authorization: Bearer ghp_supersecret token=query-secret&signature=signed-secret',
+            ),
+          },
+        ],
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+
+  const response = await applications.system.health();
+  const detail = response.data.checks?.find(({ name }) => name === 'projection:work')?.detail;
+
+  expect(detail).toContain('[REDACTED]');
+  expect(detail).not.toMatch(/ghp_supersecret|query-secret|signed-secret/);
+});
+
+it('keeps health available when a custom Error has malformed fields', async () => {
+  const malformed = new Error('failed');
+  Object.defineProperty(malformed, 'message', { value: Symbol('message') });
+  Object.defineProperty(malformed, 'name', { value: 42 });
+  const applications = createSurfaceApiApplications(
+    {
+      paths: { wakeRoot: tmpdir() },
+      config: {},
+      providers: [],
+      activationSchedulerSubscriber: { health: () => undefined },
+      processorRuntime: {
+        processors: [{ consumer: 'projection:work' }],
+        health: async () => [
+          {
+            consumer: 'projection:work',
+            status: 'degraded',
+            checkpoint: 12,
+            consecutiveFailures: 1,
+            lastError: malformed,
+          },
+        ],
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+
+  await expect(applications.system.health()).resolves.toMatchObject({
+    data: {
+      checks: expect.arrayContaining([
+        expect.objectContaining({
+          detail: expect.stringContaining('last error 42: Symbol(message)'),
+        }),
+      ]),
+    },
+  });
+});
+
 it('surfaces every registered projection consumer and represents absent snapshots as starting', async () => {
   const applications = createSurfaceApiApplications(
     {

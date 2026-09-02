@@ -414,15 +414,19 @@ function subscriptionHealthCheck(
 
 const maximumHealthErrorNameLength = 120;
 const maximumHealthErrorMessageLength = 500;
+const assignedCredential =
+  /((?:access_token|authorization|token|secret|password|key|signature|sig|x-amz-signature|x-amz-credential|x-goog-signature)=)[^\s&]+/gi;
+const authorizationCredential = /\b(?:bearer|basic|token)\s+\S+/gi;
+const providerCredential = /\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g;
 
 function describeHealthError(error: unknown): string {
   if (error === undefined) return '';
 
   let name = 'Error';
-  let message: string;
+  let message: unknown;
   try {
     if (error instanceof Error) {
-      name = error.name;
+      name = typeof error.name === 'string' ? error.name : String(error.name);
       message = error.message;
     } else if (typeof error === 'string') {
       message = error;
@@ -438,12 +442,27 @@ function describeHealthError(error: unknown): string {
     message = 'Unknown failure';
   }
 
-  return `; last error ${sanitizeHealthErrorText(name, maximumHealthErrorNameLength)}: ${sanitizeHealthErrorText(message, maximumHealthErrorMessageLength)}`;
+  return `; last error ${sanitizeHealthErrorText(name, maximumHealthErrorNameLength)}: ${sanitizeHealthErrorText(toHealthErrorText(message), maximumHealthErrorMessageLength)}`;
 }
 
 function sanitizeHealthErrorText(value: string, maximumLength: number): string {
-  const sanitized = value.replaceAll('\n', ' ').replaceAll('\r', ' ').replaceAll('\t', ' ').trim();
+  const sanitized = value
+    .replace(assignedCredential, '$1[REDACTED]')
+    .replace(authorizationCredential, '[REDACTED]')
+    .replace(providerCredential, '[REDACTED]')
+    .replaceAll('\n', ' ')
+    .replaceAll('\r', ' ')
+    .replaceAll('\t', ' ')
+    .trim();
   return sanitized.slice(0, maximumLength) || 'Unknown failure';
+}
+
+function toHealthErrorText(value: unknown): string {
+  try {
+    return typeof value === 'string' ? value : String(value);
+  } catch {
+    return 'Unknown failure';
+  }
 }
 
 function createControlPlaneApplications(root: CompositionRoot, now: () => string) {
