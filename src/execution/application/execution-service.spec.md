@@ -1,7 +1,7 @@
 # Execution service — Component Specification
 
 ---
-asOf: 5371460dc51a9d9579d5be8485eec965d9eb4ff5
+asOf: 2fd4c4f2149f50cc802266489b7686b4ef8be8dd
 ---
 
 ## Type, purpose, and scope
@@ -172,10 +172,11 @@ workspace mechanics itself — it only resolves and invokes them.
   preparation path: it normally yields one event-loop turn before returning;
   only a caller that explicitly requests immediate completion waits for that
   deterministic completion opportunity.
-- When the Activity handler returns normally, its outcome MUST be recorded
-  via `RunSucceeded` regardless of what outcome kind it reports — Execution
-  does not distinguish a `done` outcome from a `failed` or `blocked` one at
-  the transport level.
+- When the Activity handler returns normally, its outcome MUST ordinarily be
+  recorded via `RunSucceeded` regardless of what outcome kind it reports —
+  Execution does not distinguish a `done` outcome from a `failed` or `blocked`
+  one at the transport level. A concurrent shutdown cancellation that was
+  durably persisted wins instead and MUST suppress `RunSucceeded`.
 - When workspace preparation or the Activity handler throws after
   `RunPreparationStarted` was appended, the error MUST be recorded via
   `RunFailed` unless a concurrent durable cancellation request is observed
@@ -204,11 +205,12 @@ workspace mechanics itself — it only resolves and invokes them.
   It MUST own deterministic and agent/script work uniformly: start a durable
   cancellation request with reason `shutdown`, abort each locally tracked
   controller without waiting for that journal operation, and await all
-  attempt-establishment, cancellation, and completion promises. Failure
+  attempt-establishment, cancellation, and completion promises. Every terminal
   settlement caused by that abort MUST await the same Run's keyed shutdown
-  cancellation promise before deciding between `cancelled` and `failed`, so a
-  successful cancellation append wins even when an abort-aware handler throws
-  immediately. A rejected cancellation append MUST instead allow normal failure
+  cancellation promise before deciding between `cancelled` and the Activity's
+  actual outcome, so a successful cancellation append wins even when an
+  abort-aware handler throws or returns normally immediately. A rejected
+  cancellation append MUST instead preserve normal failure or success
   settlement. The keyed promise remains observable until recovery/cleanup or
   worker finalization completes. Shutdown MUST repeat this snapshot/drain
   boundary until none remain, so ownership created by an in-flight attempt
