@@ -202,8 +202,43 @@ it('surfaces durable activation scheduler subscription health', async () => {
   expect(response.data.checks).toContainEqual({
     name: 'activation-scheduler',
     status: 'degraded',
-    detail: 'degraded at checkpoint 9 after 2 failures',
+    detail: 'degraded at checkpoint 9 after 2 failures; last error Error: scheduler failed',
   });
+});
+
+it('bounds and sanitizes processor errors in health diagnostics', async () => {
+  const applications = createSurfaceApiApplications(
+    {
+      paths: { wakeRoot: tmpdir() },
+      config: {},
+      providers: [],
+      activationSchedulerSubscriber: { health: () => undefined },
+      processorRuntime: {
+        processors: [{ consumer: 'projection:work' }],
+        health: async () => [
+          {
+            consumer: 'projection:work',
+            status: 'degraded',
+            checkpoint: 12,
+            consecutiveFailures: 3,
+            lastError: {
+              name: `Processor${'n'.repeat(300)}`,
+              message: `failed\n${'m'.repeat(1_000)}`,
+            },
+          },
+        ],
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+
+  const response = await applications.system.health();
+  const check = response.data.checks?.find(({ name }) => name === 'projection:work');
+
+  expect(check?.detail).toBe(
+    `degraded at checkpoint 12 after 3 failures; last error Processor${'n'.repeat(111)}: failed ${'m'.repeat(493)}`,
+  );
+  expect(check?.detail).not.toContain('\n');
 });
 
 it('surfaces every registered projection consumer and represents absent snapshots as starting', async () => {

@@ -395,6 +395,7 @@ function subscriptionHealthCheck(
         readonly status: ActivationSchedulerSubscriptionHealthStatus;
         readonly checkpoint: number;
         readonly consecutiveFailures: number;
+        readonly lastError?: unknown;
       }
     | undefined,
 ) {
@@ -407,8 +408,42 @@ function subscriptionHealthCheck(
       status === ActivationSchedulerSubscriptionStatus.Healthy
         ? ('ok' as const)
         : ('degraded' as const),
-    detail: `${status} at checkpoint ${checkpoint} after ${consecutiveFailures} failures`,
+    detail: `${status} at checkpoint ${checkpoint} after ${consecutiveFailures} failures${describeHealthError(snapshot?.lastError)}`,
   };
+}
+
+const maximumHealthErrorNameLength = 120;
+const maximumHealthErrorMessageLength = 500;
+
+function describeHealthError(error: unknown): string {
+  if (error === undefined) return '';
+
+  let name = 'Error';
+  let message: string;
+  try {
+    if (error instanceof Error) {
+      name = error.name;
+      message = error.message;
+    } else if (typeof error === 'string') {
+      message = error;
+    } else if (typeof error === 'object' && error !== null) {
+      const candidate = error as { readonly name?: unknown; readonly message?: unknown };
+      if (typeof candidate.name === 'string') name = candidate.name;
+      if (typeof candidate.message === 'string') message = candidate.message;
+      else message = String(error);
+    } else {
+      message = String(error);
+    }
+  } catch {
+    message = 'Unknown failure';
+  }
+
+  return `; last error ${sanitizeHealthErrorText(name, maximumHealthErrorNameLength)}: ${sanitizeHealthErrorText(message, maximumHealthErrorMessageLength)}`;
+}
+
+function sanitizeHealthErrorText(value: string, maximumLength: number): string {
+  const sanitized = value.replaceAll('\n', ' ').replaceAll('\r', ' ').replaceAll('\t', ' ').trim();
+  return sanitized.slice(0, maximumLength) || 'Unknown failure';
 }
 
 function createControlPlaneApplications(root: CompositionRoot, now: () => string) {
