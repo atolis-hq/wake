@@ -60,15 +60,26 @@ function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new ProcessorRunAbortedError();
 }
 
-function waitForRetry(signal: AbortSignal, milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(done, milliseconds);
-    signal.addEventListener('abort', done, { once: true });
+export function waitForRetry(signal: AbortSignal, milliseconds: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new ProcessorRunAbortedError());
+      return;
+    }
+    const timer = setTimeout(completed, milliseconds);
+    signal.addEventListener('abort', aborted, { once: true });
+    if (signal.aborted) aborted();
 
-    function done() {
+    function completed() {
       clearTimeout(timer);
-      signal.removeEventListener('abort', done);
+      signal.removeEventListener('abort', aborted);
       resolve();
+    }
+
+    function aborted() {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', aborted);
+      reject(new ProcessorRunAbortedError());
     }
   });
 }
