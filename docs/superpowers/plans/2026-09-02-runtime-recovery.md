@@ -23,20 +23,19 @@
 - [ ] Update every projection reader and scenario fixture to consume the canonical value directly.
 - [ ] Verify focused orchestration projection, API, E2E, and rebuild-command tests pass.
 
-### Task 2: Make projection rebuild self-quiescing
+### Task 2: Document offline projection rebuild
 
 **Files:**
-- Modify: `src/bootstrap/surface-cli-applications.ts`
-- Test: `test/unit/bootstrap/surface-cli-applications.test.ts`
 - Modify: `docs/architecture.md`
 - Modify: `docs/events.md`
+- Modify: `docs/cli.md`
+- Modify: `src/orchestration/application/orchestration-projection.spec.md`
 
-- [ ] Add failing tests proving projection rebuild acquires maintenance, drains active runs, rebuilds, and releases maintenance in order.
-- [ ] Prove rebuild failure still releases an owned projection-rebuild lease and a foreign maintenance lease blocks the operation.
-- [ ] Compose the existing maintenance lease and journal-backed active-run query into `validate-state --rebuild-projections`.
-- [ ] Revert sandbox-stop behavior introduced solely for this migration path.
-- [ ] Document the single self-quiescing `wake validate-state --rebuild-projections` upgrade command.
-- [ ] Verify focused validation, maintenance, and runtime-command tests pass.
+- [ ] Remove the attempted sandbox-stop and online-quiescence runtime changes.
+- [ ] Document sandbox offline rebuild as `wake sandbox down`, `wake validate-state --rebuild-projections --no-sandbox`, then `wake sandbox up`.
+- [ ] Document host/service rebuild as stopping and restarting the resident through its supervisor around the host-side rebuild command.
+- [ ] State that both `validate-state` and `doctor` rebuild entry points require exclusive offline access.
+- [ ] Verify the existing rebuild E2E still proves clear, checkpoint reset, replay, and unchanged journal bytes.
 
 ### Task 3: Bound scheduler execution lifetime
 

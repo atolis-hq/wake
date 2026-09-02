@@ -12,10 +12,12 @@ The orchestration projection will stop persisting decoded event history. Its
 stored value will contain only the current folded workflow view. The domain
 fold will expose a single-event continuation operation so the projection does
 not duplicate transition policy. Historical projection values are not read or
-upcast. `wake validate-state --rebuild-projections` acquires the shared
-maintenance lease, waits for active runs to drain, rebuilds every registered
-projection under its processor lock, and releases maintenance. This is safe
-for sandbox and host residents without stopping their processes. No
+upcast. Projection rebuild is an offline maintenance operation: sandbox
+deployments stop the container, run
+`wake validate-state --rebuild-projections --no-sandbox`, and start the
+container again; host/service deployments stop and restart their resident via
+their supervisor. The existing CLI rebuild clears and replays every registered
+projection while the journal remains authoritative and unchanged. No
 authoritative journal migration is required.
 
 ## Dispatch lifetime
