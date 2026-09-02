@@ -61,7 +61,7 @@ wake sandbox setup
 wake tick     # one control-plane tick
 wake start    # resident loop
 wake ui       # control-plane UI (127.0.0.1:4317 by default)
-wake stop     # graceful stop, waits for any active run to finish
+wake stop     # graceful stop, drains active work and stops the sandbox
 ```
 
 Once `docker/Dockerfile` exists (i.e. after `sandbox build`), these commands

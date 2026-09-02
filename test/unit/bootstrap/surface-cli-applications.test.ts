@@ -7,6 +7,7 @@ import {
 import {
   createRunnerIdleWait,
   createSelfUpdateQuiescePort,
+  createStopApplication,
   createSurfaceCliApplications,
   runResidentLifecycle,
 } from '../../../src/bootstrap/surface-cli-applications.js';
@@ -23,6 +24,54 @@ function schedulerProcessor<T extends { readonly poke: (...args: never[]) => unk
 ) {
   return { ...scheduler, processor: {} as never, lastResult: () => undefined };
 }
+
+it('stops the configured sandbox only after active runs drain', async () => {
+  const trace: string[] = [];
+  let checks = 0;
+  const application = createStopApplication({
+    activeRunIds: async () => (++checks === 1 ? ['run-1'] : []),
+    sleep: async () => {
+      trace.push('wait');
+    },
+    close: async () => {
+      trace.push('close');
+    },
+    sandbox: {
+      stop: async () => {
+        trace.push('sandbox');
+      },
+    },
+  });
+
+  await application.stop();
+
+  expect(trace).toEqual(['wait', 'close', 'sandbox']);
+});
+
+it('preserves host-only stopping when no sandbox is configured', async () => {
+  const close = vi.fn(async () => undefined);
+  const application = createStopApplication({
+    activeRunIds: async () => [],
+    sleep: async () => undefined,
+    close,
+  });
+
+  await application.stop();
+
+  expect(close).toHaveBeenCalledOnce();
+});
+
+it('surfaces a configured sandbox shutdown failure', async () => {
+  const failure = new Error('sandbox unavailable');
+  const application = createStopApplication({
+    activeRunIds: async () => [],
+    sleep: async () => undefined,
+    close: async () => undefined,
+    sandbox: { stop: async () => Promise.reject(failure) },
+  });
+
+  await expect(application.stop()).rejects.toBe(failure);
+});
 
 it('drains subscriber scheduling progress through a one-shot tick budget while running the pipeline', async () => {
   const scheduler = {

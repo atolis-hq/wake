@@ -22,9 +22,9 @@ through its codec. The in-memory adapter holds the nested envelope model.
 Those representations are compatible reads of the same record, so no journal
 data migration is required. The orchestration workflow-instance projection
 stores its view directly; when upgrading an existing Wake home to that shape,
-run `wake stop`, then `wake validate-state --rebuild-projections`, before
-starting the resident again. This rebuild replaces projection/checkpoint data
-from the journal and leaves journal records untouched.
+run `wake stop`, then `wake validate-state --rebuild-projections --no-sandbox`,
+then `wake sandbox up`. This rebuild replaces projection/checkpoint data from
+the journal and leaves journal records untouched.
 
 ## Event ownership
 

@@ -76,6 +76,29 @@ import { resolveWakeVersion, wakeVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
 
+/** Host-side lifecycle boundary for the configured sandbox container. */
+export interface SandboxStopPort {
+  stop(): Promise<unknown>;
+}
+
+export interface StopApplicationInput {
+  readonly activeRunIds: () => Promise<readonly string[]>;
+  readonly sleep: (milliseconds: number) => Promise<void>;
+  readonly close: () => Promise<void>;
+  readonly sandbox?: SandboxStopPort;
+}
+
+/** Drains durable activity work before closing local hosts and the sandbox. */
+export function createStopApplication(input: StopApplicationInput): { stop(): Promise<void> } {
+  return {
+    async stop() {
+      await waitForActiveRuns({ activeRunIds: input.activeRunIds, sleep: input.sleep });
+      await input.close();
+      await input.sandbox?.stop();
+    },
+  };
+}
+
 export function createSurfaceCliApplications(
   root: CompositionRoot,
   api: ApiApplications,
@@ -112,6 +135,18 @@ export function createSurfaceCliApplications(
   );
   const servers = new Set<FastifyInstance>();
   const startHttp = createHttpStarter(root, api, servers);
+  const stop = createStopApplication({
+    activeRunIds: () => activeExecutionRunIds(root),
+    sleep: async (milliseconds) =>
+      new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
+    close: () => closeAll(servers),
+    sandbox: {
+      async stop() {
+        if (!(await hasSandboxDockerfile(root))) return;
+        await createSandboxDocker(root).down();
+      },
+    },
+  });
   return {
     tick: {
       async run(budget) {
@@ -142,16 +177,7 @@ export function createSurfaceCliApplications(
         });
       },
     },
-    stop: {
-      stop: async () => {
-        await waitForActiveRuns({
-          activeRunIds: () => activeExecutionRunIds(root),
-          sleep: async (milliseconds) =>
-            new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
-        });
-        await closeAll(servers);
-      },
-    },
+    stop,
     api: { start: (options) => startHttp(options, false) },
     ui: { start: (options) => startHttp(options, true) },
     auth: {
@@ -566,18 +592,20 @@ function createSandboxRuntimeApplications(root: CompositionRoot) {
   const docker = createSandboxDocker(root);
   const wakeInvocation = sandboxWakeInvocation(root);
   return {
-    async hasDockerfile(): Promise<boolean> {
-      try {
-        await access(join(root.paths.wakeRoot, 'docker', 'Dockerfile'));
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    hasDockerfile: () => hasSandboxDockerfile(root),
     async exec(arguments_: readonly string[]): Promise<void> {
       await docker.exec([...wakeInvocation, ...arguments_]);
     },
   };
+}
+
+async function hasSandboxDockerfile(root: Pick<CompositionRoot, 'paths'>): Promise<boolean> {
+  try {
+    await access(join(root.paths.wakeRoot, 'docker', 'Dockerfile'));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

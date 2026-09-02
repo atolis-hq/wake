@@ -65,8 +65,11 @@ application's own responses — it only decides when to serve them.
 - Starting `ui` MUST fail before opening a listening socket if the packaged
   web asset bundle is missing its entry document — this component MUST NOT
   silently fall back to serving an API-only server under the UI command.
-- `stop` MUST close every HTTP server this CLI surface application itself
-  started and MUST NOT affect a server or resident loop running in a
+- `stop` MUST wait for every active execution run to reach a terminal state,
+  then close every HTTP server this CLI surface application itself started.
+  When `docker/Dockerfile` exists for the Wake home, it MUST then stop the
+  configured sandbox container and surface a Docker shutdown failure. It
+  MUST NOT otherwise discover or stop a server or resident loop running in a
   different process.
 - `audit.read(id)` MUST return every event in the entire journal whose
   stream id matches the given id, across every stream kind — it is a raw
