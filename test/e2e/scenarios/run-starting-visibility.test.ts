@@ -132,6 +132,14 @@ defineScenario(
 
       await writeFile(releaseMarker, 'release\n');
       await expect(advance).resolves.toMatchObject({ kind: 'progressed' });
+      await vi.waitFor(
+        async () => {
+          expect(
+            (await root.execution.list()).find((candidate) => candidate.runId === runId)?.status,
+          ).toBe(RunStatus.Started);
+        },
+        { timeout: 10_000, interval: 20 },
+      );
       await root.projectionSubscriptions.catchUpOnce();
 
       const runningRuns = await applications.api.execution.list({ limit: 10 });

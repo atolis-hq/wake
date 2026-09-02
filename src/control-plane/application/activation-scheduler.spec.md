@@ -14,9 +14,11 @@ scheduler; it does not provide a second dispatch implementation.
 
 - One scheduler pass is enclosed by an injected `ActivationSchedulerSerialiser`.
   The critical section includes recovery, capacity reads, activation validation
-  and claim, workspace acquisition inside Execution, and durable `RunStarted`.
-  This prevents competing runtime processes from jointly exceeding global
-  capacity or creating duplicate activation work.
+  and claim, and the durable `RunPreparationStarted` capacity fact. Agent and
+  script workspace acquisition and `RunStarted` happen in Execution's detached
+  local worker after the critical section is released. The durable `starting`
+  Run prevents competing runtime processes from jointly exceeding global
+  capacity, while the activation claim prevents duplicate activation work.
 - The Control Plane depends only on the serialiser port. Bootstrap selects the
   file-backed implementation; the Control Plane does not import persistence or
   filesystem locking.

@@ -98,10 +98,7 @@ async function attemptExecution(
   if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
   const startedAt = runtime.dependencies.clock.now().toISOString();
-  let reportRunnerStarted: () => void = () => {};
-  const runnerStarted = new Promise<void>((resolve) => {
-    reportRunnerStarted = resolve;
-  });
+  const reportRunnerStarted = () => undefined;
   let lease: WorkspaceLease | undefined;
   let renewal: ReturnType<typeof renewWhileActive> | undefined;
   let claimed = false;
@@ -119,6 +116,24 @@ async function attemptExecution(
     });
     runtime.localAttempts.add(currentRunId);
     renewal = renewWhileActive(runtime, currentRunId, owner);
+    if (definition.executionKind !== ActivityExecutionKind.Deterministic) {
+      const prepared = (await runtime.repository.load(currentRunId)).view!;
+      const worker = continueDetachedAttempt(runtime, {
+        activation,
+        context,
+        currentRunId,
+        attempt: prior.length + 1,
+        runner,
+        resume,
+        renewal,
+        reportRunnerStarted,
+      });
+      void worker.catch(() => {
+        reportRunnerStarted();
+        // The worker has already attempted durable settlement; never leak its rejection.
+      });
+      return prepared;
+    }
     lease = await acquireAttemptWorkspace(runtime, activation, context, currentRunId);
     const executionStartedAt = await startRun({
       dependencies: runLifecycleDependencies(runtime),
@@ -160,15 +175,74 @@ async function attemptExecution(
       error,
     );
   }
-  await yieldToRunStart(
-    definition.executionKind === ActivityExecutionKind.Deterministic &&
-      context.awaitImmediateCompletion
-      ? undefined
-      : definition.executionKind === ActivityExecutionKind.Deterministic
-        ? Promise.resolve()
-        : runnerStarted,
-  );
+  await yieldToRunStart(context.awaitImmediateCompletion ? undefined : Promise.resolve());
   return (await runtime.repository.load(currentRunId)).view!;
+}
+
+async function continueDetachedAttempt(
+  runtime: ExecutionRuntime,
+  attempt: {
+    readonly activation: ExecutionActivation;
+    readonly context: ExecutionAttemptContext;
+    readonly currentRunId: ReturnType<typeof runId>;
+    readonly attempt: number;
+    readonly runner: ReturnType<typeof resolveRunner>;
+    readonly resume: ReturnType<typeof resumeContextFor>;
+    readonly renewal: ReturnType<typeof renewWhileActive>;
+    readonly reportRunnerStarted: () => void;
+  },
+): Promise<RunView> {
+  const {
+    activation,
+    context,
+    currentRunId,
+    attempt: attemptNumber,
+    runner,
+    resume,
+    renewal,
+    reportRunnerStarted,
+  } = attempt;
+  let lease: WorkspaceLease | undefined;
+  try {
+    lease = await acquireAttemptWorkspace(runtime, activation, context, currentRunId);
+    const executionStartedAt = await startRun({
+      dependencies: runLifecycleDependencies(runtime),
+      runId: currentRunId,
+      activation,
+      context,
+      attempt: attemptNumber,
+      runner,
+      lease,
+    });
+    if (executionStartedAt === undefined) {
+      await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
+      await renewal.stop();
+      await cleanupRun(runtime, currentRunId, activation, context, lease);
+      return (await runtime.repository.load(currentRunId)).view!;
+    }
+    const completion = completeRun(
+      runtime,
+      currentRunId,
+      activation,
+      context,
+      executionStartedAt,
+      runner,
+      resume.sessionId,
+      resume.startedAt,
+      resume.usageBaseline,
+      lease,
+      renewal,
+      reportRunnerStarted,
+    );
+    await completion;
+    return (await runtime.repository.load(currentRunId)).view!;
+  } catch (error) {
+    return recoverFailedAttempt(
+      runtime,
+      { activation, context, currentRunId, renewal, lease, claimed: true },
+      error,
+    );
+  }
 }
 
 async function recoverFailedAttempt(

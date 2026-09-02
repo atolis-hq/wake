@@ -105,7 +105,9 @@ workspace mechanics itself — it only resolves and invokes them.
   race), the attempt MUST fail with no Run stream created at all.
 - After a successful claim, `RunPreparationStarted` and the initial Run lease are
   appended atomically in one sequence-0 batch before workspace acquisition. That creates the durable `starting`
-  Run and its whole-attempt `startedAt` before any workspace operation.
+  Run and its whole-attempt `startedAt` before any workspace operation. For an
+  agent- or script-kind Activity, `attempt` returns this durable `starting` view
+  immediately and a detached local worker owns the remaining lifecycle.
 - Once claimed, a workspace MUST be acquired when the Activation requests
   `read-only` or `branch` mode, and MUST NOT be acquired for `none`
   (including when no mode is specified). Acquiring for a non-`none` mode
@@ -150,11 +152,13 @@ workspace mechanics itself — it only resolves and invokes them.
   named runner MUST invoke the configured runner-quota callback, naming
   that runner; Execution does not itself decide what happens to a
   quota-ineligible runner beyond reporting the signal.
-- An ordinary agent attempt MUST return once its runner invocation has
-  actually started, while its completion remains detached and owns the normal
-  terminal-recording and cleanup path. A deterministic attempt normally
-  yields one event-loop turn before returning; only a caller that explicitly
-  requests immediate completion waits for that deterministic completion.
+- An agent- or script-kind attempt MUST return its durable `starting` Run before
+  workspace acquisition completes. Its detached local worker acquires the
+  workspace, appends `RunStarted`, invokes the Activity, records success or
+  failure, and performs cleanup. A deterministic attempt preserves the inline
+  preparation path: it normally yields one event-loop turn before returning;
+  only a caller that explicitly requests immediate completion waits for that
+  deterministic completion opportunity.
 - When the Activity handler returns normally, its outcome MUST be recorded
   via `RunSucceeded` regardless of what outcome kind it reports — Execution
   does not distinguish a `done` outcome from a `failed` or `blocked` one at
@@ -169,7 +173,8 @@ workspace mechanics itself — it only resolves and invokes them.
   terminal status by a concurrent cancellation, the Activation claim MUST
   be released, the tracked `AbortController` and local-attempt marker MUST be removed, and any
   acquired workspace lease MUST be released — in that order — before the
-  attempt call returns or its error propagates. A workspace lease's
+  deterministic attempt returns, or before the detached worker ends for an
+  agent- or script-kind attempt. A workspace lease's
   `release()` failing MUST NOT propagate from `attempt`: it MUST instead be
   recorded as a `RunWorkspaceCleanupFailed` diagnostic fact on the Run, and
   recording that diagnostic is itself best-effort — a failure while
@@ -177,8 +182,9 @@ workspace mechanics itself — it only resolves and invokes them.
 - `attempt` only rejects (propagates an error to its caller) for upfront
   validation failures, an unexpired different-owner lease, a lost
   activation-claim race, or an error before `RunPreparationStarted` was appended. Every
-  other failure during execution surfaces as a `RunView` with status
-  `failed`, returned normally.
+  other failure during deterministic execution surfaces as a normally returned
+  `RunView` with status `failed`; for an agent- or script-kind attempt, the
+  detached worker records the same durable failed status for later observation.
 
 ## Conceptual schema
 

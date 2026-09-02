@@ -33,9 +33,11 @@ Eventing owns the processor cursor, retry, cancellation, and health. The
 production advancement is delivered through the processor.
 
 The scheduler serialiser encloses the full pass: pause gate, recovery,
-capacity check, activation claim, workspace acquisition, and durable Run
-creation. Control Plane receives this as a port and never selects a filesystem
-lock implementation.
+capacity check, activation claim, and creation of a durable `starting` Run.
+Agent and script workspace acquisition and execution continue after the pass in
+Execution's detached worker, so the scheduler lock is not held across external
+preparation. Control Plane receives the serialiser as a port and never selects
+a filesystem lock implementation.
 
 ## Pipelines and recovery
 

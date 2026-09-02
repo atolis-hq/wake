@@ -1,16 +1,31 @@
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import {
+  ActivityExecutionKind,
+  activityName,
+  ActivityRegistry,
+} from '../../../src/activities/index.js';
 import { createFileActivationSchedulerSerialiser } from '../../../src/bootstrap/index.js';
 import {
   createActivationScheduler,
   type ActivationSchedulerSerialiser,
 } from '../../../src/control-plane/index.js';
+import {
+  createExecutionService,
+  ExecutionEventType,
+  RunStatus,
+} from '../../../src/execution/index.js';
 import type {
   ActivityActivationView,
   WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
+import { BuiltInResourceKind } from '../../../src/resources/index.js';
+import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
+import { resId } from '../../support/identities.js';
 
 function candidate(id = 'one') {
   return {
@@ -25,6 +40,104 @@ function candidate(id = 'one') {
 }
 
 describe('ActivationScheduler', () => {
+  it('releases its serialiser after durable agent preparation while workspace acquisition is pending', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const registry = new ActivityRegistry();
+    registry.register({
+      name: activityName('agent-with-workspace'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Agent,
+      handler: { execute: async () => ({ kind: 'done' }) },
+    });
+    const acquireEntered = deferred<void>();
+    const releaseAcquire = deferred<void>();
+    const execution = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      {
+        clock,
+        ids: new SequentialIds(),
+        workspaces: {
+          async acquire() {
+            acquireEntered.resolve();
+            await releaseAcquire.promise;
+            return {
+              workspaceId: 'workspace-one',
+              path: '/workspace-one',
+              mode: 'read-only',
+              async release() {},
+            };
+          },
+        },
+      },
+    );
+    const pending = candidate();
+    const repository = {
+      resourceId: resId('repository-one'),
+      kind: BuiltInResourceKind.Repository,
+      externalKey: { adapter: 'github', key: 'atolis-hq/wake' },
+      capabilities: [],
+    };
+    const activation = {
+      ...pending.activation,
+      ordinal: 1,
+      activity: activityName('agent-with-workspace'),
+      input: { prompt: 'ship' },
+      execution: { workspace: 'read-only' as const },
+      status: 'pending' as const,
+    } as ActivityActivationView;
+    const scheduler = createActivationScheduler(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow: pending.workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async () => pending.workflow,
+        markActivationStarted: async () => pending.workflow,
+      },
+      execution,
+      {
+        correlationsForWork: async () => [{ resourceId: repository.resourceId }],
+        get: async () => repository,
+      } as never,
+      clock,
+      { ids: { next: () => 'command-agent-preparation' } as never },
+    );
+
+    const pass = scheduler.runOnce({ maxProgress: 1 });
+    await acquireEntered.promise;
+    const result = await Promise.race([
+      pass.then((value) => ({ kind: 'resolved' as const, value })),
+      new Promise<{ kind: 'pending' }>((resolve) => {
+        setImmediate(() => resolve({ kind: 'pending' }));
+      }),
+    ]);
+    const preparing = (await execution.list(activation.activationId))[0];
+    const eventTypes = (await journal.readAll(0)).map((event) => event.event.eventType);
+    releaseAcquire.resolve();
+    await expect(pass).resolves.toMatchObject({ kind: 'progressed' });
+
+    expect(result).toMatchObject({
+      kind: 'resolved',
+      value: {
+        kind: 'progressed',
+        dispatched: [{ activationId: activation.activationId, runId: 'run-1' }],
+      },
+    });
+    expect(preparing).toMatchObject({
+      runId: 'run-1',
+      status: RunStatus.Starting,
+    });
+    expect(eventTypes).toContain(ExecutionEventType.RunPreparationStarted);
+    await expect
+      .poll(async () => (await execution.list(activation.activationId))[0]?.status)
+      .toBe(RunStatus.Succeeded);
+  });
+
   it('runs the full scheduler sequence in order before dispatching the selected activation', async () => {
     const trace: string[] = [];
     const pending = candidate();
@@ -231,7 +344,7 @@ describe('ActivationScheduler', () => {
     ]);
   });
 
-  it('serialises capacity read, activation claim, workspace acquisition, and RunStarted', async () => {
+  it('serialises capacity read, activation claim, and durable Run preparation', async () => {
     const activeRuns = new Set<string>();
     const trace: string[] = [];
     const serialiser = serialiseInOrder();
@@ -251,10 +364,9 @@ describe('ActivationScheduler', () => {
         },
         {
           attempt: async () => {
-            trace.push(`workspace-acquire:${pending.activation.activationId}`);
             activeRuns.add(pending.activation.activationId);
-            trace.push(`run-started:${pending.activation.activationId}`);
-            return { runId: `run-${pending.activation.activationId}`, status: 'started' } as never;
+            trace.push(`run-prepared:${pending.activation.activationId}`);
+            return { runId: `run-${pending.activation.activationId}`, status: 'starting' } as never;
           },
           list: async () =>
             [...activeRuns].map((activationId) => ({ activationId, status: 'started' })) as never,
@@ -277,11 +389,7 @@ describe('ActivationScheduler', () => {
       [firstResult, secondResult].filter((result) => result.kind === 'progressed'),
     ).toHaveLength(1);
     expect(activeRuns).toEqual(new Set(['activation-first']));
-    expect(trace).toEqual([
-      'activation-claim:activation-first',
-      'workspace-acquire:activation-first',
-      'run-started:activation-first',
-    ]);
+    expect(trace).toEqual(['activation-claim:activation-first', 'run-prepared:activation-first']);
   });
 
   it('holds the real file-backed serialiser across recovery, capacity, and dispatch', async () => {
