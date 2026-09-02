@@ -3,6 +3,7 @@
 import { type EventJournal } from '@atolis-hq/eventing';
 import {
   ActivityExecutionKind,
+  type ActivityOutcome,
   type ActivityRegistry,
   type ResourceRequirement,
 } from '../../activities/index.js';
@@ -509,13 +510,7 @@ async function completeRun(
       reportRunnerStarted,
     });
     await stopRenewal();
-    await recordRunSuccess({
-      dependencies: runLifecycleDependencies(runtime),
-      runId: currentRunId,
-      activation,
-      context,
-      outcome,
-    });
+    await settleRunSuccess(runtime, currentRunId, activation, context, outcome);
   } catch (error) {
     try {
       await stopRenewal();
@@ -533,6 +528,26 @@ async function completeRun(
   }
 }
 
+async function settleRunSuccess(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
+  outcome: ActivityOutcome,
+): Promise<void> {
+  if (await shutdownCancellationSucceeded(runtime, currentRunId)) {
+    await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
+    return;
+  }
+  await recordRunSuccess({
+    dependencies: runLifecycleDependencies(runtime),
+    runId: currentRunId,
+    activation,
+    context,
+    outcome,
+  });
+}
+
 async function settleRunFailure(
   runtime: ExecutionRuntime,
   currentRunId: ReturnType<typeof runId>,
@@ -540,7 +555,10 @@ async function settleRunFailure(
   context: ExecutionAttemptContext,
   error: unknown,
 ): Promise<void> {
-  await runtime.lifecycle.cancellations.get(currentRunId);
+  if (await shutdownCancellationSucceeded(runtime, currentRunId)) {
+    await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
+    return;
+  }
   const run = await recordRunFailure({
     dependencies: runLifecycleDependencies(runtime),
     runId: currentRunId,
@@ -555,6 +573,13 @@ async function settleRunFailure(
     run.cancellation !== undefined
   )
     await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
+}
+
+async function shutdownCancellationSucceeded(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+): Promise<boolean> {
+  return (await runtime.lifecycle.cancellations.get(currentRunId)) === true;
 }
 
 function renewWhileActive(

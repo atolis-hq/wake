@@ -741,6 +741,145 @@ describe('ExecutionService', () => {
     );
   });
 
+  it('settles an immediate shutdown success as cancelled when cancellation persistence is delayed', async () => {
+    const clock = new FakeClock();
+    const base = new InMemoryEventJournal(clock);
+    const cancellationAppendEntered = deferred<void>();
+    const releaseCancellationAppend = deferred<void>();
+    const journal: EventJournal = {
+      async appendToStream(stream, expectedSequence, events) {
+        if (
+          events.some((event) => event.eventType === ExecutionEventType.RunCancellationRequested)
+        ) {
+          cancellationAppendEntered.resolve();
+          await releaseCancellationAppend.promise;
+        }
+        return base.appendToStream(stream, expectedSequence, events);
+      },
+      readStream: base.readStream.bind(base),
+      readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
+      readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
+    };
+    const handlerEntered = deferred<void>();
+    const handlerAborted = deferred<void>();
+    const registry = new ActivityRegistry();
+    registry.register({
+      name: activityName('immediate-shutdown-success'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: {
+        async execute(_invocation, executionContext) {
+          handlerEntered.resolve();
+          await new Promise<void>((resolve) => {
+            executionContext.signal.addEventListener(
+              'abort',
+              () => {
+                handlerAborted.resolve();
+                resolve();
+              },
+              { once: true },
+            );
+          });
+          return { kind: 'done' as const };
+        },
+      },
+    });
+    const service = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      { clock, ids: new SequentialIds() },
+    );
+
+    await service.attempt(
+      { ...activation, activity: activityName('immediate-shutdown-success') },
+      context,
+    );
+    await handlerEntered.promise;
+    const shutdown = service.shutdown();
+    await cancellationAppendEntered.promise;
+    await handlerAborted.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const succeededBeforeCancellationPersisted = (await base.readAll(0)).some(
+      ({ event }) => event.eventType === ExecutionEventType.RunSucceeded,
+    );
+    releaseCancellationAppend.resolve();
+    await shutdown;
+
+    expect(succeededBeforeCancellationPersisted).toBe(false);
+    expect((await service.list())[0]).toMatchObject({
+      status: RunStatus.Cancelled,
+      cancellation: { reason: 'shutdown' },
+    });
+    expect((await base.readAll(0)).map(({ event }) => event.eventType)).not.toContain(
+      ExecutionEventType.RunSucceeded,
+    );
+  });
+
+  it('preserves success when shutdown cancellation cannot be persisted', async () => {
+    const clock = new FakeClock();
+    const base = new InMemoryEventJournal(clock);
+    const journal: EventJournal = {
+      async appendToStream(stream, expectedSequence, events) {
+        if (events.some((event) => event.eventType === ExecutionEventType.RunCancellationRequested))
+          throw new Error('cancellation persistence unavailable');
+        return base.appendToStream(stream, expectedSequence, events);
+      },
+      readStream: base.readStream.bind(base),
+      readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
+      readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
+    };
+    const handlerEntered = deferred<void>();
+    const registry = new ActivityRegistry();
+    registry.register({
+      name: activityName('shutdown-success-after-cancellation-failure'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: {
+        async execute(_invocation, executionContext) {
+          handlerEntered.resolve();
+          await new Promise<void>((resolve) =>
+            executionContext.signal.addEventListener('abort', () => resolve(), { once: true }),
+          );
+          return { kind: 'done' as const };
+        },
+      },
+    });
+    const service = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      { clock, ids: new SequentialIds() },
+    );
+
+    await service.attempt(
+      {
+        ...activation,
+        activity: activityName('shutdown-success-after-cancellation-failure'),
+      },
+      context,
+    );
+    await handlerEntered.promise;
+    await service.shutdown();
+
+    expect((await service.list())[0]).toMatchObject({
+      status: RunStatus.Succeeded,
+      outcome: { kind: 'done' },
+    });
+  });
+
   it('stops detached lease renewal before a recovery load that fails', async () => {
     vi.useFakeTimers();
     try {
