@@ -1,6 +1,7 @@
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const readRepositoryFile = (path: string): Promise<string> =>
   readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
@@ -18,6 +19,9 @@ describe('developer tooling', () => {
       scripts: Record<string, string>;
       'lint-staged'?: unknown;
     };
+    const lefthookConfig = parse(lefthook) as {
+      'pre-commit': { jobs: unknown[] };
+    };
 
     expect(packageJson.devDependencies).toHaveProperty('lefthook');
     expect(packageJson.devDependencies).not.toHaveProperty('husky');
@@ -27,11 +31,15 @@ describe('developer tooling', () => {
     expect(packageJson.scripts.lint).toBe(
       'eslint --cache --cache-strategy content --cache-location node_modules/.cache/eslint/.eslintcache .',
     );
-    expect(lefthook).toContain("glob: '*.{ts,tsx,js,mjs,cjs,json,yaml,yml,css,html}'");
-    expect(lefthook).toContain('stage_fixed: true');
-    expect(lefthook).toContain(
-      'node node_modules/prettier/bin/prettier.cjs --write {staged_files}',
-    );
+    expect(lefthookConfig['pre-commit'].jobs).toEqual([
+      {
+        name: 'format staged files',
+        glob: '*.{ts,tsx,js,mjs,cjs,json,yaml,yml,css,html}',
+        run: 'node node_modules/prettier/bin/prettier.cjs --write {staged_files}',
+        stage_fixed: true,
+      },
+    ]);
+    await expect(access(new URL('../../.husky/pre-commit', import.meta.url))).rejects.toThrow();
     expect(integrationVitest).toContain('maxWorkers: 4');
     expect(webVitest).toContain('maxWorkers: 4');
   });
