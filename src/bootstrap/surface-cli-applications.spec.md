@@ -46,9 +46,9 @@ application's own responses — it only decides when to serve them.
   touches a rate-limited external API; the runner loop instead backs off only
   on a run of consecutive tick *errors*, staying on a fast fixed cadence while
   merely idle. `start` MUST abort all of those owned runs before awaiting their
-  completion, then shut down Execution so its detached agent/script workers
-  receive durable `shutdown` cancellation, abort workspace preparation, and
-  drain. Only after that drain may it close any HTTP server it opened; a drain
+  completion, then shut down Execution so all local attempts and completions
+  receive durable `shutdown` cancellation, abort workspace preparation or a
+  running handler, and drain. Only after that drain may it close any HTTP server it opened; a drain
   failure does not prevent server cleanup, and failures from both phases are
   preserved.
 - Both pipelines MUST stop operational work while the composed control plane
