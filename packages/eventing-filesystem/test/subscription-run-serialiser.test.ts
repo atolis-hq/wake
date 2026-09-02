@@ -59,6 +59,68 @@ it('does not wait when the run was aborted during contended lock acquisition', a
   }
 });
 
+it('cancels an installed processor lock retry wait when the run is aborted', async () => {
+  vi.useFakeTimers();
+  try {
+    const controller = new AbortController();
+    let rejected = false;
+    const pending = waitForRetry(controller.signal, 250);
+    void pending.catch(() => {
+      rejected = true;
+    });
+    expect(vi.getTimerCount()).toBe(1);
+
+    controller.abort();
+    await Promise.resolve();
+
+    expect(rejected).toBe(true);
+    await expect(pending).rejects.toThrow('Processor run aborted');
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('aborts a file-backed serialiser while it waits on a held processor lock', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-processor-serialiser-'));
+  const consumer = 'abort-contended';
+  const held = await acquireFileLock(
+    join(root, 'locks', `subscription-${encodeProcessorConsumer(consumer)}.lock`),
+    { staleAfterMs: 60_000, staleRequiresDeadProcess: true },
+  );
+  if (!held.acquired) throw new Error('Could not establish held processor lock');
+  try {
+    const controller = new AbortController();
+    const listenerInstalled = deferred<void>();
+    const observedSignal = {
+      get aborted() {
+        return controller.signal.aborted;
+      },
+      addEventListener(...args: Parameters<AbortSignal['addEventListener']>) {
+        controller.signal.addEventListener(...args);
+        listenerInstalled.resolve();
+      },
+      removeEventListener(...args: Parameters<AbortSignal['removeEventListener']>) {
+        controller.signal.removeEventListener(...args);
+      },
+    } as AbortSignal;
+    const serialise = createFileProcessorRunSerialiser(root);
+    let entered = false;
+    const pending = serialise(consumer, observedSignal, async () => {
+      entered = true;
+    });
+
+    await listenerInstalled.promise;
+    controller.abort();
+
+    await expect(pending).rejects.toThrow('Processor run aborted');
+    expect(entered).toBe(false);
+  } finally {
+    await held.release();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it('excludes the same consumer across hosts for load, handling, and checkpointing', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-subscription-serialiser-'));
   try {
