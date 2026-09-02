@@ -3,6 +3,9 @@ import { join } from 'node:path';
 import { acquireFileLock } from './file-lock.js';
 import { assertWellFormedUtf16 } from './storage-name.js';
 
+const firstProcessorRetryDelayMs = 10;
+const maximumProcessorRetryDelayMs = 250;
+
 export function createFileProcessorRunSerialiser(dataRoot: string): ProcessorRunSerialiser {
   let acquireTail: Promise<void> = Promise.resolve();
   const acquire = async (path: string) => {
@@ -23,6 +26,7 @@ export function createFileProcessorRunSerialiser(dataRoot: string): ProcessorRun
   };
   return async <Value>(consumer: string, signal: AbortSignal, operation: () => Promise<Value>) => {
     const path = join(dataRoot, 'locks', `subscription-${encodeProcessorConsumer(consumer)}.lock`);
+    let contentions = 0;
     while (true) {
       throwIfAborted(signal);
       const lock = await acquire(path);
@@ -34,9 +38,17 @@ export function createFileProcessorRunSerialiser(dataRoot: string): ProcessorRun
           await lock.release();
         }
       }
-      await waitForRetry(signal, 10);
+      contentions += 1;
+      await waitForRetry(signal, processorRunRetryDelayMs(contentions));
     }
   };
+}
+
+export function processorRunRetryDelayMs(contentions: number): number {
+  return Math.min(
+    maximumProcessorRetryDelayMs,
+    firstProcessorRetryDelayMs * 2 ** Math.max(0, contentions - 1),
+  );
 }
 
 export function encodeProcessorConsumer(consumer: string): string {

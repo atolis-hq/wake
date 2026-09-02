@@ -45,7 +45,9 @@ service.
   ownership, not persisted record contents, to decide what to retain.
 - Locks and atomic writes MUST prevent a partially written record becoming a
   successful durable result. Run serialisation MUST prevent concurrent passes
-  for the same consumer.
+  for the same consumer. A contended run MUST retry after an initial 10 ms
+  delay, then use bounded exponential backoff capped at 250 ms; the retry wait
+  MUST be released immediately when the run signal is aborted.
 
 ## Public surface and dependencies
 

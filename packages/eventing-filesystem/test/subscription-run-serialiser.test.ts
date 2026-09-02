@@ -18,10 +18,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { acquireFileLock } from '../src/file-lock.js';
-import { encodeProcessorConsumer } from '../src/file-processor-run-serialiser.js';
+import {
+  encodeProcessorConsumer,
+  processorRunRetryDelayMs,
+} from '../src/file-processor-run-serialiser.js';
 import { FakeClock } from './support/fake-clock.js';
 
 const activationSchedulerSubscriptionConsumer = 'activation-scheduler';
+
+it('uses a bounded exponential delay for repeated processor lock contention', () => {
+  expect([1, 2, 3, 4, 5, 6, 7].map((contentions) => processorRunRetryDelayMs(contentions))).toEqual(
+    [10, 20, 40, 80, 160, 250, 250],
+  );
+});
 
 it('excludes the same consumer across hosts for load, handling, and checkpointing', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-subscription-serialiser-'));
