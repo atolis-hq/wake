@@ -118,7 +118,7 @@ async function attemptExecution(
     renewal = renewWhileActive(runtime, currentRunId, owner);
     if (definition.executionKind !== ActivityExecutionKind.Deterministic) {
       const prepared = (await runtime.repository.load(currentRunId)).view!;
-      const worker = continueDetachedAttempt(runtime, {
+      const worker = continueDetachedAttemptOnNextTurn(runtime, {
         activation,
         context,
         currentRunId,
@@ -147,7 +147,7 @@ async function attemptExecution(
     if (executionStartedAt === undefined) {
       await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
       await renewal.stop();
-      await cleanupRun(runtime, currentRunId, activation, context, lease);
+      await cleanupRun(runtime, currentRunId, activation, context, { lease });
       return (await runtime.repository.load(currentRunId)).view!;
     }
     const completion = completeRun(
@@ -179,18 +179,29 @@ async function attemptExecution(
   return (await runtime.repository.load(currentRunId)).view!;
 }
 
+type DetachedAttempt = {
+  readonly activation: ExecutionActivation;
+  readonly context: ExecutionAttemptContext;
+  readonly currentRunId: ReturnType<typeof runId>;
+  readonly attempt: number;
+  readonly runner: ReturnType<typeof resolveRunner>;
+  readonly resume: ReturnType<typeof resumeContextFor>;
+  readonly renewal: ReturnType<typeof renewWhileActive>;
+  readonly reportRunnerStarted: () => void;
+};
+
+function continueDetachedAttemptOnNextTurn(
+  runtime: ExecutionRuntime,
+  attempt: DetachedAttempt,
+): Promise<RunView> {
+  return new Promise<void>((resolve) => setImmediate(resolve))
+    .then(() => continueDetachedAttempt(runtime, attempt))
+    .finally(() => runtime.localAttempts.delete(attempt.currentRunId));
+}
+
 async function continueDetachedAttempt(
   runtime: ExecutionRuntime,
-  attempt: {
-    readonly activation: ExecutionActivation;
-    readonly context: ExecutionAttemptContext;
-    readonly currentRunId: ReturnType<typeof runId>;
-    readonly attempt: number;
-    readonly runner: ReturnType<typeof resolveRunner>;
-    readonly resume: ReturnType<typeof resumeContextFor>;
-    readonly renewal: ReturnType<typeof renewWhileActive>;
-    readonly reportRunnerStarted: () => void;
-  },
+  attempt: DetachedAttempt,
 ): Promise<RunView> {
   const {
     activation,
@@ -217,7 +228,10 @@ async function continueDetachedAttempt(
     if (executionStartedAt === undefined) {
       await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
       await renewal.stop();
-      await cleanupRun(runtime, currentRunId, activation, context, lease);
+      await cleanupRun(runtime, currentRunId, activation, context, {
+        lease,
+        preserveLocalAttempt: true,
+      });
       return (await runtime.repository.load(currentRunId)).view!;
     }
     const completion = completeRun(
@@ -233,13 +247,22 @@ async function continueDetachedAttempt(
       lease,
       renewal,
       reportRunnerStarted,
+      true,
     );
     await completion;
     return (await runtime.repository.load(currentRunId)).view!;
   } catch (error) {
     return recoverFailedAttempt(
       runtime,
-      { activation, context, currentRunId, renewal, lease, claimed: true },
+      {
+        activation,
+        context,
+        currentRunId,
+        renewal,
+        lease,
+        claimed: true,
+        preserveLocalAttempt: true,
+      },
       error,
     );
   }
@@ -254,6 +277,7 @@ async function recoverFailedAttempt(
     readonly renewal: ReturnType<typeof renewWhileActive> | undefined;
     readonly lease: WorkspaceLease | undefined;
     readonly claimed: boolean;
+    readonly preserveLocalAttempt?: boolean | undefined;
   },
   error: unknown,
 ): Promise<RunView> {
@@ -263,22 +287,36 @@ async function recoverFailedAttempt(
     await renewal?.stop();
     const settled = await runtime.repository.load(currentRunId);
     if (settled.view !== null && !isActiveRunStatus(settled.view.status)) {
-      await cleanupRun(runtime, currentRunId, activation, context, lease);
+      await cleanupRun(runtime, currentRunId, activation, context, {
+        lease,
+        preserveLocalAttempt: attempt.preserveLocalAttempt,
+      });
       return settled.view;
     }
     if (settled.view === null) {
-      await releasePreStartResources(runtime, activation, currentRunId, lease, claimed);
+      await releasePreStartResources(runtime, activation, currentRunId, {
+        lease,
+        claimed,
+        preserveLocalAttempt: attempt.preserveLocalAttempt,
+      });
       throw error;
     }
     try {
       await settleRunFailure(runtime, currentRunId, activation, context, error);
     } finally {
-      await cleanupRun(runtime, currentRunId, activation, context, lease);
+      await cleanupRun(runtime, currentRunId, activation, context, {
+        lease,
+        preserveLocalAttempt: attempt.preserveLocalAttempt,
+      });
     }
     return (await runtime.repository.load(currentRunId)).view!;
   }
   await renewal?.stop();
-  await releasePreStartResources(runtime, activation, currentRunId, lease, claimed);
+  await releasePreStartResources(runtime, activation, currentRunId, {
+    lease,
+    claimed,
+    preserveLocalAttempt: attempt.preserveLocalAttempt,
+  });
   throw error;
 }
 
@@ -302,6 +340,7 @@ async function completeRun(
   lease: WorkspaceLease | undefined,
   renewal: ReturnType<typeof renewWhileActive>,
   reportRunnerStarted: () => void,
+  preserveLocalAttempt = false,
 ): Promise<void> {
   let renewalStopped = false;
   const stopRenewal = async () => {
@@ -343,7 +382,10 @@ async function completeRun(
   } finally {
     reportRunnerStarted();
     await stopRenewal();
-    await cleanupRun(runtime, currentRunId, activation, context, lease);
+    await cleanupRun(runtime, currentRunId, activation, context, {
+      lease,
+      preserveLocalAttempt,
+    });
   }
 }
 
@@ -413,8 +455,12 @@ async function cleanupRun(
   currentRunId: ReturnType<typeof runId>,
   activation: ExecutionActivation,
   context: ExecutionAttemptContext,
-  lease: WorkspaceLease | undefined,
+  options: {
+    readonly lease: WorkspaceLease | undefined;
+    readonly preserveLocalAttempt?: boolean | undefined;
+  },
 ): Promise<void> {
+  const { lease } = options;
   try {
     await releaseActivation({
       journal: runtime.journal,
@@ -426,7 +472,6 @@ async function cleanupRun(
     // An activation release can be retried after its claim expires; it must not mask the Run result.
   } finally {
     runtime.active.delete(currentRunId);
-    runtime.localAttempts.delete(currentRunId);
     try {
       await lease?.release();
     } catch (error) {
@@ -441,6 +486,8 @@ async function cleanupRun(
       } catch {
         // A cleanup diagnostic must not make an already-finished run fatal.
       }
+    } finally {
+      if (options.preserveLocalAttempt !== true) runtime.localAttempts.delete(currentRunId);
     }
   }
 }
@@ -449,10 +496,14 @@ async function releasePreStartResources(
   runtime: ExecutionRuntime,
   activation: ExecutionActivation,
   currentRunId: ReturnType<typeof runId>,
-  lease: WorkspaceLease | undefined,
-  claimed: boolean,
+  options: {
+    readonly lease: WorkspaceLease | undefined;
+    readonly claimed: boolean;
+    readonly preserveLocalAttempt?: boolean | undefined;
+  },
 ): Promise<void> {
-  runtime.localAttempts.delete(currentRunId);
+  const { lease, claimed } = options;
+  if (options.preserveLocalAttempt !== true) runtime.localAttempts.delete(currentRunId);
   if (claimed) {
     try {
       await releaseActivation({

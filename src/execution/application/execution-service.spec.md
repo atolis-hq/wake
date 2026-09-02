@@ -107,7 +107,9 @@ workspace mechanics itself — it only resolves and invokes them.
   appended atomically in one sequence-0 batch before workspace acquisition. That creates the durable `starting`
   Run and its whole-attempt `startedAt` before any workspace operation. For an
   agent- or script-kind Activity, `attempt` returns this durable `starting` view
-  immediately and a detached local worker owns the remaining lifecycle.
+  immediately and schedules a detached local worker for a later event-loop
+  turn. No workspace-provider acquisition code runs before that return; the
+  detached worker owns the remaining lifecycle.
 - Once claimed, a workspace MUST be acquired when the Activation requests
   `read-only` or `branch` mode, and MUST NOT be acquired for `none`
   (including when no mode is specified). Acquiring for a non-`none` mode
@@ -131,9 +133,11 @@ workspace mechanics itself — it only resolves and invokes them.
 - From `RunPreparationStarted` until terminal cleanup, Execution MUST renew the
   Run lease and keep a process-local attempt ownership marker that excludes the
   Run from local recovery, including while workspace preparation is blocked. The same rule
-  continues while the local handler is running; a fresh process has no tracked
-  worker and therefore remains responsible for reconciling an expired durable
-  Run after restart.
+  continues while the local handler is running, while the workspace is released,
+  and while any workspace-cleanup diagnostic is persisted. The marker is removed
+  only when the detached worker actually finishes; a fresh process has no
+  tracked worker and therefore remains responsible for reconciling an expired
+  durable Run after restart.
 - If a cancellation request is observed before `RunStarted`, Execution MUST
   confirm it itself before cleanup, whether preparation subsequently completes
   or throws; request-only cancellation therefore reaches the same terminal

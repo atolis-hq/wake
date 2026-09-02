@@ -97,85 +97,96 @@ async function waitForRunStatus(
   return (await service.list(id))[0]!;
 }
 
+function deferred<Value>() {
+  let resolve!: (value: Value) => void;
+  const promise = new Promise<Value>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 describe('ExecutionService', () => {
-  it('returns a durable preparing agent Run while workspace acquisition is pending', async () => {
-    const registry = new ActivityRegistry();
-    let handlerCalls = 0;
-    registry.register({
-      name: activityName('agent-with-workspace'),
-      inputSchema: z.object({ prompt: z.string() }).strict(),
-      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
-      outcomeKinds: ['done'],
-      resources: [],
-      executionKind: ActivityExecutionKind.Agent,
-      handler: {
-        async execute() {
-          handlerCalls += 1;
-          return { kind: 'done' };
-        },
-      },
-    });
-    let acquireEntered!: () => void;
-    const acquired = new Promise<void>((resolve) => {
-      acquireEntered = resolve;
-    });
-    let releaseAcquire!: () => void;
-    const acquireReleased = new Promise<void>((resolve) => {
-      releaseAcquire = resolve;
-    });
-    const clock = new FakeClock();
-    const journal = new InMemoryEventJournal(clock);
-    const service = createExecutionService(
-      journal,
-      registry,
-      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
-      {
-        clock,
-        ids: new SequentialIds(),
-        workspaces: {
-          async acquire() {
-            acquireEntered();
-            await acquireReleased;
-            return {
-              workspaceId: 'workspace-1',
-              path: '/workspace-1',
-              mode: 'read-only',
-              async release() {},
-            };
+  it.each([ActivityExecutionKind.Agent, ActivityExecutionKind.Script])(
+    'returns a durable preparing %s Run before workspace acquisition begins',
+    async (executionKind) => {
+      const registry = new ActivityRegistry();
+      let handlerCalls = 0;
+      const externalActivity = activityName(`${executionKind}-with-workspace`);
+      registry.register({
+        name: externalActivity,
+        inputSchema: z.object({ prompt: z.string() }).strict(),
+        outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+        outcomeKinds: ['done'],
+        resources: [],
+        executionKind,
+        handler: {
+          async execute() {
+            handlerCalls += 1;
+            return { kind: 'done' };
           },
         },
-      },
-    );
-    const agentActivation = {
-      ...activation,
-      activity: activityName('agent-with-workspace'),
-      execution: { workspace: 'read-only' as const },
-    };
+      });
+      let acquireEntered!: () => void;
+      const acquired = new Promise<void>((resolve) => {
+        acquireEntered = resolve;
+      });
+      let acquisitionStarted = false;
+      let releaseAcquire!: () => void;
+      const acquireReleased = new Promise<void>((resolve) => {
+        releaseAcquire = resolve;
+      });
+      const clock = new FakeClock();
+      const journal = new InMemoryEventJournal(clock);
+      const service = createExecutionService(
+        journal,
+        registry,
+        { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+        {
+          clock,
+          ids: new SequentialIds(),
+          workspaces: {
+            async acquire() {
+              acquisitionStarted = true;
+              acquireEntered();
+              await acquireReleased;
+              return {
+                workspaceId: 'workspace-1',
+                path: '/workspace-1',
+                mode: 'read-only',
+                async release() {},
+              };
+            },
+          },
+        },
+      );
+      const externalActivation = {
+        ...activation,
+        activity: externalActivity,
+        execution: { workspace: 'read-only' as const },
+      };
 
-    const attempt = service.attempt(agentActivation, {
-      ...context,
-      resources: [repositoryResource()],
-    });
-    await acquired;
+      const returned = await service.attempt(externalActivation, {
+        ...context,
+        resources: [repositoryResource()],
+      });
+      const acquisitionStartedBeforeReturn = acquisitionStarted;
+      const eventTypesBeforeAcquisition = (await journal.readAll(0)).map(
+        (event) => event.event.eventType,
+      );
+      await acquired;
+      const locallyActiveDuringAcquisition = service.isLocallyActive('run-1');
+      releaseAcquire();
+      await waitForRunStatus(service, externalActivation.activationId, 'succeeded');
 
-    const result = await Promise.race([
-      attempt.then((run) => ({ kind: 'resolved' as const, run })),
-      new Promise<{ kind: 'pending' }>((resolve) => {
-        setImmediate(() => resolve({ kind: 'pending' }));
-      }),
-    ]);
-    const eventTypes = (await journal.readAll(0)).map((event) => event.event.eventType);
-    const locallyActiveDuringAcquisition = service.isLocallyActive('run-1');
-    releaseAcquire();
-    await waitForRunStatus(service, agentActivation.activationId, 'succeeded');
-
-    expect(result).toMatchObject({ kind: 'resolved', run: { status: RunStatus.Starting } });
-    expect(locallyActiveDuringAcquisition).toBe(true);
-    expect(eventTypes).toContain(ExecutionEventType.RunPreparationStarted);
-    expect(eventTypes).not.toContain(ExecutionEventType.RunStarted);
-    expect(handlerCalls).toBe(1);
-    expect(service.isLocallyActive('run-1')).toBe(false);
-  });
+      expect(returned).toMatchObject({ status: RunStatus.Starting });
+      expect(acquisitionStartedBeforeReturn).toBe(false);
+      expect(locallyActiveDuringAcquisition).toBe(true);
+      expect(eventTypesBeforeAcquisition).toContain(ExecutionEventType.RunPreparationStarted);
+      expect(eventTypesBeforeAcquisition).not.toContain(ExecutionEventType.RunStarted);
+      expect(handlerCalls).toBe(1);
+      expect(service.isLocallyActive('run-1')).toBe(false);
+    },
+  );
 
   it('durably settles a detached agent workspace failure', async () => {
     const registry = new ActivityRegistry();
@@ -253,6 +264,112 @@ describe('ExecutionService', () => {
         ExecutionEventType.RunPreparationStarted,
         ExecutionEventType.RunFailed,
         ExecutionEventType.ActivationReleased,
+      ]),
+    );
+  });
+
+  it('keeps detached local ownership through workspace release and cleanup diagnostics', async () => {
+    const registry = new ActivityRegistry();
+    registry.register({
+      name: activityName('agent-cleanup-failure'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Agent,
+      handler: { execute: async () => ({ kind: 'done' }) },
+    });
+    const clock = new FakeClock();
+    const base = new InMemoryEventJournal(clock);
+    const diagnosticEntered = deferred<void>();
+    const releaseDiagnostic = deferred<void>();
+    const finalWorkerLoadEntered = deferred<void>();
+    const serviceRef: { value?: ReturnType<typeof createExecutionService> } = {};
+    let activeDuringWorkspaceRelease: boolean | undefined;
+    let activeDuringCleanupDiagnostic: boolean | undefined;
+    let activeDuringFinalWorkerLoad: boolean | undefined;
+    let cleanupDiagnosticPersisted = false;
+    const journal: EventJournal = {
+      async appendToStream(stream, expectedSequence, events) {
+        const recordsCleanupDiagnostic = events.some(
+          (event) => event.eventType === ExecutionEventType.RunWorkspaceCleanupFailed,
+        );
+        if (recordsCleanupDiagnostic) {
+          activeDuringCleanupDiagnostic = serviceRef.value!.isLocallyActive('run-1');
+          diagnosticEntered.resolve();
+          await releaseDiagnostic.promise;
+        }
+        const appended = await base.appendToStream(stream, expectedSequence, events);
+        if (recordsCleanupDiagnostic) cleanupDiagnosticPersisted = true;
+        return appended;
+      },
+      async readStream(stream) {
+        if (cleanupDiagnosticPersisted && stream.id === 'run-1') {
+          activeDuringFinalWorkerLoad = serviceRef.value!.isLocallyActive('run-1');
+          finalWorkerLoadEntered.resolve();
+        }
+        return base.readStream(stream);
+      },
+      readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
+      readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
+    };
+    const service = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      {
+        clock,
+        ids: new SequentialIds(),
+        workspaces: {
+          async acquire() {
+            return {
+              workspaceId: 'workspace-1',
+              path: '/workspace-1',
+              mode: 'read-only',
+              async release() {
+                activeDuringWorkspaceRelease = service.isLocallyActive('run-1');
+                throw new Error('workspace release failed');
+              },
+            };
+          },
+        },
+      },
+    );
+    serviceRef.value = service;
+    const cleanupActivation = {
+      ...activation,
+      activity: activityName('agent-cleanup-failure'),
+      execution: { workspace: 'read-only' as const },
+    };
+
+    const preparing = await service.attempt(cleanupActivation, {
+      ...context,
+      resources: [repositoryResource()],
+    });
+    await diagnosticEntered.promise;
+    const activeWhileDiagnosticPending = service.isLocallyActive(preparing.runId);
+    releaseDiagnostic.resolve();
+    await finalWorkerLoadEntered.promise;
+    await vi.waitFor(() => expect(service.isLocallyActive(preparing.runId)).toBe(false));
+
+    expect(activeDuringWorkspaceRelease).toBe(true);
+    expect(activeDuringCleanupDiagnostic).toBe(true);
+    expect(activeWhileDiagnosticPending).toBe(true);
+    expect(activeDuringFinalWorkerLoad).toBe(true);
+    expect((await service.list(cleanupActivation.activationId))[0]).toMatchObject({
+      status: RunStatus.Succeeded,
+    });
+    expect(await base.readAll(0)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: expect.objectContaining({
+            eventType: ExecutionEventType.RunWorkspaceCleanupFailed,
+            payload: { message: 'workspace release failed' },
+          }),
+        }),
       ]),
     );
   });

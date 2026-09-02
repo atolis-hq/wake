@@ -2,7 +2,7 @@ import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   ActivityExecutionKind,
@@ -136,6 +136,101 @@ describe('ActivationScheduler', () => {
     await expect
       .poll(async () => (await execution.list(activation.activationId))[0]?.status)
       .toBe(RunStatus.Succeeded);
+  });
+
+  it('releases the file-backed serialiser while detached workspace acquisition remains pending', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-detached-scheduler-'));
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const registry = new ActivityRegistry();
+    registry.register({
+      name: activityName('file-serialised-agent'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Agent,
+      handler: { execute: async () => ({ kind: 'done' }) },
+    });
+    const acquireEntered = deferred<void>();
+    const releaseAcquire = deferred<void>();
+    const execution = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      {
+        clock,
+        ids: new SequentialIds(),
+        workspaces: {
+          async acquire() {
+            acquireEntered.resolve();
+            await releaseAcquire.promise;
+            return {
+              workspaceId: 'workspace-file-lock',
+              path: '/workspace-file-lock',
+              mode: 'read-only',
+              async release() {},
+            };
+          },
+        },
+      },
+    );
+    const pending = candidate('file-lock');
+    const repository = {
+      resourceId: resId('repository-file-lock'),
+      kind: BuiltInResourceKind.Repository,
+      externalKey: { adapter: 'github', key: 'atolis-hq/wake' },
+      capabilities: [],
+    };
+    const activation = {
+      ...pending.activation,
+      ordinal: 1,
+      activity: activityName('file-serialised-agent'),
+      input: { prompt: 'ship' },
+      execution: { workspace: 'read-only' as const },
+      status: 'pending' as const,
+    } as ActivityActivationView;
+    const resources = {
+      correlationsForWork: async () => [{ resourceId: repository.resourceId }],
+      get: async () => repository,
+    } as never;
+    const orchestration = {
+      reconcileChildCompletions: async () => undefined,
+      listPendingActivations: async () => [{ workflow: pending.workflow, activation }],
+      listWaiting: async () => [],
+      acceptOutcome: async () => pending.workflow,
+      markActivationStarted: async () => pending.workflow,
+    };
+    const first = createActivationScheduler(orchestration, execution, resources, clock, {
+      ids: { next: () => 'command-file-first' } as never,
+      schedulerSerialiser: createFileActivationSchedulerSerialiser(root),
+    });
+    let secondHasEntered = false;
+    const second = createActivationScheduler(orchestration, execution, resources, clock, {
+      ids: { next: () => 'command-file-second' } as never,
+      schedulerSerialiser: createFileActivationSchedulerSerialiser(root),
+      isDispatchPaused: async () => {
+        secondHasEntered = true;
+        return false;
+      },
+    });
+
+    try {
+      await expect(first.runOnce({ maxProgress: 1 })).resolves.toMatchObject({
+        kind: 'progressed',
+      });
+      await acquireEntered.promise;
+      const secondPass = second.runOnce({ maxProgress: 1 });
+      await vi.waitFor(() => expect(secondHasEntered).toBe(true));
+      await expect(secondPass).resolves.toEqual({ kind: 'no-work' });
+      releaseAcquire.resolve();
+      await expect
+        .poll(async () => (await execution.list(activation.activationId))[0]?.status)
+        .toBe(RunStatus.Succeeded);
+    } finally {
+      releaseAcquire.resolve();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('runs the full scheduler sequence in order before dispatching the selected activation', async () => {
