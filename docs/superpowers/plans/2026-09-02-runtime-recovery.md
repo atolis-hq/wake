@@ -23,20 +23,34 @@
 - [ ] Update every projection reader and scenario fixture to consume the canonical value directly.
 - [ ] Verify focused orchestration projection, API, E2E, and rebuild-command tests pass.
 
-### Task 2: Bound scheduler execution lifetime
+### Task 2: Make stopped rebuild operationally safe
+
+**Files:**
+- Modify: `src/bootstrap/surface-cli-applications.ts`
+- Test: `test/unit/bootstrap/surface-cli-applications.test.ts`
+- Modify: `docs/architecture.md`
+- Modify: `docs/events.md`
+
+- [ ] Add a failing test proving top-level sandbox `wake stop` waits for active runs and then stops the configured sandbox container.
+- [ ] Verify the existing implementation only closes servers owned by its short-lived command process.
+- [ ] Stop the sandbox after active runs drain; preserve non-sandbox behavior.
+- [ ] Document `wake stop`, host-side `wake validate-state --rebuild-projections --no-sandbox`, then `wake sandbox up`.
+- [ ] Verify focused stop and runtime-command tests pass.
+
+### Task 3: Bound scheduler execution lifetime
 
 **Files:**
 - Modify: `src/control-plane/application/advance-once-dispatch.ts`
-- Modify as required: `src/execution/application/execution-service.ts`
+- Modify: `src/execution/application/execution-service.ts`
 - Test: `test/unit/control-plane/activation-scheduler.test.ts`
-- Test as required: `test/unit/execution/execution-service.test.ts`
+- Test: `test/unit/execution/execution-service.test.ts`
 
-- [ ] Add a failing test proving scheduler dispatch resolves after durable run preparation while the runner remains pending.
-- [ ] Verify it hangs or observes immediate-completion behavior before the fix.
-- [ ] Stop requesting `awaitImmediateCompletion` from the subscription-driven scheduler and preserve later execution/outcome reconciliation.
+- [ ] Add a failing test proving scheduler dispatch resolves after durable run preparation while workspace acquisition remains pending.
+- [ ] Verify the scheduler currently waits for workspace preparation.
+- [ ] Detach workspace acquisition, runner start, completion, and cleanup after durable preparation while retaining local-run recovery protection.
 - [ ] Verify focused control-plane and execution tests pass.
 
-### Task 3: Back off contended processor locks
+### Task 4: Back off contended processor locks
 
 **Files:**
 - Modify: `packages/eventing-filesystem/src/file-processor-run-serialiser.ts`
@@ -47,7 +61,7 @@
 - [ ] Implement bounded exponential contention backoff with prompt abort handling and reset per acquisition.
 - [ ] Verify the filesystem package tests pass.
 
-### Task 4: Expose processor failures
+### Task 5: Expose processor failures
 
 **Files:**
 - Modify: `src/bootstrap/surface-api-applications.ts`
@@ -59,7 +73,7 @@
 - [ ] Include the existing Eventing health error in the public health detail without leaking stack traces.
 - [ ] Verify focused API tests pass.
 
-### Task 5: Integrated verification
+### Task 6: Integrated verification
 
 **Files:**
 - Modify current-state docs only if public health output changed.

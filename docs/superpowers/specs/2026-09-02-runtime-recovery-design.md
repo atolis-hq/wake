@@ -38,7 +38,7 @@ remain unchanged.
 
 ## Verification
 
-Regression coverage will prove legacy orchestration values advance, scheduling
-returns with an active run before runner completion, contended filesystem locks
-back off, and health includes the processor error. Focused unit/integration
-tests run first, followed by the repository verification gate.
+Regression coverage will prove canonical orchestration projection replay,
+scheduling returns with a preparing run before runner completion, contended
+filesystem locks back off, and health includes the processor error. Focused
+unit/integration tests run first, followed by the repository verification gate.
