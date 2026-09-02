@@ -80,7 +80,8 @@ Does not own:
 - `validate-state` MUST accept an optional literal `--rebuild-projections`
   flag and the `--wake-root <path>` option used by sandbox routing; when the
   rebuild flag is present, projections MUST be rebuilt before health is read,
-  never after.
+  never after. Both this rebuild and `doctor --rebuild-projections` require
+  the operator to stop the resident process before dispatch.
 - Resident commands (`tick`/`start`/`stop`), host commands (`api`/`ui`), and
   `validate-state` accept `--wake-root`; only host commands additionally
   accept `--host` and `--port`. A flag not recognized for the command being

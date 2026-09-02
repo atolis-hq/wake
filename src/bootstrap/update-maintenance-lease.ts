@@ -21,17 +21,12 @@ export interface UpdateMaintenanceState {
   readonly failure?: string;
 }
 
-export interface MaintenanceLeaseRecoveryOptions {
-  readonly retrySameTagFailure: boolean;
-  readonly replaceDifferentTagFailure: boolean;
-}
-
 export interface UpdateMaintenanceLease {
   read(): Promise<UpdateMaintenanceState | null>;
   acquire(tag: string, retryFailed?: boolean): Promise<UpdateMaintenanceState>;
   runExclusive<Value>(
     tag: string,
-    recovery: MaintenanceLeaseRecoveryOptions,
+    retryFailed: boolean,
     operation: (state: UpdateMaintenanceState) => Promise<Value>,
   ): Promise<Value>;
   transition(
@@ -49,10 +44,14 @@ export function createUpdateMaintenanceLease(
   isProcessAlive?: (pid: number) => boolean,
 ): UpdateMaintenanceLease {
   const path = join(wakeRoot, '.wake', 'update-maintenance.json');
-  const acquireWithRecovery = async (tag: string, recovery: MaintenanceLeaseRecoveryOptions) =>
+  const acquire = async (tag: string, retryFailed = false) =>
     withLeaseLock(path, async () => {
       const existing = await readState(path);
-      if (existing !== null && !shouldReplaceFailedLease(existing, tag, recovery)) return existing;
+      if (
+        existing !== null &&
+        !(existing.phase === UpdateMaintenancePhase.Failed && (existing.tag !== tag || retryFailed))
+      )
+        return existing;
       const initial: UpdateMaintenanceState = {
         attemptId: createAttemptId(),
         tag,
@@ -62,19 +61,14 @@ export function createUpdateMaintenanceLease(
       await writeState(path, initial);
       return initial;
     });
-  const acquire = async (tag: string, retryFailed = false) =>
-    acquireWithRecovery(tag, {
-      retrySameTagFailure: retryFailed,
-      replaceDifferentTagFailure: true,
-    });
   return {
     async read() {
       return readState(path);
     },
     acquire,
-    async runExclusive(tag, recovery, operation) {
+    async runExclusive(tag, retryFailed, operation) {
       return withAttemptLock(path, isProcessAlive, async () =>
-        operation(await acquireWithRecovery(tag, recovery)),
+        operation(await acquire(tag, retryFailed)),
       );
     },
     async transition(phase, attemptId) {
@@ -115,15 +109,6 @@ export function createUpdateMaintenanceLease(
       });
     },
   };
-}
-
-function shouldReplaceFailedLease(
-  existing: UpdateMaintenanceState,
-  tag: string,
-  recovery: MaintenanceLeaseRecoveryOptions,
-): boolean {
-  if (existing.phase !== UpdateMaintenancePhase.Failed) return false;
-  return existing.tag === tag ? recovery.retrySameTagFailure : recovery.replaceDifferentTagFailure;
 }
 
 function requireOwnership(state: UpdateMaintenanceState, attemptId: string | undefined): void {

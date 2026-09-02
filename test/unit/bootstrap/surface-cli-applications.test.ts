@@ -5,7 +5,6 @@ import {
   createResidentRunnerAdvance,
 } from '../../../src/bootstrap/runner-tick-adapter.js';
 import {
-  createProjectionRebuildApplication,
   createRunnerIdleWait,
   createSelfUpdateQuiescePort,
   createSurfaceCliApplications,
@@ -24,81 +23,6 @@ function schedulerProcessor<T extends { readonly poke: (...args: never[]) => unk
 ) {
   return { ...scheduler, processor: {} as never, lastResult: () => undefined };
 }
-
-it('quiesces active runs before rebuilding projections and releases its maintenance lease', async () => {
-  const trace: string[] = [];
-  let activeRunChecks = 0;
-  const application = createProjectionRebuildApplication({
-    maintenance: {
-      runExclusive: async (tag, recovery, operation) => {
-        trace.push(
-          `acquire-and-pause:${tag}:${recovery.retrySameTagFailure}:${recovery.replaceDifferentTagFailure}`,
-        );
-        return operation({ attemptId: 'rebuild-attempt', tag: 'projection-rebuild' });
-      },
-      clear: async (attemptId) => {
-        trace.push(`clear:${attemptId}`);
-      },
-    },
-    activeRunIds: async () => (++activeRunChecks === 1 ? ['run-1'] : []),
-    sleep: async () => {
-      trace.push('drain');
-    },
-    rebuild: async () => {
-      trace.push('rebuild');
-    },
-  });
-
-  await application.rebuild();
-
-  expect(trace).toEqual([
-    'acquire-and-pause:projection-rebuild:true:false',
-    'drain',
-    'rebuild',
-    'clear:rebuild-attempt',
-  ]);
-});
-
-it('releases its maintenance lease when projection rebuild fails', async () => {
-  const failure = new Error('projection rebuild failed');
-  const clear = vi.fn(async () => undefined);
-  const application = createProjectionRebuildApplication({
-    maintenance: {
-      runExclusive: async (_tag, _retryFailed, operation) =>
-        operation({ attemptId: 'rebuild-attempt', tag: 'projection-rebuild' }),
-      clear,
-    },
-    activeRunIds: async () => [],
-    sleep: async () => undefined,
-    rebuild: async () => Promise.reject(failure),
-  });
-
-  await expect(application.rebuild()).rejects.toBe(failure);
-
-  expect(clear).toHaveBeenCalledExactlyOnceWith('rebuild-attempt');
-});
-
-it('leaves a foreign maintenance lease in place and blocks projection rebuild', async () => {
-  const clear = vi.fn(async () => undefined);
-  const activeRunIds = vi.fn(async () => []);
-  const rebuild = vi.fn(async () => undefined);
-  const application = createProjectionRebuildApplication({
-    maintenance: {
-      runExclusive: async (_tag, _retryFailed, operation) =>
-        operation({ attemptId: 'update-attempt', tag: 'self-update' }),
-      clear,
-    },
-    activeRunIds,
-    sleep: async () => undefined,
-    rebuild,
-  });
-
-  await expect(application.rebuild()).rejects.toThrow('self-update');
-
-  expect(activeRunIds).not.toHaveBeenCalled();
-  expect(rebuild).not.toHaveBeenCalled();
-  expect(clear).not.toHaveBeenCalled();
-});
 
 it('drains subscriber scheduling progress through a one-shot tick budget while running the pipeline', async () => {
   const scheduler = {

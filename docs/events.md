@@ -21,10 +21,15 @@ The Eventing filesystem package writes the exact established flat JSONL record
 through its codec. The in-memory adapter holds the nested envelope model.
 Those representations are compatible reads of the same record, so no journal
 data migration is required. The orchestration workflow-instance projection
-stores its view directly; when upgrading an existing Wake home to that shape,
-run `wake validate-state --rebuild-projections`. The command acquires shared
-maintenance, drains active runs, then replaces projection/checkpoint data from
-the journal while leaving journal records untouched.
+stores its view directly; rebuilding it requires exclusive offline access.
+Stop a host/service resident through its supervisor, run
+`wake validate-state --rebuild-projections` host-side (with `--no-sandbox`
+when `docker/Dockerfile` exists), then restart through the supervisor. For a
+sandbox, run `wake sandbox down`, then
+`wake validate-state --rebuild-projections --no-sandbox`, then `wake sandbox
+up`. `wake doctor --rebuild-projections` has the same stopped-resident
+requirement. The rebuild replaces projection/checkpoint data from the journal
+while leaving journal records untouched.
 
 ## Event ownership
 

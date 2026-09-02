@@ -41,9 +41,14 @@ re-application of already-accepted facts, never a source of new events.
   derivable from `orchestration.*` facts alone.
 - This projection-shape upgrade is not backward-compatible with the retired
   `{ events, view }` values. When upgrading an existing Wake home, operators
-  MUST run `wake validate-state --rebuild-projections`. The command acquires
-  shared maintenance, waits for active runs to drain, then replaces projection
-  and checkpoint data from the authoritative journal without modifying journal
+  MUST obtain exclusive offline access before running a rebuild. For a sandbox,
+  operators MUST run `wake sandbox down`, then
+  `wake validate-state --rebuild-projections --no-sandbox`, then `wake sandbox
+  up`. For a host/service resident, operators MUST stop and restart it through
+  its supervisor and run the rebuild host-side (with `--no-sandbox` when
+  `docker/Dockerfile` exists). `wake doctor --rebuild-projections` has the
+  same stopped-resident requirement. The rebuild replaces projection and
+  checkpoint data from the authoritative journal without modifying journal
   records.
 
 ## Dependencies and system role

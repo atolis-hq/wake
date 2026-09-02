@@ -82,9 +82,9 @@ application's own responses — it only decides when to serve them.
 - `validateState.rebuildProjections` MUST rebuild every projection
   registered for production composition, from the full event journal, and
   MUST cover exactly the same set of projections supervised by the resident
-  projection runtime. It MUST hold the shared maintenance lease while it
-  waits for active runs to drain and the rebuild executes, then release only
-  its own lease even when rebuilding fails.
+  projection runtime. The operator MUST provide exclusive offline access:
+  neither a host/service resident nor a sandbox resident may run while
+  `validate-state` or `doctor` rebuilds projections.
 - `doctor` MUST report every configured provider that failed to construct
   during composition as a failure, in addition to actively probing every
   successfully-constructed provider's own connectivity check; a Docker

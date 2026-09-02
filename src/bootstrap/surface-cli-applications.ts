@@ -72,57 +72,9 @@ import {
 import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
 import { createUpdateLedger } from './update-ledger.js';
-import type { MaintenanceLeaseRecoveryOptions } from './update-maintenance-lease.js';
 import { resolveWakeVersion, wakeVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
-
-export interface ProjectionRebuildLease {
-  readonly attemptId: string;
-  readonly tag: string;
-}
-
-export interface ProjectionRebuildMaintenancePort {
-  runExclusive<Value>(
-    tag: string,
-    recovery: MaintenanceLeaseRecoveryOptions,
-    operation: (lease: ProjectionRebuildLease) => Promise<Value>,
-  ): Promise<Value>;
-  clear(attemptId?: string): Promise<void>;
-}
-
-export interface ProjectionRebuildApplicationInput {
-  readonly maintenance: ProjectionRebuildMaintenancePort;
-  readonly activeRunIds: () => Promise<readonly string[]>;
-  readonly sleep: (milliseconds: number) => Promise<void>;
-  readonly rebuild: () => Promise<void>;
-}
-
-export const projectionRebuildMaintenanceTag = 'projection-rebuild';
-
-/** Holds the shared maintenance lease while durable work drains and views rebuild. */
-export function createProjectionRebuildApplication(input: ProjectionRebuildApplicationInput): {
-  rebuild(): Promise<void>;
-} {
-  return {
-    async rebuild() {
-      await input.maintenance.runExclusive(
-        projectionRebuildMaintenanceTag,
-        { retrySameTagFailure: true, replaceDifferentTagFailure: false },
-        async (lease) => {
-          if (lease.tag !== projectionRebuildMaintenanceTag)
-            throw new Error(`Projection rebuild is blocked by active maintenance: ${lease.tag}`);
-          try {
-            await waitForActiveRuns({ activeRunIds: input.activeRunIds, sleep: input.sleep });
-            await input.rebuild();
-          } finally {
-            await input.maintenance.clear(lease.attemptId);
-          }
-        },
-      );
-    },
-  };
-}
 
 export function createSurfaceCliApplications(
   root: CompositionRoot,
@@ -591,8 +543,8 @@ async function activeExecutionRunIds(root: CompositionRoot): Promise<readonly st
 export function createSelfUpdateQuiescePort(root: CompositionRoot): SelfUpdateQuiescePort {
   return {
     acquire: (tag, retryFailed) => root.maintenance.acquire(tag, retryFailed),
-    exclusive: (tag, recovery, operation) =>
-      root.maintenance.runExclusive(tag, recovery, operation),
+    exclusive: (tag, retryFailed, operation) =>
+      root.maintenance.runExclusive(tag, retryFailed, operation),
     activeRuns: () => activeExecutionRuns(root),
     requestMaintenanceCancellation: async (runIds) => {
       for (const runId of runIds)
@@ -1027,15 +979,6 @@ function unsupportedOperationalCommand(command: string): never {
 }
 
 function createValidationApplications(root: CompositionRoot) {
-  const projectionRebuild = createProjectionRebuildApplication({
-    maintenance: root.maintenance,
-    activeRunIds: () => activeExecutionRunIds(root),
-    sleep: (milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
-    rebuild: async () => {
-      for (const definition of runtimeProjectionDefinitions)
-        await root.projectionSubscriptions.rebuild(definition);
-    },
-  });
   return {
     async health() {
       await root.journal.readAll(0, 1);
@@ -1043,7 +986,10 @@ function createValidationApplications(root: CompositionRoot) {
       await root.checkpoints.load('surface-health');
       return { journal: 'ok', projections: 'ok', checkpoints: 'ok' };
     },
-    rebuildProjections: () => projectionRebuild.rebuild(),
+    async rebuildProjections() {
+      for (const definition of runtimeProjectionDefinitions)
+        await root.projectionSubscriptions.rebuild(definition);
+    },
   };
 }
 

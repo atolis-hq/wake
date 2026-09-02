@@ -100,10 +100,14 @@ Filesystem storage preserves the established flat JSONL record through the
 Eventing filesystem package codec, while the in-memory adapter keeps the nested
 envelope model. The journal needs no migration for that storage compatibility
 boundary. The orchestration workflow-instance projection now stores its view
-directly; when upgrading an existing Wake home to that projection shape, run
-`wake validate-state --rebuild-projections`. The command acquires shared
-maintenance, drains active runs, then rebuilds projection/checkpoint data from
-the journal without modifying journal records.
+directly; rebuilding it requires exclusive offline access: stop the resident
+through its supervisor, run `wake validate-state --rebuild-projections`
+host-side (with `--no-sandbox` when `docker/Dockerfile` exists), then restart
+through the supervisor. For a sandbox, run `wake sandbox down`, then
+`wake validate-state --rebuild-projections --no-sandbox`, then `wake sandbox
+up`. The same offline precondition applies to `wake doctor --rebuild-projections`.
+The rebuild replaces projection/checkpoint data from the journal and does not
+modify journal records.
 
 Projections are derived read models. `ProjectionStore` stores their
 namespaced, position-tracked values and they may always be rebuilt from the

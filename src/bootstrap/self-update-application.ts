@@ -1,10 +1,6 @@
 import { runSelfUpdate } from '../surfaces/index.js';
 import type { UpdateLedger } from './update-ledger.js';
-import {
-  UpdateMaintenancePhase,
-  type MaintenanceLeaseRecoveryOptions,
-  type UpdateMaintenanceState,
-} from './update-maintenance-lease.js';
+import { UpdateMaintenancePhase, type UpdateMaintenanceState } from './update-maintenance-lease.js';
 
 export interface SourceUpdatePort {
   isClean(): Promise<boolean>;
@@ -36,7 +32,7 @@ export interface SelfUpdateQuiescePort {
   acquire(tag: string, retryFailed?: boolean): Promise<UpdateMaintenanceState>;
   exclusive?<Value>(
     tag: string,
-    recovery: MaintenanceLeaseRecoveryOptions,
+    retryFailed: boolean,
     operation: (state: UpdateMaintenanceState) => Promise<Value>,
   ): Promise<Value>;
   activeRuns(): Promise<
@@ -106,11 +102,7 @@ async function startUpdateAttempt(
   force: boolean,
 ): Promise<boolean> {
   if (input.quiesce?.exclusive !== undefined)
-    return input.quiesce.exclusive(
-      tag,
-      { retrySameTagFailure: force, replaceDifferentTagFailure: true },
-      (lease) => updateAttempt(input, tag, force, lease),
-    );
+    return input.quiesce.exclusive(tag, force, (lease) => updateAttempt(input, tag, force, lease));
   return updateAttempt(input, tag, force, await input.quiesce?.acquire(tag, force));
 }
 
