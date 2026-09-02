@@ -5,10 +5,7 @@ import {
   type ControlPlaneView,
 } from '../control-plane/index.js';
 import { ExecutionFailureCode, RunStatus, type RunView } from '../execution/index.js';
-import {
-  workflowInstanceProjectionView,
-  type StoredWorkflowInstanceProjectionValue,
-} from '../orchestration/index.js';
+import type { WorkflowInstanceView } from '../orchestration/index.js';
 import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
@@ -94,12 +91,11 @@ export function createExecutionApplications(
       );
       const run = stored?.value.view;
       if (run === null || run === undefined) return undefined;
-      const workflow = await root.projections.read<StoredWorkflowInstanceProjectionValue>(
+      const workflow = await root.projections.read<WorkflowInstanceView | null>(
         'orchestration',
         run.workflowInstanceId,
       );
-      const workItemId =
-        workflow === null ? undefined : workflowInstanceProjectionView(workflow.value)?.workItemId;
+      const workItemId = workflow?.value?.workItemId;
       if (workItemId === undefined)
         return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
       const groupId = await root.transcriptStore?.groupForRun(workItemId, runId);
@@ -111,18 +107,13 @@ export function createExecutionApplications(
       const workflowIds = [...new Set(runs.map((candidate) => candidate.workflowInstanceId))];
       const workflows = await Promise.all(
         workflowIds.map(async (workflowInstanceId) =>
-          root.projections.read<StoredWorkflowInstanceProjectionValue>(
-            'orchestration',
-            workflowInstanceId,
-          ),
+          root.projections.read<WorkflowInstanceView | null>('orchestration', workflowInstanceId),
         ),
       );
       const workItemIdsByWorkflow = new Map(
         workflowIds.map((workflowInstanceId, index) => [
           workflowInstanceId,
-          workflows[index] === null
-            ? undefined
-            : workflowInstanceProjectionView(workflows[index]!.value)?.workItemId,
+          workflows[index]?.value?.workItemId,
         ]),
       );
       const groupRuns = runs.filter(

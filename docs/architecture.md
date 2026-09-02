@@ -98,9 +98,12 @@ rejects malformed data in its own namespace.
 
 Filesystem storage preserves the established flat JSONL record through the
 Eventing filesystem package codec, while the in-memory adapter keeps the nested
-envelope model.
-No journal data migration or projection rebuild is required for that storage
-compatibility boundary.
+envelope model. The journal needs no migration for that storage compatibility
+boundary. The orchestration workflow-instance projection now stores its view
+directly; when upgrading an existing Wake home to that projection shape, run
+`wake stop`, then `wake validate-state --rebuild-projections`, before starting
+the resident again. The rebuild replaces projection/checkpoint data from the
+journal and does not modify journal records.
 
 Projections are derived read models. `ProjectionStore` stores their
 namespaced, position-tracked values and they may always be rebuilt from the

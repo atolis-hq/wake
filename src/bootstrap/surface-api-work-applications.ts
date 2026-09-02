@@ -17,9 +17,8 @@ import {
   OperatorRetryIneligibleError,
   orchestrationProjection,
   selectOperatorRetryTarget,
-  workflowInstanceProjectionView,
   workflowsByWorkItemProjection,
-  type StoredWorkflowInstanceProjectionValue,
+  type WorkflowInstanceView,
 } from '../orchestration/index.js';
 import {
   workCorrelationsProjection,
@@ -230,17 +229,13 @@ async function workDetail(
   const workflows = (
     await Promise.all(
       workflowIds.map((workflowInstanceId) =>
-        root.projections.read<StoredWorkflowInstanceProjectionValue>(
+        root.projections.read<WorkflowInstanceView | null>(
           orchestrationProjection.name,
           workflowInstanceId,
         ),
       ),
     )
-  ).flatMap((entry) => {
-    if (entry === null) return [];
-    const view = workflowInstanceProjectionView(entry.value);
-    return view === null ? [] : [view];
-  });
+  ).flatMap((entry) => (entry === null || entry.value === null ? [] : [entry.value]));
   const runs = await runsForWorkItem(root, id, workflows);
   const pullRequest = (
     await Promise.all(
@@ -372,17 +367,13 @@ async function workflowsForWorkItem(root: CompositionRoot, id: ReturnType<typeof
   return (
     await Promise.all(
       workflowIds.map((workflowInstanceId) =>
-        root.projections.read<StoredWorkflowInstanceProjectionValue>(
+        root.projections.read<WorkflowInstanceView | null>(
           orchestrationProjection.name,
           workflowInstanceId,
         ),
       ),
     )
-  ).flatMap((entry) => {
-    if (entry === null) return [];
-    const view = workflowInstanceProjectionView(entry.value);
-    return view === null ? [] : [view];
-  });
+  ).flatMap((entry) => (entry === null || entry.value === null ? [] : [entry.value]));
 }
 
 function decodeWorkItemId(key: string): ReturnType<typeof workItemId> | undefined {

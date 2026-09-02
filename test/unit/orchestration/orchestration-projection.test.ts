@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
+import * as orchestration from '../../../src/orchestration/index.js';
 import {
-  foldWorkflowInstance,
   OrchestrationEventType,
   orchestrationGroupId,
   orchestrationProjection,
@@ -12,14 +12,14 @@ import {
 import { eventEnvelope } from '../../support/event-envelope.js';
 import { workId } from '../../support/identities.js';
 
-it('continues a legacy event-history projection and replaces it with the canonical view', () => {
-  const stream = workflowInstanceStream(workflowInstanceId('workflow-projection-legacy'));
+it('continues a canonical workflow view', () => {
+  const stream = workflowInstanceStream(workflowInstanceId('workflow-projection-canonical'));
   const started = eventEnvelope(
     OrchestrationEventType.InstanceStarted,
     {
-      workItemId: workId('projection-legacy'),
+      workItemId: workId('projection-canonical'),
       workflowName: workflowName('default'),
-      orchestrationGroupId: orchestrationGroupId('group-projection-legacy'),
+      orchestrationGroupId: orchestrationGroupId('group-projection-canonical'),
       entry: stageName('implement'),
     },
     stream,
@@ -31,27 +31,20 @@ it('continues a legacy event-history projection and replaces it with the canonic
     stream,
     2,
   );
-  const legacy = {
-    events: [
-      {
-        ...started.event,
-        stream: started.stream,
-        recordedAt: started.recordedAt,
-        sequence: 1,
-        globalPosition: 1,
-      },
-    ],
-    view: foldWorkflowInstance([started]),
-  };
-
-  const projected = orchestrationProjection.project(
-    legacy as unknown as ReturnType<typeof orchestrationProjection.initial>,
-    stageEntered,
+  const initial = orchestrationProjection.project(
+    orchestrationProjection.initial(stream.id),
+    started,
   );
+
+  const projected = orchestrationProjection.project(initial, stageEntered);
 
   expect(projected).toMatchObject({
     workflowInstanceId: stream.id,
     currentStage: stageName('review'),
   });
   expect(projected).not.toHaveProperty('events');
+});
+
+it('does not expose a legacy projection compatibility accessor', () => {
+  expect(orchestration).not.toHaveProperty('workflowInstanceProjectionView');
 });
