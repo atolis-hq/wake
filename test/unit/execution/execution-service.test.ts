@@ -268,6 +268,251 @@ describe('ExecutionService', () => {
     );
   });
 
+  it('cancels a detached attempt before deferred workspace acquisition starts', async () => {
+    const registry = new ActivityRegistry();
+    const agentActivity = activityName('agent-deferred-cancellation');
+    registry.register({
+      name: agentActivity,
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Agent,
+      handler: { execute: async () => ({ kind: 'done' }) },
+    });
+    let acquisitionStarted = false;
+    const clock = new FakeClock();
+    const service = createExecutionService(
+      new InMemoryEventJournal(clock),
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      {
+        clock,
+        ids: new SequentialIds(),
+        workspaces: {
+          async acquire() {
+            acquisitionStarted = true;
+            throw new Error('workspace acquisition should not start');
+          },
+        },
+      },
+    );
+
+    const preparing = await service.attempt(
+      {
+        ...activation,
+        activity: agentActivity,
+        execution: { workspace: 'read-only' as const },
+      },
+      { ...context, resources: [repositoryResource()] },
+    );
+    await service.requestCancellation(preparing.runId, 'operator');
+    await service.shutdown();
+
+    expect(acquisitionStarted).toBe(false);
+    expect((await service.list())[0]).toMatchObject({
+      runId: preparing.runId,
+      status: RunStatus.Cancelled,
+      cancellation: { reason: 'operator' },
+    });
+    expect(service.isLocallyActive(preparing.runId)).toBe(false);
+  });
+
+  it('propagates cancellation into an acquiring detached workspace and drains it', async () => {
+    const registry = new ActivityRegistry();
+    const scriptActivity = activityName('script-acquire-cancellation');
+    registry.register({
+      name: scriptActivity,
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Script,
+      handler: { execute: async () => ({ kind: 'done' }) },
+    });
+    const acquireEntered = deferred<void>();
+    let receivedSignal: AbortSignal | undefined;
+    const clock = new FakeClock();
+    const service = createExecutionService(
+      new InMemoryEventJournal(clock),
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      {
+        clock,
+        ids: new SequentialIds(),
+        workspaces: {
+          async acquire(request) {
+            receivedSignal = request.signal;
+            acquireEntered.resolve();
+            await new Promise<void>((_resolve, reject) => {
+              request.signal.addEventListener('abort', () => reject(request.signal.reason), {
+                once: true,
+              });
+            });
+            throw new Error('unreachable');
+          },
+        },
+      },
+    );
+
+    const preparing = await service.attempt(
+      {
+        ...activation,
+        activity: scriptActivity,
+        execution: { workspace: 'read-only' as const },
+      },
+      { ...context, resources: [repositoryResource()] },
+    );
+    await acquireEntered.promise;
+    await service.requestCancellation(preparing.runId, 'operator');
+    await service.shutdown();
+
+    expect(receivedSignal?.aborted).toBe(true);
+    expect((await service.list())[0]).toMatchObject({
+      runId: preparing.runId,
+      status: RunStatus.Cancelled,
+    });
+  });
+
+  it('shutdown cancels and drains a hung detached workspace acquisition exactly once', async () => {
+    const registry = new ActivityRegistry();
+    const agentActivity = activityName('agent-shutdown');
+    registry.register({
+      name: agentActivity,
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Agent,
+      handler: { execute: async () => ({ kind: 'done' }) },
+    });
+    const acquireEntered = deferred<void>();
+    const acquireAborted = deferred<void>();
+    const clock = new FakeClock();
+    const service = createExecutionService(
+      new InMemoryEventJournal(clock),
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      {
+        clock,
+        ids: new SequentialIds(),
+        workspaces: {
+          async acquire(request) {
+            acquireEntered.resolve();
+            await new Promise<void>((_resolve, reject) => {
+              request.signal.addEventListener(
+                'abort',
+                () => {
+                  acquireAborted.resolve();
+                  reject(request.signal.reason);
+                },
+                { once: true },
+              );
+            });
+            throw new Error('unreachable');
+          },
+        },
+      },
+    );
+
+    const preparing = await service.attempt(
+      {
+        ...activation,
+        activity: agentActivity,
+        execution: { workspace: 'read-only' as const },
+      },
+      { ...context, resources: [repositoryResource()] },
+    );
+    await acquireEntered.promise;
+    const firstShutdown = service.shutdown();
+    const secondShutdown = service.shutdown();
+    await acquireAborted.promise;
+    await Promise.all([firstShutdown, secondShutdown]);
+
+    expect((await service.list())[0]).toMatchObject({
+      runId: preparing.runId,
+      status: RunStatus.Cancelled,
+      cancellation: { reason: 'shutdown' },
+    });
+    await expect(
+      service.attempt(
+        { ...activation, activationId: activationId('closed-attempt'), activity: agentActivity },
+        context,
+      ),
+    ).rejects.toThrow('Execution service is shut down');
+  });
+
+  it('stops detached lease renewal before a recovery load that fails', async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = new ActivityRegistry();
+      const agentActivity = activityName('agent-recovery-load-failure');
+      registry.register({
+        name: agentActivity,
+        inputSchema: z.object({ prompt: z.string() }).strict(),
+        outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+        outcomeKinds: ['done'],
+        resources: [],
+        executionKind: ActivityExecutionKind.Agent,
+        handler: { execute: async () => ({ kind: 'done' }) },
+      });
+      const clock = new FakeClock();
+      const base = new InMemoryEventJournal(clock);
+      const recoveryLoadFailed = deferred<void>();
+      let runLoads = 0;
+      const journal: EventJournal = {
+        appendToStream: base.appendToStream.bind(base),
+        async readStream(stream) {
+          if (stream.id === 'run-1' && ++runLoads === 2) {
+            recoveryLoadFailed.resolve();
+            throw new Error('recovery load unavailable');
+          }
+          return base.readStream(stream);
+        },
+        readAll: base.readAll.bind(base),
+        latestGlobalPosition: base.latestGlobalPosition.bind(base),
+        waitForEventsAfter: base.waitForEventsAfter.bind(base),
+        readLatest: base.readLatest?.bind(base),
+        changeSignal: base.changeSignal,
+      };
+      const service = createExecutionService(
+        journal,
+        registry,
+        {
+          runnerPools: { standard: ['fake'] },
+          defaultRunnerPool: 'standard',
+          leaseDurationMs: 2,
+          leaseRenewalIntervalMs: 1,
+        },
+        {
+          clock,
+          ids: new SequentialIds(),
+          workspaces: { acquire: async () => Promise.reject(new Error('workspace unavailable')) },
+        },
+      );
+
+      await service.attempt(
+        {
+          ...activation,
+          activity: agentActivity,
+          execution: { workspace: 'read-only' as const },
+        },
+        { ...context, resources: [repositoryResource()] },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      await recoveryLoadFailed.promise;
+      await Promise.resolve();
+      clock.advance(1);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect((await base.readAll(0)).map(({ event }) => event.eventType)).not.toContain(
+        ExecutionEventType.RunLeaseRenewed,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps detached local ownership through workspace release and cleanup diagnostics', async () => {
     const registry = new ActivityRegistry();
     registry.register({

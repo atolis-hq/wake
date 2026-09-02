@@ -26,6 +26,7 @@ export class FakeWorkspaceProvider implements WorkspaceProvider {
   ) {}
 
   async acquire(request: WorkspaceRequest) {
+    request.signal.throwIfAborted();
     this.requests.push(request);
     if (this.prepareHook !== undefined) {
       this.prepareInvocations.push({ command: this.prepareHook.command, cwd: this.path });
@@ -36,6 +37,7 @@ export class FakeWorkspaceProvider implements WorkspaceProvider {
           `Fake workspace prepare hook (${this.prepareHook.command}) exited with code ${this.prepareOutcome.exitCode}`,
         );
     }
+    request.signal.throwIfAborted();
     return {
       workspaceId: `workspace-${this.requests.length}`,
       path: this.path,

@@ -5,6 +5,7 @@ import {
   createResidentRunnerAdvance,
 } from '../../../src/bootstrap/runner-tick-adapter.js';
 import {
+  closeResidentRuntime,
   createRunnerIdleWait,
   createSelfUpdateQuiescePort,
   createSurfaceCliApplications,
@@ -17,6 +18,23 @@ const testProcessorRuntime = {
   processors: [],
   catchUp: async () => 0,
 };
+
+it('shuts execution down before closing resident server resources', async () => {
+  const trace: string[] = [];
+
+  await closeResidentRuntime(
+    {
+      shutdown: async () => {
+        trace.push('execution');
+      },
+    },
+    async () => {
+      trace.push('servers');
+    },
+  );
+
+  expect(trace).toEqual(['execution', 'servers']);
+});
 
 function schedulerProcessor<T extends { readonly poke: (...args: never[]) => unknown }>(
   scheduler: T,

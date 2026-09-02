@@ -138,7 +138,7 @@ export function createSurfaceCliApplications(
           activationSchedulerSubscriber: root.activationSchedulerSubscriber,
           intakeResident,
           runnerResident,
-          close: () => closeAll(servers),
+          close: () => closeResidentRuntime(root.execution, () => closeAll(servers)),
         });
       },
     },
@@ -329,6 +329,22 @@ export async function runResidentLifecycle(input: ResidentLifecycleInput): Promi
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, 'Resident lifecycle failed');
   return result!;
+}
+
+interface ExecutionShutdown {
+  shutdown(): Promise<void>;
+}
+
+export async function closeResidentRuntime(
+  execution: ExecutionShutdown,
+  closeResources: () => Promise<void>,
+): Promise<void> {
+  const failures: unknown[] = [];
+  await captureAsyncCleanupFailure(failures, () => execution.shutdown());
+  await captureAsyncCleanupFailure(failures, closeResources);
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1)
+    throw new AggregateError(failures, 'Resident execution and resource cleanup failed');
 }
 
 function captureCleanupFailure(failures: unknown[], cleanup: () => void): void {

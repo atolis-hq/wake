@@ -6,6 +6,7 @@ import type { WorkspaceMode } from './vocabulary.js';
 
 export interface WorkspaceRequest {
   readonly runId: RunId;
+  readonly signal: AbortSignal;
   readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
   readonly workItemId: WorkItemId;
   readonly repositoryResource: ResourceView;

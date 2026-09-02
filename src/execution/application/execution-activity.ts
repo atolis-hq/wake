@@ -34,7 +34,18 @@ export interface ExecutionRuntime {
   readonly repository: RunRepository;
   readonly active: Map<string, AbortController>;
   readonly localAttempts: Set<string>;
+  readonly lifecycle: ExecutionLifecycle;
   readonly journal: EventJournal;
+}
+
+export interface ExecutionLifecycle {
+  closed: boolean;
+  shutdown: Promise<void> | undefined;
+  readonly attempts: Set<Promise<unknown>>;
+  readonly workers: Map<
+    string,
+    { readonly controller: AbortController; readonly completion: Promise<unknown> }
+  >;
 }
 
 export async function executeActivity(
@@ -62,7 +73,7 @@ export async function executeActivity(
   },
 ) {
   const { activation, context, occurredAt, runner } = request;
-  const controller = new AbortController();
+  const controller = activityController(runtime, currentRunId);
   runtime.active.set(currentRunId, controller);
   const executionContext: ActivityExecutionContext = {
     signal: controller.signal,
@@ -110,6 +121,13 @@ export async function executeActivity(
     },
     executionContext,
   );
+}
+
+function activityController(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+): AbortController {
+  return runtime.active.get(currentRunId) ?? new AbortController();
 }
 
 function runnerTimeoutReporter(
