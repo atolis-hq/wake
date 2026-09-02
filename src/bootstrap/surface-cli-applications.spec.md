@@ -65,11 +65,8 @@ application's own responses — it only decides when to serve them.
 - Starting `ui` MUST fail before opening a listening socket if the packaged
   web asset bundle is missing its entry document — this component MUST NOT
   silently fall back to serving an API-only server under the UI command.
-- `stop` MUST wait for every active execution run to reach a terminal state,
-  then close every HTTP server this CLI surface application itself started.
-  When `docker/Dockerfile` exists for the Wake home, it MUST then stop the
-  configured sandbox container and surface a Docker shutdown failure. It
-  MUST NOT otherwise discover or stop a server or resident loop running in a
+- `stop` MUST close every HTTP server this CLI surface application itself
+  started and MUST NOT affect a server or resident loop running in a
   different process.
 - `audit.read(id)` MUST return every event in the entire journal whose
   stream id matches the given id, across every stream kind — it is a raw
@@ -85,7 +82,9 @@ application's own responses — it only decides when to serve them.
 - `validateState.rebuildProjections` MUST rebuild every projection
   registered for production composition, from the full event journal, and
   MUST cover exactly the same set of projections supervised by the resident
-  projection runtime.
+  projection runtime. It MUST hold the shared maintenance lease while it
+  waits for active runs to drain and the rebuild executes, then release only
+  its own lease even when rebuilding fails.
 - `doctor` MUST report every configured provider that failed to construct
   during composition as a failure, in addition to actively probing every
   successfully-constructed provider's own connectivity check; a Docker

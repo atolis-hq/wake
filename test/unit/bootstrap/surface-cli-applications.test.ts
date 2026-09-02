@@ -5,9 +5,9 @@ import {
   createResidentRunnerAdvance,
 } from '../../../src/bootstrap/runner-tick-adapter.js';
 import {
+  createProjectionRebuildApplication,
   createRunnerIdleWait,
   createSelfUpdateQuiescePort,
-  createStopApplication,
   createSurfaceCliApplications,
   runResidentLifecycle,
 } from '../../../src/bootstrap/surface-cli-applications.js';
@@ -25,52 +25,77 @@ function schedulerProcessor<T extends { readonly poke: (...args: never[]) => unk
   return { ...scheduler, processor: {} as never, lastResult: () => undefined };
 }
 
-it('stops the configured sandbox only after active runs drain', async () => {
+it('quiesces active runs before rebuilding projections and releases its maintenance lease', async () => {
   const trace: string[] = [];
-  let checks = 0;
-  const application = createStopApplication({
-    activeRunIds: async () => (++checks === 1 ? ['run-1'] : []),
-    sleep: async () => {
-      trace.push('wait');
-    },
-    close: async () => {
-      trace.push('close');
-    },
-    sandbox: {
-      stop: async () => {
-        trace.push('sandbox');
+  let activeRunChecks = 0;
+  const application = createProjectionRebuildApplication({
+    maintenance: {
+      runExclusive: async (tag, retryFailed, operation) => {
+        trace.push(`acquire-and-pause:${tag}:${retryFailed}`);
+        return operation({ attemptId: 'rebuild-attempt', tag: 'projection-rebuild' });
+      },
+      clear: async (attemptId) => {
+        trace.push(`clear:${attemptId}`);
       },
     },
+    activeRunIds: async () => (++activeRunChecks === 1 ? ['run-1'] : []),
+    sleep: async () => {
+      trace.push('drain');
+    },
+    rebuild: async () => {
+      trace.push('rebuild');
+    },
   });
 
-  await application.stop();
+  await application.rebuild();
 
-  expect(trace).toEqual(['wait', 'close', 'sandbox']);
+  expect(trace).toEqual([
+    'acquire-and-pause:projection-rebuild:true',
+    'drain',
+    'rebuild',
+    'clear:rebuild-attempt',
+  ]);
 });
 
-it('preserves host-only stopping when no sandbox is configured', async () => {
-  const close = vi.fn(async () => undefined);
-  const application = createStopApplication({
+it('releases its maintenance lease when projection rebuild fails', async () => {
+  const failure = new Error('projection rebuild failed');
+  const clear = vi.fn(async () => undefined);
+  const application = createProjectionRebuildApplication({
+    maintenance: {
+      runExclusive: async (_tag, _retryFailed, operation) =>
+        operation({ attemptId: 'rebuild-attempt', tag: 'projection-rebuild' }),
+      clear,
+    },
     activeRunIds: async () => [],
     sleep: async () => undefined,
-    close,
+    rebuild: async () => Promise.reject(failure),
   });
 
-  await application.stop();
+  await expect(application.rebuild()).rejects.toBe(failure);
 
-  expect(close).toHaveBeenCalledOnce();
+  expect(clear).toHaveBeenCalledExactlyOnceWith('rebuild-attempt');
 });
 
-it('surfaces a configured sandbox shutdown failure', async () => {
-  const failure = new Error('sandbox unavailable');
-  const application = createStopApplication({
-    activeRunIds: async () => [],
+it('leaves a foreign maintenance lease in place and blocks projection rebuild', async () => {
+  const clear = vi.fn(async () => undefined);
+  const activeRunIds = vi.fn(async () => []);
+  const rebuild = vi.fn(async () => undefined);
+  const application = createProjectionRebuildApplication({
+    maintenance: {
+      runExclusive: async (_tag, _retryFailed, operation) =>
+        operation({ attemptId: 'update-attempt', tag: 'self-update' }),
+      clear,
+    },
+    activeRunIds,
     sleep: async () => undefined,
-    close: async () => undefined,
-    sandbox: { stop: async () => Promise.reject(failure) },
+    rebuild,
   });
 
-  await expect(application.stop()).rejects.toBe(failure);
+  await expect(application.rebuild()).rejects.toThrow('self-update');
+
+  expect(activeRunIds).not.toHaveBeenCalled();
+  expect(rebuild).not.toHaveBeenCalled();
+  expect(clear).not.toHaveBeenCalled();
 });
 
 it('drains subscriber scheduling progress through a one-shot tick budget while running the pipeline', async () => {

@@ -41,10 +41,10 @@ re-application of already-accepted facts, never a source of new events.
   derivable from `orchestration.*` facts alone.
 - This projection-shape upgrade is not backward-compatible with the retired
   `{ events, view }` values. When upgrading an existing Wake home, operators
-  MUST stop the resident with `wake stop`, run
-  `wake validate-state --rebuild-projections --no-sandbox`, then run
-  `wake sandbox up`. The rebuild replaces projection and checkpoint data from
-  the authoritative journal; it does not modify journal records.
+  MUST run `wake validate-state --rebuild-projections`. The command acquires
+  shared maintenance, waits for active runs to drain, then replaces projection
+  and checkpoint data from the authoritative journal without modifying journal
+  records.
 
 ## Dependencies and system role
 

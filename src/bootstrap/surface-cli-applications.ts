@@ -76,25 +76,45 @@ import { resolveWakeVersion, wakeVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
 
-/** Host-side lifecycle boundary for the configured sandbox container. */
-export interface SandboxStopPort {
-  stop(): Promise<unknown>;
+export interface ProjectionRebuildLease {
+  readonly attemptId: string;
+  readonly tag: string;
 }
 
-export interface StopApplicationInput {
+export interface ProjectionRebuildMaintenancePort {
+  runExclusive<Value>(
+    tag: string,
+    retryFailed: boolean,
+    operation: (lease: ProjectionRebuildLease) => Promise<Value>,
+  ): Promise<Value>;
+  clear(attemptId?: string): Promise<void>;
+}
+
+export interface ProjectionRebuildApplicationInput {
+  readonly maintenance: ProjectionRebuildMaintenancePort;
   readonly activeRunIds: () => Promise<readonly string[]>;
   readonly sleep: (milliseconds: number) => Promise<void>;
-  readonly close: () => Promise<void>;
-  readonly sandbox?: SandboxStopPort;
+  readonly rebuild: () => Promise<void>;
 }
 
-/** Drains durable activity work before closing local hosts and the sandbox. */
-export function createStopApplication(input: StopApplicationInput): { stop(): Promise<void> } {
+export const projectionRebuildMaintenanceTag = 'projection-rebuild';
+
+/** Holds the shared maintenance lease while durable work drains and views rebuild. */
+export function createProjectionRebuildApplication(input: ProjectionRebuildApplicationInput): {
+  rebuild(): Promise<void>;
+} {
   return {
-    async stop() {
-      await waitForActiveRuns({ activeRunIds: input.activeRunIds, sleep: input.sleep });
-      await input.close();
-      await input.sandbox?.stop();
+    async rebuild() {
+      await input.maintenance.runExclusive(projectionRebuildMaintenanceTag, true, async (lease) => {
+        if (lease.tag !== projectionRebuildMaintenanceTag)
+          throw new Error(`Projection rebuild is blocked by active maintenance: ${lease.tag}`);
+        try {
+          await waitForActiveRuns({ activeRunIds: input.activeRunIds, sleep: input.sleep });
+          await input.rebuild();
+        } finally {
+          await input.maintenance.clear(lease.attemptId);
+        }
+      });
     },
   };
 }
@@ -135,18 +155,6 @@ export function createSurfaceCliApplications(
   );
   const servers = new Set<FastifyInstance>();
   const startHttp = createHttpStarter(root, api, servers);
-  const stop = createStopApplication({
-    activeRunIds: () => activeExecutionRunIds(root),
-    sleep: async (milliseconds) =>
-      new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
-    close: () => closeAll(servers),
-    sandbox: {
-      async stop() {
-        if (!(await hasSandboxDockerfile(root))) return;
-        await createSandboxDocker(root).down();
-      },
-    },
-  });
   return {
     tick: {
       async run(budget) {
@@ -177,7 +185,16 @@ export function createSurfaceCliApplications(
         });
       },
     },
-    stop,
+    stop: {
+      stop: async () => {
+        await waitForActiveRuns({
+          activeRunIds: () => activeExecutionRunIds(root),
+          sleep: async (milliseconds) =>
+            new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
+        });
+        await closeAll(servers);
+      },
+    },
     api: { start: (options) => startHttp(options, false) },
     ui: { start: (options) => startHttp(options, true) },
     auth: {
@@ -592,20 +609,18 @@ function createSandboxRuntimeApplications(root: CompositionRoot) {
   const docker = createSandboxDocker(root);
   const wakeInvocation = sandboxWakeInvocation(root);
   return {
-    hasDockerfile: () => hasSandboxDockerfile(root),
+    async hasDockerfile(): Promise<boolean> {
+      try {
+        await access(join(root.paths.wakeRoot, 'docker', 'Dockerfile'));
+        return true;
+      } catch {
+        return false;
+      }
+    },
     async exec(arguments_: readonly string[]): Promise<void> {
       await docker.exec([...wakeInvocation, ...arguments_]);
     },
   };
-}
-
-async function hasSandboxDockerfile(root: Pick<CompositionRoot, 'paths'>): Promise<boolean> {
-  try {
-    await access(join(root.paths.wakeRoot, 'docker', 'Dockerfile'));
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -1007,6 +1022,15 @@ function unsupportedOperationalCommand(command: string): never {
 }
 
 function createValidationApplications(root: CompositionRoot) {
+  const projectionRebuild = createProjectionRebuildApplication({
+    maintenance: root.maintenance,
+    activeRunIds: () => activeExecutionRunIds(root),
+    sleep: (milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
+    rebuild: async () => {
+      for (const definition of runtimeProjectionDefinitions)
+        await root.projectionSubscriptions.rebuild(definition);
+    },
+  });
   return {
     async health() {
       await root.journal.readAll(0, 1);
@@ -1014,10 +1038,7 @@ function createValidationApplications(root: CompositionRoot) {
       await root.checkpoints.load('surface-health');
       return { journal: 'ok', projections: 'ok', checkpoints: 'ok' };
     },
-    async rebuildProjections() {
-      for (const definition of runtimeProjectionDefinitions)
-        await root.projectionSubscriptions.rebuild(definition);
-    },
+    rebuildProjections: () => projectionRebuild.rebuild(),
   };
 }
 

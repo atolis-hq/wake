@@ -101,9 +101,9 @@ Eventing filesystem package codec, while the in-memory adapter keeps the nested
 envelope model. The journal needs no migration for that storage compatibility
 boundary. The orchestration workflow-instance projection now stores its view
 directly; when upgrading an existing Wake home to that projection shape, run
-`wake stop`, then `wake validate-state --rebuild-projections --no-sandbox`,
-then `wake sandbox up`. The rebuild replaces projection/checkpoint data from
-the journal and does not modify journal records.
+`wake validate-state --rebuild-projections`. The command acquires shared
+maintenance, drains active runs, then rebuilds projection/checkpoint data from
+the journal without modifying journal records.
 
 Projections are derived read models. `ProjectionStore` stores their
 namespaced, position-tracked values and they may always be rebuilt from the

@@ -7,7 +7,7 @@ export const usage = [
   '  wake tick                  Run one control-plane tick',
   '  wake start                 Run the resident loop',
   '  wake validate-state        Validate .wake/ control-plane state health',
-  '  wake stop                  Drain active runs and stop the sandbox',
+  '  wake stop                  Wait for active runs to finish',
   '  wake smoke                 Smoke-test the configured runner',
   '  wake ui                    Run the control-plane UI server',
   '  wake ui token              Print the UI login access key',

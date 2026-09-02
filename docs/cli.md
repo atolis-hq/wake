@@ -13,7 +13,7 @@ walkthrough and [Configuration](configuration.md) for Wake-home settings.
 | `wake init <path>` | Scaffolds an empty Wake home with configuration, prompts, setup guide, workspace directory, Dockerfiles, and empty durable-state directories. To use a source checkout, set `host.development.mode: source` and `host.development.repoRoot` in `config.yaml` after initialization. |
 | `wake tick` | Runs one bounded control-plane advancement pass. |
 | `wake start` | Runs the resident advancement loop. |
-| `wake stop` | Waits for active runs to finish, closes local hosts, and stops the configured sandbox for a sandbox-backed Wake home. |
+| `wake stop` | Waits for active runs to finish before stopping the resident flow. |
 | `wake ui` | Starts the web UI surface; its API host and port come from `surfaces.api`. |
 | `wake api` | Starts the target API surface. |
 | `wake smoke` | Starts a smoke invocation using the configured default runner pool. |
@@ -63,10 +63,8 @@ scheduler. Use `wake doctor` after initialization and sandbox build, and use
   Run's Activity validates a successful outcome before Wake records it.
 - `wake validate-state [--rebuild-projections]` checks durable state health.
   The optional flag rebuilds projections from the authoritative journal; it
-  does not replace or discard journal facts.
-- `wake stop` waits for active runs to finish, then closes local hosts and
-  stops the configured sandbox when `docker/Dockerfile` exists. For a safe
-  projection upgrade, run `wake stop`, then
-  `wake validate-state --rebuild-projections --no-sandbox`, then
-  `wake sandbox up`. `wake doctor` is the host-side diagnostic to run after
-  initialization and after a sandbox build.
+  pauses scheduling through shared maintenance and waits for active runs to
+  drain. It does not replace or discard journal facts.
+- `wake stop` waits for active runs to finish before it stops the resident
+  flow. `wake doctor` is the host-side diagnostic to run after initialization
+  and after a sandbox build.
