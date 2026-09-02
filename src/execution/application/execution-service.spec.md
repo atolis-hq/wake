@@ -174,11 +174,13 @@ workspace mechanics itself — it only resolves and invokes them.
   instead. Only validation, claim, or another error before preparation creates
   the Run propagates unchanged to the caller.
 - Whether the attempt succeeds, fails, or the Run was already moved to a
-  terminal status by a concurrent cancellation, the Activation claim MUST
-  be released, the tracked `AbortController` and local-attempt marker MUST be removed, and any
-  acquired workspace lease MUST be released — in that order — before the
-  deterministic attempt returns, or before the detached worker ends for an
-  agent- or script-kind attempt. A workspace lease's
+  terminal status by a concurrent cancellation, cleanup MUST release the
+  Activation claim, remove any tracked `AbortController`, release any acquired
+  workspace lease, and best-effort persist a workspace-cleanup diagnostic, in
+  that order as applicable. A deterministic completion removes its local-attempt
+  marker at the end of that cleanup. An agent- or script-kind worker preserves
+  the marker through cleanup and its final Run reload; only the outer scheduled
+  worker promise's `finally` removes it. A workspace lease's
   `release()` failing MUST NOT propagate from `attempt`: it MUST instead be
   recorded as a `RunWorkspaceCleanupFailed` diagnostic fact on the Run, and
   recording that diagnostic is itself best-effort — a failure while
