@@ -1,7 +1,7 @@
 # Execution service — Component Specification
 
 ---
-asOf: 725a0bc
+asOf: 2b630543ef6ff897ef137eacaa7a833fa5cc3f29
 ---
 
 ## Type, purpose, and scope
@@ -110,6 +110,10 @@ workspace mechanics itself — it only resolves and invokes them.
   immediately and schedules a detached local worker for a later event-loop
   turn. No workspace-provider acquisition code runs before that return; the
   detached worker owns the remaining lifecycle.
+- Before returning an agent- or script-kind `starting` view, Execution MUST
+  register that detached worker and its `AbortController` as service-owned.
+  The same signal MUST cover deferred startup, workspace acquisition, and the
+  Activity handler so cancellation has no gap between those phases.
 - Once claimed, a workspace MUST be acquired when the Activation requests
   `read-only` or `branch` mode, and MUST NOT be acquired for `none`
   (including when no mode is specified). Acquiring for a non-`none` mode
@@ -138,6 +142,9 @@ workspace mechanics itself — it only resolves and invokes them.
   only when the detached worker actually finishes; a fresh process has no
   tracked worker and therefore remains responsible for reconciling an expired
   durable Run after restart.
+- Stopping lease renewal MUST be an unconditional worker-finalization action.
+  A repository read failing while recovery tries to settle an attempt MUST NOT
+  leave its renewal timer running.
 - If a cancellation request is observed before `RunStarted`, Execution MUST
   confirm it itself before cleanup, whether preparation subsequently completes
   or throws; request-only cancellation therefore reaches the same terminal
@@ -191,6 +198,12 @@ workspace mechanics itself — it only resolves and invokes them.
   other failure during deterministic execution surfaces as a normally returned
   `RunView` with status `failed`; for an agent- or script-kind attempt, the
   detached worker records the same durable failed status for later observation.
+- `shutdown` MUST be idempotent, reject later `attempt` calls predictably, wait
+  for already-entered attempts to finish establishing ownership, request
+  cancellation of every owned detached worker with reason `shutdown`, abort its
+  controller even when durable cancellation fails, and await every worker's
+  completion. Resident shutdown invokes this drain before closing server
+  resources that terminal cleanup may still need.
 
 ## Conceptual schema
 

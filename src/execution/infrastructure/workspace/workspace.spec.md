@@ -1,7 +1,7 @@
 # Workspace adapters — Component Specification
 
 ---
-asOf: 0c5a46c
+asOf: 2b630543ef6ff897ef137eacaa7a833fa5cc3f29
 ---
 
 ## Type, purpose, and scope
@@ -33,6 +33,10 @@ cleanup service.
 - `acquire` MUST only ever be called for `read-only` or `branch` mode; the
   contract's request type does not admit `none` — a Run with workspace mode
   `none` never reaches a workspace adapter at all.
+- `acquire` MUST receive the owning attempt's `AbortSignal`. The real adapter
+  MUST propagate it through clone-locator resolution, Git clone/switch
+  processes, and the configured prepare-hook process, and MUST re-check it
+  around filesystem operations that cannot consume a signal directly.
 - The real adapter MUST derive the workspace's directory name
   deterministically from the requesting `workItemId` and the repository
   resource's resolved clone locator (lower-cased, non-alphanumeric runs
@@ -83,6 +87,7 @@ cleanup service.
 | --- | --- | --- |
 | `mode` | closed vocabulary: `read-only` / `branch` | The requested isolation level; `none` never reaches this contract. |
 | `runId` | Run identity (owned by Execution) | Identifies the durable owner written into the marker before clone. |
+| `signal` | AbortSignal | Cancels preparation when the Run or Execution service is shutting down. |
 | `workItemId` | WorkItem identity (owned by Work) | Keys the real adapter's directory name. |
 | `repositoryResource` | Resource view (owned by Resources) | The repository the workspace is prepared from; its resolved clone locator also keys the directory name. |
 

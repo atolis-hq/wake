@@ -1,5 +1,5 @@
 ---
-asOf: d3f82ad8
+asOf: 2b630543ef6ff897ef137eacaa7a833fa5cc3f29
 ---
 
 # Execution — Module Specification
@@ -258,7 +258,7 @@ sequence; it does not construct envelope metadata or a processor host.
 | [Activation claim](application/activation-claim.spec.md) | aggregate | The single-flight claim on the activation-claim stream | Blocks a second concurrent attempt at the same Activation; released when the claiming Run finishes. |
 | [Run liveness and cancellation](application/run-liveness-service.spec.md) | policy/process | Lease claim/renewal and the cancellation request/confirm protocol | Keeps a Run's ownership current and lets an operator, Control-plane, or shutdown stop an active Run. |
 | [Recovery](application/recovery-service.spec.md) | policy/process | Reconciling an expired-lease Run with its real external execution | Runs before new work is dispatched so a crashed owner's Runs are resolved before they are touched again. |
-| [Execution service](application/execution-service.spec.md) | surface application | The `attempt`/`list`/`claim`/cancellation entry points; runner resolution, resource validation, workspace acquisition, and activation-claim orchestration around one attempt | The only path by which Orchestration or Control-plane reaches Execution's behaviour. |
+| [Execution service](application/execution-service.spec.md) | surface application | The `attempt`/`list`/`claim`/cancellation/`shutdown` entry points; runner resolution, resource validation, workspace acquisition, detached-worker ownership, and activation-claim orchestration around one attempt | The only path by which Orchestration or Control-plane reaches Execution's behaviour. |
 | [Runner adapters](infrastructure/runners/runners.spec.md) | adapter | Translating a `RunnerRequest` into an invoked CLI/process/fake and back into an `AgentRunnerResult` | Invoked by the Execution service once per attempt of an agent-kind Activity; enforces the wall-clock timeout. |
 | [Agent run response translation](infrastructure/agent-runner-adapter.spec.md) | adapter | Parsing an agent-kind runner's raw `AgentRunnerResult` output into the structured `AgentRunResponse` attached to `RunRunnerResultReported` | Invoked by the Execution service immediately before recording a runner's result onto the Run; downstream consumers (for example the API surface and Integrations) read `RunView.agent` rather than re-parsing raw output themselves. |
 | [Workspace adapters](infrastructure/workspace/workspace.spec.md) | adapter | Preparing and releasing an isolated working directory for a Run | Invoked by the Execution service when a workspace mode other than `none` is requested. |

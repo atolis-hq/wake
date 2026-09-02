@@ -1,7 +1,7 @@
 # CLI surface application — Component Specification
 
 ---
-asOf: 725a0bc
+asOf: 2b630543ef6ff897ef137eacaa7a833fa5cc3f29
 ---
 
 ## Type, purpose, and scope
@@ -46,7 +46,11 @@ application's own responses — it only decides when to serve them.
   touches a rate-limited external API; the runner loop instead backs off only
   on a run of consecutive tick *errors*, staying on a fast fixed cadence while
   merely idle. `start` MUST abort all of those owned runs before awaiting their
-  completion, then close any HTTP server it opened.
+  completion, then shut down Execution so its detached agent/script workers
+  receive durable `shutdown` cancellation, abort workspace preparation, and
+  drain. Only after that drain may it close any HTTP server it opened; a drain
+  failure does not prevent server cleanup, and failures from both phases are
+  preserved.
 - Both pipelines MUST stop operational work while the composed control plane
   reports itself paused while the independently supervised projections continue
   advancing from durable events; `tick`, `start`'s two resident loops, and the API surface
