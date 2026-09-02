@@ -1,7 +1,7 @@
 # Execution service — Component Specification
 
 ---
-asOf: c75a0456ed0e6768d5bf87f46107ffea4b91f8cd
+asOf: 5371460dc51a9d9579d5be8485eec965d9eb4ff5
 ---
 
 ## Type, purpose, and scope
@@ -204,11 +204,16 @@ workspace mechanics itself — it only resolves and invokes them.
   It MUST own deterministic and agent/script work uniformly: start a durable
   cancellation request with reason `shutdown`, abort each locally tracked
   controller without waiting for that journal operation, and await all
-  attempt-establishment, cancellation, and completion promises. It MUST repeat
-  this snapshot/drain boundary until none remain, so ownership created by an
-  in-flight attempt cannot escape between snapshots. Resident shutdown invokes
-  this drain before closing server resources that terminal cleanup may still
-  need.
+  attempt-establishment, cancellation, and completion promises. Failure
+  settlement caused by that abort MUST await the same Run's keyed shutdown
+  cancellation promise before deciding between `cancelled` and `failed`, so a
+  successful cancellation append wins even when an abort-aware handler throws
+  immediately. A rejected cancellation append MUST instead allow normal failure
+  settlement. The keyed promise remains observable until recovery/cleanup or
+  worker finalization completes. Shutdown MUST repeat this snapshot/drain
+  boundary until none remain, so ownership created by an in-flight attempt
+  cannot escape between snapshots. Resident shutdown invokes this drain before
+  closing server resources that terminal cleanup may still need.
 
 ## Conceptual schema
 
