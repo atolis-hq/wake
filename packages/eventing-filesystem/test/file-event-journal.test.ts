@@ -706,7 +706,7 @@ it('invalidates entry validation when a watcher reports an external append', asy
   const writer = new FileEventJournal(root, clock);
   await writer.appendToStream(stream, 0, [journalDraft('event-1')]);
   const watcher = controlledWatcherFactory();
-  let validationTime = 0;
+  const validationTime = 0;
   const reader = new FileEventJournal(root, clock, {
     validationNow: () => validationTime,
     watcherFactory: watcher.factory,

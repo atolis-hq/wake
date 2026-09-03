@@ -80,6 +80,7 @@ export class FileEventJournal implements EventJournal {
   private scanGeneration = 0;
   private validatedEntries:
     { readonly entries: readonly FileStat[]; readonly expiresAt: number } | undefined;
+
   private inFlightEntryRefresh: Promise<readonly FileStat[]> | undefined;
   private entryValidationGeneration = 0;
 
