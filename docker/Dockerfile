@@ -83,4 +83,4 @@ ENV WAKE_MAIN_JS=/app/dist/src/main.js
 # a recursive chown can race a file disappearing mid-walk. That single ENOENT
 # must not be fatal under set -eu — it would otherwise crash the container
 # before wake start ever runs.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake || true; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]

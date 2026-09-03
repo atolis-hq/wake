@@ -67,4 +67,4 @@ EXPOSE 4317
 # a recursive chown can race a file disappearing mid-walk. That single ENOENT
 # must not be fatal under set -eu — it would otherwise crash the container
 # before wake start ever runs.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake || true; exec su wake -s /bin/sh -c 'exec wake sandbox-entrypoint'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; exec su wake -s /bin/sh -c 'exec wake sandbox-entrypoint'"]

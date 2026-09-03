@@ -182,7 +182,8 @@ describe('target initialise root', () => {
       const dockerfile = await readFile(join(root, 'docker', filename), 'utf8');
 
       expect(dockerfile).toContain('mkdir -p /wake/.wake');
-      expect(dockerfile).toContain('chown -R wake:wake /wake/.wake');
+      expect(dockerfile).toContain('chown wake:wake /wake/.wake');
+      expect(dockerfile).not.toContain('chown -R wake:wake /wake/.wake');
       expect(dockerfile).toContain('su wake');
     }
   });
@@ -193,7 +194,8 @@ describe('target initialise root', () => {
 
       expect(dockerfile).toContain('USER root');
       expect(dockerfile).toContain('mkdir -p /wake/.wake');
-      expect(dockerfile).toContain('chown -R wake:wake /wake/.wake');
+      expect(dockerfile).toContain('chown wake:wake /wake/.wake');
+      expect(dockerfile).not.toContain('chown -R wake:wake /wake/.wake');
       expect(dockerfile).toContain('su wake');
     }
   });
@@ -206,12 +208,10 @@ describe('target initialise root', () => {
       const scaffolded = await readFile(join(root, 'docker', filename), 'utf8');
       const repository = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
 
-      // self-update actively creates and deletes its own lock files under the
-      // bind-mounted /wake/.wake while this entrypoint is running, so a
-      // recursive chown can race a file disappearing mid-walk; that single
-      // ENOENT must not be fatal under `set -eu`.
-      expect(scaffolded).toContain('chown -R wake:wake /wake/.wake || true');
-      expect(repository).toContain('chown -R wake:wake /wake/.wake || true');
+      expect(scaffolded).toContain('chown wake:wake /wake/.wake || true');
+      expect(scaffolded).not.toContain('chown -R wake:wake /wake/.wake');
+      expect(repository).toContain('chown wake:wake /wake/.wake || true');
+      expect(repository).not.toContain('chown -R wake:wake /wake/.wake');
     }
   });
 });
