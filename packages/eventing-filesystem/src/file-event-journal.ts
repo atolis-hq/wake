@@ -11,6 +11,7 @@ import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
 import { watch } from 'node:fs';
 import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { writeFileAtomically } from './atomic-write.js';
 import { decodeEventRecord, encodeEventRecord } from './event-record-codec.js';
 import { withFileLock } from './file-lock.js';
@@ -28,9 +29,7 @@ export type FileEventJournalWatcherFactory = (
 
 export interface FileEventJournalOptions {
   readonly watcherFactory?: FileEventJournalWatcherFactory;
-  readonly entryReader?: () => Promise<
-    readonly { readonly file: string; readonly size: number; readonly mtimeMs: number }[]
-  >;
+  readonly validationNow?: () => number;
 }
 
 const createFileSystemWatcher: FileEventJournalWatcherFactory = async (directory, notify) =>
@@ -39,11 +38,15 @@ const createFileSystemWatcher: FileEventJournalWatcherFactory = async (directory
 const entryValidationTtlMs = 30_000;
 
 export class FileEventJournal implements EventJournal {
+  private readonly validationNow: () => number;
+
   constructor(
     private readonly root: string,
     private readonly clock: EventingClock,
     private readonly options: FileEventJournalOptions = {},
-  ) {}
+  ) {
+    this.validationNow = options.validationNow ?? (() => performance.now());
+  }
 
   private readonly changeSignalSource = new InProcessJournalChangeSignal();
   private changeWatcher: FileEventJournalWatcher | undefined;
@@ -361,7 +364,6 @@ export class FileEventJournal implements EventJournal {
   }
 
   private async readCurrentEntries(): Promise<FileStat[]> {
-    if (this.options.entryReader !== undefined) return [...(await this.options.entryReader())];
     const directory = join(this.root, 'events');
     let files: string[];
     try {
@@ -381,7 +383,7 @@ export class FileEventJournal implements EventJournal {
   }
 
   private async readEntriesForRead(): Promise<readonly FileStat[]> {
-    const now = this.clock.now().getTime();
+    const now = this.validationNow();
     if (this.validatedEntries !== undefined && this.validatedEntries.expiresAt > now)
       return this.validatedEntries.entries;
     if (this.inFlightEntryRefresh !== undefined) return this.inFlightEntryRefresh;
@@ -405,7 +407,7 @@ export class FileEventJournal implements EventJournal {
     this.entryValidationGeneration += 1;
     this.validatedEntries = {
       entries,
-      expiresAt: this.clock.now().getTime() + entryValidationTtlMs,
+      expiresAt: this.validationNow() + entryValidationTtlMs,
     };
     if (replacesInFlightRefresh) this.inFlightEntryRefresh = undefined;
   }
