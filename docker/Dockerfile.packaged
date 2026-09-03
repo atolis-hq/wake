@@ -64,7 +64,7 @@ EXPOSE 4317
 #
 # /wake/.wake is bind-mounted from the host and self-update actively creates
 # and deletes its own lock files there while this container is starting, so
-# a recursive chown can race a file disappearing mid-walk. That single ENOENT
+# bounded ownership repair may observe a directory disappearing. Its failures
 # must not be fatal under set -eu — it would otherwise crash the container
 # before wake start ever runs.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; exec su wake -s /bin/sh -c 'exec wake sandbox-entrypoint'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; exec su wake -s /bin/sh -c 'exec wake sandbox-entrypoint'"]

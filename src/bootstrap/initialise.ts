@@ -407,10 +407,10 @@ ENV WAKE_MAIN_JS=/app/dist/src/main.js
 #
 # /wake/.wake is bind-mounted from the host and self-update actively creates
 # and deletes its own lock files there while this container is starting, so
-# a recursive chown can race a file disappearing mid-walk. That single ENOENT
+# bounded ownership repair may observe a directory disappearing. Its failures
 # must not be fatal under set -eu — it would otherwise crash the container
 # before wake start ever runs.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
 `;
 
 const packagedDockerfile = `# syntax=docker/dockerfile:1
@@ -477,10 +477,10 @@ EXPOSE 4317
 #
 # /wake/.wake is bind-mounted from the host and self-update actively creates
 # and deletes its own lock files there while this container is starting, so
-# a recursive chown can race a file disappearing mid-walk. That single ENOENT
+# bounded ownership repair may observe a directory disappearing. Its failures
 # must not be fatal under set -eu — it would otherwise crash the container
 # before wake start ever runs.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
 `;
 
 /** Creates an immediately-valid, human-readable target Wake root. */

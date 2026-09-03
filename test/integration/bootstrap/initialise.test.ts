@@ -6,6 +6,14 @@ import { loadConfig } from '../../../src/bootstrap/config/load-config.js';
 import { initialiseWakeRoot } from '../../../src/bootstrap/initialise.js';
 import { loadPromptTemplate, renderPromptTemplate } from '../../../src/execution/index.js';
 
+function expectBoundedWakeOwnershipRepair(dockerfile: string): void {
+  expect(dockerfile).toContain('chown wake:wake /wake/.wake || true');
+  expect(dockerfile).toContain(
+    'find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true',
+  );
+  expect(dockerfile).not.toMatch(/chown\s+(?:-R|--recursive)\s+wake:wake\s+\/wake\/\.wake/);
+}
+
 describe('target initialise root', () => {
   it('creates the visible sandbox build asset and all target runtime roots', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
@@ -182,8 +190,7 @@ describe('target initialise root', () => {
       const dockerfile = await readFile(join(root, 'docker', filename), 'utf8');
 
       expect(dockerfile).toContain('mkdir -p /wake/.wake');
-      expect(dockerfile).toContain('chown wake:wake /wake/.wake');
-      expect(dockerfile).not.toContain('chown -R wake:wake /wake/.wake');
+      expectBoundedWakeOwnershipRepair(dockerfile);
       expect(dockerfile).toContain('su wake');
     }
   });
@@ -194,13 +201,12 @@ describe('target initialise root', () => {
 
       expect(dockerfile).toContain('USER root');
       expect(dockerfile).toContain('mkdir -p /wake/.wake');
-      expect(dockerfile).toContain('chown wake:wake /wake/.wake');
-      expect(dockerfile).not.toContain('chown -R wake:wake /wake/.wake');
+      expectBoundedWakeOwnershipRepair(dockerfile);
       expect(dockerfile).toContain('su wake');
     }
   });
 
-  it('does not let a bind-mounted .wake ownership race fail the entrypoint under set -eu', async () => {
+  it('keeps bounded .wake ownership repair best effort under set -eu', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
 
@@ -208,10 +214,8 @@ describe('target initialise root', () => {
       const scaffolded = await readFile(join(root, 'docker', filename), 'utf8');
       const repository = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
 
-      expect(scaffolded).toContain('chown wake:wake /wake/.wake || true');
-      expect(scaffolded).not.toContain('chown -R wake:wake /wake/.wake');
-      expect(repository).toContain('chown wake:wake /wake/.wake || true');
-      expect(repository).not.toContain('chown -R wake:wake /wake/.wake');
+      expectBoundedWakeOwnershipRepair(scaffolded);
+      expectBoundedWakeOwnershipRepair(repository);
     }
   });
 });
