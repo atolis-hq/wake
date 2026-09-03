@@ -214,6 +214,7 @@ describe('target initialise root', () => {
       const scaffolded = await readFile(join(root, 'docker', filename), 'utf8');
       const repository = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
 
+      expect(scaffolded).toContain('find /wake/.wake -mindepth 1 -maxdepth 1 -type d');
       expectBoundedWakeOwnershipRepair(scaffolded);
       expectBoundedWakeOwnershipRepair(repository);
     }
