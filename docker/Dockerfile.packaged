@@ -62,9 +62,7 @@ EXPOSE 4317
 # `wake` binary that `npm install -g` puts on PATH, rather than a hardcoded
 # npm global lib path that varies by npm/OS setup.
 #
-# /wake/.wake is bind-mounted from the host and self-update actively creates
-# and deletes its own lock files there while this container is starting, so
-# bounded ownership repair may observe a directory disappearing. Its failures
-# must not be fatal under set -eu — it would otherwise crash the container
-# before wake start ever runs.
+# Startup ownership repair is best effort because bind-mounted paths or host
+# permissions may prevent chown. The bounded direct-child pass avoids traversing
+# accumulated runtime data.
 ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; exec su wake -s /bin/sh -c 'exec wake sandbox-entrypoint'"]

@@ -78,9 +78,7 @@ EXPOSE 4317
 # that's fine since it's the very first thing that runs.
 ENV WAKE_MAIN_JS=/app/dist/src/main.js
 
-# /wake/.wake is bind-mounted from the host and self-update actively creates
-# and deletes its own lock files there while this container is starting, so
-# bounded ownership repair may observe a directory disappearing. Its failures
-# must not be fatal under set -eu — it would otherwise crash the container
-# before wake start ever runs.
+# Startup ownership repair is best effort because bind-mounted paths or host
+# permissions may prevent chown. The bounded direct-child pass avoids traversing
+# accumulated runtime data.
 ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]
