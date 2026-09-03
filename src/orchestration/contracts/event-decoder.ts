@@ -119,6 +119,7 @@ export const activityRequestedSchema = z
     input: z.unknown(),
     execution: executionSchema.optional(),
     followOnIndex: z.number().int().nonnegative().optional(),
+    sessionPolicy: z.literal('fresh').optional(),
     supplemental: z.literal(true).optional(),
   })
   .strict();

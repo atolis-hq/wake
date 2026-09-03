@@ -114,6 +114,26 @@ it('returns the active common host instead of starting the registry twice', asyn
   await expect(first.done).resolves.toBeUndefined();
 });
 
+it('freezes registration at start and does not partially register an invalid batch', async () => {
+  const runtime = new EventProcessorRuntime(
+    new InMemoryEventJournal(clock),
+    new InMemoryCheckpointStore(),
+    createInMemoryProcessorRunSerialiser(),
+    clock,
+  );
+  const first = processor('reactor:first', 'first', async () => undefined);
+  const duplicate = processor('reactor:duplicate', 'duplicate', async () => undefined);
+
+  expect(() => runtime.register([first, duplicate, duplicate])).toThrow(/already registered/i);
+  expect(runtime.processors).toEqual([]);
+
+  runtime.register([first]);
+  const run = runtime.start();
+  expect(() => runtime.register([duplicate])).toThrow(/started/i);
+  run.abort();
+  await expect(run.done).resolves.toBeUndefined();
+});
+
 function processor(consumer: string, name: string, handle: () => Promise<void>) {
   return defineEventProcessor({
     consumer,

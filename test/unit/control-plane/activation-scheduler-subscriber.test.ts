@@ -42,7 +42,7 @@ interface LegacyProcessorHost {
     | undefined;
 }
 
-function createActivationSchedulerSubscriber(
+function createSupervisedSubscriberHarness(
   hostOrScheduler: LegacyProcessorHost | ActivationScheduler,
   schedulerOrOptions: ActivationScheduler | Parameters<typeof createProcessorSubscriber>[1] = {},
   options: Parameters<typeof createProcessorSubscriber>[1] = {},
@@ -76,7 +76,7 @@ describe('ActivationSchedulerSubscriber', () => {
     const scheduler: ActivationScheduler = {
       runOnce: vi.fn(async () => ({ dispatched: 0, recovered: 0, advanced: 0 }) as never),
     };
-    const subscriber = createActivationSchedulerSubscriber(
+    const subscriber = createSupervisedSubscriberHarness(
       {
         start: () => ({ abort() {}, done: new Promise<void>(() => {}) }),
         health: () => undefined,
@@ -144,7 +144,7 @@ describe('ActivationSchedulerSubscriber', () => {
         return result;
       },
     };
-    const subscriber = createActivationSchedulerSubscriber(
+    const subscriber = createSupervisedSubscriberHarness(
       new EventProcessorHost(journal, checkpoint, createFileProcessorRunSerialiser(root), clock),
       scheduler,
       { fallbackMs: 60_000 },
@@ -202,7 +202,7 @@ describe('ActivationSchedulerSubscriber', () => {
         schedulerSerialiser: createFileActivationSchedulerSerialiser(root),
       },
     );
-    const subscriber = createActivationSchedulerSubscriber(
+    const subscriber = createSupervisedSubscriberHarness(
       {
         start: () => ({ abort: () => undefined, done: Promise.resolve() }),
         health: () => undefined,
@@ -258,7 +258,7 @@ describe('ActivationSchedulerSubscriber', () => {
         schedulerSerialiser: createFileActivationSchedulerSerialiser(root),
       },
     );
-    const subscriber = createActivationSchedulerSubscriber(
+    const subscriber = createSupervisedSubscriberHarness(
       {
         start: (_subscriptions, signal) => {
           const stopped = deferred<void>();
@@ -298,7 +298,7 @@ describe('ActivationSchedulerSubscriber', () => {
     const fallbackEntered = deferred<void>();
     const fallbackStopped = deferred<void>();
     const scheduler: ActivationScheduler = { runOnce: vi.fn(() => startup.promise) };
-    const subscriber = createActivationSchedulerSubscriber(
+    const subscriber = createSupervisedSubscriberHarness(
       {
         start: () => ({ abort: () => durableStopped.resolve(), done: durableStopped.promise }),
         health: () => undefined,
@@ -341,7 +341,7 @@ describe('ActivationSchedulerSubscriber', () => {
         throw schedulerFailure;
       }),
     };
-    const subscriber = createActivationSchedulerSubscriber(
+    const subscriber = createSupervisedSubscriberHarness(
       new EventProcessorHost(
         journal,
         new InMemoryCheckpointStore(),
@@ -381,7 +381,7 @@ describe('ActivationSchedulerSubscriber', () => {
         .mockRejectedValueOnce(secondFailure)
         .mockResolvedValueOnce({ kind: 'no-work' }),
     };
-    const subscriber = createActivationSchedulerSubscriber(
+    const subscriber = createSupervisedSubscriberHarness(
       {
         start: (_subscriptions, signal) => {
           signal?.addEventListener('abort', () => durableStopped.resolve(), { once: true });
@@ -447,7 +447,7 @@ describe('ActivationSchedulerSubscriber', () => {
     const scheduler: ActivationScheduler = {
       runOnce: vi.fn(async () => ({ kind: 'no-work' as const })),
     };
-    const subscriber = createActivationSchedulerSubscriber(
+    const subscriber = createSupervisedSubscriberHarness(
       new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser(), clock),
       scheduler,
       { fallbackMs: 60_000 },
@@ -501,7 +501,7 @@ describe('ActivationSchedulerSubscriber', () => {
         throw new Error('failed');
       }),
     };
-    const subscriber = createActivationSchedulerSubscriber(
+    const subscriber = createSupervisedSubscriberHarness(
       new EventProcessorHost(journal, checkpoints, createInMemoryProcessorRunSerialiser(), clock),
       scheduler,
       { fallbackMs: 60_000 },

@@ -450,6 +450,19 @@ describe('Orchestration event contract', () => {
       throw new Error('expected SignalAccepted');
     expect(decoded.event.payload.outcome).toBe('rejected');
   });
+
+  it('round-trips an ActivityRequested event carrying a fresh session policy', () => {
+    const decoded = decodeOrchestrationEvent(
+      eventEnvelope(
+        OrchestrationEventType.ActivityRequested,
+        { ...activation, sessionPolicy: 'fresh' },
+        workflow,
+      ),
+    );
+    if (decoded.event.eventType !== OrchestrationEventType.ActivityRequested)
+      throw new Error('expected ActivityRequested');
+    expect(decoded.event.payload.sessionPolicy).toBe('fresh');
+  });
 });
 
 function decodingCause(decode: () => unknown): unknown {

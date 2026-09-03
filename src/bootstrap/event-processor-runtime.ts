@@ -17,6 +17,7 @@ import {
 export class EventProcessorRuntime {
   private readonly host: EventProcessorHost;
   private readonly registrations = new Map<string, EventProcessor>();
+  private registrationsClosed = false;
   private activeRun: EventProcessorHostRun | undefined;
 
   constructor(
@@ -34,15 +35,21 @@ export class EventProcessorRuntime {
   }
 
   register(processors: readonly EventProcessor[]): void {
+    if (this.registrationsClosed) throw new Error('Event processor registry has already started');
+    const consumers = new Set<string>();
     for (const processor of processors) {
-      if (this.registrations.has(processor.consumer))
+      if (this.registrations.has(processor.consumer) || consumers.has(processor.consumer))
         throw new Error(`Event processor is already registered: ${processor.consumer}`);
+      consumers.add(processor.consumer);
+    }
+    for (const processor of processors) {
       this.registrations.set(processor.consumer, processor);
     }
   }
 
   start(signal?: AbortSignal): EventProcessorHostRun {
     if (this.activeRun !== undefined) return this.activeRun;
+    this.registrationsClosed = true;
     const run = this.host.start(this.processors, signal);
     const activeRun: EventProcessorHostRun = {
       abort: () => run.abort(),
