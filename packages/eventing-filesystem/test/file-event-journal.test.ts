@@ -7,7 +7,16 @@ import {
 } from '@atolis-hq/eventing';
 import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
 import type * as FsPromises from 'node:fs/promises';
-import { appendFile, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import {
+  appendFile,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
@@ -446,16 +455,18 @@ it('refreshes a cached view when another file-journal instance appends', async (
     payload: { objective: 'ship' },
   });
   const writer = new FileEventJournal(root, new FakeClock());
-  const reader = new FileEventJournal(root, new FakeClock());
+  const readerClock = new FakeClock();
+  const reader = new FileEventJournal(root, readerClock);
   const view = cachedJournalView(reader, (events) => events.length);
 
   expect(await view.get()).toBe(0);
   await writer.appendToStream(stream, 0, [draft]);
+  readerClock.advance(30_000);
 
   expect(await view.get()).toBe(1);
 });
 
-it('checks segment fingerprints without parsing an unchanged warm journal', async () => {
+it('reuses validated segment fingerprints without parsing an unchanged warm journal', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-warm-cache-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = createEventData({
@@ -475,7 +486,7 @@ it('checks segment fingerprints without parsing an unchanged warm journal', asyn
   statMock.mockClear();
   await journal.readAll(0);
 
-  expect(statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(1);
+  expect(statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(0);
   expect(
     statMock.mock.calls.filter(([path]) => String(path).endsWith('index-manifest.json')),
   ).toHaveLength(0);
@@ -521,7 +532,7 @@ it('recovers a warmed reader after a JSONL append crashes before manifest update
 
     const wait = reader.waitForEventsAfter(1, new AbortController().signal, 1_000);
     await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
-    await vi.advanceTimersByTimeAsync(1_000);
+    watcher.notify();
     await expect(wait).resolves.toBeUndefined();
 
     expect(await reader.latestGlobalPosition()).toBe(2);
@@ -570,8 +581,9 @@ it('uses the refreshed warm-cache stream index for ordered, isolated stream read
   expect(await reader.readStream(missingStream)).toEqual([]);
 
   // A different journal instance changes the segment after this reader has
-  // warmed its cache, so the next read must rebuild both cache and index.
+  // warmed its cache, so the hard refresh must rebuild both cache and index.
   await writer.appendToStream(runStream, 1, [draft(runStream, 'run-2')]);
+  clock.advance(30_000);
   expect((await reader.readStream(runStream)).map((event) => event.event.eventId)).toEqual([
     'run-1',
     'run-2',
@@ -624,6 +636,106 @@ it('coalesces concurrent reads on a cold cache into a single on-disk decode', as
     String(path).endsWith('.jsonl'),
   );
   expect(journalFileReads).toHaveLength(1);
+});
+
+it('shares one entry validation refresh across concurrent journal reads', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-shared-entry-refresh-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.appendToStream(stream, 0, [journalDraft('event-1')]);
+  const entryReader = journalEntryReader(root);
+  const reader = new FileEventJournal(root, clock, { entryReader });
+
+  const [position, all, streamEvents] = await Promise.all([
+    reader.latestGlobalPosition(),
+    reader.readAll(0),
+    reader.readStream(stream),
+  ]);
+
+  expect(position).toBe(1);
+  expect(all.map((event) => event.event.eventId)).toEqual(['event-1']);
+  expect(streamEvents.map((event) => event.event.eventId)).toEqual(['event-1']);
+  expect(entryReader).toHaveBeenCalledOnce();
+});
+
+it('retries an entry validation refresh after its first attempt rejects', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-entry-refresh-retry-'));
+  const entryReader = vi
+    .fn<() => Promise<readonly { file: string; size: number; mtimeMs: number }[]>>()
+    .mockRejectedValueOnce(new Error('transient entry read failure'))
+    .mockResolvedValue([]);
+  const journal = new FileEventJournal(root, new FakeClock(), { entryReader });
+
+  await expect(journal.latestGlobalPosition()).rejects.toThrow('transient entry read failure');
+  await expect(journal.latestGlobalPosition()).resolves.toBe(0);
+
+  expect(entryReader).toHaveBeenCalledTimes(2);
+});
+
+it('reuses a successful entry validation inside the hard refresh window', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-entry-refresh-window-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.appendToStream(stream, 0, [journalDraft('event-1')]);
+  const entryReader = journalEntryReader(root);
+  const reader = new FileEventJournal(root, clock, { entryReader });
+
+  await expect(reader.latestGlobalPosition()).resolves.toBe(1);
+  clock.advance(29_999);
+  await expect(reader.readAll(0)).resolves.toHaveLength(1);
+
+  expect(entryReader).toHaveBeenCalledOnce();
+});
+
+it('invalidates entry validation when a watcher reports an external append', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-watcher-entry-refresh-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.appendToStream(stream, 0, [journalDraft('event-1')]);
+  const watcher = controlledWatcherFactory();
+  const entryReader = journalEntryReader(root);
+  const reader = new FileEventJournal(root, clock, {
+    entryReader,
+    watcherFactory: watcher.factory,
+  });
+
+  await expect(reader.latestGlobalPosition()).resolves.toBe(1);
+  const wait = reader.waitForEventsAfter(1, new AbortController().signal, 10_000);
+  await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
+  await writer.appendToStream(stream, 1, [journalDraft('event-2')]);
+  watcher.notify();
+  await expect(wait).resolves.toBeUndefined();
+  await expect(reader.readAll(0)).resolves.toHaveLength(2);
+
+  expect(entryReader).toHaveBeenCalledTimes(2);
+});
+
+it('discovers an external append after the hard refresh when watcher setup fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-expired-entry-refresh-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.appendToStream(stream, 0, [journalDraft('event-1')]);
+  const watcher = controlledWatcherFactory(new Error('watch unavailable'));
+  const entryReader = journalEntryReader(root);
+  const reader = new FileEventJournal(root, clock, {
+    entryReader,
+    watcherFactory: watcher.factory,
+  });
+
+  await expect(reader.latestGlobalPosition()).resolves.toBe(1);
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await reader.waitForEventsAfter(1, cancelled.signal, 1_000);
+  await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
+  await writer.appendToStream(stream, 1, [journalDraft('event-2')]);
+  clock.advance(30_000);
+  await expect(reader.readAll(0)).resolves.toHaveLength(2);
+
+  expect(entryReader).toHaveBeenCalledTimes(2);
 });
 
 it('revalidates an in-flight local scan after an external append before assigning positions', async () => {
@@ -937,7 +1049,8 @@ it('discovers an external append by fallback when watcher setup fails', async ()
       payload: { objective: 'ship' },
     });
     const watcher = controlledWatcherFactory(new Error('watch unavailable'));
-    const reader = new FileEventJournal(root, new FakeClock(), { watcherFactory: watcher.factory });
+    const clock = new FakeClock();
+    const reader = new FileEventJournal(root, clock, { watcherFactory: watcher.factory });
     const writer = new FileEventJournal(root, new FakeClock());
     const wait = reader.waitForEventsAfter(0, new AbortController().signal, 1_000);
 
@@ -946,6 +1059,7 @@ it('discovers an external append by fallback when watcher setup fails', async ()
     await vi.advanceTimersByTimeAsync(1_000);
 
     await expect(wait).resolves.toBeUndefined();
+    clock.advance(30_000);
     expect((await reader.readAll(0)).map((entry) => entry.event.eventId)).toEqual(['event-1']);
   } finally {
     vi.useRealTimers();
@@ -997,6 +1111,34 @@ function controlledWatcherFactory(failure?: Error) {
       errors.shift()?.();
     },
   };
+}
+
+function journalDraft(eventId: string) {
+  return createEventData({
+    eventId,
+    eventType: 'work.item-created',
+    occurredAt: '2026-07-30T12:00:00Z',
+    correlationId: 'corr',
+    causationId: eventId,
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    payload: { objective: 'ship' },
+  });
+}
+
+function journalEntryReader(root: string) {
+  return vi.fn(async () => {
+    const directory = join(root, 'events');
+    const files = (await readdir(directory))
+      .filter((file) => /^\d{4}-\d{2}-\d{2}(?:~\d{20})?\.jsonl$/.test(file))
+      .sort();
+    return Promise.all(
+      files.map(async (file) => {
+        const info = await stat(join(directory, file));
+        return { file, size: info.size, mtimeMs: info.mtimeMs };
+      }),
+    );
+  });
 }
 
 function deferred<Value>() {

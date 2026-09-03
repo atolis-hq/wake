@@ -28,10 +28,15 @@ export type FileEventJournalWatcherFactory = (
 
 export interface FileEventJournalOptions {
   readonly watcherFactory?: FileEventJournalWatcherFactory;
+  readonly entryReader?: () => Promise<
+    readonly { readonly file: string; readonly size: number; readonly mtimeMs: number }[]
+  >;
 }
 
 const createFileSystemWatcher: FileEventJournalWatcherFactory = async (directory, notify) =>
   watch(directory, { persistent: false }, notify);
+
+const entryValidationTtlMs = 30_000;
 
 export class FileEventJournal implements EventJournal {
   constructor(
@@ -70,6 +75,10 @@ export class FileEventJournal implements EventJournal {
     { readonly entries: readonly FileStat[]; readonly run: Promise<EventEnvelope[]> } | undefined;
 
   private scanGeneration = 0;
+  private validatedEntries:
+    { readonly entries: readonly FileStat[]; readonly expiresAt: number } | undefined;
+  private inFlightEntryRefresh: Promise<readonly FileStat[]> | undefined;
+  private entryValidationGeneration = 0;
 
   async appendToStream(
     stream: StreamRef,
@@ -238,6 +247,7 @@ export class FileEventJournal implements EventJournal {
       const watcher = await (this.options.watcherFactory ?? createFileSystemWatcher)(
         directory,
         () => {
+          this.invalidateValidatedEntries();
           this.changeSignalSource.notify();
         },
       );
@@ -305,6 +315,7 @@ export class FileEventJournal implements EventJournal {
         ];
     const events = [...priorEvents, ...newEnvelopes];
     this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
+    this.rememberValidatedEntries(entries, true);
   }
 
   private manifestPath(): string {
@@ -350,6 +361,7 @@ export class FileEventJournal implements EventJournal {
   }
 
   private async readCurrentEntries(): Promise<FileStat[]> {
+    if (this.options.entryReader !== undefined) return [...(await this.options.entryReader())];
     const directory = join(this.root, 'events');
     let files: string[];
     try {
@@ -369,10 +381,39 @@ export class FileEventJournal implements EventJournal {
   }
 
   private async readEntriesForRead(): Promise<readonly FileStat[]> {
-    // The JSONL segments are authoritative. A manifest can remain unchanged
-    // if a process crashes after appendFile() and before writing it, so every
-    // warm read validates segment fingerprints before reusing decoded data.
-    return this.readCurrentEntries();
+    const now = this.clock.now().getTime();
+    if (this.validatedEntries !== undefined && this.validatedEntries.expiresAt > now)
+      return this.validatedEntries.entries;
+    if (this.inFlightEntryRefresh !== undefined) return this.inFlightEntryRefresh;
+    const generation = this.entryValidationGeneration;
+    const refresh = this.readCurrentEntries()
+      .then((entries) => {
+        if (generation === this.entryValidationGeneration) this.rememberValidatedEntries(entries);
+        return entries;
+      })
+      .finally(() => {
+        if (this.inFlightEntryRefresh === refresh) this.inFlightEntryRefresh = undefined;
+      });
+    this.inFlightEntryRefresh = refresh;
+    return refresh;
+  }
+
+  private rememberValidatedEntries(
+    entries: readonly FileStat[],
+    replacesInFlightRefresh = false,
+  ): void {
+    this.entryValidationGeneration += 1;
+    this.validatedEntries = {
+      entries,
+      expiresAt: this.clock.now().getTime() + entryValidationTtlMs,
+    };
+    if (replacesInFlightRefresh) this.inFlightEntryRefresh = undefined;
+  }
+
+  private invalidateValidatedEntries(): void {
+    this.entryValidationGeneration += 1;
+    this.validatedEntries = undefined;
+    this.inFlightEntryRefresh = undefined;
   }
 
   // Reads exactly the indexed JSONL records. Byte offsets make tail reads and

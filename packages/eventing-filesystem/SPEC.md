@@ -32,6 +32,9 @@ service.
 
 - A file journal MUST preserve expected-sequence append semantics, stream and
   global order, and the established flat JSONL event representation.
+- Journal segment fingerprint validation MUST be shared by concurrent reads,
+  invalidated before local watcher notifications are published, and bounded by
+  a 30-second hard refresh so missed watcher changes are eventually discovered.
 - Checkpoints MUST be monotonic per consumer and use compatible established
   records when a Wake home already contains them.
 - Projection records MAY be cleared and rebuilt from the journal.
