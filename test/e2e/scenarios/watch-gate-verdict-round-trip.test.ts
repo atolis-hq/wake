@@ -32,7 +32,7 @@ import { resourceKind } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
 import { TestWorld } from '../support/world.js';
 
-it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves its waiting parent', async () => {
+it('E2E-WATCH-GATE-VERDICT-001 resolves a waiting parent from its child verdict without GitHub inbound', async () => {
   const fixture = await waitingWatchGate();
   const resource = await fixture.world.discoverResource({
     resourceId: resId('1'),
@@ -59,6 +59,16 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
     { kind: 'done' },
   );
 
+  expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
+    'completed',
+  );
+  const [signal] = await fixture.world.events('orchestration.signal-accepted');
+  expect(signal?.event.payload).toMatchObject({
+    kind: WatchGateVerdictSignal,
+    outcome: 'done',
+    authority: { kind: 'watch', watch: 'pr-review' },
+  });
+
   const publications = new AgentRunPublicationReactor({
     journal: fixture.world.journal,
     runs: new RunRepository(fixture.world.journal),
@@ -70,45 +80,30 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
   const [intent] = projectDeliveries(await fixture.world.journal.readAll(0));
   expect(intent).toBeDefined();
   const outbound = translateGitHubOutbound(resource, intent!);
-  expect(outbound.body).toContain('"watchGateVerdict"');
-  expect(outbound.body).toContain(`"runId": "${run}"`);
-  expect(outbound.body).toContain('"outcome": "DONE"');
+  expect(outbound.body).not.toContain('"watchGateVerdict"');
+});
 
-  await fixture.world.journal.appendToStream(integrationStream(BuiltInAdapterId.GitHub), 0, [
-    createEventData({
-      eventId: 'github:comment:watch-gate-verdict',
-      eventType: 'integration.github.comment-observed',
-      occurredAt: fixture.world.clock.now().toISOString(),
-      correlationId: 'github:owner/repo#7',
-      causationId: 'github:comment:watch-gate-verdict',
-      actor: { kind: 'integration', id: 'github' },
-      source: { kind: 'adapter', id: 'github' },
-      payload: {
-        reviewKind: 'issue',
-        externalKey: 'owner/repo#7',
-        body: outbound.body,
-        revision: fixture.world.clock.now().toISOString(),
-        actor: { id: 'wake-bot', kind: 'bot' },
-        raw: { id: 1 },
-      },
-    }),
-  ]);
+it('resumes the rejected watch gate at its configured re-entry stage without GitHub inbound', async () => {
+  const fixture = await waitingWatchGate('rejected');
 
-  const translator = new InboundTranslator(
-    fixture.world.journal,
-    fixture.world.work,
-    fixture.world.resources,
-    {
-      orchestration: fixture.world.orchestration,
-      runs: new RunRepository(fixture.world.journal),
-      lookup: fixture.world.resourceLookup,
-    },
+  await fixture.world.acceptOutcome(
+    fixture.child.workflowInstanceId,
+    fixture.child.pendingActivation!.activationId,
+    { kind: 'rejected' },
   );
-  await processInbound(translator, fixture.world);
 
-  expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
-    'completed',
-  );
+  const parent = await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId);
+  expect(parent).toMatchObject({
+    status: 'active',
+    currentStage: 'work',
+    pendingActivation: { ordinal: 2, activity: 'parent-work' },
+  });
+  const [signal] = await fixture.world.events('orchestration.signal-accepted');
+  expect(signal?.event.payload).toMatchObject({
+    kind: WatchGateVerdictSignal,
+    outcome: 'rejected',
+    authority: { kind: 'watch', watch: 'pr-review' },
+  });
 });
 
 it('supersedes a queued watch child when human approval leaves its gate', async () => {
@@ -288,12 +283,22 @@ it('supersedes a recovered child whose parent has already left its gate before d
   );
 });
 
-async function waitingWatchGate() {
+async function waitingWatchGate(childOutcome: 'done' | 'rejected' = 'done') {
   const world = new TestWorld();
   world.registerActivity(activity('parent-work'));
-  world.registerActivity(activity('pr-review'));
+  world.registerActivity(activity('pr-review', childOutcome));
   world.configureWorkflow('pr-review', {
-    stages: { review: { activity: 'pr-review', with: {}, on: { done: { then: 'done' } } } },
+    stages: {
+      review: {
+        activity: 'pr-review',
+        with: {},
+        on: {
+          done: { then: 'done' },
+          rejected: { then: 'done' },
+        },
+        requiresApproval: false,
+      },
+    },
   });
   world.configureWorkflow('parent', {
     stages: {
@@ -417,17 +422,17 @@ async function appendStartedRun(
   ] as never);
 }
 
-function activity(name: string) {
+function activity(name: string, outcome: 'done' | 'rejected' = 'done') {
   return {
     name: activityName(name),
     inputSchema: z.object({}).strict(),
-    outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
-    outcomeKinds: ['done'] as const,
+    outcomeSchema: z.object({ kind: z.enum(['done', 'rejected']) }).strict(),
+    outcomeKinds: ['done', 'rejected'],
     resources: [],
     executionKind: 'deterministic' as const,
     handler: {
       async execute() {
-        return { kind: 'done' } as const;
+        return { kind: outcome } as const;
       },
     },
   };

@@ -120,6 +120,11 @@ it is given.
 - A parent MUST NOT reconsume the same child's completion twice: once a
   child's identity appears in the parent's `acceptedChildCompletionIds`,
   reconciliation for that child is a no-op.
+- When the parent instead waits for `orchestration.watch-gate-verdict`, the
+  completion constructs that verdict directly from the child's durable
+  `done` or `rejected` outcome. It retains the child workflow id as its
+  evidence and watch authority, and does not depend on an outbound report or
+  provider observation.
 - Reconciling an unconsumed completion constructs a Signal whose `kind`
   equals the `orchestration.child-completed` event type itself, whose
   `providerEventId` is the child's own WorkflowInstance id, and whose

@@ -1,11 +1,12 @@
 import type { CommandContext } from '@atolis-hq/eventing';
+import { ActivityOutcomeKind } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type {
   ChildCompletionSignal,
   ChildCoordinationEventPayloads,
   ChildWorkflowRequest,
 } from '../contracts/events.js';
-import { OrchestrationEventType } from '../contracts/events.js';
+import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
 import { signalName, watchId, type WorkflowInstanceId } from '../contracts/identifiers.js';
 import { childOrchestrationGroupStream } from '../contracts/streams.js';
 import type {
@@ -199,14 +200,19 @@ export class RequestChild {
       ]);
     const parent = await this.repository.loadRequired(metadata.parentWorkflowInstanceId);
     if (parent.view.acceptedChildCompletionIds.includes(child.workflowInstanceId)) return;
+    const watchGateOutcome = watchGateVerdictOutcome(parent.view, child);
     const signal: ChildCompletionSignal = {
-      kind: signalName(OrchestrationEventType.ChildCompleted),
+      kind:
+        watchGateOutcome === undefined
+          ? signalName(OrchestrationEventType.ChildCompleted)
+          : WatchGateVerdictSignal,
       actorId: 'orchestration',
       actorDecision: { authorized: true, evidenceId: child.workflowInstanceId },
       providerEventId: child.workflowInstanceId,
       authority: { kind: ApprovalAuthorityKind.Watch, watch: watchId(child.watchId) },
       childWorkflowInstanceId: child.workflowInstanceId,
       requestId: metadata.requestId,
+      ...(watchGateOutcome === undefined ? {} : { outcome: watchGateOutcome }),
     };
     const definition = await this.workflows.definitionForOperation(
       parent.view,
@@ -267,4 +273,15 @@ function watchIdsFor(wait: SignalExpectationView | undefined): readonly string[]
   return (wait.from ?? []).flatMap((authority) =>
     authority.kind === ApprovalAuthorityKind.Watch ? [authority.watch] : [],
   );
+}
+
+function watchGateVerdictOutcome(
+  parent: WorkflowInstanceView,
+  child: WorkflowInstanceView,
+): typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected | undefined {
+  if (parent.waitingFor?.signalKind !== WatchGateVerdictSignal) return undefined;
+  return child.lastOutcome?.kind === ActivityOutcomeKind.Done ||
+    child.lastOutcome?.kind === ActivityOutcomeKind.Rejected
+    ? child.lastOutcome.kind
+    : undefined;
 }
