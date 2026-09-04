@@ -1,7 +1,6 @@
 import type { RunStatus } from '../../../execution/index.js';
 import type {
   ApiCommandResult,
-  ApiTickCommandResult,
   AuditEventResponse,
   BoardCardResponse,
   BoardResponse,
@@ -71,7 +70,6 @@ export interface ApiApplications {
     status(): Promise<ApiResourceResult<ControlPlaneStatusResponse>>;
     pause?(command: ApiCommandRequest): Promise<ApiCommandResult>;
     resume?(command: ApiCommandRequest): Promise<ApiCommandResult>;
-    tick?(command: ApiCommandRequest): Promise<ApiTickCommandResult>;
   };
   readonly work: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<WorkItemResponse>>;

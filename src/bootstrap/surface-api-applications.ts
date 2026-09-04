@@ -17,7 +17,6 @@ import {
   redactConfiguration,
   type ApiApplications,
   type ApiSystemApplications,
-  type ApiTickCommandResult,
   type AuditEventResponse,
 } from '../surfaces/index.js';
 import { analyticsProjection, type AnalyticsProjectionView } from './analytics-projection.js';
@@ -29,7 +28,6 @@ import {
 } from './board-projection.js';
 import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
-import { createOneShotRunnerAdvance } from './runner-tick-adapter.js';
 import {
   createSelfUpdateFailureLog,
   describeSelfUpdateFailure,
@@ -466,9 +464,6 @@ function toHealthErrorText(value: unknown): string {
 }
 
 function createControlPlaneApplications(root: CompositionRoot, now: () => string) {
-  const activeTicks = new Map<string, Promise<ApiTickCommandResult>>();
-  const recentTicks = new Map<string, ApiTickCommandResult>();
-  let commandSequence = 0;
   return {
     status: () => readControlPlaneStatus(root, now),
     async pause(command: { readonly idempotencyKey: string }) {
@@ -479,57 +474,6 @@ function createControlPlaneApplications(root: CompositionRoot, now: () => string
       await root.controlPlane.resume(command.idempotencyKey);
       return commandAccepted(command, now());
     },
-    tick(command: { readonly idempotencyKey: string }) {
-      const completed = recentTicks.get(command.idempotencyKey);
-      if (completed !== undefined) return Promise.resolve(completed);
-      const active = activeTicks.get(command.idempotencyKey);
-      if (active !== undefined) return active;
-      const pending = performTick(root, now, command, ++commandSequence).then(
-        (result) => {
-          activeTicks.delete(command.idempotencyKey);
-          rememberRecentTick(recentTicks, command.idempotencyKey, result);
-          return result;
-        },
-        (error: unknown) => {
-          activeTicks.delete(command.idempotencyKey);
-          throw error;
-        },
-      );
-      activeTicks.set(command.idempotencyKey, pending);
-      return pending;
-    },
-  };
-}
-
-const recentAdvanceLimit = 100;
-
-function rememberRecentTick(
-  commands: Map<string, ApiTickCommandResult>,
-  key: string,
-  result: ApiTickCommandResult,
-): void {
-  commands.set(key, result);
-  while (commands.size > recentAdvanceLimit) {
-    const oldest = commands.keys().next().value;
-    if (oldest === undefined) return;
-    commands.delete(oldest);
-  }
-}
-
-async function performTick(
-  root: CompositionRoot,
-  now: () => string,
-  command: { readonly idempotencyKey: string },
-  sequence: number,
-): Promise<ApiTickCommandResult> {
-  const acceptedAt = now();
-  await createOneShotRunnerAdvance(root)({ maxProgress: 1 });
-  return {
-    commandId: `tick:${acceptedAt}:${sequence}`,
-    idempotencyKey: command.idempotencyKey,
-    acceptedAt,
-    status: ApiCommandStatus.Completed,
-    result: await readControlPlaneStatus(root, now),
   };
 }
 

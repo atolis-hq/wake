@@ -1,5 +1,4 @@
 import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
-import type { ResourceResponse } from './common.js';
 
 export interface ControlPlaneStatusResponse {
   readonly paused: boolean;
@@ -26,10 +25,6 @@ export interface AcceptedCommandResponse {
   readonly status: ApiCommandStatus;
 }
 
-export interface TickCommandResponse extends AcceptedCommandResponse {
-  readonly result: ResourceResponse<ControlPlaneStatusResponse>;
-}
-
 export interface CommandConflictResponse {
   readonly conflict: true;
   readonly code: string;
@@ -39,8 +34,6 @@ export interface CommandConflictResponse {
 }
 
 export type ApiCommandResult = AcceptedCommandResponse | CommandConflictResponse;
-
-export type ApiTickCommandResult = TickCommandResponse | CommandConflictResponse;
 
 export const ApiCommandStatus = defineClosedVocabulary({
   Accepted: 'accepted',

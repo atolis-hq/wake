@@ -62,15 +62,16 @@ describe('HTTP Surface hardening', () => {
     }
   });
 
-  it('requires a configured auth boundary for every operational API route', async () => {
+  it('does not expose the removed control-plane tick route', async () => {
     const server = surfaceServer(createApiDispatcher(applications()));
     try {
       const response = await server.inject({
         method: 'POST',
         url: '/api/v1/control-plane/commands/tick',
-        payload: 'x'.repeat(1024 * 1024),
+        headers: { cookie: await login(server) },
+        payload: { idempotencyKey: 'operator-42' },
       });
-      expect(response.statusCode).toBe(401);
+      expect(response.statusCode).toBe(404);
     } finally {
       await server.close();
     }
@@ -168,23 +169,6 @@ describe('HTTP Surface hardening', () => {
       expect(response.statusCode).toBe(502);
       expect(response.headers['content-type']).toContain('application/problem+json');
       expect(response.json()).toMatchObject({ status: 502, code: 'upstream-provider-error' });
-    } finally {
-      await server.close();
-    }
-  });
-
-  it('maps malformed JSON to an exact RFC9457 400 response', async () => {
-    const server = surfaceServer(createApiDispatcher(applications()));
-    try {
-      const response = await server.inject({
-        method: 'POST',
-        url: '/api/v1/control-plane/commands/tick',
-        headers: { 'content-type': 'application/json', cookie: await login(server) },
-        payload: '{not-json',
-      });
-      expect(response.statusCode).toBe(400);
-      expect(response.headers['content-type']).toContain('application/problem+json');
-      expect(response.json()).toMatchObject({ status: 400, code: 'malformed-json' });
     } finally {
       await server.close();
     }

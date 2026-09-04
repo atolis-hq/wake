@@ -21,7 +21,7 @@ import {
 
 type WorkCommandName = 'freeze' | 'unfreeze' | 'delete' | 'retry' | 'extend';
 
-type ControlCommandName = 'pause' | 'resume' | 'tick';
+type ControlCommandName = 'pause' | 'resume';
 
 export async function dispatchCommand(
   applications: ApiApplications,
@@ -112,8 +112,6 @@ async function dispatchControlCommand(
   const name = controlCommandName(pathname);
   if (name === undefined) return undefined;
   const status = await applications.controlPlane.status();
-  if (name === 'tick' && status.data.paused)
-    return problem(409, 'Conflict', 'Ticks are paused', { code: 'paused', current: status.data });
   const operation = applications.controlPlane[name];
   return operation === undefined
     ? unavailable(name, status.data)
@@ -124,7 +122,7 @@ function controlCommandName(pathname: string): ControlCommandName | undefined {
   const prefix = '/api/v1/control-plane/commands/';
   if (!pathname.startsWith(prefix)) return undefined;
   const name = pathname.slice(prefix.length);
-  return name === 'pause' || name === 'resume' || name === 'tick' ? name : undefined;
+  return name === 'pause' || name === 'resume' ? name : undefined;
 }
 
 async function dispatchRunnerCommand(

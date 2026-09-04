@@ -43,8 +43,7 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
       (await runDeliveryPhase(stages, isPaused, signal, beforeDelivery)) ?? { kind: 'no-work' }
     );
   };
-  // The API's manual Tick Now endpoint and the resident tick host share this
-  // pipeline. Serializing all callers prevents them from racing the same run
+  // The one-shot and resident hosts share this pipeline. Serializing all callers prevents them from racing the same run
   // claim, checkpoint, and workspace lifecycle within one Wake process.
   let queue: Promise<unknown> = Promise.resolve();
   return {
