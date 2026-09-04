@@ -1,25 +1,15 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const packageLocations = [
-  { directory: repoRoot, label: 'Wake' },
-  {
-    directory: resolve(repoRoot, 'packages/eventing'),
-    label: 'Eventing',
-    verifySourceOutputs: true,
-  },
-  {
-    directory: resolve(repoRoot, 'packages/eventing-filesystem'),
-    label: 'Eventing filesystem',
-    verifySourceOutputs: true,
-  },
-];
+const packageLocations = [{ directory: repoRoot, label: 'Wake' }];
 const requiredArchiveFiles = ['README.md', 'LICENSE'];
+const embeddedRuntimePackages = ['eventing', 'eventing-filesystem'];
+const requiredEmbeddedRuntimeFiles = ['package.json', 'README.md', 'LICENSE'];
 
 function fail(message) {
   throw new Error(message);
@@ -70,35 +60,6 @@ async function readManifest(directory) {
   return JSON.parse(await readFile(resolve(directory, 'package.json'), 'utf8'));
 }
 
-function requireExactInternalVersions(manifests) {
-  const wake = manifests[0];
-  const eventing = manifests[1];
-  const filesystem = manifests[2];
-  const version = wake.version;
-
-  if (typeof version !== 'string' || version.length === 0) fail('Wake must declare a version.');
-  for (const manifest of [eventing, filesystem]) {
-    if (manifest.version !== version) {
-      fail(
-        `${manifest.name} must use Wake version ${version}; found ${manifest.version ?? '<missing>'}.`,
-      );
-    }
-  }
-
-  const requirements = [
-    [wake.name, wake.dependencies?.[eventing.name], eventing.name],
-    [wake.name, wake.dependencies?.[filesystem.name], filesystem.name],
-    [filesystem.name, filesystem.dependencies?.[eventing.name], eventing.name],
-  ];
-  for (const [owner, dependencyVersion, dependencyName] of requirements) {
-    if (dependencyVersion !== version) {
-      fail(
-        `${owner} must depend on ${dependencyName} at exact version ${version}; found ${dependencyVersion ?? '<missing>'}.`,
-      );
-    }
-  }
-}
-
 function exportedPaths(value) {
   if (typeof value === 'string') return [value];
   if (value !== null && typeof value === 'object') {
@@ -119,27 +80,6 @@ function publicDistEntries(manifest) {
     .filter((entry) => entry.startsWith('dist/') && /\.(?:js|d\.ts)$/u.test(entry));
 }
 
-async function sourceFiles(directory, relativeDirectory = '') {
-  const entries = await readdir(resolve(directory, relativeDirectory), { withFileTypes: true });
-  const files = await Promise.all(
-    entries.map(async (entry) => {
-      const relativePath = `${relativeDirectory}${entry.name}`;
-      if (entry.isDirectory()) return sourceFiles(directory, `${relativePath}/`);
-      return entry.isFile() ? [relativePath] : [];
-    }),
-  );
-  return files.flat();
-}
-
-async function expectedArchiveFiles(directory) {
-  const outputs = (await sourceFiles(resolve(directory, 'src'))).flatMap((file) => {
-    if (!file.endsWith('.ts') || file.endsWith('.d.ts')) return [];
-    const output = file.slice(0, -3);
-    return [`dist/${output}.js`, `dist/${output}.d.ts`, `dist/${output}.d.ts.map`];
-  });
-  return new Set(['package.json', ...requiredArchiveFiles, ...outputs]);
-}
-
 function parsePackOutput(output, label) {
   let jsonStart = output.lastIndexOf('[');
   while (jsonStart >= 0) {
@@ -158,34 +98,40 @@ function parsePackOutput(output, label) {
   fail(`${label} npm pack did not return archive JSON metadata.`);
 }
 
-async function verifyPackedEntries(manifest, packed, directory, label, verifySourceOutputs) {
-  if (packed.name !== manifest.name || packed.version !== manifest.version) {
-    fail(`${label} npm pack metadata does not match its package manifest.`);
-  }
-
-  const files = new Set(
+function packedFileSet(packed) {
+  return new Set(
     Array.isArray(packed.files)
       ? packed.files.map((file) => file?.path).filter((path) => typeof path === 'string')
       : [],
   );
+}
+
+function requirePackedFile(files, path, label) {
+  if (!files.has(path)) fail(`${label} archive is missing required package file ${path}.`);
+}
+
+function verifyPackedEntries(manifest, packed, label) {
+  if (packed.name !== manifest.name || packed.version !== manifest.version) {
+    fail(`${label} npm pack metadata does not match its package manifest.`);
+  }
+
+  const files = packedFileSet(packed);
   const entries = publicDistEntries(manifest);
   if (entries.length === 0)
     fail(`${label} has no declared JavaScript or declaration dist entrypoints.`);
-  for (const entry of entries) {
-    if (!files.has(entry)) fail(`${label} archive is missing declared public entry ${entry}.`);
-  }
-  for (const file of requiredArchiveFiles) {
-    if (!files.has(file)) fail(`${label} archive is missing required package file ${file}.`);
-  }
+  for (const entry of entries) requirePackedFile(files, entry, label);
+  for (const file of requiredArchiveFiles) requirePackedFile(files, file, label);
 
-  if (verifySourceOutputs) {
-    const expectedFiles = await expectedArchiveFiles(directory);
-    for (const file of files) {
-      if (!expectedFiles.has(file)) {
-        fail(`${label} archive contains unexpected package artifact ${file}.`);
-      }
+  for (const packageName of embeddedRuntimePackages) {
+    const runtimeRoot = `dist/src/node_modules/@atolis-hq/${packageName}`;
+    for (const file of requiredEmbeddedRuntimeFiles) {
+      requirePackedFile(files, `${runtimeRoot}/${file}`, label);
     }
+    requirePackedFile(files, `${runtimeRoot}/dist/index.js`, label);
+    requirePackedFile(files, `${runtimeRoot}/dist/index.d.ts`, label);
   }
+  requirePackedFile(files, 'dist/src/node_modules/@atolis-hq/eventing/dist/memory.js', label);
+  requirePackedFile(files, 'dist/src/node_modules/@atolis-hq/eventing/dist/memory.d.ts', label);
 }
 
 function archivePath(packed, directory, label) {
@@ -200,38 +146,63 @@ function packageFileRequirement(projectDirectory, archive) {
 }
 
 async function assertRegularDirectory(path, label) {
-  if ((await lstat(path)).isSymbolicLink())
-    fail(`${label} must be installed from an archive, not a symlink.`);
+  const entry = await lstat(path);
+  if (!entry.isDirectory() || entry.isSymbolicLink()) {
+    fail(`${label} must be an ordinary directory installed from the Wake archive.`);
+  }
 }
 
-async function verifyCleanInstall(manifests, archives, projectDirectory) {
-  const dependencies = Object.fromEntries(
-    archives.map((archive, index) => [
-      manifests[index].name,
-      packageFileRequirement(projectDirectory, archive),
-    ]),
+async function assertEmbeddedRuntime(projectDirectory) {
+  const runtimeRoot = resolve(
+    projectDirectory,
+    'node_modules/@atolis-hq/wake/dist/src/node_modules/@atolis-hq',
   );
+  for (const packageName of embeddedRuntimePackages) {
+    const packageDirectory = resolve(runtimeRoot, packageName);
+    await assertRegularDirectory(packageDirectory, `Embedded ${packageName}`);
+    for (const file of requiredEmbeddedRuntimeFiles) {
+      if (!(await stat(resolve(packageDirectory, file))).isFile()) {
+        fail(`Embedded ${packageName} is missing ${file}.`);
+      }
+    }
+    if (!(await stat(resolve(packageDirectory, 'dist/index.js'))).isFile()) {
+      fail(`Embedded ${packageName} is missing dist/index.js.`);
+    }
+  }
+  if (!(await stat(resolve(runtimeRoot, 'eventing/dist/memory.js'))).isFile()) {
+    fail('Embedded eventing is missing dist/memory.js.');
+  }
+}
+
+async function verifyCleanInstall(manifest, archive, projectDirectory) {
+  const dependencies = {
+    [manifest.name]: packageFileRequirement(projectDirectory, archive),
+  };
   await writeFile(
     resolve(projectDirectory, 'package.json'),
     `${JSON.stringify({ name: 'wake-package-check', private: true, version: '0.0.0', dependencies }, null, 2)}\n`,
   );
 
-  await runNpm(['install', '--ignore-scripts', '--no-audit', '--no-fund'], projectDirectory);
+  await runNpm(
+    ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'],
+    projectDirectory,
+  );
 
   const lock = JSON.parse(await readFile(resolve(projectDirectory, 'package-lock.json'), 'utf8'));
-  for (const [index, manifest] of manifests.entries()) {
-    const packagePath = `node_modules/${manifest.name}`;
-    const installed = lock.packages?.[packagePath];
-    const archiveName = basename(archives[index]);
-    if (
-      typeof installed?.resolved !== 'string' ||
-      !installed.resolved.startsWith('file:') ||
-      !installed.resolved.includes(archiveName)
-    ) {
-      fail(`${manifest.name} was not resolved from local archive ${archiveName}.`);
-    }
-    await assertRegularDirectory(resolve(projectDirectory, packagePath), manifest.name);
+  const installed = lock.packages?.[`node_modules/${manifest.name}`];
+  const archiveName = basename(archive);
+  if (
+    typeof installed?.resolved !== 'string' ||
+    !installed.resolved.startsWith('file:') ||
+    !installed.resolved.includes(archiveName)
+  ) {
+    fail(`${manifest.name} was not resolved from local archive ${archiveName}.`);
   }
+  await assertRegularDirectory(
+    resolve(projectDirectory, `node_modules/${manifest.name}`),
+    manifest.name,
+  );
+  await assertEmbeddedRuntime(projectDirectory);
 
   await run(
     process.execPath,
@@ -242,10 +213,14 @@ async function verifyCleanInstall(manifests, archives, projectDirectory) {
 }
 
 async function main() {
-  const manifests = await Promise.all(
-    packageLocations.map(({ directory }) => readManifest(directory)),
-  );
-  requireExactInternalVersions(manifests);
+  const [{ directory, label }] = packageLocations;
+  const manifest = await readManifest(directory);
+  if (manifest.dependencies?.['@atolis-hq/eventing'] !== undefined) {
+    fail('Wake must embed Eventing instead of declaring it as a dependency.');
+  }
+  if (manifest.dependencies?.['@atolis-hq/eventing-filesystem'] !== undefined) {
+    fail('Wake must embed Eventing filesystem instead of declaring it as a dependency.');
+  }
 
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), 'wake-workspace-packages-'));
   try {
@@ -253,45 +228,22 @@ async function main() {
     const installDirectory = resolve(temporaryDirectory, 'install');
     await Promise.all([mkdir(archiveDirectory), mkdir(installDirectory)]);
 
-    const archives = [];
-    for (const [index, location] of packageLocations.entries()) {
-      const manifest = manifests[index];
-      const dryRun = parsePackOutput(
-        (await runNpm(['pack', '--dry-run', '--json'], location.directory)).stdout,
-        location.label,
-      );
-      await verifyPackedEntries(
-        manifest,
-        dryRun,
-        location.directory,
-        location.label,
-        location.verifySourceOutputs,
-      );
+    const dryRun = parsePackOutput(
+      (await runNpm(['pack', '--dry-run', '--json'], directory)).stdout,
+      label,
+    );
+    verifyPackedEntries(manifest, dryRun, label);
 
-      const packed = parsePackOutput(
-        (
-          await runNpm(
-            ['pack', '--json', '--pack-destination', archiveDirectory],
-            location.directory,
-          )
-        ).stdout,
-        location.label,
-      );
-      await verifyPackedEntries(
-        manifest,
-        packed,
-        location.directory,
-        location.label,
-        location.verifySourceOutputs,
-      );
-      const archive = archivePath(packed, archiveDirectory, location.label);
-      if (!(await stat(archive)).isFile())
-        fail(`${location.label} archive was not written: ${archive}`);
-      archives.push(archive);
-    }
+    const packed = parsePackOutput(
+      (await runNpm(['pack', '--json', '--pack-destination', archiveDirectory], directory)).stdout,
+      label,
+    );
+    verifyPackedEntries(manifest, packed, label);
+    const archive = archivePath(packed, archiveDirectory, label);
+    if (!(await stat(archive)).isFile()) fail(`${label} archive was not written: ${archive}`);
 
-    await verifyCleanInstall(manifests, archives, installDirectory);
-    console.log('Workspace package archive check passed');
+    await verifyCleanInstall(manifest, archive, installDirectory);
+    console.log('Wake package archive check passed');
   } finally {
     await rm(temporaryDirectory, { force: true, maxRetries: 3, recursive: true, retryDelay: 100 });
   }

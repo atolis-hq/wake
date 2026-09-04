@@ -33,7 +33,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc --build tsconfig.json && node scripts/embed-version.mjs && node scripts/check-cli-entrypoint.mjs",
+    "build": "tsc --build tsconfig.json && node scripts/embed-version.mjs && node scripts/embed-runtime-workspaces.mjs && node scripts/check-cli-entrypoint.mjs",
     "prepack": "npm run build && npm run build:web",
     "check:workspace-packages": "node scripts/check-workspace-packages.mjs",
     "test": "npm run test:unit",
@@ -43,7 +43,7 @@
     "check:specs": "node scripts/check-specs.mjs",
     "check:specs:report": "node scripts/report-spec-drift.mjs",
     "lint:architecture": "node scripts/check-module-manifests.mjs && node scripts/check-contract-vocabulary.mjs && node scripts/check-event-architecture.mjs && depcruise --config dependency-cruiser.config.mjs src packages",
-    "build:docker": "tsc --build tsconfig.docker.json && node scripts/embed-version.mjs && npm run build:web",
+    "build:docker": "tsc --build tsconfig.docker.json && node scripts/embed-version.mjs && node scripts/embed-runtime-workspaces.mjs && npm run build:web",
     "build:eventing-packages": "tsc --build packages/eventing-filesystem/tsconfig.json",
     "build:web": "npm run build:eventing-packages && npm --workspace @atolis-hq/wake-web run build",
     "test:web": "npm run build:eventing-packages && npm --workspace @atolis-hq/wake-web run test",
@@ -72,8 +72,6 @@
     "verify:ci": "npm run verify && npm run test:architecture && npm run check:workspace-packages && npm run test:integration && npm run test:e2e && npm run knip && npm run test:web"
   },
   "dependencies": {
-    "@atolis-hq/eventing": "0.1.0",
-    "@atolis-hq/eventing-filesystem": "0.1.0",
     "@fastify/rate-limit": "^11.2.0",
     "@fastify/secure-session": "^8.3.0",
     "@octokit/rest": "^22.0.0",

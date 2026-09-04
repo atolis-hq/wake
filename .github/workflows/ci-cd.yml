@@ -199,23 +199,11 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: Set public workspace versions from tag
+      - name: Set Wake version from tag
         env:
           WAKE_VERSION: ${{ needs.tag.outputs.version }}
-        run: |
-          npm --workspace @atolis-hq/eventing pkg set version="$WAKE_VERSION"
-          npm --workspace @atolis-hq/eventing-filesystem pkg set version="$WAKE_VERSION" dependencies.@atolis-hq/eventing="$WAKE_VERSION"
-          npm pkg set version="$WAKE_VERSION" dependencies.@atolis-hq/eventing="$WAKE_VERSION" dependencies.@atolis-hq/eventing-filesystem="$WAKE_VERSION"
-          npm install --package-lock-only --ignore-scripts
+        run: npm pkg set version="$WAKE_VERSION"
       - name: Verify public package archives
         run: npm run check:workspace-packages
-        env:
-          WAKE_BUILD_TAG: ${{ needs.tag.outputs.version }}
-      - name: Publish Eventing
-        run: npm --workspace @atolis-hq/eventing publish --access public --provenance
-      - name: Publish Eventing filesystem
-        run: npm --workspace @atolis-hq/eventing-filesystem publish --access public --provenance
       - name: Publish Wake
         run: npm publish --workspaces=false --access public --provenance
-        env:
-          WAKE_BUILD_TAG: ${{ needs.tag.outputs.version }}

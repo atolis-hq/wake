@@ -8,6 +8,7 @@
     "url": "git+https://github.com/atolis-hq/wake.git"
   },
   "type": "module",
+  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -27,9 +28,6 @@
   ],
   "engines": {
     "node": ">=24"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "scripts": {
     "clean": "node scripts/clean-dist.mjs",

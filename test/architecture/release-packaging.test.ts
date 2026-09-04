@@ -39,8 +39,14 @@ describe('release packaging', () => {
     expect(packagedDockerfile).not.toContain('npm ci');
   });
 
-  it('publishes the three public packages at one version in dependency order', async () => {
+  it('publishes only Wake from the root package on tagged main after all checks', async () => {
     const workflow = await readRepositoryFile('.github/workflows/ci-cd.yml');
+    const publishJob = workflow.slice(workflow.indexOf('\n  publish:'));
+    const versionSet = publishJob.indexOf('npm pkg set version="$WAKE_VERSION"');
+    const archiveCheck = publishJob.indexOf('run: npm run check:workspace-packages');
+    const wakePublish = publishJob.indexOf(
+      'npm publish --workspaces=false --access public --provenance',
+    );
 
     expect(workflow).toContain('run: npm run verify');
     expect(workflow).toContain('run: npm run test:architecture');
@@ -49,31 +55,32 @@ describe('release packaging', () => {
     expect(workflow).toContain(
       'needs: [fast-verify, architecture, package-contract, knip, integration, e2e, web, docker-smoke]',
     );
+    expect(workflow).toContain(
+      "if: github.ref == 'refs/heads/main' && github.event_name == 'push'",
+    );
     expect(workflow).toContain('WAKE_VERSION: ${{ needs.tag.outputs.version }}');
-    expect(workflow).toContain(
-      'npm --workspace @atolis-hq/eventing pkg set version="$WAKE_VERSION"',
-    );
-    expect(workflow).toContain(
-      'npm --workspace @atolis-hq/eventing-filesystem pkg set version="$WAKE_VERSION" dependencies.@atolis-hq/eventing="$WAKE_VERSION"',
-    );
-    expect(workflow).toContain(
-      'npm pkg set version="$WAKE_VERSION" dependencies.@atolis-hq/eventing="$WAKE_VERSION" dependencies.@atolis-hq/eventing-filesystem="$WAKE_VERSION"',
-    );
-    expect(workflow).toContain('npm install --package-lock-only --ignore-scripts');
+    expect(workflow).toContain('npm pkg set version="$WAKE_VERSION"');
     expect(workflow).not.toContain('npm version "$WAKE_VERSION"');
     expect(workflow).not.toMatch(/npm publish --workspaces(?:\s|$)/u);
+    expect(workflow).not.toContain('npm install --package-lock-only --ignore-scripts');
 
-    const eventingPublish = workflow.indexOf('npm --workspace @atolis-hq/eventing publish');
-    const filesystemPublish = workflow.indexOf(
+    for (const forbidden of [
+      'npm --workspace @atolis-hq/eventing pkg set version="$WAKE_VERSION"',
+      'npm --workspace @atolis-hq/eventing-filesystem pkg set version="$WAKE_VERSION"',
+      'npm --workspace @atolis-hq/eventing-filesystem pkg set version="$WAKE_VERSION" dependencies.@atolis-hq/eventing="$WAKE_VERSION"',
+      'dependencies.@atolis-hq/eventing="$WAKE_VERSION"',
+      'dependencies.@atolis-hq/eventing-filesystem="$WAKE_VERSION"',
+      'npm --workspace @atolis-hq/eventing publish',
       'npm --workspace @atolis-hq/eventing-filesystem publish',
-    );
-    const wakePublish = workflow.indexOf(
-      'npm publish --workspaces=false --access public --provenance',
-    );
+    ]) {
+      expect(workflow).not.toContain(forbidden);
+    }
 
-    expect(eventingPublish).toBeGreaterThan(-1);
-    expect(filesystemPublish).toBeGreaterThan(eventingPublish);
-    expect(wakePublish).toBeGreaterThan(filesystemPublish);
+    expect(versionSet).toBeGreaterThan(-1);
+    expect(archiveCheck).toBeGreaterThan(-1);
+    expect(wakePublish).toBeGreaterThan(-1);
+    expect(versionSet).toBeLessThan(archiveCheck);
+    expect(archiveCheck).toBeLessThan(wakePublish);
     expect(workflow).toContain('--access public --provenance');
   });
 });
