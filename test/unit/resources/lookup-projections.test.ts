@@ -1,10 +1,15 @@
-import { describe, expect, it } from 'vitest';
 import {
+  createProjectionProcessor,
+  EventProcessorHost,
+  ProjectionRebuilder,
+} from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  ProjectionRunner,
-} from '../../../src/persistence/index.js';
+} from '@atolis-hq/eventing/memory';
+import { describe, expect, it } from 'vitest';
 import {
   externalKeyProjectionKey,
   resourcesByExternalKeyProjection,
@@ -78,8 +83,8 @@ describe('ResourceLookup projections', () => {
     await catchUp(world);
     const before = await world.lookup.correlationsForWork(work);
     await world.projections.clear();
-    await world.runner.rebuild(resourcesByExternalKeyProjection);
-    await world.runner.rebuild(workCorrelationsProjection);
+    await world.rebuilder.rebuild(resourcesByExternalKeyProjection);
+    await world.rebuilder.rebuild(workCorrelationsProjection);
     await expect(world.lookup.correlationsForWork(work)).resolves.toEqual(before);
   });
 });
@@ -88,18 +93,24 @@ function createWorld() {
   const journal = new InMemoryEventJournal(new FakeClock());
   const projections = new InMemoryProjectionStore();
   const checkpoints = new InMemoryCheckpointStore();
+  const serialiseRun = createInMemoryProcessorRunSerialiser();
   const lookup = createResourceLookup({ journal, projections });
   return {
     resources: createResourceService(journal, lookup),
     lookup,
     projections,
-    runner: new ProjectionRunner(journal, projections, checkpoints),
+    projectionHost: new EventProcessorHost(journal, checkpoints, serialiseRun, new FakeClock()),
+    rebuilder: new ProjectionRebuilder(journal, projections, checkpoints, serialiseRun),
   };
 }
 
 async function catchUp(world: ReturnType<typeof createWorld>) {
-  await world.runner.runOnce(resourcesByExternalKeyProjection);
-  await world.runner.runOnce(workCorrelationsProjection);
+  await world.projectionHost.runOnce(
+    createProjectionProcessor(resourcesByExternalKeyProjection, world.projections),
+  );
+  await world.projectionHost.runOnce(
+    createProjectionProcessor(workCorrelationsProjection, world.projections),
+  );
 }
 
 function discovery(

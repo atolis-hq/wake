@@ -1,5 +1,8 @@
 ﻿import { Link, useLocation } from 'react-router';
-import type { BoardCardResponse } from '../../../../api/contracts/index.js';
+import {
+  BoardActiveRunPhaseValue,
+  type BoardCardResponse,
+} from '../../../../api/contracts/index.js';
 import { Chip } from '../../components/chip.js';
 import { fmtCost, fmtDuration } from '../../components/format.js';
 import { OutcomeChip } from '../../components/outcome-chip.js';
@@ -93,6 +96,12 @@ function StageIcon() {
   );
 }
 
+function activeRunLabel(
+  phase: NonNullable<BoardCardResponse['activeRuns']>[string]['phase'],
+): string {
+  return phase === BoardActiveRunPhaseValue.Starting ? 'Starting' : 'Running';
+}
+
 export function BoardCard({
   item,
   background,
@@ -170,7 +179,9 @@ export function BoardCard({
               data-testid={`active-run-dot-${runId}`}
             />
             <div>
-              <div className={styles.childRunTitle}>{`${activeRun.action} running`}</div>
+              <div
+                className={styles.childRunTitle}
+              >{`${activeRun.action} ${activeRunLabel(activeRun.phase)}`}</div>
               <div className={styles.childRunMeta}>
                 {[activeRun.runnerName, fmtDuration(activeRun.elapsedMs)]
                   .filter((part): part is string => part !== undefined)

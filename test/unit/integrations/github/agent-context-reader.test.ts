@@ -1,3 +1,10 @@
+import {
+  correlationId,
+  createEventData,
+  EventActorKind,
+  eventId,
+  EventSourceKind,
+} from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { PullRequestCheckState } from '../../../../src/activities/index.js';
 import {
@@ -14,13 +21,6 @@ import {
   DeliveryIntentEventType,
   deliveryStream,
 } from '../../../../src/integrations/index.js';
-import {
-  correlationId,
-  createEventDraft,
-  EventActorKind,
-  eventId,
-  EventSourceKind,
-} from '../../../../src/kernel/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,
@@ -75,7 +75,7 @@ it('includes the latest correlated pull request check evidence without reading c
     ResourceCorrelationRole.Secondary,
     { ...context, commandId: 'correlate-older-pull-request' },
   );
-  const olderObservation = createEventDraft({
+  const olderObservation = createEventData({
     eventId: 'github:pr:atolis-hq/wake#9:older',
     eventType: GitHubEventType.WorkObserved,
     occurredAt: '2026-08-14T00:00:00.000Z',
@@ -83,7 +83,6 @@ it('includes the latest correlated pull request check evidence without reading c
     causationId: 'github:atolis-hq/wake#9:older',
     actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: EventSourceKind.Adapter, id: GitHubAdapter },
-    stream: integrationStream(GitHubAdapter),
     payload: {
       externalKey: 'atolis-hq/wake#9',
       kind: 'pull-request',
@@ -102,7 +101,7 @@ it('includes the latest correlated pull request check evidence without reading c
       },
     },
   });
-  const latestObservation = createEventDraft({
+  const latestObservation = createEventData({
     ...olderObservation,
     eventId: 'github:pr:atolis-hq/wake#8:latest',
     correlationId: 'github:atolis-hq/wake#8',
@@ -130,7 +129,10 @@ it('includes the latest correlated pull request check evidence without reading c
       },
     },
   });
-  await world.journal.append(olderObservation.stream, 0, [olderObservation, latestObservation]);
+  await world.journal.appendToStream(integrationStream(GitHubAdapter), 0, [
+    olderObservation,
+    latestObservation,
+  ]);
 
   const agentContext = await createGitHubAgentContextReader(
     world.journal,
@@ -667,7 +669,7 @@ async function appendConfirmedAgentRunComment(
     readonly displayBody: string;
   },
 ): Promise<void> {
-  const intent = createEventDraft({
+  const intent = createEventData({
     eventId: input.intentEventId,
     eventType: DeliveryIntentEventType.AgentRunPublishRequested,
     occurredAt: input.occurredAt,
@@ -675,7 +677,6 @@ async function appendConfirmedAgentRunComment(
     causationId: `causation:${input.intentEventId}`,
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: resourceStream(resourceId),
     payload: {
       workflowInstanceId: 'workflow-1',
       activationId: 'activation-1',
@@ -692,13 +693,13 @@ async function appendConfirmedAgentRunComment(
     },
   });
   const stream = resourceStream(resourceId);
-  const [published] = await world.journal.append(
+  const [published] = await world.journal.appendToStream(
     stream,
     (await world.journal.readStream(stream)).length,
     [intent],
   );
   if (published === undefined) throw new Error('Expected agent-run publication intent');
-  const confirmation = createEventDraft({
+  const confirmation = createEventData({
     eventId: `${input.intentEventId}-confirmed`,
     eventType: DeliveryEventType.Confirmed,
     occurredAt: input.occurredAt,
@@ -706,7 +707,6 @@ async function appendConfirmedAgentRunComment(
     causationId: `causation:${input.intentEventId}`,
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: deliveryStream(eventId(input.intentEventId)),
     payload: {
       intentEventId: eventId(input.intentEventId),
       intentGlobalPosition: published.globalPosition,
@@ -716,7 +716,9 @@ async function appendConfirmedAgentRunComment(
       externalId: `github-comment-${input.intentEventId}`,
     },
   });
-  await world.journal.append(confirmation.stream, 0, [confirmation]);
+  await world.journal.appendToStream(deliveryStream(eventId(input.intentEventId)), 0, [
+    confirmation,
+  ]);
 }
 
 async function appendIssueComment(world: TestWorld, id: number, body: string, updatedAt?: string) {
@@ -734,6 +736,7 @@ async function appendIssueComment(world: TestWorld, id: number, body: string, up
     },
   });
   if (event === null) throw new Error('Expected issue comment observation');
-  const events = await world.journal.readStream(event.stream);
-  await world.journal.append(event.stream, events.length, [event]);
+  const stream = integrationStream(GitHubAdapter);
+  const events = await world.journal.readStream(stream);
+  await world.journal.appendToStream(stream, events.length, [event]);
 }

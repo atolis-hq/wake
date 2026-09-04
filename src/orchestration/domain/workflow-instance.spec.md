@@ -19,7 +19,7 @@ from OrchestrationGroup), and the pure fold from `orchestration.*` facts to
 the current `WorkflowInstanceView`. It does not own deciding whether an
 outcome retries, a Signal is accepted, a supplemental command is authorised,
 or a child request is granted a budget slot — those are the policy
-components' responsibility, expressed purely as event drafts this aggregate
+components' responsibility, expressed purely as event data this aggregate
 then folds.
 
 ## Core policies, invariants, and behaviours

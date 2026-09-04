@@ -6,6 +6,7 @@ import { resId, workId } from '../../support/identities.js';
 
 const request = {
   runId: runId('run-fake-prepare'),
+  signal: new AbortController().signal,
   mode: 'read-only' as const,
   workItemId: workId('fake-prepare'),
   repositoryResource: {

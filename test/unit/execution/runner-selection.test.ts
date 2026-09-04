@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { workId } from '../../support/identities.js';
 
+import { createEventData, EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import {
   activationId,
   ActivityRegistry,
@@ -18,9 +20,7 @@ import {
   type Runner,
   type RunView,
 } from '../../../src/execution/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {} from '../../../src/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 
@@ -34,7 +34,7 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation('premium'), context());
 
-    expect(premium.calls).toBe(1);
+    await vi.waitFor(() => expect(premium.calls).toBe(1));
     expect(standard.calls).toBe(0);
   });
 
@@ -44,7 +44,7 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(standard.calls).toBe(1);
+    await vi.waitFor(() => expect(standard.calls).toBe(1));
   });
 
   it('records the resolved runner name, model, and effort on the Run', async () => {
@@ -64,9 +64,11 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(standard.requests).toEqual([
-      expect.objectContaining({ model: 'test-model', effort: 'high' }),
-    ]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.objectContaining({ model: 'test-model', effort: 'high' }),
+      ]),
+    );
   });
 
   it('rejects a runner pool with no registered runner', async () => {
@@ -87,7 +89,7 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context(new Set(['sonnet'])));
 
-    expect(codexMini.calls).toBe(1);
+    await vi.waitFor(() => expect(codexMini.calls).toBe(1));
     expect(sonnet.calls).toBe(0);
   });
 
@@ -134,7 +136,11 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.objectContaining({ resumeSessionId: 'session-1' }),
+      ]),
+    );
   });
 
   it('starts fresh when the selected runner does not support session resume', async () => {
@@ -148,9 +154,11 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(standard.requests).toEqual([
-      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
-    ]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+      ]),
+    );
   });
 
   it('starts fresh when a different configured runner is selected', async () => {
@@ -182,9 +190,11 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(replacement.requests).toEqual([
-      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
-    ]);
+    await vi.waitFor(() =>
+      expect(replacement.requests).toEqual([
+        expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+      ]),
+    );
   });
 
   it('forwards the accumulated usage baseline for a resumed session', async () => {
@@ -203,12 +213,14 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(standard.requests).toEqual([
-      expect.objectContaining({
-        resumeSessionId: 'session-1',
-        usageBaseline: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 },
-      }),
-    ]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.objectContaining({
+          resumeSessionId: 'session-1',
+          usageBaseline: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 },
+        }),
+      ]),
+    );
   });
 
   it('sums only scoped terminal runs with finite metadata counters for the resumed session', async () => {
@@ -261,12 +273,14 @@ describe('Execution runner selection', () => {
       { ...context(), sessionPolicy: 'resume-stage' },
     );
 
-    expect(standard.requests).toEqual([
-      expect.objectContaining({
-        resumeSessionId: 'session-1',
-        usageBaseline: { input: 10, output: 20 },
-      }),
-    ]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.objectContaining({
+          resumeSessionId: 'session-1',
+          usageBaseline: { input: 10, output: 20 },
+        }),
+      ]),
+    );
   });
 
   it('resumes the newest same-CLI session when a primary stage is re-entered', async () => {
@@ -293,9 +307,11 @@ describe('Execution runner selection', () => {
       sessionPolicy: 'resume-stage',
     });
 
-    expect(standard.requests).toEqual([
-      expect.objectContaining({ resumeSessionId: 'session-first' }),
-    ]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.objectContaining({ resumeSessionId: 'session-first' }),
+      ]),
+    );
   });
 
   it('starts a fresh session for a watch workflow', async () => {
@@ -309,9 +325,11 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), { ...context(), sessionPolicy: 'fresh' });
 
-    expect(standard.requests).toEqual([
-      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
-    ]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+      ]),
+    );
     expect(standard.requests).toEqual([
       expect.not.objectContaining({ usageBaseline: expect.anything() }),
     ]);
@@ -368,7 +386,11 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.objectContaining({ resumeSessionId: 'session-1' }),
+      ]),
+    );
     expect(standard.requests[0]).not.toEqual(
       expect.objectContaining({ usageBaseline: expect.anything() }),
     );
@@ -465,9 +487,11 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(standard.requests).toEqual([
-      expect.not.objectContaining({ usageBaseline: expect.anything() }),
-    ]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.not.objectContaining({ usageBaseline: expect.anything() }),
+      ]),
+    );
   });
 
   it('does not resume absent sessions or sessions from another adapter or activation', async () => {
@@ -489,9 +513,11 @@ describe('Execution runner selection', () => {
 
     await service.attempt(activation(), context());
 
-    expect(standard.requests).toEqual([
-      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
-    ]);
+    await vi.waitFor(() =>
+      expect(standard.requests).toEqual([
+        expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+      ]),
+    );
   });
 
   it('selects only conclusively terminal sessions and breaks newest ties deterministically', () => {
@@ -598,8 +624,8 @@ async function seedPriorRun(
   const clock = new FakeClock();
   const stream = runStream(runId(id));
   const { testStatus: status = 'failed', runnerName = 'standard', ...metadata } = usage ?? {};
-  await journal.append(stream, 0, [
-    createEventDraft({
+  await journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: clock.now().toISOString(),
@@ -607,7 +633,6 @@ async function seedPriorRun(
       causationId: activationValue.activationId,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream,
       payload: {
         activationId: activationValue.activationId,
         activity: activationValue.activity,
@@ -619,7 +644,7 @@ async function seedPriorRun(
         runner: { name: runnerName, cli },
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `${id}:result`,
       eventType: ExecutionEventType.RunRunnerResultReported,
       occurredAt: clock.now().toISOString(),
@@ -627,7 +652,6 @@ async function seedPriorRun(
       causationId: activationValue.activationId,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream,
       payload: {
         transport: 'failed',
         agent: {
@@ -641,7 +665,7 @@ async function seedPriorRun(
       ? []
       : status === 'ambiguous'
         ? [
-            createEventDraft({
+            createEventData({
               eventId: `${id}:ambiguous`,
               eventType: ExecutionEventType.RunAmbiguous,
               occurredAt: clock.now().toISOString(),
@@ -649,12 +673,11 @@ async function seedPriorRun(
               causationId: activationValue.activationId,
               actor: { kind: EventActorKind.System, id: 'test' },
               source: { kind: EventSourceKind.Internal, id: 'test' },
-              stream,
               payload: { reason: 'ambiguous', finishedAt: clock.now().toISOString() },
             }),
           ]
         : [
-            createEventDraft({
+            createEventData({
               eventId: `${id}:failed`,
               eventType: ExecutionEventType.RunFailed,
               occurredAt: clock.now().toISOString(),
@@ -662,7 +685,6 @@ async function seedPriorRun(
               causationId: activationValue.activationId,
               actor: { kind: EventActorKind.System, id: 'test' },
               source: { kind: EventSourceKind.Internal, id: 'test' },
-              stream,
               payload: {
                 failure: { kind: 'unexpected-execution-failure', message: 'failed' },
                 finishedAt: clock.now().toISOString(),

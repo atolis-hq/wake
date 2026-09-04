@@ -1,7 +1,19 @@
 /* eslint-disable max-lines */
 import {
+  correlationId,
+  defineEventProcessor,
+  EventActorKind,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  EventSourceKind,
+  WrongExpectedSequenceError,
+  type EventJournal,
+  type EventProcessor,
+} from '@atolis-hq/eventing';
+import {
   ActivityEventType,
   createPullRequestService,
+  selectActivityEvent,
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
@@ -11,17 +23,7 @@ import {
   type ConversationService,
 } from '../../../conversations/index.js';
 import type { RunRepository } from '../../../execution/index.js';
-import {
-  correlationId,
-  createEventDraft,
-  EventActorKind,
-  EventSourceKind,
-  UlidIdGenerator,
-  WrongExpectedSequenceError,
-  type CheckpointStore,
-  type EventJournal,
-  type IdGenerator,
-} from '../../../kernel/index.js';
+import { UlidIdGenerator, type IdGenerator } from '../../../kernel/index.js';
 import type { OrchestrationService } from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
@@ -31,6 +33,7 @@ import {
   ResourceEventType,
   resourceId,
   resourceStream,
+  selectResourceEvent,
   type ResourceId,
 } from '../../../resources/index.js';
 import type { WorkService } from '../../../work/index.js';
@@ -39,11 +42,18 @@ import { admitObservedWork, type WorkAdmissionServices } from '../../application
 import { concludeObservedWork } from '../../application/work-conclusion.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rules.js';
+import type { ProviderReconciler } from '../../contracts/intake.js';
 import type { WorkConclusion, WorkflowRouter } from '../../contracts/provider.js';
 import { deliveryStream, integrationStream } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../../delivery/contracts/events.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
-import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
+import { createGitHubEventData } from '../contracts/event-factory.js';
+import type {
+  ExternalWorkObservedPayload,
+  GitHubAdapterEvent,
+  GitHubAdapterEventOf,
+  GitHubEventPayloads,
+} from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
 import { commandContext } from './inbound-context.js';
@@ -51,6 +61,21 @@ import { applyReviewSignal } from './inbound-review-signals.js';
 import { applyWatchGateVerdictSignal } from './inbound-watch-gate-signals.js';
 import { gitHubIntakeFacts, gitHubIntakeRules } from './intake-policy.js';
 import { observePullRequest } from './pull-request-translation.js';
+
+type TranslatableEvent =
+  | GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved>
+  | GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>;
+
+type TranslationDiagnosticEventType =
+  | typeof GitHubEventType.InboundTranslationRetried
+  | typeof GitHubEventType.InboundTranslationFailed;
+
+type TranslationDiagnosticInput = {
+  [Type in TranslationDiagnosticEventType]: {
+    readonly eventType: Type;
+    readonly payload: GitHubEventPayloads[Type];
+  };
+}[TranslationDiagnosticEventType];
 
 type InboundCommandCandidate =
   | {
@@ -94,6 +119,8 @@ interface InboundTranslatorDependencies {
 
 export class InboundTranslator {
   private readonly minted = new Map<string, { resourceId: ResourceId; workItemId: WorkItemId }>();
+  readonly processor: EventProcessor;
+  readonly reconciler: ProviderReconciler;
 
   translate(payload: ExternalWorkObservedPayload): readonly InboundCommandCandidate[] {
     const { resourceId: resourceIdValue, workItemId: workItemIdValue } = this.newIdentity({
@@ -121,7 +148,6 @@ export class InboundTranslator {
 
   constructor(
     private readonly journal?: EventJournal,
-    private readonly checkpoints?: CheckpointStore,
     private readonly work?: WorkService,
     private readonly resources?: ResourceService,
     dependencies: InboundTranslatorDependencies = {},
@@ -136,6 +162,16 @@ export class InboundTranslator {
     this.intake = gitHubIntakeRules(dependencies.intake ?? []);
     this.conclusion = dependencies.conclusion;
     this.conversations = dependencies.conversations;
+    this.processor = defineEventProcessor({
+      consumer: `reactor:integration.${this.adapter}.inbound`,
+      name: `integration.${this.adapter}.inbound`,
+      owner: 'integrations',
+      category: EventProcessorCategory.Translator,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select: (event) => this.selectInboundEvent(event),
+      handle: async (event) => this.translateEvent(event),
+    });
+    this.reconciler = { reconcileOnce: () => this.reconcileOnce() };
   }
 
   private readonly pullRequests: PullRequestService | undefined;
@@ -150,80 +186,35 @@ export class InboundTranslator {
   private readonly conversations: ConversationService | undefined;
   private conversationRecordRecoveryPending: boolean | undefined;
 
-  // Adapter filtering, checkpointing, and typed event dispatch must stay together.
-  async runOnce(limit = 100): Promise<number> {
-    if (
-      this.journal === undefined ||
-      this.checkpoints === undefined ||
-      this.work === undefined ||
-      this.resources === undefined
-    ) {
+  private async reconcileOnce(): Promise<void> {
+    if (this.journal === undefined || this.work === undefined || this.resources === undefined) {
       throw new Error('InboundTranslator services are required to run evidence translation');
     }
-    // Retry state is resource-scoped, so it progresses even when the provider
-    // has no further observations for the broken resource.
     await this.resources.retryPendingWorkCorrelations();
     await this.applyDeferredExternalOutcomes();
-    const checkpoint = `reactor:integration.${this.adapter}.inbound`;
     await this.retryPendingConversationRecords();
-    await this.retryPendingTranslations();
-    const position = await this.checkpoints.load(checkpoint);
-    const events = await this.journal.readAll(position, limit);
-    for (const event of events) {
-      await this.translateEvent(event);
-      await this.checkpoints.save(checkpoint, event.globalPosition);
-    }
-    return events.length;
   }
 
-  private async retryPendingTranslations(): Promise<void> {
-    const events = await this.journal!.readStream(integrationStream(this.adapter));
-    const owned = events
-      .map(selectGitHubAdapterEvent)
-      .filter((event): event is GitHubAdapterEvent => event !== null);
-    const failures = new Set(
-      owned
-        .filter((event) => event.eventType === GitHubEventType.InboundTranslationFailed)
-        .map((event) => event.payload.sourceEventId),
-    );
-    const pending = new Set(
-      owned
-        .filter((event) => event.eventType === GitHubEventType.InboundTranslationRetried)
-        .map((event) => event.payload.sourceEventId),
-    );
-    const recovered = new Set(
-      owned
-        .filter((event) => event.eventType === GitHubEventType.InboundTranslationRecovered)
-        .map((event) => event.payload.sourceEventId),
-    );
-    for (const event of owned) {
-      if (
-        pending.has(event.eventId) &&
-        !failures.has(event.eventId) &&
-        !recovered.has(event.eventId) &&
-        this.isTranslatable(event)
-      )
-        await this.translateEvent(event);
-    }
+  private selectInboundEvent(
+    event: Parameters<typeof selectGitHubAdapterEvent>[0],
+  ): TranslatableEvent | null {
+    const owned = selectGitHubAdapterEvent(event);
+    return owned === null || !this.isTranslatable(owned) ? null : owned;
   }
 
-  private isTranslatable(event: GitHubAdapterEvent): boolean {
+  private isTranslatable(event: GitHubAdapterEvent): event is TranslatableEvent {
     return (
       event.stream.id === this.adapter &&
-      (event.eventType === GitHubEventType.WorkObserved ||
-        event.eventType === GitHubEventType.CommentObserved)
+      (event.event.eventType === GitHubEventType.WorkObserved ||
+        event.event.eventType === GitHubEventType.CommentObserved)
     );
   }
 
-  private async translateEvent(
-    event: Parameters<typeof selectGitHubAdapterEvent>[0],
-  ): Promise<void> {
-    const owned = selectGitHubAdapterEvent(event);
-    if (owned === null || !this.isTranslatable(owned)) return;
-    if (await this.failureRecorded(owned.eventId)) return;
+  private async translateEvent(owned: TranslatableEvent): Promise<void> {
+    if (await this.failureRecorded(owned.event.eventId)) return;
     try {
-      if (owned.eventType === GitHubEventType.WorkObserved) await this.apply(owned);
-      if (owned.eventType === GitHubEventType.CommentObserved) {
+      if (isGitHubAdapterEventType(owned, GitHubEventType.WorkObserved)) await this.apply(owned);
+      if (isGitHubAdapterEventType(owned, GitHubEventType.CommentObserved)) {
         if (!(await this.suppressWorkItemEffects(owned)))
           await applyReviewSignal({
             event: owned,
@@ -247,9 +238,11 @@ export class InboundTranslator {
           await this.recordConversationDeferred(owned);
         }
       }
-      if (await this.retryRecorded(owned.eventId)) await this.recordTranslationRecovery(owned);
+      if (await this.retryRecorded(owned.event.eventId))
+        await this.recordTranslationRecovery(owned);
     } catch (error) {
       await this.recordTranslationFailure(owned, error);
+      throw error;
     }
   }
 
@@ -261,24 +254,27 @@ export class InboundTranslator {
       .filter((event): event is GitHubAdapterEvent => event !== null);
     const recovered = new Set(
       events
-        .filter((event) => event.eventType === GitHubEventType.ConversationRecordRecovered)
-        .map((event) => event.payload.sourceEventId),
+        .filter((event) =>
+          isGitHubAdapterEventType(event, GitHubEventType.ConversationRecordRecovered),
+        )
+        .map((event) => event.event.payload.sourceEventId),
     );
     const pending = events
       .filter(
-        (
-          event,
-        ): event is Extract<
-          GitHubAdapterEvent,
-          { readonly eventType: typeof GitHubEventType.ConversationRecordDeferred }
-        > => event.eventType === GitHubEventType.ConversationRecordDeferred,
+        (event): event is GitHubAdapterEventOf<typeof GitHubEventType.ConversationRecordDeferred> =>
+          isGitHubAdapterEventType(event, GitHubEventType.ConversationRecordDeferred),
       )
-      .filter((event) => !recovered.has(event.payload.sourceEventId));
+      .filter((event) => !recovered.has(event.event.payload.sourceEventId));
     this.conversationRecordRecoveryPending = pending.length > 0;
     let stillPending = false;
     for (const deferred of pending) {
-      const source = events.find((event) => event.eventId === deferred.payload.sourceEventId);
-      if (source?.eventType !== GitHubEventType.CommentObserved) {
+      const source = events.find(
+        (event) => event.event.eventId === deferred.event.payload.sourceEventId,
+      );
+      if (
+        source === undefined ||
+        !isGitHubAdapterEventType(source, GitHubEventType.CommentObserved)
+      ) {
         stillPending = true;
         continue;
       }
@@ -294,10 +290,7 @@ export class InboundTranslator {
   }
 
   private async recordConversationDeferred(
-    event: Extract<
-      GitHubAdapterEvent,
-      { readonly eventType: typeof GitHubEventType.CommentObserved }
-    >,
+    event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
   ): Promise<void> {
     await this.appendConversationRecordFact(GitHubEventType.ConversationRecordDeferred, event);
     this.conversationRecordRecoveryPending = true;
@@ -307,41 +300,34 @@ export class InboundTranslator {
     eventType:
       | typeof GitHubEventType.ConversationRecordDeferred
       | typeof GitHubEventType.ConversationRecordRecovered,
-    source: Extract<
-      GitHubAdapterEvent,
-      { readonly eventType: typeof GitHubEventType.CommentObserved }
-    >,
+    source: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
   ): Promise<void> {
     const stream = integrationStream(this.adapter);
-    const eventId = `github:${eventType}:${this.adapter}:${source.eventId}`;
+    const eventId = `github:${eventType}:${this.adapter}:${source.event.eventId}`;
     const existing = await this.journal!.readStream(stream);
-    if (existing.some((event) => event.eventId === eventId)) return;
-    await this.journal!.append(stream, existing.length, [
-      createEventDraft({
+    if (existing.some((event) => event.event.eventId === eventId)) return;
+    await this.journal!.appendToStream(stream, existing.length, [
+      createGitHubEventData({
         eventId,
         eventType,
-        occurredAt: source.occurredAt,
-        correlationId: source.correlationId,
-        causationId: source.eventId,
+        occurredAt: source.event.occurredAt,
+        correlationId: source.event.correlationId,
+        causationId: source.event.eventId,
         actor: { kind: EventActorKind.Integration, id: this.adapter },
         source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
-        stream,
-        payload: { adapter: this.adapter, sourceEventId: source.eventId },
+        payload: { adapter: this.adapter, sourceEventId: source.event.eventId },
       }),
     ]);
   }
 
   // Conversation reconciliation keeps all entry identity decisions in one ordered command path.
   private async recordConversationEntry(
-    event: Extract<
-      GitHubAdapterEvent,
-      { readonly eventType: typeof GitHubEventType.CommentObserved }
-    >,
+    event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
   ): Promise<void> {
     if (this.conversations === undefined || this.resources === undefined) return;
     const resource = await this.resources.findByExternalKey({
       adapter: this.adapter,
-      key: event.payload.externalKey,
+      key: event.event.payload.externalKey,
     });
     if (resource === null) return;
     const correlation = await this.resources.primaryCorrelation(resource.resourceId);
@@ -375,12 +361,12 @@ export class InboundTranslator {
     )
       return;
     if (priorEntry !== undefined) {
-      if (priorEntry.body !== event.payload.body)
+      if (priorEntry.body !== event.event.payload.body)
         await this.conversations.revise(
           {
             conversationId,
             entryId: priorEntry.entryId,
-            body: event.payload.body,
+            body: event.event.payload.body,
           },
           commandContext(event),
         );
@@ -389,18 +375,19 @@ export class InboundTranslator {
     await this.conversations.record(
       {
         conversationId,
-        entryId: event.eventId,
-        body: event.payload.body,
+        entryId: event.event.eventId,
+        body: event.event.payload.body,
         origin: {
           kind: ConversationOriginKind.External,
           adapter: this.adapter,
-          actorId: event.payload.actor.id,
+          actorId: event.event.payload.actor.id,
           resourceId: resource.resourceId,
           threadId: resource.externalKey.key,
           messageId: externalId,
-          ...(event.payload.reviewKind !== 'issue' || event.payload.location === undefined
+          ...(event.event.payload.reviewKind !== 'issue' ||
+          event.event.payload.location === undefined
             ? {}
-            : { location: event.payload.location }),
+            : { location: event.event.payload.location }),
         },
       },
       commandContext(event),
@@ -411,8 +398,8 @@ export class InboundTranslator {
     return (await this.journal!.readStream(integrationStream(this.adapter))).some((event) => {
       const owned = selectGitHubAdapterEvent(event);
       return (
-        owned?.eventType === GitHubEventType.InboundTranslationFailed &&
-        owned.payload.sourceEventId === sourceEventId
+        owned?.event.eventType === GitHubEventType.InboundTranslationFailed &&
+        owned.event.payload.sourceEventId === sourceEventId
       );
     });
   }
@@ -421,28 +408,27 @@ export class InboundTranslator {
     return (await this.journal!.readStream(integrationStream(this.adapter))).some((event) => {
       const owned = selectGitHubAdapterEvent(event);
       return (
-        owned?.eventType === GitHubEventType.InboundTranslationRetried &&
-        owned.payload.sourceEventId === sourceEventId
+        owned?.event.eventType === GitHubEventType.InboundTranslationRetried &&
+        owned.event.payload.sourceEventId === sourceEventId
       );
     });
   }
 
   private async recordTranslationRecovery(event: GitHubAdapterEvent): Promise<void> {
     const stream = integrationStream(this.adapter);
-    const eventId = `github:inbound-translation-recovered:${this.adapter}:${event.eventId}`;
+    const eventId = `github:inbound-translation-recovered:${this.adapter}:${event.event.eventId}`;
     const existing = await this.journal!.readStream(stream);
-    if (existing.some((candidate) => candidate.eventId === eventId)) return;
-    await this.journal!.append(stream, existing.length, [
-      createEventDraft({
+    if (existing.some((candidate) => candidate.event.eventId === eventId)) return;
+    await this.journal!.appendToStream(stream, existing.length, [
+      createGitHubEventData({
         eventId,
         eventType: GitHubEventType.InboundTranslationRecovered,
-        occurredAt: event.occurredAt,
-        correlationId: event.correlationId,
-        causationId: event.eventId,
+        occurredAt: event.event.occurredAt,
+        correlationId: event.event.correlationId,
+        causationId: event.event.eventId,
         actor: { kind: EventActorKind.Integration, id: this.adapter },
         source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
-        stream,
-        payload: { adapter: this.adapter, sourceEventId: event.eventId },
+        payload: { adapter: this.adapter, sourceEventId: event.event.eventId },
       }),
     ]);
   }
@@ -455,8 +441,8 @@ export class InboundTranslator {
       return (
         count +
         Number(
-          owned?.eventType === GitHubEventType.InboundTranslationRetried &&
-            owned.payload.sourceEventId === event.eventId,
+          owned?.event.eventType === GitHubEventType.InboundTranslationRetried &&
+            owned.event.payload.sourceEventId === event.event.eventId,
         )
       );
     }, 0);
@@ -464,73 +450,53 @@ export class InboundTranslator {
     const message = error instanceof Error ? error.message : String(error);
     const terminal = retries >= 3;
     const eventId = terminal
-      ? `github:inbound-translation-failed:${this.adapter}:${event.eventId}`
-      : `github:inbound-translation-retried:${this.adapter}:${event.eventId}:${attempt}`;
-    const payload = terminal
+      ? `github:inbound-translation-failed:${this.adapter}:${event.event.eventId}`
+      : `github:inbound-translation-retried:${this.adapter}:${event.event.eventId}:${attempt}`;
+    const diagnostic: TranslationDiagnosticInput = terminal
       ? {
-          adapter: this.adapter,
-          sourceEventId: event.eventId,
-          attempt,
-          message,
-          globalPosition: event.globalPosition,
-          eventType: event.eventType,
-          correlationId: event.correlationId,
-          causationId: event.causationId,
-          failedAt: event.occurredAt,
+          eventType: GitHubEventType.InboundTranslationFailed,
+          payload: {
+            adapter: this.adapter,
+            sourceEventId: event.event.eventId,
+            attempt,
+            message,
+            globalPosition: event.globalPosition,
+            eventType: event.event.eventType,
+            correlationId: event.event.correlationId,
+            causationId: event.event.causationId,
+            failedAt: event.event.occurredAt,
+          },
         }
-      : { adapter: this.adapter, sourceEventId: event.eventId, attempt, message };
-    await this.appendTranslationDiagnostic(
-      eventId,
-      terminal
-        ? GitHubEventType.InboundTranslationFailed
-        : GitHubEventType.InboundTranslationRetried,
-      event,
-      payload,
+      : {
+          eventType: GitHubEventType.InboundTranslationRetried,
+          payload: { adapter: this.adapter, sourceEventId: event.event.eventId, attempt, message },
+        };
+    await this.appendTranslationDiagnostic(eventId, event, diagnostic);
+    console.error(
+      `Inbound translation failed for ${event.event.eventId} (attempt ${attempt})`,
+      error,
     );
-    console.error(`Inbound translation failed for ${event.eventId} (attempt ${attempt})`, error);
   }
 
   private async appendTranslationDiagnostic(
     eventId: string,
-    eventType:
-      | typeof GitHubEventType.InboundTranslationRetried
-      | typeof GitHubEventType.InboundTranslationFailed,
     source: GitHubAdapterEvent,
-    payload:
-      | {
-          readonly adapter: string;
-          readonly sourceEventId: string;
-          readonly attempt: number;
-          readonly message: string;
-        }
-      | {
-          readonly adapter: string;
-          readonly sourceEventId: string;
-          readonly attempt: number;
-          readonly message: string;
-          readonly globalPosition: number;
-          readonly eventType: string;
-          readonly correlationId: string;
-          readonly causationId: string;
-          readonly failedAt: string;
-        },
+    diagnostic: TranslationDiagnosticInput,
   ): Promise<void> {
     const stream = integrationStream(this.adapter);
     for (let contentionAttempts = 0; contentionAttempts < 3; contentionAttempts += 1) {
       const existing = await this.journal!.readStream(stream);
-      if (existing.some((event) => event.eventId === eventId)) return;
+      if (existing.some((event) => event.event.eventId === eventId)) return;
       try {
-        await this.journal!.append(stream, existing.length, [
-          createEventDraft({
+        await this.journal!.appendToStream(stream, existing.length, [
+          createGitHubEventData({
             eventId,
-            eventType,
-            occurredAt: source.occurredAt,
-            correlationId: source.correlationId,
-            causationId: source.eventId,
+            occurredAt: source.event.occurredAt,
+            correlationId: source.event.correlationId,
+            causationId: source.event.eventId,
             actor: { kind: EventActorKind.Integration, id: this.adapter },
             source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
-            stream,
-            payload,
+            ...diagnostic,
           }),
         ]);
         return;
@@ -542,11 +508,11 @@ export class InboundTranslator {
   }
 
   private async suppressWorkItemEffects(
-    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.CommentObserved }>,
+    event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
   ): Promise<boolean> {
     const resourceIdValue = await this.lookup?.resourceIdForExternalKey({
       adapter: this.adapter,
-      key: event.payload.externalKey,
+      key: event.event.payload.externalKey,
     });
     if (resourceIdValue === null || resourceIdValue === undefined) return false;
     const hasPrimary = (await this.resources!.correlations(resourceIdValue)).some(
@@ -562,17 +528,17 @@ export class InboundTranslator {
   }
 
   private async apply(
-    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.WorkObserved }>,
+    event: GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved>,
   ): Promise<void> {
     if (this.work === undefined || this.resources === undefined) return;
-    const payload = event.payload;
+    const payload = event.event.payload;
     const context = commandContext(event);
     const pullRequests =
       this.pullRequests ?? createPullRequestService(this.journal!, this.work, this.resources);
     const intake = evaluateIntakeRules(this.intake, gitHubIntakeFacts(payload));
     if (intake.ignored) return;
     const identity = await this.resolveIdentity(
-      event.eventId,
+      event.event.eventId,
       { adapter: this.adapter, key: payload.externalKey },
       intake.admitted,
     );
@@ -620,7 +586,7 @@ export class InboundTranslator {
   }
 
   private async applyExistingObservation(
-    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.WorkObserved }>,
+    event: GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved>,
     payload: ExternalWorkObservedPayload,
     context: ReturnType<typeof commandContext>,
     pullRequests: PullRequestService,
@@ -762,30 +728,32 @@ export class InboundTranslator {
   /** A confirmed completion consumes exactly one matching terminal observation. */
   private async unconsumedWakeCompletion(resourceIdValue: ResourceId): Promise<string | null> {
     const events = await this.journal!.readStream(resourceStream(resourceIdValue));
-    const intents = events.filter(
-      (event) => event.eventType === ActivityEventType.IssueCompleteRequested,
-    );
+    const intents = events
+      .map(selectActivityEvent)
+      .filter((event) => event?.event.eventType === ActivityEventType.IssueCompleteRequested);
     for (const intent of intents) {
+      if (intent?.event.eventType !== ActivityEventType.IssueCompleteRequested) continue;
       if (
-        events.some(
-          (event) =>
-            (event.eventType === ResourceEventType.IssueCompletionObservationConsumed ||
-              event.eventType === ResourceEventType.IssueCompletionObservationSuperseded) &&
-            event.payload !== null &&
-            typeof event.payload === 'object' &&
-            'intentEventId' in event.payload &&
-            event.payload.intentEventId === intent.eventId,
-        )
+        events.some((event) => {
+          const resourceEvent = selectResourceEvent(event);
+          return (
+            (resourceEvent?.event.eventType ===
+              ResourceEventType.IssueCompletionObservationConsumed ||
+              resourceEvent?.event.eventType ===
+                ResourceEventType.IssueCompletionObservationSuperseded) &&
+            resourceEvent.event.payload.intentEventId === intent.event.eventId
+          );
+        })
       )
         continue;
-      const deliveries = await this.journal!.readStream(deliveryStream(intent.eventId));
+      const deliveries = await this.journal!.readStream(deliveryStream(intent.event.eventId));
       if (
         deliveries.some((event) => {
           const delivery = selectDeliveryEvent(event);
-          return delivery?.eventType === DeliveryEventType.Confirmed;
+          return delivery?.event.eventType === DeliveryEventType.Confirmed;
         })
       )
-        return intent.eventId;
+        return intent.event.eventId;
     }
     return null;
   }
@@ -865,11 +833,14 @@ export class InboundTranslator {
       .map(selectGitHubAdapterEvent)
       .find(
         (candidate) =>
-          candidate?.eventType === GitHubEventType.AdmissionStarted &&
-          candidate.payload.sourceEventId === sourceEventId,
+          candidate?.event.eventType === GitHubEventType.AdmissionStarted &&
+          candidate.event.payload.sourceEventId === sourceEventId,
       );
-    if (event?.eventType !== GitHubEventType.AdmissionStarted) return undefined;
-    return { resourceId: event.payload.resourceId, workItemId: event.payload.workItemId };
+    if (event?.event.eventType !== GitHubEventType.AdmissionStarted) return undefined;
+    return {
+      resourceId: event.event.payload.resourceId,
+      workItemId: event.event.payload.workItemId,
+    };
   }
 
   private async resumeAdmissionIdentity(identity: {
@@ -887,26 +858,25 @@ export class InboundTranslator {
   }
 
   private async recordAdmissionStarted(
-    source: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.WorkObserved }>,
+    source: GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved>,
     identity: ResolvedIdentity,
   ): Promise<void> {
     if (identity.workItemId === null) throw new Error('Created identity is missing a WorkItem');
     const stream = integrationStream(this.adapter);
-    const eventId = `github:admission-started:${this.adapter}:${source.eventId}`;
+    const eventId = `github:admission-started:${this.adapter}:${source.event.eventId}`;
     const existing = await this.journal!.readStream(stream);
-    if (existing.some((event) => event.eventId === eventId)) return;
-    await this.journal!.append(stream, existing.length, [
-      createEventDraft({
+    if (existing.some((event) => event.event.eventId === eventId)) return;
+    await this.journal!.appendToStream(stream, existing.length, [
+      createGitHubEventData({
         eventId,
         eventType: GitHubEventType.AdmissionStarted,
-        occurredAt: source.occurredAt,
-        correlationId: source.correlationId,
-        causationId: source.eventId,
+        occurredAt: source.event.occurredAt,
+        correlationId: source.event.correlationId,
+        causationId: source.event.eventId,
         actor: { kind: EventActorKind.Integration, id: this.adapter },
         source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
-        stream,
         payload: {
-          sourceEventId: source.eventId,
+          sourceEventId: source.event.eventId,
           resourceId: identity.resourceId,
           workItemId: identity.workItemId,
         },
@@ -964,41 +934,40 @@ export class InboundTranslator {
   }
 
   private async recordDeletedWorkObservation(
-    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.WorkObserved }>,
+    event: GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved>,
     workItemId: WorkItemId,
   ): Promise<void> {
     const stream = integrationStream(this.adapter);
-    const eventId = `github:deleted-work-skip:${event.eventId}:${workItemId}`;
+    const eventId = `github:deleted-work-skip:${event.event.eventId}:${workItemId}`;
     const payload = {
-      externalKey: event.payload.externalKey,
+      externalKey: event.event.payload.externalKey,
       workItemId,
-      sourceEventId: event.eventId,
-      revision: event.payload.revision,
+      sourceEventId: event.event.eventId,
+      revision: event.event.payload.revision,
       reason: 'work-item-deleted' as const,
     };
     for (;;) {
       const existing = await this.journal!.readStream(stream);
-      const recorded = existing.find((candidate) => candidate.eventId === eventId);
+      const recorded = existing.find((candidate) => candidate.event.eventId === eventId);
       if (recorded !== undefined) {
         const diagnostic = selectGitHubAdapterEvent(recorded);
         if (
-          diagnostic?.eventType !== GitHubEventType.DeletedWorkObservationSkipped ||
-          JSON.stringify(diagnostic.payload) !== JSON.stringify(payload)
+          diagnostic?.event.eventType !== GitHubEventType.DeletedWorkObservationSkipped ||
+          JSON.stringify(diagnostic.event.payload) !== JSON.stringify(payload)
         )
           throw new Error(`Event id ${eventId} has already been used with different content`);
         return;
       }
       try {
-        await this.journal!.append(stream, existing.length, [
-          createEventDraft({
+        await this.journal!.appendToStream(stream, existing.length, [
+          createGitHubEventData({
             eventId,
             eventType: GitHubEventType.DeletedWorkObservationSkipped,
-            occurredAt: event.occurredAt,
-            correlationId: event.correlationId,
-            causationId: event.eventId,
+            occurredAt: event.event.occurredAt,
+            correlationId: event.event.correlationId,
+            causationId: event.event.eventId,
             actor: { kind: EventActorKind.Integration, id: this.adapter },
             source: { kind: EventSourceKind.Internal, id: 'github-inbound-translator' },
-            stream,
             payload,
           }),
         ]);
@@ -1011,11 +980,15 @@ export class InboundTranslator {
 }
 
 function observedCommentExternalId(
-  event: Extract<
-    GitHubAdapterEvent,
-    { readonly eventType: typeof GitHubEventType.CommentObserved }
-  >,
+  event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
 ): string {
-  const id = event.payload.raw.id;
-  return typeof id === 'string' || typeof id === 'number' ? String(id) : event.eventId;
+  const id = event.event.payload.raw.id;
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : event.event.eventId;
+}
+
+function isGitHubAdapterEventType<Type extends GitHubAdapterEvent['event']['eventType']>(
+  event: GitHubAdapterEvent,
+  eventType: Type,
+): event is GitHubAdapterEventOf<Type> {
+  return event.event.eventType === eventType;
 }

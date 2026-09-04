@@ -1,3 +1,4 @@
+import type { EventJournal, ProjectionStore } from '@atolis-hq/eventing';
 import { z } from 'zod';
 import {
   ActivityExecutionKind,
@@ -7,7 +8,6 @@ import {
   type ActivityDefinition,
 } from '../../src/activities/index.js';
 import type { WorkflowRouter } from '../../src/integrations/index.js';
-import type { EventJournal, ProjectionStore } from '../../src/kernel/index.js';
 import {
   compileWorkflow,
   createOrchestrationService,

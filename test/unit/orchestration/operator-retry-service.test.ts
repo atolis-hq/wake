@@ -1,7 +1,8 @@
+import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -12,7 +13,6 @@ import {
   createOrchestrationService,
   OperatorRetryIneligibleError,
 } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
@@ -133,7 +133,7 @@ it('concurrently replays a retry command with a changed occurredAt only once', a
   expect(first.operatorRetryCommandIds).toEqual(['retry-concurrent']);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.operator-retry-requested',
+      (event) => event.event.eventType === 'orchestration.operator-retry-requested',
     ),
   ).toHaveLength(1);
 });

@@ -2,7 +2,7 @@ import { ActivityOutcomeKind } from '../../activities/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import {
   OrchestrationEventType,
-  type WorkflowOrchestrationEventDraft,
+  type WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -65,7 +65,7 @@ export function acceptActivityOutcome(
     return { kind: 'ignored', reason: 'outcome is not for the pending activation' };
   if (input.outcome.kind === ActivityOutcomeKind.Waiting) return acceptWaitingOutcome(state, input);
 
-  const events: WorkflowOrchestrationEventDraft[] = [acceptOutcomeDraft(state, input)];
+  const events: WorkflowOrchestrationEventData[] = [acceptOutcomeDraft(state, input)];
   const pending = state.pendingActivation!;
   if (pending.supplemental === true) {
     finishSupplemental(events, definition, state, input);
@@ -82,8 +82,10 @@ export function acceptActivityOutcome(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.InstanceBlocked,
-        { reason: `unconfigured outcome ${input.outcome.kind}` },
+        {
+          eventType: OrchestrationEventType.InstanceBlocked,
+          payload: { reason: `unconfigured outcome ${input.outcome.kind}` },
+        },
         events.length + 1,
       ),
     );

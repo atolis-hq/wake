@@ -1,20 +1,24 @@
 import { expect, it } from 'vitest';
 import { resId, workId } from '../../support/identities.js';
 
-import { createPullRequestService, pullRequestProjection } from '../../../src/activities/index.js';
 import {
-  BuiltInAdapterId,
-  InboundTranslator,
-  createEventDraft,
-  integrationStream,
-  type ExternalWorkObservedPayload,
-} from '../../../src/integrations/github/index.js';
+  EventProcessorHost,
+  createEventData,
+  createProjectionProcessor,
+} from '@atolis-hq/eventing';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  ProjectionRunner,
-} from '../../../src/persistence/index.js';
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
+import { createPullRequestService, pullRequestProjection } from '../../../src/activities/index.js';
+import {
+  BuiltInAdapterId,
+  InboundTranslator,
+  integrationStream,
+  type ExternalWorkObservedPayload,
+} from '../../../src/integrations/github/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
@@ -38,7 +42,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
   const pullRequests = createPullRequestService(journal, work, resources);
   const prResource = resId('github-owner-repo-1');
   const payload = observation('head-a');
-  const evidence = createEventDraft({
+  const evidence = createEventData({
     eventId: 'github:pr-1',
     eventType: 'integration.github.work-observed',
     occurredAt: clock.now().toISOString(),
@@ -46,11 +50,10 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
     causationId: 'github:pr-1',
     actor: { kind: 'integration', id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: integrationStream(BuiltInAdapterId.GitHub),
     payload,
   });
-  await journal.append(evidence.stream, 0, [evidence]);
-  const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+  await journal.appendToStream(integrationStream(BuiltInAdapterId.GitHub), 0, [evidence]);
+  const translator = new InboundTranslator(journal, work, resources, {
     pullRequests,
     lookup,
   });
@@ -61,8 +64,13 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
   await preAdmit({ work, resources, clock, prResource, payload, workItem });
 
   expect(translator.translate(payload).map((candidate) => candidate.kind)).toContain('pr.observe');
-  await translator.runOnce();
-  await new ProjectionRunner(journal, projectionStore, checkpoints).runOnce(pullRequestProjection);
+  await processInbound(translator, journal, checkpoints);
+  await new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  ).runOnce(createProjectionProcessor(pullRequestProjection, projectionStore));
   const resource = await lookup.resourceIdForExternalKey({
     adapter: 'github',
     key: payload.externalKey,
@@ -78,20 +86,24 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
     { role: 'primary' },
   ]);
   await appendObservation(journal, clock, observation('head-b'), 'github:pr-2');
-  await translator.runOnce();
-  expect((await journal.readAll(0)).map((event) => event.eventType)).toContain(
+  await processInbound(translator, journal, checkpoints);
+  expect((await journal.readAll(0)).map((event) => event.event.eventType)).toContain(
     'pr.revision-changed',
   );
   const safePullRequest = await pullRequests.get(prResource);
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'pr.review-rejected'),
+    (await journal.readAll(0)).filter((event) => event.event.eventType === 'pr.review-rejected'),
   ).toHaveLength(0);
 
   await appendComment(journal, clock, 'owner/repo#unlinked', 'head-a', 'github:review-unlinked');
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'pr.review-rejected'),
-  ).toEqual([expect.objectContaining({ payload: { reason: 'missing-resource' } })]);
+    (await journal.readAll(0)).filter((event) => event.event.eventType === 'pr.review-rejected'),
+  ).toEqual([
+    expect.objectContaining({
+      event: expect.objectContaining({ payload: { reason: 'missing-resource' } }),
+    }),
+  ]);
   expect(await work.get(correlation!.workItemId)).toMatchObject({
     objective: payload.title,
   });
@@ -106,12 +118,16 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
     }),
   ).rejects.toThrow('primary');
   await appendComment(journal, clock, payload.externalKey, 'head-b', 'github:review-conflicted');
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'pr.review-rejected'),
+    (await journal.readAll(0)).filter((event) => event.event.eventType === 'pr.review-rejected'),
   ).toEqual([
-    expect.objectContaining({ payload: { reason: 'missing-resource' } }),
-    expect.objectContaining({ payload: { reason: 'correlation-conflict' } }),
+    expect.objectContaining({
+      event: expect.objectContaining({ payload: { reason: 'missing-resource' } }),
+    }),
+    expect.objectContaining({
+      event: expect.objectContaining({ payload: { reason: 'correlation-conflict' } }),
+    }),
   ]);
   expect(await work.get(correlation!.workItemId)).toMatchObject({
     objective: payload.title,
@@ -157,6 +173,19 @@ async function preAdmit(input: {
   );
 }
 
+function processInbound(
+  translator: InboundTranslator,
+  journal: InMemoryEventJournal,
+  checkpoints: InMemoryCheckpointStore,
+) {
+  return new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  ).runOnce(translator.processor);
+}
+
 function observation(revision: string): ExternalWorkObservedPayload {
   return {
     externalKey: 'owner/repo#1',
@@ -177,8 +206,8 @@ async function appendObservation(
   eventId: string,
 ) {
   const stream = integrationStream(BuiltInAdapterId.GitHub);
-  await journal.append(stream, (await journal.readStream(stream)).length, [
-    createEventDraft({
+  await journal.appendToStream(stream, (await journal.readStream(stream)).length, [
+    createEventData({
       eventId,
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -186,7 +215,6 @@ async function appendObservation(
       causationId: eventId,
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream,
       payload,
     }),
   ]);
@@ -199,7 +227,7 @@ async function appendComment(
   revision: string,
   eventId: string,
 ) {
-  const event = createEventDraft({
+  const event = createEventData({
     eventId,
     eventType: 'integration.github.comment-observed',
     occurredAt: clock.now().toISOString(),
@@ -207,7 +235,6 @@ async function appendComment(
     causationId: eventId,
     actor: { kind: 'integration', id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: integrationStream(BuiltInAdapterId.GitHub),
     payload: {
       externalKey,
       reviewKind: 'formal',
@@ -218,5 +245,5 @@ async function appendComment(
     },
   });
   const stream = integrationStream(BuiltInAdapterId.GitHub);
-  await journal.append(stream, (await journal.readStream(stream)).length, [event]);
+  await journal.appendToStream(stream, (await journal.readStream(stream)).length, [event]);
 }

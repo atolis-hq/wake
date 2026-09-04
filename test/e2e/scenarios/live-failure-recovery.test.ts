@@ -14,7 +14,7 @@ it('E2E-LIVE-002 recovers a failed fake run through a later workflow stage', asy
   await world.tick();
 
   expect(
-    (await world.events()).some((event) => event.eventType === ExecutionEventType.RunFailed),
+    (await world.events()).some((event) => event.event.eventType === ExecutionEventType.RunFailed),
   ).toBe(false);
   expect(await world.readProjection('work')).toHaveLength(1);
   expect(await world.readProjection('orchestration')).toHaveLength(1);

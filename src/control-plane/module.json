@@ -1,7 +1,15 @@
 {
   "name": "control-plane",
   "kind": "application",
-  "dependencies": ["kernel", "work", "resources", "activities", "orchestration", "execution"],
+  "dependencies": [
+    "kernel",
+    "eventing",
+    "work",
+    "resources",
+    "activities",
+    "orchestration",
+    "execution"
+  ],
   "publicEntry": "./index.ts",
   "namespaces": {
     "events": [

@@ -1,9 +1,9 @@
-import type { EventJournal } from '../../kernel/index.js';
+import type { EventJournal } from '@atolis-hq/eventing';
 import {
   decodeWorkEvent,
   selectWorkEvent,
   type WorkEvent,
-  type WorkEventDraft,
+  type WorkEventData,
 } from '../contracts/events.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
 import { workItemStream } from '../contracts/streams.js';
@@ -12,6 +12,7 @@ import { foldWorkItem } from '../domain/work-item.js';
 
 export interface LoadedWorkItem {
   readonly sequence: number;
+  readonly events: readonly WorkEvent[];
   readonly view: WorkItemView | null;
 }
 
@@ -21,15 +22,19 @@ export class WorkRepository {
   async load(workItemId: WorkItemId): Promise<LoadedWorkItem> {
     const events = await this.journal.readStream(workItemStream(workItemId));
     const owned = events.map(selectWorkEvent).filter((event) => event !== null);
-    return { sequence: events.length, view: foldWorkItem(owned) };
+    return { sequence: events.length, events: owned, view: foldWorkItem(owned) };
   }
 
   async append(
     workItemId: WorkItemId,
     expectedSequence: number,
-    drafts: readonly WorkEventDraft[],
+    drafts: readonly WorkEventData[],
   ): Promise<readonly WorkEvent[]> {
-    const events = await this.journal.append(workItemStream(workItemId), expectedSequence, drafts);
+    const events = await this.journal.appendToStream(
+      workItemStream(workItemId),
+      expectedSequence,
+      drafts,
+    );
     return events.map(decodeWorkEvent);
   }
 }

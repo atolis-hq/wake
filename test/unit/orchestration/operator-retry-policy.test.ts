@@ -27,6 +27,9 @@ import {
   requestOperatorRetry,
   selectOperatorRetryTarget,
   startInstance,
+  workflowInstanceStream,
+  type WorkflowOrchestrationEvent,
+  type WorkflowOrchestrationEventData,
 } from '../../../src/orchestration/index.js';
 import { workId } from '../../support/identities.js';
 
@@ -69,7 +72,9 @@ function blockedFailedFixture() {
     causationId: 'start-command',
   });
   if (started.kind !== 'append') throw new Error('expected start decision');
-  const beforeFailure = foldWorkflowInstance(started.events)!;
+  const beforeFailure = foldWorkflowInstance(
+    recorded(started.events, workflowInstanceId('workflow-1')),
+  )!;
   const failed = acceptActivityOutcome(definition, beforeFailure, {
     activationId: beforeFailure.pendingActivation!.activationId,
     outcome: orchestrationActivityOutcome({ kind: ActivityOutcomeKind.Failed }),
@@ -77,7 +82,12 @@ function blockedFailedFixture() {
     causationId: 'failed-run',
   });
   if (failed.kind !== 'append') throw new Error('expected failed outcome decision');
-  return { definition, state: foldWorkflowInstance([...started.events, ...failed.events])! };
+  return {
+    definition,
+    state: foldWorkflowInstance(
+      recorded([...started.events, ...failed.events], workflowInstanceId('workflow-1')),
+    )!,
+  };
 }
 
 function waitingFailedFixture() {
@@ -123,7 +133,7 @@ function waitingFailedFixture() {
   });
   if (started.kind !== 'append') throw new Error('expected start decision');
   let events = [...started.events];
-  let state = foldWorkflowInstance(events)!;
+  let state = foldWorkflowInstance(recorded(events, workflowInstanceId('workflow-3')))!;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const outcome = acceptActivityOutcome(definition, state, {
       activationId: state.pendingActivation!.activationId,
@@ -133,7 +143,7 @@ function waitingFailedFixture() {
     });
     if (outcome.kind !== 'append') throw new Error('expected failed outcome decision');
     events = [...events, ...outcome.events];
-    state = foldWorkflowInstance(events)!;
+    state = foldWorkflowInstance(recorded(events, workflowInstanceId('workflow-3')))!;
   }
   return { definition, state };
 }
@@ -168,7 +178,9 @@ function blockedAgentFixture() {
     causationId: 'start-command',
   });
   if (started.kind !== 'append') throw new Error('expected start decision');
-  const beforeBlocked = foldWorkflowInstance(started.events)!;
+  const beforeBlocked = foldWorkflowInstance(
+    recorded(started.events, workflowInstanceId('workflow-2')),
+  )!;
   const blocked = acceptActivityOutcome(definition, beforeBlocked, {
     activationId: beforeBlocked.pendingActivation!.activationId,
     outcome: orchestrationActivityOutcome({ kind: ActivityOutcomeKind.Blocked }),
@@ -176,7 +188,25 @@ function blockedAgentFixture() {
     causationId: 'blocked-run',
   });
   if (blocked.kind !== 'append') throw new Error('expected blocked outcome decision');
-  return { definition, state: foldWorkflowInstance([...started.events, ...blocked.events])! };
+  return {
+    definition,
+    state: foldWorkflowInstance(
+      recorded([...started.events, ...blocked.events], workflowInstanceId('workflow-2')),
+    )!,
+  };
+}
+
+function recorded(
+  events: readonly WorkflowOrchestrationEventData[],
+  id: ReturnType<typeof workflowInstanceId>,
+): WorkflowOrchestrationEvent[] {
+  return events.map((event, index) => ({
+    event,
+    stream: workflowInstanceStream(id),
+    recordedAt: event.occurredAt,
+    sequence: index + 1,
+    globalPosition: index + 1,
+  }));
 }
 
 const retryInput = {

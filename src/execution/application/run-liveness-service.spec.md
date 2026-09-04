@@ -27,10 +27,16 @@ lease-renewal event to record a takeover.
 
 ## Core policies, invariants, and behaviours
 
+- `starting` and `started` Runs are lease-active. The first lease is appended
+  atomically with `RunPreparationStarted`; cancellation writes retry an
+  optimistic-concurrency conflict only after a reload proves the stream sequence
+  strictly advanced, return when another writer terminalizes the Run, and fail
+  rather than spin when no progress occurred.
+
 **Lease claim and renewal**
 
 - Claiming or renewing a lease MUST operate only on a Run whose current
-  status is `started`; against any other Run, both MUST fail with an error.
+  status is `starting` or `started`; against any other Run, both MUST fail with an error.
 - Claiming a lease MUST fail when the Run already has an unexpired lease
   held by a different owner. Claiming MUST succeed — as a fresh claim, not a
   no-op — when the Run has no lease, an expired lease, or an unexpired lease
@@ -49,19 +55,18 @@ lease-renewal event to record a takeover.
 
 **Cancellation request and confirmation**
 
-- Requesting cancellation MUST operate only on a `started` Run; against any
-  other Run it MUST fail with an error.
+- Requesting cancellation MUST operate only on a `starting` or `started` Run;
+  against any other Run it MUST fail with an error.
 - Requesting cancellation MUST append a cancellation-requested fact carrying
   the request time and reason, then signal an in-process abort for that
   `RunId` if one is currently tracked. A `RunId` with no tracked in-process
   execution (owned by a different process, or already finished locally) is
   signalled as a silent no-op — the durable request fact is still recorded.
-- Requesting cancellation MAY be called more than once before confirmation;
-  each call appends a fresh fact, and folded state reflects only the most
-  recently requested reason and time.
-- Confirming cancellation MUST operate only on a `started` Run that already
-  has a recorded cancellation request; confirming with no prior request, or
-  against a non-`started` Run, MUST fail with an error.
+- Requesting cancellation again before confirmation leaves the recorded request
+  unchanged and re-signals any locally tracked execution.
+- Confirming cancellation MUST operate only on a `starting` or `started` Run
+  that already has a recorded cancellation request; confirming with no prior
+  request, or against an inactive Run, MUST fail with an error.
 - Confirming cancellation MUST append the confirmation fact and the Run's
   terminal `cancelled` fact together as a single atomic append — a Run's
   cancellation is never durably observable as "confirmed but not yet
@@ -75,8 +80,8 @@ lease-renewal event to record a takeover.
 
 - Cancelling every active Run of a set of workflow instances MUST consider
   every Run in the journal, not just Runs of a single Activation, and MUST
-  act only on those currently `started` whose `workflowInstanceId` is in
-  the given set.
+  act only on those currently `starting` or `started` whose `workflowInstanceId`
+  is in the given set.
 - For each matching Run, the cascade MUST request and then immediately
   confirm cancellation in sequence, for the given reason, and collect the
   confirmed views. A Run whose confirmation fails (for example because a
@@ -117,7 +122,7 @@ checkout.
 
 ## Dependencies and system role
 
-- Kernel — event envelope conventions and the Run stream's append
+- Eventing — event envelope conventions and the Run stream's append
   sequence this component reads before appending.
 - Run (co-owns the Run stream with) — this component's facts are folded by
   the Run aggregate's own fold; it does not duplicate that logic.
@@ -132,8 +137,8 @@ checkout.
   cancellation into every active Run of the affected workflow instances.
 
 - Bootstrap safe self-update (depends on the public Execution service) reads
-  active and ambiguous Run views for its bounded drain, requests only
-  started maintenance-cancellable Runs with reason `maintenance`, and waits
+  active and ambiguous Run views for its bounded drain, requests
+  `starting` and `started` maintenance-cancellable Runs with reason `maintenance`, and waits
   for terminal public views before checkout. It does not add another
   cancellation protocol.
 

@@ -1,13 +1,14 @@
-import { z } from 'zod';
 import {
-  brandedStringSchema,
+  eventDataSchema,
   eventEnvelopeSchema,
   eventId,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventId,
   type EventUnion,
-} from '../../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { brandedStringSchema } from '../../../kernel/index.js';
 import { IntegrationStreamKind, type DeliveryStreamRef } from '../../contracts/streams.js';
 import { DeliveryResultKind } from './vocabulary.js';
 
@@ -58,7 +59,7 @@ export interface DeliveryEventPayloads {
 
 export type DeliveryEvent = EventUnion<DeliveryEventPayloads, DeliveryStreamRef>;
 
-export type DeliveryEventDraft = EventDraftUnion<DeliveryEventPayloads, DeliveryStreamRef>;
+export type DeliveryEventData = EventDataUnion<DeliveryEventPayloads>;
 
 const correlationSchema = z
   .object({
@@ -84,43 +85,55 @@ const reconciledPayloadSchema = z.discriminatedUnion('result', [
   correlationSchema.extend({ result: z.literal(DeliveryResultKind.Unknown) }),
 ]);
 const eventSchema: z.ZodType<DeliveryEvent> = z
-  .discriminatedUnion('eventType', [
+  .union([
     eventEnvelopeSchema.extend({
-      eventType: z.literal(DeliveryEventType.AttemptStarted),
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryEventType.AttemptStarted),
+        payload: correlationSchema,
+      }),
       stream: deliveryStreamSchema,
-      payload: correlationSchema,
     }),
     eventEnvelopeSchema.extend({
-      eventType: z.literal(DeliveryEventType.Confirmed),
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryEventType.Confirmed),
+        payload: correlationSchema.extend({ externalId: z.string().min(1) }),
+      }),
       stream: deliveryStreamSchema,
-      payload: correlationSchema.extend({ externalId: z.string().min(1) }),
     }),
     eventEnvelopeSchema.extend({
-      eventType: z.literal(DeliveryEventType.Failed),
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryEventType.Failed),
+        payload: correlationSchema.extend({ code: z.string().min(1), message: z.string().min(1) }),
+      }),
       stream: deliveryStreamSchema,
-      payload: correlationSchema.extend({ code: z.string().min(1), message: z.string().min(1) }),
     }),
     eventEnvelopeSchema.extend({
-      eventType: z.literal(DeliveryEventType.Ambiguous),
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryEventType.Ambiguous),
+        payload: correlationSchema.extend({ reconciliationKey: z.string().min(1) }),
+      }),
       stream: deliveryStreamSchema,
-      payload: correlationSchema.extend({ reconciliationKey: z.string().min(1) }),
     }),
     eventEnvelopeSchema.extend({
-      eventType: z.literal(DeliveryEventType.Escalated),
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryEventType.Escalated),
+        payload: correlationSchema.extend({ reason: z.string().min(1) }),
+      }),
       stream: deliveryStreamSchema,
-      payload: correlationSchema.extend({ reason: z.string().min(1) }),
     }),
     eventEnvelopeSchema.extend({
-      eventType: z.literal(DeliveryEventType.Reconciled),
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryEventType.Reconciled),
+        payload: reconciledPayloadSchema,
+      }),
       stream: deliveryStreamSchema,
-      payload: reconciledPayloadSchema,
     }),
   ])
   .superRefine((event, context) => {
-    if (event.stream.id !== event.payload.intentEventId)
+    if (event.stream.id !== event.event.payload.intentEventId)
       context.addIssue({
         code: 'custom',
-        path: ['payload', 'intentEventId'],
+        path: ['event', 'payload', 'intentEventId'],
         message: 'Delivery intent payload id must identify its stream',
       });
   });
@@ -129,12 +142,14 @@ export function decodeDeliveryEvent(event: EventEnvelope): DeliveryEvent {
   const result = eventSchema.safeParse(event);
   if (!result.success)
     throw new Error(
-      `Invalid Delivery event ${event.eventId} at global position ${event.globalPosition} (${event.eventType}): ${result.error.message}`,
+      `Invalid Delivery event ${event.event.eventId} at global position ${event.globalPosition} (${event.event.eventType}): ${result.error.message}`,
       { cause: result.error },
     );
   return result.data;
 }
 
 export function selectDeliveryEvent(event: EventEnvelope): DeliveryEvent | null {
-  return event.eventType.startsWith(DeliveryEventNamespace) ? decodeDeliveryEvent(event) : null;
+  return event.event.eventType.startsWith(DeliveryEventNamespace)
+    ? decodeDeliveryEvent(event)
+    : null;
 }

@@ -1,3 +1,9 @@
+import { correlationId } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -8,17 +14,11 @@ import {
   type ActivityDefinition,
 } from '../../../src/activities/index.js';
 import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import {} from '../../../src/work/index.js';
 import { workId } from '../../support/identities.js';
 

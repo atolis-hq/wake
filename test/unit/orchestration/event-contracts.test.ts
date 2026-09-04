@@ -14,12 +14,13 @@ import {
   OrchestrationEventType,
   primaryOrchestrationGroupStream,
   selectOrchestrationEvent,
+  selectWorkflowOrchestrationEvent,
   workflowDefinitionsStream,
   workflowInstanceId,
   workflowInstanceStream,
   type OrchestrationWaitingActivityOutcome,
   type WorkflowOrchestrationEvent,
-  type WorkflowOrchestrationEventDraft,
+  type WorkflowOrchestrationEventData,
 } from '../../../src/orchestration/index.js';
 import {} from '../../../src/work/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
@@ -202,12 +203,12 @@ it('rejects a workflow definition registration without its workflow name', () =>
 
 it('types decoded and draft ActivityWaiting outcomes with the Orchestration brand', () => {
   type WaitingEvent = Extract<
-    WorkflowOrchestrationEvent,
+    WorkflowOrchestrationEvent['event'],
     { readonly eventType: typeof OrchestrationEventType.ActivityWaiting }
   >;
 
   type WaitingDraft = Extract<
-    WorkflowOrchestrationEventDraft,
+    WorkflowOrchestrationEventData,
     { readonly eventType: typeof OrchestrationEventType.ActivityWaiting }
   >;
 
@@ -230,7 +231,7 @@ it('types decoded and draft ActivityWaiting outcomes with the Orchestration bran
     } as OrchestrationWaitingActivityOutcome,
   };
 
-  const decoded = decodeOrchestrationEvent(
+  const decoded = selectWorkflowOrchestrationEvent(
     eventEnvelope(
       OrchestrationEventType.ActivityWaiting,
       {
@@ -243,11 +244,11 @@ it('types decoded and draft ActivityWaiting outcomes with the Orchestration bran
       workflow,
     ),
   );
-  if (decoded.eventType !== OrchestrationEventType.ActivityWaiting)
+  if (decoded?.event.eventType !== OrchestrationEventType.ActivityWaiting)
     throw new Error('expected ActivityWaiting');
-  expect(decoded.payload.outcome.data.signalKind).toBe(signalName('delivery-result'));
-  const started = decodeOrchestrationEvent(samples[0]);
-  if (started.eventType !== OrchestrationEventType.InstanceStarted)
+  expect(decoded.event.payload.outcome.data.signalKind).toBe(signalName('delivery-result'));
+  const started = selectWorkflowOrchestrationEvent(samples[0]);
+  if (started?.event.eventType !== OrchestrationEventType.InstanceStarted)
     throw new Error('expected InstanceStarted');
   expect(foldWorkflowInstance([started, decoded])?.waitingFor).toEqual({
     intentEventId: 'intent-1',
@@ -299,17 +300,38 @@ describe('Orchestration event contract', () => {
     ).toThrow();
   });
 
+  it('dispatches a known event type directly to its specific payload schema', () => {
+    const cause = decodingCause(() =>
+      decodeOrchestrationEvent(
+        eventEnvelope(
+          OrchestrationEventType.ActivityRequested,
+          { ...activation, ordinal: 0 },
+          workflow,
+        ),
+      ),
+    );
+
+    expect(cause).toMatchObject({
+      issues: expect.arrayContaining([
+        expect.objectContaining({ path: ['event', 'payload', 'ordinal'] }),
+      ]),
+    });
+    expect(cause).not.toMatchObject({
+      issues: expect.arrayContaining([expect.objectContaining({ code: 'invalid_union' })]),
+    });
+  });
+
   it('folds a block reason and operator retry command identifiers', () => {
-    const started = decodeOrchestrationEvent(samples[0]);
-    if (started.eventType !== OrchestrationEventType.InstanceStarted)
+    const started = selectWorkflowOrchestrationEvent(samples[0]);
+    if (started?.event.eventType !== OrchestrationEventType.InstanceStarted)
       throw new Error('expected InstanceStarted');
-    const blocked = decodeOrchestrationEvent(
+    const blocked = selectWorkflowOrchestrationEvent(
       eventEnvelope(OrchestrationEventType.InstanceBlocked, { reason: 'failed' }, workflow),
     );
-    if (blocked.eventType !== OrchestrationEventType.InstanceBlocked)
+    if (blocked?.event.eventType !== OrchestrationEventType.InstanceBlocked)
       throw new Error('expected InstanceBlocked');
-    const retryRequested = decodeOrchestrationEvent(samples[25]);
-    if (retryRequested.eventType !== OrchestrationEventType.OperatorRetryRequested)
+    const retryRequested = selectWorkflowOrchestrationEvent(samples[25]);
+    if (retryRequested?.event.eventType !== OrchestrationEventType.OperatorRetryRequested)
       throw new Error('expected OperatorRetryRequested');
 
     expect(foldWorkflowInstance([started, blocked, retryRequested])).toMatchObject({
@@ -326,7 +348,7 @@ describe('Orchestration event contract', () => {
     ).toThrow();
     expect(() =>
       decodeOrchestrationEvent(
-        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[24].payload, workflow),
+        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[24].event.payload, workflow),
       ),
     ).toThrow();
   });
@@ -334,7 +356,7 @@ describe('Orchestration event contract', () => {
   it('rejects a primary claim on a child/watch group stream', () => {
     expect(() =>
       decodeOrchestrationEvent(
-        eventEnvelope(OrchestrationEventType.PrimaryClaimed, samples[23].payload, childGroup),
+        eventEnvelope(OrchestrationEventType.PrimaryClaimed, samples[23].event.payload, childGroup),
       ),
     ).toThrow();
   });
@@ -342,7 +364,7 @@ describe('Orchestration event contract', () => {
   it('rejects a child/watch group claim on a primary group stream', () => {
     expect(() =>
       decodeOrchestrationEvent(
-        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[24].payload, primaryGroup),
+        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[24].event.payload, primaryGroup),
       ),
     ).toThrow();
   });
@@ -355,7 +377,7 @@ describe('Orchestration event contract', () => {
     ),
     eventEnvelope(
       OrchestrationEventType.InstanceStarted,
-      { ...samples[0].payload, workItemId: 'invalid-work-id' },
+      { ...samples[0].event.payload, workItemId: 'invalid-work-id' },
       workflow,
     ),
   ])('reports invalid branded IDs through the Orchestration decoder context', (event) => {
@@ -369,7 +391,7 @@ describe('Orchestration event contract', () => {
       decodeOrchestrationEvent(
         eventEnvelope(
           OrchestrationEventType.PrimaryClaimed,
-          { ...samples[23].payload, workItemId: workId('2') },
+          { ...samples[23].event.payload, workItemId: workId('2') },
           primaryGroup,
         ),
       ),
@@ -382,7 +404,7 @@ describe('Orchestration event contract', () => {
       decodeOrchestrationEvent(
         eventEnvelope(
           OrchestrationEventType.GroupClaimed,
-          { ...samples[24].payload, key: otherChildGroup.id },
+          { ...samples[24].event.payload, key: otherChildGroup.id },
           childGroup,
         ),
       ),
@@ -408,9 +430,9 @@ describe('Orchestration event contract', () => {
         workflow,
       ),
     );
-    if (decoded.eventType !== OrchestrationEventType.SignalWaitStarted)
+    if (decoded.event.eventType !== OrchestrationEventType.SignalWaitStarted)
       throw new Error('expected SignalWaitStarted');
-    expect(decoded.payload.onRejectResume).toEqual({
+    expect(decoded.event.payload.onRejectResume).toEqual({
       kind: 'stage',
       stage: stageName('implement'),
     });
@@ -424,8 +446,31 @@ describe('Orchestration event contract', () => {
         workflow,
       ),
     );
-    if (decoded.eventType !== OrchestrationEventType.SignalAccepted)
+    if (decoded.event.eventType !== OrchestrationEventType.SignalAccepted)
       throw new Error('expected SignalAccepted');
-    expect(decoded.payload.outcome).toBe('rejected');
+    expect(decoded.event.payload.outcome).toBe('rejected');
+  });
+
+  it('round-trips an ActivityRequested event carrying a fresh session policy', () => {
+    const decoded = decodeOrchestrationEvent(
+      eventEnvelope(
+        OrchestrationEventType.ActivityRequested,
+        { ...activation, sessionPolicy: 'fresh' },
+        workflow,
+      ),
+    );
+    if (decoded.event.eventType !== OrchestrationEventType.ActivityRequested)
+      throw new Error('expected ActivityRequested');
+    expect(decoded.event.payload.sessionPolicy).toBe('fresh');
   });
 });
+
+function decodingCause(decode: () => unknown): unknown {
+  try {
+    decode();
+  } catch (error) {
+    if (error instanceof Error) return error.cause;
+    throw error;
+  }
+  throw new Error('Expected event decoding to fail');
+}

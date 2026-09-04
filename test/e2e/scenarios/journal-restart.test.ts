@@ -1,9 +1,9 @@
+import { correlationId } from '@atolis-hq/eventing';
+import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { correlationId } from '../../../src/kernel/index.js';
-import { FileEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { workId } from '../../support/identities.js';
 import { FakeClock } from '../support/world.js';

@@ -1,5 +1,5 @@
-﻿import { ActivityEventType, selectActivityEvent } from '../../../activities/index.js';
-import { type EventEnvelope, type ProjectionDefinition } from '../../../kernel/index.js';
+﻿import { type EventEnvelope, type ProjectionDefinition } from '@atolis-hq/eventing';
+import { ActivityEventType, selectActivityEvent } from '../../../activities/index.js';
 import { IntegrationStreamKind } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
 import { DeliveryIntentEventType, selectDeliveryIntentEvent } from '../contracts/intents.js';
@@ -54,16 +54,16 @@ function intentView(event: EventEnvelope): IntentViewResult {
 
 function activityIntentView(event: EventEnvelope): IntentViewResult {
   const intent = selectActivityEvent(event);
-  if (intent?.eventType === ActivityEventType.IssueCompleteRequested)
+  if (intent?.event.eventType === ActivityEventType.IssueCompleteRequested)
     return {
-      eventId: intent.eventId,
+      eventId: intent.event.eventId,
       view: {
-        intentEventId: intent.eventId,
+        intentEventId: intent.event.eventId,
         globalPosition: intent.globalPosition,
-        workflowInstanceId: intent.payload.workflowInstanceId,
-        activationId: intent.payload.activationId,
+        workflowInstanceId: intent.event.payload.workflowInstanceId,
+        activationId: intent.event.payload.activationId,
         kind: DeliveryIntentKind.IssueComplete,
-        resourceId: intent.payload.resourceId,
+        resourceId: intent.event.payload.resourceId,
         payload: { kind: DeliveryIntentKind.IssueComplete },
         state: DeliveryState.Pending,
         attempts: 0,
@@ -71,20 +71,20 @@ function activityIntentView(event: EventEnvelope): IntentViewResult {
         reconciliationAttempts: 0,
       },
     };
-  if (intent?.eventType === ActivityEventType.PrApproveRequested)
+  if (intent?.event.eventType === ActivityEventType.PrApproveRequested)
     return {
-      eventId: intent.eventId,
+      eventId: intent.event.eventId,
       view: {
-        intentEventId: intent.eventId,
+        intentEventId: intent.event.eventId,
         globalPosition: intent.globalPosition,
-        workflowInstanceId: intent.payload.workflowInstanceId,
-        activationId: intent.payload.activationId,
+        workflowInstanceId: intent.event.payload.workflowInstanceId,
+        activationId: intent.event.payload.activationId,
         kind: DeliveryIntentKind.PrApprove,
-        resourceId: intent.payload.resourceId,
+        resourceId: intent.event.payload.resourceId,
         payload: {
           kind: DeliveryIntentKind.PrApprove,
-          revision: intent.payload.revision,
-          ...(intent.payload.body === null ? {} : { body: intent.payload.body }),
+          revision: intent.event.payload.revision,
+          ...(intent.event.payload.body === null ? {} : { body: intent.event.payload.body }),
         },
         state: DeliveryState.Pending,
         attempts: 0,
@@ -92,21 +92,21 @@ function activityIntentView(event: EventEnvelope): IntentViewResult {
         reconciliationAttempts: 0,
       },
     };
-  if (intent?.eventType === ActivityEventType.PrMergeRequested)
+  if (intent?.event.eventType === ActivityEventType.PrMergeRequested)
     return {
-      eventId: intent.eventId,
+      eventId: intent.event.eventId,
       view: {
-        intentEventId: intent.eventId,
+        intentEventId: intent.event.eventId,
         globalPosition: intent.globalPosition,
-        workflowInstanceId: intent.payload.workflowInstanceId,
-        activationId: intent.payload.activationId,
+        workflowInstanceId: intent.event.payload.workflowInstanceId,
+        activationId: intent.event.payload.activationId,
         kind: DeliveryIntentKind.PrMerge,
-        resourceId: intent.payload.resourceId,
+        resourceId: intent.event.payload.resourceId,
         payload: {
           kind: DeliveryIntentKind.PrMerge,
-          revision: intent.payload.revision,
-          method: intent.payload.method,
-          autoMerge: intent.payload.autoMerge,
+          revision: intent.event.payload.revision,
+          method: intent.event.payload.method,
+          autoMerge: intent.event.payload.autoMerge,
         },
         state: DeliveryState.Pending,
         attempts: 0,
@@ -120,40 +120,41 @@ function activityIntentView(event: EventEnvelope): IntentViewResult {
 function integrationIntentView(
   integrationIntent: NonNullable<ReturnType<typeof selectDeliveryIntentEvent>>,
 ): IntentViewResult {
-  if (integrationIntent.eventType === DeliveryIntentEventType.AgentRunPublishRequested)
+  if (integrationIntent.event.eventType === DeliveryIntentEventType.AgentRunPublishRequested)
     return {
-      eventId: integrationIntent.eventId,
+      eventId: integrationIntent.event.eventId,
       view: {
-        intentEventId: integrationIntent.eventId,
+        intentEventId: integrationIntent.event.eventId,
         globalPosition: integrationIntent.globalPosition,
-        workflowInstanceId: integrationIntent.payload.workflowInstanceId,
-        activationId: integrationIntent.payload.activationId,
+        workflowInstanceId: integrationIntent.event.payload.workflowInstanceId,
+        activationId: integrationIntent.event.payload.activationId,
         kind: DeliveryIntentKind.AgentRunPublish,
-        resourceId: integrationIntent.payload.resourceId,
+        resourceId: integrationIntent.event.payload.resourceId,
         payload: {
           kind: DeliveryIntentKind.AgentRunPublish,
-          report: integrationIntent.payload.report,
-          conversationId: integrationIntent.payload.conversationId,
-          conversationEntryId: integrationIntent.payload.conversationEntryId,
+          report: integrationIntent.event.payload.report,
+          conversationId: integrationIntent.event.payload.conversationId,
+          conversationEntryId: integrationIntent.event.payload.conversationEntryId,
         },
         state: DeliveryState.Pending,
         attempts: 0,
         occurrenceOrdinal: 0,
       },
     };
-  const status = integrationIntent.eventType === DeliveryIntentEventType.StatusPublishRequested;
+  const status =
+    integrationIntent.event.eventType === DeliveryIntentEventType.StatusPublishRequested;
   return {
-    eventId: integrationIntent.eventId,
+    eventId: integrationIntent.event.eventId,
     view: {
-      intentEventId: integrationIntent.eventId,
+      intentEventId: integrationIntent.event.eventId,
       globalPosition: integrationIntent.globalPosition,
-      workflowInstanceId: integrationIntent.payload.workflowInstanceId,
-      activationId: integrationIntent.payload.activationId,
+      workflowInstanceId: integrationIntent.event.payload.workflowInstanceId,
+      activationId: integrationIntent.event.payload.activationId,
       kind: status ? DeliveryIntentKind.StatusPublish : DeliveryIntentKind.ReplyPublish,
-      resourceId: integrationIntent.payload.resourceId,
+      resourceId: integrationIntent.event.payload.resourceId,
       payload: status
-        ? { kind: DeliveryIntentKind.StatusPublish, body: integrationIntent.payload.body }
-        : { kind: DeliveryIntentKind.ReplyPublish, body: integrationIntent.payload.body },
+        ? { kind: DeliveryIntentKind.StatusPublish, body: integrationIntent.event.payload.body }
+        : { kind: DeliveryIntentKind.ReplyPublish, body: integrationIntent.event.payload.body },
       state: DeliveryState.Pending,
       attempts: 0,
       occurrenceOrdinal: 0,
@@ -168,39 +169,42 @@ function foldDeliveryFact(
 ): DeliveryIntentView | null {
   if (delivery === null || previous === null) return previous;
   if (
-    delivery.payload.intentEventId !== previous.intentEventId ||
-    delivery.payload.intentGlobalPosition !== previous.globalPosition
+    delivery.event.payload.intentEventId !== previous.intentEventId ||
+    delivery.event.payload.intentGlobalPosition !== previous.globalPosition
   )
     return previous;
   const current = {
     ...previous,
-    occurrenceOrdinal: Math.max(previous.occurrenceOrdinal, delivery.payload.occurrenceOrdinal),
+    occurrenceOrdinal: Math.max(
+      previous.occurrenceOrdinal,
+      delivery.event.payload.occurrenceOrdinal,
+    ),
   };
-  switch (delivery.eventType) {
+  switch (delivery.event.eventType) {
     case DeliveryEventType.AttemptStarted:
       return { ...current, attempts: current.attempts + 1 };
     case DeliveryEventType.Confirmed:
-      return { ...current, state: DeliveryState.Confirmed, resolvedAt: delivery.occurredAt };
+      return { ...current, state: DeliveryState.Confirmed, resolvedAt: delivery.event.occurredAt };
     case DeliveryEventType.Failed:
-      return { ...current, state: DeliveryState.Failed, resolvedAt: delivery.occurredAt };
+      return { ...current, state: DeliveryState.Failed, resolvedAt: delivery.event.occurredAt };
     case DeliveryEventType.Ambiguous:
       return {
         ...current,
         state: DeliveryState.Ambiguous,
-        resolvedAt: delivery.occurredAt,
-        reconciliationKey: delivery.payload.reconciliationKey,
+        resolvedAt: delivery.event.occurredAt,
+        reconciliationKey: delivery.event.payload.reconciliationKey,
       };
     case DeliveryEventType.Escalated:
-      return { ...current, escalation: { reason: delivery.payload.reason } };
+      return { ...current, escalation: { reason: delivery.event.payload.reason } };
     case DeliveryEventType.Reconciled:
-      if (delivery.payload.result === DeliveryResultKind.Confirmed)
+      if (delivery.event.payload.result === DeliveryResultKind.Confirmed)
         return {
           ...current,
           state: DeliveryState.Confirmed,
-          resolvedAt: delivery.occurredAt,
+          resolvedAt: delivery.event.occurredAt,
           escalation: undefined,
         };
-      return delivery.payload.result === DeliveryResultKind.Unknown
+      return delivery.event.payload.result === DeliveryResultKind.Unknown
         ? { ...current, reconciliationAttempts: (current.reconciliationAttempts ?? 0) + 1 }
         : current;
   }

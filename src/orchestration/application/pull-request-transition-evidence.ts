@@ -84,7 +84,7 @@ function firstMatch(
     const transition = transitions.find((entry) =>
       matchesPrimaryPullRequestTransition(entry, candidate, pullRequest, authorized),
     );
-    if (transition !== undefined) return { transition, evidenceId: candidate.eventId };
+    if (transition !== undefined) return { transition, evidenceId: candidate.event.eventId };
   }
   return null;
 }
@@ -97,23 +97,23 @@ function matchesPrimaryPullRequestTransition(
   pullRequest: PullRequestView,
   authorized: boolean,
 ): boolean {
-  if (transition.event !== event.eventType) return false;
-  if (event.eventType === ActivityEventType.PrReviewAccepted)
-    return event.payload.revision === pullRequest.headRevision && authorized;
-  if (event.eventType === ActivityEventType.PrStateChanged)
+  if (transition.event !== event.event.eventType) return false;
+  if (event.event.eventType === ActivityEventType.PrReviewAccepted)
+    return event.event.payload.revision === pullRequest.headRevision && authorized;
+  if (event.event.eventType === ActivityEventType.PrStateChanged)
     return (
       transition.where !== undefined &&
       'state' in transition.where &&
-      transition.where.state === event.payload.state &&
-      event.payload.state === PullRequestState.Merged &&
+      transition.where.state === event.event.payload.state &&
+      event.event.payload.state === PullRequestState.Merged &&
       pullRequest.state === PullRequestState.Merged
     );
-  if (event.eventType !== ActivityEventType.PrChecksChanged) return false;
+  if (event.event.eventType !== ActivityEventType.PrChecksChanged) return false;
   return (
     transition.where !== undefined &&
     'checks' in transition.where &&
-    transition.where.checks === event.payload.checks &&
-    event.payload.checks === PullRequestCheckState.Failing &&
+    transition.where.checks === event.event.payload.checks &&
+    event.event.payload.checks === PullRequestCheckState.Failing &&
     pullRequest.checks === PullRequestCheckState.Failing
   );
 }

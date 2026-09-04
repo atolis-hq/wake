@@ -4,14 +4,14 @@ import { WorkStatus } from '../contracts/vocabulary.js';
 
 export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null {
   if (events.length === 0) return null;
-  if (events[0]?.eventType !== WorkEventType.ItemCreated) {
+  if (events[0]?.event.eventType !== WorkEventType.ItemCreated) {
     throw new Error(`WorkItem stream must begin with ${WorkEventType.ItemCreated}`);
   }
 
   const id = events[0].stream.id;
   const state = {
-    objective: events[0].payload.objective,
-    tags: events[0].payload.tags ?? [],
+    objective: events[0].event.payload.objective,
+    tags: events[0].event.payload.tags ?? [],
     lifecycle: WorkStatus.Open as WorkState,
     autoApprovalGranted: false,
     frozen: false,
@@ -51,18 +51,21 @@ function applyEvent(
   if (event.stream.id !== id) {
     throw new Error('WorkItem events must belong to the same work-item stream');
   }
-  switch (event.eventType) {
+  switch (event.event.eventType) {
     case WorkEventType.ItemCreated:
       if (index > 0) throw new Error('WorkItem stream cannot contain a second creation event');
       break;
     case WorkEventType.ObjectiveRevised:
-      state.objective = event.payload.objective;
+      state.objective = event.event.payload.objective;
       break;
     case WorkEventType.ItemLinked:
-      addLink(state, { workItemId: event.payload.to, relation: event.payload.relation });
+      addLink(state, {
+        workItemId: event.event.payload.to,
+        relation: event.event.payload.relation,
+      });
       break;
     default:
-      applyStatusEvent(state, event);
+      applyStatusEvent(state, event.event);
   }
 }
 
@@ -74,7 +77,7 @@ function applyStatusEvent(
     deleted: boolean;
   },
   event: Exclude<
-    WorkEvent,
+    WorkEvent['event'],
     {
       eventType:
         | typeof WorkEventType.ItemCreated

@@ -1,11 +1,12 @@
-import { z } from 'zod';
 import {
-  brandedStringSchema,
+  eventDataSchema,
   eventEnvelopeSchema,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { brandedStringSchema } from '../../kernel/index.js';
 import type { LinkWorkItems } from './commands.js';
 import { workItemId, type WorkItemId } from './identifiers.js';
 import { WorkStreamKind, type WorkItemStreamRef } from './streams.js';
@@ -49,7 +50,7 @@ export interface WorkEventPayloads {
 
 export type WorkEvent = EventUnion<WorkEventPayloads, WorkItemStreamRef>;
 
-export type WorkEventDraft = EventDraftUnion<WorkEventPayloads, WorkItemStreamRef>;
+export type WorkEventData = EventDataUnion<WorkEventPayloads>;
 
 const streamSchema = z
   .object({
@@ -69,63 +70,56 @@ const consentSchema = z.object({}).strict();
 const itemCreatedSchema = objectiveSchema.extend({
   tags: z.array(z.string().trim().min(1)).readonly().optional(),
 });
-const eventSchema = z.discriminatedUnion('eventType', [
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.ItemCreated),
-    stream: streamSchema,
-    payload: itemCreatedSchema,
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.ObjectiveRevised),
-    stream: streamSchema,
-    payload: objectiveSchema,
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.ItemLinked),
-    stream: streamSchema,
-    payload: z
-      .object({
-        to: brandedStringSchema(workItemId),
-        relation: z.enum(['relates-to', 'parent-of', 'child-of']),
-      })
-      .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.ItemClosed),
-    stream: streamSchema,
-    payload: reasonSchema,
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.ItemCancelled),
-    stream: streamSchema,
-    payload: reasonSchema,
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.AutoApprovalGranted),
-    stream: streamSchema,
-    payload: consentSchema,
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.AutoApprovalRevoked),
-    stream: streamSchema,
-    payload: consentSchema,
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.ItemFrozen),
-    stream: streamSchema,
-    payload: consentSchema,
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.ItemUnfrozen),
-    stream: streamSchema,
-    payload: consentSchema,
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(WorkEventType.ItemDeleted),
-    stream: streamSchema,
-    payload: consentSchema,
-  }),
-]);
+const eventSchema: z.ZodType<WorkEvent> = eventEnvelopeSchema.extend({
+  event: z.discriminatedUnion('eventType', [
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.ItemCreated),
+      payload: itemCreatedSchema,
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.ObjectiveRevised),
+      payload: objectiveSchema,
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.ItemLinked),
+      payload: z
+        .object({
+          to: brandedStringSchema(workItemId),
+          relation: z.enum(['relates-to', 'parent-of', 'child-of']),
+        })
+        .strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.ItemClosed),
+      payload: reasonSchema,
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.ItemCancelled),
+      payload: reasonSchema,
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.AutoApprovalGranted),
+      payload: consentSchema,
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.AutoApprovalRevoked),
+      payload: consentSchema,
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.ItemFrozen),
+      payload: consentSchema,
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.ItemUnfrozen),
+      payload: consentSchema,
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(WorkEventType.ItemDeleted),
+      payload: consentSchema,
+    }),
+  ]),
+  stream: streamSchema,
+});
 
 export function decodeWorkEvent(event: EventEnvelope): WorkEvent {
   const result = eventSchema.safeParse(event);
@@ -134,12 +128,12 @@ export function decodeWorkEvent(event: EventEnvelope): WorkEvent {
 }
 
 export function selectWorkEvent(event: EventEnvelope): WorkEvent | null {
-  return event.eventType.startsWith('work.') ? decodeWorkEvent(event) : null;
+  return event.event.eventType.startsWith('work.') ? decodeWorkEvent(event) : null;
 }
 
 function invalidWorkEvent(event: EventEnvelope, cause: z.ZodError): Error {
   return new Error(
-    `Invalid Work event ${event.eventId} at global position ${event.globalPosition} (${event.eventType}): ${cause.message}`,
+    `Invalid Work event ${event.event.eventId} at global position ${event.globalPosition} (${event.event.eventType}): ${cause.message}`,
     { cause },
   );
 }

@@ -73,8 +73,9 @@ validate that a runner being unpaused was actually paused.
 
 ## Dependencies and system role
 
-- Kernel — event journal append (optimistic on the global stream's current
-  length), Clock, IdGenerator, and command-context conventions.
+- Eventing — event journal append (optimistic on the global stream's current
+  length) and command-context conventions.
+- Kernel — Clock and IdGenerator conventions.
 - Control Plane view (dependent) — folds the `RunnerPaused`/`RunnerResumed`
   facts this component appends.
 - Execution's runner pause/unpause API surface (depends on this component)

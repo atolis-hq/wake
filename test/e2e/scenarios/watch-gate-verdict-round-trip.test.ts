@@ -1,3 +1,5 @@
+import { EventProcessorHost, correlationId, createEventData } from '@atolis-hq/eventing';
+import { createInMemoryProcessorRunSerialiser } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -19,7 +21,6 @@ import {
   InboundTranslator,
   integrationStream,
 } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventDraft } from '../../../src/kernel/index.js';
 import {
   OrchestrationEventType,
   WatchGateVerdictSignal,
@@ -58,13 +59,13 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
     { kind: 'done' },
   );
 
-  await new AgentRunPublicationReactor({
+  const publications = new AgentRunPublicationReactor({
     journal: fixture.world.journal,
-    checkpoints: fixture.world.checkpoints,
     runs: new RunRepository(fixture.world.journal),
     resources: fixture.world.resources,
     orchestration: fixture.world.orchestration,
-  }).runOnce();
+  });
+  await fixture.world.process(publications.processor);
 
   const [intent] = projectDeliveries(await fixture.world.journal.readAll(0));
   expect(intent).toBeDefined();
@@ -73,8 +74,8 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
   expect(outbound.body).toContain(`"runId": "${run}"`);
   expect(outbound.body).toContain('"outcome": "DONE"');
 
-  await fixture.world.journal.append(integrationStream(BuiltInAdapterId.GitHub), 0, [
-    createEventDraft({
+  await fixture.world.journal.appendToStream(integrationStream(BuiltInAdapterId.GitHub), 0, [
+    createEventData({
       eventId: 'github:comment:watch-gate-verdict',
       eventType: 'integration.github.comment-observed',
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -82,7 +83,6 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
       causationId: 'github:comment:watch-gate-verdict',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'owner/repo#7',
@@ -94,9 +94,8 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
     }),
   ]);
 
-  await new InboundTranslator(
+  const translator = new InboundTranslator(
     fixture.world.journal,
-    fixture.world.checkpoints,
     fixture.world.work,
     fixture.world.resources,
     {
@@ -104,7 +103,8 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
       runs: new RunRepository(fixture.world.journal),
       lookup: fixture.world.resourceLookup,
     },
-  ).runOnce();
+  );
+  await processInbound(translator, fixture.world);
 
   expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
     'completed',
@@ -154,8 +154,8 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
     signalKind: 'orchestration.watch-gate-verdict',
   });
 
-  await fixture.world.journal.append(integrationStream(BuiltInAdapterId.GitHub), 0, [
-    createEventDraft({
+  await fixture.world.journal.appendToStream(integrationStream(BuiltInAdapterId.GitHub), 0, [
+    createEventData({
       eventId: 'github:comment:watch-gate-extend',
       eventType: 'integration.github.comment-observed',
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -163,7 +163,6 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
       causationId: 'github:comment:watch-gate-extend',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'owner/repo#17',
@@ -179,9 +178,8 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
     }),
   ]);
 
-  await new InboundTranslator(
+  const translator = new InboundTranslator(
     fixture.world.journal,
-    fixture.world.checkpoints,
     fixture.world.work,
     fixture.world.resources,
     {
@@ -189,7 +187,8 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
       runs: new RunRepository(fixture.world.journal),
       lookup: fixture.world.resourceLookup,
     },
-  ).runOnce();
+  );
+  await processInbound(translator, fixture.world);
 
   expect(await fixture.world.events('integration.github.inbound-translation-retried')).toHaveLength(
     0,
@@ -247,8 +246,8 @@ it('supersedes a recovered child whose parent has already left its gate before d
   const fixture = await waitingWatchGate();
   const stream = workflowInstanceStream(fixture.parent.workflowInstanceId);
   const events = await fixture.world.journal.readStream(stream);
-  await fixture.world.journal.append(stream, events.length, [
-    createEventDraft({
+  await fixture.world.journal.appendToStream(stream, events.length, [
+    createEventData({
       eventId: 'recovered-parent-signal',
       eventType: OrchestrationEventType.SignalAccepted,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -256,7 +255,6 @@ it('supersedes a recovered child whose parent has already left its gate before d
       causationId: 'recovered-parent-signal',
       actor: { kind: 'operator', id: 'owner' },
       source: { kind: 'internal', id: 'recovery' },
-      stream,
       payload: {
         kind: WatchGateVerdictSignal,
         actorId: 'owner',
@@ -329,6 +327,15 @@ async function waitingWatchGate() {
   return { world, parent, child, workItemId: work.workItemId };
 }
 
+function processInbound(translator: InboundTranslator, world: TestWorld) {
+  return new EventProcessorHost(
+    world.journal,
+    world.checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    world.clock,
+  ).runOnce(translator.processor);
+}
+
 async function appendTerminalAgentRun(
   world: TestWorld,
   id: ReturnType<typeof runId>,
@@ -337,8 +344,8 @@ async function appendTerminalAgentRun(
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
-  await world.journal.append(stream, 0, [
-    createEventDraft({
+  await world.journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: `execution:${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: now,
@@ -346,7 +353,6 @@ async function appendTerminalAgentRun(
       causationId: 'watch-gate-verdict',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId,
         activity: 'agent',
@@ -356,7 +362,7 @@ async function appendTerminalAgentRun(
         startedAt: now,
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `execution:${id}:agent-result`,
       eventType: ExecutionEventType.RunRunnerResultReported,
       occurredAt: now,
@@ -364,13 +370,12 @@ async function appendTerminalAgentRun(
       causationId: 'watch-gate-verdict',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         transport: 'succeeded',
         agent: { outcome: 'DONE', displayBody: 'Review complete.', metadata: {} },
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `execution:${id}:succeeded`,
       eventType: ExecutionEventType.RunSucceeded,
       occurredAt: now,
@@ -378,7 +383,6 @@ async function appendTerminalAgentRun(
       causationId: 'watch-gate-verdict',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { outcome: { kind: 'done' }, finishedAt: now },
     }),
   ] as never);
@@ -392,8 +396,8 @@ async function appendStartedRun(
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
-  await world.journal.append(stream, 0, [
-    createEventDraft({
+  await world.journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: `execution:${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: now,
@@ -401,7 +405,6 @@ async function appendStartedRun(
       causationId: 'watch-gate-verdict',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId,
         activity: 'agent',

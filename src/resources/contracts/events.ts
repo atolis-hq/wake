@@ -1,11 +1,12 @@
-import { z } from 'zod';
 import {
-  brandedStringSchema,
+  eventDataSchema,
   eventEnvelopeSchema,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId, type WorkItemId } from '../../work/index.js';
 import {
   resourceCapability,
@@ -86,7 +87,7 @@ export interface ResourceEventPayloads {
 
 export type ResourceEvent = EventUnion<ResourceEventPayloads, ResourceStreamRef>;
 
-export type ResourceEventDraft = EventDraftUnion<ResourceEventPayloads, ResourceStreamRef>;
+export type ResourceEventData = EventDataUnion<ResourceEventPayloads>;
 
 export interface ResourceEventStream {
   readonly resourceId: ResourceId;
@@ -101,105 +102,96 @@ const streamSchema = z
   .strict();
 const revisionSchema = z.object({ revision: z.string() }).strict();
 const workItemIdSchema = brandedStringSchema(workItemId);
-const eventSchema = z.discriminatedUnion('eventType', [
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.ResourceDiscovered),
-    stream: streamSchema,
-    payload: z
-      .object({
-        kind: brandedStringSchema(resourceKind),
-        externalKey: z.object({ adapter: z.string(), key: z.string() }).strict(),
-        capabilities: z.array(brandedStringSchema(resourceCapability)),
-        revision: z.string().optional(),
-        title: z.string().optional(),
-      })
-      .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.ExternalOutcomeObserved),
-    stream: streamSchema,
-    payload: z
-      .object({
-        sourceObservationId: z.string().min(1),
-        outcome: z.enum([ResourceExternalOutcome.Completed, ResourceExternalOutcome.Cancelled]),
-        revision: z.string().min(1),
-      })
-      .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.ExternalOutcomeReopened),
-    stream: streamSchema,
-    payload: z.object({ revision: z.string().min(1) }).strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.ExternalOutcomeConsumed),
-    stream: streamSchema,
-    payload: z.object({ sourceObservationId: z.string().min(1) }).strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.WorkCorrelationRetryPending),
-    stream: streamSchema,
-    payload: z
-      .object({ attemptCount: z.number().int().min(1), lastFailureReason: z.string().min(1) })
-      .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.WorkCorrelationUnresolvable),
-    stream: streamSchema,
-    payload: z
-      .object({
-        externalKey: z.object({ adapter: z.string(), key: z.string() }).strict(),
-        attemptCount: z.number().int().min(1),
-        lastFailureReason: z.string().min(1),
-      })
-      .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.ResourceRevisionObserved),
-    stream: streamSchema,
-    payload: revisionSchema,
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.WorkCorrelationEstablished),
-    stream: streamSchema,
-    payload: z
-      .object({
-        workItemId: workItemIdSchema,
-        role: z.enum([ResourceCorrelationRole.Primary, ResourceCorrelationRole.Secondary]),
-        provenance: z.enum([
-          ResourceCorrelationProvenance.ProviderObserved,
-          ResourceCorrelationProvenance.AgentReported,
-          ResourceCorrelationProvenance.OperatorDeclared,
-        ]),
-      })
-      .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.WorkCorrelationRetracted),
-    stream: streamSchema,
-    payload: z.object({ workItemId: workItemIdSchema }).strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.WorkCorrelationConflicted),
-    stream: streamSchema,
-    payload: z
-      .object({
-        workItemId: workItemIdSchema,
-        existingWorkItemId: workItemIdSchema,
-      })
-      .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.IssueCompletionObservationConsumed),
-    stream: streamSchema,
-    payload: z.object({ intentEventId: z.string().min(1) }).strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(ResourceEventType.IssueCompletionObservationSuperseded),
-    stream: streamSchema,
-    payload: z.object({ intentEventId: z.string().min(1) }).strict(),
-  }),
-]);
+const eventSchema: z.ZodType<ResourceEvent> = eventEnvelopeSchema.extend({
+  event: z.discriminatedUnion('eventType', [
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.ResourceDiscovered),
+      payload: z
+        .object({
+          kind: brandedStringSchema(resourceKind),
+          externalKey: z.object({ adapter: z.string(), key: z.string() }).strict(),
+          capabilities: z.array(brandedStringSchema(resourceCapability)),
+          revision: z.string().optional(),
+          title: z.string().optional(),
+        })
+        .strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.ExternalOutcomeObserved),
+      payload: z
+        .object({
+          sourceObservationId: z.string().min(1),
+          outcome: z.enum([ResourceExternalOutcome.Completed, ResourceExternalOutcome.Cancelled]),
+          revision: z.string().min(1),
+        })
+        .strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.ExternalOutcomeReopened),
+      payload: z.object({ revision: z.string().min(1) }).strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.ExternalOutcomeConsumed),
+      payload: z.object({ sourceObservationId: z.string().min(1) }).strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.WorkCorrelationRetryPending),
+      payload: z
+        .object({ attemptCount: z.number().int().min(1), lastFailureReason: z.string().min(1) })
+        .strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.WorkCorrelationUnresolvable),
+      payload: z
+        .object({
+          externalKey: z.object({ adapter: z.string(), key: z.string() }).strict(),
+          attemptCount: z.number().int().min(1),
+          lastFailureReason: z.string().min(1),
+        })
+        .strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.ResourceRevisionObserved),
+      payload: revisionSchema,
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.WorkCorrelationEstablished),
+      payload: z
+        .object({
+          workItemId: workItemIdSchema,
+          role: z.enum([ResourceCorrelationRole.Primary, ResourceCorrelationRole.Secondary]),
+          provenance: z.enum([
+            ResourceCorrelationProvenance.ProviderObserved,
+            ResourceCorrelationProvenance.AgentReported,
+            ResourceCorrelationProvenance.OperatorDeclared,
+          ]),
+        })
+        .strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.WorkCorrelationRetracted),
+      payload: z.object({ workItemId: workItemIdSchema }).strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.WorkCorrelationConflicted),
+      payload: z
+        .object({
+          workItemId: workItemIdSchema,
+          existingWorkItemId: workItemIdSchema,
+        })
+        .strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.IssueCompletionObservationConsumed),
+      payload: z.object({ intentEventId: z.string().min(1) }).strict(),
+    }),
+    eventDataSchema.extend({
+      eventType: z.literal(ResourceEventType.IssueCompletionObservationSuperseded),
+      payload: z.object({ intentEventId: z.string().min(1) }).strict(),
+    }),
+  ]),
+  stream: streamSchema,
+});
 
 export function decodeResourceEvent(event: EventEnvelope): ResourceEvent {
   const result = eventSchema.safeParse(event);
@@ -208,12 +200,12 @@ export function decodeResourceEvent(event: EventEnvelope): ResourceEvent {
 }
 
 export function selectResourceEvent(event: EventEnvelope): ResourceEvent | null {
-  return event.eventType.startsWith('resources.') ? decodeResourceEvent(event) : null;
+  return event.event.eventType.startsWith('resources.') ? decodeResourceEvent(event) : null;
 }
 
 function invalidResourceEvent(event: EventEnvelope, cause: z.ZodError): Error {
   return new Error(
-    `Invalid Resource event ${event.eventId} at global position ${event.globalPosition} (${event.eventType}): ${cause.message}`,
+    `Invalid Resource event ${event.event.eventId} at global position ${event.globalPosition} (${event.event.eventType}): ${cause.message}`,
     { cause },
   );
 }

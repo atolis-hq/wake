@@ -67,8 +67,10 @@ describe('Resource event contract', () => {
         ),
       ),
     ).toMatchObject({
-      eventType: 'resources.issue-completion-observation-superseded',
-      payload: { intentEventId: 'complete-intent' },
+      event: {
+        eventType: 'resources.issue-completion-observation-superseded',
+        payload: { intentEventId: 'complete-intent' },
+      },
     });
   });
 

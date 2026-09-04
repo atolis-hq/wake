@@ -17,6 +17,6 @@ it('E2E-LIVE-008 preserves an accepted delivery across a composed process restar
 
   expect(await world.readProjection('work')).toHaveLength(1);
   expect(
-    (await world.events()).filter((event) => event.eventType === DeliveryEventType.Confirmed),
+    (await world.events()).filter((event) => event.event.eventType === DeliveryEventType.Confirmed),
   ).toHaveLength(1);
 });

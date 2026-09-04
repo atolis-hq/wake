@@ -1,11 +1,19 @@
 /* eslint-disable max-lines */
+import type { CommandContext, EventJournal } from '@atolis-hq/eventing';
+import { correlationId, EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import type { ActivityOutcome, ActivityRegistry } from '../../activities/index.js';
-import type { Clock, CommandContext, EventJournal } from '../../kernel/index.js';
-import { correlationId, EventActorKind, EventSourceKind } from '../../kernel/index.js';
+import type { Clock } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import type { RecoveryCoordinator } from '../contracts/control-plane.js';
-import { createRunExecutionEventDraft } from '../contracts/event-factory.js';
-import { ExecutionEventType, type RunExecutionEventDraft } from '../contracts/events.js';
+import {
+  createExecutionEventData,
+  type RunExecutionEventDataInput,
+} from '../contracts/event-factory.js';
+import {
+  ExecutionEventType,
+  type ExecutionEventData,
+  type RunExecutionEventData,
+} from '../contracts/events.js';
 import { runId, type RunId } from '../contracts/identifiers.js';
 import type { AgentRunnerResult } from '../contracts/runner.js';
 import { runStream } from '../contracts/streams.js';
@@ -13,6 +21,7 @@ import type { RunView } from '../contracts/views.js';
 import {
   ExecutionFailureCode,
   ExternalExecutionState,
+  isActiveRunStatus,
   RunStatus,
 } from '../contracts/vocabulary.js';
 import { RunRepository } from './run-repository.js';
@@ -63,9 +72,15 @@ export class RecoveryService {
     const currentRunId = runId(id);
     const loaded = await this.repository.load(currentRunId);
     const run = loaded.view;
-    if (run === null || run.status !== RunStatus.Started) return requireRun(run);
+    if (run === null || !isActiveRunStatus(run.status)) return requireRun(run);
     if (run.lease !== undefined && new Date(run.lease.expiresAt) > this.clock.now())
       throw new Error(`Run ${id} does not have an expired lease`);
+    if (run.status === RunStatus.Starting)
+      return this.appendFailure(
+        currentRunId,
+        run,
+        'Preparation was interrupted before execution started',
+      );
     if (run.externalExecution === undefined)
       return this.appendFailure(currentRunId, run, 'External execution was never reported');
     const inspection = await this.inspector.inspect(run.externalExecution);
@@ -92,9 +107,9 @@ export class RecoveryService {
       if (
         loaded.events?.some(
           (event) =>
-            event.causationId === context.commandId &&
-            (event.eventType === ExecutionEventType.RunSucceeded ||
-              event.eventType === ExecutionEventType.RunFailed),
+            event.event.causationId === context.commandId &&
+            (event.event.eventType === ExecutionEventType.RunSucceeded ||
+              event.event.eventType === ExecutionEventType.RunFailed),
         )
       )
         return loaded.view;
@@ -106,12 +121,12 @@ export class RecoveryService {
         : undefined;
     const draft =
       resolution.kind === RunStatus.Succeeded
-        ? createRunExecutionEventDraft({
+        ? runEventData({
             ...resolutionMetadata(currentRunId, loaded.view, context),
             eventType: ExecutionEventType.RunSucceeded,
             payload: { outcome: outcome!, finishedAt: context.occurredAt },
           })
-        : createRunExecutionEventDraft({
+        : runEventData({
             ...resolutionMetadata(currentRunId, loaded.view, context),
             eventType: ExecutionEventType.RunFailed,
             payload: { failure: resolution.failure, finishedAt: context.occurredAt },
@@ -130,7 +145,7 @@ export class RecoveryService {
   ): Promise<readonly RunView[]> {
     const recovered: RunView[] = [];
     for (const run of await this.repository.list()) {
-      if (run.status !== RunStatus.Started) continue;
+      if (!isActiveRunStatus(run.status)) continue;
       if (isLocallyActive(run.runId)) continue;
       if (run.lease !== undefined && new Date(run.lease.expiresAt) > this.clock.now()) continue;
       recovered.push(await this.recover(run.runId, owner));
@@ -182,7 +197,7 @@ export class RecoveryService {
     if (loaded.view.status !== RunStatus.Started) return loaded.view;
     const occurredAt = this.clock.now().toISOString();
     const attempt = loaded.view.ambiguityAttempts + 1;
-    const drafts: RunExecutionEventDraft[] = [
+    const drafts: RunExecutionEventData[] = [
       ambiguityObservedDraft(id, loaded.view, { reason, attempt }, occurredAt),
     ];
     if (attempt >= (this.config.maxAmbiguityReconciliationAttempts ?? 3))
@@ -203,10 +218,10 @@ export class RecoveryService {
     return updated;
   }
 
-  private async append(id: RunId, draft: RunExecutionEventDraft): Promise<RunView> {
+  private async append(id: RunId, draft: RunExecutionEventData): Promise<RunView> {
     const loaded = await this.repository.load(id);
     if (loaded.view === null) throw new Error(`Run ${id} does not exist`);
-    if (loaded.view.status !== RunStatus.Started) return loaded.view;
+    if (!isActiveRunStatus(loaded.view.status)) return loaded.view;
     await this.repository.append(id, loaded.sequence, [draft]);
     return (await this.repository.load(id)).view!;
   }
@@ -221,8 +236,8 @@ function leaseRenewedDraft(
   run: RunView,
   payload: { readonly owner: string; readonly acquiredAt: string; readonly expiresAt: string },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunLeaseRenewed,
     payload,
@@ -238,8 +253,8 @@ function recoveredDraft(
     readonly finishedAt: string;
   },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunRecovered,
     payload,
@@ -257,8 +272,8 @@ function failedDraft(
     readonly finishedAt: string;
   },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunFailed,
     payload,
@@ -270,8 +285,8 @@ function ambiguityObservedDraft(
   run: RunView,
   payload: { readonly reason: string; readonly attempt: number },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventId: `${id}:recovery-ambiguity:${payload.attempt}:${occurredAt}`,
     eventType: ExecutionEventType.RunAmbiguityObserved,
@@ -284,8 +299,8 @@ function ambiguousDraft(
   run: RunView,
   payload: { readonly reason: string; readonly finishedAt: string },
   occurredAt: string,
-): RunExecutionEventDraft {
-  return createRunExecutionEventDraft({
+): RunExecutionEventData {
+  return runEventData({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunAmbiguous,
     payload,
@@ -326,6 +341,21 @@ function eventMetadata(
     source: { kind: EventSourceKind.Internal, id: 'execution-recovery' },
     stream: runStream(id),
   };
+}
+
+function runEventData(input: RunExecutionEventDataInput): RunExecutionEventData {
+  const event = createExecutionEventData(input);
+  return requireRunEventData(event);
+}
+
+function requireRunEventData(event: ExecutionEventData): RunExecutionEventData {
+  switch (event.eventType) {
+    case ExecutionEventType.ActivationClaimed:
+    case ExecutionEventType.ActivationReleased:
+      throw new Error(`Expected Run event data, received ${event.eventType}`);
+    default:
+      return event;
+  }
 }
 
 function recoveredOutcome(

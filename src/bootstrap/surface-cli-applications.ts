@@ -1,3 +1,5 @@
+import { EventActorKind, JOURNAL_CHANGE_FALLBACK_MS, correlationId } from '@atolis-hq/eventing';
+import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import type { FastifyInstance } from 'fastify';
 import { execFile as nodeExecFile, spawn } from 'node:child_process';
 import { access, copyFile, mkdir, writeFile as writeFileContent } from 'node:fs/promises';
@@ -5,14 +7,20 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { promisify } from 'node:util';
 import { BuiltInActivityName, agentActivityDefinition } from '../activities/index.js';
-import { IntakeHost, ResidentHost, TickHost } from '../control-plane/index.js';
+import {
+  IntakeHost,
+  ResidentHost,
+  TickHost,
+  type HostBudget,
+  type HostResult,
+} from '../control-plane/index.js';
 import {
   ExecutionCancellationReason,
   ExecutionFailureCode,
   RunStatus,
+  isActiveRunStatus,
   loadPromptTemplate,
 } from '../execution/index.js';
-import { EventActorKind, JOURNAL_CHANGE_FALLBACK_MS, correlationId } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
   DockerProcessError,
@@ -53,6 +61,11 @@ import { loadConfig } from './config/load-config.js';
 import { runtimeProjectionDefinitions } from './projection-runtime.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import {
+  createOneShotRunnerAdvance,
+  createResidentRunnerAdvance,
+  withFinalProjectionCatchUp,
+} from './runner-tick-adapter.js';
+import {
   createSelfUpdateApplication,
   type SelfUpdateQuiescePort,
 } from './self-update-application.js';
@@ -68,7 +81,8 @@ export function createSurfaceCliApplications(
   api: ApiApplications,
   now: () => string,
 ): WakeCliApplications {
-  const runnerTick = new TickHost((options) => root.runnerPipeline.run(options));
+  const runnerTick = new TickHost(createOneShotRunnerAdvance(root));
+  const runnerResidentTick = new TickHost(createResidentRunnerAdvance(root));
   const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
   const runnerIdleWait = createRunnerIdleWait(root, root.config.controlPlane?.resident);
   const reportResidentError = (label: 'intake' | 'runner') => async (error: unknown) => {
@@ -76,19 +90,14 @@ export function createSurfaceCliApplications(
       `Wake ${label} tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
     );
   };
-  // Only intake unconditionally polls a rate-limited external API (GitHub),
-  // so only its resident loop backs off exponentially when idle. The
-  // runner loop (schedules, reactors, Advancement, delivery, GitHub label
-  // maintenance) stays on a fast, fixed cadence when it simply has nothing
-  // to do locally — mirroring legacy src/core/control-plane.ts's
-  // `runIntakeTick`/`runRunnerTick` split (idleBackoff: true vs false), just
-  // as two ResidentHosts instead of two hand-rolled loops. But some runner
-  // stages (deliver, label maintenance) DO call that same external API, so a
-  // run of consecutive *errors* — as opposed to ordinary "no local work"
-  // idling — still backs off exponentially, or a live rate-limit window gets
-  // hammered every cycle instead of given a chance to recover.
+  // Intake owns provider polling, so only its resident loop backs off
+  // exponentially when idle. The runner loop owns schedules, reconciliation,
+  // and delivery; it stays on a fast cadence when there is no local work.
+  // The independent durable subscriber owns activation scheduling. Delivery
+  // can still hit an external API, so consecutive errors back off
+  // independently of ordinary idle ticks.
   const runnerResident = new ResidentHost(
-    runnerTick,
+    runnerResidentTick,
     runnerIdleWait,
     reportResidentError('runner'),
   );
@@ -106,30 +115,31 @@ export function createSurfaceCliApplications(
   return {
     tick: {
       async run(budget) {
-        // Mirrors legacy's combined one-shot `runTick`: intake once, then
-        // let the runner loop drain up to its own budget.
-        await intakeHost.run(budget);
-        return runnerTick.run(budget);
+        return withFinalProjectionCatchUp(
+          async () => {
+            await root.projectionSubscriptions.catchUpOnce();
+            // Mirrors legacy's combined one-shot `runTick`: intake once, then
+            // let the runner loop drain up to its own budget.
+            await intakeHost.run(budget);
+            return await runnerTick.run(budget);
+          },
+          () => root.projectionSubscriptions.catchUpOnce(),
+        );
       },
     },
     start: {
       async run(signal, budget) {
         if (root.config.surfaces.web.enabled) await startHttp({}, true);
         else if (root.config.surfaces.api.enabled) await startHttp({}, false);
-        // Runs on its own cadence, independent of both resident loops:
-        // `advance()` blocks for an activity's full duration before the
-        // runner loop's own catchUpProjections runs again, so without this
-        // pump, projections (e.g. the board's active-run card) never
-        // reflect a run in progress — only its state before and after.
-        const projectionPump = runProjectionPump(root, signal);
-        const intakeRun = intakeResident.run(signal, budget);
-        try {
-          return await runnerResident.run(signal, budget);
-        } finally {
-          await intakeRun;
-          await projectionPump;
-          await closeAll(servers);
-        }
+        return runResidentLifecycle({
+          signal,
+          budget,
+          processorRuntime: root.processorRuntime,
+          activationSchedulerSubscriber: root.activationSchedulerSubscriber,
+          intakeResident,
+          runnerResident,
+          close: () => closeResidentRuntime(root.execution, () => closeAll(servers)),
+        });
       },
     },
     stop: {
@@ -148,8 +158,13 @@ export function createSurfaceCliApplications(
       async token(accessKey: string | undefined) {
         if (root.config.surfaces.web.auth.disabled)
           return 'UI authentication is disabled by surfaces.web.auth.disabled.';
-        if (accessKey !== undefined) await replaceAccessKey(root.paths.wakeRoot, accessKey);
-        const grant = await createPairingGrant(root.paths.wakeRoot);
+        if (accessKey !== undefined)
+          await replaceAccessKey(root.paths.wakeRoot, accessKey, serialiseCredentialMutation);
+        const grant = await createPairingGrant(
+          root.paths.wakeRoot,
+          undefined,
+          serialiseCredentialMutation,
+        );
         const localHost =
           root.config.surfaces.api.host === '0.0.0.0' ? 'localhost' : root.config.surfaces.api.host;
         const local = `http://${localHost}:${root.config.surfaces.api.port}/?grant=${encodeURIComponent(grant.value)}`;
@@ -175,12 +190,12 @@ export function createSurfaceCliApplications(
             (event) => event.stream.kind === WorkStreamKind.WorkItem && event.stream.id === id,
           )
           .map((event) => ({
-            eventId: event.eventId,
-            eventType: event.eventType,
-            occurredAt: event.occurredAt,
+            eventId: event.event.eventId,
+            eventType: event.event.eventType,
+            occurredAt: event.event.occurredAt,
             stream: `${event.stream.kind}:${event.stream.id}`,
-            causationId: event.causationId,
-            correlationId: event.correlationId,
+            causationId: event.event.causationId,
+            correlationId: event.event.correlationId,
           }));
       },
     },
@@ -235,39 +250,167 @@ export function createRunnerIdleWait(
   root: Pick<CompositionRoot, 'journal'>,
   resident: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number } | undefined,
 ) {
-  let priorRevision = root.journal.changeSignal.revision();
+  // Cursor initialization stays inside the resident lifecycle. The first
+  // wait starts at the origin so an append during the first pass remains
+  // visible; each subsequent cursor is sampled before waiting.
+  let priorPosition: Promise<number> | undefined;
   return (
     signal: AbortSignal,
     {
-      consecutiveIdleTicks,
+      consecutiveIdleTicks: _consecutiveIdleTicks,
       consecutiveErrorTicks,
     }: { readonly consecutiveIdleTicks: number; readonly consecutiveErrorTicks: number },
   ): Promise<void> => {
     if (consecutiveErrorTicks > 0)
       return sleepUntilAbort(signal, nextPollBackoffMs(resident, consecutiveErrorTicks));
-    const revision = root.journal.changeSignal.revision();
-    const journalChanged = revision !== priorRevision;
-    priorRevision = revision;
-    return consecutiveIdleTicks === 0 && journalChanged
-      ? Promise.resolve()
-      : root.journal.changeSignal.waitForChange(signal, JOURNAL_CHANGE_FALLBACK_MS);
+    const initializing = priorPosition === undefined;
+    const cursor = priorPosition ?? Promise.resolve(0);
+    return waitForRunnerEvents(
+      root,
+      cursor,
+      signal,
+      resident,
+      _consecutiveIdleTicks,
+      initializing,
+    ).then((position) => {
+      priorPosition = Promise.resolve(position);
+    });
   };
 }
 
-export async function runProjectionPump(
-  root: Pick<CompositionRoot, 'projectionRunner' | 'journal'>,
-  signal: AbortSignal,
-): Promise<void> {
-  while (!signal.aborted) {
-    try {
-      await root.projectionRunner.runRegisteredOnce();
-    } catch (error) {
-      process.stderr.write(
-        `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
+export interface ResidentLifecycleHost {
+  run(signal: AbortSignal, budget: HostBudget): Promise<HostResult>;
+}
+
+export interface ResidentLifecycleInput {
+  readonly signal: AbortSignal;
+  readonly budget: HostBudget;
+  readonly processorRuntime: Pick<CompositionRoot['processorRuntime'], 'start'>;
+  readonly activationSchedulerSubscriber: Pick<
+    CompositionRoot['activationSchedulerSubscriber'],
+    'start'
+  >;
+  readonly intakeResident: ResidentLifecycleHost;
+  readonly runnerResident: ResidentLifecycleHost;
+  readonly close: () => Promise<void>;
+}
+
+/** Starts one processor registry before its resident consumers. */
+export async function runResidentLifecycle(input: ResidentLifecycleInput): Promise<HostResult> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (input.signal.aborted) abort();
+  else input.signal.addEventListener('abort', abort, { once: true });
+  let processorRun: ReturnType<ResidentLifecycleInput['processorRuntime']['start']> | undefined;
+  let schedulerRun:
+    ReturnType<ResidentLifecycleInput['activationSchedulerSubscriber']['start']> | undefined;
+  let intakeRun: Promise<HostResult> | undefined;
+  const failures: unknown[] = [];
+  let result: HostResult | undefined;
+  try {
+    processorRun = input.processorRuntime.start(controller.signal);
+    schedulerRun = input.activationSchedulerSubscriber.start(controller.signal);
+    intakeRun = input.intakeResident.run(controller.signal, input.budget);
+    result = await input.runnerResident.run(controller.signal, input.budget);
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    captureCleanupFailure(failures, () => controller.abort());
+    captureCleanupFailure(failures, () => processorRun?.abort());
+    captureCleanupFailure(failures, () => schedulerRun?.abort());
+    await captureAsyncCleanupFailure(failures, async () => {
+      failures.push(
+        ...(await settledRunFailures([intakeRun, processorRun?.done, schedulerRun?.done])),
       );
-    }
-    await root.journal.changeSignal.waitForChange(signal, JOURNAL_CHANGE_FALLBACK_MS);
+    });
+    captureCleanupFailure(failures, () => input.signal.removeEventListener('abort', abort));
+    await captureAsyncCleanupFailure(failures, () => input.close());
   }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Resident lifecycle failed');
+  return result!;
+}
+
+interface ExecutionShutdown {
+  shutdown(): Promise<void>;
+}
+
+export async function closeResidentRuntime(
+  execution: ExecutionShutdown,
+  closeResources: () => Promise<void>,
+): Promise<void> {
+  const failures: unknown[] = [];
+  await captureAsyncCleanupFailure(failures, () => execution.shutdown());
+  await captureAsyncCleanupFailure(failures, closeResources);
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1)
+    throw new AggregateError(failures, 'Resident execution and resource cleanup failed');
+}
+
+function captureCleanupFailure(failures: unknown[], cleanup: () => void): void {
+  try {
+    cleanup();
+  } catch (error) {
+    failures.push(error);
+  }
+}
+
+async function captureAsyncCleanupFailure(
+  failures: unknown[],
+  cleanup: () => Promise<void>,
+): Promise<void> {
+  try {
+    await cleanup();
+  } catch (error) {
+    failures.push(error);
+  }
+}
+
+async function settledRunFailures(
+  runs: readonly (Promise<unknown> | undefined)[],
+): Promise<unknown[]> {
+  const settled = await Promise.allSettled(runs.filter((run) => run !== undefined));
+  return settled.flatMap((run) => (run.status === 'fulfilled' ? [] : [run.reason]));
+}
+
+async function waitForRunnerEvents(
+  root: Pick<CompositionRoot, 'journal'>,
+  priorPosition: Promise<number>,
+  signal: AbortSignal,
+  resident: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number } | undefined,
+  consecutiveIdleTicks: number,
+  initializing: boolean,
+): Promise<number> {
+  let currentPosition = 0;
+  try {
+    const afterPosition = await priorPosition;
+    currentPosition = initializing
+      ? await sampleRunnerPosition(root)
+      : await root.journal.latestGlobalPosition();
+    await root.journal.waitForEventsAfter(afterPosition, signal, JOURNAL_CHANGE_FALLBACK_MS);
+  } catch (error) {
+    reportRunnerWaitError(error);
+    await sleepUntilAbort(signal, nextPollBackoffMs(resident, consecutiveIdleTicks));
+  }
+  return currentPosition;
+}
+
+function sampleRunnerPosition(root: Pick<CompositionRoot, 'journal'>): Promise<number> {
+  try {
+    return root.journal.latestGlobalPosition().catch((error: unknown) => {
+      reportRunnerWaitError(error);
+      return 0;
+    });
+  } catch (error) {
+    reportRunnerWaitError(error);
+    return Promise.resolve(0);
+  }
+}
+
+function reportRunnerWaitError(error: unknown): void {
+  process.stderr.write(
+    `Wake runner event wait failed: ${error instanceof Error ? error.message : String(error)}\n`,
+  );
 }
 
 function nextPollBackoffMs(
@@ -308,7 +451,8 @@ function createHttpStarter(
       credentials: await loadOrCreateCredentials(root.paths.wakeRoot),
       auth: {
         disabled: root.config.surfaces.web.auth.disabled,
-        redeemGrant: (grant) => redeemPairingGrant(root.paths.wakeRoot, grant),
+        redeemGrant: (grant) =>
+          redeemPairingGrant(root.paths.wakeRoot, grant, undefined, serialiseCredentialMutation),
       },
       ...(assets === undefined ? {} : { assets }),
     });
@@ -323,6 +467,13 @@ function createHttpStarter(
       throw error;
     }
   };
+}
+
+function serialiseCredentialMutation<Value>(
+  lockPath: string,
+  operation: () => Promise<Value>,
+): Promise<Value> {
+  return withFileLock(lockPath, operation, { waitMs: 5_000, retryIntervalMs: 10 });
 }
 
 function createDockerCliForRoot(root: CompositionRoot): DockerCli {
@@ -385,13 +536,13 @@ async function activeExecutionRuns(root: CompositionRoot) {
   // Run whose lease already expired would otherwise never be recovered during
   // a maintenance quiesce wait. Recover it here so an owner that is truly gone
   // (no heartbeat, no lease renewal) reaches a terminal or ambiguous status
-  // instead of sitting as "started" and blocking the update forever.
+  // instead of sitting as active and blocking the update forever.
   await root.recovery.recoverActive('self-update', root.execution.isLocallyActive);
   // Ambiguous Runs are always terminal (finishedAt is set the moment escalation
   // occurs) and require an operator's `run-resolve`, not a maintenance drain or
   // cancellation. Treating them as active would deadlock every future update.
   return (await root.execution.list())
-    .filter((run) => run.status === RunStatus.Started)
+    .filter((run) => isActiveRunStatus(run.status))
     .map((run) => ({
       runId: run.runId,
       maintenanceCancellable: run.cancellation === undefined,
@@ -400,7 +551,7 @@ async function activeExecutionRuns(root: CompositionRoot) {
 
 async function activeExecutionRunIds(root: CompositionRoot): Promise<readonly string[]> {
   return (await root.execution.list())
-    .filter((run) => run.status === RunStatus.Started)
+    .filter((run) => isActiveRunStatus(run.status))
     .map((run) => run.runId);
 }
 
@@ -496,7 +647,7 @@ function createOperationalApplications(root: CompositionRoot) {
           health: async () => projectionHealth(root),
           rebuild: async () => {
             for (const definition of runtimeProjectionDefinitions)
-              await root.projectionRunner.rebuild(definition);
+              await root.projectionSubscriptions.rebuild(definition);
           },
         },
       }),
@@ -853,7 +1004,7 @@ function createValidationApplications(root: CompositionRoot) {
     },
     async rebuildProjections() {
       for (const definition of runtimeProjectionDefinitions)
-        await root.projectionRunner.rebuild(definition);
+        await root.projectionSubscriptions.rebuild(definition);
     },
   };
 }

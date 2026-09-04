@@ -1,5 +1,5 @@
+import { createEventData, type EventEnvelope } from '@atolis-hq/eventing';
 import { describe, expect, it } from 'vitest';
-import { createEventDraft, type EventEnvelope } from '../../src/kernel/index.js';
 import { workItemStream } from '../../src/work/index.js';
 import { workId } from '../support/identities.js';
 import { FaultInjector, InjectedFaultError } from './support/faults.js';
@@ -37,21 +37,21 @@ describe('event-model support', () => {
 
   it('routes TestWorld journal appends through before and after fault boundaries', async () => {
     const world = new TestWorld();
-    world.faults.failOnce('journal.append.before');
+    world.faults.failOnce('journal.appendToStream.before');
 
     await expect(world.createWork({ objective: 'before fault' })).rejects.toMatchObject({
-      faultName: 'journal.append.before',
+      faultName: 'journal.appendToStream.before',
     });
 
-    world.faults.failOnce('journal.append.after');
+    world.faults.failOnce('journal.appendToStream.after');
     await expect(world.createWork({ objective: 'after fault' })).rejects.toMatchObject({
-      faultName: 'journal.append.after',
+      faultName: 'journal.appendToStream.after',
     });
     expect((await world.events('work.item-created')).length).toBe(1);
   });
 
   it('formats stable causal traces without recorded time', () => {
-    const draft = createEventDraft({
+    const draft = createEventData({
       eventId: 'evt-1',
       eventType: 'work.item-created',
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -59,11 +59,11 @@ describe('event-model support', () => {
       causationId: 'cmd-1',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: workItemStream(workId('1')),
       payload: { objective: 'test' },
     });
     const envelope: EventEnvelope = {
-      ...draft,
+      event: draft,
+      stream: workItemStream(workId('1')),
       recordedAt: '2099-01-01T00:00:00.000Z',
       sequence: 1,
       globalPosition: 3,

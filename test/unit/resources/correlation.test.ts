@@ -1,10 +1,11 @@
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import type { resourceId } from '../../../src/resources/index.js';
 import { resourceCapability, resourceKind, resourceStream } from '../../../src/resources/index.js';
 import {} from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { resId, workId } from '../../support/identities.js';
+import { InterleavingEventJournal } from '../../support/interleaving-event-journal.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
 
 const context = (commandId: string) => ({
@@ -104,7 +105,87 @@ describe('Resource correlations', () => {
 
     expect(
       (await journal.readStream(resourceStream(resId('one')))).filter(
-        (event) => event.eventType === 'resources.work-correlation-established',
+        (event) => event.event.eventType === 'resources.work-correlation-established',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('treats concurrent identical correlations as one idempotent Resource change', async () => {
+    const inner = new InMemoryEventJournal(new FakeClock());
+    const service = createTestResourceServices(
+      new InterleavingEventJournal(
+        inner,
+        (events) => events[0]?.eventType === 'resources.work-correlation-established',
+      ),
+    ).resources;
+    const resource = resId('concurrent-replay');
+    await service.discover(discovery(resource), context('discover'));
+
+    const results = await Promise.all([
+      service.correlate(resource, workId('one'), 'primary', context('correlate')),
+      service.correlate(resource, workId('one'), 'primary', context('correlate')),
+    ]);
+
+    expect(results).toEqual([
+      expect.objectContaining({ workItemId: workId('one'), role: 'primary' }),
+      expect.objectContaining({ workItemId: workId('one'), role: 'primary' }),
+    ]);
+    expect(
+      (await inner.readStream(resourceStream(resource))).filter(
+        (event) => event.event.eventType === 'resources.work-correlation-established',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('records the mandated conflict when primary correlations race', async () => {
+    const inner = new InMemoryEventJournal(new FakeClock());
+    const service = createTestResourceServices(
+      new InterleavingEventJournal(
+        inner,
+        (events) => events[0]?.eventType === 'resources.work-correlation-established',
+      ),
+    ).resources;
+    const resource = resId('concurrent-primary');
+    await service.discover(discovery(resource), context('discover'));
+
+    const results = await Promise.allSettled([
+      service.correlate(resource, workId('one'), 'primary', context('correlate-one')),
+      service.correlate(resource, workId('two'), 'primary', context('correlate-two')),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({ message: expect.stringContaining('primary') }),
+      }),
+    ]);
+    const events = await inner.readStream(resourceStream(resource));
+    expect(
+      events.filter((event) => event.event.eventType === 'resources.work-correlation-established'),
+    ).toHaveLength(1);
+    const winner = results.find((result) => result.status === 'fulfilled')?.value.workItemId;
+    const loser = winner === workId('one') ? workId('two') : workId('one');
+    expect(events.at(-1)).toMatchObject({
+      event: {
+        eventType: 'resources.work-correlation-conflicted',
+        payload: { workItemId: loser, existingWorkItemId: winner },
+      },
+    });
+  });
+
+  it('rejects reuse of a command event identity with different Resource data', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createTestResourceServices(journal).resources;
+    const resource = resId('identity-conflict');
+    await service.discover(discovery(resource), context('command-1'));
+    await service.correlate(resource, workId('one'), 'primary', context('command-2'));
+
+    await expect(
+      service.correlate(resource, workId('two'), 'primary', context('command-2')),
+    ).rejects.toThrow('has already been used with different content');
+    expect(
+      (await journal.readStream(resourceStream(resource))).filter(
+        (event) => event.event.eventType === 'resources.work-correlation-established',
       ),
     ).toHaveLength(1);
   });
@@ -119,7 +200,7 @@ describe('Resource correlations', () => {
     await expect(
       service.correlate(resource, workId('two'), 'primary', context('command-3')),
     ).rejects.toThrow('primary');
-    expect((await journal.readStream(resourceStream(resId('one')))).at(-1)?.eventType).toBe(
+    expect((await journal.readStream(resourceStream(resId('one')))).at(-1)?.event.eventType).toBe(
       'resources.work-correlation-conflicted',
     );
   });
@@ -165,13 +246,15 @@ describe('Resource correlations', () => {
 
     expect(await service.get(resource)).toMatchObject({ correlationStatus: 'unresolvable' });
     expect((await journal.readStream(resourceStream(resource))).at(-1)).toMatchObject({
-      eventType: 'resources.work-correlation-unresolvable',
-      payload: { attemptCount: 4, lastFailureReason: 'no primary correlation' },
+      event: {
+        eventType: 'resources.work-correlation-unresolvable',
+        payload: { attemptCount: 4, lastFailureReason: 'no primary correlation' },
+      },
     });
     await service.retryPendingWorkCorrelations();
     expect(
       (await journal.readStream(resourceStream(resource))).filter(
-        (event) => event.eventType === 'resources.work-correlation-unresolvable',
+        (event) => event.event.eventType === 'resources.work-correlation-unresolvable',
       ),
     ).toHaveLength(1);
   });
@@ -218,8 +301,10 @@ describe('Resource correlations', () => {
     );
 
     expect((await journal.readStream(resourceStream(resource))).at(-1)).toMatchObject({
-      eventType: 'resources.work-correlation-retry-pending',
-      payload: { attemptCount: 1, lastFailureReason: 'no primary correlation' },
+      event: {
+        eventType: 'resources.work-correlation-retry-pending',
+        payload: { attemptCount: 1, lastFailureReason: 'no primary correlation' },
+      },
     });
   });
 });

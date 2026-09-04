@@ -1,12 +1,26 @@
-import { ActivityOutcomeKind, activationId } from '../../../activities/index.js';
-import { type ConversationService } from '../../../conversations/index.js';
 import {
+  correlationId,
+  defineEventProcessor,
+  entityRefSchema,
   EventActorKind,
-  type CheckpointStore,
+  eventDataSchema,
+  eventEnvelopeSchema,
+  eventId,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  type CorrelationId,
   type EventEnvelope,
+  type EventId,
   type EventJournal,
+  type EventProcessor,
+  type ProcessorRunSerialiser,
+  type ProcessorStateStore,
   type ProjectionStore,
-} from '../../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { activationId, ActivityOutcomeKind } from '../../../activities/index.js';
+import { type ConversationService } from '../../../conversations/index.js';
+import { brandedStringSchema, offsetIsoTimestampSchema } from '../../../kernel/index.js';
 import {
   ActivityActivationStatus,
   workflowInstanceId,
@@ -14,81 +28,154 @@ import {
   type WorkflowInstanceId,
 } from '../../../orchestration/index.js';
 import { IntegrationStreamKind } from '../../contracts/streams.js';
-import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
+import {
+  DeliveryEventType,
+  selectDeliveryEvent,
+  type DeliveryEventPayloads,
+} from '../contracts/events.js';
 import type { DeliveryIntentView } from '../contracts/views.js';
 import { DeliveryIntentKind, DeliveryResultKind } from '../contracts/vocabulary.js';
 
 const deliveryResultSignalKind = 'delivery-result';
-const pendingNamespace = 'reactor:delivery-outcomes:pending';
+
+export const DeliveryOutcomeProcessorConsumer = 'reactor:delivery-outcomes';
+const pendingConsumer = DeliveryOutcomeProcessorConsumer;
 const pendingKey = 'pending-confirmations';
 
-interface PendingConfirmations {
-  readonly events: readonly EventEnvelope[];
+type PendingDeliveryOutcome =
+  | PendingDeliveryOutcomeOf<typeof DeliveryEventType.Confirmed>
+  | PendingDeliveryOutcomeOf<typeof DeliveryEventType.Failed>
+  | (PendingDeliveryOutcomeOf<typeof DeliveryEventType.Reconciled> & {
+      readonly payload: DeliveryEventPayloads[typeof DeliveryEventType.Reconciled] & {
+        readonly result: typeof DeliveryResultKind.Confirmed;
+        readonly externalId: string;
+      };
+    });
+
+interface PendingDeliveryOutcomeOf<Type extends keyof DeliveryEventPayloads> {
+  readonly eventId: EventId;
+  readonly eventType: Type;
+  readonly correlationId: CorrelationId;
+  readonly recordedAt: string;
+  readonly payload: DeliveryEventPayloads[Type];
 }
 
+interface PendingConfirmations {
+  readonly events: readonly PendingDeliveryOutcome[];
+}
+
+const pendingConfirmationsSchema = z.object({ events: z.array(z.unknown()) }).strict();
+const pendingCorrelationSchema = z
+  .object({
+    intentEventId: brandedStringSchema(eventId),
+    intentGlobalPosition: z.number().int().positive(),
+    workflowInstanceId: z.string().min(1),
+    activationId: z.string().min(1),
+    occurrenceOrdinal: z.number().int().positive(),
+  })
+  .strict();
+const pendingOutcomeHeaderSchema = z
+  .object({
+    eventId: brandedStringSchema(eventId),
+    correlationId: brandedStringSchema(correlationId),
+    recordedAt: offsetIsoTimestampSchema,
+  })
+  .strict();
+const pendingDeliveryOutcomeSchema: z.ZodType<PendingDeliveryOutcome> = z.discriminatedUnion(
+  'eventType',
+  [
+    pendingOutcomeHeaderSchema.extend({
+      eventType: z.literal(DeliveryEventType.Confirmed),
+      payload: pendingCorrelationSchema.extend({ externalId: z.string().min(1) }),
+    }),
+    pendingOutcomeHeaderSchema.extend({
+      eventType: z.literal(DeliveryEventType.Failed),
+      payload: pendingCorrelationSchema.extend({
+        code: z.string().min(1),
+        message: z.string().min(1),
+      }),
+    }),
+    pendingOutcomeHeaderSchema.extend({
+      eventType: z.literal(DeliveryEventType.Reconciled),
+      payload: pendingCorrelationSchema.extend({
+        result: z.literal(DeliveryResultKind.Confirmed),
+        externalId: z.string().min(1),
+      }),
+    }),
+  ],
+);
+const legacyPendingEnvelopeSchema = eventDataSchema
+  .omit({ payload: true })
+  .extend({
+    stream: entityRefSchema,
+    payload: z.unknown(),
+    recordedAt: offsetIsoTimestampSchema,
+    sequence: z.number().int().positive(),
+    globalPosition: z.number().int().positive(),
+  })
+  .strict();
+
 export class DeliveryOutcomeReactor {
+  readonly processor: EventProcessor;
+
   constructor(
     private readonly journal: EventJournal,
-    private readonly checkpoints: CheckpointStore,
     private readonly orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>,
     private readonly projections: ProjectionStore,
-    private readonly conversations?: Pick<ConversationService, 'recordRepresentation'>,
-  ) {}
-
-  async runOnce(): Promise<number> {
-    const consumer = 'reactor:delivery-outcomes';
-    const events = await this.journal.readAll(await this.checkpoints.load(consumer));
-    const resolved = new Set<string>();
-    const pending = new Map(
-      (await this.loadPending()).map((event) => [event.eventId, event] as const),
-    );
-    for (const event of events) {
-      const matched = await this.reconcile(event, resolved);
-      if (matched === false) {
-        // reconcile() only ever returns false for a delivery-terminal event
-        // (selectDeliveryEvent(event) !== null), so this lookup can't miss.
-        const delivery = selectDeliveryEvent(event)!;
-        pending.set(delivery.eventId, event);
-      }
-      await this.checkpoints.save(consumer, event.globalPosition);
-    }
-    // Catches a confirmation checkpointed before its workflow reached
-    // "waiting for delivery" — re-checked here on every call rather than
-    // relying on the incremental pass above, which never revisits a
-    // position once checkpointed.
-    for (const [id, pendingEvent] of pending) {
-      if (resolved.has(id)) {
-        pending.delete(id);
-        continue;
-      }
-      const matched = await this.reconcile(pendingEvent, resolved);
-      if (matched === true) pending.delete(id);
-    }
-    await this.savePending([...pending.values()]);
-    return events.length;
+    private readonly processorState: ProcessorStateStore,
+    private readonly conversations: Pick<ConversationService, 'recordRepresentation'> | undefined,
+    private readonly serialiseRun: ProcessorRunSerialiser,
+  ) {
+    this.processor = defineEventProcessor({
+      consumer: 'reactor:delivery-outcomes',
+      name: 'delivery-outcomes',
+      owner: 'integrations',
+      category: EventProcessorCategory.Reactor,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select(event) {
+        return isResolvedDelivery(selectDeliveryEvent(event)) ? event : null;
+      },
+      // EventProcessorHost already holds this consumer's serialiser while
+      // invoking the handler. Acquiring it again here would deadlock.
+      handle: async (event) => this.reactWithinProcessor(event),
+    });
   }
 
-  // true: resolved (accepted this call, or already accepted earlier this
-  // same call). false: a delivery-terminal event whose workflow isn't
-  // waiting on it yet — belongs in the pending set for a later retry. null:
-  // not a delivery-terminal event at all.
-  private async reconcile(event: EventEnvelope, seen: Set<string>): Promise<boolean | null> {
+  react(event: EventEnvelope, signal: AbortSignal = new AbortController().signal): Promise<void> {
+    return this.serialiseRun(this.processor.consumer, signal, () =>
+      this.reactWithinProcessor(event),
+    );
+  }
+
+  private async reactWithinProcessor(event: EventEnvelope): Promise<void> {
     const delivery = selectDeliveryEvent(event);
-    if (delivery === null) return null;
-    if (seen.has(delivery.eventId)) return true;
+    if (!isResolvedDelivery(delivery)) return;
+    const pending = projectPendingDeliveryOutcome(event, delivery);
+    if ((await this.reconcile(pending)) === false) await this.savePendingEvent(pending);
+  }
+
+  reconcileOnce(signal: AbortSignal = new AbortController().signal): Promise<void> {
+    return this.serialiseRun(this.processor.consumer, signal, () => this.reconcilePendingOnce());
+  }
+
+  private async reconcilePendingOnce(): Promise<void> {
+    const pending = new Map((await this.loadPending()).map((event) => [event.eventId, event]));
+    for (const [id, event] of pending) {
+      if ((await this.reconcile(event)) === true) pending.delete(id);
+    }
+    await this.savePending([...pending.values()]);
+  }
+
+  private async reconcile(delivery: PendingDeliveryOutcome): Promise<boolean> {
     const outcome =
       delivery.eventType === DeliveryEventType.Confirmed ||
-      (delivery.eventType === DeliveryEventType.Reconciled &&
-        delivery.payload.result === DeliveryResultKind.Confirmed)
+      delivery.eventType === DeliveryEventType.Reconciled
         ? { kind: ActivityOutcomeKind.Done, data: { deliveryEventId: delivery.eventId } }
-        : delivery.eventType === DeliveryEventType.Failed
-          ? { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.payload.code } }
-          : null;
-    if (outcome === null) return null;
+        : { kind: ActivityOutcomeKind.Failed, data: { reason: delivery.payload.code } };
     try {
-      await this.recordConversationRepresentation(event, delivery);
+      await this.recordConversationRepresentation(delivery);
     } catch (error) {
-      // Delivery reconciliation must continue if optional conversation provenance is unavailable.
+      // Optional conversation provenance must not block delivery reconciliation.
       console.error(`Conversation provenance recording failed for ${delivery.eventId}`, error);
     }
     const command = {
@@ -96,30 +183,26 @@ export class DeliveryOutcomeReactor {
       activationId: activationId(delivery.payload.activationId),
     };
     if (!(await this.isAwaitingThisDelivery(command, delivery.payload.intentEventId))) return false;
-    seen.add(delivery.eventId);
     await this.orchestration.acceptOutcome(
       { ...command, outcome },
       {
         commandId: delivery.eventId,
-        correlationId: event.correlationId,
+        correlationId: delivery.correlationId,
         actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
-        occurredAt: event.recordedAt,
+        occurredAt: delivery.recordedAt,
       },
     );
     return true;
   }
 
-  private async recordConversationRepresentation(
-    event: EventEnvelope,
-    delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
-  ): Promise<void> {
+  private async recordConversationRepresentation(delivery: PendingDeliveryOutcome): Promise<void> {
     if (this.conversations === undefined || !isConfirmedDelivery(delivery)) return;
     const intent = await conversationDeliveryIntent(
       this.projections,
       delivery.payload.intentEventId,
     );
     if (intent === undefined) return;
-    const externalId = (delivery.payload as { readonly externalId?: string }).externalId;
+    const externalId = confirmedExternalId(delivery);
     if (externalId === undefined) return;
     const payload = intent.payload as {
       readonly conversationId: string;
@@ -134,24 +217,18 @@ export class DeliveryOutcomeReactor {
       },
       {
         commandId: delivery.eventId,
-        correlationId: event.correlationId,
+        correlationId: delivery.correlationId,
         actor: { kind: EventActorKind.System, id: 'delivery-outcome-reactor' },
-        occurredAt: event.recordedAt,
+        occurredAt: delivery.recordedAt,
       },
     );
   }
 
-  /**
-   * A delivery's own completion may only resolve the activation that
-   * actually asked to wait on it (an activity outcome of `waiting` with
-   * `signalKind: 'delivery-result'`, e.g. pr.approve/pr.merge) — never a
-   * merely-still-open activation left pending for an unrelated reason
-   * (e.g. a technical failure with no configured route for that stage).
-   */
   private async isAwaitingThisDelivery(
     command: { readonly workflowInstanceId: WorkflowInstanceId; readonly activationId: string },
     intentEventId: string,
   ): Promise<boolean> {
+    // A terminal delivery can only resolve the activation that waited for this exact intent.
     const view = await this.orchestration.get(command.workflowInstanceId);
     return (
       view?.pendingActivation?.activationId === command.activationId &&
@@ -161,29 +238,78 @@ export class DeliveryOutcomeReactor {
     );
   }
 
-  private async loadPending(): Promise<readonly EventEnvelope[]> {
-    const stored = await this.projections.read<PendingConfirmations>(pendingNamespace, pendingKey);
-    return stored?.value.events ?? [];
+  private async loadPending(): Promise<readonly PendingDeliveryOutcome[]> {
+    const stored = await this.processorState.read<unknown>(pendingConsumer, pendingKey);
+    if (stored === null) return [];
+    return pendingConfirmationsSchema.parse(stored.value).events.map(decodePendingOutcome);
   }
 
-  private async savePending(events: readonly EventEnvelope[]): Promise<void> {
-    await this.projections.write<PendingConfirmations>({
-      namespace: pendingNamespace,
+  private async savePending(events: readonly PendingDeliveryOutcome[]): Promise<void> {
+    await this.processorState.write<PendingConfirmations>({
+      consumer: pendingConsumer,
       key: pendingKey,
-      lastGlobalPosition: 0,
       value: { events },
     });
   }
+
+  private async savePendingEvent(event: PendingDeliveryOutcome): Promise<void> {
+    const pending = new Map((await this.loadPending()).map((value) => [value.eventId, value]));
+    pending.set(event.eventId, event);
+    await this.savePending([...pending.values()]);
+  }
 }
 
-function isConfirmedDelivery(
+function decodePendingOutcome(value: unknown): PendingDeliveryOutcome {
+  const canonical = pendingDeliveryOutcomeSchema.safeParse(value);
+  if (canonical.success) return canonical.data;
+  const nested = eventEnvelopeSchema.safeParse(value);
+  if (nested.success) {
+    const delivery = selectDeliveryEvent(nested.data);
+    if (isResolvedDelivery(delivery)) return projectPendingDeliveryOutcome(nested.data, delivery);
+  }
+  const legacy = legacyPendingEnvelopeSchema.parse(value);
+  return pendingDeliveryOutcomeSchema.parse({
+    eventId: legacy.eventId,
+    eventType: legacy.eventType,
+    correlationId: legacy.correlationId,
+    recordedAt: legacy.recordedAt,
+    payload: legacy.payload,
+  });
+}
+
+function projectPendingDeliveryOutcome(
+  envelope: EventEnvelope,
   delivery: NonNullable<ReturnType<typeof selectDeliveryEvent>>,
-): boolean {
+): PendingDeliveryOutcome {
+  return pendingDeliveryOutcomeSchema.parse({
+    eventId: delivery.event.eventId,
+    eventType: delivery.event.eventType,
+    correlationId: envelope.event.correlationId,
+    recordedAt: envelope.recordedAt,
+    payload: delivery.event.payload,
+  });
+}
+
+function isResolvedDelivery(
+  delivery: ReturnType<typeof selectDeliveryEvent>,
+): delivery is NonNullable<ReturnType<typeof selectDeliveryEvent>> {
+  return (
+    delivery?.event.eventType === DeliveryEventType.Confirmed ||
+    delivery?.event.eventType === DeliveryEventType.Failed ||
+    (delivery?.event.eventType === DeliveryEventType.Reconciled &&
+      delivery.event.payload.result === DeliveryResultKind.Confirmed)
+  );
+}
+
+function isConfirmedDelivery(delivery: PendingDeliveryOutcome): boolean {
   return (
     delivery.eventType === DeliveryEventType.Confirmed ||
-    (delivery.eventType === DeliveryEventType.Reconciled &&
-      delivery.payload.result === DeliveryResultKind.Confirmed)
+    delivery.eventType === DeliveryEventType.Reconciled
   );
+}
+
+function confirmedExternalId(delivery: PendingDeliveryOutcome): string | undefined {
+  return delivery.eventType === DeliveryEventType.Failed ? undefined : delivery.payload.externalId;
 }
 
 async function conversationDeliveryIntent(projections: ProjectionStore, intentEventId: string) {

@@ -42,6 +42,8 @@ export * from './contracts/config.js';
 
 export * from './contracts/events.js';
 
+export * from './contracts/event-factory.js';
+
 export * from './contracts/issue-query.js';
 
 export * from './contracts/payloads.js';

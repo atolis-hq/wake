@@ -1,5 +1,5 @@
+import type { EventId } from '@atolis-hq/eventing';
 import { rename, writeFile } from 'node:fs/promises';
-import type { EventId } from '../../kernel/index.js';
 import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
 import type { DeliveryIntentView } from '../delivery/contracts/views.js';
 import { DeliveryResultKind } from '../delivery/contracts/vocabulary.js';

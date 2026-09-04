@@ -61,6 +61,16 @@ describe('workspace prepare configuration', () => {
 });
 
 describe('control-plane concurrency configuration', () => {
+  it('accepts absent scheduler configuration and rejects the removed scheduler mode', () => {
+    expect(parseRootConfig(baseConfig).controlPlane).not.toHaveProperty('activationScheduler');
+    expect(() =>
+      parseRootConfig({
+        ...baseConfig,
+        controlPlane: { activationScheduler: { mode: 'subscriber' } },
+      }),
+    ).toThrow(/activationScheduler/);
+  });
+
   it('defaults to one concurrent Run and requires a positive integer', () => {
     expect(parseRootConfig(baseConfig).controlPlane.maxConcurrentRuns).toBe(1);
     expect(

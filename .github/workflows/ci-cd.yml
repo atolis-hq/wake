@@ -23,6 +23,7 @@ jobs:
               - 'docker/**'
               - 'package.json'
               - 'package-lock.json'
+              - 'packages/**'
               - 'assets/**'
               - 'dependency-cruiser.config.mjs'
               - 'eslint.config.js'
@@ -47,14 +48,53 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: Run fast verification and unused-code checks
-        run: npm run verify && npm run knip
+      - name: Run fast verification
+        run: npm run verify
       - name: Diagnose formatting failure
         if: failure()
         run: |
           npx prettier --write .
           git diff --stat
           git diff
+
+  architecture:
+    needs: changes
+    if: "needs.changes.outputs.relevant == 'true'"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:architecture
+
+  package-contract:
+    needs: changes
+    if: "needs.changes.outputs.relevant == 'true'"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check:workspace-packages
+
+  knip:
+    needs: changes
+    if: "needs.changes.outputs.relevant == 'true'"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run knip
 
   integration:
     needs: changes
@@ -120,7 +160,7 @@ jobs:
                 node /app/dist/src/main.js tick --wake-root /tmp/wake-smoke --no-sandbox'
 
   tag:
-    needs: [fast-verify, integration, e2e, web, docker-smoke]
+    needs: [fast-verify, architecture, package-contract, knip, integration, e2e, web, docker-smoke]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -159,9 +199,25 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - name: Set public workspace versions from tag
+        env:
+          WAKE_VERSION: ${{ needs.tag.outputs.version }}
+        run: |
+          npm --workspace @atolis-hq/eventing version "$WAKE_VERSION" --no-git-tag-version --ignore-scripts
+          npm --workspace @atolis-hq/eventing-filesystem version "$WAKE_VERSION" --no-git-tag-version --ignore-scripts
+          npm version "$WAKE_VERSION" --workspaces=false --no-git-tag-version --ignore-scripts
+          npm --workspace @atolis-hq/eventing-filesystem pkg set dependencies.@atolis-hq/eventing="$WAKE_VERSION"
+          npm pkg set dependencies.@atolis-hq/eventing="$WAKE_VERSION" dependencies.@atolis-hq/eventing-filesystem="$WAKE_VERSION"
+          npm install --package-lock-only --ignore-scripts
+      - name: Verify public package archives
+        run: npm run check:workspace-packages
         env:
           WAKE_BUILD_TAG: ${{ needs.tag.outputs.version }}
-      - name: Set version from tag
-        run: npm version ${{ needs.tag.outputs.version }} --no-git-tag-version
-      - run: npm publish --access public --provenance
+      - name: Publish Eventing
+        run: npm --workspace @atolis-hq/eventing publish --access public --provenance
+      - name: Publish Eventing filesystem
+        run: npm --workspace @atolis-hq/eventing-filesystem publish --access public --provenance
+      - name: Publish Wake
+        run: npm publish --workspaces=false --access public --provenance
+        env:
+          WAKE_BUILD_TAG: ${{ needs.tag.outputs.version }}

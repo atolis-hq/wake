@@ -26,38 +26,37 @@ separate `IntakePipeline`, not owned by this component.
 - **Selection** — choosing which pending activation to dispatch next when no
   reconciliation candidate exists.
 - **Dispatch loop** — the per-call iteration that repeats selection and
-  dispatch, rechecking `maxConcurrentRuns` against the current `started` Run
+  dispatch, rechecking `maxConcurrentRuns` against the current active (`starting` or `started`) Run
   count after every dispatch (never spending a capacity count computed once
   up front), excluding activations already dispatched earlier in the same
   call from later selection, and stopping at the first of: the
   `maxConcurrentRuns` ceiling, the per-call `maxDispatches` burst cap, or no
   further eligible candidate.
 - **Runner pipeline** — the fixed ordered stage sequence
-  (`catchUpProjections` → `runSchedules` → Advancement → `react` →
-  `catchUpProjections` → `deliver` → `catchUpProjections` → `react`) that
-  one call to `RunnerPipeline.run` performs, wrapping exactly one
-  Advancement call. `poll` and `translateInbound` — the externally
+  (`runSchedules` → `react` → agent-run publication → `deliver` → `react`)
+  that one call to `RunnerPipeline.run` performs. It never advances the
+  activation scheduler or catches every projection. `poll` and `translateInbound` — the externally
   rate-limited half of a tick — run on a separate `IntakePipeline` instead,
   not embedded in this sequence; see control-plane's `tick-host.spec.md`
-  for why the two are split across independently-scheduled hosts.
+  for why the two are split across independently scheduled hosts.
 
 ## Responsibilities and boundaries
 
 Advancement owns the recovery → reconciliation → dispatch-loop
 (selection → dispatch → outcome-acceptance, repeated until capacity or
-candidates are exhausted) sequence for one call, and (as the Runner pipeline) the
-ordering of the IO stages around that one call for the internal half of one
+candidates are exhausted) sequence for one scheduler pass. The Runner pipeline
+owns the ordering of the non-scheduling IO stages for the internal half of one
 tick. It does not define what makes an activation pending or a workflow
-waiting — it reads Orchestration's own readiness reports. It does not
-implement `runSchedules`, `react`, or `deliver` — those stages are supplied
-by the caller (bootstrap composition) and only sequenced here; `poll` and
-`translateInbound` are not sequenced by this component at all, since they run
-on the separate `IntakePipeline`. It does not decide runner eligibility
-itself — it calls an injected `runnerIneligibility` supplier and passes the
-result through to Execution unchanged. It does not decide whether a WorkItem
-is frozen or deleted — it calls an injected `work.get` lookup per candidate
-and excludes one whose WorkItem is currently frozen or deleted, but Work's
-own aggregate remains the source of that state.
+waiting — it reads Orchestration's own readiness reports. The Runner pipeline
+does not implement `runSchedules`, `react`, or `deliver` — those stages are
+supplied by the caller (bootstrap composition) and only sequenced here; `poll`
+and `translateInbound` are not sequenced by this component at all, since they
+run on the separate `IntakePipeline`. Advancement does not decide runner
+eligibility itself — it calls an injected `runnerIneligibility` supplier and
+passes the result through to Execution unchanged. It does not decide whether a
+WorkItem is frozen or deleted — it calls an injected `work.get` lookup per
+candidate and excludes one whose WorkItem is currently frozen or deleted, but
+Work's own aggregate remains the source of that state.
 
 ## Core policies, invariants, and behaviours
 
@@ -95,7 +94,7 @@ own aggregate remains the source of that state.
   resolution: that succeeded outcome is reconciled and accepted.
 - When no reconciliation candidate exists, Advancement runs its dispatch
   loop: while dispatched-this-call is below `maxDispatches`, it counts all
-  `started` Runs and, when that count has reached `maxConcurrentRuns`, stops
+  active (`starting` and `started`) Runs and, when that count has reached `maxConcurrentRuns`, stops
   dispatching (returning `no-work`, or `progressed` with whatever was already
   dispatched earlier in the same call). Otherwise it applies Dispatch
   Policy's fairness-ordered selection over the pending candidates, excluding
@@ -145,22 +144,35 @@ own aggregate remains the source of that state.
   dispatched yet in this call. A workflow blocked this way is picked up by
   reconciliation or Advancement's `no-work` waiting check on a later call,
   not surfaced again by this one.
-- The Runner pipeline MUST run its eight stages in the fixed order given
+- The Runner pipeline MUST run its ordered stages in the fixed order given
   above, awaiting each stage fully before starting the next, exactly once
-  per `run` call, and MUST return the `AdvanceResult` of the embedded
-  Advancement call. `catchUpProjections` runs three times (before
-  `runSchedules`, after Advancement, after `deliver`) so each stage
-  observes projections caught up to the facts the prior stage produced.
-  `react` runs twice: once after Advancement so watch reactors observe state
-  transitions from accepted outcomes, and once for delivery outcomes after
-  `deliver`. A `finally` block runs `catchUpProjections` a fourth
-  time regardless of outcome, including when an earlier stage throws.
+  per `run` call, and MUST return only its operational `no-work` or `paused`
+  status: it never reports scheduler progress. `react` runs twice: once after
+  schedule facts are produced and once for delivery outcomes after `deliver`.
+  The one-shot adapter owns all-projection barriers before pipeline work,
+  before its scheduler poke/delivery boundary, and while unwinding; the
+  resident runtime uses independently supervised subscriptions. Delivery is
+  the explicit resident freshness barrier because it reads its outbox from a
+  projection.
 - `RunnerPipeline.run`'s `signal` parameter defaults to a fresh,
   never-aborted `AbortController`'s signal when the caller omits one.
+- `AdvanceOnce` accepts the optional lifecycle signal supplied by `TickHost`.
+  Resident runner adapters forward it to `RunnerPipeline.run`, so an in-flight
+  outbound delivery observes resident shutdown; one-shot callers omit it and
+  retain their bounded, standalone behavior.
+- Bootstrap always composes an independently supervised, checkpointed
+  activation-scheduler subscriber. It reconsiders every durable fact,
+  reconciles on startup and bounded fallback, and shares the scheduler
+  serialiser. One-shot ticks run the non-scheduling pipeline to produce
+  schedule and reactor facts, then its ordered pre-delivery hook pokes that
+  required subscriber before outbound delivery. A later delivery error still
+  rejects the tick, but cannot undo or postpone that completed scheduler pass;
+  resident publication, delivery, or reactor latency cannot hold subscriber
+  dispatch.
 - When the shared pause is already active at the start of a Runner or Intake
-  pipeline call, the pipeline MUST catch projections up exactly once before
-  returning its paused/no-progress result. It MUST NOT invoke any operational
-  stage (`runSchedules`, Advancement, reactors, publication, delivery, poll,
+  pipeline call, the pipeline MUST return its paused/no-progress result
+  without invoking any operational
+  stage (`runSchedules`, reactors, publication, delivery, poll,
   or inbound translation). This makes durable pause/resume facts visible
   without allowing paused operational work to proceed.
 
@@ -207,14 +219,14 @@ own aggregate remains the source of that state.
   function, not Work's own service.
 - Kernel — Clock, IdGenerator, and command-context/correlation conventions
   for every downstream command Advancement issues.
-- Tick and Resident Hosts (dependent) — in production composition, wrap the
-  Runner pipeline (not the bare Advancement call) as their repeated unit of
-  work.
-- The API `advance` command (dependent) — invokes the bare Advancement
-  function directly, without the surrounding Runner pipeline stages, so an
-  API-triggered advance performs no schedule reconciliation/react/deliver
-  (and, as with any bare Advancement call, no poll/translate — those never
-  ran here, even before the Runner/Intake split).
+- Tick and Resident Hosts (dependent) — in production composition, use
+  separate runner adapters: the one-shot adapter runs the non-scheduling
+  pipeline and pokes the required scheduler subscriber at its pre-delivery
+  boundary, while the resident adapter runs only the pipeline.
+- The API `tick` command (dependent) — invokes that one-shot adapter, so it
+  runs schedule reconciliation, reactions, publication, and the ordered
+  subscriber poke before delivery. It does not poll or translate inbound;
+  those operations belong to the separate Intake pipeline.
 
 ## Decisions, exclusions, and deferred capability
 

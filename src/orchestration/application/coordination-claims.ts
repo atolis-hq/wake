@@ -1,13 +1,10 @@
-import {
-  createEventDraft,
-  EventSourceKind,
-  type CommandContext,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext, type EventJournal } from '@atolis-hq/eventing';
 import type { WorkItemId } from '../../work/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
+import { createOrchestrationEventData } from '../contracts/event-factory.js';
 import type { ChildWorkflowRequest } from '../contracts/events.js';
 import { OrchestrationEventType, type OrchestrationGroupEvent } from '../contracts/events.js';
+import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import {
   isOrchestrationGroupStream,
   primaryOrchestrationGroupStream,
@@ -21,7 +18,7 @@ export class CoordinationClaims {
 
   async claimPrimary(
     workItemId: WorkItemId,
-    workflowInstanceId: string,
+    workflowInstanceId: WorkflowInstanceId,
     context: CommandContext,
   ): Promise<void> {
     const stream = primaryOrchestrationGroupStream(workItemId);
@@ -35,8 +32,8 @@ export class CoordinationClaims {
         throw new Error(`WorkItem already has an active primary workflow owned by ${owner}`);
       },
       append: async (sequence) => {
-        await this.journal.append(stream, sequence, [
-          createEventDraft({
+        await this.journal.appendToStream(stream, sequence, [
+          createOrchestrationEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.PrimaryClaimed}:${workItemId}`,
             eventType: OrchestrationEventType.PrimaryClaimed,
             occurredAt: context.occurredAt,
@@ -44,7 +41,6 @@ export class CoordinationClaims {
             causationId: context.commandId,
             actor: context.actor,
             source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-            stream,
             payload: { workItemId, workflowInstanceId },
           }),
         ]);
@@ -72,8 +68,8 @@ export class CoordinationClaims {
       canAppend: (_rawEvents, events) =>
         claimedRequestIds(events).size < request.maxPerGroup + budgetGrants(events),
       append: async (sequence) => {
-        await this.journal.append(stream, sequence, [
-          createEventDraft({
+        await this.journal.appendToStream(stream, sequence, [
+          createOrchestrationEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupClaimed}:${request.requestId}`,
             eventType: OrchestrationEventType.GroupClaimed,
             occurredAt: context.occurredAt,
@@ -81,7 +77,6 @@ export class CoordinationClaims {
             causationId: context.commandId,
             actor: context.actor,
             source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-            stream,
             payload: { key: stream.id, requestId: request.requestId },
           }),
         ]);
@@ -107,12 +102,12 @@ export class CoordinationClaims {
       alreadyClaimed: (events) =>
         events.some(
           (event) =>
-            event.eventType === OrchestrationEventType.GroupBudgetGranted &&
-            event.payload.commandId === context.commandId,
+            event.event.eventType === OrchestrationEventType.GroupBudgetGranted &&
+            event.event.payload.commandId === context.commandId,
         ),
       append: async (sequence) => {
-        await this.journal.append(stream, sequence, [
-          createEventDraft({
+        await this.journal.appendToStream(stream, sequence, [
+          createOrchestrationEventData({
             eventId: `${context.commandId}:${OrchestrationEventType.GroupBudgetGranted}:${requestId}`,
             eventType: OrchestrationEventType.GroupBudgetGranted,
             occurredAt: context.occurredAt,
@@ -120,7 +115,6 @@ export class CoordinationClaims {
             causationId: context.commandId,
             actor: context.actor,
             source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-            stream,
             payload: { key: stream.id, requestId, commandId: context.commandId },
           }),
         ]);
@@ -131,14 +125,14 @@ export class CoordinationClaims {
 
 function primaryOwner(events: readonly OrchestrationGroupEvent[]): string | undefined {
   for (const event of events) {
-    switch (event.eventType) {
+    switch (event.event.eventType) {
       case OrchestrationEventType.PrimaryClaimed:
-        return event.payload.workflowInstanceId;
+        return event.event.payload.workflowInstanceId;
       case OrchestrationEventType.GroupClaimed:
       case OrchestrationEventType.GroupBudgetGranted:
         break;
       default:
-        assertNever(event);
+        assertNever(event.event);
     }
   }
   return undefined;
@@ -147,22 +141,23 @@ function primaryOwner(events: readonly OrchestrationGroupEvent[]): string | unde
 function claimedRequestIds(events: readonly OrchestrationGroupEvent[]): ReadonlySet<string> {
   return new Set(
     events.flatMap((event) => {
-      switch (event.eventType) {
+      switch (event.event.eventType) {
         case OrchestrationEventType.GroupClaimed:
-          return [event.payload.requestId];
+          return [event.event.payload.requestId];
         case OrchestrationEventType.PrimaryClaimed:
         case OrchestrationEventType.GroupBudgetGranted:
           return [];
         default:
-          return assertNever(event);
+          return assertNever(event.event);
       }
     }),
   );
 }
 
 function budgetGrants(events: readonly OrchestrationGroupEvent[]): number {
-  return events.filter((event) => event.eventType === OrchestrationEventType.GroupBudgetGranted)
-    .length;
+  return events.filter(
+    (event) => event.event.eventType === OrchestrationEventType.GroupBudgetGranted,
+  ).length;
 }
 
 function groupEvents(

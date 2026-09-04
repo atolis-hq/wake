@@ -1,6 +1,6 @@
 import { RetrySafety, type ActivityOutcome } from '../../activities/index.js';
 import type { CompiledOutcomeRoute, CompiledWorkflow } from '../contracts/config.js';
-import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
+import type { WorkflowOrchestrationEventData } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -18,7 +18,7 @@ export function mayRetry(
 }
 
 export function requestRetry(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: AcceptActivityOutcome,
@@ -30,18 +30,25 @@ export function requestRetry(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.RetryCounted,
-      { retryKey, count },
+      { eventType: OrchestrationEventType.RetryCounted, payload: { retryKey, count } },
       events.length + 1,
     ),
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-        stage: stageName(state.currentStage),
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          stage.activity,
+          stage.with,
+          {
+            execution: stage.execution,
+            stage: stageName(state.currentStage),
+          },
+        ),
+      },
       events.length + 2,
     ),
   );

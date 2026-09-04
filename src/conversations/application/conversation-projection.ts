@@ -1,4 +1,4 @@
-import type { ProjectionDefinition } from '../../kernel/index.js';
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { selectConversationEvent } from '../contracts/events.js';
 import { ConversationStreamKind } from '../contracts/streams.js';
 import type { ConversationView } from '../contracts/views.js';

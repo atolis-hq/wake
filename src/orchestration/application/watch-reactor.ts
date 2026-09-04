@@ -1,11 +1,12 @@
-import { type RunRepository } from '../../execution/index.js';
 import {
-  correlationId,
-  EventActorKind,
+  defineEventProcessor,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
   type CheckpointStore,
   type CommandContext,
   type EventJournal,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { type RunRepository } from '../../execution/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import {
   OrchestrationEventType,
@@ -20,6 +21,7 @@ import {
 } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import { ApprovalAuthorityKind } from '../contracts/vocabulary.js';
+import { reactorCommandContext } from './reactor-command-context.js';
 import { resolveTriggerWorkflowInstanceId } from './trigger-workflow-instance.js';
 
 type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
@@ -59,26 +61,49 @@ interface WatchOrchestrationPort {
 
 const checkpoint = 'reactor:orchestration.watch';
 const reconciliationCheckpoint = 'reconciler:orchestration.watch';
+const noWatchEventTypes = (): readonly string[] => [];
 
 export function createWatchReactor(
   orchestration: WatchOrchestrationPort,
-  journal?: EventJournal,
-  checkpoints?: CheckpointStore,
+  watchEventTypes: () => readonly string[] = noWatchEventTypes,
+  runs?: Pick<RunRepository, 'load'>,
+) {
+  const react = async (event: PersistedEvent, context: CommandContext): Promise<void> => {
+    await dispatch(
+      orchestration,
+      runs,
+      event,
+      context,
+      await orchestration.listWatchMatches(event, context),
+    );
+  };
+  return {
+    react,
+    processor: defineEventProcessor({
+      consumer: checkpoint,
+      name: ApprovalAuthorityKind.Watch,
+      owner: 'orchestration',
+      category: EventProcessorCategory.Reactor,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select(event) {
+        if (!watchEventTypes().includes(event.event.eventType)) return null;
+        selectOrchestrationEvent(event);
+        return event;
+      },
+      handle: async (event) =>
+        react(event, reactorCommandContext(event, ApprovalAuthorityKind.Watch, 'watch-reactor')),
+    }),
+  };
+}
+
+export function createWatchReconciler(
+  orchestration: WatchOrchestrationPort,
+  journal: EventJournal,
+  checkpoints: CheckpointStore,
   runs?: Pick<RunRepository, 'load'>,
 ) {
   return {
-    async react(event: PersistedEvent, context: CommandContext): Promise<void> {
-      await dispatch(
-        orchestration,
-        runs,
-        event,
-        context,
-        await orchestration.listWatchMatches(event, context),
-      );
-    },
     async reconcileOnce(limit = 100): Promise<number> {
-      if (journal === undefined || checkpoints === undefined)
-        throw new Error('WatchReactor journal and checkpoints are required to reconcile');
       if (orchestration.listWaiting === undefined)
         throw new Error('WatchReactor listWaiting is required to reconcile');
       const events = await journal.readAll(await checkpoints.load(reconciliationCheckpoint), limit);
@@ -96,13 +121,13 @@ export function createWatchReactor(
       );
       let reconciled = 0;
       for (const event of events) {
-        const context = commandContext(event);
+        const context = reactorCommandContext(event, ApprovalAuthorityKind.Watch, 'watch-reactor');
         const matches = (
           await Promise.all(
             (await orchestration.listWatchMatches(event, context)).map(async (match) => {
               const watches = waiting.get(match.parent.workflowInstanceId);
               return watches?.has(match.watch.id) === true &&
-                !(await hasDurableWatchOutcome(orchestration, journal, match, event.eventId))
+                !(await hasDurableWatchOutcome(orchestration, journal, match, event.event.eventId))
                 ? match
                 : null;
             }),
@@ -115,16 +140,6 @@ export function createWatchReactor(
         await checkpoints.save(reconciliationCheckpoint, event.globalPosition);
       }
       return reconciled;
-    },
-    async runOnce(limit = 100): Promise<number> {
-      if (journal === undefined || checkpoints === undefined)
-        throw new Error('WatchReactor journal and checkpoints are required to run');
-      const events = await journal.readAll(await checkpoints.load(checkpoint), limit);
-      for (const event of events) {
-        await this.react(event, commandContext(event));
-        await checkpoints.save(checkpoint, event.globalPosition);
-      }
-      return events.length;
     },
   };
 }
@@ -145,12 +160,12 @@ async function dispatch(
     )
       continue;
     const requestId = workflowInstanceId(
-      `${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`,
+      `${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.event.eventId}`,
     );
     const request = {
       parentWorkflowInstanceId: match.parent.workflowInstanceId,
       watchId: match.watch.id,
-      triggerId: event.eventId,
+      triggerId: event.event.eventId,
       workflowName: workflowName(match.watch.workflow),
       causalCycleId: causalCycle ?? requestId,
       requestId,
@@ -160,7 +175,7 @@ async function dispatch(
     if (
       (await orchestration.isCausalRepeat?.(
         match.parent.workflowInstanceId,
-        event.eventId,
+        event.event.eventId,
         causalCycle,
         request.requestId,
       )) === true
@@ -191,27 +206,18 @@ async function hasDurableWatchOutcome(
   return parentEvents.some((event) => {
     const owned = selectOrchestrationEvent(event);
     return (
-      owned?.eventType === OrchestrationEventType.GroupBudgetExhausted &&
-      owned.payload.requestId === requestId
+      owned?.event.eventType === OrchestrationEventType.GroupBudgetExhausted &&
+      owned.event.payload.requestId === requestId
     );
   });
 }
 
-function commandContext(event: PersistedEvent): CommandContext {
-  return {
-    commandId: `${event.eventId}:watch`,
-    correlationId: correlationId(event.correlationId),
-    occurredAt: event.occurredAt,
-    actor: { kind: EventActorKind.System, id: 'watch-reactor' },
-  };
-}
-
 function orchestrationCausalCycleId(event: OrchestrationEvent | null): string | undefined {
-  return event !== null && 'causalCycleId' in event.payload
-    ? event.payload.causalCycleId
+  return event !== null && 'causalCycleId' in event.event.payload
+    ? event.event.payload.causalCycleId
     : undefined;
 }
 
 function watchCommandId(context: CommandContext, match: WatchMatch, event: PersistedEvent): string {
-  return `${context.commandId}:parent:${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`;
+  return `${context.commandId}:parent:${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.event.eventId}`;
 }

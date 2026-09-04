@@ -1,7 +1,4 @@
-import type {
-  WorkflowOrchestrationEvent,
-  WorkflowOrchestrationEventDraft,
-} from '../contracts/events.js';
+import type { WorkflowOrchestrationEvent } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
@@ -14,22 +11,25 @@ import {
 
 export { orchestrationStatusTransitions };
 
-type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventDraft;
-
-export function foldWorkflowInstance(events: readonly WorkflowFact[]): WorkflowInstanceView | null {
-  const first = events.find((event) => event.eventType === OrchestrationEventType.InstanceStarted);
+export function foldWorkflowInstance(
+  events: readonly WorkflowOrchestrationEvent[],
+): WorkflowInstanceView | null {
+  const first = events.find(
+    (event) => event.event.eventType === OrchestrationEventType.InstanceStarted,
+  );
   if (first === undefined) return null;
+  if (first.event.eventType !== OrchestrationEventType.InstanceStarted) return null;
   const state: MutableWorkflowInstance = {
     workflowInstanceId: first.stream.id,
-    workItemId: first.payload.workItemId,
-    workflowName: first.payload.workflowName,
-    ...(first.payload.workflowDefinitionFingerprint === undefined
+    workItemId: first.event.payload.workItemId,
+    workflowName: first.event.payload.workflowName,
+    ...(first.event.payload.workflowDefinitionFingerprint === undefined
       ? {}
-      : { workflowDefinitionFingerprint: first.payload.workflowDefinitionFingerprint }),
-    orchestrationGroupId: first.payload.orchestrationGroupId,
-    ...optionalChildFields(first.payload),
+      : { workflowDefinitionFingerprint: first.event.payload.workflowDefinitionFingerprint }),
+    orchestrationGroupId: first.event.payload.orchestrationGroupId,
+    ...optionalChildFields(first.event.payload),
     status: WorkflowStatus.Active,
-    currentStage: first.payload.entry,
+    currentStage: first.event.payload.entry,
     repeatCounts: {},
     retryCounts: {},
     supplementalQueue: [],
@@ -40,13 +40,34 @@ export function foldWorkflowInstance(events: readonly WorkflowFact[]): WorkflowI
     causalRejectionIds: [],
     childCompletionRecorded: false,
   };
-  for (const event of events) applyWorkflowInstanceEvent(state, event);
+  for (const event of events) applyWorkflowInstanceEvent(state, event.event);
+  return immutableWorkflowInstanceView(state);
+}
+
+/** Applies one decoded journal event to an already-folded workflow view. */
+export function continueWorkflowInstance(
+  previous: WorkflowInstanceView | null,
+  event: WorkflowOrchestrationEvent,
+): WorkflowInstanceView | null {
+  if (previous === null) return foldWorkflowInstance([event]);
+  const state: MutableWorkflowInstance = {
+    ...previous,
+    repeatCounts: { ...previous.repeatCounts },
+    retryCounts: { ...previous.retryCounts },
+    supplementalQueue: [...previous.supplementalQueue],
+    acceptedSignalIds: [...previous.acceptedSignalIds],
+    operatorRetryCommandIds: [...previous.operatorRetryCommandIds],
+    acceptedOutcomes: [...previous.acceptedOutcomes],
+    acceptedChildCompletionIds: [...previous.acceptedChildCompletionIds],
+    causalRejectionIds: [...previous.causalRejectionIds],
+  };
+  applyWorkflowInstanceEvent(state, event.event);
   return immutableWorkflowInstanceView(state);
 }
 
 function optionalChildFields(
   payload: Extract<
-    WorkflowFact,
+    WorkflowOrchestrationEvent['event'],
     { eventType: typeof OrchestrationEventType.InstanceStarted }
   >['payload'],
 ): Pick<

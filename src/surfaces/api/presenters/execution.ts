@@ -1,7 +1,7 @@
 import { ActivityOutcomeKind } from '../../../activities/index.js';
 import {
   agentTokenUsage,
-  RunStatus,
+  isActiveRunStatus,
   type AgentRunResponse,
   type RunView,
 } from '../../../execution/index.js';
@@ -33,8 +33,11 @@ export function presentRun(value: RunView): RunResponse {
     orchestrationGroupId: value.orchestrationGroupId,
     attempt: value.attempt,
     status: value.status,
-    active: value.status === RunStatus.Started,
+    active: isActiveRunStatus(value.status),
     startedAt: value.startedAt,
+    ...(value.executionStartedAt === undefined
+      ? {}
+      : { executionStartedAt: value.executionStartedAt }),
     ...(value.finishedAt === undefined ? {} : { finishedAt: value.finishedAt }),
     ...(value.outcome === undefined ? {} : { outcome: value.outcome }),
     ...(value.failure === undefined ? {} : { failure: { kind: value.failure.kind } }),

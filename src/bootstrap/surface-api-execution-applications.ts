@@ -1,10 +1,10 @@
+import { correlationId, EventActorKind } from '@atolis-hq/eventing';
 import {
   ControlStreamKind,
   ineligibleRunners,
   type ControlPlaneView,
 } from '../control-plane/index.js';
 import { ExecutionFailureCode, RunStatus, type RunView } from '../execution/index.js';
-import { correlationId, EventActorKind } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';
@@ -91,11 +91,11 @@ export function createExecutionApplications(
       );
       const run = stored?.value.view;
       if (run === null || run === undefined) return undefined;
-      const workflow = await root.projections.read<{ readonly view: WorkflowInstanceView | null }>(
+      const workflow = await root.projections.read<WorkflowInstanceView | null>(
         'orchestration',
         run.workflowInstanceId,
       );
-      const workItemId = workflow?.value.view?.workItemId;
+      const workItemId = workflow?.value?.workItemId;
       if (workItemId === undefined)
         return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
       const groupId = await root.transcriptStore?.groupForRun(workItemId, runId);
@@ -107,16 +107,13 @@ export function createExecutionApplications(
       const workflowIds = [...new Set(runs.map((candidate) => candidate.workflowInstanceId))];
       const workflows = await Promise.all(
         workflowIds.map(async (workflowInstanceId) =>
-          root.projections.read<{ readonly view: WorkflowInstanceView | null }>(
-            'orchestration',
-            workflowInstanceId,
-          ),
+          root.projections.read<WorkflowInstanceView | null>('orchestration', workflowInstanceId),
         ),
       );
       const workItemIdsByWorkflow = new Map(
         workflowIds.map((workflowInstanceId, index) => [
           workflowInstanceId,
-          workflows[index]?.value.view?.workItemId,
+          workflows[index]?.value?.workItemId,
         ]),
       );
       const groupRuns = runs.filter(

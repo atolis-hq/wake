@@ -8,16 +8,12 @@ const prepareOutputTailBytes = 4096;
 export async function prepareWorkspace(
   path: string,
   hook: NonNullable<WorkspacePrepareHook>,
+  signal: AbortSignal,
 ): Promise<void> {
-  const process = runProcess(
-    hook.command,
-    [],
-    path,
-    new AbortController().signal,
-    { hardMs: hook.timeoutMs },
-    true,
-  );
+  signal.throwIfAborted();
+  const process = runProcess(hook.command, [], path, signal, { hardMs: hook.timeoutMs }, true);
   const result = await process.result;
+  signal.throwIfAborted();
   if (result.exitCode === 0 && !result.timedOut && result.failureKind === undefined) return;
   throw new Error(prepareFailureMessage(hook.command, result));
 }

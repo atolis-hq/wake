@@ -1,42 +1,138 @@
+import {
+  createEventData,
+  type EventData,
+  type EventEnvelope,
+  type EventJournal,
+  type ProcessorStateStore,
+} from '@atolis-hq/eventing';
+import {
+  InMemoryProcessorStateStore,
+  InProcessJournalChangeSignal,
+} from '@atolis-hq/eventing/memory';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { resolveWakePaths } from '../../../src/bootstrap/index.js';
 import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
-import { InProcessJournalChangeSignal, type EventJournal } from '../../../src/kernel/index.js';
+import { DeliveryOutcomeProcessorConsumer } from '../../../src/integrations/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 it('serializes appends shared by resident runtime loops', async () => {
-  const journal = concurrentAppendRejectingJournal();
+  const { journal, expectedSequences } = concurrentAppendRejectingJournal();
   const persistence = composePersistence(resolveWakePaths('C:/wake-home'), new FakeClock(), {
     journal,
   });
 
-  await expect(
-    Promise.all([
-      persistence.journal.append({} as never, 0, []),
-      persistence.journal.append({} as never, 0, []),
-    ]),
-  ).resolves.toEqual([[], []]);
+  const [first, second] = await Promise.all([
+    persistence.journal.appendToStream(stream, 0, [event('event-1')]),
+    persistence.journal.appendToStream(stream, 1, [event('event-2')]),
+  ]);
+
+  expect(first).toEqual([
+    expect.objectContaining({
+      event: expect.objectContaining({ eventId: 'event-1' }),
+      sequence: 1,
+    }),
+  ]);
+  expect(second).toEqual([
+    expect.objectContaining({
+      event: expect.objectContaining({ eventId: 'event-2' }),
+      sequence: 2,
+    }),
+  ]);
+  expect(expectedSequences).toEqual([0, 1]);
 });
 
-function concurrentAppendRejectingJournal(): EventJournal {
+it('keeps injected processor recovery state separate from projections', () => {
+  const processorState: ProcessorStateStore = new InMemoryProcessorStateStore();
+  const persistence = composePersistence(resolveWakePaths('C:/wake-home'), new FakeClock(), {
+    processorState,
+  });
+
+  expect(persistence.processorState).toBe(processorState);
+});
+
+it('reserves delivery recovery state while clearing filesystem projections', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-persistence-composition-'));
+  try {
+    const persistence = composePersistence(resolveWakePaths(root), new FakeClock(), {});
+    await persistence.processorState.write({
+      consumer: DeliveryOutcomeProcessorConsumer,
+      key: 'pending-confirmations',
+      value: { events: ['event-1'] },
+    });
+
+    await persistence.projections.clear();
+
+    await expect(
+      persistence.processorState.read(DeliveryOutcomeProcessorConsumer, 'pending-confirmations'),
+    ).resolves.toEqual({
+      consumer: DeliveryOutcomeProcessorConsumer,
+      key: 'pending-confirmations',
+      value: { events: ['event-1'] },
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+const stream: EntityRef<'test', 'serialization'> = { kind: 'test', id: 'serialization' };
+
+function event(eventId: string): EventData {
+  return createEventData({
+    eventId,
+    eventType: 'test.appended',
+    occurredAt: '2026-08-30T00:00:00.000Z',
+    correlationId: 'correlation-1',
+    causationId: 'causation-1',
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    payload: { eventId },
+  });
+}
+
+function concurrentAppendRejectingJournal(): {
+  readonly journal: EventJournal;
+  readonly expectedSequences: readonly number[];
+} {
   let appendInFlight = false;
+  let globalPosition = 0;
+  const expectedSequences: number[] = [];
   return {
-    async append() {
-      if (appendInFlight) throw new Error('concurrent append');
-      appendInFlight = true;
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      appendInFlight = false;
-      return [];
+    expectedSequences,
+    journal: {
+      async appendToStream(
+        appendStream,
+        expectedSequence,
+        events,
+      ): Promise<readonly EventEnvelope[]> {
+        if (events.length === 0) throw new Error('appendToStream requires at least one event');
+        if (appendInFlight) throw new Error('concurrent append');
+        appendInFlight = true;
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        appendInFlight = false;
+        expectedSequences.push(expectedSequence);
+        return events.map((event, index) => ({
+          event,
+          stream: appendStream,
+          recordedAt: '2026-08-30T00:00:00.000Z',
+          sequence: expectedSequence + index + 1,
+          globalPosition: ++globalPosition,
+        }));
+      },
+      async readStream() {
+        return [];
+      },
+      async readAll() {
+        return [];
+      },
+      async latestGlobalPosition() {
+        return globalPosition;
+      },
+      async waitForEventsAfter() {},
+      changeSignal: new InProcessJournalChangeSignal(),
     },
-    async readStream() {
-      return [];
-    },
-    async readAll() {
-      return [];
-    },
-    async latestGlobalPosition() {
-      return 0;
-    },
-    changeSignal: new InProcessJournalChangeSignal(),
   };
 }

@@ -1,6 +1,7 @@
 import { defineClosedVocabulary, type ValueOf } from '../../kernel/index.js';
 
 export const RunStatus = defineClosedVocabulary({
+  Starting: 'starting',
   Started: 'started',
   Succeeded: 'succeeded',
   Failed: 'failed',
@@ -10,7 +11,16 @@ export const RunStatus = defineClosedVocabulary({
 
 export type RunStatus = ValueOf<typeof RunStatus>;
 
-export type FinishedRunStatus = Exclude<RunStatus, typeof RunStatus.Started>;
+export type FinishedRunStatus = Exclude<
+  RunStatus,
+  typeof RunStatus.Starting | typeof RunStatus.Started
+>;
+
+export function isActiveRunStatus(
+  status: RunStatus,
+): status is typeof RunStatus.Starting | typeof RunStatus.Started {
+  return status === RunStatus.Starting || status === RunStatus.Started;
+}
 
 export const ExecutionFailureCode = defineClosedVocabulary({
   Unexpected: 'unexpected-execution-failure',

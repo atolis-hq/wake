@@ -27,6 +27,7 @@ export interface RunView {
   readonly ambiguityAttempts: number;
   readonly escalated: boolean;
   readonly startedAt: string;
+  readonly executionStartedAt?: string | undefined;
   readonly runner?:
     | {
         readonly name: string;

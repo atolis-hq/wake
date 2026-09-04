@@ -1,3 +1,12 @@
+import {
+  defineEventProcessor,
+  EventActorKind,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  EventSourceKind,
+  type EventJournal,
+  type EventProcessor,
+} from '@atolis-hq/eventing';
 import { BuiltInActivityName } from '../../activities/index.js';
 import {
   conversationIdForWorkItem,
@@ -6,17 +15,11 @@ import {
 } from '../../conversations/index.js';
 import { RunStatus, type RunRepository } from '../../execution/index.js';
 import {
-  createEventDraft,
-  EventActorKind,
-  EventSourceKind,
-  type CheckpointStore,
-  type EventJournal,
-} from '../../kernel/index.js';
-import {
   ApprovalAuthorityKind,
   isApprovalAwaitingSignalKind,
   OrchestrationEventType,
   OrchestrationStreamKind,
+  selectWorkflowOrchestrationEvent,
   WatchGateVerdictSignal,
   type OrchestrationService,
   type WorkflowInstanceView,
@@ -29,6 +32,7 @@ import {
   type ResourceCorrelationView,
 } from '../../resources/index.js';
 import { ReplyTarget, type ReplyPublicationConfig } from '../contracts/reply-routing.js';
+import { createDeliveryIntentEventData } from '../delivery/contracts/event-factory.js';
 import { DeliveryIntentEventType } from '../delivery/contracts/intents.js';
 import {
   defaultReplyPublication,
@@ -38,43 +42,55 @@ import { projectTerminalAgentRunReport, type TerminalRun } from './terminal-agen
 
 /** Projects terminal agent runs into one durable outbound intent per configured resource. */
 export class AgentRunPublicationReactor {
+  readonly processor: EventProcessor;
+
   constructor(
     private readonly dependencies: {
       readonly journal: EventJournal;
-      readonly checkpoints: CheckpointStore;
       readonly runs: RunRepository;
       readonly resources: Pick<ResourceService, 'correlationsForWork' | 'get'>;
       readonly orchestration: Pick<OrchestrationService, 'listAll'>;
       readonly conversations?: Pick<ConversationService, 'createForWorkItem' | 'record'>;
       readonly replies?: ReplyPublicationConfig | undefined;
     },
-  ) {}
+  ) {
+    this.processor = defineEventProcessor({
+      consumer: 'reactor:agent-run-publication',
+      name: 'agent-run-publication',
+      owner: 'integrations',
+      category: EventProcessorCategory.Reactor,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select(event) {
+        const outcome = selectWorkflowOrchestrationEvent(event);
+        return outcome?.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted ||
+          outcome?.event.eventType === OrchestrationEventType.ActivityExecutionFailed
+          ? outcome
+          : null;
+      },
+      handle: async (outcome) => this.react(outcome),
+    });
+  }
 
-  async runOnce(limit = 100): Promise<number> {
-    const consumer = 'reactor:agent-run-publication';
-    const events = await this.dependencies.journal.readAll(
-      await this.dependencies.checkpoints.load(consumer),
-      limit,
-    );
-    for (const event of events) {
-      if (event.eventType === OrchestrationEventType.ActivityOutcomeAccepted)
-        await this.publishAcceptedOutcome(
-          event.stream.id,
-          (event.payload as { readonly activationId: string }).activationId,
-          event.recordedAt,
-          event.eventId,
-          event.correlationId,
-        );
-      if (event.eventType === OrchestrationEventType.ActivityExecutionFailed)
-        await this.publish(
-          (event.payload as { readonly runId: string }).runId,
-          event.recordedAt,
-          event.eventId,
-          event.correlationId,
-        );
-      await this.dependencies.checkpoints.save(consumer, event.globalPosition);
+  async react(
+    outcome: NonNullable<ReturnType<typeof selectWorkflowOrchestrationEvent>>,
+  ): Promise<void> {
+    if (outcome.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted) {
+      await this.publishAcceptedOutcome(
+        outcome.stream.id,
+        outcome.event.payload.activationId,
+        outcome.recordedAt,
+        outcome.event.eventId,
+        outcome.event.correlationId,
+      );
+      return;
     }
-    return events.length;
+    if (outcome.event.eventType !== OrchestrationEventType.ActivityExecutionFailed) return;
+    await this.publish(
+      outcome.event.payload.runId,
+      outcome.recordedAt,
+      outcome.event.eventId,
+      outcome.event.correlationId,
+    );
   }
 
   private async publishAcceptedOutcome(
@@ -130,8 +146,8 @@ export class AgentRunPublicationReactor {
     const stream = resourceStream(resource.resourceId);
     const sequence = (await this.dependencies.journal.readStream(stream)).length;
     try {
-      await this.dependencies.journal.append(stream, sequence, [
-        createEventDraft({
+      await this.dependencies.journal.appendToStream(stream, sequence, [
+        createDeliveryIntentEventData({
           eventId: `agent-run:${run.runId}`,
           eventType: DeliveryIntentEventType.AgentRunPublishRequested,
           occurredAt,
@@ -139,7 +155,6 @@ export class AgentRunPublicationReactor {
           causationId: causationId as never,
           actor: { kind: EventActorKind.Integration, id: 'agent-run-publication' },
           source: { kind: EventSourceKind.Internal, id: 'agent-run-publication' },
-          stream,
           payload: {
             workflowInstanceId: run.workflowInstanceId,
             activationId: run.activationId,
@@ -217,15 +232,18 @@ export class AgentRunPublicationReactor {
       kind: OrchestrationStreamKind.WorkflowInstance,
       id: workflowInstanceId,
     } as never);
-    const request = events.findIndex(
+    const orchestrationEvents = events
+      .map(selectWorkflowOrchestrationEvent)
+      .filter((event) => event !== null);
+    const request = orchestrationEvents.findIndex(
       (event) =>
-        event.eventType === OrchestrationEventType.ActivityRequested &&
-        (event.payload as { readonly activationId: string }).activationId === activationId,
+        event.event.eventType === OrchestrationEventType.ActivityRequested &&
+        event.event.payload.activationId === activationId,
     );
     for (let index = request - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (event?.eventType === OrchestrationEventType.StageEntered)
-        return (event.payload as { readonly stage: string }).stage;
+      const event = orchestrationEvents[index];
+      if (event?.event.eventType === OrchestrationEventType.StageEntered)
+        return event.event.payload.stage;
     }
     return undefined;
   }

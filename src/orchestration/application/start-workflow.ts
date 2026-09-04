@@ -1,11 +1,11 @@
-import { createEventDraft, EventSourceKind, type CommandContext } from '../../kernel/index.js';
+import { EventSourceKind, type CommandContext } from '@atolis-hq/eventing';
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import { validateChildProvenance } from '../domain/child-policy.js';
+import { workflowEventData } from '../domain/decision-events.js';
 import { startInstance } from '../domain/interpreter.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
@@ -78,7 +78,7 @@ export class StartWorkflow {
       if (!(error instanceof WorkflowDefinitionUnavailableError)) throw error;
       if (!TERMINAL_OR_BLOCKED_STATUSES.has(view.status))
         await this.repository.append(view.workflowInstanceId, sequence, [
-          createEventDraft({
+          workflowEventData({
             // workflowInstanceId is included because listWatchMatches shares one
             // CommandContext across every matched parent in a batch; commandId
             // alone would collide when two instances block in the same pass.
@@ -89,7 +89,6 @@ export class StartWorkflow {
             causationId: context.commandId,
             actor: context.actor,
             source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-            stream: workflowInstanceStream(view.workflowInstanceId),
             payload: { reason: 'workflow-definition-unavailable' },
           }),
         ]);

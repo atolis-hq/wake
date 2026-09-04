@@ -1,18 +1,15 @@
 import {
   EventActorKind,
+  EventSourceKind,
   WrongExpectedSequenceError,
   correlationId,
-  type Clock,
   type EventEnvelope,
   type EventJournal,
-  type IdGenerator,
-} from '../../kernel/index.js';
-import {
-  ControlEventType,
-  createControlEventDraft,
-  selectControlEvent,
-} from '../contracts/events.js';
-import { controlPlaneStream } from '../contracts/streams.js';
+} from '@atolis-hq/eventing';
+import { type Clock, type IdGenerator } from '../../kernel/index.js';
+import { createControlPlaneEventData } from '../contracts/event-factory.js';
+import { ControlEventType, selectControlEvent } from '../contracts/events.js';
+import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
 
 export interface RunnerControlService {
   pause(runnerName: string, idempotencyKey: string): Promise<void>;
@@ -58,7 +55,10 @@ async function append(
     operation === 'pause' ? ControlEventType.RunnerPaused : ControlEventType.RunnerResumed;
   const correlation = correlationId(`runner:${runnerName}:${idempotencyKey}`);
   if (
-    events.some((event) => event.eventType === expectedType && event.correlationId === correlation)
+    events.some(
+      (event) =>
+        event.event.eventType === expectedType && event.event.correlationId === correlation,
+    )
   )
     return;
   if (
@@ -75,24 +75,35 @@ async function append(
   };
   const event =
     operation === 'pause'
-      ? createControlEventDraft(
-          ControlEventType.RunnerPaused,
-          { runnerName, cause: 'manual', reason: 'paused by operator' },
-          context,
-        )
-      : createControlEventDraft(
-          ControlEventType.RunnerResumed,
-          { runnerName, resumedAt: occurredAt },
-          context,
-        );
+      ? createControlPlaneEventData({
+          eventId: `${context.commandId}:${ControlEventType.RunnerPaused}`,
+          eventType: ControlEventType.RunnerPaused,
+          occurredAt: context.occurredAt,
+          correlationId: context.correlationId,
+          causationId: context.commandId,
+          actor: context.actor,
+          source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
+          payload: { runnerName, cause: 'manual', reason: 'paused by operator' },
+        })
+      : createControlPlaneEventData({
+          eventId: `${context.commandId}:${ControlEventType.RunnerResumed}`,
+          eventType: ControlEventType.RunnerResumed,
+          occurredAt: context.occurredAt,
+          correlationId: context.correlationId,
+          causationId: context.commandId,
+          actor: context.actor,
+          source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
+          payload: { runnerName, resumedAt: occurredAt },
+        });
   try {
-    await input.journal.append(stream, events.length, [event]);
+    await input.journal.appendToStream(stream, events.length, [event]);
   } catch (error) {
     if (!(error instanceof WrongExpectedSequenceError)) throw error;
     const latest = await input.journal.readStream(stream);
     if (
       latest.some(
-        (entry) => entry.eventType === expectedType && entry.correlationId === correlation,
+        (entry) =>
+          entry.event.eventType === expectedType && entry.event.correlationId === correlation,
       )
     )
       return;
@@ -109,13 +120,16 @@ function runnerIsPaused(
   for (const envelope of events) {
     const event = selectControlEvent(envelope);
     if (
-      event?.eventType === ControlEventType.RunnerPaused &&
-      event.payload.runnerName === runnerName
+      event?.event.eventType === ControlEventType.RunnerPaused &&
+      event.event.payload.runnerName === runnerName
     )
-      pause = event.payload.resumeAt === undefined ? {} : { resumeAt: event.payload.resumeAt };
+      pause =
+        event.event.payload.resumeAt === undefined
+          ? {}
+          : { resumeAt: event.event.payload.resumeAt };
     if (
-      event?.eventType === ControlEventType.RunnerResumed &&
-      event.payload.runnerName === runnerName
+      event?.event.eventType === ControlEventType.RunnerResumed &&
+      event.event.payload.runnerName === runnerName
     )
       pause = undefined;
   }

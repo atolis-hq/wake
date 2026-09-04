@@ -3,6 +3,7 @@ import { activationId } from '../../../src/activities/contracts/identifiers.js';
 import { activityName } from '../../../src/activities/index.js';
 import {
   activationStream,
+  createExecutionEventData,
   decodeActivationExecutionEvent,
   decodeExecutionEvent,
   decodeRunExecutionEvent,
@@ -11,12 +12,26 @@ import {
   runId,
   runStream,
   selectExecutionEvent,
+  selectRunExecutionEvent,
 } from '../../../src/execution/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
 
 const stream = runStream(runId('run-1'));
 const runSamples = [
+  [
+    ExecutionEventType.RunPreparationStarted,
+    {
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
+      stage: 'refine',
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
+      attempt: 1,
+      startedAt: '2026-07-31T11:59:00.000Z',
+      runner: { name: 'codex', model: 'gpt-5.1', effort: 'high', pool: 'default', cli: 'codex' },
+    },
+  ],
   [
     ExecutionEventType.RunStarted,
     {
@@ -139,7 +154,11 @@ describe('Execution event contract', () => {
     expect(() => decodeExecutionEvent(eventEnvelope('execution.unknown', {}, stream))).toThrow();
     expect(() =>
       decodeExecutionEvent(
-        eventEnvelope(ExecutionEventType.RunStarted, { activationId: activationId('x') }, stream),
+        eventEnvelope(
+          ExecutionEventType.RunPreparationStarted,
+          { activationId: activationId('x') },
+          stream,
+        ),
       ),
     ).toThrow();
     expect(() =>
@@ -159,7 +178,7 @@ describe('Execution event contract', () => {
       decodeExecutionEvent(
         eventEnvelope(
           ExecutionEventType.RunStarted,
-          runSamples[0][1],
+          runSamples[1][1],
           activationStream(activation),
         ),
       ),
@@ -176,11 +195,15 @@ describe('Execution event contract', () => {
   });
 
   it.each([
-    eventEnvelope(ExecutionEventType.RunSucceeded, runSamples[1][1], {
+    eventEnvelope(ExecutionEventType.RunSucceeded, runSamples[2][1], {
       kind: 'execution-run',
       id: ' ',
     }),
-    eventEnvelope(ExecutionEventType.RunStarted, { ...runSamples[0][1], activationId: '' }, stream),
+    eventEnvelope(
+      ExecutionEventType.RunPreparationStarted,
+      { ...runSamples[0][1], activationId: '' },
+      stream,
+    ),
   ])('reports invalid IDs through the Execution decoder context', (event) => {
     expect(() => decodeExecutionEvent(event)).toThrow(
       /Invalid Execution event event-7 at global position 7/i,
@@ -203,7 +226,23 @@ describe('Execution event contract', () => {
       ),
     );
 
-    expect(selected?.eventType).toBe(ExecutionEventType.ActivationClaimed);
+    expect(selected?.event.eventType).toBe(ExecutionEventType.ActivationClaimed);
+  });
+
+  it('selects and creates preparation events on run streams', () => {
+    const preparation = eventEnvelope(
+      ExecutionEventType.RunPreparationStarted,
+      runSamples[0][1],
+      stream,
+    );
+
+    expect(selectRunExecutionEvent(preparation)?.event.eventType).toBe(
+      ExecutionEventType.RunPreparationStarted,
+    );
+    expect(createExecutionEventData(preparation.event)).toMatchObject({
+      eventType: ExecutionEventType.RunPreparationStarted,
+      payload: runSamples[0][1],
+    });
   });
 
   it('rejects provider or Error names as machine failure kinds', () => {
@@ -224,8 +263,33 @@ describe('Execution event contract', () => {
   it('rejects an empty originating stage', () => {
     expect(() =>
       decodeExecutionEvent(
-        eventEnvelope(ExecutionEventType.RunStarted, { ...runSamples[0][1], stage: '' }, stream),
+        eventEnvelope(
+          ExecutionEventType.RunPreparationStarted,
+          { ...runSamples[0][1], stage: '' },
+          stream,
+        ),
       ),
     ).toThrow(/stage/i);
+  });
+
+  it('rejects preparation events carrying a workspace or activation stream', () => {
+    expect(() =>
+      decodeExecutionEvent(
+        eventEnvelope(
+          ExecutionEventType.RunPreparationStarted,
+          { ...runSamples[0][1], workspace: { mode: 'branch', path: 'C:\\repo' } },
+          stream,
+        ),
+      ),
+    ).toThrow(/workspace/i);
+    expect(() =>
+      decodeExecutionEvent(
+        eventEnvelope(
+          ExecutionEventType.RunPreparationStarted,
+          runSamples[0][1],
+          activationStream(activation),
+        ),
+      ),
+    ).toThrow();
   });
 });

@@ -1,10 +1,35 @@
 # Wake events
 
-Wake stores immutable, globally ordered event envelopes. The envelope contract
-is defined by `src/kernel/contracts/events.ts`; every event has an identifier,
-an event type, a typed stream reference, a payload, and an occurrence time.
-The append-only journal is the durable record. Projections are rebuildable
-read models and never define or reconstruct events.
+Wake stores immutable, globally ordered event envelopes. The append-only
+journal is the durable record; projections are rebuildable read models and
+never define or reconstruct events.
+
+## Event record model
+
+An owning module creates immutable `EventData`: event identity and type,
+schema version, occurrence and causal metadata, actor, source, and typed
+payload. `EventData` has no stream or journal metadata.
+
+The journal records `EventEnvelope<EventData>` by adding the stream,
+`recordedAt`, stream `sequence`, and `globalPosition`. Modules append a
+non-empty batch with `appendToStream(stream, expectedSequence, events)`.
+`expectedSequence` is optimistic concurrency; modules choose conflict handling
+and idempotency. The journal does not apply automatic retry or a general
+deduplication policy.
+
+The Eventing filesystem package writes the exact established flat JSONL record
+through its codec. The in-memory adapter holds the nested envelope model.
+Those representations are compatible reads of the same record, so no journal
+data migration is required. The orchestration workflow-instance projection
+stores its view directly; rebuilding it requires exclusive offline access.
+Stop a host/service resident through its supervisor, run
+`wake validate-state --rebuild-projections` host-side (with `--no-sandbox`
+when `docker/Dockerfile` exists), then restart through the supervisor. For a
+sandbox, run `wake sandbox down`, then
+`wake validate-state --rebuild-projections --no-sandbox`, then `wake sandbox
+up`. `wake doctor --rebuild-projections` has the same stopped-resident
+requirement. The rebuild replaces projection/checkpoint data from the journal
+while leaving journal records untouched.
 
 ## Event ownership
 
@@ -22,11 +47,12 @@ Use that module's `contracts/events.ts` as the exact catalogue and decoder:
 | `control-plane` | `control.` facts for control-plane coordination and runner quotas. |
 | `integrations` | Provider observations, artifact facts, and delivery intents/outcomes. GitHub-specific contracts live in `src/integrations/github/contracts/events.ts`. |
 
-## Current event catalogue
+## Event catalogue overview
 
-The following is the current Wake-owned catalogue. Event names are stable
-contracts; their exact payloads and permitted streams remain defined by the
-owning module's contract source.
+The following table highlights the principal stable Wake-owned events; it is
+an overview, not an exhaustive registry. The complete event names, exact
+payloads, and permitted streams are defined by each owning module's contract
+source linked by the ownership table above.
 
 | Owner | Event types |
 | --- | --- |
@@ -35,14 +61,16 @@ owning module's contract source.
 | `conversations` | `conversation.created`, `conversation.resource-associated`, `conversation.entry-recorded`, `conversation.entry-revised`, `conversation.entry-tombstoned`, `conversation.entry-representation-recorded` |
 | `activities` | `pr.discovered`, `pr.revision-changed`, `pr.state-changed`, `pr.checks-changed`, `pr.review-accepted`, `review.acceptance-signal-recorded`, `pr.review-changes-requested`, `pr.review-rejected`, `pr.merge-denied`, `pr.approve-denied`, `pr.merge-authorized`, `pr.approve-requested`, `pr.merge-requested`, `pr.approve-decision-claimed`, `pr.merge-decision-claimed` |
 | `orchestration` | `orchestration.instance-started`, `orchestration.stage-entered`, `orchestration.activity-requested`, `orchestration.activity-started`, `orchestration.activity-outcome-accepted`, `orchestration.activity-execution-failed`, `orchestration.activity-retried-for-runner-quota`, `orchestration.activity-waiting`, `orchestration.signal-wait-started`, `orchestration.signal-accepted`, `orchestration.supplemental-activity-queued`, `orchestration.supplemental-activity-dequeued`, `orchestration.repeat-counted`, `orchestration.retry-counted`, `orchestration.instance-completed`, `orchestration.instance-blocked`, `orchestration.operator-retry-requested`, `orchestration.instance-superseded`, `orchestration.child-requested`, `orchestration.child-started`, `orchestration.child-completed`, `orchestration.child-completion-consumed`, `orchestration.causal-activation-rejected`, `orchestration.group-budget-exhausted`, `orchestration.primary-claimed`, `orchestration.group-claimed` |
-| `execution` | `execution.run-started`, `execution.run-succeeded`, `execution.run-failed`, `execution.run-lease-claimed`, `execution.run-lease-renewed`, `execution.run-external-execution-reported`, `execution.run-runner-result-reported`, `execution.workspace-cleanup-failed`, `execution.run-cancellation-requested`, `execution.run-cancellation-confirmed`, `execution.run-cancelled`, `execution.run-recovered`, `execution.run-ambiguity-observed`, `execution.run-ambiguous`, `execution.activation-claimed`, `execution.activation-released` |
+| `execution` | `execution.run-preparation-started`, `execution.run-started`, `execution.run-succeeded`, `execution.run-failed`, `execution.run-lease-claimed`, `execution.run-lease-renewed`, `execution.run-external-execution-reported`, `execution.run-runner-result-reported`, `execution.workspace-cleanup-failed`, `execution.run-cancellation-requested`, `execution.run-cancellation-confirmed`, `execution.run-cancelled`, `execution.run-recovered`, `execution.run-ambiguity-observed`, `execution.run-ambiguous`, `execution.activation-claimed`, `execution.activation-released` |
 | `control-plane` | `control-plane.dispatch-paused`, `control-plane.dispatch-resumed`, `control-plane.runner-paused`, `control-plane.runner-resumed` |
 | `integrations` | `integration.github.work-observed`, `integration.github.comment-observed`, `integration.github.delivery-observed`, `integration.artifact-verification-unresolved`, `delivery.attempt-started`, `delivery.confirmed`, `delivery.failed`, `delivery.ambiguous`, `delivery.reconciled`, `delivery.escalated` |
 
-An event must be written only to the stream kind required by its schema. Typed
-draft factories enforce this at compile time; runtime selectors validate it
-when replaying persisted data. Selectors return `null` for another module's
-namespace and throw if an event in their own namespace is malformed.
+An event must be written only to the stream kind required by its schema. Each
+bounded module owns its event types, payload map, stream references,
+selector/decoder, and `create<Owner>EventData` factory. These contracts enforce
+event-type-to-stream ownership at compile time and at runtime when persisted
+data is decoded. Selectors return `null` for another module's namespace and
+throw if an event in their own namespace is malformed.
 
 ## Event handling rules
 
@@ -70,6 +98,26 @@ choose outbound targets or workflow transitions.
   vocabulary, not magic strings or copied provider locators.
 - Register production projections in Bootstrap so replay and normal operation
   observe the same event sequence.
+- The Eventing package owns persistence-neutral envelopes, journals,
+  subscriptions, checkpoints, projections, processor-state ports, and in-memory
+  adapters without domain knowledge. Its filesystem package implements those
+  ports with Node APIs without domain knowledge. Bootstrap composes the
+  processor registry and module factories; only surfaces flatten an envelope
+  for external transport.
+- The delivery outcome reactor keeps ProcessorStateStore-backed recovery state for
+  pending confirmations. This is not a rebuildable Eventing projection:
+  `ProjectionStore` remains exclusively for read models, while
+  `ProcessorStateStore` persists the reactor-owned canonical state. The
+  filesystem adapter accepts established stored representations so existing
+  Wake homes need no data migration; Wake has no legacy Eventing source import
+  or alternate delivery runtime.
+
+`check-event-architecture` is a symbol-aware architecture gate. It enforces
+publishing and processor ownership, bounded imports, legacy-vocabulary bans,
+and manifest namespaces. The existing narrow ports also leave a future seam:
+SQLite, Emmett, or Kurrent adapters can sit behind `EventJournal` and Eventing
+when they preserve Wake's compatibility, global-order, push-wake, checkpoint,
+and lock semantics.
 
 For the current module topology and advancement path, see
 [Architecture](architecture.md).

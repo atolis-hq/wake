@@ -1,3 +1,4 @@
+import { EventActorKind, EventSourceKind, createEventData } from '@atolis-hq/eventing';
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +18,6 @@ import {
   runId,
   runStream,
 } from '../../../src/execution/index.js';
-import { EventActorKind, EventSourceKind, createEventDraft } from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { workId } from '../../support/identities.js';
 import { defineScenario } from '../support/scenario.js';
@@ -198,8 +198,8 @@ async function appendRun(
   }
   const currentRunId = runId(id);
   const occurredAt = '2026-08-11T00:00:00.000Z';
-  await root.journal.append(runStream(currentRunId), 0, [
-    createEventDraft({
+  await root.journal.appendToStream(runStream(currentRunId), 0, [
+    createEventData({
       eventId: `${id}:${eventType}`,
       eventType,
       occurredAt,
@@ -207,7 +207,6 @@ async function appendRun(
       causationId: `activation-${id}`,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: runStream(currentRunId),
       payload: {
         activationId: activationId(`activation-${id}`),
         activity: activityName('fake'),
@@ -226,8 +225,8 @@ async function appendAmbiguous(
 ): Promise<void> {
   const currentRunId = runId(id);
   const occurredAt = '2026-08-11T00:00:00.000Z';
-  await root.journal.append(runStream(currentRunId), 1, [
-    createEventDraft({
+  await root.journal.appendToStream(runStream(currentRunId), 1, [
+    createEventData({
       eventId: `${id}:${ExecutionEventType.RunAmbiguous}`,
       eventType: ExecutionEventType.RunAmbiguous,
       occurredAt,
@@ -235,7 +234,6 @@ async function appendAmbiguous(
       causationId: `activation-${id}`,
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: runStream(currentRunId),
       payload: { reason: 'recovery needs an operator', finishedAt: occurredAt },
     }),
   ]);

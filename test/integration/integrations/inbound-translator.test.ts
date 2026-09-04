@@ -1,23 +1,31 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
+import { createEventData, EventProcessorHost, type EventProcessor } from '@atolis-hq/eventing';
 import { activityName, ActivityOutcomeKind } from '../../../src/activities/index.js';
 import { RunRepository } from '../../../src/execution/index.js';
+import { FakeEventType } from '../../../src/integrations/fake/external-source.js';
+import { FakeInboundTranslator } from '../../../src/integrations/fake/inbound-translator.js';
 
+import type { CheckpointStore, EventJournal } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import {
   conversationIdForWorkItem,
   createConversationService,
 } from '../../../src/conversations/index.js';
 import {
   BuiltInAdapterId,
-  createEventDraft,
   GitHubEventType,
   InboundTranslator,
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
+import { adapterId } from '../../../src/integrations/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,
@@ -28,7 +36,68 @@ import { FakeClock, TestWorld } from '../../e2e/support/world.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
 
+const githubStream = integrationStream(BuiltInAdapterId.GitHub);
+
 describe('InboundTranslator', () => {
+  it('rejects fake evidence from a non-integration stream before handling it', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const checkpoints = new InMemoryCheckpointStore();
+    const translator = new FakeInboundTranslator(adapterId('fake'), {} as never);
+    const foreign = createEventData({
+      eventId: 'fake-on-delivery-stream',
+      eventType: FakeEventType.WorkObserved,
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'fake-on-delivery-stream',
+      causationId: 'fake-on-delivery-stream',
+      actor: { kind: 'integration', id: 'fake' },
+      source: { kind: 'adapter', id: 'fake' },
+      payload: { key: 'ignored', title: 'Ignored' },
+    });
+    await journal.appendToStream({ kind: 'delivery', id: 'fake' } as never, 0, [foreign]);
+
+    await expect(processInbound(translator, journal, checkpoints)).resolves.toMatchObject({
+      handledCount: 0,
+    });
+  });
+
+  it('exposes a GitHub-owned processor that ignores other adapters', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const checkpoints = new InMemoryCheckpointStore();
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const translator = new InboundTranslator(journal, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
+    const foreign = createEventData({
+      eventId: 'foreign-work',
+      eventType: GitHubEventType.WorkObserved,
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'foreign-work',
+      causationId: 'foreign-work',
+      actor: { kind: 'integration', id: 'other' },
+      source: { kind: 'adapter', id: 'other' },
+      payload: observation(),
+    });
+    await journal.appendToStream(integrationStream('other' as never), 0, [foreign]);
+
+    const host = new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
+    );
+    const pass = await host.runOnce(translator.processor);
+
+    expect(translator.processor.consumer).toBe('reactor:integration.github.inbound');
+    expect(pass).toMatchObject({ eventCount: 1, handledCount: 0 });
+    expect(await checkpoints.load(translator.processor.consumer)).toBe(1);
+  });
+
   it('translates an external work observation into Work and Resource command candidates', () => {
     const translator = new InboundTranslator();
     const candidates = translator.translate(observation());
@@ -55,7 +124,7 @@ describe('InboundTranslator', () => {
     const { resources, lookup } = createTestResourceServices(journal);
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:delivery-7',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -63,20 +132,19 @@ describe('InboundTranslator', () => {
       causationId: 'github:delivery-7',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: observation(),
     });
-    await journal.append(event.stream, 0, [event]);
+    await journal.appendToStream(githubStream, 0, [event]);
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
     });
 
-    await translator.runOnce();
+    await processInbound(translator, journal, checkpoints);
     await checkpoints.reset('reactor:integration.github.inbound');
-    await translator.runOnce();
+    await processInbound(translator, journal, checkpoints);
 
     const resource = await lookup.resourceIdForExternalKey({
       adapter: 'github',
@@ -97,8 +165,8 @@ describe('InboundTranslator', () => {
     const checkpoints = new InMemoryCheckpointStore();
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
     const stream = integrationStream(BuiltInAdapterId.GitHub);
-    await journal.append(stream, 0, [
-      createEventDraft({
+    await journal.appendToStream(stream, 0, [
+      createEventData({
         eventId: 'github:issue:owner/repo#partial:v1',
         eventType: GitHubEventType.WorkObserved,
         occurredAt: clock.now().toISOString(),
@@ -106,7 +174,6 @@ describe('InboundTranslator', () => {
         causationId: 'github:issue:owner/repo#partial:v1',
         actor: { kind: 'integration', id: 'github' },
         source: { kind: 'adapter', id: 'github' },
-        stream,
         payload: { ...observation(), externalKey: 'owner/repo#partial' },
       }),
     ]);
@@ -114,9 +181,16 @@ describe('InboundTranslator', () => {
     vi.spyOn(work, 'create').mockRejectedValueOnce(new Error('transient create failure'));
     const dependencies = { lookup, orchestration, routing };
 
-    await new InboundTranslator(journal, checkpoints, work, resources, dependencies).runOnce();
+    const failedTranslator = new InboundTranslator(journal, work, resources, dependencies);
+    await expect(processInbound(failedTranslator, journal, checkpoints)).rejects.toThrow(
+      'transient create failure',
+    );
     vi.mocked(work.create).mockImplementation(originalCreate);
-    await new InboundTranslator(journal, checkpoints, work, resources, dependencies).runOnce();
+    await processInbound(
+      new InboundTranslator(journal, work, resources, dependencies),
+      journal,
+      checkpoints,
+    );
 
     const resource = await lookup.resourceIdForExternalKey({
       adapter: 'github',
@@ -130,7 +204,7 @@ describe('InboundTranslator', () => {
     expect(await work.get(correlation!.workItemId)).not.toBeNull();
     expect(
       (await journal.readStream(stream)).filter(
-        (candidate) => candidate.eventType === GitHubEventType.AdmissionStarted,
+        (candidate) => candidate.event.eventType === GitHubEventType.AdmissionStarted,
       ),
     ).toHaveLength(1);
   });
@@ -142,7 +216,7 @@ describe('InboundTranslator', () => {
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue:owner/repo#7:security',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -150,11 +224,10 @@ describe('InboundTranslator', () => {
       causationId: 'github:issue:owner/repo#7:security',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: { ...observation(), labels: ['security'] },
     });
-    await journal.append(event.stream, 0, [event]);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    await journal.appendToStream(githubStream, 0, [event]);
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
@@ -168,7 +241,7 @@ describe('InboundTranslator', () => {
       ],
     });
 
-    await translator.runOnce();
+    await processInbound(translator, journal, checkpoints);
 
     expect(
       await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#7' }),
@@ -188,8 +261,8 @@ describe('InboundTranslator', () => {
       return resourceIdForExternalKey(externalKey);
     });
     const stream = integrationStream(BuiltInAdapterId.GitHub);
-    const [poison, later] = await journal.append(stream, 0, [
-      createEventDraft({
+    const [poison, later] = await journal.appendToStream(stream, 0, [
+      createEventData({
         eventId: 'github:issue:owner/repo#poison:v1',
         eventType: GitHubEventType.WorkObserved,
         occurredAt: clock.now().toISOString(),
@@ -197,10 +270,9 @@ describe('InboundTranslator', () => {
         causationId: 'github:issue:owner/repo#poison:v1',
         actor: { kind: 'integration', id: 'github' },
         source: { kind: 'adapter', id: 'github' },
-        stream,
         payload: { ...observation(), externalKey: 'owner/repo#poison' },
       }),
-      createEventDraft({
+      createEventData({
         eventId: 'github:issue:owner/repo#later:v1',
         eventType: GitHubEventType.WorkObserved,
         occurredAt: clock.now().toISOString(),
@@ -208,40 +280,42 @@ describe('InboundTranslator', () => {
         causationId: 'github:issue:owner/repo#later:v1',
         actor: { kind: 'integration', id: 'github' },
         source: { kind: 'adapter', id: 'github' },
-        stream,
         payload: { ...observation(), externalKey: 'owner/repo#later' },
       }),
     ]);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
     });
 
-    await translator.runOnce();
+    await expect(processInbound(translator, journal, checkpoints)).rejects.toThrow('poison lookup');
+    expect(await checkpoints.load('reactor:integration.github.inbound')).toBe(0);
+    await expect(processInbound(translator, journal, checkpoints)).rejects.toThrow('poison lookup');
+    await expect(processInbound(translator, journal, checkpoints)).rejects.toThrow('poison lookup');
+    await expect(processInbound(translator, journal, checkpoints)).rejects.toThrow('poison lookup');
+    await processInbound(translator, journal, checkpoints);
     expect(await checkpoints.load('reactor:integration.github.inbound')).toBeGreaterThanOrEqual(
       later!.globalPosition,
     );
     expect(
       await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#later' }),
     ).not.toBeNull();
-
-    await translator.runOnce();
-    await translator.runOnce();
-    await translator.runOnce();
     const failures = (await journal.readStream(stream)).filter(
-      (event) => event.eventType === GitHubEventType.InboundTranslationFailed,
+      (event) => event.event.eventType === GitHubEventType.InboundTranslationFailed,
     );
     expect(failures).toHaveLength(1);
     expect(failures[0]).toMatchObject({
-      payload: {
-        adapter: 'github',
-        sourceEventId: poison!.eventId,
-        attempt: 4,
-        globalPosition: poison!.globalPosition,
-        eventType: GitHubEventType.WorkObserved,
-        correlationId: poison!.correlationId,
-        causationId: poison!.causationId,
+      event: {
+        payload: {
+          adapter: 'github',
+          sourceEventId: poison!.event.eventId,
+          attempt: 4,
+          globalPosition: poison!.globalPosition,
+          eventType: GitHubEventType.WorkObserved,
+          correlationId: poison!.event.correlationId,
+          causationId: poison!.event.causationId,
+        },
       },
     });
   });
@@ -253,12 +327,12 @@ describe('InboundTranslator', () => {
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
     });
-    const initial = createEventDraft({
+    const initial = createEventData({
       eventId: 'github:issue:owner/repo#7:v1',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -266,11 +340,10 @@ describe('InboundTranslator', () => {
       causationId: 'github:issue:owner/repo#7:v1',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: observation(),
     });
-    await journal.append(initial.stream, 0, [initial]);
-    await translator.runOnce();
+    await journal.appendToStream(githubStream, 0, [initial]);
+    await processInbound(translator, journal, checkpoints);
     const staleResource = await lookup.resourceIdForExternalKey({
       adapter: 'github',
       key: 'owner/repo#7',
@@ -284,17 +357,17 @@ describe('InboundTranslator', () => {
     };
     await work.delete(staleWork, deletion);
     await resources.retract(staleResource!, staleWork, deletion);
-    const resumed = new InboundTranslator(journal, checkpoints, work, resources, {
+    const resumed = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
     });
 
-    const [ignored, admitted] = await journal.append(
-      initial.stream,
-      (await journal.readStream(initial.stream)).length,
+    const [ignored, admitted] = await journal.appendToStream(
+      githubStream,
+      (await journal.readStream(githubStream)).length,
       [
-        createEventDraft({
+        createEventData({
           eventId: 'github:issue:owner/repo#7:v2',
           eventType: 'integration.github.work-observed',
           occurredAt: clock.now().toISOString(),
@@ -302,10 +375,9 @@ describe('InboundTranslator', () => {
           causationId: 'github:issue:owner/repo#7:v2',
           actor: { kind: 'integration', id: 'github' },
           source: { kind: 'adapter', id: 'github' },
-          stream: integrationStream(BuiltInAdapterId.GitHub),
           payload: { ...observation(), revision: 'def456' },
         }),
-        createEventDraft({
+        createEventData({
           eventId: 'github:issue:owner/repo#8:v1',
           eventType: 'integration.github.work-observed',
           occurredAt: clock.now().toISOString(),
@@ -313,13 +385,14 @@ describe('InboundTranslator', () => {
           causationId: 'github:issue:owner/repo#8:v1',
           actor: { kind: 'integration', id: 'github' },
           source: { kind: 'adapter', id: 'github' },
-          stream: integrationStream(BuiltInAdapterId.GitHub),
           payload: { ...observation(), externalKey: 'owner/repo#8', revision: 'ghi789' },
         }),
       ],
     );
 
-    await expect(resumed.runOnce()).resolves.toBeGreaterThan(0);
+    await expect(processInbound(resumed, journal, checkpoints)).resolves.toMatchObject({
+      eventCount: expect.any(Number),
+    });
     expect(await checkpoints.load('reactor:integration.github.inbound')).toBe(
       admitted!.globalPosition,
     );
@@ -331,16 +404,18 @@ describe('InboundTranslator', () => {
     expect(await resources.get(staleResource!)).toMatchObject({ revision: 'abc123' });
     const diagnostics = (
       await journal.readStream(integrationStream(BuiltInAdapterId.GitHub))
-    ).filter((event) => event.eventType === GitHubEventType.DeletedWorkObservationSkipped);
+    ).filter((event) => event.event.eventType === GitHubEventType.DeletedWorkObservationSkipped);
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toMatchObject({
-      eventId: `github:deleted-work-skip:github:issue:owner/repo#7:v2:${staleWork}`,
-      payload: {
-        externalKey: 'owner/repo#7',
-        workItemId: staleWork,
-        sourceEventId: 'github:issue:owner/repo#7:v2',
-        revision: 'def456',
-        reason: 'work-item-deleted',
+      event: {
+        eventId: `github:deleted-work-skip:github:issue:owner/repo#7:v2:${staleWork}`,
+        payload: {
+          externalKey: 'owner/repo#7',
+          workItemId: staleWork,
+          sourceEventId: 'github:issue:owner/repo#7:v2',
+          revision: 'def456',
+          reason: 'work-item-deleted',
+        },
       },
     });
 
@@ -348,10 +423,10 @@ describe('InboundTranslator', () => {
     // deterministic diagnostic instead of appending another one.
     await checkpoints.reset('reactor:integration.github.inbound');
     await checkpoints.save('reactor:integration.github.inbound', ignored!.globalPosition - 1);
-    await resumed.runOnce();
+    await processInbound(resumed, journal, checkpoints);
     expect(
       (await journal.readStream(integrationStream(BuiltInAdapterId.GitHub))).filter(
-        (event) => event.eventType === GitHubEventType.DeletedWorkObservationSkipped,
+        (event) => event.event.eventType === GitHubEventType.DeletedWorkObservationSkipped,
       ),
     ).toHaveLength(1);
   });
@@ -362,7 +437,7 @@ describe('InboundTranslator', () => {
     const { resources, lookup } = createTestResourceServices(journal);
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:pr:owner/repo#11:v1',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -370,18 +445,17 @@ describe('InboundTranslator', () => {
       causationId: 'github:owner/repo#11:v1',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: { ...observation(), kind: 'pull-request', externalKey: 'owner/repo#11' },
     });
-    await journal.append(event.stream, 0, [event]);
+    await journal.appendToStream(githubStream, 0, [event]);
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
     });
 
-    await translator.runOnce();
+    await processInbound(translator, journal, checkpoints);
 
     const resourceId = await lookup.resourceIdForExternalKey({
       adapter: 'github',
@@ -398,7 +472,7 @@ describe('InboundTranslator', () => {
     const { resources, lookup } = createTestResourceServices(journal);
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:delivery-8',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -406,18 +480,17 @@ describe('InboundTranslator', () => {
       causationId: 'github:delivery-8',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: observation(),
     });
-    await journal.append(event.stream, 0, [event]);
+    await journal.appendToStream(githubStream, 0, [event]);
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
     });
 
-    await translator.runOnce();
+    await processInbound(translator, journal, checkpoints);
 
     const resourceId = await lookup.resourceIdForExternalKey({
       adapter: 'github',
@@ -430,7 +503,6 @@ describe('InboundTranslator', () => {
     const fixture = await waitingWatchGate();
     const translator = new InboundTranslator(
       fixture.world.journal,
-      fixture.world.checkpoints,
       fixture.world.work,
       fixture.world.resources,
       {
@@ -438,7 +510,7 @@ describe('InboundTranslator', () => {
         runs: new RunRepository(fixture.world.journal),
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:comment:watch-gate-verdict',
       eventType: 'integration.github.comment-observed',
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -446,7 +518,6 @@ describe('InboundTranslator', () => {
       causationId: 'github:comment:watch-gate-verdict',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'atolis-hq/wake#1',
@@ -456,9 +527,9 @@ describe('InboundTranslator', () => {
         raw: { id: 1 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(githubStream, 0, [event]);
 
-    await translator.runOnce();
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
     expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
       'completed',
@@ -469,7 +540,6 @@ describe('InboundTranslator', () => {
     const fixture = await blockedIssueWorkflow();
     const translator = new InboundTranslator(
       fixture.world.journal,
-      fixture.world.checkpoints,
       fixture.world.work,
       fixture.world.resources,
       {
@@ -478,7 +548,7 @@ describe('InboundTranslator', () => {
         pullRequests: fixture.world.pullRequests,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:1',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -486,7 +556,6 @@ describe('InboundTranslator', () => {
       causationId: 'github:issue-comment:1',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'atolis-hq/wake#583',
@@ -496,9 +565,9 @@ describe('InboundTranslator', () => {
         raw: { id: 1 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(githubStream, 0, [event]);
 
-    await translator.runOnce();
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
     expect(await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId)).toMatchObject({
       status: 'active',
@@ -530,7 +599,6 @@ describe('InboundTranslator', () => {
     );
     const translator = new InboundTranslator(
       fixture.world.journal,
-      fixture.world.checkpoints,
       fixture.world.work,
       fixture.world.resources,
       {
@@ -540,7 +608,7 @@ describe('InboundTranslator', () => {
         conversations,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:987',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -548,7 +616,6 @@ describe('InboundTranslator', () => {
       causationId: 'github:issue-comment:987',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'atolis-hq/wake#583',
@@ -558,9 +625,9 @@ describe('InboundTranslator', () => {
         raw: { id: 987 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(githubStream, 0, [event]);
 
-    await translator.runOnce();
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
     const entries = (await conversations.forWorkItem(fixture.workflow.workItemId))?.entries;
     expect(entries).toHaveLength(2);
@@ -576,7 +643,6 @@ describe('InboundTranslator', () => {
     const conversations = createConversationService(fixture.world.journal);
     const translator = new InboundTranslator(
       fixture.world.journal,
-      fixture.world.checkpoints,
       fixture.world.work,
       fixture.world.resources,
       {
@@ -586,7 +652,7 @@ describe('InboundTranslator', () => {
         conversations,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:988',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -594,7 +660,6 @@ describe('InboundTranslator', () => {
       causationId: 'github:issue-comment:988',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'atolis-hq/wake#583',
@@ -605,9 +670,9 @@ describe('InboundTranslator', () => {
         raw: { id: 988 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(githubStream, 0, [event]);
 
-    await translator.runOnce();
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
     expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
       {
@@ -617,15 +682,15 @@ describe('InboundTranslator', () => {
       },
     ]);
 
-    const updated = createEventDraft({
+    const updated = createEventData({
       ...event,
       eventId: 'github:issue-comment:atolis-hq/wake#583:988:updated',
       occurredAt: '2026-08-18T00:00:00.000Z',
       payload: { ...event.payload, body: 'Please continue with the updated plan.' },
     });
-    await fixture.world.journal.append(event.stream, 1, [updated]);
+    await fixture.world.journal.appendToStream(githubStream, 1, [updated]);
 
-    await translator.runOnce();
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
     expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
       {
@@ -643,7 +708,6 @@ describe('InboundTranslator', () => {
     const fixture = await blockedIssueWorkflow();
     const translator = new InboundTranslator(
       fixture.world.journal,
-      fixture.world.checkpoints,
       fixture.world.work,
       fixture.world.resources,
       {
@@ -655,7 +719,7 @@ describe('InboundTranslator', () => {
         } as never,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:989',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -663,7 +727,6 @@ describe('InboundTranslator', () => {
       causationId: 'github:issue-comment:989',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'atolis-hq/wake#583',
@@ -673,10 +736,10 @@ describe('InboundTranslator', () => {
         raw: { id: 989 },
       },
     });
-    const [observed] = await fixture.world.journal.append(event.stream, 0, [event]);
+    const [observed] = await fixture.world.journal.appendToStream(githubStream, 0, [event]);
     if (observed === undefined) throw new Error('Expected comment observation');
 
-    await translator.runOnce();
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
     expect(await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId)).toMatchObject({
       status: 'active',
@@ -687,16 +750,15 @@ describe('InboundTranslator', () => {
     ).resolves.toBe(observed.globalPosition);
     expect(
       (await fixture.world.events(GitHubEventType.ConversationRecordDeferred)).map(
-        (event) => event.payload,
+        (event) => event.event.payload,
       ),
     ).toContainEqual({ adapter: BuiltInAdapterId.GitHub, sourceEventId: event.eventId });
   });
 
-  it('does not rescan the adapter stream once no deferred conversation record remains', async () => {
+  it('does not run provider recovery before each processor batch', async () => {
     const fixture = await blockedIssueWorkflow();
     const translator = new InboundTranslator(
       fixture.world.journal,
-      fixture.world.checkpoints,
       fixture.world.work,
       fixture.world.resources,
       {
@@ -707,16 +769,20 @@ describe('InboundTranslator', () => {
       },
     );
     const readStream = vi.spyOn(fixture.world.journal, 'readStream');
+    const retryCorrelations = vi.spyOn(fixture.world.resources, 'retryPendingWorkCorrelations');
 
-    await translator.runOnce();
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
     readStream.mockClear();
-    await translator.runOnce();
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
+    expect(retryCorrelations).not.toHaveBeenCalled();
     expect(
       readStream.mock.calls.filter(
         ([stream]) => stream.kind === 'integration' && stream.id === BuiltInAdapterId.GitHub,
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+    await translator.reconciler.reconcileOnce();
+    expect(retryCorrelations).toHaveBeenCalledOnce();
   });
 
   it('recovers deferred canonical recording without replaying inbound workflow signals', async () => {
@@ -727,7 +793,6 @@ describe('InboundTranslator', () => {
       .mockRejectedValueOnce(new Error('conversation temporarily unavailable'));
     const translator = new InboundTranslator(
       fixture.world.journal,
-      fixture.world.checkpoints,
       fixture.world.work,
       fixture.world.resources,
       {
@@ -737,7 +802,7 @@ describe('InboundTranslator', () => {
         conversations,
       },
     );
-    const event = createEventDraft({
+    const event = createEventData({
       eventId: 'github:issue-comment:atolis-hq/wake#583:990',
       eventType: GitHubEventType.CommentObserved,
       occurredAt: fixture.world.clock.now().toISOString(),
@@ -745,7 +810,6 @@ describe('InboundTranslator', () => {
       causationId: 'github:issue-comment:990',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         reviewKind: 'issue',
         externalKey: 'atolis-hq/wake#583',
@@ -755,18 +819,18 @@ describe('InboundTranslator', () => {
         raw: { id: 990 },
       },
     });
-    await fixture.world.journal.append(event.stream, 0, [event]);
+    await fixture.world.journal.appendToStream(githubStream, 0, [event]);
 
-    await translator.runOnce();
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
     record.mockRestore();
-    await translator.runOnce();
+    await translator.reconciler.reconcileOnce();
 
     expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
       { entryId: event.eventId, body: 'Please include the missing migration note.' },
     ]);
     expect(
       (await fixture.world.events(GitHubEventType.ConversationRecordRecovered)).map(
-        (recovered) => recovered.payload,
+        (recovered) => recovered.event.payload,
       ),
     ).toContainEqual({ adapter: BuiltInAdapterId.GitHub, sourceEventId: event.eventId });
     expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
@@ -792,14 +856,14 @@ describe('InboundTranslator conclusion', () => {
         return work.get(workItemId as never) as never;
       },
     };
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
       conclusion,
     });
 
-    const open = createEventDraft({
+    const open = createEventData({
       eventId: 'github:issue:owner/repo#9:v1',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -807,13 +871,12 @@ describe('InboundTranslator conclusion', () => {
       causationId: 'github:owner/repo#9:v1',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: { ...observation(), externalKey: 'owner/repo#9', revision: 'v1' },
     });
-    await journal.append(open.stream, 0, [open]);
-    await translator.runOnce();
+    await journal.appendToStream(githubStream, 0, [open]);
+    await processInbound(translator, journal, checkpoints);
 
-    const closed = createEventDraft({
+    const closed = createEventData({
       eventId: 'github:issue:owner/repo#9:v2',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -821,7 +884,6 @@ describe('InboundTranslator conclusion', () => {
       causationId: 'github:owner/repo#9:v2',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         ...observation(),
         externalKey: 'owner/repo#9',
@@ -830,8 +892,10 @@ describe('InboundTranslator conclusion', () => {
         outcome: 'completed',
       },
     });
-    await journal.append(closed.stream, (await journal.readStream(closed.stream)).length, [closed]);
-    await translator.runOnce();
+    await journal.appendToStream(githubStream, (await journal.readStream(githubStream)).length, [
+      closed,
+    ]);
+    await processInbound(translator, journal, checkpoints);
 
     expect(calls).toEqual([
       { method: 'closeWork', reason: expect.stringContaining('owner/repo#9') },
@@ -856,14 +920,14 @@ describe('InboundTranslator conclusion', () => {
         return work.get(workItemId as never) as never;
       },
     };
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
       conclusion,
     });
 
-    const open = createEventDraft({
+    const open = createEventData({
       eventId: 'github:issue:owner/repo#10:v1',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -871,13 +935,12 @@ describe('InboundTranslator conclusion', () => {
       causationId: 'github:owner/repo#10:v1',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: { ...observation(), externalKey: 'owner/repo#10', revision: 'v1' },
     });
-    await journal.append(open.stream, 0, [open]);
-    await translator.runOnce();
+    await journal.appendToStream(githubStream, 0, [open]);
+    await processInbound(translator, journal, checkpoints);
 
-    const closed = createEventDraft({
+    const closed = createEventData({
       eventId: 'github:issue:owner/repo#10:v2',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -885,7 +948,6 @@ describe('InboundTranslator conclusion', () => {
       causationId: 'github:owner/repo#10:v2',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: {
         ...observation(),
         externalKey: 'owner/repo#10',
@@ -894,8 +956,10 @@ describe('InboundTranslator conclusion', () => {
         outcome: 'cancelled',
       },
     });
-    await journal.append(closed.stream, (await journal.readStream(closed.stream)).length, [closed]);
-    await translator.runOnce();
+    await journal.appendToStream(githubStream, (await journal.readStream(githubStream)).length, [
+      closed,
+    ]);
+    await processInbound(translator, journal, checkpoints);
 
     expect(calls).toEqual([
       { method: 'cancelWork', reason: expect.stringContaining('owner/repo#10') },
@@ -914,6 +978,19 @@ function observation(): ExternalWorkObservedPayload {
     actor: { id: 'octocat', kind: 'human' },
     raw: { 'private-provider-field': true },
   };
+}
+
+async function processInbound(
+  translator: { readonly processor: EventProcessor },
+  journal: EventJournal,
+  checkpoints: CheckpointStore,
+) {
+  return new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  ).runOnce(translator.processor);
 }
 
 async function waitingWatchGate() {

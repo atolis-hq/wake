@@ -44,6 +44,11 @@ read time from stored history, not by rewriting that history.
 - `ineligibleRunners(view, now)` MUST include a runner name in the returned
   set only while it has a `runnerPauses` entry AND that entry's `resumeAt`
   is either absent (an indefinite manual pause) or later than `now`.
+- `createDurableRunnerIneligibility(journal, now)` MUST fold the authoritative
+  `control-plane:global` stream for scheduler eligibility. It may reuse that
+  folded view only while `journal.latestGlobalPosition()` is unchanged; it
+  MUST recompute eligibility against `now` on every read so elapsed quota
+  pauses become eligible without requiring a new projection write.
 - The projection MUST be a pure fold: rebuilding it from a full replay of
   the `control-plane:global` stream MUST reproduce the same view as the
   live fold, with no dependency on anything outside the events themselves.
@@ -77,7 +82,7 @@ read time from stored history, not by rewriting that history.
 
 ## Dependencies and system role
 
-- Kernel — event envelope decoding, the `ProjectionDefinition` contract, and
+- Eventing — event envelope decoding, the `ProjectionDefinition` contract, and
   the projection registration/rebuild machinery this view is registered
   into.
 - Runner Pause and Resume, and the bootstrap runner-quota reporter (both

@@ -39,4 +39,10 @@ export const controlPlaneConfigSchema = z
       .strict()
       .default({ pollBackoffMs: 1000 }),
   })
-  .strict();
+  .strict()
+  .default({
+    maxDispatches: 1,
+    maxConcurrentRuns: 1,
+    schedules: [],
+    resident: { pollBackoffMs: 1000 },
+  });

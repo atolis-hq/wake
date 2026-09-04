@@ -16,6 +16,8 @@ export * from './contracts/config.js';
 
 export * from './contracts/artifact-events.js';
 
+export * from './contracts/artifact-event-factory.js';
+
 export * from './contracts/artifact-vocabulary.js';
 
 export * from './contracts/outcome-vocabulary.js';

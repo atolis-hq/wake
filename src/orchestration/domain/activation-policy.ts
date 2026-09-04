@@ -2,7 +2,7 @@ import type { ActivationId, ActivityName } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationActivityOutcome } from '../contracts/activity-outcome.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
-import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
+import type { WorkflowOrchestrationEventData } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { OrchestrationGroupId, WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -11,7 +11,7 @@ import { childStartDrafts } from './coordination-events.js';
 import { activation, startDraft, stateDraft } from './decision-events.js';
 
 export type OrchestrationDecision =
-  | { readonly kind: 'append'; readonly events: readonly WorkflowOrchestrationEventDraft[] }
+  | { readonly kind: 'append'; readonly events: readonly WorkflowOrchestrationEventData[] }
   | { readonly kind: 'ignored'; readonly reason: string };
 
 interface StartInstanceBase {
@@ -82,32 +82,38 @@ export function startInstance(input: StartInstanceInput): OrchestrationDecision 
       ...childEvents,
       startDraft(
         input,
-        OrchestrationEventType.InstanceStarted,
         {
-          workItemId: input.workItemId,
-          workflowName: input.definition.name,
-          orchestrationGroupId: input.orchestrationGroupId,
-          entry: input.definition.entry,
-          ...(input.workflowDefinitionFingerprint === undefined
-            ? {}
-            : { workflowDefinitionFingerprint: input.workflowDefinitionFingerprint }),
-          ...child,
+          eventType: OrchestrationEventType.InstanceStarted,
+          payload: {
+            workItemId: input.workItemId,
+            workflowName: input.definition.name,
+            orchestrationGroupId: input.orchestrationGroupId,
+            entry: input.definition.entry,
+            ...(input.workflowDefinitionFingerprint === undefined
+              ? {}
+              : { workflowDefinitionFingerprint: input.workflowDefinitionFingerprint }),
+            ...child,
+          },
         },
         childEvents.length + 1,
       ),
       startDraft(
         input,
-        OrchestrationEventType.StageEntered,
-        { stage: input.definition.entry },
+        {
+          eventType: OrchestrationEventType.StageEntered,
+          payload: { stage: input.definition.entry },
+        },
         childEvents.length + 2,
       ),
       startDraft(
         input,
-        OrchestrationEventType.ActivityRequested,
-        activation(input.workflowInstanceId, 1, stage.activity, stage.with, {
-          execution: stage.execution,
-          stage: input.definition.entry,
-        }),
+        {
+          eventType: OrchestrationEventType.ActivityRequested,
+          payload: activation(input.workflowInstanceId, 1, stage.activity, stage.with, {
+            execution: stage.execution,
+            stage: input.definition.entry,
+          }),
+        },
         childEvents.length + 3,
       ),
     ],
@@ -128,18 +134,20 @@ export function isPendingOutcome(
 export function acceptOutcomeDraft(
   state: WorkflowInstanceView,
   input: AcceptActivityOutcome,
-): WorkflowOrchestrationEventDraft {
+): WorkflowOrchestrationEventData {
   return stateDraft(
     state,
     input,
-    OrchestrationEventType.ActivityOutcomeAccepted,
-    { activationId: input.activationId, outcome: input.outcome },
+    {
+      eventType: OrchestrationEventType.ActivityOutcomeAccepted,
+      payload: { activationId: input.activationId, outcome: input.outcome },
+    },
     1,
   );
 }
 
 export function requestFollowOn(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   state: WorkflowInstanceView,
   input: AcceptActivityOutcome,
   activities: readonly { readonly use: ActivityName; readonly with: unknown }[],
@@ -152,11 +160,13 @@ export function requestFollowOn(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, pending.ordinal + 1, next.use, next.with, {
-        execution: undefined,
-        followOnIndex: nextFollowOnIndex,
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(state.workflowInstanceId, pending.ordinal + 1, next.use, next.with, {
+          execution: undefined,
+          followOnIndex: nextFollowOnIndex,
+        }),
+      },
       events.length + 1,
     ),
   );

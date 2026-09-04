@@ -1,5 +1,10 @@
-import { ControlStreamKind } from '../control-plane/index.js';
-import type { EventEnvelope, EventJournal } from '../kernel/index.js';
+import type { EventEnvelope, EventJournal } from '@atolis-hq/eventing';
+import {
+  ActivationSchedulerSubscriptionStatus,
+  ControlStreamKind,
+  type ActivationSchedulerSubscriptionHealthStatus,
+} from '../control-plane/index.js';
+import { type RunStatus } from '../execution/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
 import {
@@ -19,10 +24,12 @@ import { analyticsProjection, type AnalyticsProjectionView } from './analytics-p
 import {
   boardConditionCounts,
   boardProjection,
+  normalizeBoardActiveRunPhase,
   type BoardProjectionView,
 } from './board-projection.js';
 import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
+import { createOneShotRunnerAdvance } from './runner-tick-adapter.js';
 import {
   createSelfUpdateFailureLog,
   describeSelfUpdateFailure,
@@ -110,15 +117,33 @@ function activeBoardRuns(
 ): Readonly<
   Record<
     string,
-    { readonly action: string; readonly runnerName?: string; readonly startedAt: string }
+    {
+      readonly action: string;
+      readonly runnerName?: string;
+      readonly startedAt: string;
+      readonly phase: typeof RunStatus.Starting | typeof RunStatus.Started;
+    }
   >
 > {
-  if (card.activeRuns !== undefined) return card.activeRuns;
+  if (card.activeRuns !== undefined)
+    return Object.fromEntries(
+      Object.entries(card.activeRuns).map(([runId, activeRun]) => [
+        runId,
+        { ...activeRun, phase: normalizeBoardActiveRunPhase(activeRun.phase) },
+      ]),
+    );
   if (card.activeRun === undefined) return {};
   const legacyRunId = Object.entries(board.runs)
     .reverse()
     .find(([, workItemId]) => workItemId === card.workItemId)?.[0];
-  return legacyRunId === undefined ? {} : { [legacyRunId]: card.activeRun };
+  return legacyRunId === undefined
+    ? {}
+    : {
+        [legacyRunId]: {
+          ...card.activeRun,
+          phase: normalizeBoardActiveRunPhase(card.activeRun.phase),
+        },
+      };
 }
 
 function createStatusApplications(root: CompositionRoot, now: () => string) {
@@ -161,10 +186,8 @@ function createOrchestrationApplications(root: CompositionRoot, now: () => strin
   return {
     async list(query: Parameters<ApiApplications['orchestration']['list']>[0]) {
       const stored = (
-        await root.projections.list<{ readonly view: WorkflowInstanceView | null }>('orchestration')
-      ).flatMap((entry) =>
-        entry.value.view === null ? [] : [{ ...entry, value: entry.value.view }],
-      );
+        await root.projections.list<WorkflowInstanceView | null>('orchestration')
+      ).flatMap((entry) => (entry.value === null ? [] : [{ ...entry, value: entry.value }]));
       const filtered = stored.filter(
         (entry) => query.state === undefined || entry.value.status === query.state,
       );
@@ -197,10 +220,10 @@ function createEventApplications(root: CompositionRoot, now: () => string) {
         (event) =>
           workItemId === undefined ||
           event.stream.id === workItemId ||
-          (typeof event.payload === 'object' &&
-            event.payload !== null &&
-            'workItemId' in event.payload &&
-            event.payload.workItemId === workItemId),
+          (typeof event.event.payload === 'object' &&
+            event.event.payload !== null &&
+            'workItemId' in event.event.payload &&
+            event.event.payload.workItemId === workItemId),
       );
       const visible = events.slice(0, query.limit);
       const newest = visible[0];
@@ -280,6 +303,10 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
     async health() {
       const checkedAt = now();
       const selfUpdateFailure = await createSelfUpdateFailureLog(root.paths.wakeRoot).read();
+      const processorHealth = new Map(
+        (await root.processorRuntime.health()).map((snapshot) => [snapshot.consumer, snapshot]),
+      );
+      const schedulerOverlay = root.activationSchedulerSubscriber.health();
       const checks = [
         { name: 'journal', status: 'ok' as const },
         { name: 'projections', status: 'ok' as const },
@@ -291,6 +318,19 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
               status: 'degraded' as const,
               detail: describeSelfUpdateFailure(selfUpdateFailure),
             },
+        ...root.processorRuntime.processors.map(({ consumer }) => {
+          const snapshot = processorHealth.get(consumer);
+          return subscriptionHealthCheck(
+            consumer === 'subscriber:control-plane.activation-scheduler'
+              ? 'activation-scheduler'
+              : consumer,
+            consumer === 'subscriber:control-plane.activation-scheduler' &&
+              schedulerOverlay !== undefined &&
+              snapshot !== undefined
+              ? { ...snapshot, ...schedulerOverlay, checkpoint: snapshot.checkpoint }
+              : snapshot,
+          );
+        }),
       ];
       const adapters = root.providers.flatMap((instance) =>
         (instance.health?.() ?? []).map((check) => ({
@@ -346,6 +386,83 @@ function commandAccepted(command: { readonly idempotencyKey: string }, acceptedA
     acceptedAt,
     status: ApiCommandStatus.Accepted,
   };
+}
+
+function subscriptionHealthCheck(
+  name: string,
+  snapshot:
+    | {
+        readonly status: ActivationSchedulerSubscriptionHealthStatus;
+        readonly checkpoint: number;
+        readonly consecutiveFailures: number;
+        readonly lastError?: unknown;
+      }
+    | undefined,
+) {
+  const status = snapshot?.status ?? ActivationSchedulerSubscriptionStatus.Starting;
+  const checkpoint = snapshot?.checkpoint ?? 0;
+  const consecutiveFailures = snapshot?.consecutiveFailures ?? 0;
+  return {
+    name,
+    status:
+      status === ActivationSchedulerSubscriptionStatus.Healthy
+        ? ('ok' as const)
+        : ('degraded' as const),
+    detail: `${status} at checkpoint ${checkpoint} after ${consecutiveFailures} failures${describeHealthError(snapshot?.lastError)}`,
+  };
+}
+
+const maximumHealthErrorNameLength = 120;
+const maximumHealthErrorMessageLength = 500;
+const assignedCredential =
+  /((?:access_token|authorization|token|secret|password|key|signature|sig|x-amz-signature|x-amz-credential|x-goog-signature)=)[^\s&]+/gi;
+const authorizationCredential = /\b(?:bearer|basic|token)\s+\S+/gi;
+const providerCredential = /\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g;
+
+function describeHealthError(error: unknown): string {
+  if (error === undefined) return '';
+
+  let name = 'Error';
+  let message: unknown;
+  try {
+    if (error instanceof Error) {
+      name = typeof error.name === 'string' ? error.name : String(error.name);
+      message = error.message;
+    } else if (typeof error === 'string') {
+      message = error;
+    } else if (typeof error === 'object' && error !== null) {
+      const candidate = error as { readonly name?: unknown; readonly message?: unknown };
+      if (typeof candidate.name === 'string') name = candidate.name;
+      if (typeof candidate.message === 'string') message = candidate.message;
+      else message = String(error);
+    } else {
+      message = String(error);
+    }
+  } catch {
+    message = 'Unknown failure';
+  }
+
+  return `; last error ${sanitizeHealthErrorText(name, maximumHealthErrorNameLength)}: ${sanitizeHealthErrorText(toHealthErrorText(message), maximumHealthErrorMessageLength)}`;
+}
+
+function sanitizeHealthErrorText(value: string, maximumLength: number): string {
+  const sanitized = value
+    .replace(assignedCredential, '$1[REDACTED]')
+    .replace(authorizationCredential, '[REDACTED]')
+    .replace(providerCredential, '[REDACTED]')
+    .replaceAll('\n', ' ')
+    .replaceAll('\r', ' ')
+    .replaceAll('\t', ' ')
+    .trim();
+  return sanitized.slice(0, maximumLength) || 'Unknown failure';
+}
+
+function toHealthErrorText(value: unknown): string {
+  try {
+    return typeof value === 'string' ? value : String(value);
+  } catch {
+    return 'Unknown failure';
+  }
 }
 
 function createControlPlaneApplications(root: CompositionRoot, now: () => string) {
@@ -406,7 +523,7 @@ async function performTick(
   sequence: number,
 ): Promise<ApiTickCommandResult> {
   const acceptedAt = now();
-  await root.runnerPipeline.run({ maxProgress: 1 });
+  await createOneShotRunnerAdvance(root)({ maxProgress: 1 });
   return {
     commandId: `tick:${acceptedAt}:${sequence}`,
     idempotencyKey: command.idempotencyKey,
@@ -453,14 +570,14 @@ export function elapsedSince(timestamp: string, nowMs: number): number {
 
 function presentEvents(events: readonly EventEnvelope[]): readonly AuditEventResponse[] {
   return events.map((event) => ({
-    id: event.eventId,
-    type: event.eventType,
-    occurredAt: event.occurredAt,
+    id: event.event.eventId,
+    type: event.event.eventType,
+    occurredAt: event.event.occurredAt,
     position: event.globalPosition,
     stream: event.stream,
-    causationId: event.causationId,
-    correlationId: event.correlationId,
-    payload: event.payload,
+    causationId: event.event.causationId,
+    correlationId: event.event.correlationId,
+    payload: event.event.payload,
   }));
 }
 

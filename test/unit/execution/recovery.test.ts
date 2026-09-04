@@ -1,21 +1,21 @@
 import { expect, it } from 'vitest';
 
+import {
+  createEventData,
+  EventActorKind,
+  EventSourceKind,
+  type EventJournal,
+} from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import {
   ExecutionEventType,
   RecoveryService,
   runId,
   RunRepository,
-  runStream,
+  RunStatus,
 } from '../../../src/execution/index.js';
-import {
-  createEventDraft,
-  EventActorKind,
-  EventSourceKind,
-  type EventJournal,
-} from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { executionFixture } from './support.js';
 
 it('exports RecoveryService for active Run reconciliation', () => {
@@ -30,7 +30,7 @@ it('lists Run views from one journal snapshot without per-Run stream reads', asy
   const second = runId('snapshot-second');
   for (const id of [first, second]) {
     await writer.append(id, 0, [
-      createEventDraft({
+      createEventData({
         eventId: `${id}:started`,
         eventType: ExecutionEventType.RunStarted,
         occurredAt: fixture.clock.now().toISOString(),
@@ -38,7 +38,6 @@ it('lists Run views from one journal snapshot without per-Run stream reads', asy
         causationId: 'snapshot',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: runStream(id),
         payload: {
           activationId: activationId(`${id}:activation`),
           activity: activityName('long-running'),
@@ -53,7 +52,7 @@ it('lists Run views from one journal snapshot without per-Run stream reads', asy
   let readAllCalls = 0;
   let readStreamCalls = 0;
   const recording: EventJournal = {
-    append: backing.append.bind(backing),
+    appendToStream: backing.appendToStream.bind(backing),
     async readAll(after, limit) {
       readAllCalls += 1;
       return backing.readAll(after, limit);
@@ -63,6 +62,7 @@ it('lists Run views from one journal snapshot without per-Run stream reads', asy
       return backing.readStream(stream);
     },
     latestGlobalPosition: backing.latestGlobalPosition.bind(backing),
+    waitForEventsAfter: backing.waitForEventsAfter.bind(backing),
     changeSignal: backing.changeSignal,
   };
 
@@ -97,6 +97,57 @@ it('does not recover a locally tracked Run after its lease duration elapses', as
   ]);
   fixture.complete({ kind: 'done' });
   await fixture.finished('succeeded');
+});
+
+it('leaves an unexpired starting Run alone during active recovery', async () => {
+  const fixture = executionFixture();
+  const id = await appendStartingRun(fixture, 'starting-unexpired', 60_000);
+  let inspections = 0;
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        inspections += 1;
+        return { kind: 'absent' as const };
+      },
+    },
+    fixture.activities,
+  );
+
+  await expect(recovery.recoverActive('resident-b')).resolves.toEqual([]);
+  await expect(new RunRepository(fixture.journal).load(id)).resolves.toMatchObject({
+    view: { status: RunStatus.Starting },
+  });
+  expect(inspections).toBe(0);
+});
+
+it('fails an expired starting Run without external execution inspection', async () => {
+  const fixture = executionFixture();
+  const id = await appendStartingRun(fixture, 'starting-expired', -1);
+  let inspections = 0;
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        inspections += 1;
+        return { kind: 'absent' as const };
+      },
+    },
+    fixture.activities,
+  );
+
+  await expect(recovery.recoverActive('resident-b')).resolves.toMatchObject([
+    {
+      runId: id,
+      status: RunStatus.Failed,
+      failure: {
+        message: 'Preparation was interrupted before execution started',
+      },
+    },
+  ]);
+  expect(inspections).toBe(0);
 });
 
 it('reconciles definitely completed execution without rerunning it', async () => {
@@ -174,7 +225,7 @@ it('fails an unclaimed Run with no external execution instead of refusing recove
   const fixture = executionFixture();
   const id = runId('unclaimed-run');
   await new RunRepository(fixture.journal).append(id, 0, [
-    createEventDraft({
+    createEventData({
       eventId: 'unclaimed-started',
       eventType: ExecutionEventType.RunStarted,
       occurredAt: fixture.clock.now().toISOString(),
@@ -182,7 +233,6 @@ it('fails an unclaimed Run with no external execution instead of refusing recove
       causationId: 'test',
       actor: { kind: EventActorKind.System, id: 'test' },
       source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream: runStream(id),
       payload: {
         activationId: activationId('unclaimed-activation'),
         activity: activityName('long-running'),
@@ -226,7 +276,7 @@ it('records unknown external execution as ambiguous', async () => {
   await expect(recovery.recover(run.runId, 'resident-b')).resolves.toMatchObject({
     status: 'ambiguous',
   });
-  expect((await fixture.events()).at(-1)?.eventType).toBe(ExecutionEventType.RunAmbiguous);
+  expect((await fixture.events()).at(-1)?.event.eventType).toBe(ExecutionEventType.RunAmbiguous);
 });
 
 it('does not rerun an escalated ambiguous Run', async () => {
@@ -339,7 +389,7 @@ it('accepts an operator resolution only after a Run is escalated', async () => {
       },
     ),
   ).resolves.toMatchObject({ status: 'succeeded', escalated: false, outcome: { kind: 'done' } });
-  expect((await fixture.events()).at(-1)?.actor).toEqual({
+  expect((await fixture.events()).at(-1)?.event.actor).toEqual({
     kind: EventActorKind.Operator,
     id: 'operator-1',
   });
@@ -383,7 +433,7 @@ it('rejects resolution before escalation and converges concurrent operator resol
   ]);
   expect(results.map((result) => result.status)).toEqual([results[0]!.status, results[0]!.status]);
   expect(
-    (await fixture.events()).filter((event) => event.actor.kind === EventActorKind.Operator),
+    (await fixture.events()).filter((event) => event.event.actor.kind === EventActorKind.Operator),
   ).toHaveLength(1);
 });
 
@@ -416,3 +466,46 @@ it('validates an operator success outcome against the Run Activity', async () =>
     ),
   ).rejects.toThrow(/undeclared activity outcome/i);
 });
+
+async function appendStartingRun(
+  fixture: ReturnType<typeof executionFixture>,
+  id: string,
+  leaseOffsetMs: number,
+) {
+  const currentRunId = runId(id);
+  const now = fixture.clock.now();
+  await new RunRepository(fixture.journal).append(currentRunId, 0, [
+    createEventData({
+      eventId: `${id}:preparation`,
+      eventType: ExecutionEventType.RunPreparationStarted,
+      occurredAt: now.toISOString(),
+      correlationId: id,
+      causationId: id,
+      actor: { kind: EventActorKind.System, id: 'test' },
+      source: { kind: EventSourceKind.Internal, id: 'test' },
+      payload: {
+        activationId: activationId(`${id}:activation`),
+        activity: activityName('long-running'),
+        workflowInstanceId: workflowInstanceId(`${id}:workflow`),
+        orchestrationGroupId: orchestrationGroupId(`${id}:group`),
+        attempt: 1,
+        startedAt: now.toISOString(),
+      },
+    }),
+    createEventData({
+      eventId: `${id}:lease`,
+      eventType: ExecutionEventType.RunLeaseClaimed,
+      occurredAt: now.toISOString(),
+      correlationId: id,
+      causationId: id,
+      actor: { kind: EventActorKind.System, id: 'test' },
+      source: { kind: EventSourceKind.Internal, id: 'test' },
+      payload: {
+        owner: 'resident-a',
+        acquiredAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + leaseOffsetMs).toISOString(),
+      },
+    }),
+  ]);
+  return currentRunId;
+}

@@ -12,7 +12,10 @@ import {
   foldWorkflowInstance,
   orchestrationActivityOutcome,
   startInstance,
+  workflowInstanceStream,
   type StartInstanceInput,
+  type WorkflowOrchestrationEvent,
+  type WorkflowOrchestrationEventData,
 } from '../../../src/orchestration/index.js';
 import {} from '../../../src/work/index.js';
 import { workId } from '../../support/identities.js';
@@ -70,7 +73,7 @@ describe('workflow interpreter', () => {
     const decision = startInstance(start);
     expect(decision.kind).toBe('append');
     if (decision.kind !== 'append') return;
-    const view = foldWorkflowInstance(decision.events);
+    const view = foldWorkflowInstance(recorded(decision.events));
     expect(view?.currentStage).toBe('implement');
     expect(view?.pendingActivation?.activationId).toBe('workflow-1:activity:1');
   });
@@ -78,7 +81,7 @@ describe('workflow interpreter', () => {
   it('runs follow-ons in order and completes terminal routes', () => {
     const started = startInstance(start);
     if (started.kind !== 'append') throw new Error('expected events');
-    const state = foldWorkflowInstance(started.events)!;
+    const state = foldWorkflowInstance(recorded(started.events))!;
     const first = acceptActivityOutcome(definition, state, {
       activationId: state.pendingActivation!.activationId,
       outcome: orchestrationActivityOutcome({ kind: 'done' }),
@@ -86,7 +89,7 @@ describe('workflow interpreter', () => {
       causationId: 'run-1',
     });
     if (first.kind !== 'append') throw new Error('expected events');
-    const reviewing = foldWorkflowInstance([...started.events, ...first.events])!;
+    const reviewing = foldWorkflowInstance(recorded([...started.events, ...first.events]))!;
     expect(reviewing.pendingActivation?.activity).toBe('review');
     const second = acceptActivityOutcome(definition, reviewing, {
       activationId: reviewing.pendingActivation!.activationId,
@@ -96,7 +99,8 @@ describe('workflow interpreter', () => {
     });
     if (second.kind !== 'append') throw new Error('expected events');
     expect(
-      foldWorkflowInstance([...started.events, ...first.events, ...second.events])?.status,
+      foldWorkflowInstance(recorded([...started.events, ...first.events, ...second.events]))
+        ?.status,
     ).toBe('completed');
   });
 });
@@ -129,7 +133,7 @@ describe('workflow follow-ons', () => {
     if (initial.kind !== 'append') throw new Error('expected events');
     let events = [...initial.events];
     for (const expectedActivity of ['review', 'implement']) {
-      const state = foldWorkflowInstance(events)!;
+      const state = foldWorkflowInstance(recorded(events))!;
       const decision = acceptActivityOutcome(multiple, state, {
         activationId: state.pendingActivation!.activationId,
         outcome: orchestrationActivityOutcome({ kind: 'done' }),
@@ -138,9 +142,11 @@ describe('workflow follow-ons', () => {
       });
       if (decision.kind !== 'append') throw new Error('expected events');
       events = [...events, ...decision.events];
-      expect(foldWorkflowInstance(events)?.pendingActivation?.activity).toBe(expectedActivity);
+      expect(foldWorkflowInstance(recorded(events))?.pendingActivation?.activity).toBe(
+        expectedActivity,
+      );
     }
-    const state = foldWorkflowInstance(events)!;
+    const state = foldWorkflowInstance(recorded(events))!;
     const terminal = acceptActivityOutcome(multiple, state, {
       activationId: state.pendingActivation!.activationId,
       outcome: orchestrationActivityOutcome({ kind: 'done' }),
@@ -148,7 +154,9 @@ describe('workflow follow-ons', () => {
       causationId: 'run-terminal',
     });
     if (terminal.kind !== 'append') throw new Error('expected events');
-    expect(foldWorkflowInstance([...events, ...terminal.events])?.status).toBe('completed');
+    expect(foldWorkflowInstance(recorded([...events, ...terminal.events]))?.status).toBe(
+      'completed',
+    );
   });
 });
 
@@ -156,7 +164,7 @@ describe('workflow outcome acceptance', () => {
   it('ignores duplicate or non-pending outcomes and waits for humans', () => {
     const started = startInstance(start);
     if (started.kind !== 'append') throw new Error('expected events');
-    const state = foldWorkflowInstance(started.events)!;
+    const state = foldWorkflowInstance(recorded(started.events))!;
     expect(
       acceptActivityOutcome(definition, state, {
         activationId: activationId('other'),
@@ -172,13 +180,15 @@ describe('workflow outcome acceptance', () => {
       causationId: 'run-1',
     });
     if (waiting.kind !== 'append') throw new Error('expected events');
-    expect(foldWorkflowInstance([...started.events, ...waiting.events])?.status).toBe('waiting');
+    expect(foldWorkflowInstance(recorded([...started.events, ...waiting.events]))?.status).toBe(
+      'waiting',
+    );
   });
 
   it('durably blocks — rather than silently dropping — an outcome its stage never routed', () => {
     const started = startInstance(start);
     if (started.kind !== 'append') throw new Error('expected events');
-    const state = foldWorkflowInstance(started.events)!;
+    const state = foldWorkflowInstance(recorded(started.events))!;
     const activation = state.pendingActivation!.activationId;
 
     const decision = acceptActivityOutcome(definition, state, {
@@ -189,7 +199,7 @@ describe('workflow outcome acceptance', () => {
     });
     expect(decision.kind).toBe('append');
     if (decision.kind !== 'append') return;
-    const resolved = foldWorkflowInstance([...started.events, ...decision.events])!;
+    const resolved = foldWorkflowInstance(recorded([...started.events, ...decision.events]))!;
 
     expect(resolved.status).toBe('blocked');
     // The outcome is recorded as accepted even though it had nowhere to
@@ -206,3 +216,13 @@ describe('workflow outcome acceptance', () => {
     expect(late.kind).toBe('ignored');
   });
 });
+
+function recorded(events: readonly WorkflowOrchestrationEventData[]): WorkflowOrchestrationEvent[] {
+  return events.map((event, index) => ({
+    event,
+    stream: workflowInstanceStream(start.workflowInstanceId),
+    recordedAt: event.occurredAt,
+    sequence: index + 1,
+    globalPosition: index + 1,
+  }));
+}

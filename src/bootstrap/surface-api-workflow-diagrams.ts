@@ -1,5 +1,5 @@
 import { ActivityOutcomeKind } from '../activities/index.js';
-import { agentTokenUsage, RunStatus, type RunView } from '../execution/index.js';
+import { agentTokenUsage, isActiveRunStatus, RunStatus, type RunView } from '../execution/index.js';
 import {
   TransitionTargetKind,
   WorkflowStatus,
@@ -202,7 +202,7 @@ function runSummary(runs: readonly RunView[]): WorkflowDiagramMetricsResponse & 
   if (runs.length === 0) return {};
   const ordered = [...runs].sort((left, right) => right.startedAt.localeCompare(left.startedAt));
   const activeRuns = ordered
-    .filter((run) => run.status === RunStatus.Started)
+    .filter((run) => isActiveRunStatus(run.status))
     .map((run) => ({
       runId: run.runId,
       activity: run.activity,

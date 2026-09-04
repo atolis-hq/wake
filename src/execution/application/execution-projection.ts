@@ -1,4 +1,4 @@
-import type { ProjectionDefinition } from '../../kernel/index.js';
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import {
   ExecutionEventType,
   selectRunExecutionEvent,
@@ -32,14 +32,22 @@ export const runsByWorkflowInstanceProjection: ProjectionDefinition<readonly Run
   name: 'runs-by-workflow-instance',
   select(event) {
     const owned = selectRunExecutionEvent(event);
-    return owned?.eventType === ExecutionEventType.RunStarted
-      ? { key: owned.payload.workflowInstanceId }
-      : null;
+    if (owned === null) return null;
+    if (
+      owned.event.eventType !== ExecutionEventType.RunPreparationStarted &&
+      owned.event.eventType !== ExecutionEventType.RunStarted
+    )
+      return null;
+    return { key: owned.event.payload.workflowInstanceId };
   },
   initial: () => [],
   project(previous, event) {
     const owned = selectRunExecutionEvent(event);
-    if (owned?.eventType !== ExecutionEventType.RunStarted) return previous;
+    if (
+      owned?.event.eventType !== ExecutionEventType.RunPreparationStarted &&
+      owned?.event.eventType !== ExecutionEventType.RunStarted
+    )
+      return previous;
     return previous.includes(owned.stream.id) ? previous : [...previous, owned.stream.id];
   },
 };

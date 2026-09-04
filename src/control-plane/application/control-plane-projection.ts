@@ -1,6 +1,6 @@
-import type { EventEnvelope, ProjectionDefinition } from '../../kernel/index.js';
+import type { EventEnvelope, EventJournal, ProjectionDefinition } from '@atolis-hq/eventing';
 import { ControlEventType, selectControlEvent, type ControlEvent } from '../contracts/events.js';
-import { ControlStreamKind } from '../contracts/streams.js';
+import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
 
 export interface ControlPlaneView {
   readonly pausedUntil: string | null;
@@ -10,7 +10,7 @@ export interface ControlPlaneView {
       string,
       {
         readonly cause: Extract<
-          ControlEvent,
+          ControlEvent['event'],
           { readonly eventType: typeof ControlEventType.RunnerPaused }
         >['payload']['cause'];
         readonly reason: string;
@@ -29,6 +29,28 @@ export function ineligibleRunners(view: ControlPlaneView, now: string): Readonly
   );
 }
 
+/**
+ * Reads pause eligibility from the authoritative control stream for scheduling.
+ * The folded view is cached only while the durable journal position is unchanged.
+ */
+export function createDurableRunnerIneligibility(
+  journal: Pick<EventJournal, 'latestGlobalPosition' | 'readStream'>,
+  now: () => string,
+): () => Promise<ReadonlySet<string>> {
+  let cached: { readonly position: number; readonly view: ControlPlaneView } | undefined;
+  return async () => {
+    const position = await journal.latestGlobalPosition();
+    if (cached === undefined || cached.position !== position) {
+      const view = (await journal.readStream(controlPlaneStream())).reduce(
+        (previous, event) => controlPlaneProjection.project(previous, event),
+        controlPlaneProjection.initial('global'),
+      );
+      cached = { position, view };
+    }
+    return ineligibleRunners(cached.view, now());
+  };
+}
+
 export const controlPlaneProjection: ProjectionDefinition<ControlPlaneView> = {
   name: ControlStreamKind.Global,
   select(event: EventEnvelope) {
@@ -38,18 +60,25 @@ export const controlPlaneProjection: ProjectionDefinition<ControlPlaneView> = {
   project(previous, envelope) {
     const event = selectControlEvent(envelope);
     if (event === null) return previous;
-    switch (event.eventType) {
+    switch (event.event.eventType) {
       case ControlEventType.DispatchPaused:
-        return { ...previous, pausedUntil: event.payload.resumeAt, reason: event.payload.reason };
+        return {
+          ...previous,
+          pausedUntil: event.event.payload.resumeAt,
+          reason: event.event.payload.reason,
+        };
       case ControlEventType.DispatchResumed:
         return withoutDispatchPause(previous);
       case ControlEventType.RunnerPaused:
         return {
           ...previous,
-          runnerPauses: { ...previous.runnerPauses, [event.payload.runnerName]: event.payload },
+          runnerPauses: {
+            ...previous.runnerPauses,
+            [event.event.payload.runnerName]: event.event.payload,
+          },
         };
       case ControlEventType.RunnerResumed: {
-        const { [event.payload.runnerName]: _, ...runnerPauses } = previous.runnerPauses;
+        const { [event.event.payload.runnerName]: _, ...runnerPauses } = previous.runnerPauses;
         return { ...previous, runnerPauses };
       }
     }

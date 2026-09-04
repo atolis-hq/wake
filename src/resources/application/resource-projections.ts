@@ -1,4 +1,4 @@
-import type { ProjectionDefinition } from '../../kernel/index.js';
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { ResourceEventType, selectResourceEvent, type ResourceEvent } from '../contracts/events.js';
 import type { ResourceCorrelationView, ResourceView } from '../contracts/views.js';
 import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
@@ -14,35 +14,42 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
   project(previous, event) {
     const owned = selectResourceEvent(event);
     if (owned === null) return previous;
-    if (isExternalOutcome(owned)) return projectExternalOutcome(previous, owned);
-    if (isCorrelationRetry(owned)) return projectCorrelationRetry(previous, owned);
-    switch (owned.eventType) {
+    const resourceEvent = owned.event;
+    if (isExternalOutcome(resourceEvent)) return projectExternalOutcome(previous, resourceEvent);
+    if (isCorrelationRetry(resourceEvent)) return projectCorrelationRetry(previous, resourceEvent);
+    switch (resourceEvent.eventType) {
       case ResourceEventType.ResourceDiscovered:
         return {
           resourceId: owned.stream.id,
-          kind: owned.payload.kind,
-          externalKey: owned.payload.externalKey,
-          capabilities: owned.payload.capabilities,
-          ...(owned.payload.revision === undefined ? {} : { revision: owned.payload.revision }),
-          ...(owned.payload.title === undefined ? {} : { title: owned.payload.title }),
+          kind: resourceEvent.payload.kind,
+          externalKey: resourceEvent.payload.externalKey,
+          capabilities: resourceEvent.payload.capabilities,
+          ...(resourceEvent.payload.revision === undefined
+            ? {}
+            : { revision: resourceEvent.payload.revision }),
+          ...(resourceEvent.payload.title === undefined
+            ? {}
+            : { title: resourceEvent.payload.title }),
         };
       case ResourceEventType.ResourceRevisionObserved:
-        return previous === null ? previous : { ...previous, revision: owned.payload.revision };
+        return previous === null
+          ? previous
+          : { ...previous, revision: resourceEvent.payload.revision };
       case ResourceEventType.WorkCorrelationConflicted:
         return previous === null
           ? previous
           : {
               ...previous,
               primaryCorrelationConflict: {
-                attemptedWorkItemId: owned.payload.workItemId,
-                existingWorkItemId: owned.payload.existingWorkItemId,
-                eventId: owned.eventId,
+                attemptedWorkItemId: resourceEvent.payload.workItemId,
+                existingWorkItemId: resourceEvent.payload.existingWorkItemId,
+                eventId: resourceEvent.eventId,
               },
             };
       case ResourceEventType.WorkCorrelationEstablished:
         return previous === null
           ? previous
-          : owned.payload.role === ResourceCorrelationRole.Primary
+          : resourceEvent.payload.role === ResourceCorrelationRole.Primary
             ? withoutCorrelationStatus(previous)
             : previous;
       case ResourceEventType.WorkCorrelationRetracted:
@@ -50,13 +57,13 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
       case ResourceEventType.IssueCompletionObservationSuperseded:
         return previous;
       default:
-        return assertNever(owned);
+        return assertNever(resourceEvent);
     }
   },
 };
 
 type CorrelationRetryEvent = Extract<
-  ResourceEvent,
+  ResourceEvent['event'],
   {
     eventType:
       | typeof ResourceEventType.WorkCorrelationRetryPending
@@ -65,7 +72,7 @@ type CorrelationRetryEvent = Extract<
 >;
 
 type ExternalOutcomeEvent = Extract<
-  ResourceEvent,
+  ResourceEvent['event'],
   {
     eventType:
       | typeof ResourceEventType.ExternalOutcomeObserved
@@ -74,14 +81,14 @@ type ExternalOutcomeEvent = Extract<
   }
 >;
 
-function isCorrelationRetry(event: ResourceEvent): event is CorrelationRetryEvent {
+function isCorrelationRetry(event: ResourceEvent['event']): event is CorrelationRetryEvent {
   return (
     event.eventType === ResourceEventType.WorkCorrelationRetryPending ||
     event.eventType === ResourceEventType.WorkCorrelationUnresolvable
   );
 }
 
-function isExternalOutcome(event: ResourceEvent): event is ExternalOutcomeEvent {
+function isExternalOutcome(event: ResourceEvent['event']): event is ExternalOutcomeEvent {
   return (
     event.eventType === ResourceEventType.ExternalOutcomeObserved ||
     event.eventType === ResourceEventType.ExternalOutcomeReopened ||
@@ -144,30 +151,31 @@ export const resourceCorrelationProjection: ProjectionDefinition<
   project(previous, event) {
     const owned = selectResourceEvent(event);
     if (owned === null) return previous;
-    if (!changesCorrelation(owned)) return previous;
-    switch (owned.eventType) {
+    const resourceEvent = owned.event;
+    if (!changesCorrelation(resourceEvent)) return previous;
+    switch (resourceEvent.eventType) {
       case ResourceEventType.WorkCorrelationEstablished: {
         const correlation: ResourceCorrelationView = {
           resourceId: owned.stream.id,
-          workItemId: owned.payload.workItemId,
-          role: owned.payload.role,
-          provenance: owned.payload.provenance,
-          establishedByEventId: owned.eventId,
+          workItemId: resourceEvent.payload.workItemId,
+          role: resourceEvent.payload.role,
+          provenance: resourceEvent.payload.provenance,
+          establishedByEventId: resourceEvent.eventId,
         };
         return previous.some((value) => value.workItemId === correlation.workItemId)
           ? previous
           : [...previous, correlation];
       }
       case ResourceEventType.WorkCorrelationRetracted:
-        return previous.filter((value) => value.workItemId !== owned.payload.workItemId);
+        return previous.filter((value) => value.workItemId !== resourceEvent.payload.workItemId);
       default:
-        return assertNever(owned);
+        return assertNever(resourceEvent);
     }
   },
 };
 
 type CorrelationEvent = Extract<
-  ResourceEvent,
+  ResourceEvent['event'],
   {
     eventType:
       | typeof ResourceEventType.WorkCorrelationEstablished
@@ -175,7 +183,7 @@ type CorrelationEvent = Extract<
   }
 >;
 
-function changesCorrelation(event: ResourceEvent): event is CorrelationEvent {
+function changesCorrelation(event: ResourceEvent['event']): event is CorrelationEvent {
   return (
     event.eventType === ResourceEventType.WorkCorrelationEstablished ||
     event.eventType === ResourceEventType.WorkCorrelationRetracted

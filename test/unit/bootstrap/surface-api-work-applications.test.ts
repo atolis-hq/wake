@@ -261,7 +261,7 @@ it('omits the last run outcome when a newer transport-failed run follows an agen
   const projections: Readonly<Record<string, unknown>> = {
     [`work-correlations:${workItemId}`]: [],
     [`workflows-by-work-item:${workItemId}`]: [workflowId],
-    [`orchestration:${workflowId}`]: { view: { workflowInstanceId: workflowId } },
+    [`orchestration:${workflowId}`]: { workflowInstanceId: workflowId },
     [`runs-by-workflow-instance:${workflowId}`]: [olderAgentRun.runId, newerFailedRun.runId],
     [`execution:${olderAgentRun.runId}`]: { view: olderAgentRun },
     [`execution:${newerFailedRun.runId}`]: { view: newerFailedRun },
@@ -299,6 +299,81 @@ it('omits the last run outcome when a newer transport-failed run follows an agen
   expect(response?.data.work).not.toHaveProperty('lastRunOutcome');
 });
 
+it('reads a canonical orchestration projection for work detail', async () => {
+  const workItemId = workId('detail-canonical-projection');
+  const workflowId = 'workflow-detail-canonical';
+  const workflow = workflowProjectionView(workflowId, workItemId);
+  const applications = createSurfaceWorkApplications(
+    {
+      work: {
+        get: async () => ({
+          workItemId,
+          objective: 'Read the orchestration projection',
+          state: 'open',
+          relatedWorkItems: [],
+        }),
+      },
+      resources: { get: async () => null },
+      projections: {
+        read: async (stream: string, key: string) => {
+          if (stream === 'work-correlations' && key === workItemId)
+            return { value: [], lastGlobalPosition: 0 };
+          if (stream === 'workflows-by-work-item' && key === workItemId)
+            return { value: [workflowId], lastGlobalPosition: 0 };
+          if (stream === 'orchestration' && key === workflowId)
+            return { value: workflow, lastGlobalPosition: 0 };
+          if (stream === 'runs-by-workflow-instance' && key === workflowId)
+            return { value: [], lastGlobalPosition: 0 };
+          return null;
+        },
+      },
+      journal: { readAll: async () => [] },
+    } as unknown as CompositionRoot,
+    () => '2026-09-02T12:00:00.000Z',
+  );
+  const detail = applications.detail;
+  if (detail === undefined) throw new Error('Expected detail work application');
+
+  const response = await detail(toWorkItemKey(workItemId));
+
+  expect(response?.data.orchestration.primary).toMatchObject({ workflowInstanceId: workflowId });
+});
+
+it('reads a canonical orchestration projection for a work transcript', async () => {
+  const workItemId = workId('tr-canonical-projection');
+  const workflowId = 'workflow-transcript-canonical';
+  const workflow = workflowProjectionView(workflowId, workItemId);
+  const run = {
+    runId: 'run-transcript-canonical',
+    workflowInstanceId: workflowId,
+    startedAt: '2026-09-02T11:00:00.000Z',
+  } as RunView;
+  const applications = createSurfaceWorkApplications(
+    {
+      projections: {
+        read: async (stream: string, key: string) => {
+          if (stream === 'work' && key === workItemId) return { value: { deleted: false } };
+          if (stream === 'workflows-by-work-item' && key === workItemId)
+            return { value: [workflowId] };
+          if (stream === 'orchestration' && key === workflowId) return { value: workflow };
+          if (stream === 'runs-by-workflow-instance' && key === workflowId)
+            return { value: [run.runId] };
+          if (stream === 'execution' && key === run.runId) return { value: { view: run } };
+          return null;
+        },
+      },
+      journal: { readAll: async () => [] },
+    } as unknown as CompositionRoot,
+    () => '2026-09-02T12:00:00.000Z',
+  );
+  const transcript = applications.transcript;
+  if (transcript === undefined) throw new Error('Expected transcript work application');
+
+  const response = await transcript(toWorkItemKey(workItemId), 'missing-group');
+
+  expect(response?.data).toMatchObject({ groupId: 'missing-group', available: false });
+});
+
 function rootThatRejectsRetry(error: Error): CompositionRoot {
   return {
     work: { get: async () => ({ state: 'open' }) },
@@ -320,5 +395,25 @@ function eligibleWorkflow(): WorkflowInstanceView {
     pendingActivation: { activationId: 'activation-1', status: 'completed', supplemental: false },
     lastOutcome: { kind: 'failed' },
     acceptedOutcomes: ['activation-1'],
+  } as unknown as WorkflowInstanceView;
+}
+
+function workflowProjectionView(workflowInstanceId: string, workItemId: ReturnType<typeof workId>) {
+  return {
+    workflowInstanceId,
+    workItemId,
+    workflowName: 'default',
+    orchestrationGroupId: 'group-projection',
+    status: 'active',
+    currentStage: 'implement',
+    repeatCounts: {},
+    retryCounts: {},
+    supplementalQueue: [],
+    acceptedSignalIds: [],
+    operatorRetryCommandIds: [],
+    acceptedOutcomes: [],
+    acceptedChildCompletionIds: [],
+    causalRejectionIds: [],
+    childCompletionRecorded: false,
   } as unknown as WorkflowInstanceView;
 }

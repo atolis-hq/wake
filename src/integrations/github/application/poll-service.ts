@@ -1,11 +1,11 @@
-import type { EventJournal } from '../../../kernel/index.js';
-import { EventSourceKind } from '../../../kernel/index.js';
+import type { EventJournal } from '@atolis-hq/eventing';
+import { EventSourceKind } from '@atolis-hq/eventing';
 import { integrationStream } from '../../contracts/streams.js';
-import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
+import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
 
 export interface ExternalEventSource {
-  poll(signal: AbortSignal): Promise<readonly GitHubAdapterEventDraft[]>;
+  poll(signal: AbortSignal): Promise<readonly GitHubAdapterEventData[]>;
 }
 
 const gitHubEventTypes = new Set<string>(Object.values(GitHubEventType));
@@ -29,10 +29,13 @@ export class PollService {
     if (drafts.length === 0) return;
     const stream = integrationStream(GitHubAdapter);
     const existing = await this.journal.readStream(stream);
-    await this.journal.append(
-      stream,
-      existing.length,
-      drafts.map((draft) => ({ ...draft, stream })),
-    );
+    const seenEventIds = new Set(existing.map((event) => event.event.eventId));
+    const newDrafts = drafts.filter((draft) => {
+      if (seenEventIds.has(draft.eventId)) return false;
+      seenEventIds.add(draft.eventId);
+      return true;
+    });
+    if (newDrafts.length === 0) return;
+    await this.journal.appendToStream(stream, existing.length, newDrafts);
   }
 }

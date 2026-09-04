@@ -1,13 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createSurfaceApplications, type CompositionRoot } from '../../../src/bootstrap/index.js';
 import {
   EventActorKind,
   EventSourceKind,
   causationId,
   correlationId,
   eventId,
-} from '../../../src/kernel/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
+} from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
+import { describe, expect, it, vi } from 'vitest';
+import { createSurfaceApplications, type CompositionRoot } from '../../../src/bootstrap/index.js';
 import { runWakeCommand, type WakeCliApplications } from '../../../src/surfaces/cli/main.js';
 
 describe('Wake target CLI runtime commands', () => {
@@ -31,7 +31,7 @@ describe('Wake target CLI runtime commands', () => {
   it('reads audit facts from the composed canonical journal and formats target records', async () => {
     const clock = { now: () => new Date('2026-08-11T12:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);
-    await journal.append({ kind: 'work-item', id: 'work-demo' }, 0, [
+    await journal.appendToStream({ kind: 'work-item', id: 'work-demo' }, 0, [
       {
         eventId: eventId('audit-event'),
         eventType: 'work.created',
@@ -41,11 +41,10 @@ describe('Wake target CLI runtime commands', () => {
         causationId: causationId('audit-causation'),
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'work-item', id: 'work-demo' },
         payload: { objective: 'Audit the canonical journal' },
       },
     ]);
-    await journal.append({ kind: 'resource', id: 'work-demo' }, 0, [
+    await journal.appendToStream({ kind: 'resource', id: 'work-demo' }, 0, [
       {
         eventId: eventId('same-id-non-work-event'),
         eventType: 'resource.registered',
@@ -55,7 +54,6 @@ describe('Wake target CLI runtime commands', () => {
         causationId: causationId('non-work-causation'),
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'resource', id: 'work-demo' },
         payload: { provider: 'test' },
       },
     ]);
@@ -84,6 +82,10 @@ describe('Wake target CLI runtime commands', () => {
           },
         },
       ),
+      processorRuntime: {
+        processors: [],
+        catchUp: async () => 0,
+      },
     } as unknown as CompositionRoot;
     const applications = (
       await createSurfaceApplications(root, {

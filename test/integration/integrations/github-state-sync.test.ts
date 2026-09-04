@@ -1,3 +1,10 @@
+import { EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { createPullRequestService } from '../../../src/activities/index.js';
 import {
@@ -10,11 +17,6 @@ import {
   reconcileGitHubWakeLabels,
 } from '../../../src/integrations/github/index.js';
 import { PollService } from '../../../src/integrations/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
@@ -271,12 +273,18 @@ it('flows a tracked PR review from GitHub source polling through Activities acce
     inbound: {} as never,
     verifyArtifact: async () => 'not-found' as const,
   }).pollOnce(new AbortController().signal);
-  await new InboundTranslator(journal, checkpoints, work, resources, {
+  const translator = new InboundTranslator(journal, work, resources, {
     pullRequests,
     lookup,
-  }).runOnce();
+  });
+  await new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  ).runOnce(translator.processor);
 
-  expect((await journal.readAll(0)).map((event) => event.eventType)).toContain(
+  expect((await journal.readAll(0)).map((event) => event.event.eventType)).toContain(
     'pr.review-accepted',
   );
 });
@@ -683,6 +691,8 @@ it('does not append a new work observation when only the GitHub revision and Wak
   await service.pollOnce(new AbortController().signal);
 
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === GitHubEventType.WorkObserved),
+    (await journal.readAll(0)).filter(
+      (event) => event.event.eventType === GitHubEventType.WorkObserved,
+    ),
   ).toHaveLength(1);
 });

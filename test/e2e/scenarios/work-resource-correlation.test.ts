@@ -1,6 +1,6 @@
+import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect } from 'vitest';
-import { correlationId } from '../../../src/kernel/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { resId, workId } from '../../support/identities.js';
@@ -59,7 +59,7 @@ defineScenario(
       frozen: false,
       deleted: false,
     });
-    expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
+    expect((await journal.readAll(0)).map((event) => event.event.eventType)).toEqual([
       'work.item-created',
       'resources.resource-discovered',
       'resources.work-correlation-established',

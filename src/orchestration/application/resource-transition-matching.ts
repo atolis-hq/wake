@@ -1,5 +1,5 @@
-import type { selectActivityEvent } from '../../activities/index.js';
-import type { CommandContext } from '../../kernel/index.js';
+import type { CommandContext } from '@atolis-hq/eventing';
+import { ActivityEventType, selectActivityEvent } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { CompiledResourceTransition, TransitionTarget } from '../contracts/config.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
@@ -52,10 +52,17 @@ export async function matchResourceTransitions(
 
 // Compares the declared predicate key-wise against the event payload.
 function matchesFact(transition: CompiledResourceTransition, event: PersistedEvent): boolean {
-  if (transition.event !== event.eventType) return false;
+  const activity = selectActivityEvent(event);
+  if (activity === null || transition.event !== activity.event.eventType) return false;
   if (transition.where === undefined) return true;
-  const payload = event.payload as Record<string, unknown>;
-  return Object.entries(transition.where).every(([key, value]) => payload[key] === value);
+  if (activity.event.eventType === ActivityEventType.PrStateChanged && 'state' in transition.where)
+    return activity.event.payload.state === transition.where.state;
+  if (
+    activity.event.eventType === ActivityEventType.PrChecksChanged &&
+    'checks' in transition.where
+  )
+    return activity.event.payload.checks === transition.where.checks;
+  return false;
 }
 
 // Applies a transition the reactor's evidence policy already confirmed. The

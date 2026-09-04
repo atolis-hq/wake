@@ -1,16 +1,13 @@
 import {
   EventActorKind,
+  EventSourceKind,
   correlationId,
-  type Clock,
   type EventJournal,
-  type IdGenerator,
-} from '../../kernel/index.js';
-import {
-  ControlEventType,
-  createControlEventDraft,
-  selectControlEvent,
-} from '../contracts/events.js';
-import { controlPlaneStream } from '../contracts/streams.js';
+} from '@atolis-hq/eventing';
+import { type Clock, type IdGenerator } from '../../kernel/index.js';
+import { createControlPlaneEventData } from '../contracts/event-factory.js';
+import { ControlEventType, selectControlEvent } from '../contracts/events.js';
+import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
 
 export interface ControlPlaneService {
   pause(idempotencyKey: string): Promise<void>;
@@ -47,8 +44,8 @@ function isPausedIn(events: Awaited<ReturnType<EventJournal['readStream']>>): bo
   let paused = false;
   for (const envelope of events) {
     const event = selectControlEvent(envelope);
-    if (event?.eventType === ControlEventType.DispatchPaused) paused = true;
-    if (event?.eventType === ControlEventType.DispatchResumed) paused = false;
+    if (event?.event.eventType === ControlEventType.DispatchPaused) paused = true;
+    if (event?.event.eventType === ControlEventType.DispatchResumed) paused = false;
   }
   return paused;
 }
@@ -63,7 +60,11 @@ async function change(
   const eventType =
     operation === 'pause' ? ControlEventType.DispatchPaused : ControlEventType.DispatchResumed;
   const correlation = correlationId(`control:${operation}:${idempotencyKey}`);
-  if (events.some((event) => event.eventType === eventType && event.correlationId === correlation))
+  if (
+    events.some(
+      (event) => event.event.eventType === eventType && event.event.correlationId === correlation,
+    )
+  )
     return;
   const currentlyPaused = isPausedIn(events);
   if ((operation === 'pause' && currentlyPaused) || (operation === 'resume' && !currentlyPaused))
@@ -77,15 +78,25 @@ async function change(
   };
   const event =
     operation === 'pause'
-      ? createControlEventDraft(
-          ControlEventType.DispatchPaused,
-          { resumeAt: '9999-12-31T23:59:59.999Z', reason: 'paused by operator' },
-          context,
-        )
-      : createControlEventDraft(
-          ControlEventType.DispatchResumed,
-          { resumedAt: occurredAt },
-          context,
-        );
-  await input.journal.append(stream, events.length, [event]);
+      ? createControlPlaneEventData({
+          eventId: `${context.commandId}:${ControlEventType.DispatchPaused}`,
+          eventType: ControlEventType.DispatchPaused,
+          occurredAt: context.occurredAt,
+          correlationId: context.correlationId,
+          causationId: context.commandId,
+          actor: context.actor,
+          source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
+          payload: { resumeAt: '9999-12-31T23:59:59.999Z', reason: 'paused by operator' },
+        })
+      : createControlPlaneEventData({
+          eventId: `${context.commandId}:${ControlEventType.DispatchResumed}`,
+          eventType: ControlEventType.DispatchResumed,
+          occurredAt: context.occurredAt,
+          correlationId: context.correlationId,
+          causationId: context.commandId,
+          actor: context.actor,
+          source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
+          payload: { resumedAt: occurredAt },
+        });
+  await input.journal.appendToStream(stream, events.length, [event]);
 }

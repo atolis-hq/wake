@@ -106,14 +106,14 @@ defineScenario(
     const [childCompleted] = await world.events('orchestration.child-completed');
     if (childCompleted === undefined) throw new Error('Child completion was not recorded');
     const childCompletion = selectOrchestrationEvent(childCompleted);
-    if (childCompletion?.eventType !== OrchestrationEventType.ChildCompleted)
+    if (childCompletion?.event.eventType !== OrchestrationEventType.ChildCompleted)
       throw new Error('Recorded child completion was invalid');
     await world.triggerWatch(
-      childCompletion.eventType,
+      childCompletion.event.eventType,
       childId,
       {
-        ...childCompletion.payload,
-        causalCycleId: `${childCompletion.payload.causalCycleId}:reobserved`,
+        ...childCompletion.event.payload,
+        causalCycleId: `${childCompletion.event.payload.causalCycleId}:reobserved`,
       },
       childCompletion.stream,
     );

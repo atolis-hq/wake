@@ -1,14 +1,10 @@
-import {
-  cachedJournalView,
-  type CachedJournalView,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { cachedJournalView, type CachedJournalView, type EventJournal } from '@atolis-hq/eventing';
 import {
   ResourceEventType,
   decodeResourceEvent,
   selectResourceEvent,
   type ResourceEvent,
-  type ResourceEventDraft,
+  type ResourceEventData,
 } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';
 import { resourceStream } from '../contracts/streams.js';
@@ -35,9 +31,13 @@ export class ResourceRepository {
   async append(
     resourceId: ResourceId,
     expectedSequence: number,
-    drafts: readonly ResourceEventDraft[],
+    drafts: readonly ResourceEventData[],
   ): Promise<readonly ResourceEvent[]> {
-    const events = await this.journal.append(resourceStream(resourceId), expectedSequence, drafts);
+    const events = await this.journal.appendToStream(
+      resourceStream(resourceId),
+      expectedSequence,
+      drafts,
+    );
     return events.map(decodeResourceEvent);
   }
 
@@ -53,7 +53,7 @@ function deriveResourceIds(
     ...new Set(
       events
         .map(selectResourceEvent)
-        .filter((event) => event?.eventType === ResourceEventType.ResourceDiscovered)
+        .filter((event) => event?.event.eventType === ResourceEventType.ResourceDiscovered)
         .map((event) => event!.stream.id),
     ),
   ];

@@ -64,8 +64,9 @@ stream's `DispatchPaused`/`DispatchResumed` events themselves.
 
 ## Dependencies and system role
 
-- Kernel — event journal read/append on the global stream, Clock,
-  IdGenerator, and `correlationId` derivation.
+- Eventing — event journal read/append on the global stream and
+  `correlationId` derivation.
+- Kernel — Clock and IdGenerator conventions.
 - Control Plane view (related, not depended on) — folds the same
   `DispatchPaused`/`DispatchResumed` events this component appends, for
   status display; this component does not read that projection itself.

@@ -1,24 +1,38 @@
-import type { CheckpointStore, Clock, EventJournal, ProjectionStore } from '../kernel/index.js';
+import type {
+  CheckpointStore,
+  EventJournal,
+  ProcessorRunSerialiser,
+  ProcessorStateStore,
+  ProjectionStore,
+} from '@atolis-hq/eventing';
 import {
   FileCheckpointStore,
   FileEventJournal,
+  FileProcessorStateStore,
   FileProjectionStore,
-} from '../persistence/index.js';
+  createFileProcessorRunSerialiser,
+} from '@atolis-hq/eventing-filesystem';
+import { DeliveryOutcomeProcessorConsumer } from '../integrations/index.js';
+import type { Clock } from '../kernel/index.js';
 import type { WakePaths } from './paths.js';
 
 export interface PersistenceCompositionOptions {
   readonly journal?: EventJournal;
   readonly projections?: ProjectionStore;
   readonly checkpoints?: CheckpointStore;
+  readonly processorState?: ProcessorStateStore;
   readonly decorateJournal?: (journal: EventJournal) => EventJournal;
   readonly decorateProjections?: (projections: ProjectionStore) => ProjectionStore;
   readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
+  readonly subscriptionRunSerialiser?: ProcessorRunSerialiser;
 }
 
 export interface PersistenceComposition {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
+  readonly processorState: ProcessorStateStore;
+  readonly subscriptionRunSerialiser: ProcessorRunSerialiser;
 }
 
 function identity<T>(value: T): T {
@@ -28,8 +42,10 @@ function identity<T>(value: T): T {
 function serializeJournalAppends(journal: EventJournal): EventJournal {
   let appendTail: Promise<void> = Promise.resolve();
   return {
-    append(stream, expectedSequence, events) {
-      const appended = appendTail.then(() => journal.append(stream, expectedSequence, events));
+    appendToStream(stream, expectedSequence, events) {
+      const appended = appendTail.then(() =>
+        journal.appendToStream(stream, expectedSequence, events),
+      );
       appendTail = appended.then(
         () => undefined,
         () => undefined,
@@ -39,6 +55,8 @@ function serializeJournalAppends(journal: EventJournal): EventJournal {
     readStream: (stream) => journal.readStream(stream),
     readAll: (afterGlobalPosition, limit) => journal.readAll(afterGlobalPosition, limit),
     latestGlobalPosition: () => journal.latestGlobalPosition(),
+    waitForEventsAfter: (afterGlobalPosition, signal, fallbackMs) =>
+      journal.waitForEventsAfter(afterGlobalPosition, signal, fallbackMs),
     changeSignal: journal.changeSignal,
     ...(journal.readLatest === undefined
       ? {}
@@ -54,6 +72,8 @@ export function composePersistence(
   clock: Clock,
   options: PersistenceCompositionOptions,
 ): PersistenceComposition {
+  const subscriptionRunSerialiser =
+    options.subscriptionRunSerialiser ?? createFileProcessorRunSerialiser(paths.dataRoot);
   return {
     journal: serializeJournalAppends(
       (options.decorateJournal ?? identity)(
@@ -61,10 +81,15 @@ export function composePersistence(
       ),
     ),
     projections: (options.decorateProjections ?? identity)(
-      options.projections ?? new FileProjectionStore(paths.dataRoot),
+      options.projections ??
+        new FileProjectionStore(paths.dataRoot, {
+          protectedProcessorStateConsumers: [DeliveryOutcomeProcessorConsumer],
+        }),
     ),
     checkpoints: (options.decorateCheckpoints ?? identity)(
       options.checkpoints ?? new FileCheckpointStore(paths.dataRoot),
     ),
+    processorState: options.processorState ?? new FileProcessorStateStore(paths.dataRoot),
+    subscriptionRunSerialiser,
   };
 }

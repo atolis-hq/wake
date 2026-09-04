@@ -1,3 +1,4 @@
+import { createEventData } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../../src/activities/index.js';
@@ -8,7 +9,6 @@ import {
   runStream,
 } from '../../../../src/execution/index.js';
 import { applyWatchGateVerdictSignal } from '../../../../src/integrations/github/application/inbound-watch-gate-signals.js';
-import { createEventDraft } from '../../../../src/kernel/index.js';
 import { workflowName } from '../../../../src/orchestration/index.js';
 import { TestWorld } from '../../../e2e/support/world.js';
 
@@ -167,8 +167,8 @@ async function waitingWatchGate() {
 
 async function appendNonterminalChildRun(fixture: Awaited<ReturnType<typeof waitingWatchGate>>) {
   const id = runId('run-active-watch-child');
-  await fixture.world.journal.append(runStream(id), 0, [
-    createEventDraft({
+  await fixture.world.journal.appendToStream(runStream(id), 0, [
+    createEventData({
       eventId: 'execution:run-active-watch-child:started',
       eventType: ExecutionEventType.RunStarted,
       occurredAt: '2026-08-08T00:00:00.000Z',
@@ -176,7 +176,6 @@ async function appendNonterminalChildRun(fixture: Awaited<ReturnType<typeof wait
       causationId: 'test:inbound-watch-gate',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: runStream(id),
       payload: {
         activationId: 'activation-active-watch-child',
         activity: 'pr-review',
@@ -216,21 +215,27 @@ function marker(runId: string, outcome: string): string {
 
 function commentEvent(body: string) {
   return {
-    eventId: 'github:comment:1',
-    eventType: 'integration.github.comment-observed',
-    occurredAt: '2026-08-08T00:00:00.000Z',
-    correlationId: 'github:issue:1',
-    causationId: 'github:comment:1',
-    actor: { kind: 'integration', id: 'github' },
-    source: { kind: 'adapter', id: 'github' },
-    stream: { kind: 'integration', id: 'github' },
-    payload: {
-      reviewKind: 'issue',
-      externalKey: 'github:atolis-hq/wake#1',
-      body,
-      revision: '2026-08-08T00:00:00.000Z',
-      actor: { id: 'wake-bot', kind: 'bot' },
-      raw: { id: 1 },
+    event: {
+      eventId: 'github:comment:1',
+      eventType: 'integration.github.comment-observed',
+      schemaVersion: 1,
+      occurredAt: '2026-08-08T00:00:00.000Z',
+      correlationId: 'github:issue:1',
+      causationId: 'github:comment:1',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'github:atolis-hq/wake#1',
+        body,
+        revision: '2026-08-08T00:00:00.000Z',
+        actor: { id: 'wake-bot', kind: 'bot' },
+        raw: { id: 1 },
+      },
     },
+    stream: { kind: 'integration', id: 'github' },
+    recordedAt: '2026-08-08T00:00:00.000Z',
+    sequence: 1,
+    globalPosition: 1,
   } as never;
 }

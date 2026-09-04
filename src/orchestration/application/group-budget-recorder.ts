@@ -2,7 +2,7 @@ import {
   type CommandContext,
   type EventJournal,
   WrongExpectedSequenceError,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import type {
   ChildCoordinationMetadata,
@@ -34,14 +34,14 @@ export class GroupBudgetRecorder {
         events.some((event) => {
           const owned = selectOrchestrationEvent(event);
           return (
-            owned?.eventType === OrchestrationEventType.GroupBudgetExhausted &&
-            owned.payload.requestId === metadata.requestId
+            owned?.event.eventType === OrchestrationEventType.GroupBudgetExhausted &&
+            owned.event.payload.requestId === metadata.requestId
           );
         })
       )
         return;
       try {
-        await this.journal.append(stream, events.length, [
+        await this.journal.appendToStream(stream, events.length, [
           coordinationDraft(
             {
               workflowInstanceId: parent.workflowInstanceId,
@@ -50,15 +50,16 @@ export class GroupBudgetRecorder {
               correlationId: parent.orchestrationGroupId,
               causationId: context.commandId,
             },
-            OrchestrationEventType.GroupBudgetExhausted,
-            payload,
+            { eventType: OrchestrationEventType.GroupBudgetExhausted, payload },
             1,
           ),
           stateDraft(
             parent,
             { occurredAt: context.occurredAt, causationId: context.commandId },
-            OrchestrationEventType.InstanceBlocked,
-            { reason: `watch group budget exhausted for ${metadata.watchId}` },
+            {
+              eventType: OrchestrationEventType.InstanceBlocked,
+              payload: { reason: `watch group budget exhausted for ${metadata.watchId}` },
+            },
             2,
           ),
         ]);

@@ -1,8 +1,7 @@
+import { createEventData } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { PollService } from '../../../src/integrations/application/poll-service.js';
-import { integrationStream } from '../../../src/integrations/contracts/streams.js';
-import { createEventDraft } from '../../../src/kernel/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 it('commits a provider cursor only after its evidence is durable', async () => {
@@ -33,15 +32,16 @@ it('continues after a persistence failure and withholds the provider cursor', as
     readAll: delegate.readAll.bind(delegate),
     readStream: delegate.readStream.bind(delegate),
     latestGlobalPosition: delegate.latestGlobalPosition.bind(delegate),
+    waitForEventsAfter: delegate.waitForEventsAfter.bind(delegate),
     changeSignal: delegate.changeSignal,
-    async append(
-      stream: Parameters<typeof delegate.append>[0],
+    async appendToStream(
+      stream: Parameters<typeof delegate.appendToStream>[0],
       sequence: number,
-      events: Parameters<typeof delegate.append>[2],
+      events: Parameters<typeof delegate.appendToStream>[2],
     ) {
       if (events[0]?.eventId === 'github:issue:owner/repo#1:revision')
         throw new Error('disk unavailable');
-      return delegate.append(stream, sequence, events);
+      return delegate.appendToStream(stream, sequence, events);
     },
   };
   const service = new PollService(
@@ -77,7 +77,7 @@ function provider(source: {
 }
 
 function draft(eventId = 'github:issue:owner/repo#1:revision') {
-  return createEventDraft({
+  return createEventData({
     eventId,
     eventType: 'integration.github.work-observed',
     occurredAt: '2026-08-16T19:22:00.000Z',
@@ -85,7 +85,6 @@ function draft(eventId = 'github:issue:owner/repo#1:revision') {
     causationId: 'github:issue:owner/repo#1:revision',
     actor: { kind: 'integration', id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: integrationStream('github' as never),
     payload: { externalKey: 'owner/repo#1' },
   });
 }

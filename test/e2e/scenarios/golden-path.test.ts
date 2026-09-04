@@ -46,7 +46,7 @@ it(`${scenario.id} completes work through orchestration and an explicit Run`, as
     status: 'succeeded',
     outcome: { kind: 'done' },
   });
-  expect((await world.events()).map((event) => event.eventType)).toEqual([
+  expect((await world.events()).map((event) => event.event.eventType)).toEqual([
     'work.item-created',
     'orchestration.primary-claimed',
     'orchestration.workflow-definition-registered',
@@ -55,8 +55,9 @@ it(`${scenario.id} completes work through orchestration and an explicit Run`, as
     'orchestration.activity-requested',
     'orchestration.activity-started',
     ExecutionEventType.ActivationClaimed,
-    'execution.run-started',
+    ExecutionEventType.RunPreparationStarted,
     'execution.run-lease-claimed',
+    'execution.run-started',
     'execution.run-succeeded',
     ExecutionEventType.ActivationReleased,
     'orchestration.activity-outcome-accepted',

@@ -1,3 +1,4 @@
+import { correlationId, createEventData, eventId } from '@atolis-hq/eventing';
 import { expect } from 'vitest';
 import { z } from 'zod';
 import { activityName, createAgentActivity } from '../../../src/activities/index.js';
@@ -8,7 +9,6 @@ import {
   DeliveryIntentEventType,
   deliveryStream,
 } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventDraft, eventId } from '../../../src/kernel/index.js';
 import { watchId, workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import { WatchGateVerdictSignal } from '../../../src/orchestration/index.js';
 import { resourceKind, resourceStream, type ResourceId } from '../../../src/resources/index.js';
@@ -214,10 +214,14 @@ defineScenario(
     expect(implementAttempts).toBe(2);
     const requests = await world.events('orchestration.child-requested');
     expect(
-      requests.filter((event) => (event.payload as { watchId: string }).watchId === 'plan-review'),
+      requests.filter(
+        (event) => (event.event.payload as { watchId: string }).watchId === 'plan-review',
+      ),
     ).toHaveLength(1);
     expect(
-      requests.filter((event) => (event.payload as { watchId: string }).watchId === 'pr-review'),
+      requests.filter(
+        (event) => (event.event.payload as { watchId: string }).watchId === 'pr-review',
+      ),
     ).toHaveLength(2);
     expect((await world.viewWorkflow(parent.workflowInstanceId))?.status).toBe('completed');
   },
@@ -229,7 +233,7 @@ async function appendConfirmedAgentRunComment(
   displayBody: string,
 ): Promise<void> {
   const intentId = 'agent-run-publish-rejection';
-  const intent = createEventDraft({
+  const intent = createEventData({
     eventId: intentId,
     eventType: DeliveryIntentEventType.AgentRunPublishRequested,
     occurredAt: world.clock.now().toISOString(),
@@ -237,7 +241,6 @@ async function appendConfirmedAgentRunComment(
     causationId: intentId,
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: resourceStream(resourceId),
     payload: {
       workflowInstanceId: 'workflow-1',
       activationId: 'activation-1',
@@ -253,13 +256,13 @@ async function appendConfirmedAgentRunComment(
     },
   });
   const stream = resourceStream(resourceId);
-  const [published] = await world.journal.append(
+  const [published] = await world.journal.appendToStream(
     stream,
     (await world.journal.readStream(stream)).length,
     [intent],
   );
   if (published === undefined) throw new Error('Expected agent-run publication intent');
-  const confirmation = createEventDraft({
+  const confirmation = createEventData({
     eventId: `${intentId}-confirmed`,
     eventType: DeliveryEventType.Confirmed,
     occurredAt: world.clock.now().toISOString(),
@@ -267,7 +270,6 @@ async function appendConfirmedAgentRunComment(
     causationId: intentId,
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: deliveryStream(eventId(intentId)),
     payload: {
       intentEventId: eventId(intentId),
       intentGlobalPosition: published.globalPosition,
@@ -277,5 +279,5 @@ async function appendConfirmedAgentRunComment(
       externalId: 'github-comment-rejection',
     },
   });
-  await world.journal.append(confirmation.stream, 0, [confirmation]);
+  await world.journal.appendToStream(deliveryStream(eventId(intentId)), 0, [confirmation]);
 }

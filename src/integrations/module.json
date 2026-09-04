@@ -3,6 +3,7 @@
   "kind": "adapter",
   "dependencies": [
     "kernel",
+    "eventing",
     "work",
     "resources",
     "activities",

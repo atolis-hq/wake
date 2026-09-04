@@ -1,13 +1,9 @@
+import { cachedJournalView, type CachedJournalView, type EventJournal } from '@atolis-hq/eventing';
 import type { ActivationId } from '../../activities/index.js';
-import {
-  cachedJournalView,
-  type CachedJournalView,
-  type EventJournal,
-} from '../../kernel/index.js';
 import {
   decodeRunExecutionEvent,
   type RunExecutionEvent,
-  type RunExecutionEventDraft,
+  type RunExecutionEventData,
 } from '../contracts/events.js';
 import { runId, type RunId } from '../contracts/identifiers.js';
 import { isRunStream, runStream } from '../contracts/streams.js';
@@ -36,9 +32,9 @@ export class RunRepository {
   async append(
     runId: RunId,
     sequence: number,
-    drafts: readonly RunExecutionEventDraft[],
+    drafts: readonly RunExecutionEventData[],
   ): Promise<readonly RunExecutionEvent[]> {
-    const events = await this.journal.append(runStream(runId), sequence, drafts);
+    const events = await this.journal.appendToStream(runStream(runId), sequence, drafts);
     return events.map(decodeRunExecutionEvent);
   }
 

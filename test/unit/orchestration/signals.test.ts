@@ -1,3 +1,5 @@
+import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -5,7 +7,6 @@ import {
   ActivityOutcomeKind,
   ActivityRegistry,
 } from '../../../src/activities/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   signalName,
@@ -25,7 +26,6 @@ import {
   WatchGateVerdictSignal,
   WorkflowStatus,
 } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {} from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
@@ -271,11 +271,11 @@ it('restarts the current refine stage when an approval is rejected', async () =>
   );
 
   const events = (await journal.readAll(0)).slice(before);
-  expect(events.map((event) => event.eventType)).toEqual([
+  expect(events.map((event) => event.event.eventType)).toEqual([
     OrchestrationEventType.SignalAccepted,
     OrchestrationEventType.ActivityRequested,
   ]);
-  expect(events.at(-1)?.payload).toMatchObject({ activity: 'refine' });
+  expect(events.at(-1)?.event.payload).toMatchObject({ activity: 'refine' });
 });
 
 it('honors an explicit rejection resume target', async () => {
@@ -301,12 +301,12 @@ it('honors an explicit rejection resume target', async () => {
   );
 
   const events = (await journal.readAll(0)).slice(before);
-  expect(events.map((event) => event.eventType)).toEqual([
+  expect(events.map((event) => event.event.eventType)).toEqual([
     OrchestrationEventType.SignalAccepted,
     OrchestrationEventType.StageEntered,
     OrchestrationEventType.ActivityRequested,
   ]);
-  expect(events.at(-1)?.payload).toMatchObject({ activity: 'refine' });
+  expect(events.at(-1)?.event.payload).toMatchObject({ activity: 'refine' });
 });
 
 it('lets an explicitly human-authorized signal resolve a retained blocked wait', async () => {
@@ -337,7 +337,7 @@ it('lets an explicitly human-authorized signal resolve a retained blocked wait',
     acceptedSignalIds: ['github-comment-approved'],
     pendingActivation: { activity: activityName('implement') },
   });
-  expect((await journal.readAll(0)).slice(before).map((event) => event.eventType)).toEqual([
+  expect((await journal.readAll(0)).slice(before).map((event) => event.event.eventType)).toEqual([
     OrchestrationEventType.SignalAccepted,
     OrchestrationEventType.StageEntered,
     OrchestrationEventType.ActivityRequested,
@@ -404,9 +404,9 @@ it('blocks distinct workflow instances under one command without reusing an even
   });
 
   const blocked = (await journal.readAll(0)).filter(
-    (event) => event.eventType === OrchestrationEventType.InstanceBlocked,
+    (event) => event.event.eventType === OrchestrationEventType.InstanceBlocked,
   );
-  expect(blocked.map((event) => event.eventId)).toEqual([
+  expect(blocked.map((event) => event.event.eventId)).toEqual([
     'conclude-work:block-1:orchestration.instance-blocked',
     'conclude-work:block-2:orchestration.instance-blocked',
   ]);

@@ -1,16 +1,16 @@
+import { createEventData } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import { RunRepository } from '../../../src/execution/application/run-repository.js';
 import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
-import { createEventDraft } from '../../../src/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 async function seedRun(journal: InMemoryEventJournal, id: string, activation: string) {
   const stream = runStream(runId(id));
-  await journal.append(stream, 0, [
-    createEventDraft({
+  await journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: '2026-07-30T12:00:00Z',
@@ -18,7 +18,6 @@ async function seedRun(journal: InMemoryEventJournal, id: string, activation: st
       causationId: id,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId: activationId(activation),
         activity: activityName('implement'),

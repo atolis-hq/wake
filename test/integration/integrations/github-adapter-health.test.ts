@@ -1,7 +1,7 @@
+import { InMemoryEventJournal, InMemoryProjectionStore } from '@atolis-hq/eventing/memory';
 import { describe, expect, it, vi } from 'vitest';
 import { DeliveryIntentKind } from '../../../src/integrations/delivery/contracts/vocabulary.js';
 import { gitHubProviderDefinition } from '../../../src/integrations/github/provider.js';
-import { InMemoryEventJournal, InMemoryProjectionStore } from '../../../src/persistence/index.js';
 import {
   BuiltInResourceKind,
   createResourceLookup,

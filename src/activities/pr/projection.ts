@@ -1,6 +1,11 @@
-import type { ProjectionDefinition } from '../../kernel/index.js';
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { isResourceStream } from '../../resources/index.js';
-import { ActivityEventType, selectActivityEvent, type ActivityEvent } from '../contracts/events.js';
+import {
+  ActivityEventType,
+  selectActivityEvent,
+  type ActivityEvent,
+  type ActivityEventData,
+} from '../contracts/events.js';
 import type { AcceptedReviewSignalView, PullRequestView } from './contracts.js';
 
 export const pullRequestProjection: ProjectionDefinition<PullRequestView | null> = {
@@ -13,7 +18,7 @@ export const pullRequestProjection: ProjectionDefinition<PullRequestView | null>
   project(previous, event) {
     const owned = selectActivityEvent(event);
     if (owned === null || !isResourceStream(owned.stream)) return previous;
-    return projectPullRequest(previous, owned);
+    return projectPullRequest(previous, owned.event, owned.stream.id);
   },
 };
 
@@ -56,41 +61,40 @@ function clearRevisionEvidence(view: PullRequestView): PullRequestView {
 
 function projectPullRequest(
   previous: PullRequestView | null,
-  event: ActivityEvent,
+  data: ActivityEventData,
+  resourceId: PullRequestView['resourceId'],
 ): PullRequestView | null {
-  switch (event.eventType) {
+  switch (data.eventType) {
     case ActivityEventType.PrDiscovered:
-      return { resourceId: event.stream.id, ...event.payload };
+      return { resourceId, ...data.payload };
     case ActivityEventType.PrRevisionChanged:
-      return previous === null
-        ? previous
-        : { ...clearRevisionEvidence(previous), ...event.payload };
+      return previous === null ? previous : { ...clearRevisionEvidence(previous), ...data.payload };
     case ActivityEventType.PrStateChanged:
-      return previous === null ? previous : { ...previous, state: event.payload.state };
+      return previous === null ? previous : { ...previous, state: data.payload.state };
     case ActivityEventType.PrChecksChanged:
-      return previous === null ? previous : { ...previous, checks: event.payload.checks };
+      return previous === null ? previous : { ...previous, checks: data.payload.checks };
     case ActivityEventType.PrReviewAccepted:
       return previous === null
         ? previous
         : {
             ...previous,
             acceptedReview: {
-              revision: event.payload.revision,
-              actorId: event.payload.actorId,
-              acceptedEventId: event.eventId,
+              revision: data.payload.revision,
+              actorId: data.payload.actorId,
+              acceptedEventId: data.eventId,
             },
           };
     case ActivityEventType.PrReviewChangesRequested:
       return previous === null ? previous : clearReview(previous);
     default:
-      return ignorePullRequestEvent(previous, event);
+      return ignorePullRequestEvent(previous, data);
   }
 }
 
 function ignorePullRequestEvent(
   previous: PullRequestView | null,
   event: Exclude<
-    ActivityEvent,
+    ActivityEventData,
     {
       readonly eventType:
         | typeof ActivityEventType.PrDiscovered
@@ -123,9 +127,11 @@ function projectAcceptedReviewSignal(
   previous: readonly AcceptedReviewSignalView[],
   event: ActivityEvent,
 ): readonly AcceptedReviewSignalView[] {
-  switch (event.eventType) {
+  if (!isResourceStream(event.stream)) return previous;
+  const data = event.event;
+  switch (data.eventType) {
     case ActivityEventType.ReviewAcceptanceSignalRecorded: {
-      const signal = { resourceId: event.stream.id, ...event.payload };
+      const signal = { resourceId: event.stream.id, ...data.payload };
       return previous.some((candidate) => candidate.acceptedEventId === signal.acceptedEventId)
         ? previous
         : [...previous, signal];
@@ -136,14 +142,14 @@ function projectAcceptedReviewSignal(
     case ActivityEventType.PrMergeDecisionClaimed:
       return previous;
     default:
-      return ignoreAcceptedSignalFact(previous, event);
+      return ignoreAcceptedSignalFact(previous, data);
   }
 }
 
 function ignoreAcceptedSignalFact(
   previous: readonly AcceptedReviewSignalView[],
   event: Exclude<
-    ActivityEvent,
+    ActivityEventData,
     {
       readonly eventType:
         | typeof ActivityEventType.ReviewAcceptanceSignalRecorded

@@ -1,5 +1,5 @@
 ---
-asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
+asOf: 2fd4c4f2149f50cc802266489b7686b4ef8be8dd
 ---
 
 # Execution — Module Specification
@@ -18,7 +18,7 @@ returns a transport-level result: it does not decide what to run next.
 Execution owns:
 
 - Minting and running a `Run`: a single numbered attempt at one Activation,
-  from its `RunStarted` fact through to a terminal transport status.
+  from its `RunPreparationStarted` fact through to a terminal transport status.
 - The lease and cancellation protocol that keeps a Run's ownership current
   and lets an operator or a cascading Work cancellation stop it.
 - Resolving a runner from a configured runner pool and invoking it, bounded
@@ -44,6 +44,13 @@ Execution does not own:
   Execution only receives resource views and a `WorkItemId` already minted
   by Work.
 
+## Event publishing boundary
+
+Execution owns its event types, payload map, run and activation stream
+references, selectors/decoders, and `createExecutionEventData` factory. It
+creates immutable event data and appends non-empty batches with expected
+sequence; it does not construct envelope metadata or a processor host.
+
 ## Ubiquitous language
 
 - **Run** — a single, numbered attempt at one Activation, identified by a
@@ -52,8 +59,8 @@ Execution does not own:
 - **Attempt** — the 1-based ordinal of a Run among all Runs recorded for the
   same Activation. A new attempt is only created when no completed,
   ambiguous, or currently-leased Run already exists for that Activation.
-- **Transport status** — `started` / `succeeded` / `failed` / `cancelled` /
-  `ambiguous`: what happened to the attempt at the execution-mechanics
+- **Transport status** — `starting` / `started` / `succeeded` / `failed` /
+  `cancelled` / `ambiguous`: what happened to the attempt at the execution-mechanics
   level. This is distinct from an Activity's own outcome (done, blocked,
   rejected, failed), which is opaque data Execution carries but does not
   interpret.
@@ -118,6 +125,10 @@ Execution does not own:
 - A further attempt at an Activation whose most recent Run is `started` and
   currently held under an unexpired lease owned by a different owner MUST
   be rejected.
+- A `starting` Run has the same active, capacity-consuming, cancellation,
+  quiescence, and lease semantics as a `started` Run. A recovery pass whose
+  lease finds a `starting` Run expired records its failure without inspecting
+  an external execution, because no runner has started yet.
 - A failure while releasing an acquired workspace after an attempt has
   already concluded MUST NOT alter the Run's already-recorded terminal
   outcome; it MUST be recorded as a `RunWorkspaceCleanupFailed` diagnostic
@@ -125,10 +136,11 @@ Execution does not own:
 - Before a Git workspace is cloned, its adapter MUST persist a managed
   ownership marker containing the Run ID, WorkItem ID, repository Resource
   ID, workspace mode, workspace ID, and absolute path. This bridges the
-  crash window before `execution.run-started` becomes durable.
+  crash window before a workspace is acquired; the Run is already durable as
+  `starting` during that work.
 - During the existing pre-dispatch recovery pass, a workspace adapter may
   reclaim only a valid marker-owned path below its managed workspace root
-  when its owner Run is terminal or absent (never started). Started and
+  when its owner Run is terminal or absent. Starting, Started, and
   ambiguous owners, unmarked directories, malformed markers, and paths that
   are outside or resolve outside that root MUST be retained for inspection.
 - Workspace crash recovery is pause-aware: the existing dispatch pause stops
@@ -151,7 +163,8 @@ Execution does not own:
 
 | Event | Occurs when | Business meaning |
 | --- | --- | --- |
-| `execution.run-started` | A new attempt begins | A fresh Run now exists for this Activation, at this attempt number, optionally bound to a runner and workspace. |
+| `execution.run-preparation-started` | A new attempt begins | A fresh Run now exists in `starting` status, with its whole-attempt start time and selected runner identity, before workspace preparation. |
+| `execution.run-started` | Workspace preparation completes and runner invocation begins | The same Run crosses to `started`, records `executionStartedAt`, and may add its acquired workspace reference. |
 | `execution.run-succeeded` | The Activity handler returns without throwing | The attempt finished; its Activity outcome is now attached to the Run. |
 | `execution.run-failed` | The attempt throws, or recovery cannot establish a successful outcome | The attempt did not complete; an `ExecutionFailure` describes why. |
 | `execution.run-lease-claimed` | An owner first claims a Run | That owner is now responsible for driving this Run to completion. |
@@ -180,9 +193,11 @@ Execution does not own:
 | `workflowInstanceId` | Workflow instance identity (owned by Orchestration) | Correlates the Run back to its workflow, opaque to Execution. |
 | `orchestrationGroupId` | Orchestration group identity (owned by Orchestration) | Correlation id used on every event this Run produces. |
 | `attempt` | positive integer | This Run's 1-based ordinal among Runs for the same Activation. |
-| `status` | closed vocabulary: `started` / `succeeded` / `failed` / `cancelled` / `ambiguous` | Transport status; terminal once anything but `started`. |
-| `startedAt` | timestamp | When this attempt began. |
+| `status` | closed vocabulary: `starting` / `started` / `succeeded` / `failed` / `cancelled` / `ambiguous` | Transport status; terminal once it is neither `starting` nor `started`. |
+| `startedAt` | timestamp | When this whole attempt, including workspace preparation, began. |
+| `executionStartedAt` | timestamp, optional | When the runner invocation began; absent while `starting` and on a preparation failure. |
 | `finishedAt` | timestamp | Set once the Run reaches a terminal status. |
+| `duration` | derived milliseconds | `finishedAt - startedAt`, so it covers workspace preparation and execution end to end. |
 | `runner` | Runner descriptor | Which runner (and model/effort/pool/cli) this Run is bound to, if the Activity is agent-kind. |
 | `workspace` | Workspace reference | The acquired workspace's mode and path, if one was requested. |
 | `outcome` | Activity outcome (owned by Activities) | Carried opaquely on `succeeded`; Execution does not interpret it. |
@@ -232,7 +247,7 @@ Execution does not own:
 | `resources` | list of Resource view | Resources available to validate the Activity's requirements against and to acquire a workspace from. |
 | `owner` | string, optional | Lease owner identity for this attempt; defaults to `"execution"`. |
 | `ineligibleRunners` | set of string, optional | Runner names currently quota-paused, supplied by Control-plane. |
-| `awaitImmediateCompletion` | boolean, optional | Makes a deterministic attempt wait for its detached completion before returning. |
+| `awaitImmediateCompletion` | boolean, optional | Gives a deterministic attempt one event-loop turn to observe immediate completion before returning; agent- and script-kind attempts always return after durable preparation. |
 
 ## Child components and interactions
 
@@ -243,7 +258,7 @@ Execution does not own:
 | [Activation claim](application/activation-claim.spec.md) | aggregate | The single-flight claim on the activation-claim stream | Blocks a second concurrent attempt at the same Activation; released when the claiming Run finishes. |
 | [Run liveness and cancellation](application/run-liveness-service.spec.md) | policy/process | Lease claim/renewal and the cancellation request/confirm protocol | Keeps a Run's ownership current and lets an operator, Control-plane, or shutdown stop an active Run. |
 | [Recovery](application/recovery-service.spec.md) | policy/process | Reconciling an expired-lease Run with its real external execution | Runs before new work is dispatched so a crashed owner's Runs are resolved before they are touched again. |
-| [Execution service](application/execution-service.spec.md) | surface application | The `attempt`/`list`/`claim`/cancellation entry points; runner resolution, resource validation, workspace acquisition, and activation-claim orchestration around one attempt | The only path by which Orchestration or Control-plane reaches Execution's behaviour. |
+| [Execution service](application/execution-service.spec.md) | surface application | The `attempt`/`list`/`claim`/cancellation/`shutdown` entry points; runner resolution, resource validation, workspace acquisition, local-execution ownership, and activation-claim orchestration around one attempt | The only path by which Orchestration or Control-plane reaches Execution's behaviour. |
 | [Runner adapters](infrastructure/runners/runners.spec.md) | adapter | Translating a `RunnerRequest` into an invoked CLI/process/fake and back into an `AgentRunnerResult` | Invoked by the Execution service once per attempt of an agent-kind Activity; enforces the wall-clock timeout. |
 | [Agent run response translation](infrastructure/agent-runner-adapter.spec.md) | adapter | Parsing an agent-kind runner's raw `AgentRunnerResult` output into the structured `AgentRunResponse` attached to `RunRunnerResultReported` | Invoked by the Execution service immediately before recording a runner's result onto the Run; downstream consumers (for example the API surface and Integrations) read `RunView.agent` rather than re-parsing raw output themselves. |
 | [Workspace adapters](infrastructure/workspace/workspace.spec.md) | adapter | Preparing and releasing an isolated working directory for a Run | Invoked by the Execution service when a workspace mode other than `none` is requested. |
@@ -251,9 +266,10 @@ Execution does not own:
 
 ## Dependencies and system role
 
-- Kernel — event journal, envelope, projection registration, closed
-  vocabulary and branded-identity helpers, and command context conventions;
-  Execution's foundation for reading and appending its own streams.
+- Eventing — public event journal, envelope, processor, and command-context
+  contracts; Execution uses it to read and append its own streams without
+  constructing a host or filesystem adapter.
+- Kernel — closed-vocabulary and branded-identity helpers.
 - Activities (Execution depends on) — the `ActivityRegistry` that validates
   an Activation's input and resources and executes its handler; Execution
   supplies that handler an `ActivityExecutionContext` bound to a resolved

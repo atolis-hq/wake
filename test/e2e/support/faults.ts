@@ -29,17 +29,18 @@ export interface DeliveryEvidence {
 
 export function faultInjectingJournal(journal: EventJournal, faults: FaultInjector): EventJournal {
   return {
-    async append(stream, expectedSequence, events) {
-      faults.check('journal.append.before');
+    async appendToStream(stream, expectedSequence, events) {
+      faults.check('journal.appendToStream.before');
       checkEventFaults(faults, events, 'before');
-      const appended = await journal.append(stream, expectedSequence, events);
+      const appended = await journal.appendToStream(stream, expectedSequence, events);
       checkEventFaults(faults, events, 'after');
-      faults.check('journal.append.after');
+      faults.check('journal.appendToStream.after');
       return appended;
     },
     readStream: journal.readStream.bind(journal),
     readAll: journal.readAll.bind(journal),
     latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
+    waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
     changeSignal: journal.changeSignal,
     ...(journal.readLatest === undefined ? {} : { readLatest: journal.readLatest.bind(journal) }),
   };
@@ -141,6 +142,6 @@ export function faultInjectingDeliveryAdapter(
     },
   };
 }
+import type { CheckpointStore, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
 import type { ScheduleCheckpointStore } from '../../../src/control-plane/index.js';
 import type { ExternalDeliveryAdapter } from '../../../src/integrations/index.js';
-import type { CheckpointStore, EventJournal, ProjectionStore } from '../../../src/kernel/index.js';

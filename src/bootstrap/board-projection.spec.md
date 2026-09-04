@@ -58,12 +58,18 @@ API surface application's board and status applications do that).
   the wait's signal kind is an approval-awaiting kind; `SignalAccepted`
   MUST clear it. A workflow block following a failed or ambiguous terminal
   run MUST retain condition `error`; other workflow blocks use `needs-input`.
-- `RunStarted` MUST increment `runCount`, record its `activeRuns` entry keyed
-  by Run ID (action, optional runner name, start time), and `lastRunAt`; for a primary-instance
+- `RunPreparationStarted` MUST increment `runCount`, record its `activeRuns`
+  entry keyed by Run ID (action, optional runner name, whole-attempt start
+  time, phase `starting`), and `lastRunAt`; for a primary-instance
   run only, it MUST also set condition `active` and clear
   `awaitingApproval`. A run started under a child instance MUST leave the
   card's condition and `awaitingApproval` untouched — the primary is still
   genuinely waiting on that child.
+- The later `RunStarted` for that Run ID MUST retain the same active entry and
+  change only its machine phase to `started`; it MUST NOT increment `runCount` or
+  create a second card entry. Historical streams whose first event is
+  `RunStarted` remain visible directly as `started` entries. Surfaces render a
+  `started` active run as “Running”.
 - A terminal run event (`RunSucceeded`, `RunFailed`, `RunCancelled`,
   `RunAmbiguous`) MUST remove only its own `activeRuns` entry, accumulate its duration into
   `totalDurationMs`, and record `lastRunOutcome`. For `RunSucceeded`
@@ -85,7 +91,7 @@ This component reacts to Work's `ItemCreated`, `ObjectiveRevised`,
 `ItemClosed`, `ItemCancelled`, and `ItemDeleted`; Orchestration's
 `InstanceStarted`, `StageEntered`, and every status-changing event (via the
 shared transition table, including `SignalWaitStarted`/`SignalAccepted`);
-and Execution's `RunStarted`, `RunSucceeded`, `RunFailed`, `RunCancelled`,
+and Execution's `RunPreparationStarted`, `RunStarted`, `RunSucceeded`, `RunFailed`, `RunCancelled`,
 `RunAmbiguous`, and `RunRunnerResultReported`. It emits no events of its
 own.
 
@@ -102,7 +108,7 @@ own.
 | `workflowName` / `stage` | string, optional | The primary instance's workflow and current stage. |
 | `dwellSince` | timestamp | When the card entered its current stage (or was created, before any stage). |
 | `runCount` | number | Total runs started under this WorkItem's workflow instances, including child instances. |
-| `activeRuns` | object, keyed by Run ID | Every in-flight run's action label, optional runner name, and start time; empty when nothing is running. |
+| `activeRuns` | object, keyed by Run ID | Every in-flight Run's action label, optional runner name, whole-attempt start time, and machine phase `starting` or `started`; empty when nothing is active. Surfaces present `started` as “Running”. |
 | `lastRunAt` / `lastRunOutcome` | timestamp / string, optional | The most recently started run's start time, and the most recently finished run's outcome. |
 | `totalTokens` / `totalCostUsd` / `totalDurationMs` | number | Cumulative totals across every run recorded for this WorkItem. |
 

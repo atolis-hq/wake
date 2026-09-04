@@ -1,9 +1,9 @@
+import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { ControlEventType, createRunnerControlService } from '../../../src/control-plane/index.js';
-import { FileEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 
 it('deduplicates an unpause after a filesystem-backed service restart', async () => {
@@ -27,7 +27,7 @@ it('deduplicates an unpause after a filesystem-backed service restart', async ()
   });
   await restarted.unpause('sonnet', 'operator-43');
 
-  expect((await reopened.readAll(0)).map((event) => event.eventType)).toEqual([
+  expect((await reopened.readAll(0)).map((event) => event.event.eventType)).toEqual([
     ControlEventType.RunnerPaused,
     ControlEventType.RunnerResumed,
   ]);

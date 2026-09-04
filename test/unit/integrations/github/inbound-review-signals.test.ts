@@ -1,3 +1,4 @@
+import { causationId, correlationId, eventId } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -11,10 +12,9 @@ import { recognizedCommand } from '../../../../src/integrations/github/applicati
 import { applyReviewSignal } from '../../../../src/integrations/github/application/inbound-review-signals.js';
 import {
   GitHubEventType,
-  type GitHubAdapterEvent,
+  type GitHubAdapterEventOf,
 } from '../../../../src/integrations/github/contracts/events.js';
 import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
-import { correlationId } from '../../../../src/kernel/index.js';
 import {
   OperatorRetryIneligibleError,
   signalName,
@@ -53,9 +53,12 @@ it('fails closed for an unauthorized /extend comment', async () => {
   await applyReviewSignal({
     event: {
       ...issueCommentEvent('/extend'),
-      payload: {
-        ...issueCommentEvent('/extend').payload,
-        authorization: { source: ReviewerAuthorizationSource.None },
+      event: {
+        ...issueCommentEvent('/extend').event,
+        payload: {
+          ...issueCommentEvent('/extend').event.payload,
+          authorization: { source: ReviewerAuthorizationSource.None },
+        },
       },
     },
     journal: {} as never,
@@ -107,11 +110,14 @@ it('retries an open primary workflow only for a provider-authorized /retry comme
   await applyReviewSignal({
     event: {
       ...event,
-      payload: {
-        ...event.payload,
-        authorization: {
-          source: ReviewerAuthorizationSource.ProviderPermission,
-          permission: ProviderPermission.Write,
+      event: {
+        ...event.event,
+        payload: {
+          ...event.event.payload,
+          authorization: {
+            source: ReviewerAuthorizationSource.ProviderPermission,
+            permission: ProviderPermission.Write,
+          },
         },
       },
     } as never,
@@ -175,11 +181,14 @@ it('restarts an open primary workflow in a fresh session for an authorized /rest
   await applyReviewSignal({
     event: {
       ...event,
-      payload: {
-        ...event.payload,
-        authorization: {
-          source: ReviewerAuthorizationSource.ProviderPermission,
-          permission: ProviderPermission.Write,
+      event: {
+        ...event.event,
+        payload: {
+          ...event.event.payload,
+          authorization: {
+            source: ReviewerAuthorizationSource.ProviderPermission,
+            permission: ProviderPermission.Write,
+          },
         },
       },
     } as never,
@@ -241,11 +250,14 @@ it('retries the eligible child for the exact waiting watch on an authorized /ret
   await applyReviewSignal({
     event: {
       ...issueCommentEvent('/retry'),
-      payload: {
-        ...issueCommentEvent('/retry').payload,
-        authorization: {
-          source: ReviewerAuthorizationSource.ProviderPermission,
-          permission: ProviderPermission.Write,
+      event: {
+        ...issueCommentEvent('/retry').event,
+        payload: {
+          ...issueCommentEvent('/retry').event.payload,
+          authorization: {
+            source: ReviewerAuthorizationSource.ProviderPermission,
+            permission: ProviderPermission.Write,
+          },
         },
       },
     } as never,
@@ -318,11 +330,14 @@ it('ignores an ineligible authorized /retry command', async () => {
     applyReviewSignal({
       event: {
         ...issueCommentEvent('/retry'),
-        payload: {
-          ...issueCommentEvent('/retry').payload,
-          authorization: {
-            source: ReviewerAuthorizationSource.ProviderPermission,
-            permission: ProviderPermission.Write,
+        event: {
+          ...issueCommentEvent('/retry').event,
+          payload: {
+            ...issueCommentEvent('/retry').event.payload,
+            authorization: {
+              source: ReviewerAuthorizationSource.ProviderPermission,
+              permission: ProviderPermission.Write,
+            },
           },
         },
       } as never,
@@ -746,27 +761,31 @@ async function issueCommentSignals(body: string): Promise<unknown[]> {
 
 function issueCommentEvent(
   body: string,
-): Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.CommentObserved }> {
+): GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved> {
   return {
-    eventId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z',
-    eventType: GitHubEventType.CommentObserved,
-    occurredAt: '2026-08-08T00:00:00Z',
-    correlationId: 'github:atolis-hq/wake-test#7',
-    causationId: 'github:issue-comment:99',
-    actor: { kind: 'integration', id: 'github' },
-    source: { kind: 'adapter', id: GitHubAdapter },
-    stream: { kind: 'integration', id: GitHubAdapter },
-    payload: {
-      reviewKind: 'issue',
-      externalKey: 'atolis-hq/wake-test#7',
-      body,
-      revision: '2026-08-08T00:00:00Z',
-      actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
-      raw: { id: 99 },
+    event: {
+      eventId: eventId('github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z'),
+      eventType: GitHubEventType.CommentObserved,
+      schemaVersion: 1,
+      occurredAt: '2026-08-08T00:00:00Z',
+      correlationId: correlationId('github:atolis-hq/wake-test#7'),
+      causationId: causationId('github:issue-comment:99'),
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: GitHubAdapter },
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake-test#7',
+        body,
+        revision: '2026-08-08T00:00:00Z',
+        actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
+        raw: { id: 99 },
+      },
     },
+    stream: { kind: 'integration', id: GitHubAdapter },
+    recordedAt: '2026-08-08T00:00:00Z',
+    sequence: 1,
     globalPosition: 0,
-    ingestedAt: '2026-08-08T00:00:00Z',
-  } as never;
+  };
 }
 
 async function waitingIssueWorkflow(
@@ -941,24 +960,28 @@ async function applyHumanIssueCommand(
 ): Promise<void> {
   await applyReviewSignal({
     event: {
-      eventId: `github:issue-comment:atolis-hq/wake-test#7:99:${body}`,
-      eventType: GitHubEventType.CommentObserved,
-      occurredAt: fixture.world.clock.now().toISOString(),
-      correlationId: 'github:atolis-hq/wake-test#7',
-      causationId: 'github:issue-comment:99',
-      actor: { kind: 'integration', id: 'github' },
-      source: { kind: 'adapter', id: GitHubAdapter },
-      stream: { kind: 'integration', id: GitHubAdapter },
-      payload: {
-        reviewKind: 'issue',
-        externalKey: 'atolis-hq/wake-test#7',
-        body,
-        revision: fixture.world.clock.now().toISOString(),
-        actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
-        raw: { id: 99 },
+      event: {
+        eventId: `github:issue-comment:atolis-hq/wake-test#7:99:${body}`,
+        eventType: GitHubEventType.CommentObserved,
+        schemaVersion: 1,
+        occurredAt: fixture.world.clock.now().toISOString(),
+        correlationId: 'github:atolis-hq/wake-test#7',
+        causationId: 'github:issue-comment:99',
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: GitHubAdapter },
+        payload: {
+          reviewKind: 'issue',
+          externalKey: 'atolis-hq/wake-test#7',
+          body,
+          revision: fixture.world.clock.now().toISOString(),
+          actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
+          raw: { id: 99 },
+        },
       },
-      globalPosition: 0,
-      ingestedAt: fixture.world.clock.now().toISOString(),
+      stream: { kind: 'integration', id: GitHubAdapter },
+      recordedAt: fixture.world.clock.now().toISOString(),
+      sequence: 1,
+      globalPosition: 1,
     } as never,
     journal: fixture.world.journal,
     resources: fixture.world.resources,
@@ -977,24 +1000,28 @@ async function applyHumanPrComment(
 ): Promise<void> {
   await applyReviewSignal({
     event: {
-      eventId: `github:pr-comment:atolis-hq/wake-test#8:${body}`,
-      eventType: GitHubEventType.CommentObserved,
-      occurredAt: fixture.world.clock.now().toISOString(),
-      correlationId: 'github:atolis-hq/wake-test#8',
-      causationId: 'github:pr-comment:101',
-      actor: { kind: 'integration', id: 'github' },
-      source: { kind: 'adapter', id: GitHubAdapter },
-      stream: { kind: 'integration', id: GitHubAdapter },
-      payload: {
-        reviewKind: 'issue',
-        externalKey: 'atolis-hq/wake-test#8',
-        body,
-        revision: fixture.world.clock.now().toISOString(),
-        actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
-        raw: { id: 101 },
+      event: {
+        eventId: `github:pr-comment:atolis-hq/wake-test#8:${body}`,
+        eventType: GitHubEventType.CommentObserved,
+        schemaVersion: 1,
+        occurredAt: fixture.world.clock.now().toISOString(),
+        correlationId: 'github:atolis-hq/wake-test#8',
+        causationId: 'github:pr-comment:101',
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: GitHubAdapter },
+        payload: {
+          reviewKind: 'issue',
+          externalKey: 'atolis-hq/wake-test#8',
+          body,
+          revision: fixture.world.clock.now().toISOString(),
+          actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
+          raw: { id: 101 },
+        },
       },
-      globalPosition: 0,
-      ingestedAt: fixture.world.clock.now().toISOString(),
+      stream: { kind: 'integration', id: GitHubAdapter },
+      recordedAt: fixture.world.clock.now().toISOString(),
+      sequence: 1,
+      globalPosition: 1,
     } as never,
     journal: fixture.world.journal,
     resources: fixture.world.resources,
@@ -1009,5 +1036,5 @@ async function applyHumanPrComment(
 
 async function acceptedSignal(fixture: Awaited<ReturnType<typeof waitingIssueWorkflow>>) {
   const event = (await fixture.world.events('orchestration.signal-accepted')).at(-1);
-  return event?.payload;
+  return event?.event.payload;
 }

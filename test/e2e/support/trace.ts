@@ -1,12 +1,12 @@
-import type { EventEnvelope } from '../../../src/kernel/index.js';
+import type { EventEnvelope } from '@atolis-hq/eventing';
 
 export function formatTrace(events: readonly EventEnvelope[]): string {
   return events
     .map(
       (event) =>
-        `${event.globalPosition} ${event.eventType} ` +
+        `${event.globalPosition} ${event.event.eventType} ` +
         `stream=${event.stream.kind}:${event.stream.id} ` +
-        `cause=${event.causationId} payload=${JSON.stringify(event.payload)}`,
+        `cause=${event.event.causationId} payload=${JSON.stringify(event.event.payload)}`,
     )
     .join('\n');
 }

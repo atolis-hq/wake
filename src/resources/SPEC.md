@@ -1,5 +1,5 @@
 ---
-asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
+asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ---
 
 # Resources — Module Specification
@@ -39,6 +39,13 @@ Resources does not own:
   Other modules read Resource state to make those decisions; Resources does
   not make them.
 
+## Event publishing boundary
+
+Resources owns its event types, payload map, resource stream references,
+selector/decoder, and `createResourceEventData` factory. It creates immutable
+event data and appends non-empty expected-sequence batches; it does not
+construct envelope metadata or a processor host.
+
 ## Ubiquitous language
 
 - **Resource** — the identity-bearing record of one external provider object.
@@ -77,6 +84,13 @@ Resources does not own:
   rejected and MUST be recorded as a distinct conflict fact rather than
   silently dropped or silently overwriting the existing primary.
 - Secondary correlations are not limited to one per Resource.
+- Repeating a correlation command with the same generated event data returns
+  the established correlation without another append. Resources uses expected
+  sequence as a bounded compare-and-swap: after one sequence conflict it
+  reloads and reevaluates exact replay and a competing primary correlation
+  before retrying at most once. A nonmatching repeated event id or unreconciled
+  conflict is rejected by the owning service; the journal records every
+  accepted batch.
 
 ## Event catalogue
 
@@ -121,8 +135,9 @@ Resources does not own:
 
 ## Dependencies and system role
 
-- Kernel — event journal, envelope, projection, and relation conventions;
-  Resources' foundation for its own stream and read models.
+- Eventing — public journal, envelope, and projection contracts; Resources'
+  foundation for its own stream and read models.
+- Kernel — generic relation and identity conventions.
 - Work (Resources depends on it) — supplies the `WorkItemId` identity and
   format that a correlation targets; Resources never mints or transitions a
   WorkItem.

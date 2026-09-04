@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { resId } from '../../support/identities.js';
 
+import { eventId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { MergeMethod } from '../../../src/activities/index.js';
 import { DeliveryService } from '../../../src/integrations/delivery/application/delivery-service.js';
 import type { DeliveryIntentView } from '../../../src/integrations/delivery/contracts/views.js';
@@ -11,8 +13,6 @@ import {
   DeliveryResultKind,
   DeliveryState,
 } from '../../../src/integrations/index.js';
-import { eventId } from '../../../src/kernel/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {} from '../../../src/resources/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -56,8 +56,8 @@ describe('DeliveryService', () => {
 
     expect(calls).toEqual(['intent-1']);
     const events = await journal.readAll(0);
-    expect(decodeDeliveryEvent(events[1]!).eventType).toBe(DeliveryEventType.Confirmed);
-    expect(decodeDeliveryEvent(events[1]!).payload).toMatchObject({
+    expect(decodeDeliveryEvent(events[1]!).event.eventType).toBe(DeliveryEventType.Confirmed);
+    expect(decodeDeliveryEvent(events[1]!).event.payload).toMatchObject({
       intentEventId: 'intent-1',
       intentGlobalPosition: 1,
       workflowInstanceId: 'workflow-1',
@@ -93,7 +93,7 @@ describe('DeliveryService', () => {
     const service = new DeliveryService({
       journal,
       intents: async () => {
-        const eventTypes = (await journal.readAll(0)).map((event) => event.eventType);
+        const eventTypes = (await journal.readAll(0)).map((event) => event.event.eventType);
         return eventTypes.includes(DeliveryEventType.Failed) ? [second] : [first, second];
       },
       resource: async (id) => ({
@@ -116,7 +116,7 @@ describe('DeliveryService', () => {
     await service.deliverNext(new AbortController().signal);
 
     expect(calls).toEqual(['first', 'second']);
-    expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
+    expect((await journal.readAll(0)).map((event) => event.event.eventType)).toEqual([
       DeliveryEventType.AttemptStarted,
       DeliveryEventType.Failed,
       DeliveryEventType.AttemptStarted,
@@ -151,12 +151,14 @@ describe('DeliveryService', () => {
     const events = await journal.readAll(0);
     expect(events).toHaveLength(1);
     expect(decodeDeliveryEvent(events[0]!)).toMatchObject({
-      eventType: DeliveryEventType.Failed,
-      payload: {
-        intentEventId: 'intent-unavailable-provider',
-        occurrenceOrdinal: 1,
-        code: 'provider-unavailable',
-        message: 'Delivery provider github is unavailable',
+      event: {
+        eventType: DeliveryEventType.Failed,
+        payload: {
+          intentEventId: 'intent-unavailable-provider',
+          occurrenceOrdinal: 1,
+          code: 'provider-unavailable',
+          message: 'Delivery provider github is unavailable',
+        },
       },
     });
   });

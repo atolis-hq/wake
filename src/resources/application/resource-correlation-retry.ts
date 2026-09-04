@@ -1,21 +1,14 @@
-import {
-  correlationId,
-  createEventDraft,
-  EventActorKind,
-  EventSourceKind,
-  type CommandContext,
-} from '../../kernel/index.js';
-import {
-  ResourceEventType,
-  type ResourceEvent,
-  type ResourceEventDraft,
-  type ResourceEventPayloads,
-} from '../contracts/events.js';
+import { correlationId, EventActorKind, type CommandContext } from '@atolis-hq/eventing';
+import { ResourceEventType, type ResourceEvent } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';
-import { resourceStream } from '../contracts/streams.js';
 import type { ResourceCorrelationView } from '../contracts/views.js';
 import type { ResourceExternalOutcome } from '../contracts/vocabulary.js';
 import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
+import {
+  appendResourceEvent,
+  resourceDraft,
+  type ResourceDraftInput,
+} from './resource-event-support.js';
 import type { ResourceRepository } from './resource-repository.js';
 
 export async function observeExternalOutcome(
@@ -32,8 +25,9 @@ export async function observeExternalOutcome(
     await appendResourceEvent(
       repository,
       resourceId,
-      resourceDraft(resourceId, context, ResourceEventType.ExternalOutcomeReopened, {
-        revision: observation.revision,
+      resourceDraft(context, {
+        eventType: ResourceEventType.ExternalOutcomeReopened,
+        payload: { revision: observation.revision },
       }),
     );
     return;
@@ -41,10 +35,13 @@ export async function observeExternalOutcome(
   await appendResourceEvent(
     repository,
     resourceId,
-    resourceDraft(resourceId, context, ResourceEventType.ExternalOutcomeObserved, {
-      sourceObservationId: observation.sourceObservationId,
-      outcome: observation.outcome,
-      revision: observation.revision,
+    resourceDraft(context, {
+      eventType: ResourceEventType.ExternalOutcomeObserved,
+      payload: {
+        sourceObservationId: observation.sourceObservationId,
+        outcome: observation.outcome,
+        revision: observation.revision,
+      },
     }),
   );
 }
@@ -80,9 +77,9 @@ export async function noteMissingPrimaryCorrelation(
   if (loaded.resource.view.correlationStatus === 'unresolvable') return;
   if (retryAttempts(loaded.resource.events) > 0) return;
   await repository.append(resourceId, loaded.sequence, [
-    resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationRetryPending, {
-      attemptCount: 1,
-      lastFailureReason: reason,
+    resourceDraft(context, {
+      eventType: ResourceEventType.WorkCorrelationRetryPending,
+      payload: { attemptCount: 1, lastFailureReason: reason },
     }),
   ]);
 }
@@ -99,7 +96,8 @@ export async function retryPendingWorkCorrelations(
     if (attempts === 0) continue;
     const last = [...loaded.resource.events]
       .reverse()
-      .find((event) => event.eventType === ResourceEventType.WorkCorrelationRetryPending);
+      .map((event) => event.event)
+      .find(isCorrelationRetryPending);
     const reason =
       last?.payload.lastFailureReason ?? 'Resource has no active primary WorkItem correlation';
     const attemptCount = attempts + 1;
@@ -109,21 +107,34 @@ export async function retryPendingWorkCorrelations(
       occurredAt: new Date().toISOString(),
       actor: { kind: EventActorKind.System, id: 'resource-service' },
     };
-    const draft =
+    const input: ResourceDraftInput =
       attemptCount >= 4
-        ? resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationUnresolvable, {
-            externalKey: loaded.resource.view.externalKey,
-            attemptCount,
-            lastFailureReason: reason,
-          })
-        : resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationRetryPending, {
-            attemptCount,
-            lastFailureReason: reason,
-          });
+        ? {
+            eventType: ResourceEventType.WorkCorrelationUnresolvable,
+            payload: {
+              externalKey: loaded.resource.view.externalKey,
+              attemptCount,
+              lastFailureReason: reason,
+            },
+          }
+        : {
+            eventType: ResourceEventType.WorkCorrelationRetryPending,
+            payload: { attemptCount, lastFailureReason: reason },
+          };
+    const draft = resourceDraft(context, input);
     await repository.append(resourceId, loaded.sequence, [draft]);
     processed += 1;
   }
   return processed;
+}
+
+function isCorrelationRetryPending(
+  event: ResourceEvent['event'],
+): event is Extract<
+  ResourceEvent['event'],
+  { eventType: typeof ResourceEventType.WorkCorrelationRetryPending }
+> {
+  return event.eventType === ResourceEventType.WorkCorrelationRetryPending;
 }
 
 function hasPrimary(correlations: readonly ResourceCorrelationView[]): boolean {
@@ -135,40 +146,12 @@ function retryAttempts(events: readonly ResourceEvent[]): number {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]!;
     if (
-      event.eventType === ResourceEventType.WorkCorrelationEstablished &&
-      event.payload.role === ResourceCorrelationRole.Primary
+      event.event.eventType === ResourceEventType.WorkCorrelationEstablished &&
+      event.event.payload.role === ResourceCorrelationRole.Primary
     )
       break;
-    if (event.eventType === ResourceEventType.WorkCorrelationRetryPending)
-      attempts = Math.max(attempts, event.payload.attemptCount);
+    if (event.event.eventType === ResourceEventType.WorkCorrelationRetryPending)
+      attempts = Math.max(attempts, event.event.payload.attemptCount);
   }
   return attempts;
-}
-
-async function appendResourceEvent(
-  repository: ResourceRepository,
-  resourceId: ResourceId,
-  draft: ResourceEventDraft,
-): Promise<void> {
-  const loaded = await repository.load(resourceId);
-  await repository.append(resourceId, loaded.sequence, [draft]);
-}
-
-function resourceDraft<Type extends keyof ResourceEventPayloads>(
-  resourceId: ResourceId,
-  context: CommandContext,
-  eventType: Type,
-  payload: ResourceEventPayloads[Type],
-) {
-  return createEventDraft({
-    eventId: `${context.commandId}:${eventType}`,
-    eventType,
-    occurredAt: context.occurredAt,
-    correlationId: context.correlationId,
-    causationId: context.commandId,
-    actor: context.actor,
-    source: { kind: EventSourceKind.Internal, id: 'resource-service' },
-    stream: resourceStream(resourceId),
-    payload,
-  });
 }

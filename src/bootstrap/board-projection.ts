@@ -1,11 +1,12 @@
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { ActivityOutcomeKind } from '../activities/index.js';
 import {
   agentTokenUsage,
   ExecutionEventType,
   RunStatus,
   selectRunExecutionEvent,
+  type RunExecutionEventData,
 } from '../execution/index.js';
-import type { ProjectionDefinition } from '../kernel/index.js';
 import {
   isApprovalAwaitingSignalKind,
   OrchestrationEventType,
@@ -13,9 +14,22 @@ import {
   selectWorkflowOrchestrationEvent,
   WorkflowStatus,
   type SignalName,
+  type WorkflowOrchestrationEventData,
 } from '../orchestration/index.js';
 import { toWorkItemKey } from '../surfaces/index.js';
 import { selectWorkEvent, WorkEventType } from '../work/index.js';
+
+type WorkflowEvent = NonNullable<ReturnType<typeof selectWorkflowOrchestrationEvent>>;
+
+type WorkflowEventOf<Type extends WorkflowOrchestrationEventData['eventType']> = WorkflowEvent & {
+  readonly event: Extract<WorkflowOrchestrationEventData, { readonly eventType: Type }>;
+};
+
+type RunEvent = NonNullable<ReturnType<typeof selectRunExecutionEvent>>;
+
+type RunEventOf<Type extends RunExecutionEventData['eventType']> = RunEvent & {
+  readonly event: Extract<RunExecutionEventData, { readonly eventType: Type }>;
+};
 
 const conditionShape = {
   ready: true,
@@ -35,10 +49,28 @@ const BoardCondition = {
 
 type BoardConditionValue = (typeof BoardCondition)[keyof typeof BoardCondition];
 
+const activeRunPhaseShape = {
+  [RunStatus.Starting]: true,
+  [RunStatus.Started]: true,
+} as const;
+const activeRunPhases = Object.keys(activeRunPhaseShape);
+const ActiveRunPhase = {
+  Starting: activeRunPhases[0]! as typeof RunStatus.Starting,
+  Started: activeRunPhases[1]! as typeof RunStatus.Started,
+} as const;
+
+export type BoardActiveRunPhase = (typeof ActiveRunPhase)[keyof typeof ActiveRunPhase];
+
+export function normalizeBoardActiveRunPhase(phase: unknown): BoardActiveRunPhase {
+  return phase === RunStatus.Starting ? ActiveRunPhase.Starting : ActiveRunPhase.Started;
+}
+
 interface StoredActiveRun {
   readonly action: string;
   readonly runnerName?: string;
   readonly startedAt: string;
+  // Optional only for checkpoints written before phase was introduced.
+  readonly phase?: BoardActiveRunPhase;
 }
 
 interface StoredCard {
@@ -96,11 +128,11 @@ export const boardProjection: ProjectionDefinition<BoardProjectionView> = {
   initial: () => ({ cards: {}, workflows: {}, runs: {}, children: {}, childRuns: {} }),
   project(previous, envelope) {
     const work = selectWorkEvent(envelope);
-    if (work !== null) return projectWork(previous, work, envelope.occurredAt);
+    if (work !== null) return projectWork(previous, work, envelope.event.occurredAt);
     const workflow = selectWorkflowOrchestrationEvent(envelope);
-    if (workflow !== null) return projectWorkflow(previous, workflow, envelope.occurredAt);
+    if (workflow !== null) return projectWorkflow(previous, workflow, envelope.event.occurredAt);
     const run = selectRunExecutionEvent(envelope);
-    return run === null ? previous : projectRun(previous, run, envelope.occurredAt);
+    return run === null ? previous : projectRun(previous, run, envelope.event.occurredAt);
   },
 };
 
@@ -122,11 +154,12 @@ function projectWork(
   occurredAt: string,
 ): BoardProjectionView {
   const id = event.stream.id;
-  if (event.eventType === WorkEventType.ItemCreated) {
+  const data = event.event;
+  if (data.eventType === WorkEventType.ItemCreated) {
     const card: StoredCard = {
       workItemKey: toWorkItemKey(id),
       workItemId: id,
-      objective: event.payload.objective,
+      objective: data.payload.objective,
       condition: BoardCondition.Ready,
       dwellSince: occurredAt,
       runCount: 0,
@@ -143,20 +176,20 @@ function projectWork(
   }
   const current = view.cards[id];
   if (current === undefined) return view;
-  if (event.eventType === WorkEventType.ObjectiveRevised)
+  if (data.eventType === WorkEventType.ObjectiveRevised)
     return {
       ...view,
-      cards: { ...view.cards, [id]: { ...current, objective: event.payload.objective } },
+      cards: { ...view.cards, [id]: { ...current, objective: data.payload.objective } },
     };
-  if (event.eventType === WorkEventType.ItemFrozen)
+  if (data.eventType === WorkEventType.ItemFrozen)
     return { ...view, cards: { ...view.cards, [id]: { ...current, frozen: true } } };
-  if (event.eventType === WorkEventType.ItemUnfrozen) {
+  if (data.eventType === WorkEventType.ItemUnfrozen) {
     const { frozen: _frozen, ...unfrozen } = current;
     return { ...view, cards: { ...view.cards, [id]: unfrozen } };
   }
   if (
-    event.eventType === WorkEventType.ItemClosed ||
-    event.eventType === WorkEventType.ItemCancelled
+    data.eventType === WorkEventType.ItemClosed ||
+    data.eventType === WorkEventType.ItemCancelled
   ) {
     return {
       ...view,
@@ -168,7 +201,7 @@ function projectWork(
   }
   // Deletion is a purge, not a lifecycle outcome — the card must disappear
   // from the board entirely rather than settle into any condition column.
-  if (event.eventType === WorkEventType.ItemDeleted) {
+  if (data.eventType === WorkEventType.ItemDeleted) {
     const { [id]: _removed, ...cards } = view.cards;
     return { ...view, cards };
   }
@@ -180,27 +213,32 @@ function projectWorkflow(
   event: ReturnType<typeof selectWorkflowOrchestrationEvent> & {},
   occurredAt: string,
 ): BoardProjectionView {
-  if (event.eventType === OrchestrationEventType.InstanceStarted)
+  if (isWorkflowEventType(event, OrchestrationEventType.InstanceStarted))
     return projectWorkflowStarted(view, event, occurredAt);
   return projectWorkflowUpdate(view, event, occurredAt);
 }
 
+function isWorkflowEventType<Type extends WorkflowOrchestrationEventData['eventType']>(
+  event: WorkflowEvent,
+  eventType: Type,
+): event is WorkflowEventOf<Type> {
+  return event.event.eventType === eventType;
+}
+
 function projectWorkflowStarted(
   view: BoardProjectionView,
-  event: ReturnType<typeof selectWorkflowOrchestrationEvent> & {
-    readonly eventType: typeof OrchestrationEventType.InstanceStarted;
-  },
+  event: WorkflowEventOf<typeof OrchestrationEventType.InstanceStarted>,
   occurredAt: string,
 ): BoardProjectionView {
-  const workId = event.payload.workItemId;
+  const workId = event.event.payload.workItemId;
   const card = view.cards[workId];
   if (card === undefined) return view;
   const workflows = { ...view.workflows, [event.stream.id]: workId };
-  if ('parentWorkflowInstanceId' in event.payload)
+  if ('parentWorkflowInstanceId' in event.event.payload)
     return {
       ...view,
       workflows,
-      children: { ...view.children, [event.stream.id]: event.payload.entry },
+      children: { ...view.children, [event.stream.id]: event.event.payload.entry },
     };
   return {
     ...view,
@@ -208,8 +246,8 @@ function projectWorkflowStarted(
       ...view.cards,
       [workId]: {
         ...card,
-        workflowName: event.payload.workflowName,
-        stage: event.payload.entry,
+        workflowName: event.event.payload.workflowName,
+        stage: event.event.payload.entry,
         dwellSince: occurredAt,
         condition: BoardCondition.Ready,
       },
@@ -236,14 +274,14 @@ function projectWorkflowUpdate(
   // Error from the prior stage's failed run, or whatever it held before the
   // SignalAccepted that unblocked it — until a Run actually starts (Active)
   // or a fresh SignalWaitStarted arrives (Needs Input).
-  if (event.eventType === OrchestrationEventType.StageEntered)
+  if (event.event.eventType === OrchestrationEventType.StageEntered)
     return {
       ...view,
       cards: {
         ...view.cards,
         [workId]: {
           ...withoutBlockReason(card),
-          stage: event.payload.stage,
+          stage: event.event.payload.stage,
           dwellSince: occurredAt,
           condition: BoardCondition.Ready,
         },
@@ -255,26 +293,29 @@ function projectWorkflowUpdate(
   // the board instead of silently sitting at whatever condition it had
   // before — this is exactly the class of gap that let the card sit in
   // Ready while GitHub's own label already said working.
-  const status = orchestrationStatusTransitions[event.eventType];
+  const status = orchestrationStatusTransitions[event.event.eventType];
   if (status === undefined) return view;
   const withCondition = {
-    ...(event.eventType === OrchestrationEventType.InstanceBlocked
+    ...(event.event.eventType === OrchestrationEventType.InstanceBlocked
       ? card
       : withoutBlockReason(card)),
     condition: boardConditionForStatus(status, card),
-    ...(event.eventType === OrchestrationEventType.InstanceBlocked
-      ? { blockReason: event.payload.reason }
+    ...(event.event.eventType === OrchestrationEventType.InstanceBlocked
+      ? { blockReason: event.event.payload.reason }
       : {}),
   };
-  if (event.eventType === OrchestrationEventType.SignalWaitStarted)
+  if (event.event.eventType === OrchestrationEventType.SignalWaitStarted)
     return {
       ...view,
       cards: {
         ...view.cards,
-        [workId]: { ...withCondition, ...awaitingApprovalField(event.payload.signalKind) },
+        [workId]: {
+          ...withCondition,
+          ...awaitingApprovalField(event.event.payload.signalKind),
+        },
       },
     };
-  if (event.eventType === OrchestrationEventType.SignalAccepted)
+  if (event.event.eventType === OrchestrationEventType.SignalAccepted)
     return { ...view, cards: { ...view.cards, [workId]: withoutAwaitingApproval(withCondition) } };
   return { ...view, cards: { ...view.cards, [workId]: withCondition } };
 }
@@ -331,13 +372,14 @@ const runTerminalEventTypes = new Set<string>([
 function terminalFinishedAt(
   event: ReturnType<typeof selectRunExecutionEvent> & {},
 ): string | undefined {
+  const data = event.event;
   if (
-    event.eventType === ExecutionEventType.RunSucceeded ||
-    event.eventType === ExecutionEventType.RunFailed ||
-    event.eventType === ExecutionEventType.RunCancelled ||
-    event.eventType === ExecutionEventType.RunAmbiguous
+    data.eventType === ExecutionEventType.RunSucceeded ||
+    data.eventType === ExecutionEventType.RunFailed ||
+    data.eventType === ExecutionEventType.RunCancelled ||
+    data.eventType === ExecutionEventType.RunAmbiguous
   )
-    return event.payload.finishedAt;
+    return data.payload.finishedAt;
   return undefined;
 }
 
@@ -357,8 +399,9 @@ function needsClarificationOutcome(data: unknown): string | undefined {
 function terminalRunFields(
   event: ReturnType<typeof selectRunExecutionEvent> & {},
 ): (Pick<StoredCard, 'lastRunOutcome'> & Partial<Pick<StoredCard, 'condition'>>) | undefined {
-  if (event.eventType === ExecutionEventType.RunSucceeded) {
-    const kind = event.payload.outcome.kind;
+  const data = event.event;
+  if (data.eventType === ExecutionEventType.RunSucceeded) {
+    const kind = data.payload.outcome.kind;
     // A successful outcome means the runner has stopped, but does not decide
     // the workflow's next state. Keep the workflow-owned condition until its
     // next lifecycle event (ActivityRequested, SignalWaitStarted, or
@@ -367,16 +410,16 @@ function terminalRunFields(
       return { lastRunOutcome: kind, condition: BoardCondition.Error };
     if (kind === ActivityOutcomeKind.Blocked)
       return {
-        lastRunOutcome: needsClarificationOutcome(event.payload.outcome.data) ?? kind,
+        lastRunOutcome: needsClarificationOutcome(data.payload.outcome.data) ?? kind,
         condition: BoardCondition.NeedsInput,
       };
     return { lastRunOutcome: kind };
   }
-  if (event.eventType === ExecutionEventType.RunFailed)
+  if (data.eventType === ExecutionEventType.RunFailed)
     return { lastRunOutcome: RunStatus.Failed, condition: BoardCondition.Error };
-  if (event.eventType === ExecutionEventType.RunCancelled)
+  if (data.eventType === ExecutionEventType.RunCancelled)
     return { lastRunOutcome: RunStatus.Cancelled, condition: BoardCondition.Error };
-  if (event.eventType === ExecutionEventType.RunAmbiguous)
+  if (data.eventType === ExecutionEventType.RunAmbiguous)
     return { lastRunOutcome: RunStatus.Ambiguous, condition: BoardCondition.Error };
   return undefined;
 }
@@ -386,19 +429,35 @@ function projectRun(
   event: ReturnType<typeof selectRunExecutionEvent> & {},
   _occurredAt: string,
 ): BoardProjectionView {
-  if (event.eventType === ExecutionEventType.RunStarted) return projectRunStarted(view, event);
+  if (isRunEventType(event, ExecutionEventType.RunPreparationStarted))
+    return projectRunPreparationStarted(view, event);
+  if (isRunEventType(event, ExecutionEventType.RunStarted)) return projectRunStarted(view, event);
 
   const workId = view.runs[event.stream.id];
   const card = workId === undefined ? undefined : view.cards[workId];
   if (card === undefined || workId === undefined) return view;
 
-  if (runTerminalEventTypes.has(event.eventType))
+  if (runTerminalEventTypes.has(event.event.eventType))
     return projectRunTerminal(view, event, workId, card);
 
-  if (event.eventType === ExecutionEventType.RunRunnerResultReported)
-    return projectRunnerResult(view, workId, card, event.payload.agent?.metadata);
+  if (event.event.eventType === ExecutionEventType.RunRunnerResultReported)
+    return projectRunnerResult(view, workId, card, event.event.payload.agent?.metadata);
 
   return view;
+}
+
+function isRunEventType<Type extends RunExecutionEventData['eventType']>(
+  event: RunEvent,
+  eventType: Type,
+): event is RunEventOf<Type> {
+  return event.event.eventType === eventType;
+}
+
+function projectRunPreparationStarted(
+  view: BoardProjectionView,
+  event: RunEventOf<typeof ExecutionEventType.RunPreparationStarted>,
+): BoardProjectionView {
+  return projectNewRun(view, event, ActiveRunPhase.Starting);
 }
 
 function projectRunTerminal(
@@ -410,6 +469,7 @@ function projectRunTerminal(
   const finishedAt = terminalFinishedAt(event);
   const activeRuns = activeRunsFor(view, card, workId);
   const activeRun = activeRuns[event.stream.id];
+  const remainingActiveRuns = withoutActiveRun(activeRuns, event.stream.id);
   const runDurationMs =
     activeRun === undefined || finishedAt === undefined
       ? 0
@@ -425,61 +485,157 @@ function projectRunTerminal(
       ...view.cards,
       [workId]: {
         ...withoutLegacyActiveRun(card),
-        activeRuns: withoutActiveRun(activeRuns, event.stream.id),
+        activeRuns: remainingActiveRuns,
         ...(terminal === undefined ? {} : { lastRunOutcome: terminal.lastRunOutcome }),
-        ...(terminal === undefined ||
-        isChildRun ||
-        card.condition === BoardCondition.Finished ||
-        terminal.condition === undefined
+        ...(card.condition === BoardCondition.Finished
           ? {}
-          : { condition: terminal.condition }),
+          : hasPrimaryActiveRun(view, remainingActiveRuns)
+            ? { condition: BoardCondition.Active }
+            : terminal === undefined || isChildRun || terminal.condition === undefined
+              ? {}
+              : { condition: terminal.condition }),
         totalDurationMs: card.totalDurationMs + runDurationMs,
       },
     },
   };
 }
 
+function hasPrimaryActiveRun(
+  view: BoardProjectionView,
+  activeRuns: Readonly<Record<string, StoredActiveRun>>,
+): boolean {
+  return Object.keys(activeRuns).some((runId) => view.childRuns?.[runId] !== true);
+}
+
 function projectRunStarted(
   view: BoardProjectionView,
-  event: Extract<
-    ReturnType<typeof selectRunExecutionEvent> & {},
-    { eventType: typeof ExecutionEventType.RunStarted }
-  >,
+  event: RunEventOf<typeof ExecutionEventType.RunStarted>,
 ): BoardProjectionView {
-  const workId = view.workflows[event.payload.workflowInstanceId];
+  const workId = view.workflows[event.event.payload.workflowInstanceId];
   const card = workId === undefined ? undefined : view.cards[workId];
   if (card === undefined || workId === undefined) return view;
   // Same legacy-checkpoint tolerance as the `children` guard in
   // projectWorkflow: a RunStarted event reaches this field independently of
   // that guard, so a checkpoint predating `children` must not crash here either.
-  const childAction = view.children?.[event.payload.workflowInstanceId];
+  const childAction = view.children?.[event.event.payload.workflowInstanceId];
   const isChildRun = childAction !== undefined;
   const activeRuns = activeRunsFor(view, card, workId);
-  return {
-    ...view,
-    runs: { ...view.runs, [event.stream.id]: workId },
-    ...(isChildRun ? { childRuns: { ...view.childRuns, [event.stream.id]: true } } : {}),
-    cards: {
-      ...view.cards,
-      [workId]: {
-        ...(isChildRun
-          ? withoutLegacyActiveRun(card)
-          : withoutLegacyActiveRun(withoutLastRunOutcome(withoutAwaitingApproval(card)))),
-        runCount: card.runCount + 1,
-        ...(shouldSetCardActive(card, isChildRun) ? { condition: BoardCondition.Active } : {}),
-        lastRunAt: event.payload.startedAt,
-        activeRuns: {
-          ...activeRuns,
-          [event.stream.id]: {
-            action: childAction ?? card.stage ?? event.payload.activity,
-            startedAt: event.payload.startedAt,
-            ...(event.payload.runner?.name === undefined
-              ? {}
-              : { runnerName: event.payload.runner.name }),
+  const activeRun = activeRuns[event.stream.id];
+  if (activeRun !== undefined)
+    return {
+      ...view,
+      runs: { ...view.runs, [event.stream.id]: workId },
+      ...(isChildRun ? { childRuns: { ...view.childRuns, [event.stream.id]: true } } : {}),
+      cards: {
+        ...view.cards,
+        [workId]: {
+          ...withoutLegacyActiveRun(card),
+          activeRuns: {
+            ...activeRuns,
+            [event.stream.id]: { ...activeRun, phase: ActiveRunPhase.Started },
           },
         },
       },
+    };
+  return projectNewRun(view, event, ActiveRunPhase.Started);
+}
+
+function projectNewRun(
+  view: BoardProjectionView,
+  event: RunEventOf<
+    typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted
+  >,
+  phase: BoardActiveRunPhase,
+): BoardProjectionView {
+  const target = newRunTarget(view, event);
+  if (target === undefined) return view;
+  const { workId } = target;
+  return {
+    ...view,
+    runs: { ...view.runs, [event.stream.id]: workId },
+    ...childRunReference(view, event, target.isChildRun),
+    cards: {
+      ...view.cards,
+      [workId]: newRunCard(view, event, target, phase),
     },
+  };
+}
+
+function newRunTarget(
+  view: BoardProjectionView,
+  event: RunEventOf<
+    typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted
+  >,
+):
+  | {
+      readonly workId: string;
+      readonly card: StoredCard;
+      readonly childAction: string | undefined;
+      readonly isChildRun: boolean;
+    }
+  | undefined {
+  const workId = view.workflows[event.event.payload.workflowInstanceId];
+  const card = workId === undefined ? undefined : view.cards[workId];
+  if (workId === undefined || card === undefined) return undefined;
+  const childAction = view.children?.[event.event.payload.workflowInstanceId];
+  return { workId, card, childAction, isChildRun: childAction !== undefined };
+}
+
+function childRunReference(
+  view: BoardProjectionView,
+  event: RunEventOf<
+    typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted
+  >,
+  isChildRun: boolean,
+): Pick<BoardProjectionView, 'childRuns'> | Record<string, never> {
+  return isChildRun ? { childRuns: { ...view.childRuns, [event.stream.id]: true } } : {};
+}
+
+function newRunCard(
+  view: BoardProjectionView,
+  event: RunEventOf<
+    typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted
+  >,
+  target: {
+    readonly workId: string;
+    readonly card: StoredCard;
+    readonly childAction: string | undefined;
+    readonly isChildRun: boolean;
+  },
+  phase: BoardActiveRunPhase,
+): StoredCard {
+  const { card, childAction, isChildRun, workId } = target;
+  const activeRuns = activeRunsFor(view, card, workId);
+  const alreadyRegistered = view.runs[event.stream.id] !== undefined;
+  return {
+    ...(isChildRun
+      ? withoutLegacyActiveRun(card)
+      : withoutLegacyActiveRun(withoutLastRunOutcome(withoutAwaitingApproval(card)))),
+    runCount: alreadyRegistered ? card.runCount : card.runCount + 1,
+    ...(shouldSetCardActive(card, isChildRun) ? { condition: BoardCondition.Active } : {}),
+    lastRunAt: event.event.payload.startedAt,
+    activeRuns: {
+      ...activeRuns,
+      [event.stream.id]: newActiveRun(event, childAction, card, phase),
+    },
+  };
+}
+
+function newActiveRun(
+  event: RunEventOf<
+    typeof ExecutionEventType.RunPreparationStarted | typeof ExecutionEventType.RunStarted
+  >,
+  childAction: string | undefined,
+  card: StoredCard,
+  phase: BoardActiveRunPhase,
+): StoredActiveRun {
+  return {
+    action: childAction ?? event.event.payload.stage ?? card.stage ?? event.event.payload.activity,
+    startedAt: event.event.payload.startedAt,
+    phase,
+    ...(event.event.payload.runner?.name === undefined
+      ? {}
+      : { runnerName: event.event.payload.runner.name }),
   };
 }
 
@@ -529,12 +685,22 @@ function activeRunsFor(
   card: StoredCard,
   workId: string,
 ): Readonly<Record<string, StoredActiveRun>> {
-  if (card.activeRuns !== undefined) return card.activeRuns;
+  if (card.activeRuns !== undefined)
+    return Object.fromEntries(
+      Object.entries(card.activeRuns).map(([runId, activeRun]) => [
+        runId,
+        normalizedActiveRun(activeRun),
+      ]),
+    );
   if (card.activeRun === undefined) return {};
   const legacyRunId = Object.entries(view.runs)
     .reverse()
     .find(([, runWorkId]) => runWorkId === workId)?.[0];
-  return legacyRunId === undefined ? {} : { [legacyRunId]: card.activeRun };
+  return legacyRunId === undefined ? {} : { [legacyRunId]: normalizedActiveRun(card.activeRun) };
+}
+
+function normalizedActiveRun(activeRun: StoredActiveRun): StoredActiveRun {
+  return { ...activeRun, phase: normalizeBoardActiveRunPhase(activeRun.phase) };
 }
 
 function withoutActiveRun(

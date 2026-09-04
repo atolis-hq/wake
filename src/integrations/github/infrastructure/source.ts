@@ -1,4 +1,4 @@
-import type { CheckpointStore } from '../../../kernel/index.js';
+import type { CheckpointStore } from '@atolis-hq/eventing';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ExternalEventSource } from '../../contracts/intake.js';
 import { gitHubIssueQueryFilters } from '../application/intake-policy.js';
@@ -41,11 +41,9 @@ export function createGitHubSource(
   },
 ): ExternalEventSource {
   const health = state?.health ?? createGitHubAdapterHealthRegistry(config.repositories);
-  // Draft eventIds are already content fingerprints (see issue-source.ts/pr-source.ts),
-  // so the journal itself is idempotent per item. This cache only avoids re-appending
-  // (and re-triggering downstream translation) an unchanged item on every poll within
-  // a single process lifetime — it's a perf optimization, not a correctness dependency,
-  // so it's safe for it to reset on restart.
+  // Event ids are content fingerprints (see issue-source.ts/pr-source.ts), and the polling
+  // persistence boundary deduplicates them durably. This cache avoids returning unchanged
+  // work observations within one process lifetime, so it is only a performance optimization.
   const lastEventIds = new Map<string, string>();
   const pendingWatermarks = new Map<string, number>();
   const now = state?.now ?? Date.now;

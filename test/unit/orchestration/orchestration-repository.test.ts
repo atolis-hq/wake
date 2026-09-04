@@ -1,7 +1,8 @@
+import { correlationId, type EventJournal } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
-import { correlationId, type EventJournal } from '../../../src/kernel/index.js';
 import { OrchestrationRepository } from '../../../src/orchestration/application/orchestration-repository.js';
 import {
   orchestrationGroupId,
@@ -9,7 +10,6 @@ import {
   workflowName,
 } from '../../../src/orchestration/contracts/identifiers.js';
 import { compileWorkflow, createOrchestrationService } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';

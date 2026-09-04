@@ -36,10 +36,6 @@ execution:
     deep: [fake]
   defaultRunnerPool: standard
 
-# Tick dispatch cap and resident-loop idle backoff; the built-in defaults
-# are fine for a first run.
-controlPlane: {}
-
 orchestration:
   workflowSelectors:
     - match: { tags: [approval] }
@@ -409,12 +405,10 @@ ENV WAKE_MAIN_JS=/app/dist/src/main.js
 # when WAKE_START_ENABLED's supervised \`wake start\` child keeps crashing —
 # e.g. on first boot, before sandbox auth has been configured.
 #
-# /wake/.wake is bind-mounted from the host and self-update actively creates
-# and deletes its own lock files there while this container is starting, so
-# a recursive chown can race a file disappearing mid-walk. That single ENOENT
-# must not be fatal under set -eu — it would otherwise crash the container
-# before wake start ever runs.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
+# Startup ownership repair is best effort because bind-mounted paths or host
+# permissions may prevent chown. The bounded direct-child pass avoids traversing
+# accumulated runtime data.
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
 `;
 
 const packagedDockerfile = `# syntax=docker/dockerfile:1
@@ -479,12 +473,10 @@ EXPOSE 4317
 # \`wake\` binary that \`npm install -g\` puts on PATH, rather than a hardcoded
 # npm global lib path that varies by npm/OS setup.
 #
-# /wake/.wake is bind-mounted from the host and self-update actively creates
-# and deletes its own lock files there while this container is starting, so
-# a recursive chown can race a file disappearing mid-walk. That single ENOENT
-# must not be fatal under set -eu — it would otherwise crash the container
-# before wake start ever runs.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
+# Startup ownership repair is best effort because bind-mounted paths or host
+# permissions may prevent chown. The bounded direct-child pass avoids traversing
+# accumulated runtime data.
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
 `;
 
 /** Creates an immediately-valid, human-readable target Wake root. */

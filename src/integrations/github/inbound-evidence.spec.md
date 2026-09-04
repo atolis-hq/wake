@@ -5,7 +5,7 @@
 Adapter. This component polls GitHub for issues, pull requests, pull-request
 reviews, and issue/PR comments, and normalizes and deduplicates them into
 `integration.github.work-observed`/`integration.github.comment-observed`
-evidence event drafts on the adapter's own `integration` stream, without
+evidence event data on the adapter's own `integration` stream, without
 deciding eligibility or minting any Wake identity.
 
 ## Ubiquitous language
@@ -31,8 +31,8 @@ deciding eligibility or minting any Wake identity.
 
 This component owns turning one GitHub issue or pull request — plus, for a
 pull request, its check runs and commit statuses — into one
-`integration.github.work-observed` draft; turning one pull-request review or
-one issue/PR comment into one `integration.github.comment-observed` draft;
+`integration.github.work-observed` event data; turning one pull-request review or
+one issue/PR comment into one `integration.github.comment-observed` event data;
 per-repository polling isolation; poll throttling; and ETag-based
 conditional-GET caching across every list/get call it makes. It does not
 decide whether an observation is eligible for admission or what tags it
@@ -61,16 +61,17 @@ identity.
 - Every repository has a durable last-successful-poll watermark. Subsequent
   issue and comment queries use that watermark minus configured `lookbackMs`;
   a repository with no watermark uses the provider's bounded bootstrap query.
-  The watermark advances only after every draft from a complete repository
+  The watermark advances only after every event data from a complete repository
   query has been durably appended. Any failed query leaves it unchanged, so
-  the next poll replays the overlap and stable provider event ids deduplicate it.
+  the next poll replays the overlap and the polling persistence boundary
+  deduplicates stable provider event ids against durable evidence.
   A pull-request query failure must not prevent available issue/comment evidence
   from being returned, but it still leaves that repository's watermark unchanged
   and emits an operator-visible partial-poll failure. An
-  issue or pull-request draft whose event id is unchanged since this
+  issue or pull-request event data whose event id is unchanged since this
   process's last poll of that same external key MUST also be omitted, as a
-  same-process perf optimization on top of the journal's own idempotency —
-  neither omission is a correctness dependency, and both reset on restart.
+  same-process performance optimization on top of durable polling-boundary
+  deduplication. The cache resets on restart without affecting correctness.
 - A pull request's checks state MUST be `unknown` when check evidence could
   not be fetched this poll. When evidence was fetched, checks state MUST be
   `failing` if any check or status failed, else `pending` if any is still
@@ -79,7 +80,7 @@ identity.
   merge timestamp, regardless of the provider's own open/closed state
   field.
 - A comment whose body is empty or whitespace-only MUST produce no
-  evidence draft.
+  evidence event data.
 - Every list or get call this component makes (issues, pull requests,
   reviews, issue comments, a single issue's labels, a single pull request,
   a branch) MUST reuse its cached response, keyed by its own request
@@ -128,7 +129,7 @@ identity.
 ## Dependencies and system role
 
 - Provider Composition & Inbound Polling (depends on this component) —
-  ingests this component's evidence drafts through its generic idempotent
+  ingests this component's evidence event data through its generic idempotent
   append.
 - GitHub Inbound Translation (depends on this component) — the sole
   consumer of `integration.github.work-observed` and

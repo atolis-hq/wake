@@ -1,4 +1,4 @@
-import type { EventJournal, StoredProjection } from '../kernel/index.js';
+import type { EventJournal, StoredProjection } from '@atolis-hq/eventing';
 import type { ResponseMeta } from '../surfaces/index.js';
 
 export function sampledMeta(asOf: string): ResponseMeta {
@@ -18,5 +18,5 @@ export async function projectionMeta(
   const event = (await journal.readAll(position - 1, 1))[0];
   if (event === undefined || event.globalPosition !== position)
     throw new Error(`Journal fact unavailable for projection position ${position}`);
-  return { asOf: event.occurredAt, position };
+  return { asOf: event.event.occurredAt, position };
 }

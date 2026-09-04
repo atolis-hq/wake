@@ -63,7 +63,13 @@ scheduler. Use `wake doctor` after initialization and sandbox build, and use
   Run's Activity validates a successful outcome before Wake records it.
 - `wake validate-state [--rebuild-projections]` checks durable state health.
   The optional flag rebuilds projections from the authoritative journal; it
-  does not replace or discard journal facts.
+  requires exclusive offline access and does not replace or discard journal
+  facts. Stop a host/service resident through its supervisor, run the rebuild
+  host-side (with `--no-sandbox` when `docker/Dockerfile` exists), then restart
+  through the supervisor. For a sandbox, run `wake sandbox down`, then
+  `wake validate-state --rebuild-projections --no-sandbox`, then `wake sandbox
+  up`. `wake doctor --rebuild-projections` has the same stopped-resident
+  requirement.
 - `wake stop` waits for active runs to finish before it stops the resident
   flow. `wake doctor` is the host-side diagnostic to run after initialization
   and after a sandbox build.

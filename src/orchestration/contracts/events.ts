@@ -1,10 +1,10 @@
+import type { EventDataUnion, EventUnion } from '@atolis-hq/eventing';
 import type {
   ActivationId,
   ActivityName,
   ActivityOutcome,
   ActivityOutcomeKind,
 } from '../../activities/index.js';
-import type { EventDraftUnion, EventUnion } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
 import type {
@@ -201,32 +201,25 @@ export type WorkflowDefinitionRegisteredEvent = EventUnion<
 
 export type OrchestrationGroupEvent = PrimaryOrchestrationGroupEvent | ChildOrchestrationGroupEvent;
 
-export type WorkflowOrchestrationEventDraft = EventDraftUnion<
-  WorkflowEventPayloads,
-  WorkflowInstanceStreamRef
->;
+export type WorkflowOrchestrationEventData = EventDataUnion<WorkflowEventPayloads>;
 
-type PrimaryOrchestrationGroupEventDraft = EventDraftUnion<
-  PrimaryGroupEventPayloads,
-  PrimaryOrchestrationGroupStreamRef
->;
+type PrimaryOrchestrationGroupEventData = EventDataUnion<PrimaryGroupEventPayloads>;
 
-type ChildOrchestrationGroupEventDraft = EventDraftUnion<
-  ChildGroupEventPayloads,
-  ChildOrchestrationGroupStreamRef
->;
+type ChildOrchestrationGroupEventData = EventDataUnion<ChildGroupEventPayloads>;
 
-export type OrchestrationGroupEventDraft =
-  PrimaryOrchestrationGroupEventDraft | ChildOrchestrationGroupEventDraft;
+export type OrchestrationGroupEventData =
+  PrimaryOrchestrationGroupEventData | ChildOrchestrationGroupEventData;
 
 export type OrchestrationEvent =
   WorkflowOrchestrationEvent | OrchestrationGroupEvent | WorkflowDefinitionRegisteredEvent;
 
-export type OrchestrationEventDraft =
-  WorkflowOrchestrationEventDraft | OrchestrationGroupEventDraft;
+export type OrchestrationEventData =
+  | WorkflowOrchestrationEventData
+  | OrchestrationGroupEventData
+  | EventDataUnion<WorkflowDefinitionEventPayloads>;
 
-export type ChildCoordinationEventDraft = Extract<
-  OrchestrationEventDraft,
+export type ChildCoordinationEventData = Extract<
+  OrchestrationEventData,
   {
     readonly eventType:
       | typeof OrchestrationEventType.ChildRequested
@@ -240,7 +233,7 @@ export type ChildCoordinationEventDraft = Extract<
 
 export type ChildCoordinationEventPayloads = Pick<
   OrchestrationEventPayloads,
-  ChildCoordinationEventDraft['eventType']
+  ChildCoordinationEventData['eventType']
 >;
 
 export interface ChildCompletionSignal extends OrchestrationSignal {

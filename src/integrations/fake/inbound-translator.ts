@@ -1,3 +1,13 @@
+import type { EventEnvelope } from '@atolis-hq/eventing';
+import {
+  correlationId,
+  defineEventProcessor,
+  EventActorKind,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  type CommandContext,
+  type EventProcessor,
+} from '@atolis-hq/eventing';
 import { z } from 'zod';
 import {
   PullRequestCheckState,
@@ -5,7 +15,6 @@ import {
   ReviewActorKind,
   ReviewerAuthorizationSource,
 } from '../../activities/index.js';
-import { correlationId, EventActorKind, type CommandContext } from '../../kernel/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
@@ -16,7 +25,9 @@ import {
 import { workItemId, type WorkItemId } from '../../work/index.js';
 import { admitObservedWork } from '../application/work-admission.js';
 import type { AdapterId } from '../contracts/identifiers.js';
+import type { ProviderReconciler } from '../contracts/intake.js';
 import type { ProviderServices } from '../contracts/provider.js';
+import { isIntegrationStream } from '../contracts/streams.js';
 import { FakeEventType, type FakeWorkEvidence } from './external-source.js';
 
 const evidenceSchema = z
@@ -40,24 +51,39 @@ const evidenceSchema = z
   .strict();
 
 export class FakeInboundTranslator {
+  readonly processor: EventProcessor;
+  readonly reconciler: ProviderReconciler;
+
   constructor(
     private readonly adapter: AdapterId,
     private readonly services: ProviderServices,
-  ) {}
+  ) {
+    this.processor = defineEventProcessor({
+      consumer: `reactor:integration.${adapter}.inbound`,
+      name: `integration.${adapter}.inbound`,
+      owner: 'integrations',
+      category: EventProcessorCategory.Translator,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select: (event) => this.selectEvidence(event),
+      handle: async ({ evidence, event }) => this.apply(evidence, event.event),
+    });
+    this.reconciler = { reconcileOnce: () => this.reconcileOnce() };
+  }
 
-  async runOnce(limit = 100): Promise<number> {
+  private async reconcileOnce(): Promise<void> {
     await this.services.resources.retryPendingWorkCorrelations();
-    const checkpoint = `reactor:integration.${this.adapter}.inbound`;
-    const events = await this.services.journal.readAll(
-      await this.services.checkpoints.load(checkpoint),
-      limit,
-    );
-    for (const event of events) {
-      if (event.eventType === FakeEventType.WorkObserved && event.stream.id === this.adapter)
-        await this.apply(evidenceSchema.parse(event.payload), event);
-      await this.services.checkpoints.save(checkpoint, event.globalPosition);
-    }
-    return events.length;
+  }
+
+  private selectEvidence(
+    event: EventEnvelope,
+  ): { readonly evidence: FakeWorkEvidence; readonly event: EventEnvelope } | null {
+    if (
+      event.event.eventType !== FakeEventType.WorkObserved ||
+      !isIntegrationStream(event.stream) ||
+      event.stream.id !== this.adapter
+    )
+      return null;
+    return { evidence: evidenceSchema.parse(event.event.payload), event };
   }
 
   private async apply(

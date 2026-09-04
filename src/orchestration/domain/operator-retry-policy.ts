@@ -1,6 +1,6 @@
 import { ActivityOutcomeKind, BuiltInActivityName } from '../../activities/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
-import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
+import type { WorkflowOrchestrationEventData } from '../contracts/events.js';
 import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
 import { signalName, stageName, watchId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -139,23 +139,36 @@ function requestRetry(
     };
 
   const stage = definition.stages[stageName(state.currentStage)]!;
-  const events: WorkflowOrchestrationEventDraft[] = [
+  const events: WorkflowOrchestrationEventData[] = [
     stateDraft(
       state,
       input,
-      OrchestrationEventType.OperatorRetryRequested,
-      { activationId: state.pendingActivation!.activationId, commandId: input.commandId },
+      {
+        eventType: OrchestrationEventType.OperatorRetryRequested,
+        payload: {
+          activationId: state.pendingActivation!.activationId,
+          commandId: input.commandId,
+        },
+      },
       1,
     ),
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-        stage: stageName(state.currentStage),
-        ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          stage.activity,
+          stage.with,
+          {
+            execution: stage.execution,
+            stage: stageName(state.currentStage),
+            ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
+          },
+        ),
+      },
       2,
     ),
   ];
@@ -182,18 +195,31 @@ export function requestChangesResume(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.OperatorRetryRequested,
-        { activationId: state.pendingActivation!.activationId, commandId: input.commandId },
+        {
+          eventType: OrchestrationEventType.OperatorRetryRequested,
+          payload: {
+            activationId: state.pendingActivation!.activationId,
+            commandId: input.commandId,
+          },
+        },
         1,
       ),
       stateDraft(
         state,
         input,
-        OrchestrationEventType.ActivityRequested,
-        activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-          execution: stage.execution,
-          stage: stageName(state.currentStage),
-        }),
+        {
+          eventType: OrchestrationEventType.ActivityRequested,
+          payload: activation(
+            state.workflowInstanceId,
+            nextOrdinal(state),
+            stage.activity,
+            stage.with,
+            {
+              execution: stage.execution,
+              stage: stageName(state.currentStage),
+            },
+          ),
+        },
         2,
       ),
     ],

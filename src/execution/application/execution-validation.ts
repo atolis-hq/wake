@@ -11,6 +11,7 @@ export async function acquireWorkspace(
   workItemId: WorkItemId,
   resources: readonly ResourceView[],
   provider?: WorkspaceProvider,
+  signal: AbortSignal = new AbortController().signal,
 ): Promise<WorkspaceLease | undefined> {
   if (mode === WorkspaceMode.None) return undefined;
   if (provider === undefined) throw new Error('Workspace provider is required');
@@ -22,7 +23,8 @@ export async function acquireWorkspace(
         resource.kind === BuiltInResourceKind.PullRequest,
     );
   if (repositoryResource === undefined) throw new Error('Repository Resource is required');
-  return provider.acquire({ runId, mode, workItemId, repositoryResource });
+  signal.throwIfAborted();
+  return provider.acquire({ runId, signal, mode, workItemId, repositoryResource });
 }
 
 export function validateResourceRequirements(

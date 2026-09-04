@@ -7,8 +7,9 @@ callback up to one bounded cycle's `HostBudget`. `IntakeHost` runs exactly
 one poll-and-translate cycle per call. `ResidentHost` repeats either host's
 cycles across the lifetime of an `AbortSignal`, sleeping between cycles.
 Together these are the composed entry points CLI `tick` and `start` use to
-repeat Advancement and intake; none of the hosts has any knowledge of what
-its wrapped callback actually does internally.
+repeat the non-scheduling runner pipeline and intake. The independently
+supervised durable activation-scheduler subscriber owns dispatch; none of the
+hosts has any knowledge of what its wrapped callback actually does internally.
 
 ## Ubiquitous language
 
@@ -25,9 +26,12 @@ its wrapped callback actually does internally.
 `TickHost` owns looping its `advance` callback with `maxProgress: 1` per
 call, counting advances/runs, enforcing the budget's wall-clock and count
 caps, and mapping each stopping condition to a `HostStopReason`. It does not
-decide what one `advance` call does — in production composition it is given
-`RunnerPipeline.run`, so each loop iteration performs the internal half of a
-tick (schedules, Advancement, react, deliver, react — no external poll).
+decide what one `advance` call does. In production composition, its one-shot
+adapter runs the non-scheduling `RunnerPipeline` and pokes the durable
+activation-scheduler subscriber at the pipeline's pre-delivery boundary,
+while its resident adapter runs only that pipeline. A runner-pipeline
+iteration performs the internal half of a tick (schedules, reactions,
+agent-run publication, delivery, and final reactions — no external poll).
 `IntakeHost` owns running its cycle callback once per call and mapping
 `processed`/not to `advances`/`stoppedBecause`; it does not loop within a
 budget the way `TickHost` does, since one poll-and-translate pass is already
@@ -41,10 +45,11 @@ Decisions below).
 
 ## Core policies, invariants, and behaviours
 
-- `TickHost.run` MUST call `advance({ maxProgress: 1 })` in a loop while
-  `advances < maxAdvances` and `runs < maxRuns`, checking the wall-clock
-  budget (`Date.now() - started >= maxDurationMs`) at the top of every
-  iteration, including before the first call.
+- `TickHost.run` MUST call `advance({ maxProgress: 1 }, signal)` in a loop
+  while `advances < maxAdvances` and `runs < maxRuns`, forwarding its optional
+  lifecycle signal on every call and checking the wall-clock budget
+  (`Date.now() - started >= maxDurationMs`) at the top of every iteration,
+  including before the first call.
 - Every `advance` result of kind `progressed` MUST increment `advances` by
   one and `runs` by the length of its `dispatched` batch (Advancement's own
   per-call dispatch loop may start more than one Run per `advance` call, up
@@ -66,11 +71,13 @@ Decisions below).
   and `processed: false` to `{ advances: 0, runs: 0, stoppedBecause: Idle }`.
   It never reports a `dispatched` batch, since intake has no honest value for
   one — that is why it does not reuse `AdvanceResult`.
-- `ResidentHost.run` MUST repeat `TickHost.run(budget)` (or `IntakeHost`'s
-  equivalent) while the signal is not aborted, accumulating `advances` and
-  `runs` as a running total across the whole resident lifetime (not per
-  cycle), and MUST call the injected `sleep(signal, cadence)` between cycles
-  only when the signal has not aborted since the last cycle completed.
+- `ResidentHost.run` MUST repeat `TickHost.run(budget, signal)` (or
+  `IntakeHost`'s equivalent) while the signal is not aborted, so each
+  in-flight intake or resident-runner cycle observes lifecycle shutdown. It
+  accumulates `advances` and `runs` as a running total across the whole
+  resident lifetime (not per cycle), and MUST call the injected
+  `sleep(signal, cadence)` between cycles only when the signal has not aborted
+  since the last cycle completed.
 - `cadence.consecutiveIdleTicks` MUST increment on any cycle that does not
   progress (`advances === 0`, whether it returned cleanly or threw) and MUST
   reset to 0 on any cycle that progresses. `cadence.consecutiveErrorTicks`
@@ -83,11 +90,13 @@ Decisions below).
   event (resolving immediately if already aborted) and never resolves on a
   timer — so a resident run with no caller-supplied `sleep` performs exactly
   one bounded cycle and then blocks until the signal is aborted externally.
-- `ResidentHost.run` MUST catch any error thrown by the wrapped host's `run`,
-  pass it to the injected `reportError` callback (default: a no-op), and
-  continue the resident loop rather than letting the error propagate and end
-  the resident run. A cycle that throws contributes nothing to the
-  accumulated `advances`/`runs` totals.
+- `ResidentHost.run` MUST catch any error thrown by the wrapped host's `run`
+  before its lifecycle signal aborts, pass it to the injected `reportError`
+  callback (default: a no-op), and continue the resident loop rather than
+  letting the error propagate and end the resident run. A rejection that
+  arrives after the lifecycle signal aborts is expected shutdown: it MUST end
+  the resident loop without reporting or backing off. A pre-abort failure
+  contributes nothing to the accumulated `advances`/`runs` totals.
 - `ResidentHost.run`'s returned `stoppedBecause` MUST always be
   `HostStopReason.Shutdown`, regardless of the last cycle's own stop reason
   — the only way `run` returns is because the signal aborted, so every
@@ -112,16 +121,17 @@ Decisions below).
 
 ## Dependencies and system role
 
-- Advancement / RunnerPipeline (dependency) — the `advance` callback
-  `TickHost` repeats; in production composition this is `RunnerPipeline.run`.
+- Runner adapters / RunnerPipeline (dependency) — the `AdvanceOnce`-shaped
+  callback `TickHost` repeats. In production, the one-shot adapter runs the
+  pipeline and pokes the required subscriber; the resident adapter runs only
+  the pipeline.
 - IntakePipeline (dependency) — the cycle callback `IntakeHost` runs once
   per call; in production composition this is `IntakePipeline.run`.
-- Bootstrap composition root (dependent) — constructs one `TickHost` (wrapping
-  `root.runnerPipeline.run`) and one `IntakeHost` (wrapping
-  `root.intakePipeline.run`), each wrapped in its own `ResidentHost`, exposed
-  together as the CLI `start` command; the one-shot CLI `tick` command runs
-  an intake cycle once and then drains the runner `TickHost` up to budget,
-  mirroring the former combined `runTick` loop.
+- Bootstrap composition root (dependent) — constructs an intake host and
+  separate one-shot/resident runner `TickHost` adapters. The one-shot adapter
+  pokes the required durable scheduler subscriber and returns its result,
+  while the resident adapter runs only `root.runnerPipeline.run`; the durable
+  scheduler subscription is started independently.
 
 ## Decisions, exclusions, and deferred capability
 

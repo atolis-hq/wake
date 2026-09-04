@@ -2,86 +2,79 @@ import { describe, expect, it, vi } from 'vitest';
 import { createRunnerPipeline } from '../../../src/control-plane/application/runner-pipeline.js';
 
 describe('RunnerPipeline', () => {
-  it('catches projections up once without running operational stages while paused', async () => {
-    const catchUpProjections = vi.fn(async () => undefined);
+  it('runs schedules and maintenance without accepting a scheduler stage', async () => {
+    const maintain = vi.fn(async () => undefined);
+    const pipeline = createRunnerPipeline({
+      runSchedules: async () => undefined,
+      maintain,
+      deliver: async () => undefined,
+    });
+
+    await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
+
+    expect(maintain).toHaveBeenCalledOnce();
+  });
+
+  it('runs no operational stages while paused', async () => {
     const runSchedules = vi.fn(async () => undefined);
-    const react = vi.fn(async () => undefined);
-    const advance = vi.fn(async () => ({ kind: 'no-work' as const }));
-    const publishAgentRuns = vi.fn(async () => undefined);
+    const maintain = vi.fn(async () => undefined);
     const deliver = vi.fn(async () => undefined);
     const pipeline = createRunnerPipeline({
       isPaused: async () => true,
-      catchUpProjections,
       runSchedules,
-      react,
-      advance,
-      publishAgentRuns,
+      maintain,
       deliver,
     });
 
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
-    expect(catchUpProjections).toHaveBeenCalledOnce();
     expect(runSchedules).not.toHaveBeenCalled();
-    expect(react).not.toHaveBeenCalled();
-    expect(advance).not.toHaveBeenCalled();
-    expect(publishAgentRuns).not.toHaveBeenCalled();
+    expect(maintain).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
   });
 
   it('serializes overlapping ticks', async () => {
-    let releaseFirstCatchUp: (() => void) | undefined;
-    const firstCatchUpStarted = new Promise<void>((resolve) => {
-      releaseFirstCatchUp = resolve;
+    let releaseFirstSchedule: (() => void) | undefined;
+    const firstScheduleStarted = new Promise<void>((resolve) => {
+      releaseFirstSchedule = resolve;
     });
-    let allowFirstCatchUp: (() => void) | undefined;
-    const firstCatchUpMayFinish = new Promise<void>((resolve) => {
-      allowFirstCatchUp = resolve;
+    let allowFirstSchedule: (() => void) | undefined;
+    const firstScheduleMayFinish = new Promise<void>((resolve) => {
+      allowFirstSchedule = resolve;
     });
-    const catchUpProjections = vi.fn(async () => {
-      if (catchUpProjections.mock.calls.length === 1) {
-        releaseFirstCatchUp?.();
-        await firstCatchUpMayFinish;
+    const runSchedules = vi.fn(async () => {
+      if (runSchedules.mock.calls.length === 1) {
+        releaseFirstSchedule?.();
+        await firstScheduleMayFinish;
       }
     });
     const pipeline = createRunnerPipeline({
-      catchUpProjections,
-      runSchedules: async () => undefined,
-      react: async () => undefined,
-      advance: async () => ({ kind: 'no-work' as const }),
+      runSchedules,
+      maintain: async () => undefined,
       deliver: async () => undefined,
     });
 
     const first = pipeline.run({ maxProgress: 1 });
-    await firstCatchUpStarted;
+    await firstScheduleStarted;
     const second = pipeline.run({ maxProgress: 1 });
 
     await new Promise((resolve) => setImmediate(resolve));
-    expect(catchUpProjections).toHaveBeenCalledOnce();
+    expect(runSchedules).toHaveBeenCalledOnce();
 
-    allowFirstCatchUp?.();
+    allowFirstSchedule?.();
     await Promise.all([first, second]);
   });
 
   it('stops an in-flight tick at the next stage boundary when maintenance acquires', async () => {
     let paused = false;
-    let projections = 0;
     let reactions = 0;
-    let advances = 0;
     let deliveries = 0;
     const pipeline = createRunnerPipeline({
       isPaused: async () => paused,
-      catchUpProjections: async () => {
-        projections += 1;
-      },
       runSchedules: async () => {
         paused = true;
       },
-      react: async () => {
+      maintain: async () => {
         reactions += 1;
-      },
-      advance: async () => {
-        advances += 1;
-        return { kind: 'no-work' };
       },
       deliver: async () => {
         deliveries += 1;
@@ -89,78 +82,45 @@ describe('RunnerPipeline', () => {
     });
 
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
-    expect({ projections, reactions, advances, deliveries }).toEqual({
-      projections: 2,
-      reactions: 0,
-      advances: 0,
-      deliveries: 0,
-    });
+    expect({ reactions, deliveries }).toEqual({ reactions: 0, deliveries: 0 });
   });
 
-  it('catches projections up after a later stage fails', async () => {
-    let projectionCatchUps = 0;
+  it('propagates a later stage failure', async () => {
     const pipeline = createRunnerPipeline({
-      catchUpProjections: async () => {
-        projectionCatchUps += 1;
-      },
       runSchedules: async () => undefined,
-      react: async () => {
+      maintain: async () => {
         throw new Error('label delivery denied');
       },
-      advance: async () => ({ kind: 'no-work' }),
       deliver: async () => undefined,
     });
 
     await expect(pipeline.run({ maxProgress: 1 })).rejects.toThrow('label delivery denied');
-    expect(projectionCatchUps).toBe(2);
   });
 
-  it('reacts after a progressed dispatch so watches see the resulting wait state', async () => {
+  it('never reports scheduler progress after producing schedule and maintenance facts', async () => {
     const stages: string[] = [];
     const pipeline = createRunnerPipeline({
-      catchUpProjections: async () => {
-        stages.push('projections');
-      },
       runSchedules: async () => {
         stages.push('schedules');
       },
-      react: async () => {
-        stages.push('react');
-      },
-      advance: async () => {
-        stages.push('advance');
-        return {
-          kind: 'progressed',
-          dispatched: [{ activationId: 'activation-1', runId: 'run-1' }],
-        };
+      maintain: async () => {
+        stages.push('maintain');
       },
       deliver: async () => {
         stages.push('deliver');
       },
     });
 
-    await expect(pipeline.run({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });
-    expect(stages.indexOf('react')).toBeGreaterThan(stages.indexOf('advance'));
-    expect(stages.lastIndexOf('react')).toBeGreaterThan(stages.indexOf('advance'));
+    await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
+    expect(stages).toEqual(['schedules', 'maintain', 'deliver']);
   });
 
-  it('publishes agent-run reports after advancement and before delivery', async () => {
+  it('runs delivery after maintenance without invoking processor stages', async () => {
     const stages: string[] = [];
     const pipeline = createRunnerPipeline({
-      catchUpProjections: async () => undefined,
       runSchedules: async () => undefined,
-      react: async () => {
-        stages.push('react');
-      },
-      advance: async () => {
-        stages.push('advance');
-        return {
-          kind: 'progressed',
-          dispatched: [{ activationId: 'activation-1', runId: 'run-1' }],
-        };
-      },
-      publishAgentRuns: async () => {
-        stages.push('publish-agent-runs');
+      maintain: async () => {
+        stages.push('maintain');
       },
       deliver: async () => {
         stages.push('deliver');
@@ -169,7 +129,6 @@ describe('RunnerPipeline', () => {
 
     await pipeline.run({ maxProgress: 1 });
 
-    expect(stages.indexOf('publish-agent-runs')).toBeGreaterThan(stages.indexOf('advance'));
-    expect(stages.indexOf('publish-agent-runs')).toBeLessThan(stages.indexOf('deliver'));
+    expect(stages).toEqual(['maintain', 'deliver']);
   });
 });

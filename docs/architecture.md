@@ -20,7 +20,8 @@ or workflow shape.
   model is a rebuildable interpretation of facts, never an alternate source of
   truth.
 - **A bounded module owns its vocabulary.** Event names, payloads, stream
-  references, closed status/outcome vocabularies, decoders, and draft factories
+  references, closed status/outcome vocabularies, decoders, and `EventData`
+  factories
   belong to one module. Consumers use its public contract rather than copying
   strings or reconstructing envelopes.
 - **Policy is deterministic and separate from execution.** Orchestration
@@ -58,8 +59,9 @@ location. Adapters retain control
 
 | Module | Owns |
 | --- | --- |
-| `kernel` | Event envelopes, identifiers, relations, clocks, and persistence contracts. |
-| `persistence` | Filesystem and in-memory event journals, checkpoints, projections, and locks. |
+| `kernel` | Identifiers, relations, clocks, and universal contracts. |
+| `@atolis-hq/eventing` | Persistence-neutral envelopes, journal/state ports, processor definitions and runtime, projections, and in-memory adapters. |
+| `@atolis-hq/eventing-filesystem` | Node filesystem adapters for Eventing journals, checkpoints, read-model projections, processor state, locks, and keyed run serialisation. |
 | `work` | Work-item facts, lifecycle controls, and work projections. |
 | `resources` | External-resource facts and their correlation to work items. |
 | `conversations` | Canonical work-item conversation facts, entry origins, and rebuildable conversation views. |
@@ -69,25 +71,53 @@ location. Adapters retain control
 | `control-plane` | Bounded advancement, intake, selection, scheduling, quotas, and resident/tick hosts. |
 | `integrations` | Provider polling, inbound translation, artifact registration, and outbound delivery. |
 | `surfaces` | CLI, HTTP API, and web presentation. |
-| `bootstrap` | Root configuration, paths, concrete adapter selection, projections, and composition. |
+| `bootstrap` | Root configuration, paths, concrete adapter selection, the complete processor registry, and composition. |
 
 No domain module imports a provider client, filesystem implementation, or
-surface. Surfaces call public applications and views; they do not write facts
-directly. Bootstrap selects concrete infrastructure and connects the complete
-application graph.
+surface. Bounded modules use Eventing's public package surface; only Bootstrap
+selects filesystem adapters. Surfaces call public applications and views; they
+do not write facts directly. Bootstrap connects the complete application graph.
 
 ## Durable model
 
-The append-only journal is authoritative. Events have a globally ordered
-envelope with an event type, stream reference, payload, and occurrence time.
-Every owning module supplies strict event decoders; a decoder returns `null`
-for another namespace and rejects malformed events in its own namespace.
+The append-only journal is authoritative. A bounded module creates immutable
+`EventData`: its event identity, type, occurrence and causal metadata, actor,
+source, and typed payload. It contains no stream or journal metadata. The
+journal accepts a non-empty `appendToStream(stream, expectedSequence, events)`
+batch and records an `EventEnvelope<EventData>` by attaching the stream,
+recording time, stream sequence, and global position. Expected sequence is
+optimistic concurrency: the module chooses how to handle a conflict and whether
+to retry; the journal provides neither automatic retry nor a general deduplication
+policy.
 
-Projections are derived read models. The filesystem implementation stores the
-journal and projection/checkpoint data below the Wake home's `.wake/`
-directory, but consumers must treat the journal—not a projection file—as the
-source of truth. The production projection runtime rebuilds and updates the
-board, analytics, resource lookup, and module projections from that journal.
+Each bounded module owns its event types, payload map, stream references,
+selector/decoder, and `create<Owner>EventData` factory. The contracts enforce
+event-type-to-stream ownership at compile time and validate it again while
+decoding persisted data. A selector returns `null` for another namespace and
+rejects malformed data in its own namespace.
+
+Filesystem storage preserves the established flat JSONL record through the
+Eventing filesystem package codec, while the in-memory adapter keeps the nested
+envelope model. The journal needs no migration for that storage compatibility
+boundary. The orchestration workflow-instance projection now stores its view
+directly; rebuilding it requires exclusive offline access: stop the resident
+through its supervisor, run `wake validate-state --rebuild-projections`
+host-side (with `--no-sandbox` when `docker/Dockerfile` exists), then restart
+through the supervisor. For a sandbox, run `wake sandbox down`, then
+`wake validate-state --rebuild-projections --no-sandbox`, then `wake sandbox
+up`. The same offline precondition applies to `wake doctor --rebuild-projections`.
+The rebuild replaces projection/checkpoint data from the journal and does not
+modify journal records.
+
+Projections are derived read models. `ProjectionStore` stores their
+namespaced, position-tracked values and they may always be rebuilt from the
+journal. `ProcessorStateStore` is separate: it stores processor-owned recovery
+state, such as pending delivery confirmations, and is not rebuildable from a
+projection. The filesystem adapters store the journal, projection/checkpoint
+data, and processor state below the Wake home's `.wake/` directory, but
+consumers must treat the journal—not a projection file—as the source of truth.
+The production projection runtime rebuilds and updates the board, analytics,
+resource lookup, and module projections from that journal.
 
 Work-item identities are minted by Wake. Resources are separate durable facts
 and are correlated to work items through `resources`; provider locators do not
@@ -133,9 +163,12 @@ Activation.
    state to the CLI, API, and UI.
 
 The tick, resident loop, and scheduled host all use the same control-plane
-advancement capability. Recovery is explicit: execution leases and result
+advancement capability. Durable reactions run through one Eventing host and
+explicit Bootstrap registry. Recovery is explicit: execution leases and result
 envelopes make incomplete attempts visible after restart rather than relying on
-process memory.
+process memory. Provider polling, schedules, delivery, surface diagnostics,
+and reconciliation remain separate bounded lanes with their own watermarks or
+checkpoints.
 
 ## Designing for extension
 
@@ -153,9 +186,44 @@ path around it:
 - A **surface** calls public applications and presents projections. It does not
   append another module's facts directly or infer lifecycle from UI state.
 
+Event processor ownership is enforced in the architecture checks: bounded
+modules may define selectors and handlers, the Eventing filesystem package
+supplies concrete serialisers, and only Bootstrap may construct the host and
+compose the full registry. No module maintains a parallel durable-subscription
+runtime.
+
+The symbol-aware `check-event-architecture` gate also enforces publishing and
+processor ownership, bounded imports, legacy-vocabulary bans, and manifest
+namespaces. The Eventing package hosts subscriptions, checkpoints, projections,
+and processor-state ports without knowing domain facts; its filesystem package
+implements those ports with Node APIs without knowing domain facts; Bootstrap
+composes both with module factories and the processor registry. Production code
+uses only `@atolis-hq/eventing`, `@atolis-hq/eventing/memory`, and
+`@atolis-hq/eventing-filesystem` public exports—there is no current
+`src/eventing`/`src/persistence` compatibility surface or alternate delivery
+path. Surfaces flatten an internal envelope only at their transport boundary to
+preserve existing API, CLI, and web shapes.
+
+The current ports deliberately remain narrow. They match established event-store
+concepts without adding infrastructure: SQLite, Emmett, or Kurrent adapters can
+fit behind `EventJournal` and Eventing later. Kurrent would require new
+infrastructure, and neither a SQLite nor Emmett substitution currently replaces
+Wake's compatibility, global-order, push-wake, checkpoint, and lock semantics.
+
 This keeps additions testable with durable fakes, makes production reachability
 provable through Bootstrap, and ensures a new transport or CLI does not change
 the meaning of existing workflow facts.
+
+## Workspace release topology
+
+The repository publishes three packages at the same version, in dependency
+order: `@atolis-hq/eventing`, `@atolis-hq/eventing-filesystem`, then
+`@atolis-hq/wake`. Eventing exposes contracts and runtime from its package root
+and in-memory adapters only from its `/memory` subpath. Eventing Filesystem
+exposes its adapter constructors only from its package root. Its JSONL journal
+and processor-state readers preserve existing Wake-home disk formats; that data
+compatibility does not introduce a migration package, a legacy source import,
+or a second runtime path.
 
 ## Configuration and extension
 

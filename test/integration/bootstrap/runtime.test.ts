@@ -1,3 +1,22 @@
+import type {
+  CheckpointStore,
+  EventJournal,
+  ProcessorRunSerialiser,
+  ProjectionStore,
+} from '@atolis-hq/eventing';
+import {
+  EventActorKind,
+  EventSourceKind,
+  causationId,
+  correlationId,
+  createEventData,
+  eventId,
+} from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,10 +29,15 @@ import {
   activityWorkflowInstanceId,
 } from '../../../src/activities/index.js';
 import {
+  analyticsProjection,
   createCompositionRoot,
   createSurfaceApplications,
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
+import {
+  ControlStreamKind,
+  activationSchedulerSubscriptionConsumer,
+} from '../../../src/control-plane/index.js';
 import {
   ExecutionEventType,
   TranscriptStore,
@@ -25,26 +49,20 @@ import {
   issueCommentObservation,
   issueObservation,
 } from '../../../src/integrations/github/infrastructure/issue-source.js';
-import { DeliveryIntentEventType } from '../../../src/integrations/index.js';
-import type { CheckpointStore, EventJournal, ProjectionStore } from '../../../src/kernel/index.js';
+import { DeliveryIntentEventType, integrationStream } from '../../../src/integrations/index.js';
 import {
-  EventActorKind,
-  EventSourceKind,
-  causationId,
-  correlationId,
-  createEventDraft,
-  eventId,
-} from '../../../src/kernel/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
+  OrchestrationEventType,
+  orchestrationGroupId,
+  workflowInstanceId,
+  workflowInstanceStream,
+  workflowName,
+} from '../../../src/orchestration/index.js';
 import {
   ResourceCorrelationRole,
   resourceCapability,
   resourceKind,
 } from '../../../src/resources/index.js';
+import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { resId, workId } from '../../support/identities.js';
 
 const roots: string[] = [];
@@ -58,12 +76,340 @@ afterEach(async () => {
 });
 
 describe('target composition root', () => {
+  it('always composes the activation scheduler as a durable subscriber', async () => {
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: parseRootConfig({
+        schemaVersion: 1,
+        execution: {
+          agentRunners: { fake: { kind: 'fake' } },
+          runnerPools: { standard: ['fake'] },
+          defaultRunnerPool: 'standard',
+        },
+        orchestration: { workflows: {} },
+        controlPlane: {},
+        integrations: {},
+        surfaces: {},
+      }),
+      journal: new InMemoryEventJournal({ now: () => new Date('2026-08-29T00:00:00.000Z') }),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+    });
+
+    expect(runtime.activationSchedulerSubscriber).toBeDefined();
+  });
+
+  it('exposes projection subscriptions without a legacy projection runner facade', async () => {
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: parseRootConfig({
+        schemaVersion: 1,
+        execution: {
+          agentRunners: { fake: { kind: 'fake' } },
+          runnerPools: { standard: ['fake'] },
+          defaultRunnerPool: 'standard',
+        },
+        orchestration: { workflows: {} },
+        controlPlane: {},
+        integrations: {},
+        surfaces: {},
+      }),
+      journal: new InMemoryEventJournal({ now: () => new Date('2026-08-29T00:00:00.000Z') }),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+    });
+
+    expect(runtime.projectionSubscriptions).toBeDefined();
+    expect(runtime).not.toHaveProperty('projectionRunner');
+  });
+
+  it('hosts the activation scheduler processor through the injected processor serialiser', async () => {
+    const root = await fixtureRoot();
+    const serialisedConsumers: string[] = [];
+    const serialise: ProcessorRunSerialiser = async (consumer, _signal, operation) => {
+      serialisedConsumers.push(consumer);
+      return operation();
+    };
+    const runtime = await createCompositionRoot(root, {
+      config: rootConfig(),
+      journal: new InMemoryEventJournal({ now: () => new Date('2026-08-29T00:00:00.000Z') }),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      subscriptionRunSerialiser: serialise,
+    });
+    const controller = new AbortController();
+    const run = startProcessorRuntime(runtime, controller.signal);
+    try {
+      await runtime.work.create(
+        { workItemId: workId('shared-scheduler-serialiser'), objective: 'serialise scheduler' },
+        commandContext({ now: () => new Date('2026-08-29T00:00:00.000Z') }, 'shared-serialiser'),
+      );
+
+      await vi.waitFor(() =>
+        expect(serialisedConsumers).toContain(activationSchedulerSubscriptionConsumer),
+      );
+    } finally {
+      controller.abort();
+      await run.done;
+    }
+  });
+
+  it('starts a production-composed fake runner from a conversation resume through the subscriber', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    const firstRunnerStarted = deferred<void>();
+    const resumedRunnerStarted = deferred<void>();
+    const trace: string[] = [];
+    let runnerStarts = 0;
+    const root = await fixtureRoot();
+    const runtime = await createCompositionRoot(root, {
+      config: subscriberConversationRootConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+      decorateRunner(runner) {
+        return {
+          async start(request, signal) {
+            runnerStarts += 1;
+            trace.push(`runner:${runnerStarts}`);
+            if (runnerStarts === 1) firstRunnerStarted.resolve();
+            if (runnerStarts === 2) resumedRunnerStarted.resolve();
+            return runner.start(request, signal);
+          },
+        };
+      },
+    });
+    const run = startProcessorRuntime(runtime);
+    const item = await runtime.work.create(
+      { workItemId: workId('conversation-latency'), objective: 'resume blocked agent work' },
+      commandContext(clock, 'conversation-latency-work'),
+    );
+    const workflow = workflowInstanceId('workflow-conversation-latency');
+    try {
+      await runtime.orchestration.start(
+        {
+          workflowInstanceId: workflow,
+          workItemId: item.workItemId,
+          workflowName: workflowName('conversation-latency'),
+          orchestrationGroupId: orchestrationGroupId('group-conversation-latency'),
+        },
+        commandContext(clock, 'conversation-latency-start'),
+      );
+
+      await firstRunnerStarted.promise;
+      await waitForJournalEvent(
+        journal,
+        0,
+        (event) =>
+          event.event.eventType === OrchestrationEventType.InstanceBlocked &&
+          event.stream.id === workflow,
+      );
+      trace.push('blocked');
+      // The resident projection subscriptions normally maintain this read
+      // model; this test advances them explicitly before invoking the API.
+      await runtime.projectionSubscriptions.catchUpOnce();
+
+      const message = (
+        await createSurfaceApplications(runtime, { now: () => clock.now().toISOString() })
+      ).api.work.message;
+      if (message === undefined)
+        throw new Error('Expected enabled conversation message application');
+      await message(toWorkItemKey(item.workItemId), {
+        idempotencyKey: 'conversation-latency-message',
+        body: 'Please continue using this correction.',
+      });
+      trace.push('message-recorded');
+
+      const facts = await journal.readStream(workflowInstanceStream(workflow));
+      expect(facts.map((event) => event.event.eventType)).toContain(
+        OrchestrationEventType.OperatorRetryRequested,
+      );
+      expect(
+        facts.filter((event) => event.event.eventType === OrchestrationEventType.ActivityRequested),
+      ).toHaveLength(2);
+      trace.push('retry-and-activity-durable');
+
+      await resumedRunnerStarted.promise;
+      expect(runnerStarts).toBe(2);
+      expect(trace).toEqual([
+        'runner:1',
+        'blocked',
+        'message-recorded',
+        'retry-and-activity-durable',
+        'runner:2',
+      ]);
+    } finally {
+      run.abort();
+      await run.done;
+    }
+  });
+
+  it('reconsiders released capacity through the subscriber and starts the pending activation once', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const firstCompletion = deferred<void>();
+    const firstRunnerStarted = deferred<void>();
+    const secondRunnerStarted = deferred<void>();
+    const trace: string[] = [];
+    let runnerStarts = 0;
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: subscriberCapacityRootConfig(),
+      journal: new InMemoryEventJournal(clock),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+      decorateRunner(runner) {
+        return {
+          async start(request, signal) {
+            const execution = await runner.start(request, signal);
+            runnerStarts += 1;
+            trace.push(`runner:${runnerStarts}`);
+            if (runnerStarts === 1) {
+              firstRunnerStarted.resolve();
+              return { ...execution, result: firstCompletion.promise.then(() => execution.result) };
+            }
+            if (runnerStarts === 2) secondRunnerStarted.resolve();
+            return execution;
+          },
+        };
+      },
+    });
+    const run = startProcessorRuntime(runtime);
+    try {
+      await startComposedWorkflow(runtime, clock, 'capacity-first');
+      await firstRunnerStarted.promise;
+      await startComposedWorkflow(runtime, clock, 'capacity-second');
+      trace.push('pending-work-recorded');
+
+      firstCompletion.resolve();
+      trace.push('capacity-released');
+      await secondRunnerStarted.promise;
+
+      expect(runnerStarts).toBe(2);
+      expect(trace).toEqual(['runner:1', 'pending-work-recorded', 'capacity-released', 'runner:2']);
+    } finally {
+      run.abort();
+      await run.done;
+    }
+  });
+
+  it('reads a pre-restart runner pause from durable facts before stale projections can schedule it', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    const firstRuntime = await createCompositionRoot('C:/wake-home', {
+      config: subscriberCapacityRootConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    await firstRuntime.runnerControls.pause('fake', 'pause-before-restart');
+
+    const staleProjections = new InMemoryProjectionStore();
+    let runnerStarts = 0;
+    const restarted = await createCompositionRoot('C:/wake-home', {
+      config: subscriberCapacityRootConfig(),
+      journal,
+      projections: staleProjections,
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+      decorateRunner(runner) {
+        return {
+          async start(request, signal) {
+            runnerStarts += 1;
+            return runner.start(request, signal);
+          },
+        };
+      },
+    });
+    await startComposedWorkflow(restarted, clock, 'paused-after-restart');
+    // Do not run projection subscriptions: the scheduler reads the durable
+    // control stream without waiting for read-model catch-up.
+    await expect(staleProjections.read(ControlStreamKind.Global, 'global')).resolves.toBeNull();
+
+    await restarted.activationSchedulerSubscriber.poke();
+    expect(runnerStarts).toBe(0);
+
+    await restarted.runnerControls.unpause('fake', 'resume-after-restart');
+    await restarted.activationSchedulerSubscriber.poke();
+    expect(runnerStarts).toBe(1);
+  });
+
+  it('resumes the composed subscriber from its durable checkpoint after restart', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const root = await fixtureRoot();
+    const firstCheckpoint = deferred<void>();
+    const secondCheckpoint = deferred<void>();
+    const saves: number[] = [];
+    let restarted = false;
+    const decorateCheckpoints = (base: CheckpointStore): CheckpointStore => ({
+      load: base.load.bind(base),
+      async save(consumer, position) {
+        await base.save(consumer, position);
+        if (consumer !== activationSchedulerSubscriptionConsumer) return;
+        saves.push(position);
+        if (!restarted) firstCheckpoint.resolve();
+        else secondCheckpoint.resolve();
+      },
+      reset: base.reset.bind(base),
+    });
+    const first = await createCompositionRoot(root, {
+      config: subscriberRestartRootConfig(),
+      clock,
+      decorateCheckpoints,
+    });
+    const firstRun = startProcessorRuntime(first);
+    try {
+      await startRestartWorkflow(first, clock, 'before-restart');
+      await firstCheckpoint.promise;
+    } finally {
+      firstRun.abort();
+      await firstRun.done;
+    }
+    const checkpointBeforeRestart = await first.checkpoints.load(
+      activationSchedulerSubscriptionConsumer,
+    );
+    if (checkpointBeforeRestart === undefined || checkpointBeforeRestart < 1)
+      throw new Error('Expected the file-backed subscriber checkpoint before restart');
+
+    await startRestartWorkflow(first, clock, 'after-restart');
+    restarted = true;
+    const secondRunnerStarted = deferred<void>();
+    let restartedRunnerStarts = 0;
+
+    const restartedRoot = await createCompositionRoot(root, {
+      config: subscriberRestartRootConfig(),
+      clock,
+      decorateCheckpoints,
+      decorateRunner(runner) {
+        return {
+          async start(request, signal) {
+            restartedRunnerStarts += 1;
+            secondRunnerStarted.resolve();
+            return runner.start(request, signal);
+          },
+        };
+      },
+    });
+    const restartedRun = startProcessorRuntime(restartedRoot);
+    try {
+      await secondRunnerStarted.promise;
+      await secondCheckpoint.promise;
+      expect(restartedRunnerStarts).toBe(1);
+      await expect(
+        restartedRoot.checkpoints.load(activationSchedulerSubscriptionConsumer),
+      ).resolves.toBeGreaterThan(checkpointBeforeRestart);
+      expect(saves.some((position) => position > checkpointBeforeRestart)).toBe(true);
+    } finally {
+      restartedRun.abort();
+      await restartedRun.done;
+    }
+  });
+
   it('recovers durable started Runs through the live advance composition', async () => {
     const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);
     const id = runId('run-restart-recovery');
-    await journal.append(runStream(id), 0, [
-      createEventDraft({
+    await journal.appendToStream(runStream(id), 0, [
+      createEventData({
         eventId: 'run-restart-recovery:started',
         eventType: ExecutionEventType.RunStarted,
         occurredAt: clock.now().toISOString(),
@@ -71,7 +417,6 @@ describe('target composition root', () => {
         causationId: 'run-restart-recovery',
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: runStream(id),
         payload: {
           activationId: activationId('activation-restart-recovery'),
           activity: BuiltInActivityName.Agent,
@@ -90,7 +435,7 @@ describe('target composition root', () => {
       clock,
     });
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(runtime.execution.list()).resolves.toMatchObject([
       {
@@ -106,14 +451,15 @@ describe('target composition root', () => {
     const journal = new InMemoryEventJournal(clock);
     const writes: string[] = [];
     const decoratedJournal: EventJournal = {
-      async append(stream, expectedSequence, events) {
+      async appendToStream(stream, expectedSequence, events) {
         writes.push(`${stream.kind}:${stream.id}`);
-        return journal.append(stream, expectedSequence, events);
+        return journal.appendToStream(stream, expectedSequence, events);
       },
       readStream: journal.readStream.bind(journal),
       readAll: journal.readAll.bind(journal),
       readLatest: journal.readLatest?.bind(journal),
       latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
+      waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
       changeSignal: journal.changeSignal,
     };
     const decorator = vi.fn((base: EventJournal) => {
@@ -167,7 +513,7 @@ describe('target composition root', () => {
       { workItemId: workId('decorated-projections'), objective: 'prove projection decoration' },
       commandContext(clock, 'decorated-projections'),
     );
-    await runtime.projectionRunner.runRegisteredOnce();
+    await runtime.projectionSubscriptions.catchUpOnce();
 
     expect(writes).toBeGreaterThan(0);
   });
@@ -195,7 +541,7 @@ describe('target composition root', () => {
       { workItemId: workId('decorated-checkpoints'), objective: 'prove checkpoint decoration' },
       commandContext(clock, 'decorated-checkpoints'),
     );
-    await runtime.projectionRunner.runRegisteredOnce();
+    await runtime.projectionSubscriptions.catchUpOnce();
 
     expect(saves).toBeGreaterThan(0);
   });
@@ -223,6 +569,48 @@ describe('target composition root', () => {
 
     expect(saves).toEqual(['2026-08-10T00:01:00.000Z']);
   });
+
+  it.each([
+    [
+      'CLI',
+      async (runtime: Awaited<ReturnType<typeof createCompositionRoot>>) => {
+        const applications = await createSurfaceApplications(runtime);
+        await applications.cli.tick.run({ maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 });
+      },
+    ],
+    [
+      'API',
+      async (runtime: Awaited<ReturnType<typeof createCompositionRoot>>) => {
+        const applications = await createSurfaceApplications(runtime);
+        await applications.api.controlPlane.tick?.({ idempotencyKey: 'due-schedule-api-tick' });
+      },
+    ],
+  ])(
+    'creates and dispatches a due schedule through a subscriber-mode one-shot %s tick',
+    async (_surface, tick) => {
+      const clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };
+      let checkpoint = '2026-08-10T00:00:00.000Z';
+      const runtime = await createCompositionRoot('C:/wake-home', {
+        config: subscriberScheduledRootConfig(),
+        journal: new InMemoryEventJournal(clock),
+        projections: new InMemoryProjectionStore(),
+        checkpoints: new InMemoryCheckpointStore(),
+        scheduleCheckpoints: {
+          async load() {
+            return checkpoint;
+          },
+          async save(_scheduleId, slot) {
+            checkpoint = slot;
+          },
+        },
+        clock,
+      });
+
+      await tick(runtime);
+
+      expect(await runtime.execution.list()).toHaveLength(1);
+    },
+  );
 
   it('pauses the composed runner pipeline for maintenance and resumes it after a healthy update clears the lease', async () => {
     const clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };
@@ -330,7 +718,7 @@ describe('target composition root', () => {
       },
       commandContext(clock, 'decorated-delivery'),
     );
-    await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
+    await journal.appendToStream({ kind: 'resource', id: resource.resourceId }, 1, [
       {
         eventId: eventId('decorated-delivery-intent'),
         eventType: DeliveryIntentEventType.StatusPublishRequested,
@@ -340,7 +728,6 @@ describe('target composition root', () => {
         causationId: causationId('decorated-delivery'),
         actor: { kind: EventActorKind.System, id: 'test' },
         source: { kind: EventSourceKind.Internal, id: 'test' },
-        stream: { kind: 'resource', id: resource.resourceId },
         payload: {
           workflowInstanceId: 'workflow-decorated-delivery',
           activationId: 'activation-decorated-delivery',
@@ -349,11 +736,74 @@ describe('target composition root', () => {
         },
       },
     ]);
-    await runtime.projectionRunner.runRegisteredOnce();
+    await runtime.projectionSubscriptions.catchUpOnce();
 
     await runtime.delivery.deliverNext(new AbortController().signal);
 
     expect(deliveries).toBe(1);
+  });
+
+  it('delivers from its targeted projection while an unrelated projection is blocked and the scheduler advances', async () => {
+    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    const projections = new BlockingNamespaceProjectionStore(analyticsProjection.name);
+    let deliveries = 0;
+    const runtime = await createCompositionRoot('C:/wake-targeted-delivery', {
+      config: fakeProviderRootConfig(),
+      journal,
+      projections,
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+      decorateDeliveryAdapter: (adapter) => ({
+        async deliver(intent, signal) {
+          deliveries += 1;
+          return adapter.deliver(intent, signal);
+        },
+        reconcile: adapter.reconcile.bind(adapter),
+      }),
+    });
+    const resource = await runtime.resources.discover(
+      {
+        resourceId: resId('targeted-delivery'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'fake', key: 'targeted-delivery' },
+        capabilities: [],
+      },
+      commandContext(clock, 'targeted-delivery-resource'),
+    );
+    const blockedProjection = runtime.projectionSubscriptions.catchUp(analyticsProjection);
+    await projections.blockedWriteStarted.promise;
+    const subscriber = startProcessorRuntime(runtime);
+    try {
+      await journal.appendToStream({ kind: 'resource', id: resource.resourceId }, 1, [
+        createEventData({
+          eventId: 'targeted-delivery-intent',
+          eventType: DeliveryIntentEventType.StatusPublishRequested,
+          occurredAt: clock.now().toISOString(),
+          correlationId: 'targeted-delivery-intent',
+          causationId: 'targeted-delivery-intent',
+          actor: { kind: EventActorKind.System, id: 'test' },
+          source: { kind: EventSourceKind.Internal, id: 'test' },
+          payload: {
+            workflowInstanceId: 'workflow-targeted-delivery',
+            activationId: 'activation-targeted-delivery',
+            resourceId: resource.resourceId,
+            body: 'deliver despite unrelated projection latency',
+          },
+        }),
+      ]);
+      await vi.waitFor(async () => {
+        expect(await runtime.checkpoints.load(activationSchedulerSubscriptionConsumer)).toBe(2);
+      });
+
+      await runtime.runnerPipeline.run({ maxProgress: 1 }, new AbortController().signal);
+
+      expect(deliveries).toBe(1);
+    } finally {
+      subscriber.abort();
+      projections.releaseBlockedWrite();
+      await Promise.all([subscriber.done, blockedProjection]);
+    }
   });
 
   it('injects only domain-owned config and central persistence ports', async () => {
@@ -382,7 +832,7 @@ describe('target composition root', () => {
 
     expect(runtime.config.execution.defaultRunnerPool).toBe('standard');
     expect(runtime.paths.dataRoot).toContain('.wake');
-    expect(runtime.projectionRunner).toBeDefined();
+    expect(runtime.projectionSubscriptions).toBeDefined();
     expect(runtime.work).toBeDefined();
     expect(runtime.resources).toBeDefined();
     expect(runtime.orchestration).toBeDefined();
@@ -464,7 +914,7 @@ describe('target composition root', () => {
       namespace: 'orchestration',
       key: 'workflow-transcript',
       lastGlobalPosition: 0,
-      value: { view: { workItemId: 'work-transcript' } },
+      value: { workItemId: 'work-transcript' },
     });
 
     await expect(
@@ -509,7 +959,7 @@ describe('target composition root', () => {
       namespace: 'orchestration',
       key: 'workflow-session',
       lastGlobalPosition: 0,
-      value: { view: { workItemId: 'work-session' } },
+      value: { workItemId: 'work-session' },
     });
 
     await expect(
@@ -582,7 +1032,7 @@ describe('target composition root', () => {
     );
     const eventsBefore = await journal.readAll(0);
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(closedWorkspace.path)).rejects.toThrow();
     await expect(access(openWorkspace.path)).resolves.toBeUndefined();
@@ -595,7 +1045,7 @@ describe('target composition root', () => {
     expect(await journal.readAll(0)).toEqual(eventsBefore);
 
     now = new Date('2026-08-13T10:00:00.000Z');
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
   });
 
@@ -636,7 +1086,8 @@ describe('target composition root', () => {
       });
     const eventsBefore = await journal.readAll(0);
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.projectionSubscriptions.catchUpOnce();
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(
       readFile(join(runtime.paths.transcriptsRoot, closed, '.cleaned-at'), 'utf8'),
@@ -647,7 +1098,7 @@ describe('target composition root', () => {
     expect(await journal.readAll(0)).toEqual(eventsBefore);
 
     now = new Date('2026-08-13T10:00:00.000Z');
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
     await expect(access(join(runtime.paths.transcriptsRoot, open))).resolves.toBeUndefined();
@@ -681,7 +1132,7 @@ describe('target composition root', () => {
     });
     await ownedWorkspace(runtime.paths.workspacesRoot, 'zero-workspace', closed, 'zero-run');
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
   });
@@ -727,14 +1178,14 @@ describe('target composition root', () => {
     );
     const eventsBefore = await journal.readAll(0);
 
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(workspace.markerPath)).resolves.toBeUndefined();
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).resolves.toBeUndefined();
     expect(await journal.readAll(0)).toEqual(eventsBefore);
 
     failRemoval = false;
-    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
 
     await expect(access(workspace.markerPath)).rejects.toThrow();
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
@@ -791,7 +1242,7 @@ describe('target composition root', () => {
         user: { login: 'author', type: 'User' },
       },
     });
-    await journal.append(issue.stream, 0, [issue]);
+    await journal.appendToStream(integrationStream(GitHubAdapter), 0, [issue]);
     const comment = issueCommentObservation({
       repository: 'atolis-hq/wake',
       issue: { number: 7 },
@@ -804,7 +1255,7 @@ describe('target composition root', () => {
       },
     });
     if (comment === null) throw new Error('Test comment observation was unexpectedly empty');
-    await journal.append(comment.stream, 1, [comment]);
+    await journal.appendToStream(integrationStream(GitHubAdapter), 1, [comment]);
     let prompt = '';
 
     await runtime.activities.execute(
@@ -948,6 +1399,104 @@ function scheduledRootConfig() {
   });
 }
 
+function subscriberScheduledRootConfig() {
+  return scheduledRootConfig();
+}
+
+function subscriberConversationRootConfig() {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: {
+      default: 'conversation-latency',
+      workflows: {
+        'conversation-latency': {
+          stages: {
+            implement: {
+              activity: 'agent',
+              with: { prompt: '[fake:blocked]' },
+              on: { done: { then: 'done' } },
+            },
+          },
+        },
+      },
+    },
+    controlPlane: {},
+    integrations: {},
+    surfaces: { api: { conversationMessages: { enabled: true } } },
+  });
+}
+
+function subscriberCapacityRootConfig() {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: {
+      default: 'capacity',
+      workflows: {
+        capacity: {
+          stages: {
+            implement: {
+              activity: 'agent',
+              with: { prompt: 'complete this work' },
+              on: { done: { then: 'done' } },
+              requiresApproval: false,
+            },
+          },
+        },
+      },
+    },
+    controlPlane: {
+      maxConcurrentRuns: 1,
+      maxDispatches: 1,
+    },
+    integrations: {},
+    surfaces: {},
+  });
+}
+
+function subscriberRestartRootConfig() {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: {
+      default: 'restart',
+      workflows: {
+        restart: {
+          stages: {
+            run: {
+              activity: 'agent',
+              with: { prompt: 'restart from durable checkpoint' },
+              on: { done: { then: 'done' } },
+            },
+          },
+        },
+      },
+    },
+    controlPlane: {},
+    integrations: {},
+    surfaces: {},
+  });
+}
+
 function fakeProviderRootConfig() {
   return parseRootConfig({
     schemaVersion: 1,
@@ -1021,4 +1570,108 @@ async function fixtureRoot(): Promise<string> {
   roots.push(root);
   await mkdir(join(root, 'prompts'));
   return root;
+}
+
+function deferred<Value>() {
+  let resolve!: (value: Value) => void;
+  const promise = new Promise<Value>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function startProcessorRuntime(
+  root: Awaited<ReturnType<typeof createCompositionRoot>>,
+  signal?: AbortSignal,
+) {
+  const processors = root.processorRuntime.start(signal);
+  const reconciliation = root.activationSchedulerSubscriber.start(signal);
+  return {
+    abort() {
+      processors.abort();
+      reconciliation.abort();
+    },
+    done: Promise.all([processors.done, reconciliation.done]).then(() => undefined),
+  };
+}
+
+class BlockingNamespaceProjectionStore extends InMemoryProjectionStore {
+  readonly blockedWriteStarted = deferred<void>();
+  private readonly release = deferred<void>();
+
+  constructor(private readonly blockedNamespace: string) {
+    super();
+  }
+
+  override async write<Value>(projection: {
+    readonly namespace: string;
+    readonly key: string;
+    readonly lastGlobalPosition: number;
+    readonly value: Value;
+  }): Promise<void> {
+    if (projection.namespace === this.blockedNamespace) {
+      this.blockedWriteStarted.resolve();
+      await this.release.promise;
+    }
+    await super.write(projection);
+  }
+
+  releaseBlockedWrite(): void {
+    this.release.resolve();
+  }
+}
+
+async function startComposedWorkflow(
+  runtime: Awaited<ReturnType<typeof createCompositionRoot>>,
+  clock: { now(): Date },
+  id: string,
+): Promise<void> {
+  const item = await runtime.work.create(
+    { workItemId: workId(id), objective: `complete ${id}` },
+    commandContext(clock, `${id}-work`),
+  );
+  await runtime.orchestration.start(
+    {
+      workflowInstanceId: workflowInstanceId(`workflow-${id}`),
+      workItemId: item.workItemId,
+      workflowName: workflowName('capacity'),
+      orchestrationGroupId: orchestrationGroupId(`group-${id}`),
+    },
+    commandContext(clock, `${id}-start`),
+  );
+}
+
+async function startRestartWorkflow(
+  runtime: Awaited<ReturnType<typeof createCompositionRoot>>,
+  clock: { now(): Date },
+  id: string,
+): Promise<void> {
+  const item = await runtime.work.create(
+    { workItemId: workId(`restart-${id}`), objective: `restart ${id}` },
+    commandContext(clock, `${id}-work`),
+  );
+  await runtime.orchestration.start(
+    {
+      workflowInstanceId: workflowInstanceId(`workflow-restart-${id}`),
+      workItemId: item.workItemId,
+      workflowName: workflowName('restart'),
+      orchestrationGroupId: orchestrationGroupId(`group-restart-${id}`),
+    },
+    commandContext(clock, `${id}-start`),
+  );
+}
+
+async function waitForJournalEvent(
+  journal: EventJournal,
+  after: number,
+  predicate: (event: Awaited<ReturnType<EventJournal['readAll']>>[number]) => boolean,
+): Promise<void> {
+  let position = after;
+  while (true) {
+    const events = await journal.readAll(position);
+    const matched = events.find(predicate);
+    if (matched !== undefined) return;
+    position = events.at(-1)?.globalPosition ?? position;
+    await journal.waitForEventsAfter(position, new AbortController().signal, 30_000);
+  }
 }

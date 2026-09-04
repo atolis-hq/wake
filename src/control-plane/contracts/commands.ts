@@ -29,4 +29,4 @@ export interface HostResult {
     | typeof HostStopReason.Shutdown;
 }
 
-export type AdvanceOnce = (options: AdvanceOptions) => Promise<AdvanceResult>;
+export type AdvanceOnce = (options: AdvanceOptions, signal?: AbortSignal) => Promise<AdvanceResult>;

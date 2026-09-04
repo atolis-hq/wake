@@ -1,7 +1,8 @@
+import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { ActivityRegistry, activityName } from '../../../src/activities/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   ApprovalAuthorityKind,
   OrchestrationEventType,
@@ -17,7 +18,6 @@ import {
   workflowName,
   type ApprovalAuthority,
 } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
@@ -261,10 +261,10 @@ describe('approval authority acceptance', () => {
     );
 
     const accepted = (await journal.readAll(0)).find(
-      (event) => event.eventType === OrchestrationEventType.SignalAccepted,
+      (event) => event.event.eventType === OrchestrationEventType.SignalAccepted,
     );
 
-    expect(accepted?.payload).toMatchObject({
+    expect(accepted?.event.payload).toMatchObject({
       authority: { kind: ApprovalAuthorityKind.Auto },
       actorId: 'owner',
       actorDecision: { authorized: true, evidenceId: 'approval-evidence-1' },

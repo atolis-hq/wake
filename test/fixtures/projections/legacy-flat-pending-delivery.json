@@ -1,0 +1,31 @@
+{
+  "namespace": "reactor:delivery-outcomes:pending",
+  "key": "pending-confirmations",
+  "lastGlobalPosition": 0,
+  "value": {
+    "events": [
+      {
+        "eventId": "intent-1:confirmed",
+        "eventType": "delivery.confirmed",
+        "schemaVersion": 1,
+        "occurredAt": "2026-08-09T00:00:00.000Z",
+        "correlationId": "delivery-outcome-test",
+        "causationId": "delivery-outcome-test",
+        "actor": { "kind": "system", "id": "test" },
+        "source": { "kind": "internal", "id": "test" },
+        "stream": { "kind": "delivery", "id": "intent-1" },
+        "payload": {
+          "intentEventId": "intent-1",
+          "intentGlobalPosition": 1,
+          "workflowInstanceId": "primary:work-1",
+          "activationId": "primary:work-1:activity:1",
+          "occurrenceOrdinal": 1,
+          "externalId": "external-1"
+        },
+        "recordedAt": "2026-08-09T00:00:01.000Z",
+        "sequence": 1,
+        "globalPosition": 1
+      }
+    ]
+  }
+}

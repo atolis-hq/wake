@@ -1,17 +1,17 @@
 import {
+  EventActorKind,
+  EventSourceKind,
+  correlationId,
+  type EventJournal,
+} from '@atolis-hq/eventing';
+import {
   ControlEventType,
   ControlStreamKind,
   controlPlaneStream,
-  createControlEventDraft,
+  createControlPlaneEventData,
   resolveRunnerQuotaResumeAt,
 } from '../control-plane/index.js';
-import {
-  EventActorKind,
-  correlationId,
-  type Clock,
-  type EventJournal,
-  type IdGenerator,
-} from '../kernel/index.js';
+import { type Clock, type IdGenerator } from '../kernel/index.js';
 
 export function createRunnerQuotaReporter(journal: EventJournal, clock: Clock, ids: IdGenerator) {
   return async ({
@@ -23,22 +23,23 @@ export function createRunnerQuotaReporter(journal: EventJournal, clock: Clock, i
   }) => {
     const stream = controlPlaneStream();
     const occurredAt = clock.now().toISOString();
-    await journal.append(stream, (await journal.readStream(stream)).length, [
-      createControlEventDraft(
-        ControlEventType.RunnerPaused,
-        {
+    const commandId = ids.next('command');
+    await journal.appendToStream(stream, (await journal.readStream(stream)).length, [
+      createControlPlaneEventData({
+        eventId: `${commandId}:${ControlEventType.RunnerPaused}`,
+        eventType: ControlEventType.RunnerPaused,
+        occurredAt,
+        correlationId: correlationId(`runner-quota:${runnerName}`),
+        causationId: commandId,
+        actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
+        source: { kind: EventSourceKind.Internal, id: ControlStreamKind.Global },
+        payload: {
           runnerName,
           cause: 'quota',
           reason: message,
           resumeAt: resolveRunnerQuotaResumeAt(message, occurredAt),
         },
-        {
-          commandId: ids.next('command'),
-          correlationId: correlationId(`runner-quota:${runnerName}`),
-          occurredAt,
-          actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
-        },
-      ),
+      }),
     ]);
   };
 }

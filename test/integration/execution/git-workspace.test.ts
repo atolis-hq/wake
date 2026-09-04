@@ -21,6 +21,47 @@ describe('GitWorkspaceProvider', () => {
     );
   });
 
+  it('propagates the acquisition signal to an in-flight git clone', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    let reportCloneEntered!: () => void;
+    const cloneEntered = new Promise<void>((resolve) => {
+      reportCloneEntered = resolve;
+    });
+    let receivedSignal: AbortSignal | undefined;
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (_args, signal) => {
+        receivedSignal = signal;
+        reportCloneEntered();
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+      },
+    );
+    const controller = new AbortController();
+    const cancellation = new Error('workspace cancelled');
+
+    const acquisition = provider.acquire({
+      runId: runId('run-cancelled-clone'),
+      signal: controller.signal,
+      mode: 'read-only',
+      workItemId: workId('cancelled-clone'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+      },
+    });
+    await cloneEntered;
+    controller.abort(cancellation);
+
+    await expect(acquisition).rejects.toBe(cancellation);
+    expect(receivedSignal).toBe(controller.signal);
+  });
+
   it('clones a repository into a work-item workspace', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
     roots.push(root);
@@ -34,6 +75,7 @@ describe('GitWorkspaceProvider', () => {
     );
     const lease = await provider.acquire({
       runId: runId('run-0'),
+      signal: new AbortController().signal,
       mode: 'read-only',
       workItemId: workId('one'),
       repositoryResource: {
@@ -65,6 +107,7 @@ describe('GitWorkspaceProvider', () => {
     const workItemId = workId('work-branch');
     const lease = await provider.acquire({
       runId: runId('run-branch'),
+      signal: new AbortController().signal,
       mode: 'branch',
       workItemId,
       repositoryResource: {
@@ -101,6 +144,7 @@ describe('GitWorkspaceProvider', () => {
     );
     const workItemId = workId('follow-up');
     const request = {
+      signal: new AbortController().signal,
       mode: 'branch' as const,
       workItemId,
       repositoryResource: {
@@ -146,6 +190,7 @@ describe('GitWorkspaceProvider', () => {
 
       const lease = await provider.acquire({
         runId: runId(`run-${mode}`),
+        signal: new AbortController().signal,
         mode,
         workItemId: workId(`prepare-${mode}`),
         repositoryResource: {
@@ -174,6 +219,7 @@ describe('GitWorkspaceProvider', () => {
     );
     const lease = await provider.acquire({
       runId: runId('run-no-prepare'),
+      signal: new AbortController().signal,
       mode: 'read-only',
       workItemId: workId('no-prepare'),
       repositoryResource: {
@@ -205,6 +251,7 @@ describe('GitWorkspaceProvider', () => {
       },
     );
     const request = {
+      signal: new AbortController().signal,
       mode: 'branch' as const,
       workItemId: workId('prepare-reacquire'),
       repositoryResource: {
@@ -245,6 +292,7 @@ describe('GitWorkspaceProvider', () => {
 
     const acquisition = provider.acquire({
       runId: runId('run-prepare-failure'),
+      signal: new AbortController().signal,
       mode: 'read-only',
       workItemId: workId('prepare-failure'),
       repositoryResource: {
@@ -278,6 +326,7 @@ describe('GitWorkspaceProvider', () => {
     await expect(
       provider.acquire({
         runId: runId('run-prepare-timeout'),
+        signal: new AbortController().signal,
         mode: 'read-only',
         workItemId: workId('prepare-timeout'),
         repositoryResource: {
@@ -317,6 +366,7 @@ describe('GitWorkspaceProvider', () => {
 
     const lease = await provider.acquire({
       runId: runId('run-1'),
+      signal: new AbortController().signal,
       mode: 'read-only',
       workItemId,
       repositoryResource: {

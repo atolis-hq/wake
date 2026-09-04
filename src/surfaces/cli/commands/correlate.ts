@@ -1,4 +1,4 @@
-import type { CommandContext } from '../../../kernel/index.js';
+import type { CommandContext } from '@atolis-hq/eventing';
 import { ResourceCorrelationRole, type ResourceId } from '../../../resources/index.js';
 import type { WorkItemId } from '../../../work/index.js';
 

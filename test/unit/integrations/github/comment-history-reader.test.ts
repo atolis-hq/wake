@@ -1,3 +1,4 @@
+import { correlationId, createEventData, eventId, type EventData } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { adapterId } from '../../../../src/integrations/contracts/identifiers.js';
 import { createCommentHistoryReader } from '../../../../src/integrations/github/application/comment-history-reader.js';
@@ -8,13 +9,9 @@ import {
   DeliveryIntentEventType,
   DeliveryResultKind,
   deliveryStream,
+  integrationStream,
 } from '../../../../src/integrations/index.js';
-import {
-  correlationId,
-  createEventDraft,
-  eventId,
-  type EventDraft,
-} from '../../../../src/kernel/index.js';
+import { type EntityRef } from '../../../../src/kernel/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,
@@ -452,7 +449,7 @@ async function appendConfirmedDelivery(
 ) {
   const intent = await appendEvent(
     world,
-    createEventDraft({
+    createEventData({
       eventId: input.intentEventId,
       eventType: input.eventType,
       occurredAt: input.occurredAt,
@@ -460,7 +457,6 @@ async function appendConfirmedDelivery(
       causationId: `causation:${input.intentEventId}`,
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: resourceStream(resourceId),
       payload: {
         workflowInstanceId: 'workflow-1',
         activationId: 'activation-1',
@@ -468,6 +464,7 @@ async function appendConfirmedDelivery(
         body: input.body,
       },
     }),
+    resourceStream(resourceId),
   );
   if (input.confirmed === false) return intent;
   const delivery = (payload: {
@@ -480,7 +477,6 @@ async function appendConfirmedDelivery(
     causationId: `causation:${input.intentEventId}`,
     actor: { kind: 'system' as const, id: 'test' },
     source: { kind: 'internal' as const, id: 'test' },
-    stream: deliveryStream(eventId(input.intentEventId)),
     payload: {
       intentEventId: eventId(input.intentEventId),
       intentGlobalPosition: intent.globalPosition,
@@ -493,21 +489,22 @@ async function appendConfirmedDelivery(
   return appendEvent(
     world,
     input.reconciled === true
-      ? createEventDraft({
+      ? createEventData({
           ...delivery({ externalId: 'github-comment-1', result: DeliveryResultKind.Confirmed }),
           eventType: DeliveryEventType.Reconciled,
         })
-      : createEventDraft({
+      : createEventData({
           ...delivery({ externalId: 'github-comment-1' }),
           eventId: `${input.intentEventId}-confirmed`,
           eventType: DeliveryEventType.Confirmed,
         }),
+    deliveryStream(eventId(input.intentEventId)),
   );
 }
 
-async function appendEvent(world: TestWorld, event: EventDraft) {
-  const events = await world.journal.readStream(event.stream);
-  const [appended] = await world.journal.append(event.stream, events.length, [event]);
+async function appendEvent(world: TestWorld, event: EventData, stream: EntityRef) {
+  const events = await world.journal.readStream(stream);
+  const [appended] = await world.journal.appendToStream(stream, events.length, [event]);
   if (appended === undefined) throw new Error('Expected the journal to append an event');
   return appended;
 }
@@ -543,6 +540,7 @@ async function appendIssueComment(
     },
   });
   if (event === null) throw new Error('Test comment observation was unexpectedly empty');
-  const events = await world.journal.readStream(event.stream);
-  await world.journal.append(event.stream, events.length, [event]);
+  const stream = integrationStream(adapter);
+  const events = await world.journal.readStream(stream);
+  await world.journal.appendToStream(stream, events.length, [event]);
 }

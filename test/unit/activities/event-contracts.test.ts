@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
+import { createEventData } from '@atolis-hq/eventing';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   activationId,
@@ -10,7 +11,6 @@ import {
   type PullRequestDenialCode,
   selectActivityEvent,
 } from '../../../src/activities/index.js';
-import { createEventDraft } from '../../../src/kernel/index.js';
 import { signalName } from '../../../src/orchestration/contracts/identifiers.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { workItemStream } from '../../../src/work/index.js';
@@ -29,7 +29,7 @@ const context = {
   baseRevision: 'def',
   checks: 'passing',
 } as const;
-const approveIntent = createEventDraft({
+const approveIntent = createEventData({
   eventId: 'approve-intent',
   eventType: ActivityEventType.PrApproveRequested,
   occurredAt: '2026-07-31T12:00:00.000Z',
@@ -37,7 +37,6 @@ const approveIntent = createEventDraft({
   causationId: 'causation-1',
   actor: { kind: 'system', id: 'test' },
   source: { kind: 'internal', id: 'activities-pr' },
-  stream: resource,
   payload: {
     idempotencyKey: 'approve-intent',
     activationId: activation,
@@ -47,7 +46,7 @@ const approveIntent = createEventDraft({
     body: null,
   },
 });
-const mergeIntent = createEventDraft({
+const mergeIntent = createEventData({
   ...approveIntent,
   eventId: 'merge-intent',
   eventType: ActivityEventType.PrMergeRequested,
@@ -61,7 +60,7 @@ const mergeIntent = createEventDraft({
     requireChecks: true,
   },
 });
-const approveDenial = createEventDraft({
+const approveDenial = createEventData({
   ...approveIntent,
   eventId: 'approve-denied',
   eventType: ActivityEventType.PrApproveDenied,
@@ -155,6 +154,7 @@ const samples = [
         data: { intentEventId: approveIntent.eventId, signalKind: signalName('delivery-result') },
       },
       fact: approveIntent,
+      factStream: resource,
     },
     approveDecision,
   ),
@@ -169,6 +169,7 @@ const samples = [
         data: { intentEventId: mergeIntent.eventId, signalKind: signalName('delivery-result') },
       },
       fact: mergeIntent,
+      factStream: resource,
     },
     mergeDecision,
   ),
@@ -204,7 +205,7 @@ describe('Activity event contract', () => {
 
   it('closes review rejection reasons to Pull Request denial codes', () => {
     type ReviewRejected = Extract<
-      ActivityEvent,
+      ActivityEvent['event'],
       { readonly eventType: typeof ActivityEventType.PrReviewRejected }
     >;
 
@@ -228,13 +229,30 @@ describe('Activity event contract', () => {
     expect(source).not.toMatch(/export interface ActivityActivated/);
   });
 
+  it('uses EventData naming for pull-request event constructors', async () => {
+    const source = await readFile(
+      new URL('../../../src/activities/pr/event-data.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toMatch(/type ActivityEventDataOf/);
+    expect(source).not.toMatch(/ActivityDraft|event-drafts/);
+    await expect(
+      readFile(new URL('../../../src/activities/pr/event-drafts.ts', import.meta.url), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('rejects event-specific wrong stream kinds', () => {
     expect(() =>
       decodeActivityEvent(eventEnvelope(ActivityEventType.PrDiscovered, context, approveDecision)),
     ).toThrow();
     expect(() =>
       decodeActivityEvent(
-        eventEnvelope(ActivityEventType.PrApproveDecisionClaimed, samples[13].payload, resource),
+        eventEnvelope(
+          ActivityEventType.PrApproveDecisionClaimed,
+          samples[14].event.payload,
+          resource,
+        ),
       ),
     ).toThrow();
   });
@@ -244,7 +262,7 @@ describe('Activity event contract', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveDecisionClaimed,
-          samples[13].payload,
+          samples[14].event.payload,
           mergeDecision,
         ),
       ),
@@ -256,7 +274,7 @@ describe('Activity event contract', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrMergeDecisionClaimed,
-          samples[14].payload,
+          samples[15].event.payload,
           approveDecision,
         ),
       ),
@@ -281,7 +299,7 @@ describe('Activity event integrity', () => {
     ),
     eventEnvelope(
       ActivityEventType.PrApproveDecisionClaimed,
-      { ...samples[13].payload, activationId: ' ' },
+      { ...samples[14].event.payload, activationId: ' ' },
       approveDecision,
     ),
   ])('reports invalid branded IDs through the Activity decoder context', (event) => {
@@ -307,27 +325,105 @@ describe('Activity event integrity', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveDecisionClaimed,
-          { ...samples[13].payload, activationId: activationId('activation-2') },
+          { ...samples[14].event.payload, activationId: activationId('activation-2') },
           approveDecision,
         ),
       ),
     ).toThrow();
   });
+
+  it('reports nested decision-claim refinement issue paths', () => {
+    const cause = decodingCause(() =>
+      decodeActivityEvent(
+        eventEnvelope(
+          ActivityEventType.PrApproveDecisionClaimed,
+          {
+            ...samples[14].event.payload,
+            outcome: {
+              kind: 'waiting',
+              data: { intentEventId: 'other-intent', signalKind: signalName('delivery-result') },
+            },
+          },
+          approveDecision,
+        ),
+      ),
+    );
+
+    expect(cause).toMatchObject({
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          path: ['event', 'payload', 'outcome', 'data', 'intentEventId'],
+        }),
+      ]),
+    });
+  });
 });
 
 describe('Activity decision claim integrity', () => {
+  it('decodes the new stream-free fact with its explicit routing stream', () => {
+    const decoded = decodeActivityEvent(
+      eventEnvelope(
+        ActivityEventType.PrApproveDecisionClaimed,
+        {
+          action: 'approve',
+          activationId: activation,
+          decisionKind: 'requested',
+          outcome: {
+            kind: 'waiting',
+            data: {
+              intentEventId: approveIntent.eventId,
+              signalKind: signalName('delivery-result'),
+            },
+          },
+          fact: approveIntent,
+          factStream: resource,
+        },
+        approveDecision,
+      ),
+    );
+
+    expect(decoded.event.payload).toMatchObject({ fact: approveIntent, factStream: resource });
+  });
+
+  it('normalizes a legacy fact stream into the explicit routing stream', () => {
+    const decoded = decodeActivityEvent(
+      eventEnvelope(
+        ActivityEventType.PrApproveDecisionClaimed,
+        {
+          action: 'approve',
+          activationId: activation,
+          decisionKind: 'requested',
+          outcome: {
+            kind: 'waiting',
+            data: {
+              intentEventId: approveIntent.eventId,
+              signalKind: signalName('delivery-result'),
+            },
+          },
+          fact: { ...approveIntent, stream: resource },
+        },
+        approveDecision,
+      ),
+    );
+
+    expect(decoded.event.payload).toMatchObject({ fact: approveIntent, factStream: resource });
+    if (decoded.event.eventType !== ActivityEventType.PrApproveDecisionClaimed)
+      throw new Error('expected approve decision claim');
+    expect(decoded.event.payload.fact).not.toHaveProperty('stream');
+  });
+
   it.each([
     {
       name: 'requested claim with a blocked outcome',
       payload: {
-        ...samples[13].payload,
+        ...samples[14].event.payload,
         outcome: { kind: 'blocked', data: { reason: 'policy' } },
       },
     },
     {
       name: 'requested claim with a mismatched intent event id',
       payload: {
-        ...samples[13].payload,
+        ...samples[14].event.payload,
         outcome: {
           kind: 'waiting',
           data: { intentEventId: 'other-intent', signalKind: signalName('delivery-result') },
@@ -337,7 +433,7 @@ describe('Activity decision claim integrity', () => {
     {
       name: 'denied claim with a waiting outcome',
       payload: {
-        ...samples[13].payload,
+        ...samples[14].event.payload,
         decisionKind: 'denied',
         outcome: {
           kind: 'waiting',
@@ -359,7 +455,7 @@ describe('Activity decision claim integrity', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveDecisionClaimed,
-          { ...samples[13].payload, activationId: '\uD800' },
+          { ...samples[14].event.payload, activationId: '\uD800' },
           approveDecision,
         ),
       ),
@@ -377,10 +473,20 @@ describe('Activity decision claim integrity', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveDecisionClaimed,
-          { ...samples[13].payload, ...mismatch },
+          { ...samples[14].event.payload, ...mismatch },
           approveDecision,
         ),
       ),
     ).toThrow();
   });
 });
+
+function decodingCause(decode: () => unknown): unknown {
+  try {
+    decode();
+  } catch (error) {
+    if (error instanceof Error) return error.cause;
+    throw error;
+  }
+  throw new Error('Expected event decoding to fail');
+}

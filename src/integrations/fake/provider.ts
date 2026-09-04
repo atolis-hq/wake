@@ -62,6 +62,7 @@ export const fakeProviderDefinition: ProviderDefinition<z.output<typeof configSc
   create({ adapter, config, services }) {
     if (config.createError !== undefined) throw new Error(config.createError);
     if (services === undefined) throw new Error('Fake provider requires composed services');
+    const inbound = new FakeInboundTranslator(adapter, services);
     return {
       adapter,
       eventTypes: [FakeEventType.WorkObserved, FakeEventType.ReviewRequested],
@@ -88,7 +89,8 @@ export const fakeProviderDefinition: ProviderDefinition<z.output<typeof configSc
           ...(evidence.revision === undefined ? {} : { revision: evidence.revision }),
         };
       },
-      inbound: new FakeInboundTranslator(adapter, services),
+      inbound,
+      reconciler: inbound.reconciler,
       checkConnectivity: async () => {
         if (config.connectivityError !== undefined) throw new Error(config.connectivityError);
       },

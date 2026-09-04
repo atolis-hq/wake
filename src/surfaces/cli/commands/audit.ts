@@ -1,4 +1,4 @@
-import type { EventEnvelope } from '../../../kernel/index.js';
+import type { EventEnvelope } from '@atolis-hq/eventing';
 
 export interface AuditJournal {
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;
@@ -9,7 +9,7 @@ export interface AuditWork {
 }
 
 export interface AuditFact {
-  readonly event: EventEnvelope;
+  readonly event: EventEnvelope['event'] & Omit<EventEnvelope, 'event'>;
   readonly causalLinks: { readonly causationId: string; readonly correlationId: string };
 }
 
@@ -23,7 +23,16 @@ export async function audit(
   return (await journal.readAll(0))
     .filter((event) => event.stream.id === workItemId)
     .map((event) => ({
-      event,
-      causalLinks: { causationId: event.causationId, correlationId: event.correlationId },
+      event: {
+        ...event.event,
+        stream: event.stream,
+        recordedAt: event.recordedAt,
+        sequence: event.sequence,
+        globalPosition: event.globalPosition,
+      },
+      causalLinks: {
+        causationId: event.event.causationId,
+        correlationId: event.event.correlationId,
+      },
     }));
 }

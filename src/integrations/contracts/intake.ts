@@ -1,15 +1,19 @@
-import type { EventDraft } from '../../kernel/index.js';
-import type { IntegrationStreamRef } from './streams.js';
+import type { EventData, EventProcessor } from '@atolis-hq/eventing';
 
-export type ProviderEventDraft = EventDraft<string, unknown, IntegrationStreamRef>;
+export type ProviderEventData = EventData<string, unknown>;
 
 export interface ExternalEventSource {
-  poll(signal: AbortSignal): Promise<readonly ProviderEventDraft[]>;
+  poll(signal: AbortSignal): Promise<readonly ProviderEventData[]>;
   /** Commits provider cursor state after every draft from the poll is durable. */
   markPollPersisted?(): Promise<void>;
 }
 
 export interface InboundTranslation {
-  /** Resolves to the count of inbound events processed this pass, so callers can tell activity from a quiet checkpoint. */
-  runOnce(limit?: number): Promise<number>;
+  /** Stable adapter-specific definition hosted by the shared Eventing runtime. */
+  readonly processor: EventProcessor;
+}
+
+export interface ProviderReconciler {
+  /** Provider recovery stays in the maintenance lane, outside incremental event handling. */
+  reconcileOnce(): Promise<void>;
 }

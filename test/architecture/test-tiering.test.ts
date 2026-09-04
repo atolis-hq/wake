@@ -8,25 +8,33 @@ describe('target test tiers', () => {
     const packageJson = JSON.parse(await read('package.json')) as {
       scripts: Record<string, string>;
     };
-    const [unit, architecture, integration, e2e, live, workflow] = await Promise.all([
-      read('vitest.unit.config.ts'),
-      read('vitest.architecture.config.ts'),
-      read('vitest.integration.config.ts'),
-      read('vitest.e2e.config.ts'),
-      read('vitest.live-e2e.config.ts'),
-      read('.github/workflows/ci-cd.yml'),
-    ]);
+    const [unit, architecture, integration, e2e, live, workflow, workspacePackages] =
+      await Promise.all([
+        read('vitest.unit.config.ts'),
+        read('vitest.architecture.config.ts'),
+        read('vitest.integration.config.ts'),
+        read('vitest.e2e.config.ts'),
+        read('vitest.live-e2e.config.ts'),
+        read('.github/workflows/ci-cd.yml'),
+        read('test/architecture/workspace-packages.test.ts'),
+      ]);
 
     expect(packageJson.scripts.test).toBe('npm run test:unit');
+    expect(packageJson.scripts['test:unit']).toBe(
+      'npm --workspace @atolis-hq/eventing test && npm --workspace @atolis-hq/eventing-filesystem test && npm run test:unit:wake',
+    );
+    expect(packageJson.scripts['test:unit:wake']).toBe('vitest run --config vitest.unit.config.ts');
     expect(packageJson.scripts.verify).toContain('npm run check:specs');
     expect(packageJson.scripts['check:specs:report']).toBe('node scripts/report-spec-drift.mjs');
     expect(packageJson.scripts.verify).toContain('npm run check:specs:report');
     expect(packageJson.scripts.verify).toContain('npm run build');
     expect(packageJson.scripts.verify).toContain('npm run test:unit');
+    expect(packageJson.scripts.verify).toContain('npm run check:source-resolution');
     expect(packageJson.scripts).toHaveProperty('verify:ci');
     expect(packageJson.scripts['verify:ci']).toContain('npm run test:architecture');
     expect(packageJson.scripts['verify:ci']).toContain('npm run test:integration');
     expect(packageJson.scripts['verify:ci']).toContain('npm run test:e2e');
+    expect(packageJson.scripts['verify:ci']).toContain('npm run check:workspace-packages');
     expect(packageJson.scripts['verify:ci']).toContain('npm run knip');
     expect(packageJson.scripts['verify:ci']).toContain('npm run test:web');
     expect(packageJson.scripts).not.toHaveProperty('test:next');
@@ -39,13 +47,36 @@ describe('target test tiers', () => {
     expect(e2e).toContain("exclude: ['test/e2e/scenarios/live-*.test.ts']");
     expect(live).toContain("include: ['test/e2e/scenarios/live-*.test.ts']");
     expect(workflow).toContain('fast-verify:');
-    expect(workflow).toContain('npm run verify && npm run knip');
+    expect(workflow).toContain('run: npm run verify');
+    expect(workflow).toContain('architecture:');
+    expect(workflow).toContain('run: npm run test:architecture');
+    expect(workflow).toContain('package-contract:');
+    expect(workflow).toContain('run: npm run check:workspace-packages');
+    expect(workflow).toContain('knip:');
+    expect(workflow).toContain('run: npm run knip');
+    expect(workflow).not.toContain(
+      'npm run verify && npm run test:architecture && npm run check:workspace-packages && npm run knip',
+    );
+    expect(workspacePackages).not.toContain("execAsync('npm run check:workspace-packages'");
     expect(workflow).toContain('integration:');
     expect(workflow).toContain('npm run test:integration');
     expect(workflow).toContain('e2e:');
     expect(workflow).toContain('npm run test:e2e');
     expect(workflow).toContain('web:');
     expect(workflow).toContain('npm run test:web');
-    expect(workflow.match(/cache: npm/g) ?? []).toHaveLength(5);
+    expect(workflow.match(/cache: npm/g) ?? []).toHaveLength(8);
+
+    for (const command of [
+      'start',
+      'tick',
+      'ui',
+      'e2e:github-fake',
+      'smoke',
+      'smoke:claude',
+      'smoke:codex',
+      'smoke:cursor',
+    ]) {
+      expect(packageJson.scripts[command]).toContain('--tsconfig tsconfig.source.json');
+    }
   });
 });

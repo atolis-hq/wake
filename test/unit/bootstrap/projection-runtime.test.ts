@@ -1,80 +1,342 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
-import { resId, workId } from '../../support/identities.js';
+import { expect, it, vi } from 'vitest';
 
+import type { ProcessorRunSerialiser } from '@atolis-hq/eventing';
 import {
-  createFileProjectionRunSerialiser,
-  createRuntimeProjectionRunner,
-} from '../../../src/bootstrap/index.js';
-import { createEventDraft } from '../../../src/kernel/index.js';
+  createEventData,
+  type CheckpointStore,
+  type EventJournal,
+  type ProjectionDefinition,
+  type ProjectionStore,
+} from '@atolis-hq/eventing';
+import {
+  FileCheckpointStore,
+  FileEventJournal,
+  FileProjectionStore,
+} from '@atolis-hq/eventing-filesystem';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
-import { resourceStream } from '../../../src/resources/index.js';
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
+import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
+import {
+  createRuntimeProjectionSubscriptions as composeRuntimeProjectionSubscriptions,
+  runtimeProjectionDefinitions,
+} from '../../../src/bootstrap/index.js';
+import { resolveWakePaths } from '../../../src/bootstrap/paths.js';
+import { composePersistence } from '../../../src/bootstrap/persistence-composition.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
-it('constructs runtime replay with the activities-pr and delivery projections registered', async () => {
+it('registers every runtime definition with its stable projection consumer', () => {
+  const runtime = createRuntimeProjectionSubscriptions(
+    new InMemoryEventJournal(new FakeClock()),
+    new InMemoryProjectionStore(),
+    new InMemoryCheckpointStore(),
+  );
+
+  expect(runtime.processors.map(({ consumer }) => consumer)).toEqual(
+    runtimeProjectionDefinitions.map(({ name }) => `projection:${name}`),
+  );
+  expect(new Set(runtime.processors.map(({ consumer }) => consumer))).toHaveProperty(
+    'size',
+    runtimeProjectionDefinitions.length,
+  );
+});
+
+it('catches up only the targeted projection before catching up its sibling', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  const primary = countedProjection('targeted-primary');
+  const sibling = countedProjection('targeted-sibling');
+  const runtime = createRuntimeProjectionSubscriptions(
+    journal,
+    new InMemoryProjectionStore(),
+    checkpoints,
+    undefined,
+    [primary, sibling],
+  );
+  await appendCountedEvent(journal, 'targeted-event');
+
+  await expect(runtime.catchUp(primary)).resolves.toBe(1);
+  expect(await checkpoints.load('projection:targeted-primary')).toBe(1);
+  expect(await checkpoints.load('projection:targeted-sibling')).toBe(0);
+  await expect(runtime.catchUpOnce()).resolves.toBe(1);
+  expect(await checkpoints.load('projection:targeted-sibling')).toBe(1);
+});
+
+it('skips already-caught-up projection consumers before acquiring their locks', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const serialisedConsumers: string[] = [];
+  const runtime = createRuntimeProjectionSubscriptions(
+    journal,
+    new InMemoryProjectionStore(),
+    new InMemoryCheckpointStore(),
+    recordingSerialiser(serialisedConsumers),
+    [countedProjection('caught-up-primary'), countedProjection('caught-up-sibling')],
+  );
+  await appendCountedEvent(journal, 'caught-up-event');
+  await runtime.catchUpOnce();
+  serialisedConsumers.length = 0;
+
+  await expect(runtime.catchUpOnce()).resolves.toBe(0);
+
+  expect(serialisedConsumers).toEqual([]);
+});
+
+it('drains a one-shot projection barrier through its observed head under one consumer lock', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  const serialisedConsumers: string[] = [];
+  const runtime = createRuntimeProjectionSubscriptions(
+    journal,
+    new InMemoryProjectionStore(),
+    checkpoints,
+    recordingSerialiser(serialisedConsumers),
+    [countedProjection('barrier-projection')],
+  );
+  await appendCountedEvents(journal, 'barrier-event', 101);
+
+  await expect(runtime.catchUpOnce()).resolves.toBe(101);
+
+  expect(await checkpoints.load('projection:barrier-projection')).toBe(101);
+  expect(serialisedConsumers).toEqual(['projection:barrier-projection']);
+});
+
+it('rebuilds the registered projection when another definition has the same name', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const projections = new InMemoryProjectionStore();
-  const stream = resourceStream(resId('1'));
-  await journal.append(stream, 0, [
-    createEventDraft({
-      eventId: 'pr-discovered',
-      eventType: 'pr.discovered',
-      occurredAt: '2026-07-30T12:00:00.000Z',
-      correlationId: 'correlation-1',
-      causationId: 'observe-1',
-      actor: { kind: 'integration', id: 'github' },
-      source: { kind: 'internal', id: 'activities-pr' },
-      stream,
-      payload: {
-        workItemId: workId('1'),
-        state: 'open',
-        headRevision: 'head-a',
-        baseRevision: 'base-a',
-        checks: 'passing',
-      },
+  const registered = countedProjection('registered-projection');
+  const runtime = createRuntimeProjectionSubscriptions(
+    journal,
+    projections,
+    new InMemoryCheckpointStore(),
+    undefined,
+    [registered],
+  );
+  await appendCountedEvent(journal, 'registered-rebuild');
+
+  await expect(
+    runtime.rebuild({
+      ...registered,
+      select: () => null,
     }),
+  ).resolves.toBe(1);
+  expect(await projections.read<number>(registered.name, 'one')).toMatchObject({ value: 1 });
+});
+
+it('uses file locking for two fully injected projection runtimes at one data root', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-projection-serialiser-'));
+  const clock = new FakeClock();
+  const paths = resolveWakePaths(root);
+  const definition = countedProjection('injected-file-projection');
+  const firstWriteStarted = deferred<void>();
+  const releaseFirstWrite = deferred<void>();
+  let secondJournalReadStarted = false;
+  const first = composePersistence(paths, clock, {
+    journal: new FileEventJournal(paths.dataRoot, clock),
+    projections: new FileProjectionStore(paths.dataRoot),
+    checkpoints: new FileCheckpointStore(paths.dataRoot),
+    decorateJournal: (journal) => journal,
+    decorateProjections: (projections): ProjectionStore => ({
+      read: projections.read.bind(projections),
+      async write(projection) {
+        firstWriteStarted.resolve();
+        await releaseFirstWrite.promise;
+        await projections.write(projection);
+      },
+      list: projections.list.bind(projections),
+      clear: projections.clear.bind(projections),
+    }),
+    decorateCheckpoints: (checkpoints) => checkpoints,
+  });
+  const second = composePersistence(paths, clock, {
+    journal: new FileEventJournal(paths.dataRoot, clock),
+    projections: new FileProjectionStore(paths.dataRoot),
+    checkpoints: new FileCheckpointStore(paths.dataRoot),
+    decorateJournal: (journal): EventJournal => ({
+      appendToStream: journal.appendToStream.bind(journal),
+      readStream: journal.readStream.bind(journal),
+      async readAll(afterGlobalPosition, limit) {
+        secondJournalReadStarted = true;
+        return journal.readAll(afterGlobalPosition, limit);
+      },
+      latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
+      waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
+      changeSignal: journal.changeSignal,
+      ...(journal.readLatest === undefined ? {} : { readLatest: journal.readLatest.bind(journal) }),
+    }),
+    decorateProjections: (projections) => projections,
+    decorateCheckpoints: (checkpoints) => checkpoints,
+  });
+  const firstRuntime = createRuntimeProjectionSubscriptions(
+    first.journal,
+    first.projections,
+    first.checkpoints,
+    first.subscriptionRunSerialiser,
+    [definition],
+  );
+  const secondRuntime = createRuntimeProjectionSubscriptions(
+    second.journal,
+    second.projections,
+    second.checkpoints,
+    second.subscriptionRunSerialiser,
+    [definition],
+  );
+
+  try {
+    await appendCountedEvent(first.journal, 'injected-file-event');
+    const firstPass = firstRuntime.catchUp(definition);
+    await firstWriteStarted.promise;
+    const secondPass = secondRuntime.catchUp(definition);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(secondJournalReadStarted).toBe(false);
+    releaseFirstWrite.resolve();
+    await Promise.all([firstPass, secondPass]);
+    expect(secondJournalReadStarted).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it('lets a sibling subscription reach the journal head while another projection write blocks', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  const projections = new BlockingProjectionStore('blocked-projection', 'ready-projection');
+  const runtime = createRuntimeProjectionSubscriptions(
+    journal,
+    projections,
+    checkpoints,
+    undefined,
+    [countedProjection('blocked-projection'), countedProjection('ready-projection')],
+  );
+  await appendCountedEvent(journal, 'concurrent-event');
+  const controller = new AbortController();
+  const run = runtime.start(controller.signal);
+
+  await projections.readyProjectionWritten.promise;
+  await vi.waitFor(async () => {
+    expect(await checkpoints.load('projection:ready-projection')).toBe(1);
+  });
+  expect(await checkpoints.load('projection:blocked-projection')).toBe(0);
+  expect((await runtime.health()).map(({ consumer }) => consumer)).toEqual([
+    'projection:blocked-projection',
+    'projection:ready-projection',
   ]);
-  const runner = createRuntimeProjectionRunner(journal, projections, new InMemoryCheckpointStore());
 
-  await runner.runRegisteredOnce();
-
-  expect(await projections.read('activities-pr', resId('1'))).toMatchObject({
-    value: { headRevision: 'head-a' },
-  });
-  expect(await projections.list('delivery')).toEqual([]);
+  controller.abort();
+  projections.releaseBlockedProjection();
+  await run.done;
 });
 
-it('waits for another process projection run to finish before starting', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-projection-lock-'));
-  const first = createFileProjectionRunSerialiser(root);
-  const second = createFileProjectionRunSerialiser(root);
-  let notifyFirstStarted: (() => void) | undefined;
-  const firstStarted = new Promise<void>((resolve) => {
-    notifyFirstStarted = resolve;
-  });
-  let releaseFirst: (() => void) | undefined;
-  let secondStarted = false;
+function countedProjection(name: string): ProjectionDefinition<number> {
+  return {
+    name,
+    select: () => ({ key: 'one' }),
+    initial: () => 0,
+    project: (previous) => previous + 1,
+  };
+}
 
-  const firstRun = first(async () => {
-    notifyFirstStarted?.();
-    await new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-  });
-  await firstStarted;
-  const secondRun = second(async () => {
-    secondStarted = true;
-  });
+async function appendCountedEvent(journal: EventJournal, eventId: string): Promise<void> {
+  await appendCountedEvents(journal, eventId, 1);
+}
 
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(secondStarted).toBe(false);
-  releaseFirst?.();
-  await Promise.all([firstRun, secondRun]);
-  expect(secondStarted).toBe(true);
-});
+async function appendCountedEvents(
+  journal: EventJournal,
+  eventIdPrefix: string,
+  count: number,
+): Promise<void> {
+  const stream: EntityRef<'counter', 'projection-runtime'> = {
+    kind: 'counter',
+    id: 'projection-runtime',
+  };
+  await journal.appendToStream(
+    stream,
+    0,
+    Array.from({ length: count }, (_, index) =>
+      createEventData({
+        eventId: `${eventIdPrefix}-${index}`,
+        eventType: 'counted',
+        occurredAt: '2026-08-29T00:00:00.000Z',
+        correlationId: 'correlation',
+        causationId: 'causation',
+        actor: { kind: 'system', id: 'test' },
+        source: { kind: 'internal', id: 'test' },
+        payload: {},
+      }),
+    ),
+  );
+}
+
+function recordingSerialiser(consumers: string[]): ProcessorRunSerialiser {
+  return async (consumer, _signal, operation) => {
+    consumers.push(consumer);
+    return operation();
+  };
+}
+
+function createRuntimeProjectionSubscriptions(
+  journal: EventJournal,
+  projections: ProjectionStore,
+  checkpoints: CheckpointStore,
+  serialiseRun: ProcessorRunSerialiser = createInMemoryProcessorRunSerialiser(),
+  definitions = runtimeProjectionDefinitions,
+) {
+  const processorRuntime = new EventProcessorRuntime(
+    journal,
+    checkpoints,
+    serialiseRun,
+    new FakeClock(),
+  );
+  const subscriptions = composeRuntimeProjectionSubscriptions(
+    journal,
+    projections,
+    checkpoints,
+    processorRuntime,
+    serialiseRun,
+    definitions,
+  );
+  processorRuntime.register(subscriptions.processors);
+  return subscriptions;
+}
+
+class BlockingProjectionStore extends InMemoryProjectionStore {
+  private readonly blockedWrite = deferred<void>();
+  readonly readyProjectionWritten = deferred<void>();
+
+  constructor(
+    private readonly blockedProjection: string,
+    private readonly readyProjection: string,
+  ) {
+    super();
+  }
+
+  override async write<Value>(projection: {
+    readonly namespace: string;
+    readonly key: string;
+    readonly lastGlobalPosition: number;
+    readonly value: Value;
+  }): Promise<void> {
+    if (projection.namespace === this.blockedProjection) await this.blockedWrite.promise;
+    await super.write(projection);
+    if (projection.namespace === this.readyProjection) this.readyProjectionWritten.resolve();
+  }
+
+  releaseBlockedProjection(): void {
+    this.blockedWrite.resolve();
+  }
+}
+
+function deferred<Value>() {
+  let resolve!: (value: Value | PromiseLike<Value>) => void;
+  const promise = new Promise<Value>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}

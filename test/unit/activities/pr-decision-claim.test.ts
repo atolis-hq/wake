@@ -1,27 +1,23 @@
+import { createEventData, type EventJournal } from '@atolis-hq/eventing';
+import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
 import { expect, expectTypeOf, it } from 'vitest';
 import {
   activationId,
-  activityDecisionStream,
   ActivityEventType,
-  decodeActivityEventDraft,
-  type ActivityFactDraft,
+  decodeActivityEventData,
+  type ActivityFactEventData,
 } from '../../../src/activities/index.js';
 import type { PullRequestActivityOutcome } from '../../../src/activities/pr/contracts.js';
 import {
   claimDecision,
   type PullRequestDecision,
 } from '../../../src/activities/pr/decision-claim.js';
-import {
-  createEventDraft,
-  InProcessJournalChangeSignal,
-  type EventJournal,
-} from '../../../src/kernel/index.js';
 import { signalName } from '../../../src/orchestration/contracts/identifiers.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
 
-type Fact<Type extends ActivityFactDraft['eventType']> = Extract<
-  ActivityFactDraft,
+type Fact<Type extends ActivityFactEventData['eventType']> = Extract<
+  ActivityFactEventData,
   { eventType: Type }
 >;
 
@@ -55,10 +51,10 @@ it('maps action and decision kind to the exact canonical fact type', () => {
   expectTypeOf<MergeDenied['outcome']>().toEqualTypeOf<Outcome<'blocked'>>();
 });
 
-it('rejects a malformed outcome/fact pair through the draft decoder context', () => {
+it('rejects a malformed outcome/fact pair through the event data decoder context', () => {
   const activation = activationId('activation-1');
   const stream = resourceStream(resId('1'));
-  const approveRequest = createEventDraft({
+  const approveRequest = createEventData({
     eventId: 'approve-request',
     eventType: ActivityEventType.PrApproveRequested,
     occurredAt: '2026-07-31T12:00:00.000Z',
@@ -66,7 +62,6 @@ it('rejects a malformed outcome/fact pair through the draft decoder context', ()
     causationId: 'causation-1',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'activities-pr' },
-    stream,
     payload: {
       idempotencyKey: 'approve-request',
       activationId: activation,
@@ -75,7 +70,7 @@ it('rejects a malformed outcome/fact pair through the draft decoder context', ()
       body: null,
     },
   });
-  const malformedClaim = createEventDraft({
+  const malformedClaim = createEventData({
     eventId: 'approve-claim',
     eventType: ActivityEventType.PrApproveDecisionClaimed,
     occurredAt: approveRequest.occurredAt,
@@ -83,25 +78,25 @@ it('rejects a malformed outcome/fact pair through the draft decoder context', ()
     causationId: approveRequest.causationId,
     actor: approveRequest.actor,
     source: { kind: 'internal', id: 'activities-pr' },
-    stream: activityDecisionStream(activation, 'approve'),
     payload: {
       action: 'approve',
       activationId: activation,
       decisionKind: 'requested',
       outcome: { kind: 'blocked', data: { reason: 'policy' } },
       fact: approveRequest,
+      factStream: stream,
     },
   });
 
-  expect(() => decodeActivityEventDraft(malformedClaim)).toThrow(
-    /Invalid Activity event draft approve-claim/i,
+  expect(() => decodeActivityEventData(malformedClaim)).toThrow(
+    /Invalid Activity event data approve-claim/i,
   );
 });
 
 it('rejects an inexact decision claim before calling the journal append boundary', async () => {
   let appends = 0;
   const journal: EventJournal = {
-    async append() {
+    async appendToStream() {
       appends += 1;
       return [];
     },
@@ -114,11 +109,12 @@ it('rejects an inexact decision claim before calling the journal append boundary
     async latestGlobalPosition() {
       return 0;
     },
+    async waitForEventsAfter() {},
     changeSignal: new InProcessJournalChangeSignal(),
   };
   const activation = activationId('activation-1');
   const stream = resourceStream(resId('1'));
-  const mergeRequest = createEventDraft({
+  const mergeRequest = createEventData({
     eventId: 'merge-request',
     eventType: ActivityEventType.PrMergeRequested,
     occurredAt: '2026-07-31T12:00:00.000Z',
@@ -126,7 +122,6 @@ it('rejects an inexact decision claim before calling the journal append boundary
     causationId: 'causation-1',
     actor: { kind: 'system', id: 'test' },
     source: { kind: 'internal', id: 'activities-pr' },
-    stream,
     payload: {
       idempotencyKey: 'merge-request',
       activationId: activation,
@@ -143,10 +138,11 @@ it('rejects an inexact decision claim before calling the journal append boundary
       data: { intentEventId: mergeRequest.eventId, signalKind: signalName('delivery-result') },
     },
     fact: mergeRequest,
+    factStream: stream,
   } as unknown as PullRequestDecision<'approve'>;
 
   await expect(claimDecision(journal, activation, 'approve', invalidProposal)).rejects.toThrow(
-    /Invalid Activity event draft/i,
+    /Invalid Activity event data/i,
   );
   expect(appends).toBe(0);
 });

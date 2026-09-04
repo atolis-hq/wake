@@ -1,4 +1,4 @@
-import { type CommandContext, type EventJournal } from '../../kernel/index.js';
+import { type CommandContext, type EventJournal } from '@atolis-hq/eventing';
 import {
   resourceStream,
   type ResourceService,
@@ -9,7 +9,7 @@ import {
   ActivityEventType,
   selectActivityEvent,
   type ActivityEvent,
-  type ActivityFactDraft,
+  type ActivityFactEventData,
 } from '../contracts/events.js';
 import { ActivityResourceRole } from '../contracts/vocabulary.js';
 import { isReviewAuthorized } from '../review/authorization.js';
@@ -34,7 +34,7 @@ import {
   reviewRejected,
   revisionChanged,
   stateChanged,
-} from './event-drafts.js';
+} from './event-data.js';
 import { decidePullRequestAuthority } from './policy.js';
 import { acceptedReviewSignalProjection, pullRequestProjection } from './projection.js';
 import { PullRequestDenialCode } from './vocabulary.js';
@@ -137,11 +137,11 @@ class JournalPullRequestService implements PullRequestService {
     const decision = decidePullRequestAuthority(input);
     if (decision.allowed) {
       const stream = resourceStream(decision.resourceId);
-      await this.appendStream(stream, mergeAuthorized(stream, decision.revision, context));
+      await this.appendStream(stream, mergeAuthorized(decision.revision, context));
       return true;
     }
     const stream = denialStream(input, workItemId);
-    await this.appendStream(stream, mergeDenied(stream, decision.reason, context));
+    await this.appendStream(stream, mergeDenied(decision.reason, context));
     return false;
   }
 
@@ -170,7 +170,7 @@ class JournalPullRequestService implements PullRequestService {
 
   private async append(
     resourceId: ObservePullRequest['resourceId'],
-    event: ActivityFactDraft | readonly ActivityFactDraft[],
+    event: ActivityFactEventData | readonly ActivityFactEventData[],
   ): Promise<void> {
     const stream = resourceStream(resourceId);
     await this.appendStream(stream, event);
@@ -178,22 +178,26 @@ class JournalPullRequestService implements PullRequestService {
 
   private async appendStream(
     stream: ResourceStreamRef | WorkItemStreamRef,
-    event: ActivityFactDraft | readonly ActivityFactDraft[],
+    event: ActivityFactEventData | readonly ActivityFactEventData[],
   ): Promise<void> {
     const events = Array.isArray(event) ? event : [event];
-    await this.journal.append(stream, (await this.journal.readStream(stream)).length, events);
+    await this.journal.appendToStream(
+      stream,
+      (await this.journal.readStream(stream)).length,
+      events,
+    );
   }
 
   private async priorMergeDecision(commandId: string): Promise<boolean | null> {
     const events = await this.journal.readAll(0);
     if (
       events.some(
-        (event) => event.eventId === `${commandId}:${ActivityEventType.PrMergeAuthorized}`,
+        (event) => event.event.eventId === `${commandId}:${ActivityEventType.PrMergeAuthorized}`,
       )
     )
       return true;
     return events.some(
-      (event) => event.eventId === `${commandId}:${ActivityEventType.PrMergeDenied}`,
+      (event) => event.event.eventId === `${commandId}:${ActivityEventType.PrMergeDenied}`,
     )
       ? false
       : null;

@@ -1,15 +1,17 @@
-import { reportedArtifactSchema } from '../../activities/index.js';
 import {
   cachedJournalView,
-  createEventDraft,
+  defineEventProcessor,
   EventActorKind,
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
   EventSourceKind,
   type CachedJournalView,
-  type CheckpointStore,
   type EventEnvelope,
   type EventJournal,
-  type IdGenerator,
-} from '../../kernel/index.js';
+  type EventProcessor,
+} from '@atolis-hq/eventing';
+import { reportedArtifactSchema } from '../../activities/index.js';
+import { type IdGenerator } from '../../kernel/index.js';
 import {
   OrchestrationEventType,
   selectWorkflowOrchestrationEvent,
@@ -25,6 +27,7 @@ import {
   type ResourceKind,
   type ResourceService,
 } from '../../resources/index.js';
+import { createArtifactEventData } from '../contracts/artifact-event-factory.js';
 import {
   ArtifactEventType,
   decodeArtifactEvent,
@@ -40,7 +43,6 @@ import { integrationStream } from '../contracts/streams.js';
 
 interface ArtifactRegistrationDependencies {
   readonly journal: EventJournal;
-  readonly checkpoints: CheckpointStore;
   readonly resources: ResourceService;
   readonly ids: IdGenerator;
   readonly providers: readonly ProviderInstance[];
@@ -68,36 +70,33 @@ type ArtifactRecord = {
 
 export class ArtifactRegistrationReactor {
   private readonly latestUnresolved: CachedJournalView<ReadonlyMap<string, ArtifactEvent>>;
+  readonly processor: EventProcessor;
 
   constructor(private readonly dependencies: ArtifactRegistrationDependencies) {
     this.latestUnresolved = cachedJournalView(dependencies.journal, deriveLatestUnresolved);
-  }
-
-  async runOnce(limit = 100): Promise<number> {
-    const consumer = 'reactor:artifact-registration';
-    const events = await this.dependencies.journal.readAll(
-      await this.dependencies.checkpoints.load(consumer),
-      limit,
-    );
-    for (const event of events) {
-      const outcome = selectWorkflowOrchestrationEvent(event);
-      if (outcome?.eventType === OrchestrationEventType.ActivityOutcomeAccepted)
-        await this.register(outcome);
-      await this.dependencies.checkpoints.save(consumer, event.globalPosition);
-    }
-    await this.reconcileAmbiguous();
-    return events.length;
+    this.processor = defineEventProcessor({
+      consumer: 'reactor:artifact-registration',
+      name: 'artifact-registration',
+      owner: 'integrations',
+      category: EventProcessorCategory.Reactor,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select(event) {
+        const outcome = selectWorkflowOrchestrationEvent(event);
+        return outcome?.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted
+          ? outcome
+          : null;
+      },
+      handle: async (outcome) => this.register(outcome),
+    });
   }
 
   private async register(
-    outcome: Extract<
-      ReturnType<typeof selectWorkflowOrchestrationEvent>,
-      { readonly eventType: typeof OrchestrationEventType.ActivityOutcomeAccepted }
-    >,
+    outcome: NonNullable<ReturnType<typeof selectWorkflowOrchestrationEvent>>,
   ): Promise<void> {
-    const artifacts = reportedArtifacts(outcome.payload.outcome.data);
+    if (outcome.event.eventType !== OrchestrationEventType.ActivityOutcomeAccepted) return;
+    const artifacts = reportedArtifacts(outcome.event.payload.outcome.data);
     if (artifacts.length === 0) return;
-    const branch = await this.branchFor(outcome.payload.activationId);
+    const branch = await this.branchFor(outcome.event.payload.activationId);
     if (branch === undefined) return;
     const workItemId = await this.workItemFor(outcome.stream.id);
     if (workItemId === null) return;
@@ -105,10 +104,10 @@ export class ArtifactRegistrationReactor {
       await this.verifyAndRegister(
         {
           workflowInstanceId: outcome.stream.id,
-          activationId: outcome.payload.activationId,
+          activationId: outcome.event.payload.activationId,
           artifact,
-          correlationId: outcome.correlationId,
-          causationId: outcome.eventId,
+          correlationId: outcome.event.correlationId,
+          causationId: outcome.event.eventId,
           occurredAt: outcome.recordedAt,
         },
         branch,
@@ -117,26 +116,29 @@ export class ArtifactRegistrationReactor {
       );
   }
 
-  private async reconcileAmbiguous(): Promise<void> {
+  async reconcileOnce(): Promise<void> {
     const latest = await this.latestUnresolved.get();
     for (const event of latest.values()) {
-      if (event.payload.status !== ArtifactVerificationStatus.Ambiguous || event.payload.escalated)
+      if (
+        event.event.payload.status !== ArtifactVerificationStatus.Ambiguous ||
+        event.event.payload.escalated
+      )
         continue;
-      const branch = await this.branchFor(event.payload.activationId);
-      const workItemId = await this.workItemFor(event.payload.workflowInstanceId);
+      const branch = await this.branchFor(event.event.payload.activationId);
+      const workItemId = await this.workItemFor(event.event.payload.workflowInstanceId);
       if (branch === undefined || workItemId === null) continue;
       await this.verifyAndRegister(
         {
-          workflowInstanceId: event.payload.workflowInstanceId,
-          activationId: event.payload.activationId,
-          artifact: event.payload.artifact,
-          correlationId: event.correlationId,
-          causationId: event.causationId,
+          workflowInstanceId: event.event.payload.workflowInstanceId,
+          activationId: event.event.payload.activationId,
+          artifact: event.event.payload.artifact,
+          correlationId: event.event.correlationId,
+          causationId: event.event.causationId,
           occurredAt: event.recordedAt,
         },
         branch,
         workItemId as never,
-        event.payload.attempt + 1,
+        event.event.payload.attempt + 1,
       );
     }
   }
@@ -207,8 +209,8 @@ export class ArtifactRegistrationReactor {
     const ambiguous = result === ArtifactVerificationResult.Ambiguous;
     const escalated =
       ambiguous && attempt >= (this.dependencies.maxAmbiguityReconciliationAttempts ?? 3);
-    await this.dependencies.journal.append(stream, sequence, [
-      createEventDraft({
+    await this.dependencies.journal.appendToStream(stream, sequence, [
+      createArtifactEventData({
         eventId: `${record.causationId}:artifact:${record.artifact.externalKey.key}:unresolved:${attempt}`,
         eventType: ArtifactEventType.VerificationUnresolved,
         occurredAt: record.occurredAt,
@@ -216,7 +218,6 @@ export class ArtifactRegistrationReactor {
         causationId: record.causationId as never,
         actor: { kind: EventActorKind.Integration, id: 'artifact-registration' },
         source: { kind: EventSourceKind.Internal, id: 'artifact-registration' },
-        stream,
         payload: {
           workflowInstanceId: record.workflowInstanceId,
           activationId: record.activationId as never,
@@ -239,8 +240,10 @@ export class ArtifactRegistrationReactor {
     const events = await this.dependencies.journal.readStream(workflowInstanceStream(workflow));
     const started = events
       .map(selectWorkflowOrchestrationEvent)
-      .find((event) => event?.eventType === OrchestrationEventType.InstanceStarted);
-    return started?.payload.workItemId ?? null;
+      .find((event) => event?.event.eventType === OrchestrationEventType.InstanceStarted);
+    return started?.event.eventType === OrchestrationEventType.InstanceStarted
+      ? started.event.payload.workItemId
+      : null;
   }
 }
 
@@ -249,9 +252,9 @@ function deriveLatestUnresolved(
 ): ReadonlyMap<string, ArtifactEvent> {
   const latest = new Map<string, ArtifactEvent>();
   for (const event of events) {
-    if (event.eventType !== ArtifactEventType.VerificationUnresolved) continue;
+    if (event.event.eventType !== ArtifactEventType.VerificationUnresolved) continue;
     const decoded = decodeArtifactEvent(event);
-    const key = `${decoded.causationId}:${decoded.payload.artifact.externalKey.adapter}:${decoded.payload.artifact.externalKey.key}`;
+    const key = `${decoded.event.causationId}:${decoded.event.payload.artifact.externalKey.adapter}:${decoded.event.payload.artifact.externalKey.key}`;
     latest.set(key, decoded);
   }
   return latest;

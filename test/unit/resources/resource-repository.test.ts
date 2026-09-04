@@ -1,6 +1,6 @@
+import { createEventData } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
-import { createEventDraft } from '../../../src/kernel/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {
   ResourceEventType,
   ResourceRepository,
@@ -30,8 +30,8 @@ it('refreshes the resource materialized view after an append and skips reads whi
 
 async function discover(journal: InMemoryEventJournal, id: typeof first, sequence: number) {
   const stream = resourceStream(id);
-  await journal.append(stream, sequence, [
-    createEventDraft({
+  await journal.appendToStream(stream, sequence, [
+    createEventData({
       eventId: `${id}:discovered`,
       eventType: ResourceEventType.ResourceDiscovered,
       occurredAt: '2026-08-01T12:00:00Z',
@@ -39,7 +39,6 @@ async function discover(journal: InMemoryEventJournal, id: typeof first, sequenc
       causationId: 'resource-test',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         kind: resourceKind('issue'),
         externalKey: { adapter: 'fake', key: id },

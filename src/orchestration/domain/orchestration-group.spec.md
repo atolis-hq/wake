@@ -85,7 +85,7 @@ attempt succeeds against the current state of its stream.
 
 ## Dependencies and system role
 
-- Kernel — event journal conventions for reading and appending its own
+- Eventing — event journal conventions for reading and appending its own
   claim streams, and the optimistic-append conflict signal it retries on.
 - WorkflowInstance (depends on this component for a primary start) — a
   primary start only proceeds once its WorkItem's primary claim succeeds.

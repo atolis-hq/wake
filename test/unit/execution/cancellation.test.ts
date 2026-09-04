@@ -1,6 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ExecutionEventType, RunStatus } from '../../../src/execution/index.js';
+import {
+  createEventData,
+  EventActorKind,
+  EventSourceKind,
+  WrongExpectedSequenceError,
+  type EventJournal,
+} from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
+import { activationId, activityName, ActivityRegistry } from '../../../src/activities/index.js';
+import {
+  createExecutionService,
+  ExecutionEventType,
+  runId,
+  RunRepository,
+  RunStatus,
+} from '../../../src/execution/index.js';
+import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
+import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 import { executionFixture } from './support.js';
 
 describe('Run cancellation', () => {
@@ -27,7 +44,7 @@ describe('Run cancellation', () => {
 
     await fixture.service.requestCancellation(run.runId, 'operator');
 
-    expect((await fixture.events()).map((event) => event.eventType)).toContain(
+    expect((await fixture.events()).map((event) => event.event.eventType)).toContain(
       ExecutionEventType.RunCancellationRequested,
     );
     expect(fixture.cancelled).toBe(true);
@@ -70,4 +87,82 @@ describe('Run cancellation', () => {
     fixture.complete({ kind: 'done' });
     await pending;
   });
+
+  it('cancels a starting Run without requiring a runner process', async () => {
+    const fixture = executionFixture();
+    const id = runId('preparing-run');
+    await new RunRepository(fixture.journal).append(id, 0, [
+      createEventData({
+        eventId: 'preparing-run:preparation',
+        eventType: ExecutionEventType.RunPreparationStarted,
+        occurredAt: fixture.clock.now().toISOString(),
+        correlationId: 'preparing-run',
+        causationId: 'preparing-run',
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        payload: {
+          activationId: activationId('preparing-activation'),
+          activity: activityName('long-running'),
+          workflowInstanceId: workflowInstanceId('workflow-1'),
+          orchestrationGroupId: orchestrationGroupId('group-1'),
+          attempt: 1,
+          startedAt: fixture.clock.now().toISOString(),
+        },
+      }),
+    ]);
+
+    await expect(
+      fixture.service.cancelActive(['workflow-1'], 'work-cancelled'),
+    ).resolves.toMatchObject([
+      { runId: id, status: RunStatus.Cancelled, cancellation: { reason: 'work-cancelled' } },
+    ]);
+  });
+
+  it('rejects a cancellation request conflict that makes no sequence progress', async () => {
+    const clock = new FakeClock();
+    const base = new InMemoryEventJournal(clock);
+    const journal: EventJournal = {
+      async appendToStream(stream, expectedSequence, events) {
+        if (events.some((event) => event.eventType === ExecutionEventType.RunCancellationRequested))
+          throw new WrongExpectedSequenceError('unchanged sequence');
+        return base.appendToStream(stream, expectedSequence, events);
+      },
+      readStream: base.readStream.bind(base),
+      readAll: base.readAll.bind(base),
+      latestGlobalPosition: base.latestGlobalPosition.bind(base),
+      waitForEventsAfter: base.waitForEventsAfter.bind(base),
+      readLatest: base.readLatest?.bind(base),
+      changeSignal: base.changeSignal,
+    };
+    const service = createExecutionService(
+      journal,
+      new ActivityRegistry(),
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      { clock, ids: new SequentialIds() },
+    );
+    const id = runId('no-cancellation-progress');
+    await new RunRepository(base).append(id, 0, [
+      createEventData({
+        eventId: `${id}:preparation`,
+        eventType: ExecutionEventType.RunPreparationStarted,
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'group-1',
+        causationId: 'activation-1',
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        payload: {
+          activationId: activationId('activation-1'),
+          activity: activityName('long-running'),
+          workflowInstanceId: workflowInstanceId('workflow-1'),
+          orchestrationGroupId: orchestrationGroupId('group-1'),
+          attempt: 1,
+          startedAt: clock.now().toISOString(),
+        },
+      }),
+    ]);
+
+    await expect(service.requestCancellation(id, 'operator')).rejects.toThrow(
+      'did not advance after a cancellation request conflict',
+    );
+  }, 100);
 });

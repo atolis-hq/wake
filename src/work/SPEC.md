@@ -1,5 +1,5 @@
 ---
-asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
+asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ---
 
 # Work — Module Specification
@@ -34,6 +34,13 @@ Work does not own:
   Work, at the point an external observation is first admitted as Wake work;
   Work only accepts and validates that a `WorkItemId` follows Wake's own
   format. Work never derives identity from a provider key.
+
+## Event publishing boundary
+
+Work owns its event types, payload map, WorkItem stream reference,
+selector/decoder, and `createWorkEventData` factory. It creates immutable event
+data and appends non-empty expected-sequence batches; it does not construct
+envelope metadata or a processor host.
 
 ## Ubiquitous language
 
@@ -84,6 +91,12 @@ Work does not own:
 - A relation between two WorkItems MUST be idempotent: recording the same
   `(to, relation)` pair against a WorkItem more than once MUST NOT duplicate
   it in that WorkItem's related-items view.
+- Repeating a command with the same generated work event data returns the
+  current WorkItem view without another append. Work uses expected sequence as
+  a bounded compare-and-swap: on a sequence conflict it reloads once and
+  returns only an exact concurrent replay, otherwise preserving the conflict
+  for its caller. Reusing that event id for different event data is rejected
+  by Work before appending; the journal records every accepted batch.
 
 ## Event catalogue
 
@@ -132,9 +145,9 @@ Work does not own:
 
 ## Dependencies and system role
 
-- Kernel — event journal, envelope, and command context conventions; Work's
-  only dependency, and the only thing it needs to append and rehydrate its
-  own streams.
+- Eventing — public journal, envelope, and command-context contracts; Work's
+  eventing dependency for appending and rehydrating its own streams.
+- Kernel — generic identity and relation vocabulary used by Work contracts.
 - Resources (depends on Work) — correlates an observed external resource to
   a `WorkItemId` it did not mint, anchoring provider-side identity to Wake
   identity.

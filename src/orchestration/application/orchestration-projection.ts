@@ -1,16 +1,13 @@
-import type { ProjectionDefinition } from '../../kernel/index.js';
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { selectWorkflowOrchestrationEvent } from '../contracts/event-decoder.js';
-import { OrchestrationEventType, type WorkflowOrchestrationEvent } from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import { isWorkflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { foldWorkflowInstance } from '../domain/workflow-instance.js';
+import { continueWorkflowInstance } from '../domain/workflow-instance.js';
 
-type ProjectionValue = {
-  readonly events: readonly WorkflowOrchestrationEvent[];
-  readonly view: WorkflowInstanceView | null;
-};
+export type WorkflowInstanceProjectionValue = WorkflowInstanceView | null;
 
-export const orchestrationProjection: ProjectionDefinition<ProjectionValue> = {
+export const orchestrationProjection: ProjectionDefinition<WorkflowInstanceProjectionValue> = {
   name: 'orchestration',
   select(event) {
     const owned = selectWorkflowOrchestrationEvent(event);
@@ -18,12 +15,11 @@ export const orchestrationProjection: ProjectionDefinition<ProjectionValue> = {
       ? { key: owned.stream.id }
       : null;
   },
-  initial: () => ({ events: [], view: null }),
+  initial: () => null,
   project(previous, event) {
     const owned = selectWorkflowOrchestrationEvent(event);
     if (owned === null || !isWorkflowInstanceStream(owned.stream)) return previous;
-    const events = [...previous.events, owned];
-    return { events, view: foldWorkflowInstance(events) };
+    return continueWorkflowInstance(previous, owned);
   },
 };
 
@@ -34,16 +30,16 @@ export const workflowsByWorkItemProjection: ProjectionDefinition<
   name: 'workflows-by-work-item',
   select(event) {
     const owned = selectWorkflowOrchestrationEvent(event);
-    return owned?.eventType === OrchestrationEventType.InstanceStarted &&
+    return owned?.event.eventType === OrchestrationEventType.InstanceStarted &&
       isWorkflowInstanceStream(owned.stream)
-      ? { key: owned.payload.workItemId }
+      ? { key: owned.event.payload.workItemId }
       : null;
   },
   initial: () => [],
   project(previous, event) {
     const owned = selectWorkflowOrchestrationEvent(event);
     if (
-      owned?.eventType !== OrchestrationEventType.InstanceStarted ||
+      owned?.event.eventType !== OrchestrationEventType.InstanceStarted ||
       !isWorkflowInstanceStream(owned.stream)
     )
       return previous;

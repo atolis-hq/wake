@@ -10,7 +10,7 @@ const fullJournalRescanRule = {
     'CallExpression[callee.property.name="readAll"][arguments.0.type="Literal"][arguments.0.value=0]',
   message:
     'readAll(0) re-derives the full event history on every call. Route it through ' +
-    'cachedJournalView() (src/persistence) so a resident loop only pays that cost ' +
+    'cachedJournalView() (@atolis-hq/eventing) so a resident loop only pays that cost ' +
     'when the journal has actually moved since the last call.',
 };
 
@@ -19,6 +19,7 @@ export default tseslint.config(
     ignores: [
       'coverage/**',
       'dist/**',
+      'packages/*/dist/**',
       'archive/legacy/**',
       'node_modules/**',
       '.wake/**',
@@ -83,6 +84,10 @@ export default tseslint.config(
       'vitest.integration.config.ts',
       'vitest.e2e.config.ts',
       'vitest.live-e2e.config.ts',
+      'packages/eventing/test/**/*.ts',
+      'packages/eventing/vitest.config.ts',
+      'packages/eventing-filesystem/test/**/*.ts',
+      'packages/eventing-filesystem/vitest.config.ts',
     ],
     extends: [tseslint.configs.disableTypeChecked],
   },
@@ -101,7 +106,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ['test/**/*.ts'],
+    files: [
+      'test/**/*.ts',
+      'packages/eventing/test/**/*.ts',
+      'packages/eventing-filesystem/test/**/*.ts',
+    ],
     plugins: { vitest },
     rules: {
       'max-lines': 'off',
@@ -124,7 +133,7 @@ export default tseslint.config(
           patterns: [
             {
               group: ['**/kernel/index.js', '**/kernel/contracts/*.js'],
-              importNames: ['EventDraft', 'EventEnvelope', 'entityRef'],
+              importNames: ['EventData', 'EventEnvelope', 'entityRef'],
               message: 'Use the owning domain event union and stream constructor.',
             },
           ],
@@ -152,10 +161,6 @@ export default tseslint.config(
     files: ['src/**/*.ts'],
     ignores: [
       'src/{work,resources,activities,orchestration,execution}/{domain,application}/**/*.ts',
-      // Own the journal and already gate full rescans behind a
-      // last-seen-position check (ProjectionRunner; cachedJournalView, the
-      // shared primitive every other fix in this file routes through).
-      'src/persistence/**',
       'src/kernel/infrastructure/cached-journal-view.ts',
       // Composition/wiring and CLI command handlers: startup and one-off
       // command volume, not a resident tick.
@@ -176,7 +181,12 @@ export default tseslint.config(
   },
   eslintConfigPrettier,
   {
-    files: ['src/**/*.ts', 'test/**/*.ts'],
+    files: [
+      'src/**/*.ts',
+      'test/**/*.ts',
+      'packages/eventing/src/**/*.ts',
+      'packages/eventing-filesystem/src/**/*.ts',
+    ],
     plugins: { '@stylistic': stylistic },
     rules: {
       '@stylistic/lines-between-class-members': [

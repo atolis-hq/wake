@@ -1,19 +1,30 @@
-import {
-  createEventDraft,
-  EventActorKind,
-  EventSourceKind,
-  WrongExpectedSequenceError,
-  type Clock,
-} from '../../kernel/index.js';
+import { EventActorKind, EventSourceKind, WrongExpectedSequenceError } from '@atolis-hq/eventing';
+import { type Clock } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
+import { createExecutionEventData } from '../contracts/event-factory.js';
+import {
+  ExecutionEventType,
+  type ExecutionEventData,
+  type RunExecutionEventData,
+  type RunExecutionEventPayloads,
+} from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
-import { runStream } from '../contracts/streams.js';
 import type { RunView } from '../contracts/views.js';
-import { RunStatus } from '../contracts/vocabulary.js';
+import { isActiveRunStatus } from '../contracts/vocabulary.js';
 import type { RunRepository } from './run-repository.js';
 
 const defaultLeaseDurationMs = 60_000;
+
+export function newRunLease(clock: Clock, config: ExecutionConfig, owner: string) {
+  const now = clock.now();
+  return {
+    owner,
+    acquiredAt: now.toISOString(),
+    expiresAt: new Date(
+      now.getTime() + (config.leaseDurationMs ?? defaultLeaseDurationMs),
+    ).toISOString(),
+  };
+}
 
 export async function claimRun(
   repository: RunRepository,
@@ -27,15 +38,14 @@ export async function claimRun(
   const now = clock.now();
   if (run.lease !== undefined && new Date(run.lease.expiresAt) > now && run.lease.owner !== owner)
     throw new Error(`Run ${currentRunId} has an unexpired lease`);
-  const lease = {
-    owner,
-    acquiredAt: now.toISOString(),
-    expiresAt: new Date(
-      now.getTime() + (config.leaseDurationMs ?? defaultLeaseDurationMs),
-    ).toISOString(),
-  };
+  const lease = newRunLease(clock, config, owner);
   await repository.append(currentRunId, loaded.sequence, [
-    livenessEvent(currentRunId, run, ExecutionEventType.RunLeaseClaimed, lease, now.toISOString()),
+    livenessEvent(
+      currentRunId,
+      run,
+      { eventType: ExecutionEventType.RunLeaseClaimed, payload: lease },
+      now.toISOString(),
+    ),
   ]);
   return (await repository.load(currentRunId)).view!;
 }
@@ -63,7 +73,12 @@ export async function renewLease(
     ).toISOString(),
   };
   await repository.append(currentRunId, loaded.sequence, [
-    livenessEvent(currentRunId, run, ExecutionEventType.RunLeaseRenewed, lease, now.toISOString()),
+    livenessEvent(
+      currentRunId,
+      run,
+      { eventType: ExecutionEventType.RunLeaseRenewed, payload: lease },
+      now.toISOString(),
+    ),
   ]);
   return (await repository.load(currentRunId)).view!;
 }
@@ -75,6 +90,7 @@ export async function requestCancellation(
   reason: NonNullable<RunView['cancellation']>['reason'],
   active: ReadonlyMap<string, AbortController>,
 ) {
+  let retriedAfterSequence: number | undefined;
   while (true) {
     const loaded = await repository.load(currentRunId);
     const run = requireActiveRun(loaded.view);
@@ -82,19 +98,26 @@ export async function requestCancellation(
       active.get(currentRunId)?.abort(reason);
       return run;
     }
+    if (retriedAfterSequence !== undefined && loaded.sequence <= retriedAfterSequence)
+      throw new Error(`Run ${currentRunId} did not advance after a cancellation request conflict`);
     const requestedAt = clock.now().toISOString();
     try {
       await repository.append(currentRunId, loaded.sequence, [
         livenessEvent(
           currentRunId,
           run,
-          ExecutionEventType.RunCancellationRequested,
-          { requestedAt, reason },
+          {
+            eventType: ExecutionEventType.RunCancellationRequested,
+            payload: { requestedAt, reason },
+          },
           requestedAt,
         ),
       ]);
     } catch (error) {
-      if (error instanceof WrongExpectedSequenceError) continue;
+      if (error instanceof WrongExpectedSequenceError) {
+        retriedAfterSequence = loaded.sequence;
+        continue;
+      }
       throw error;
     }
     active.get(currentRunId)?.abort(reason);
@@ -107,58 +130,85 @@ export async function confirmCancellation(
   clock: Clock,
   currentRunId: ReturnType<typeof runId>,
 ) {
-  const loaded = await repository.load(currentRunId);
-  const run = requireActiveRun(loaded.view);
-  if (run.cancellation === undefined)
-    throw new Error(`Run ${currentRunId} has no cancellation request`);
-  const confirmedAt = clock.now().toISOString();
-  await repository.append(currentRunId, loaded.sequence, [
-    livenessEvent(
-      currentRunId,
-      run,
-      ExecutionEventType.RunCancellationConfirmed,
-      { confirmedAt },
-      confirmedAt,
-    ),
-    livenessEvent(
-      currentRunId,
-      run,
-      ExecutionEventType.RunCancelled,
-      { finishedAt: confirmedAt },
-      confirmedAt,
-    ),
-  ]);
-  return (await repository.load(currentRunId)).view!;
+  let retriedAfterSequence: number | undefined;
+  while (true) {
+    const loaded = await repository.load(currentRunId);
+    if (loaded.view === null) throw new Error('Run is not active');
+    if (!isActiveRunStatus(loaded.view.status)) return loaded.view;
+    if (loaded.view.cancellation === undefined)
+      throw new Error(`Run ${currentRunId} has no cancellation request`);
+    if (retriedAfterSequence !== undefined && loaded.sequence <= retriedAfterSequence)
+      throw new Error(`Run ${currentRunId} did not advance after a cancellation conflict`);
+    const confirmedAt = clock.now().toISOString();
+    try {
+      await repository.append(currentRunId, loaded.sequence, [
+        livenessEvent(
+          currentRunId,
+          loaded.view,
+          {
+            eventType: ExecutionEventType.RunCancellationConfirmed,
+            payload: { confirmedAt },
+          },
+          confirmedAt,
+        ),
+        livenessEvent(
+          currentRunId,
+          loaded.view,
+          { eventType: ExecutionEventType.RunCancelled, payload: { finishedAt: confirmedAt } },
+          confirmedAt,
+        ),
+      ]);
+      return (await repository.load(currentRunId)).view!;
+    } catch (error) {
+      if (!(error instanceof WrongExpectedSequenceError)) throw error;
+      retriedAfterSequence = loaded.sequence;
+    }
+  }
 }
 
 function requireActiveRun(run: RunView | null): RunView {
-  if (run === null || run.status !== RunStatus.Started) throw new Error('Run is not active');
+  if (run === null || !isActiveRunStatus(run.status)) throw new Error('Run is not active');
   return run;
 }
 
-function livenessEvent<
-  Type extends Exclude<
-    keyof RunExecutionEventPayloads,
-    | typeof ExecutionEventType.RunStarted
-    | typeof ExecutionEventType.RunSucceeded
-    | typeof ExecutionEventType.RunFailed
-  >,
->(
+type LivenessEventType = Exclude<
+  keyof RunExecutionEventPayloads,
+  | typeof ExecutionEventType.RunStarted
+  | typeof ExecutionEventType.RunSucceeded
+  | typeof ExecutionEventType.RunFailed
+>;
+
+type LivenessEventInput = {
+  [Type in LivenessEventType]: {
+    readonly eventType: Type;
+    readonly payload: RunExecutionEventPayloads[Type];
+  };
+}[LivenessEventType];
+
+function livenessEvent(
   currentRunId: ReturnType<typeof runId>,
   run: RunView,
-  eventType: Type,
-  payload: RunExecutionEventPayloads[Type],
+  input: LivenessEventInput,
   occurredAt: string,
-) {
-  return createEventDraft({
-    eventId: `${currentRunId}:${eventType}:${occurredAt}`,
-    eventType,
+): RunExecutionEventData {
+  const event = createExecutionEventData({
+    eventId: `${currentRunId}:${input.eventType}:${occurredAt}`,
     occurredAt,
     correlationId: run.orchestrationGroupId,
     causationId: run.activationId,
     actor: { kind: EventActorKind.System, id: 'execution' },
     source: { kind: EventSourceKind.Internal, id: 'execution' },
-    stream: runStream(currentRunId),
-    payload,
+    ...input,
   });
+  return requireRunEventData(event);
+}
+
+function requireRunEventData(event: ExecutionEventData): RunExecutionEventData {
+  switch (event.eventType) {
+    case ExecutionEventType.ActivationClaimed:
+    case ExecutionEventType.ActivationReleased:
+      throw new Error(`Expected Run event data, received ${event.eventType}`);
+    default:
+      return event;
+  }
 }

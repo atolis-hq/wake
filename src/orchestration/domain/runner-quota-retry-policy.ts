@@ -1,7 +1,7 @@
 import { activationId as toActivationId } from '../../activities/index.js';
 import {
   OrchestrationEventType,
-  type WorkflowOrchestrationEventDraft,
+  type WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import type { DecisionContext, OrchestrationDecision } from './activation-policy.js';
@@ -41,39 +41,43 @@ export function requestRunnerQuotaRetry(
   // No RetryCounted here, deliberately: a quota condition is a runner-capacity
   // fact, not a failed attempt, so it must never consume the route's
   // configured `retry.max` budget.
-  const events: WorkflowOrchestrationEventDraft[] = [
+  const events: WorkflowOrchestrationEventData[] = [
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRetriedForRunnerQuota,
       {
-        activationId: toActivationId(input.activationId),
-        runId: input.runId,
-        runnerName: input.runnerName,
-        message: input.message,
+        eventType: OrchestrationEventType.ActivityRetriedForRunnerQuota,
+        payload: {
+          activationId: toActivationId(input.activationId),
+          runId: input.runId,
+          runnerName: input.runnerName,
+          message: input.message,
+        },
       },
       1,
     ),
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(
-        state.workflowInstanceId,
-        nextOrdinal(state),
-        interrupted.activity,
-        interrupted.input,
-        {
-          execution: interrupted.execution,
-          ...(interrupted.stage === undefined ? {} : { stage: interrupted.stage }),
-          ...(interrupted.followOnIndex === undefined
-            ? {}
-            : { followOnIndex: interrupted.followOnIndex }),
-          ...(interrupted.supplemental === undefined
-            ? {}
-            : { supplemental: interrupted.supplemental }),
-        },
-      ),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          interrupted.activity,
+          interrupted.input,
+          {
+            execution: interrupted.execution,
+            ...(interrupted.stage === undefined ? {} : { stage: interrupted.stage }),
+            ...(interrupted.followOnIndex === undefined
+              ? {}
+              : { followOnIndex: interrupted.followOnIndex }),
+            ...(interrupted.supplemental === undefined
+              ? {}
+              : { supplemental: interrupted.supplemental }),
+          },
+        ),
+      },
       2,
     ),
   ];

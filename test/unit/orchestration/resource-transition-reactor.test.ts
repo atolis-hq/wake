@@ -1,12 +1,18 @@
-import { expect, it } from 'vitest';
-import { ActivityEventType } from '../../../src/activities/index.js';
 import {
-  createEventDraft,
+  createEventData,
   eventId,
+  EventProcessorHost,
   type CheckpointStore,
   type CommandContext,
-  type EntityRef,
-} from '../../../src/kernel/index.js';
+} from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
+import { expect, it } from 'vitest';
+import { ActivityEventType } from '../../../src/activities/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   createResourceTransitionReactor,
   OrchestrationEventType,
@@ -16,10 +22,71 @@ import {
   type CompiledResourceTransition,
   type ResourceTransitionEvidence,
 } from '../../../src/orchestration/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { workItemId } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
+
+it('exposes the stable resource-transition processor', () => {
+  const reactor = createResourceTransitionReactor(
+    {
+      async listResourceTransitionMatches() {
+        return [];
+      },
+      async applyResourceTransition() {},
+    },
+    evidence(async () => null),
+  );
+
+  expect(reactor).toMatchObject({
+    processor: {
+      consumer: 'reactor:orchestration.resource-transition',
+      name: 'resource-transition',
+      owner: 'orchestration',
+    },
+  });
+  expect(typeof reactor.react).toBe('function');
+});
+
+it('ignores unrelated facts through its processor selector', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  await journal.appendToStream(stream, 0, [
+    createEventData({
+      eventId: 'unrelated-fact',
+      eventType: 'work.created',
+      occurredAt: '2026-08-15T12:00:00.000Z',
+      correlationId: 'correlation-1',
+      causationId: 'cause-1',
+      actor: { kind: 'integration', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {},
+    }),
+  ]);
+  let matched = 0;
+  const reactor = createResourceTransitionReactor(
+    {
+      async listResourceTransitionMatches() {
+        matched += 1;
+        return [];
+      },
+      async applyResourceTransition() {},
+    },
+    evidence(async () => null),
+  );
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
+
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({
+    eventCount: 1,
+    handledCount: 0,
+  });
+  expect(matched).toBe(0);
+  expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(1);
+});
 
 const stream: EntityRef<'test', 'resource-transition-reactor'> = {
   kind: 'test',
@@ -47,10 +114,8 @@ function evidence(resolve: ResourceTransitionEvidence['resolve']): ResourceTrans
 }
 
 function mergedFact(id = 'merged-1') {
-  return {
-    ...eventEnvelope(ActivityEventType.PrStateChanged, { state: 'merged' }, stream),
-    eventId: eventId(id),
-  };
+  const envelope = eventEnvelope(ActivityEventType.PrStateChanged, { state: 'merged' }, stream);
+  return { ...envelope, event: { ...envelope.event, eventId: eventId(id) } };
 }
 
 it('applies an evidence-resolved resource transition', async () => {
@@ -129,16 +194,17 @@ it('asks evidence to search history when a resource-transition wait starts', asy
       return null;
     }),
   );
+  const envelope = eventEnvelope(
+    OrchestrationEventType.SignalWaitStarted,
+    {
+      signalKind: 'orchestration.resource-transition',
+      resourceTransitions: [transition],
+    },
+    workflowInstanceStream(match.workflowInstanceId),
+  );
   const waitStarted = {
-    ...eventEnvelope(
-      OrchestrationEventType.SignalWaitStarted,
-      {
-        signalKind: 'orchestration.resource-transition',
-        resourceTransitions: [transition],
-      },
-      workflowInstanceStream(match.workflowInstanceId),
-    ),
-    eventId: eventId('wait-started-1'),
+    ...envelope,
+    event: { ...envelope.event, eventId: eventId('wait-started-1') },
   };
 
   await reactor.react(waitStarted, context);
@@ -167,11 +233,11 @@ it('passes a live fact to the evidence policy', async () => {
   expect(receivedFact).toBe(fact);
 });
 
-it('moves its checkpoint once after each event in journal order', async () => {
+it('delegates bounded checkpoint progress to the event processor host', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
-  await journal.append(stream, 0, [
-    createEventDraft({
+  await journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: 'event-1',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:00:00.000Z',
@@ -179,10 +245,9 @@ it('moves its checkpoint once after each event in journal order', async () => {
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
-    createEventDraft({
+    createEventData({
       eventId: 'event-2',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:01:00.000Z',
@@ -190,7 +255,6 @@ it('moves its checkpoint once after each event in journal order', async () => {
       causationId: 'cause-2',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
   ]);
@@ -211,24 +275,28 @@ it('moves its checkpoint once after each event in journal order', async () => {
       async applyResourceTransition() {},
     },
     evidence(async () => null),
+  );
+  const host = new EventProcessorHost(
     journal,
     trackingCheckpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
 
-  await expect(reactor.runOnce()).resolves.toBe(2);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 2 });
 
-  expect(saves).toEqual([1, 2]);
+  expect(saves).toEqual([2]);
   expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(2);
 });
 
-it('drains more than one batch and advances its checkpoint through the final event', async () => {
+it('catches up more than one batch through the eventing barrier', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
-  await journal.append(
+  await journal.appendToStream(
     stream,
     0,
     Array.from({ length: 101 }, (_, index) =>
-      createEventDraft({
+      createEventData({
         eventId: `event-${index + 1}`,
         eventType: ActivityEventType.PrStateChanged,
         occurredAt: '2026-08-15T12:00:00.000Z',
@@ -236,7 +304,6 @@ it('drains more than one batch and advances its checkpoint through the final eve
         causationId: `cause-${index + 1}`,
         actor: { kind: 'integration', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream,
         payload: { state: 'merged' },
       }),
     ),
@@ -249,20 +316,24 @@ it('drains more than one batch and advances its checkpoint through the final eve
       async applyResourceTransition() {},
     },
     evidence(async () => null),
+  );
+  const host = new EventProcessorHost(
     journal,
     checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
 
-  await expect(reactor.drain()).resolves.toBe(101);
+  await expect(host.runThrough(reactor.processor, 101)).resolves.toMatchObject({ eventCount: 101 });
   expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(101);
-  await expect(reactor.runOnce()).resolves.toBe(0);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 0 });
 });
 
-it('serializes an overlapping runner batch and barrier drain through checkpoint advancement', async () => {
+it('serializes an overlapping processor pass and catch-up barrier through checkpoint advancement', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const durable = new InMemoryCheckpointStore();
-  await journal.append(stream, 0, [
-    createEventDraft({
+  await journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: 'event-1',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:00:00.000Z',
@@ -270,10 +341,9 @@ it('serializes an overlapping runner batch and barrier drain through checkpoint 
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
-    createEventDraft({
+    createEventData({
       eventId: 'event-2',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:01:00.000Z',
@@ -281,7 +351,6 @@ it('serializes an overlapping runner batch and barrier drain through checkpoint 
       causationId: 'cause-2',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
   ]);
@@ -317,19 +386,23 @@ it('serializes an overlapping runner batch and barrier drain through checkpoint 
       },
     },
     evidence(async ({ fact }) =>
-      fact === undefined ? null : { transition, evidenceId: fact.eventId },
+      fact === undefined ? null : { transition, evidenceId: fact.event.eventId },
     ),
+  );
+  const host = new EventProcessorHost(
     journal,
     checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
 
-  const runnerBatch = reactor.runOnce(1);
+  const runnerBatch = host.runOnce(reactor.processor);
   await firstSave;
-  const barrierDrain = reactor.drain();
+  const barrierCatchUp = host.runThrough(reactor.processor, 2);
   releaseFirstSave();
 
-  await expect(runnerBatch).resolves.toBe(1);
-  await expect(barrierDrain).resolves.toBe(1);
+  await expect(runnerBatch).resolves.toMatchObject({ eventCount: 2 });
+  await expect(barrierCatchUp).resolves.toMatchObject({ eventCount: 0 });
   expect(applied).toEqual(['event-1', 'event-2']);
   expect(await durable.load('reactor:orchestration.resource-transition')).toBe(2);
 });
@@ -337,8 +410,8 @@ it('serializes an overlapping runner batch and barrier drain through checkpoint 
 it('does not advance after a failed reaction and reuses its command context on replay', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
-  await journal.append(stream, 0, [
-    createEventDraft({
+  await journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: 'event-fail-react',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:00:00.000Z',
@@ -346,7 +419,6 @@ it('does not advance after a failed reaction and reuses its command context on r
       causationId: 'cause-fail',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
   ]);
@@ -366,13 +438,17 @@ it('does not advance after a failed reaction and reuses its command context on r
       },
     },
     evidence(async () => ({ transition, evidenceId: 'evidence-1' })),
+  );
+  const host = new EventProcessorHost(
     journal,
     checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
 
-  await expect(reactor.runOnce()).rejects.toThrow('injected transition failure');
+  await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected transition failure');
   expect(await checkpoints.load('reactor:orchestration.resource-transition')).toBe(0);
-  await expect(reactor.runOnce()).resolves.toBe(1);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 1 });
 
   expect(commandIds).toEqual([
     'event-fail-react:resource-transition',
@@ -384,8 +460,8 @@ it('does not advance after a failed reaction and reuses its command context on r
 it('does not advance after a checkpoint failure and reuses its command context on replay', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const durable = new InMemoryCheckpointStore();
-  await journal.append(stream, 0, [
-    createEventDraft({
+  await journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: 'event-fail-checkpoint',
       eventType: ActivityEventType.PrStateChanged,
       occurredAt: '2026-08-15T12:00:00.000Z',
@@ -393,7 +469,6 @@ it('does not advance after a checkpoint failure and reuses its command context o
       causationId: 'cause-checkpoint',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { state: 'merged' },
     }),
   ]);
@@ -420,13 +495,17 @@ it('does not advance after a checkpoint failure and reuses its command context o
       },
     },
     evidence(async () => ({ transition, evidenceId: 'evidence-1' })),
+  );
+  const host = new EventProcessorHost(
     journal,
     checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
 
-  await expect(reactor.runOnce()).rejects.toThrow('injected checkpoint failure');
+  await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected checkpoint failure');
   expect(await durable.load('reactor:orchestration.resource-transition')).toBe(0);
-  await expect(reactor.runOnce()).resolves.toBe(1);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 1 });
 
   expect(commandIds).toEqual([
     'event-fail-checkpoint:resource-transition',

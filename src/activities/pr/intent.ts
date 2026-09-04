@@ -3,10 +3,10 @@ import {
   EventActorKind,
   type EventJournal,
   WrongExpectedSequenceError,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
 import type { ResourceStreamRef } from '../../resources/index.js';
 import type { WorkItemStreamRef } from '../../work/index.js';
-import type { ActivityFactDraft } from '../contracts/events.js';
+import type { ActivityFactEventData } from '../contracts/events.js';
 import { IntentAppendStatus } from '../contracts/vocabulary.js';
 
 export type IntentAppendResult =
@@ -18,7 +18,7 @@ export type IntentAppendResult =
 export interface IntentAppender {
   append(
     stream: ResourceStreamRef | WorkItemStreamRef,
-    intent: ActivityFactDraft,
+    intent: ActivityFactEventData,
   ): Promise<IntentAppendResult>;
 }
 
@@ -31,23 +31,24 @@ export function createJournalIntentAppender(journal: EventJournal): IntentAppend
 export async function appendIntentOnce(
   journal: EventJournal,
   stream: ResourceStreamRef | WorkItemStreamRef,
-  intent: ActivityFactDraft,
+  intent: ActivityFactEventData,
 ): Promise<IntentAppendResult> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const events = await journal.readStream(stream);
-    if (events.some((event) => event.eventId === intent.eventId)) return IntentAppendStatus.Known;
+    if (events.some((event) => event.event.eventId === intent.eventId))
+      return IntentAppendStatus.Known;
     try {
-      await journal.append(stream, events.length, [intent]);
+      await journal.appendToStream(stream, events.length, [intent]);
       return IntentAppendStatus.Appended;
     } catch (error) {
       const observed = await journal.readStream(stream);
-      if (observed.some((event) => event.eventId === intent.eventId))
+      if (observed.some((event) => event.event.eventId === intent.eventId))
         return IntentAppendStatus.Known;
       if (!(error instanceof WrongExpectedSequenceError)) return IntentAppendStatus.Failed;
     }
   }
   const reconciled = await journal.readStream(stream);
-  return reconciled.some((event) => event.eventId === intent.eventId)
+  return reconciled.some((event) => event.event.eventId === intent.eventId)
     ? IntentAppendStatus.Known
     : IntentAppendStatus.Failed;
 }

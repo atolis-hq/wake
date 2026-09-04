@@ -1,3 +1,13 @@
+import {
+  EventActorKind,
+  type CheckpointStore,
+  type EventJournal,
+  type EventProcessor,
+  type ProcessorRunSerialiser,
+  type ProcessorStateStore,
+  type ProjectionStore,
+} from '@atolis-hq/eventing';
+import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import { join } from 'node:path';
 import type { createPullRequestService } from '../activities/index.js';
 import {
@@ -6,7 +16,6 @@ import {
   createIntakePipeline,
   createRunnerPipeline,
   createWorkCancellationPolicy,
-  type AdvanceOnce,
   type IntakePipeline,
   type RunnerPipeline,
   type ScheduleCheckpointStore,
@@ -27,6 +36,7 @@ import {
   IntegrationStreamKind,
   PollService,
   ProviderRegistry,
+  deliveryProjectionDefinitions,
   fakeProviderDefinition,
   type DeliveryIntentView,
   type DurableFakeDeliveryProvider,
@@ -36,24 +46,17 @@ import {
   type ProviderInstance,
   type WorkflowRouter,
 } from '../integrations/index.js';
-import {
-  EventActorKind,
-  type CheckpointStore,
-  type Clock,
-  type EventJournal,
-  type ProjectionStore,
-  type UlidIdGenerator,
-} from '../kernel/index.js';
+import { type Clock, type UlidIdGenerator } from '../kernel/index.js';
 import {
   compileWorkflowSelectors,
   createPullRequestTransitionEvidence,
   createResourceTransitionReactor,
   createWatchReactor,
+  createWatchReconciler,
   selectWorkflow,
   workflowName,
   type createOrchestrationService,
 } from '../orchestration/index.js';
-import { withFileLock, type ProjectionRunSerialiser } from '../persistence/index.js';
 import {
   BuiltInResourceCapability,
   resourceId,
@@ -62,12 +65,17 @@ import {
 } from '../resources/index.js';
 import type { createWorkService } from '../work/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
+import type { EventProcessorRuntime } from './event-processor-runtime.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
-import { createRuntimeProjectionRunner } from './projection-runtime.js';
+import {
+  createRuntimeProjectionSubscriptions,
+  type RuntimeProjectionSubscriptions,
+} from './projection-runtime.js';
 import { createCapabilityResourceTransitionEvidence } from './resource-transition-evidence.js';
 
 export interface IntegrationRuntime {
-  readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
+  readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
+  readonly processors: readonly EventProcessor[];
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
@@ -80,6 +88,7 @@ export interface IntegrationRuntimeInput {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
+  readonly processorState: ProcessorStateStore;
   readonly resources: ReturnType<typeof createResourceService>;
   readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly pullRequests: ReturnType<typeof createPullRequestService>;
@@ -87,13 +96,13 @@ export interface IntegrationRuntimeInput {
   readonly conversations: ReturnType<typeof createConversationService>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
-  readonly advanceOnce: AdvanceOnce;
   readonly controlPlane: ReturnType<typeof createControlPlaneService>;
   readonly isPaused: () => Promise<boolean>;
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
-  readonly projectionRunSerialiser?: ProjectionRunSerialiser;
+  readonly subscriptionRunSerialiser: ProcessorRunSerialiser;
+  readonly processorRuntime: EventProcessorRuntime;
   readonly scheduleCheckpoints: ScheduleCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
@@ -101,19 +110,6 @@ export interface IntegrationRuntimeInput {
   ) => ExternalDeliveryAdapter;
   readonly fakeDeliveryProvider?: DurableFakeDeliveryProvider;
   readonly providerDefinitions: readonly ProviderDefinition[];
-}
-
-function serializeRunRegisteredOnce(
-  runner: ReturnType<typeof createRuntimeProjectionRunner>,
-): ReturnType<typeof createRuntimeProjectionRunner> {
-  let queue: Promise<unknown> = Promise.resolve();
-  const runRegisteredOnce = runner.runRegisteredOnce.bind(runner);
-  runner.runRegisteredOnce = (limit?: number) => {
-    const result = queue.then(() => runRegisteredOnce(limit));
-    queue = result.catch(() => {});
-    return result;
-  };
-  return runner;
 }
 
 export async function composeIntegrationRuntime(
@@ -169,20 +165,12 @@ export async function composeIntegrationRuntime(
         delivery: input.decorateDeliveryAdapter!(provider.delivery, provider),
       }))
     : composedProviders;
-  // FileCheckpointStore.save throws on any regression (persistence/filesystem/
-  // file-checkpoint-store.ts), so two concurrent runRegisteredOnce calls that
-  // interleave can race a slower caller's stale checkpoint save against a
-  // faster one that already advanced past it. Every caller (the tick
-  // pipeline's own catchUpProjections, the API's manual tick, and the
-  // resident's standalone projection pump) shares this one instance, so
-  // serializing it here in-process covers all of them without a file lock.
-  const projectionRunner = serializeRunRegisteredOnce(
-    createRuntimeProjectionRunner(
-      input.journal,
-      input.projections,
-      input.checkpoints,
-      input.projectionRunSerialiser,
-    ),
+  const projectionSubscriptions = createRuntimeProjectionSubscriptions(
+    input.journal,
+    input.projections,
+    input.checkpoints,
+    input.processorRuntime,
+    input.subscriptionRunSerialiser,
   );
   const delivery = new DeliveryService({
     journal: input.journal,
@@ -211,7 +199,6 @@ export async function composeIntegrationRuntime(
   });
   const artifacts = new ArtifactRegistrationReactor({
     journal: input.journal,
-    checkpoints: input.checkpoints,
     resources: input.resources,
     ids: input.ids,
     providers,
@@ -223,14 +210,23 @@ export async function composeIntegrationRuntime(
   )?.replyPublication;
   const agentRunPublications = new AgentRunPublicationReactor({
     journal: input.journal,
-    checkpoints: input.checkpoints,
     runs,
     resources: input.resources,
     orchestration: input.orchestration,
     conversations: input.conversations,
     ...(replies === undefined ? {} : { replies }),
   });
-  const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints, runs);
+  const watch = createWatchReactor(
+    input.orchestration,
+    () => input.orchestration.watchEventTypes(),
+    runs,
+  );
+  const watchReconciler = createWatchReconciler(
+    input.orchestration,
+    input.journal,
+    input.checkpoints,
+    runs,
+  );
   const resourceTransitionEvidence = createCapabilityResourceTransitionEvidence({
     resources: input.resources,
     policies: [
@@ -247,29 +243,30 @@ export async function composeIntegrationRuntime(
   const resourceTransitions = createResourceTransitionReactor(
     input.orchestration,
     resourceTransitionEvidence,
-    input.journal,
-    input.checkpoints,
   );
   input.orchestration.setAcceptSignalOperationCoordinator(async (operation) => {
-    await resourceTransitions.drain();
+    await input.processorRuntime.catchUpThrough(
+      'resource-transition signal',
+      await input.journal.latestGlobalPosition(),
+      [resourceTransitions.processor],
+    );
     return operation();
   });
   const outcomes = new DeliveryOutcomeReactor(
     input.journal,
-    input.checkpoints,
     input.orchestration,
     input.projections,
+    input.processorState,
     input.conversations,
+    input.subscriptionRunSerialiser,
   );
-  const catchUpProjections = async () => {
-    await projectionRunner.runRegisteredOnce();
-  };
   // Only poll hits a rate-limited external API, so only this half of the
   // Tick needs a backing-off host; see bootstrap/surface-cli-applications.ts.
+  // Inbound translation reads durable provider facts through its own services,
+  // so it has no projection freshness dependency that could hold shutdown or
+  // unrelated resident work behind a blocked projection consumer.
   const intakePipeline = createIntakePipeline({
     isPaused: input.isPaused,
-    catchUpProjections: () =>
-      observeMemory(memoryProfile, 'intake.projections', catchUpProjections),
     poll: async (signal) => {
       return observeMemory(memoryProfile, 'intake.poll', async () => {
         let appended = 0;
@@ -281,18 +278,9 @@ export async function composeIntegrationRuntime(
         return appended;
       });
     },
-    translateInbound: async () => {
-      return observeMemory(memoryProfile, 'intake.translate', async () => {
-        let translated = 0;
-        for (const provider of providers) translated += await provider.inbound.runOnce();
-        return translated;
-      });
-    },
   });
   const runnerPipeline = createRunnerPipeline({
     isPaused: input.isPaused,
-    catchUpProjections: () =>
-      observeMemory(memoryProfile, 'runner.projections', catchUpProjections),
     runSchedules: () =>
       observeMemory(memoryProfile, 'runner.schedules', async () => {
         for (const schedule of input.config.controlPlane.schedules)
@@ -303,28 +291,37 @@ export async function composeIntegrationRuntime(
             actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
           });
       }),
-    react: () =>
-      observeMemory(memoryProfile, 'runner.react', async () => {
-        await watch.runOnce();
-        await watch.reconcileOnce();
-        await resourceTransitions.runOnce();
-        await artifacts.runOnce();
-        await outcomes.runOnce();
-        for (const provider of providers) await provider.maintenance?.runOnce();
-      }),
-    advance: (options) =>
-      observeMemory(memoryProfile, 'runner.advance', () => input.advanceOnce(options)),
-    publishAgentRuns: () =>
-      observeMemory(memoryProfile, 'runner.publish-agent-runs', async () => {
-        await agentRunPublications.runOnce();
+    maintain: () =>
+      observeMemory(memoryProfile, 'runner.maintenance', async () => {
+        await watchReconciler.reconcileOnce();
+        await artifacts.reconcileOnce();
+        await outcomes.reconcileOnce();
+        for (const provider of providers) {
+          await provider.reconciler?.reconcileOnce();
+          await provider.maintenance?.runOnce();
+        }
       }),
     deliver: (signal) =>
       observeMemory(memoryProfile, 'runner.deliver', async () => {
+        // Delivery reads its outbox from a projection. Projection writes do
+        // not append journal facts, so catch up this one dependency directly
+        // instead of waiting for unrelated resident projection consumers.
+        for (const definition of deliveryProjectionDefinitions)
+          await projectionSubscriptions.catchUp(definition, signal);
         await delivery.deliverNext(signal);
       }),
   });
   return {
-    projectionRunner,
+    projectionSubscriptions,
+    processors: [
+      ...projectionSubscriptions.processors,
+      watch.processor,
+      resourceTransitions.processor,
+      artifacts.processor,
+      outcomes.processor,
+      agentRunPublications.processor,
+      ...providers.map((provider) => provider.inbound.processor),
+    ],
     providers,
     providerFailures,
     delivery,

@@ -1,3 +1,4 @@
+import { correlationId, createEventData } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
@@ -10,7 +11,6 @@ import {
 import { AgentRunPublicationReactor } from '../../../src/integrations/application/agent-run-publication-reactor.js';
 import { projectDeliveries } from '../../../src/integrations/delivery/application/delivery-projector.js';
 import { BuiltInAdapterId } from '../../../src/integrations/github/index.js';
-import { correlationId, createEventDraft } from '../../../src/kernel/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
@@ -56,18 +56,18 @@ it('E2E-AGENT-PUBLICATION-001 waits for the approval decision before publishing 
   await appendTerminalAgentRun(world, run, workflow.workflowInstanceId, activation);
   const publications = new AgentRunPublicationReactor({
     journal: world.journal,
-    checkpoints: world.checkpoints,
     runs: new RunRepository(world.journal),
     resources: world.resources,
     orchestration: world.orchestration,
   });
 
-  await publications.runOnce();
+  await world.process(publications.processor);
   expect(projectDeliveries(await world.journal.readAll(0))).toEqual([]);
 
   await world.acceptOutcome(workflow.workflowInstanceId, activation, { kind: 'done' });
-  await publications.runOnce();
-  await publications.runOnce();
+  await world.process(publications.processor);
+  await world.checkpoints.reset('reactor:agent-run-publication');
+  await world.process(publications.processor);
 
   expect(projectDeliveries(await world.journal.readAll(0))).toMatchObject([
     { payload: { report: { runId: run, outcome: 'DONE', awaitingApproval: true } } },
@@ -114,13 +114,12 @@ it('E2E-AGENT-PUBLICATION-002 publishes a transport failure after it is resolved
   await appendFailedAgentRun(world, run, workflow.workflowInstanceId, activation);
   const publications = new AgentRunPublicationReactor({
     journal: world.journal,
-    checkpoints: world.checkpoints,
     runs: new RunRepository(world.journal),
     resources: world.resources,
     orchestration: world.orchestration,
   });
 
-  await publications.runOnce();
+  await world.process(publications.processor);
   expect(projectDeliveries(await world.journal.readAll(0))).toEqual([]);
 
   await world.resolveExecutionFailure(workflow.workflowInstanceId, {
@@ -128,8 +127,8 @@ it('E2E-AGENT-PUBLICATION-002 publishes a transport failure after it is resolved
     runId: run,
     reason: 'runner exited 1',
   });
-  await publications.runOnce();
-  await publications.runOnce();
+  await world.process(publications.processor);
+  await world.process(publications.processor);
 
   await expect(world.viewWorkflow(workflow.workflowInstanceId)).resolves.toMatchObject({
     status: 'blocked',
@@ -148,8 +147,8 @@ async function appendTerminalAgentRun(
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
-  await world.journal.append(stream, 0, [
-    createEventDraft({
+  await world.journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: now,
@@ -157,7 +156,6 @@ async function appendTerminalAgentRun(
       causationId: 'publication-boundary',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId,
         activity: 'agent',
@@ -167,7 +165,7 @@ async function appendTerminalAgentRun(
         startedAt: now,
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `${id}:agent-result`,
       eventType: ExecutionEventType.RunRunnerResultReported,
       occurredAt: now,
@@ -175,13 +173,12 @@ async function appendTerminalAgentRun(
       causationId: 'publication-boundary',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         transport: 'succeeded',
         agent: { outcome: 'DONE', displayBody: 'Plan complete.', metadata: {} },
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `${id}:succeeded`,
       eventType: ExecutionEventType.RunSucceeded,
       occurredAt: now,
@@ -189,7 +186,6 @@ async function appendTerminalAgentRun(
       causationId: 'publication-boundary',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: { outcome: { kind: 'done' }, finishedAt: now },
     }),
   ] as never);
@@ -203,8 +199,8 @@ async function appendFailedAgentRun(
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
-  await world.journal.append(stream, 0, [
-    createEventDraft({
+  await world.journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: `${id}:started`,
       eventType: ExecutionEventType.RunStarted,
       occurredAt: now,
@@ -212,7 +208,6 @@ async function appendFailedAgentRun(
       causationId: 'publication-failure',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         activationId,
         activity: 'agent',
@@ -222,7 +217,7 @@ async function appendFailedAgentRun(
         startedAt: now,
       },
     }),
-    createEventDraft({
+    createEventData({
       eventId: `${id}:failed`,
       eventType: ExecutionEventType.RunFailed,
       occurredAt: now,
@@ -230,7 +225,6 @@ async function appendFailedAgentRun(
       causationId: 'publication-failure',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {
         failure: {
           kind: 'unexpected-execution-failure',

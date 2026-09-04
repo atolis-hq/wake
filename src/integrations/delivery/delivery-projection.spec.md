@@ -60,7 +60,7 @@ this component is that view's sole projector.
   Merge Decision records; never writes them.
 - Agent Run Publication (this projection depends on it) — reads the
   `agent-run.publish-requested` facts it records; never writes them.
-- Kernel — event reading and sorting conventions this projection folds
+- Eventing — event reading and sorting conventions this projection folds
   over.
 - Delivery aggregate — supplies this projection's own `delivery.*` source
   facts, and in turn depends on this projection's output as its work queue;

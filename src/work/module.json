@@ -1,7 +1,7 @@
 {
   "name": "work",
   "kind": "domain",
-  "dependencies": ["kernel"],
+  "dependencies": ["kernel", "eventing"],
   "publicEntry": "./index.ts",
   "namespaces": {
     "events": ["work."],

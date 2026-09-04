@@ -2,9 +2,9 @@
 
 ## Type, purpose, and scope
 
-Policy/process. Recovery reconciles a Run whose lease has expired with the
-real state of its external execution, so a crashed owner's Runs do not stay
-`started` forever. It is the only component that inspects an external
+Policy/process. Recovery reconciles an active Run whose lease has expired with
+the real state of its external execution when execution began, so a crashed
+owner's Runs do not stay active forever. It is the only component that inspects an external
 execution's actual state rather than trusting a Run's own recorded facts.
 
 ## Ubiquitous language
@@ -20,21 +20,28 @@ Recovery owns deciding what to do with one expired-lease Run: re-lease it to
 a new owner if its execution is still genuinely running, record its
 recovered success or failure if it has completed, record a failure if the
 execution is simply absent, or record an unresolved ambiguity if inspection
-cannot tell. It also owns scanning every `started` Run for lease expiry and
-recovering each. It does not itself talk to any specific runner or provider
+cannot tell. It also owns scanning every `starting` and `started` Run for
+lease expiry and recovering each. It does not itself talk to any specific runner or provider
 — that is delegated entirely to the injected inspector — and it does not
 decide whether a further attempt should be started afterward; that remains
-the Execution service's concern once the Run is out of `started`.
+the Execution service's concern once the Run is inactive.
 
 ## Core policies, invariants, and behaviours
 
+- Recovery skips a locally owned `starting` or `started` Run even after its
+  durable lease expires; only the process that created that attempt supplies
+  this local marker, and cleanup removes it before another process may recover.
+
 - Recovering a Run that does not exist MUST fail with an error. Recovering a
-  Run that exists but is not currently `started` MUST be a no-op that
-  returns its current view unchanged.
-- Recovering a `started` Run whose lease is present and not yet expired
+  Run that exists but is not currently `starting` or `started` MUST be a no-op
+  that returns its current view unchanged.
+- Recovering an active Run whose lease is present and not yet expired
   MUST fail with an error — Recovery MUST NOT act on a Run that still has a
-  live, unexpired lease. A `started` Run with no lease at all is treated as
+  live, unexpired lease. An active Run with no lease at all is treated as
   eligible, the same as an expired one.
+- A lease-eligible `starting` Run MUST be recorded as failed without invoking
+  the external-execution inspector: workspace preparation ended before an
+  execution existed to inspect.
 - A `started`, lease-eligible Run with no recorded external-execution
   reference MUST be recorded as failed, without attempting inspection —
   there is nothing for the inspector to look up.
@@ -56,19 +63,19 @@ the Execution service's concern once the Run is out of `started`.
   Recovery MUST record the Run as `ambiguous`, carrying the inspector's own
   reason text.
 - Every append MUST re-check the Run's current status immediately before
-  writing: if some other process has already moved the Run out of `started`
+  writing: if some other process has already moved the Run out of an active state
   between the initial read and this append, the append MUST be skipped and
   the Run's current (already-updated) view returned instead, rather than
   overwriting it or erroring.
-- Recovering every active Run MUST consider every `started` Run in the
-  journal (not scoped to one Activation), acting only on those whose lease
+- Recovering every active Run MUST consider every `starting` and `started` Run
+  in the journal (not scoped to one Activation), acting only on those whose lease
   is absent or expired, and MUST process them one at a time.
 
 ## Event catalogue
 
 | Event | Recorded when | Meaning |
 | --- | --- | --- |
-| `execution.run-lease-renewed` | Inspection finds the execution still running | The Run is re-leased to the recovering owner and remains `started`. |
+| `execution.run-lease-renewed` | Inspection finds the execution still running | The `started` Run is re-leased to the recovering owner and remains `started`. |
 | `execution.run-recovered` | Inspection finds the execution completed successfully | The Run's terminal `succeeded` status and outcome are derived from the recovered result. |
 | `execution.run-failed` | No external-execution reference was ever recorded, or inspection finds the execution absent | The Run is recorded as failed without a successful outcome to recover. |
 | `execution.run-ambiguous` | Inspection cannot determine the execution's state | The Run is terminal but its real outcome is unresolved. |
@@ -85,7 +92,7 @@ the Execution service's concern once the Run is out of `started`.
 
 ## Dependencies and system role
 
-- Kernel — event envelope conventions and the Run stream's append sequence
+- Eventing — event envelope conventions and the Run stream's append sequence
   this component reads before appending.
 - Run (co-owns the Run stream with) — this component's facts are folded by
   the Run aggregate's own fold, including the terminal statuses it produces.

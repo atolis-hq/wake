@@ -4,7 +4,8 @@
   "dependencies": [
     "conversations",
     "kernel",
-    "persistence",
+    "eventing",
+    "eventing-filesystem",
     "work",
     "resources",
     "activities",

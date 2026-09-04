@@ -192,7 +192,7 @@ budget claim, returned to the caller instead of a started child.
   triggering event's owning WorkflowInstance through Execution's Run
   repository, to scope a Watch match to the run that actually produced the
   event.
-- Kernel — event journal and checkpoint conventions for the watch reactor's
+- Eventing — event journal and checkpoint conventions for the watch reactor's
   own durable, resumable sweep of the event journal.
 
 ## Decisions, exclusions, and deferred capability

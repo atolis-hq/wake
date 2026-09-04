@@ -1,16 +1,11 @@
+import { EventSourceKind, type CommandContext } from '@atolis-hq/eventing';
 import type { ActivationId, selectActivityEvent } from '../../activities/index.js';
-import { EventSourceKind, createEventDraft, type CommandContext } from '../../kernel/index.js';
 import type { TransitionTarget } from '../contracts/config.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import {
-  commandName,
-  workflowInstanceId,
-  type SignalName,
-  type WorkflowInstanceId,
-} from '../contracts/identifiers.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
+import { commandName, type SignalName, type WorkflowInstanceId } from '../contracts/identifiers.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
+import { workflowEventData } from '../domain/decision-events.js';
 import {
   requestChangesResume as decideChangesResume,
   requestFreshOperatorRetry as decideFreshOperatorRetry,
@@ -81,7 +76,7 @@ export class AdvanceWorkflow {
   ) {
     const loaded = await this.repository.load(id);
     if (loaded.view?.pendingActivation?.activationId !== activationId) return loaded.view;
-    const event = createEventDraft({
+    const event = workflowEventData({
       eventId: `${context.commandId}:${OrchestrationEventType.ActivityStarted}`,
       eventType: OrchestrationEventType.ActivityStarted,
       occurredAt: context.occurredAt,
@@ -89,7 +84,6 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
       actor: context.actor,
       source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-      stream: workflowInstanceStream(workflowInstanceId(id)),
       payload: { activationId },
     });
     await this.repository.append(id, loaded.sequence, [event]);
@@ -99,7 +93,7 @@ export class AdvanceWorkflow {
   async block(id: WorkflowInstanceId, reason: string, context: CommandContext) {
     const loaded = await this.repository.load(id);
     if (loaded.view === null || loaded.view.status === WorkflowStatus.Blocked) return loaded.view;
-    const event = createEventDraft({
+    const event = workflowEventData({
       eventId: `${context.commandId}:${id}:${OrchestrationEventType.InstanceBlocked}`,
       eventType: OrchestrationEventType.InstanceBlocked,
       occurredAt: context.occurredAt,
@@ -107,7 +101,6 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
       actor: context.actor,
       source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-      stream: workflowInstanceStream(id),
       payload: { reason },
     });
     await this.repository.append(id, loaded.sequence, [event]);
@@ -128,9 +121,8 @@ export class AdvanceWorkflow {
       loaded.view.acceptedOutcomes.includes(input.activationId)
     )
       return loaded.view;
-    const stream = workflowInstanceStream(id);
     await this.repository.append(id, loaded.sequence, [
-      createEventDraft({
+      workflowEventData({
         eventId: `${context.commandId}:${OrchestrationEventType.ActivityExecutionFailed}`,
         eventType: OrchestrationEventType.ActivityExecutionFailed,
         occurredAt: context.occurredAt,
@@ -138,10 +130,9 @@ export class AdvanceWorkflow {
         causationId: context.commandId,
         actor: context.actor,
         source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-        stream,
         payload: input,
       }),
-      createEventDraft({
+      workflowEventData({
         eventId: `${context.commandId}:${OrchestrationEventType.InstanceBlocked}`,
         eventType: OrchestrationEventType.InstanceBlocked,
         occurredAt: context.occurredAt,
@@ -149,7 +140,6 @@ export class AdvanceWorkflow {
         causationId: context.commandId,
         actor: context.actor,
         source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-        stream,
         payload: { reason: input.reason },
       }),
     ]);

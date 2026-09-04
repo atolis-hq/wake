@@ -1,13 +1,13 @@
+import { EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import {
   PullRequestState,
   ReviewActorKind,
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
-import { integrationStream } from '../../contracts/streams.js';
-import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
+import { createGitHubEventData } from '../contracts/event-factory.js';
+import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import {
   gitHubAssigneeLogins,
@@ -22,7 +22,7 @@ export function issueObservation(input: {
   readonly repository: string;
   readonly issue: GitHubIssuePayload;
   readonly adapter?: AdapterId;
-}): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
+}): Extract<GitHubAdapterEventData, { eventType: typeof GitHubEventType.WorkObserved }> {
   const key = formatGitHubResourceKey({
     ...parseRepository(input.repository),
     number: input.issue.number,
@@ -45,7 +45,7 @@ export function issueObservation(input: {
     labels: withoutWakeMarkers(labels),
     assignees: [...assignees].sort(),
   });
-  return createEventDraft({
+  const event = createGitHubEventData({
     eventId: `github:issue:${key}:${fingerprint}`,
     eventType: GitHubEventType.WorkObserved,
     occurredAt: input.issue.updated_at,
@@ -53,7 +53,6 @@ export function issueObservation(input: {
     causationId: `github:${key}:${fingerprint}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: EventSourceKind.Adapter, id: input.adapter ?? GitHubAdapter },
-    stream: integrationStream(input.adapter ?? GitHubAdapter),
     payload: {
       externalKey: key,
       kind: 'issue',
@@ -68,6 +67,9 @@ export function issueObservation(input: {
       raw: { number: input.issue.number },
     },
   });
+  if (event.eventType !== GitHubEventType.WorkObserved)
+    throw new Error(`Expected GitHub WorkObserved event data, received ${event.eventType}`);
+  return event;
 }
 
 function issueOutcome(issue: GitHubIssuePayload): ExternalWorkOutcome | undefined {
@@ -90,7 +92,7 @@ export function issueCommentObservation(input: {
   readonly comment: GitHubIssueCommentPayload;
   readonly authorization?: ReviewerAuthorizationEvidence;
   readonly adapter?: AdapterId;
-}): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.CommentObserved }> | null {
+}): Extract<GitHubAdapterEventData, { eventType: typeof GitHubEventType.CommentObserved }> | null {
   const body = input.comment.body?.trim();
   if (body === undefined || body.length === 0) return null;
   const key = formatGitHubResourceKey({
@@ -98,7 +100,7 @@ export function issueCommentObservation(input: {
     number: input.issue.number,
   });
   const location = commentLocation(input.comment);
-  return createEventDraft({
+  const event = createGitHubEventData({
     eventId: `github:issue-comment:${key}:${input.comment.id}:${input.comment.updated_at}`,
     eventType: GitHubEventType.CommentObserved,
     occurredAt: input.comment.updated_at,
@@ -106,7 +108,6 @@ export function issueCommentObservation(input: {
     causationId: `github:issue-comment:${input.comment.id}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: EventSourceKind.Adapter, id: input.adapter ?? GitHubAdapter },
-    stream: integrationStream(input.adapter ?? GitHubAdapter),
     payload: {
       reviewKind: 'issue',
       externalKey: key,
@@ -121,6 +122,9 @@ export function issueCommentObservation(input: {
       raw: { id: input.comment.id },
     },
   });
+  if (event.eventType !== GitHubEventType.CommentObserved)
+    throw new Error(`Expected GitHub CommentObserved event data, received ${event.eventType}`);
+  return event;
 }
 
 function commentLocation(comment: GitHubIssueCommentPayload) {

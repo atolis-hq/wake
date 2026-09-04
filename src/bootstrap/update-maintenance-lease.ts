@@ -1,8 +1,8 @@
+import { acquireFileLock } from '@atolis-hq/eventing-filesystem';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { defineClosedVocabulary, type ValueOf } from '../kernel/index.js';
-import { acquireFileLock } from '../persistence/index.js';
 
 export const UpdateMaintenancePhase = defineClosedVocabulary({
   Quiescing: 'quiescing',

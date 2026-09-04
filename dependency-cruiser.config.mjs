@@ -1,6 +1,5 @@
 const modules = [
   'kernel',
-  'persistence',
   'conversations',
   'work',
   'resources',
@@ -14,7 +13,6 @@ const modules = [
 ];
 const dependencyMap = {
   kernel: [],
-  persistence: ['kernel'],
   conversations: ['kernel', 'work'],
   work: ['kernel'],
   resources: ['kernel', 'work'],
@@ -33,7 +31,6 @@ const dependencyMap = {
   ],
   surfaces: [
     'kernel',
-    'persistence',
     'work',
     'resources',
     'activities',
@@ -45,7 +42,6 @@ const dependencyMap = {
   ],
   bootstrap: [
     'kernel',
-    'persistence',
     'work',
     'resources',
     'activities',
@@ -119,9 +115,21 @@ export default {
       name: 'filesystem-io-stays-in-adapters',
       severity: 'error',
       from: {
-        path: '^src/(?!persistence/|execution/infrastructure/(?:workspace/|transcripts\\.ts$)|bootstrap/|surfaces/web-host/)',
+        path: '^src/(?!execution/infrastructure/(?:workspace/|transcripts\\.ts$)|bootstrap/|surfaces/web-host/)',
       },
       to: { path: '^node:fs' },
+    },
+    {
+      name: 'eventing-has-no-filesystem-or-wake-dependencies',
+      severity: 'error',
+      from: { path: '^packages/eventing/src/' },
+      to: { path: '^(?:node:fs|src/)' },
+    },
+    {
+      name: 'eventing-filesystem-has-no-wake-dependencies',
+      severity: 'error',
+      from: { path: '^packages/eventing-filesystem/src/' },
+      to: { path: '^src/' },
     },
     {
       name: 'browser-imports-only-surface-transport-contracts',

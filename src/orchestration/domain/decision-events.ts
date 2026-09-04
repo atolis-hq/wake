@@ -1,16 +1,18 @@
+import { EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import { activationId, type ActivityName } from '../../activities/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import {
+  createOrchestrationEventData,
+  type OrchestrationEventDataInput,
+} from '../contracts/event-factory.js';
+import {
+  OrchestrationEventType,
   type ActivityRequestedPayload,
+  type OrchestrationEventData,
   type OrchestrationEventPayloads,
+  type WorkflowOrchestrationEventData,
   type WorkflowOrchestrationEventName,
 } from '../contracts/events.js';
-import {
-  workflowInstanceId,
-  type StageName,
-  type WorkflowInstanceId,
-} from '../contracts/identifiers.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
+import type { StageName, WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 
 interface DecisionContext {
@@ -56,41 +58,64 @@ export function activation(
   };
 }
 
-export function startDraft<Type extends WorkflowOrchestrationEventName>(
+type WorkflowDraftInput = {
+  [Type in WorkflowOrchestrationEventName]: {
+    readonly eventType: Type;
+    readonly payload: OrchestrationEventPayloads[Type];
+  };
+}[WorkflowOrchestrationEventName];
+
+export function startDraft(
   input: StartDraftContext,
-  eventType: Type,
-  payload: OrchestrationEventPayloads[Type],
+  event: WorkflowDraftInput,
   ordinal: number,
-) {
-  return createEventDraft({
-    eventId: `${input.causationId}:${eventType}:${ordinal}`,
-    eventType,
+): WorkflowOrchestrationEventData {
+  return workflowEventData({
+    eventId: `${input.causationId}:${event.eventType}:${ordinal}`,
     occurredAt: input.occurredAt,
     correlationId: input.correlationId,
     causationId: input.causationId,
     actor,
     source,
-    stream: workflowInstanceStream(workflowInstanceId(input.workflowInstanceId)),
-    payload,
+    ...event,
   });
 }
 
-export function stateDraft<Type extends WorkflowOrchestrationEventName>(
+export function stateDraft(
   state: WorkflowInstanceView,
   input: DecisionContext,
-  eventType: Type,
-  payload: OrchestrationEventPayloads[Type],
+  event: WorkflowDraftInput,
   ordinal: number,
-) {
-  return createEventDraft({
-    eventId: `${input.causationId}:${eventType}:${ordinal}`,
-    eventType,
+): WorkflowOrchestrationEventData {
+  return workflowEventData({
+    eventId: `${input.causationId}:${event.eventType}:${ordinal}`,
     occurredAt: input.occurredAt,
     correlationId: state.orchestrationGroupId,
     causationId: input.causationId,
     actor,
     source,
-    stream: workflowInstanceStream(workflowInstanceId(state.workflowInstanceId)),
-    payload,
+    ...event,
   });
+}
+
+export function workflowEventData(
+  input: Extract<
+    OrchestrationEventDataInput,
+    { readonly eventType: WorkflowOrchestrationEventName }
+  >,
+): WorkflowOrchestrationEventData {
+  const event = createOrchestrationEventData(input);
+  return requireWorkflowEventData(event);
+}
+
+function requireWorkflowEventData(event: OrchestrationEventData): WorkflowOrchestrationEventData {
+  switch (event.eventType) {
+    case OrchestrationEventType.WorkflowDefinitionRegistered:
+    case OrchestrationEventType.PrimaryClaimed:
+    case OrchestrationEventType.GroupClaimed:
+    case OrchestrationEventType.GroupBudgetGranted:
+      throw new Error(`Expected Workflow event data, received ${event.eventType}`);
+    default:
+      return event;
+  }
 }

@@ -1,6 +1,12 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { correlationId, type EventEnvelope } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import {
   ActivityRegistry,
   activityName,
@@ -16,18 +22,13 @@ import {
 import type { Runner, RunnerRequest } from '../../../src/execution/index.js';
 import { DurableFakeDeliveryProvider } from '../../../src/integrations/fake/durable-delivery-provider.js';
 import { DeliveryIntentEventType } from '../../../src/integrations/index.js';
-import { correlationId, type Clock } from '../../../src/kernel/index.js';
+import { type Clock } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   watchId,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { workProjection } from '../../../src/work/index.js';
 import { resId, workId } from '../../support/identities.js';
@@ -55,9 +56,12 @@ it(`${scenario.id} replays or exposes every composed durable boundary without du
 }, 30_000);
 
 async function journalAppendBoundaries(): Promise<void> {
-  for (const point of ['journal.append.before', 'journal.append.after'] as const) {
+  for (const [index, point] of [
+    'journal.appendToStream.before',
+    'journal.appendToStream.after',
+  ].entries()) {
     const fixture = await composed();
-    const id = workId(point);
+    const id = workId(`journal-append-${index}`);
     fixture.faults.failOnce(point);
     const create = () =>
       fixture.root.work.create({ workItemId: id, objective: point }, context(point));
@@ -68,7 +72,7 @@ async function journalAppendBoundaries(): Promise<void> {
     await tick(fixture.root);
     expect(
       (await fixture.root.journal.readAll(0)).filter(
-        (event) => event.eventType === 'work.item-created',
+        (event) => event.event.eventType === 'work.item-created',
       ),
     ).toHaveLength(1);
     await expectPublicWorkProjection(fixture.root, id, point);
@@ -89,7 +93,7 @@ async function projectionAndCheckpointBoundaries(): Promise<void> {
     await tick(fixture.root);
     expect(
       (await fixture.root.journal.readAll(0)).filter(
-        (event) => event.eventType === 'work.item-created',
+        (event) => event.event.eventType === 'work.item-created',
       ),
     ).toHaveLength(1);
     await expectPublicWorkProjection(fixture.root, workId(point), point);
@@ -147,7 +151,7 @@ async function deliveryBoundaries(): Promise<void> {
       },
       context(point),
     );
-    await fixture.root.journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
+    await fixture.root.journal.appendToStream({ kind: 'resource', id: resource.resourceId }, 1, [
       {
         eventId: `${point}-intent` as never,
         eventType: DeliveryIntentEventType.StatusPublishRequested,
@@ -157,7 +161,6 @@ async function deliveryBoundaries(): Promise<void> {
         causationId: point as never,
         actor: { kind: 'system', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream: { kind: 'resource', id: resource.resourceId },
         payload: {
           workflowInstanceId: `workflow-${point}`,
           activationId: `activation-${point}`,
@@ -184,7 +187,7 @@ async function deliveryBoundaries(): Promise<void> {
 
 async function assertDeliveryRecovery(root: CompositionRoot, point: string): Promise<void> {
   const events = await root.journal.readAll(0);
-  const confirmations = events.filter((event) => event.eventType === 'delivery.confirmed');
+  const confirmations = events.filter((event) => event.event.eventType === 'delivery.confirmed');
   const reconciliations = events.filter(isTerminalDeliveryConfirmation);
   if (
     point === 'outbound.provider-acceptance.after' ||
@@ -227,7 +230,7 @@ async function childCompletionBoundaries(): Promise<void> {
       },
       context(point),
     );
-    await fixture.root.journal.append({ kind: 'test', id: point }, 0, [
+    await fixture.root.journal.appendToStream({ kind: 'test', id: point }, 0, [
       {
         eventId: `${point}-trigger` as never,
         eventType: 'fault.child.requested',
@@ -237,7 +240,6 @@ async function childCompletionBoundaries(): Promise<void> {
         causationId: point as never,
         actor: { kind: 'system', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream: { kind: 'test', id: point },
         payload: {},
       },
     ]);
@@ -246,7 +248,7 @@ async function childCompletionBoundaries(): Promise<void> {
     await tick(fixture.root, 3);
     expect(
       (await fixture.root.journal.readAll(0)).filter(
-        (event) => event.eventType === 'orchestration.child-completion-consumed',
+        (event) => event.event.eventType === 'orchestration.child-completion-consumed',
       ),
     ).toHaveLength(1);
     const recovered = await fixture.root.orchestration.get(parent.workflowInstanceId);
@@ -265,7 +267,7 @@ async function scheduleSlotBoundaries(): Promise<void> {
     await tick(fixture.root);
     expect(
       (await fixture.root.journal.readAll(0)).filter(
-        (event) => event.eventType === 'work.item-created',
+        (event) => event.event.eventType === 'work.item-created',
       ),
     ).toHaveLength(1);
     expect((await fixture.root.projections.list(workProjection.name)).length, point).toBe(1);
@@ -293,12 +295,12 @@ async function expectPublicWorkProjection(
 async function assertExecutionRecovery(
   root: CompositionRoot,
   point: string,
-  events: readonly { readonly eventType: string }[],
+  events: readonly EventEnvelope[],
   runnerRequests: readonly RunnerRequest[],
 ): Promise<void> {
   const runs = await root.execution.list();
   const recoveredResult = events.filter(
-    (event) => event.eventType === 'orchestration.activity-outcome-accepted',
+    (event) => event.event.eventType === 'orchestration.activity-outcome-accepted',
   );
   const durableFailure = runs.filter(
     (run) => run.status === 'failed' || run.status === 'ambiguous' || run.escalated,
@@ -313,8 +315,10 @@ async function assertExecutionRecovery(
   // An execution fault must not launch the same agent work twice. The request
   // is evidence from the real runner boundary and its identity is the Run that
   // recorded the outcome, not a fabricated test value.
-  expect(runnerRequests, point).toHaveLength(point === 'run.start.after' ? 0 : 1);
-  if (point === 'run.start.after') return;
+  expect(runnerRequests, point).toHaveLength(
+    point === 'run.start.before' || point === 'run.start.after' ? 0 : 1,
+  );
+  if (point === 'run.start.before' || point === 'run.start.after') return;
   const [request] = runnerRequests;
   expect(
     runs.some((run) => run.runId === request!.runId),
@@ -323,35 +327,35 @@ async function assertExecutionRecovery(
   expect(
     events.some(
       (event) =>
-        event.eventType === 'execution.run-runner-result-reported' &&
-        (event as { readonly stream?: { readonly id?: string } }).stream?.id === request!.runId,
+        event.event.eventType === 'execution.run-runner-result-reported' &&
+        event.stream.id === request!.runId,
     ),
     point,
   ).toBe(true);
   switch (point) {
     case 'run.start.before':
-      // Pre-append interruption never creates a Run; the replay starts it once.
+      // Preparation is durable before a start append, so an interruption here
+      // fails that starting attempt without invoking the external runner.
       expect(
-        events.filter((event) => event.eventType === 'execution.run-started'),
+        events.filter((event) => event.event.eventType === 'execution.run-started'),
         point,
-      ).toHaveLength(1);
-      expect(recoveredResult, point).toHaveLength(1);
+      ).toHaveLength(0);
       return;
     case 'run.start.after':
       // A durable start without a reported external identity is never replayed.
       expect(
-        events.filter((event) => event.eventType === 'execution.run-started'),
+        events.filter((event) => event.event.eventType === 'execution.run-started'),
         point,
       ).toHaveLength(1);
       expect(
-        events.filter((event) => event.eventType === 'execution.run-failed'),
+        events.filter((event) => event.event.eventType === 'execution.run-failed'),
         point,
       ).toHaveLength(1);
       return;
     case 'run.result-append.before':
     case 'run.result-append.after':
       expect(
-        events.filter((event) => event.eventType === 'execution.run-runner-result-reported'),
+        events.filter((event) => event.event.eventType === 'execution.run-runner-result-reported'),
         point,
       ).not.toHaveLength(0);
       expect(recoveredResult, point).toHaveLength(1);
@@ -368,19 +372,25 @@ async function assertExecutionRecovery(
 
 async function tick(root: CompositionRoot, count = 1): Promise<void> {
   for (let index = 0; index < count; index += 1) {
-    await root.runnerPipeline.run({ maxProgress: 1 });
+    const options = { maxProgress: 1 };
+    await root.projectionSubscriptions.catchUpOnce();
+    try {
+      await root.runnerPipeline.run(options, undefined, async () => {
+        await root.projectionSubscriptions.catchUpOnce();
+        await root.activationSchedulerSubscriber.poke(options);
+      });
+    } finally {
+      await root.projectionSubscriptions.catchUpOnce();
+    }
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
 }
 
-function isTerminalDeliveryConfirmation(event: {
-  readonly eventType: string;
-  readonly payload: unknown;
-}): boolean {
+function isTerminalDeliveryConfirmation(event: EventEnvelope): boolean {
   return (
-    event.eventType === 'delivery.confirmed' ||
-    (event.eventType === 'delivery.reconciled' &&
-      (event.payload as { readonly result?: string }).result === 'confirmed')
+    event.event.eventType === 'delivery.confirmed' ||
+    (event.event.eventType === 'delivery.reconciled' &&
+      (event.event.payload as { readonly result?: string }).result === 'confirmed')
   );
 }
 
@@ -398,7 +408,7 @@ async function triggerFault(
     if (!faults.isArmed(point)) return;
   }
   throw new Error(
-    `The armed composed fault ${point} was never reached by runnerPipeline; events=${(await root.journal.readAll(0)).map((event) => event.eventType).join(',')}`,
+    `The armed composed fault ${point} was never reached by runnerPipeline; events=${(await root.journal.readAll(0)).map((event) => event.event.eventType).join(',')}`,
   );
 }
 

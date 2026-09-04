@@ -1,3 +1,14 @@
+import {
+  createEventData,
+  eventId,
+  EventProcessorHost,
+  type EventEnvelope,
+} from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import {
@@ -7,20 +18,122 @@ import {
   runStream,
   type RunRepository,
 } from '../../../src/execution/index.js';
-import { createEventDraft, eventId, type EntityRef } from '../../../src/kernel/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowName,
 } from '../../../src/orchestration/contracts/identifiers.js';
 import {
   createWatchReactor,
+  createWatchReconciler,
   OrchestrationEventType,
   workflowInstanceId,
   workflowInstanceStream,
 } from '../../../src/orchestration/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
+
+it('exposes the stable watch processor while retaining react as the business handler', () => {
+  const reactor = createWatchReactor({
+    async listWatchMatches() {
+      return [];
+    },
+    async requestChild() {},
+    async rejectCausalActivation() {},
+  });
+
+  expect(reactor).toMatchObject({
+    processor: {
+      consumer: 'reactor:orchestration.watch',
+      name: 'watch',
+      owner: 'orchestration',
+    },
+  });
+  expect(typeof reactor.react).toBe('function');
+});
+
+it('ignores facts outside the configured watch event types through its processor selector', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  await journal.appendToStream(watchStream, 0, [
+    createEventData({
+      eventId: 'unrelated-watch-fact',
+      eventType: 'work.created',
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      correlationId: 'corr-1',
+      causationId: 'cause-1',
+      actor: { kind: 'integration', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {},
+    }),
+  ]);
+  let matched = 0;
+  const reactor = createWatchReactor(
+    {
+      async listWatchMatches() {
+        matched += 1;
+        return [];
+      },
+      async requestChild() {},
+      async rejectCausalActivation() {},
+    },
+    () => ['review.requested'],
+  );
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
+
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({
+    eventCount: 1,
+    handledCount: 0,
+  });
+  expect(matched).toBe(0);
+});
+
+it('advances past an unrecognized orchestration event outside the configured watch event types', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const checkpoints = new InMemoryCheckpointStore();
+  await journal.appendToStream(watchStream, 0, [
+    createEventData({
+      eventId: 'unrecognized-orchestration-watch-fact',
+      eventType: 'orchestration.unrecognized',
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      correlationId: 'corr-1',
+      causationId: 'cause-1',
+      actor: { kind: 'integration', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {},
+    }),
+  ]);
+  let matched = 0;
+  const reactor = createWatchReactor(
+    {
+      async listWatchMatches() {
+        matched += 1;
+        return [];
+      },
+      async requestChild() {},
+      async rejectCausalActivation() {},
+    },
+    () => ['review.requested'],
+  );
+  const host = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
+
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({
+    eventCount: 1,
+    handledCount: 0,
+  });
+  expect(matched).toBe(0);
+  expect(await checkpoints.load('reactor:orchestration.watch')).toBe(1);
+});
 
 const watchStream: EntityRef<'test', 'watch-reactor'> = {
   kind: 'test',
@@ -32,10 +145,10 @@ const canonicalEvent = (
   id: string,
   payload: unknown,
   stream: EntityRef = watchStream,
-) => ({
-  ...eventEnvelope(eventType, payload, stream),
-  eventId: eventId(id),
-});
+) => {
+  const envelope = eventEnvelope(eventType, payload, stream);
+  return { ...envelope, event: { ...envelope.event, eventId: eventId(id) } };
+};
 
 it('rejects a malformed owned orchestration envelope before routing watches', async () => {
   const reactor = createWatchReactor({
@@ -102,7 +215,7 @@ it('does not inspect an unrelated domain payload for causal metadata', async () 
 });
 
 it('passes the persisted event to watch matching so predicates can decode its payload', async () => {
-  let matchedEvent: { readonly eventType: string; readonly payload: unknown } | undefined;
+  let matchedEvent: EventEnvelope | undefined;
   const event = canonicalEvent('pr.checks-changed', 'checks-failed', { checks: 'failing' });
   const reactor = createWatchReactor({
     async listWatchMatches(candidate) {
@@ -121,8 +234,10 @@ it('passes the persisted event to watch matching so predicates can decode its pa
   });
 
   expect(matchedEvent).toMatchObject({
-    eventType: 'pr.checks-changed',
-    payload: { checks: 'failing' },
+    event: {
+      eventType: 'pr.checks-changed',
+      payload: { checks: 'failing' },
+    },
   });
 });
 
@@ -216,8 +331,8 @@ it('keeps its checkpoint unchanged until every watch request succeeds', async ()
     kind: 'test',
     id: 'watch-reactor',
   };
-  await journal.append(stream, 0, [
-    createEventDraft({
+  await journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: 'event-1',
       eventType: 'review.requested',
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -225,7 +340,6 @@ it('keeps its checkpoint unchanged until every watch request succeeds', async ()
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {},
     }),
   ]);
@@ -249,14 +363,19 @@ it('keeps its checkpoint unchanged until every watch request succeeds', async ()
       },
       async rejectCausalActivation() {},
     },
+    () => ['review.requested'],
+  );
+  const host = new EventProcessorHost(
     journal,
     checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
 
-  await expect(reactor.runOnce()).rejects.toThrow('injected request failure');
+  await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected request failure');
   expect(await checkpoints.load('reactor:orchestration.watch')).toBe(0);
 
-  await expect(reactor.runOnce()).resolves.toBe(1);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 1 });
   expect(await checkpoints.load('reactor:orchestration.watch')).toBe(1);
   expect(attempts).toEqual([
     'first:event-1:watch:parent:parent-1:watch:first:trigger:event-1',
@@ -320,8 +439,8 @@ it('replays the identical child request after checkpoint persistence fails', asy
     kind: 'test',
     id: 'checkpoint-replay',
   };
-  await journal.append(stream, 0, [
-    createEventDraft({
+  await journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: 'event-replay-1',
       eventType: 'review.requested',
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -329,7 +448,6 @@ it('replays the identical child request after checkpoint persistence fails', asy
       causationId: 'cause-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {},
     }),
   ]);
@@ -371,13 +489,18 @@ it('replays the identical child request after checkpoint persistence fails', asy
         return durableRequestId !== undefined && durableRequestId !== requestId;
       },
     },
+    () => ['review.requested'],
+  );
+  const host = new EventProcessorHost(
     journal,
     checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
   );
 
-  await expect(reactor.runOnce()).rejects.toThrow('injected checkpoint failure');
+  await expect(host.runOnce(reactor.processor)).rejects.toThrow('injected checkpoint failure');
   expect(await durable.load('reactor:orchestration.watch')).toBe(0);
-  await expect(reactor.runOnce()).resolves.toBe(1);
+  await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({ eventCount: 1 });
   expect(await durable.load('reactor:orchestration.watch')).toBe(1);
   expect(requests).toBe(2);
   expect(rejections).toBe(0);
@@ -385,8 +508,8 @@ it('replays the identical child request after checkpoint persistence fails', asy
 
 it('reconciles a durable watch trigger orphaned after its checkpoint advanced', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  await journal.append(watchStream, 0, [
-    createEventDraft({
+  await journal.appendToStream(watchStream, 0, [
+    createEventData({
       eventId: 'orphaned-trigger',
       eventType: 'review.requested',
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -394,13 +517,12 @@ it('reconciles a durable watch trigger orphaned after its checkpoint advanced', 
       causationId: 'orphaned-trigger',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: watchStream,
       payload: {},
     }),
   ]);
   const requested: string[] = [];
   const checkpoints = new InMemoryCheckpointStore();
-  const reactor = createWatchReactor(
+  const reconciler = createWatchReconciler(
     {
       async listWatchMatches() {
         return [
@@ -428,7 +550,7 @@ it('reconciles a durable watch trigger orphaned after its checkpoint advanced', 
     checkpoints,
   );
 
-  await expect(reactor.reconcileOnce()).resolves.toBe(1);
+  await expect(reconciler.reconcileOnce()).resolves.toBe(1);
   expect(requested).toEqual(['parent-1:watch:review:trigger:orphaned-trigger']);
   expect(await checkpoints.load('reconciler:orchestration.watch')).toBe(1);
   expect(await checkpoints.load('reactor:orchestration.watch')).toBe(0);
@@ -518,7 +640,6 @@ it('scopes a run-lifecycle event to the run owner, not an unrelated match', asyn
         throw new Error('must not reject; the unrelated match should simply be skipped');
       },
     },
-    undefined,
     undefined,
     runs,
   );

@@ -1,13 +1,9 @@
-import {
-  createEventDraft,
-  EventSourceKind,
-  type EventEnvelope,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { EventSourceKind, type EventEnvelope, type EventJournal } from '@atolis-hq/eventing';
+import { createActivityEventData } from '../contracts/event-factory.js';
 import {
   ActivityEventType,
   decodeActivityEvent,
-  decodeActivityEventDraft,
+  decodeActivityEventData,
   type ActivityEventPayloads,
 } from '../contracts/events.js';
 import type { ActivationId } from '../contracts/identifiers.js';
@@ -20,6 +16,7 @@ import {
 import { appendResolved } from './activity-support.js';
 import type { PullRequestActivityOutcome } from './contracts.js';
 import type { IntentAppender } from './intent.js';
+import { MergeMethod } from './vocabulary.js';
 
 type PullRequestDecisionKind = 'requested' | 'denied';
 
@@ -33,11 +30,13 @@ type DecisionFromClaim<Claim> = Claim extends {
   readonly decisionKind: infer Kind extends PullRequestDecisionKind;
   readonly outcome: infer Outcome extends PullRequestActivityOutcome;
   readonly fact: infer Fact;
+  readonly factStream: infer FactStream;
 }
   ? {
       readonly decisionKind: Kind;
       readonly outcome: Outcome;
       readonly fact: Fact;
+      readonly factStream: FactStream;
     }
   : never;
 
@@ -51,7 +50,7 @@ export async function readDecisionClaim<Action extends PullRequestAction>(
 ): Promise<PullRequestDecision<Action> | null> {
   const claimId = decisionClaimId(activationId, action);
   const event = (await journal.readStream(activityDecisionStream(activationId, action))).find(
-    (candidate) => candidate.eventId === claimId,
+    (candidate) => candidate.event.eventId === claimId,
   );
   return event === undefined ? null : parseClaim(event, activationId, action);
 }
@@ -66,27 +65,11 @@ export async function claimDecision<Action extends PullRequestAction>(
   if (existing !== null) return existing;
 
   const stream = activityDecisionStream(activationId, action);
-  const claim = createEventDraft({
-    eventId: decisionClaimId(activationId, action),
-    eventType: decisionEventType(action),
-    occurredAt: proposal.fact.occurredAt,
-    correlationId: proposal.fact.correlationId,
-    causationId: proposal.fact.causationId,
-    actor: proposal.fact.actor,
-    source: { kind: EventSourceKind.Internal, id: 'activities-pr' },
-    stream,
-    payload: {
-      action,
-      activationId,
-      decisionKind: proposal.decisionKind,
-      outcome: proposal.outcome,
-      fact: proposal.fact,
-    },
-  });
-  decodeActivityEventDraft(claim);
+  const claim = decisionClaimEventData(activationId, action, proposal);
+  decodeActivityEventData(claim);
 
   try {
-    await journal.append(stream, 0, [claim]);
+    await journal.appendToStream(stream, 0, [claim]);
     return proposal;
   } catch (error) {
     const winner = await readDecisionClaim(journal, activationId, action);
@@ -95,12 +78,54 @@ export async function claimDecision<Action extends PullRequestAction>(
   }
 }
 
+function decisionClaimEventData<Action extends PullRequestAction>(
+  activationId: ActivationId,
+  action: Action,
+  proposal: PullRequestDecision<Action>,
+) {
+  const metadata = {
+    eventId: decisionClaimId(activationId, action),
+    occurredAt: proposal.fact.occurredAt,
+    correlationId: proposal.fact.correlationId,
+    causationId: proposal.fact.causationId,
+    actor: proposal.fact.actor,
+    source: { kind: EventSourceKind.Internal, id: 'activities-pr' },
+  } as const;
+  if (action === 'approve') {
+    if (!isApproveDecision(proposal)) throw invalidDecisionClaim(proposal.fact.eventId);
+    return createActivityEventData({
+      ...metadata,
+      eventType: ActivityEventType.PrApproveDecisionClaimed,
+      payload: { action: 'approve', activationId, ...proposal },
+    });
+  }
+  if (isApproveDecision(proposal)) throw invalidDecisionClaim(proposal.fact.eventId);
+  return createActivityEventData({
+    ...metadata,
+    eventType: ActivityEventType.PrMergeDecisionClaimed,
+    payload: { action: MergeMethod.Merge, activationId, ...proposal },
+  });
+}
+
+function isApproveDecision(
+  decision: PullRequestDecision,
+): decision is PullRequestDecision<'approve'> {
+  return (
+    decision.fact.eventType === ActivityEventType.PrApproveRequested ||
+    decision.fact.eventType === ActivityEventType.PrApproveDenied
+  );
+}
+
+function invalidDecisionClaim(eventId: string): Error {
+  return new Error(`Invalid Activity event data ${eventId}`);
+}
+
 export async function completeDecisionClaim(
   journal: EventJournal,
   appender: IntentAppender,
   decision: PullRequestDecision,
 ): Promise<PullRequestActivityOutcome> {
-  const result = await appendResolved(journal, appender, decision.fact.stream, decision.fact);
+  const result = await appendResolved(journal, appender, decision.factStream, decision.fact);
   return result === IntentAppendStatus.Failed
     ? { kind: ActivityOutcomeKind.Failed, data: { reason: ActivityFailureCode.IntentWriteFailed } }
     : decision.outcome;
@@ -129,16 +154,17 @@ function parseClaim<Action extends PullRequestAction>(
   const decoded = decodeActivityEvent(event);
   const expectedType = decisionEventType(action);
   if (
-    decoded.eventType !== expectedType ||
-    decoded.payload.activationId !== activationId ||
-    decoded.payload.action !== action
+    decoded.event.eventType !== expectedType ||
+    decoded.event.payload.activationId !== activationId ||
+    decoded.event.payload.action !== action
   ) {
-    throw new Error(`Invalid pull-request decision claim ${event.eventId}`);
+    throw new Error(`Invalid pull-request decision claim ${event.event.eventId}`);
   }
   return {
-    decisionKind: decoded.payload.decisionKind,
-    outcome: decoded.payload.outcome,
-    fact: decoded.payload.fact,
+    decisionKind: decoded.event.payload.decisionKind,
+    outcome: decoded.event.payload.outcome,
+    fact: decoded.event.payload.fact,
+    factStream: decoded.event.payload.factStream,
   } as PullRequestDecision<Action>;
 }
 

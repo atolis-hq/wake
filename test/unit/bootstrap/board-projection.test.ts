@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import { boardConditionCounts, boardProjection } from '../../../src/bootstrap/board-projection.js';
-import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
+import {
+  ExecutionEventType,
+  ExecutionFailureCode,
+  RunStatus,
+  runId,
+  runStream,
+} from '../../../src/execution/index.js';
 import {
   OrchestrationEventType,
   orchestrationGroupId,
@@ -13,7 +19,314 @@ import { WorkEventType, workItemStream } from '../../../src/work/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
 import { workId } from '../../support/identities.js';
 
+type WorkItemId = ReturnType<typeof workId>;
+
+type WorkflowInstanceId = ReturnType<typeof workflowInstanceId>;
+
+function seedPrimaryBoard(item: WorkItemId, workflowId: WorkflowInstanceId) {
+  return [
+    eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+    eventEnvelope(
+      OrchestrationEventType.InstanceStarted,
+      {
+        workItemId: item,
+        workflowName: 'delivery',
+        orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+        entry: 'implement',
+      },
+      workflowInstanceStream(workflowId),
+      2,
+    ),
+  ].reduce(
+    (view, event) => boardProjection.project(view, event),
+    boardProjection.initial('global'),
+  );
+}
+
+function runPreparationEvent(
+  run: ReturnType<typeof runId>,
+  workflowId: WorkflowInstanceId,
+  item: WorkItemId,
+  position: number,
+) {
+  return eventEnvelope(
+    ExecutionEventType.RunPreparationStarted,
+    {
+      activationId: activationId(`activation-${run}`),
+      activity: activityName('implement'),
+      stage: 'implement',
+      workflowInstanceId: workflowId,
+      orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+      attempt: 1,
+      startedAt: '2026-08-30T12:00:00.000Z',
+      runner: { name: 'codex' },
+    },
+    runStream(run),
+    position,
+  );
+}
+
+function runStartedEvent(
+  run: ReturnType<typeof runId>,
+  workflowId: WorkflowInstanceId,
+  item: WorkItemId,
+  position: number,
+) {
+  return eventEnvelope(
+    ExecutionEventType.RunStarted,
+    {
+      activationId: activationId(`activation-${run}`),
+      activity: activityName('implement'),
+      stage: 'implement',
+      workflowInstanceId: workflowId,
+      orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+      attempt: 1,
+      startedAt: '2026-08-30T12:01:00.000Z',
+      runner: { name: 'codex' },
+    },
+    runStream(run),
+    position,
+  );
+}
+
 describe('operator board projection', () => {
+  it('projects a primary preparation as an active starting run before execution begins', () => {
+    const item = workId('board-preparing-primary');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-preparing-primary');
+    const ready = seedPrimaryBoard(item, workflowId);
+
+    const preparing = boardProjection.project(ready, runPreparationEvent(run, workflowId, item, 3));
+
+    expect(preparing.cards[item]).toMatchObject({
+      condition: 'active',
+      runCount: 1,
+      lastRunAt: '2026-08-30T12:00:00.000Z',
+      activeRuns: {
+        [run]: {
+          action: 'implement',
+          runnerName: 'codex',
+          startedAt: '2026-08-30T12:00:00.000Z',
+          phase: RunStatus.Starting,
+        },
+      },
+    });
+    expect(preparing.runs[run]).toBe(item);
+  });
+
+  it('changes a prepared run to the started machine phase without recounting its preparation', () => {
+    const item = workId('board-preparing-started');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-preparing-started');
+    const preparing = boardProjection.project(
+      seedPrimaryBoard(item, workflowId),
+      runPreparationEvent(run, workflowId, item, 3),
+    );
+
+    const started = boardProjection.project(preparing, runStartedEvent(run, workflowId, item, 4));
+
+    expect(started.cards[item]).toMatchObject({
+      condition: 'active',
+      runCount: 1,
+      lastRunAt: '2026-08-30T12:00:00.000Z',
+      activeRuns: {
+        [run]: {
+          action: 'implement',
+          runnerName: 'codex',
+          startedAt: '2026-08-30T12:00:00.000Z',
+          phase: RunStatus.Started,
+        },
+      },
+    });
+  });
+
+  it('settles a failure reported before RunStarted from the preparation timestamp', () => {
+    const item = workId('board-preparation-failed');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-preparation-failed');
+    const preparing = boardProjection.project(
+      seedPrimaryBoard(item, workflowId),
+      runPreparationEvent(run, workflowId, item, 3),
+    );
+
+    const failed = boardProjection.project(
+      preparing,
+      eventEnvelope(
+        ExecutionEventType.RunFailed,
+        {
+          failure: { kind: ExecutionFailureCode.Unexpected, message: 'workspace unavailable' },
+          finishedAt: '2026-08-30T12:02:00.000Z',
+        },
+        runStream(run),
+        4,
+      ),
+    );
+
+    expect(failed.cards[item]).toMatchObject({
+      condition: 'error',
+      lastRunOutcome: 'failed',
+      totalDurationMs: 120_000,
+    });
+    expect(failed.cards[item]!.activeRuns).toEqual({});
+  });
+
+  it('keeps independent mixed-phase runs when one completes', () => {
+    const item = workId('board-mixed-phases');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const starting = runId('run-mixed-starting');
+    const running = runId('run-mixed-running');
+    const prepared = [
+      runPreparationEvent(starting, workflowId, item, 3),
+      runPreparationEvent(running, workflowId, item, 4),
+      runStartedEvent(running, workflowId, item, 5),
+    ].reduce(
+      (view, event) => boardProjection.project(view, event),
+      seedPrimaryBoard(item, workflowId),
+    );
+
+    const completed = boardProjection.project(
+      prepared,
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        { outcome: { kind: 'done' }, finishedAt: '2026-08-30T12:03:00.000Z' },
+        runStream(running),
+        6,
+      ),
+    );
+
+    expect(completed.cards[item]).toMatchObject({
+      condition: 'active',
+      runCount: 2,
+      activeRuns: { [starting]: { phase: RunStatus.Starting } },
+    });
+    expect(completed.cards[item]!.activeRuns[running]).toBeUndefined();
+  });
+
+  it('keeps the card Active when a primary run fails while another primary attempt remains active', () => {
+    const item = workId('board-mixed-primary-failure');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const starting = runId('run-mixed-primary-starting');
+    const running = runId('run-mixed-primary-running');
+    const active = [
+      runPreparationEvent(starting, workflowId, item, 3),
+      runPreparationEvent(running, workflowId, item, 4),
+      runStartedEvent(running, workflowId, item, 5),
+    ].reduce(
+      (view, event) => boardProjection.project(view, event),
+      seedPrimaryBoard(item, workflowId),
+    );
+
+    const failed = boardProjection.project(
+      active,
+      eventEnvelope(
+        ExecutionEventType.RunFailed,
+        {
+          failure: { kind: ExecutionFailureCode.Unexpected, message: 'runner exited' },
+          finishedAt: '2026-08-30T12:03:00.000Z',
+        },
+        runStream(running),
+        6,
+      ),
+    );
+
+    expect(failed.cards[item]).toMatchObject({
+      condition: 'active',
+      activeRuns: { [starting]: { phase: RunStatus.Starting } },
+    });
+    expect(failed.cards[item]!.activeRuns[running]).toBeUndefined();
+  });
+
+  it('keeps an approval-waiting primary card in Needs Input for a child preparation', () => {
+    const item = workId('board-preparing-child');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const childWorkflowId = workflowInstanceId(`primary:${item}:watch:review:run-1`);
+    const run = runId('run-preparing-child');
+    const waiting = [
+      ...[
+        eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+        eventEnvelope(
+          OrchestrationEventType.InstanceStarted,
+          {
+            workItemId: item,
+            workflowName: 'delivery',
+            orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+            entry: 'implement',
+          },
+          workflowInstanceStream(workflowId),
+          2,
+        ),
+      ],
+      eventEnvelope(
+        OrchestrationEventType.SignalWaitStarted,
+        { signalKind: 'approved', from: [{ kind: 'human' }] },
+        workflowInstanceStream(workflowId),
+        3,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'review',
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          entry: 'review',
+          parentWorkflowInstanceId: workflowId,
+          watchId: 'review',
+          triggerId: 'run-1',
+          causalCycleId: 'cycle-1',
+          requestId: 'request-1',
+          childWorkflowInstanceId: childWorkflowId,
+        },
+        workflowInstanceStream(childWorkflowId),
+        4,
+      ),
+    ].reduce(
+      (view, event) => boardProjection.project(view, event),
+      boardProjection.initial('global'),
+    );
+
+    const preparing = boardProjection.project(
+      waiting,
+      eventEnvelope(
+        ExecutionEventType.RunPreparationStarted,
+        {
+          activationId: activationId('activation-preparing-child'),
+          activity: activityName('agent'),
+          workflowInstanceId: childWorkflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-30T12:00:00.000Z',
+        },
+        runStream(run),
+        5,
+      ),
+    );
+
+    expect(preparing.cards[item]).toMatchObject({
+      condition: 'needs-input',
+      awaitingApproval: true,
+      activeRuns: { [run]: { action: 'review', phase: RunStatus.Starting } },
+    });
+  });
+
+  it('keeps a finished card finished when a primary preparation arrives late', () => {
+    const item = workId('board-preparing-finished');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const closed = boardProjection.project(
+      seedPrimaryBoard(item, workflowId),
+      eventEnvelope(WorkEventType.ItemClosed, { reason: 'done' }, workItemStream(item), 3),
+    );
+
+    const preparing = boardProjection.project(
+      closed,
+      runPreparationEvent(runId('run-preparing-finished'), workflowId, item, 4),
+    );
+
+    expect(preparing.cards[item]).toMatchObject({
+      condition: 'finished',
+      activeRuns: { [runId('run-preparing-finished')]: { phase: RunStatus.Starting } },
+    });
+  });
+
   it('retains an ambiguous-run block reason for the board recovery affordance', () => {
     const item = workId('board-ambiguous-run');
     const workflowId = workflowInstanceId(`primary:${item}`);
@@ -484,7 +797,7 @@ describe('operator board projection', () => {
       boardProjection.initial('global'),
     );
     // A checkpoint written before the `children` field was added round-trips
-    // through storage without it, the same as ProjectionRunner resuming from
+    // through storage without it, the same as a durable subscription resuming from
     // a persisted value rather than calling initial() again.
     const { children: _children, ...legacyView } = seeded;
 
@@ -601,23 +914,84 @@ describe('operator board projection', () => {
     const card = seeded.cards[item]!;
     const { activeRuns, ...withoutActiveRuns } = card;
     const { [run]: activeRun } = activeRuns;
+    const { phase: _phase, ...legacyActiveRun } = activeRun!;
     const legacyView = {
       ...seeded,
-      cards: { ...seeded.cards, [item]: { ...withoutActiveRuns, activeRun } },
+      cards: { ...seeded.cards, [item]: { ...withoutActiveRuns, activeRun: legacyActiveRun } },
     } as typeof seeded;
 
-    const finished = boardProjection.project(
+    const recovered = boardProjection.project(
       legacyView,
+      runPreparationEvent(runId('run-after-legacy-checkpoint'), workflowId, item, 4),
+    );
+    expect(recovered.cards[item]!.activeRuns).toMatchObject({
+      [run]: { phase: RunStatus.Started },
+      [runId('run-after-legacy-checkpoint')]: { phase: RunStatus.Starting },
+    });
+
+    const finished = boardProjection.project(
+      recovered,
       eventEnvelope(
         ExecutionEventType.RunSucceeded,
         { outcome: { kind: 'done' }, finishedAt: '2026-08-09T13:40:59.015Z' },
         runStream(run),
-        4,
+        5,
       ),
     );
 
-    expect(finished.cards[item]!.activeRuns).toEqual({});
+    expect(finished.cards[item]!.activeRuns).toMatchObject({
+      [runId('run-after-legacy-checkpoint')]: { phase: RunStatus.Starting },
+    });
     expect(finished.cards[item]!.totalDurationMs).toBe(21_660);
+  });
+
+  it('normalizes a retired running phase in keyed and single active-run checkpoints', () => {
+    const item = workId('board-legacy-running-phase');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-legacy-running-phase');
+    const seeded = boardProjection.project(
+      seedPrimaryBoard(item, workflowId),
+      runStartedEvent(run, workflowId, item, 3),
+    );
+    const card = seeded.cards[item]!;
+    const legacyPhase = 'running' as const;
+    const keyedLegacyView = {
+      ...seeded,
+      cards: {
+        ...seeded.cards,
+        [item]: {
+          ...card,
+          activeRuns: {
+            ...card.activeRuns,
+            [run]: { ...card.activeRuns[run]!, phase: legacyPhase },
+          },
+        },
+      },
+    } as unknown as typeof seeded;
+    const { activeRuns, ...withoutActiveRuns } = card;
+    const singleLegacyView = {
+      ...seeded,
+      cards: {
+        ...seeded.cards,
+        [item]: { ...withoutActiveRuns, activeRun: { ...activeRuns[run]!, phase: legacyPhase } },
+      },
+    } as unknown as typeof seeded;
+
+    const keyedRecovered = boardProjection.project(
+      keyedLegacyView,
+      runPreparationEvent(runId('run-after-keyed-legacy-phase'), workflowId, item, 4),
+    );
+    const singleRecovered = boardProjection.project(
+      singleLegacyView,
+      runPreparationEvent(runId('run-after-single-legacy-phase'), workflowId, item, 4),
+    );
+
+    expect(keyedRecovered.cards[item]!.activeRuns[run]).toMatchObject({
+      phase: RunStatus.Started,
+    });
+    expect(singleRecovered.cards[item]!.activeRuns[run]).toMatchObject({
+      phase: RunStatus.Started,
+    });
   });
 
   it('shows an active run, accumulates token/cost totals, and clears the run on completion', () => {
@@ -767,11 +1141,13 @@ describe('operator board projection', () => {
         action: 'implement',
         runnerName: 'claude',
         startedAt: '2026-08-03T12:00:00.000Z',
+        phase: RunStatus.Started,
       },
       [secondRun]: {
         action: 'implement',
         runnerName: 'codex',
         startedAt: '2026-08-03T12:01:00.000Z',
+        phase: RunStatus.Started,
       },
     });
 
@@ -790,6 +1166,7 @@ describe('operator board projection', () => {
         action: 'implement',
         runnerName: 'codex',
         startedAt: '2026-08-03T12:01:00.000Z',
+        phase: RunStatus.Started,
       },
     });
     expect(finished.cards[item]?.totalDurationMs).toBe(300_000);

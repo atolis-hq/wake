@@ -1,12 +1,13 @@
-import { z } from 'zod';
-import { activationId } from '../../activities/index.js';
 import {
-  brandedStringSchema,
+  eventDataSchema,
   eventEnvelopeSchema,
-  type EventDraftUnion,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { activationId } from '../../activities/index.js';
+import { brandedStringSchema } from '../../kernel/index.js';
 import { workflowInstanceId } from '../../orchestration/index.js';
 import { resourceKind, type ResourceKind } from '../../resources/index.js';
 import {
@@ -38,37 +39,39 @@ export interface ArtifactEventPayloads {
 
 export type ArtifactEvent = EventUnion<ArtifactEventPayloads, IntegrationStreamRef>;
 
-export type ArtifactEventDraft = EventDraftUnion<ArtifactEventPayloads, IntegrationStreamRef>;
+export type ArtifactEventData = EventDataUnion<ArtifactEventPayloads>;
 
 const schema: z.ZodType<ArtifactEvent> = eventEnvelopeSchema
   .extend({
-    eventType: z.literal(ArtifactEventType.VerificationUnresolved),
+    event: eventDataSchema.extend({
+      eventType: z.literal(ArtifactEventType.VerificationUnresolved),
+      payload: z
+        .object({
+          workflowInstanceId: brandedStringSchema(workflowInstanceId),
+          activationId: brandedStringSchema(activationId),
+          artifact: z
+            .object({
+              kind: brandedStringSchema(resourceKind),
+              externalKey: z
+                .object({ adapter: brandedStringSchema(adapterId), key: z.string().min(1) })
+                .strict(),
+            })
+            .strict(),
+          status: z.enum([ArtifactVerificationStatus.Failed, ArtifactVerificationStatus.Ambiguous]),
+          attempt: z.number().int().positive(),
+          escalated: z.boolean(),
+        })
+        .strict(),
+    }),
     stream: z
       .object({
         kind: z.literal(IntegrationStreamKind.Integration),
         id: brandedStringSchema(adapterId),
       })
       .strict(),
-    payload: z
-      .object({
-        workflowInstanceId: brandedStringSchema(workflowInstanceId),
-        activationId: brandedStringSchema(activationId),
-        artifact: z
-          .object({
-            kind: brandedStringSchema(resourceKind),
-            externalKey: z
-              .object({ adapter: brandedStringSchema(adapterId), key: z.string().min(1) })
-              .strict(),
-          })
-          .strict(),
-        status: z.enum([ArtifactVerificationStatus.Failed, ArtifactVerificationStatus.Ambiguous]),
-        attempt: z.number().int().positive(),
-        escalated: z.boolean(),
-      })
-      .strict(),
   })
   .superRefine((event, context) => {
-    if (event.stream.id !== event.payload.artifact.externalKey.adapter)
+    if (event.stream.id !== event.event.payload.artifact.externalKey.adapter)
       context.addIssue({
         code: 'custom',
         path: [],
@@ -79,16 +82,10 @@ const schema: z.ZodType<ArtifactEvent> = eventEnvelopeSchema
 export function decodeArtifactEvent(event: EventEnvelope): ArtifactEvent {
   const result = schema.safeParse(event);
   if (!result.success)
-    throw new Error(`Invalid artifact event ${event.eventId}: ${result.error.message}`, {
+    throw new Error(`Invalid artifact event ${event.event.eventId}: ${result.error.message}`, {
       cause: result.error,
     });
   return result.data;
-}
-
-export function artifactVerificationUnresolvedDraft(
-  input: Omit<ArtifactEventDraft, 'schemaVersion'>,
-): ArtifactEventDraft {
-  return { ...input, schemaVersion: 1 };
 }
 
 export function artifactIntegrationStream(adapter: AdapterId): IntegrationStreamRef {

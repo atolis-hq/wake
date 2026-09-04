@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const eslint = new ESLint({ cwd: root });
 const restrictedSource = [
-  "import { type EventDraft as DraftAlias, type EventEnvelope as EnvelopeAlias, entityRef as refAlias } from '../../kernel/index.js';",
+  "import { type EventData as DraftAlias, type EventEnvelope as EnvelopeAlias, entityRef as refAlias } from '../../kernel/index.js';",
   'void (undefined as unknown as DraftAlias);',
   'void (undefined as unknown as EnvelopeAlias);',
   "void refAlias('kind', 'id');",
@@ -38,7 +38,7 @@ describe('typed domain and application contract boundaries', () => {
   it.each([
     'src/work/contracts/allowed-fixture.ts',
     'src/integrations/github/application/allowed-fixture.ts',
-    'src/persistence/application/allowed-fixture.ts',
+    'src/bootstrap/allowed-fixture.ts',
     'test/unit/work/allowed-fixture.test.ts',
   ])('permits the exact %s boundary', async (filePath) => {
     await expect(restrictedRules(filePath)).resolves.toEqual([]);

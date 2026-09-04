@@ -67,6 +67,12 @@ for a single WorkItem (see the Work detail component).
   The response's overall `status` MUST be `degraded` when any check is
   degraded, `ok` otherwise, and MUST include this installation's resolved
   version string.
+- `health` MUST report activation-scheduler health and one check for every
+  registered projection consumer. A `healthy` subscription reports `ok`; a
+  `starting`, `degraded`, or `stopped` subscription reports `degraded`. Each
+  check includes its status, checkpoint, and consecutive failure count; an
+  unavailable pre-start snapshot is represented as `starting` at checkpoint
+  zero with zero failures.
 - `configuration` MUST return the composed root configuration with any key
   whose name looks secret-shaped redacted before it is returned; this
   component supplies the full configuration value, and Surfaces' own
@@ -144,6 +150,13 @@ for a single WorkItem (see the Work detail component).
   originating `stage`; it MUST NOT derive a historic stage from current
   workflow state, and MUST leave the run unenriched when the instance is
   not known (e.g. it has since been superseded away).
+- Execution reads MUST expose a preparation-created Run as `status: starting`
+  and `active: true`, with `startedAt` set but neither `executionStartedAt`
+  nor `finishedAt`. Once its later `RunStarted` is projected, the same Run ID
+  is `started`/active with `executionStartedAt`; board reads expose that same
+  Run in `activeRuns` as machine phase `starting` then `started` and remove it when
+  terminal. `startedAt` and displayed active duration cover the whole attempt,
+  including workspace preparation.
 - `runners` MUST synthesize availability purely from the configured runner
   pools crossed with the currently ineligible runner set computed from the
   control-plane projection at call time. A runner absent from every
@@ -164,7 +177,7 @@ for a single WorkItem (see the Work detail component).
 - Every composed module service (Work, Resources, Orchestration, Execution,
   Control-plane) — this component only reads their projections and calls
   their own command surfaces; it never folds events itself.
-- Persistence's projection store and event journal — read directly for
+- `@atolis-hq/eventing-filesystem`'s projection store and event journal — read directly for
   freshness metadata and for the raw events feed.
 - Surfaces (depends on this component) — defines the response shapes this
   component produces values for, and owns the configuration-redaction and

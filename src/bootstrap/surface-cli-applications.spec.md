@@ -1,7 +1,7 @@
 # CLI surface application — Component Specification
 
 ---
-asOf: 725a0bc
+asOf: 2b630543ef6ff897ef137eacaa7a833fa5cc3f29
 ---
 
 ## Type, purpose, and scope
@@ -30,25 +30,30 @@ application's own responses — it only decides when to serve them.
 
 ## Core policies, invariants, and behaviours
 
-- `tick` MUST run one intake pass followed by the runner pipeline drained
-  to its own budget, mirroring a single one-shot pass of what `start`'s two
-  resident loops do continuously.
+- `tick` MUST catch all registered projections before intake and again while
+  unwinding, run one intake pass, then drain the runner pipeline to its own
+  budget. Its runner adapter catches all projections before pipeline work,
+  before the scheduler poke/delivery boundary, and while unwinding.
 - `start` MUST run two independently scheduled resident loops for as long
-  as it is not stopped or its budget is exhausted: an intake loop (catch up
-  projections, poll every configured provider, translate polled input into
-  facts) and a runner loop (catch up projections, run schedules, react to
-  newly appended facts, advance the control plane by one bounded step,
-  attempt one outbound delivery). Only the intake loop backs off
-  exponentially while idle, since only it touches a rate-limited external
-  API; the runner loop instead backs off only on a run of consecutive tick
-  *errors*, staying on a fast fixed cadence while merely idle. `start` MUST
-  also run a fixed-interval projection-catch-up pump alongside both loops,
-  independent of either one's own cadence, so a run's projected state (e.g.
-  the board's active-run card) reflects progress made mid-run rather than
-  only its state before and after.
+  as it is not stopped or its budget is exhausted: an intake loop (poll every
+  configured provider and translate polled input into facts) and a runner loop
+  (run schedules, react to newly appended facts, and attempt one outbound
+  delivery). Before both loops, `start` MUST supervise the independently
+  checkpointed projection subscriptions, then the activation scheduler
+  subscriber. Delivery catches up its own outbox projection immediately before
+  delivery; neither resident loop waits for every projection on every cycle.
+  Only the intake loop backs off exponentially while idle, since only it
+  touches a rate-limited external API; the runner loop instead backs off only
+  on a run of consecutive tick *errors*, staying on a fast fixed cadence while
+  merely idle. `start` MUST abort all of those owned runs before awaiting their
+  completion, then shut down Execution so all local attempts and completions
+  receive durable `shutdown` cancellation, abort workspace preparation or a
+  running handler, and drain. Only after that drain may it close any HTTP server it opened; a drain
+  failure does not prevent server cleanup, and failures from both phases are
+  preserved.
 - Both pipelines MUST stop operational work while the composed control plane
-  reports itself paused, while still catching projections up from durable
-  events; `tick`, `start`'s two resident loops, and the API surface
+  reports itself paused while the independently supervised projections continue
+  advancing from durable events; `tick`, `start`'s two resident loops, and the API surface
   application's own `advance` command all observe this same pause state.
 - `start` MUST start an HTTP server before entering its resident loops
   whenever either the web surface or the API surface is enabled in
@@ -80,9 +85,10 @@ application's own responses — it only decides when to serve them.
   this command has no partial or degraded report; it is all-or-nothing.
 - `validateState.rebuildProjections` MUST rebuild every projection
   registered for production composition, from the full event journal, and
-  MUST cover exactly the same set of projections the intake and runner
-  pipelines themselves catch up on — no projection is rebuildable-only or
-  catch-up-only.
+  MUST cover exactly the same set of projections supervised by the resident
+  projection runtime. The operator MUST provide exclusive offline access:
+  neither a host/service resident nor a sandbox resident may run while
+  `validate-state` or `doctor` rebuilds projections.
 - `doctor` MUST report every configured provider that failed to construct
   during composition as a failure, in addition to actively probing every
   successfully-constructed provider's own connectivity check; a Docker

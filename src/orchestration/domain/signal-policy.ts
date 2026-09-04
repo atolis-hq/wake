@@ -7,7 +7,7 @@ import type { ApprovalAuthority, CompiledWorkflow } from '../contracts/config.js
 import type {
   OrchestrationSignal,
   SignalExpectation,
-  WorkflowOrchestrationEventDraft,
+  WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
@@ -42,7 +42,14 @@ export function waitForSignal(
     return { kind: 'ignored', reason: 'signal kind must not be empty' };
   return {
     kind: 'append',
-    events: [stateDraft(state, input, OrchestrationEventType.SignalWaitStarted, expectation, 1)],
+    events: [
+      stateDraft(
+        state,
+        input,
+        { eventType: OrchestrationEventType.SignalWaitStarted, payload: expectation },
+        1,
+      ),
+    ],
   };
 }
 
@@ -57,8 +64,16 @@ export function acceptSignal(
   const signal = input.signal;
   const expected = state.waitingFor!;
   const authority = signal.authority ?? { kind: ApprovalAuthorityKind.Human };
-  const events: WorkflowOrchestrationEventDraft[] = [
-    stateDraft(state, input, OrchestrationEventType.SignalAccepted, { ...signal, authority }, 1),
+  const events: WorkflowOrchestrationEventData[] = [
+    stateDraft(
+      state,
+      input,
+      {
+        eventType: OrchestrationEventType.SignalAccepted,
+        payload: { ...signal, authority },
+      },
+      1,
+    ),
   ];
   const target =
     signal.outcome === ActivityOutcomeKind.Rejected ? expected.onRejectResume : expected.resume;
@@ -68,7 +83,7 @@ export function acceptSignal(
 }
 
 function requestLegacyReentry(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: DecisionContext,
@@ -78,11 +93,19 @@ function requestLegacyReentry(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-        stage: stageName(state.currentStage),
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          stage.activity,
+          stage.with,
+          {
+            execution: stage.execution,
+            stage: stageName(state.currentStage),
+          },
+        ),
+      },
       events.length + 1,
     ),
   );
@@ -174,12 +197,14 @@ export function acceptWaitingOutcome(
     state.waitingFor.signalKind === waiting.data.signalKind
   )
     return { kind: 'ignored', reason: 'waiting outcome was already recorded' };
-  const events: WorkflowOrchestrationEventDraft[] = [
+  const events: WorkflowOrchestrationEventData[] = [
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityWaiting,
-      { activationId: input.activationId, outcome: waiting },
+      {
+        eventType: OrchestrationEventType.ActivityWaiting,
+        payload: { activationId: input.activationId, outcome: waiting },
+      },
       1,
     ),
   ];

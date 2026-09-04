@@ -1,19 +1,22 @@
+import { EventActorKind, EventSourceKind, WrongExpectedSequenceError } from '@atolis-hq/eventing';
 import type { ActivityOutcome } from '../../activities/index.js';
-import {
-  EventActorKind,
-  EventSourceKind,
-  createEventDraft,
-  type Clock,
-} from '../../kernel/index.js';
+import { type Clock } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
+import { createExecutionEventData } from '../contracts/event-factory.js';
+import {
+  ExecutionEventType,
+  type ExecutionEventData,
+  type RunExecutionEventData,
+  type RunExecutionEventPayloads,
+  type RunPreparationStartedPayload,
+} from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
-import { runStream } from '../contracts/streams.js';
-import { RunStatus } from '../contracts/vocabulary.js';
+import type { RunView } from '../contracts/views.js';
+import { isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
 import type { WorkspaceLease } from '../contracts/workspace.js';
 import { failureFrom } from '../domain/run-result.js';
-import { claimRun } from './run-liveness-service.js';
+import { newRunLease } from './run-liveness-service.js';
 import type { RunRepository } from './run-repository.js';
 
 interface RunLifecycleDependencies {
@@ -30,7 +33,7 @@ interface ResolvedRunner {
   readonly cli?: string | undefined;
 }
 
-export async function startRun(input: {
+export async function prepareRun(input: {
   readonly dependencies: RunLifecycleDependencies;
   readonly runId: ReturnType<typeof runId>;
   readonly activation: ExecutionActivation;
@@ -38,7 +41,6 @@ export async function startRun(input: {
   readonly attempt: number;
   readonly startedAt: string;
   readonly runner: ResolvedRunner;
-  readonly lease: WorkspaceLease | undefined;
 }): Promise<void> {
   const {
     dependencies,
@@ -48,54 +50,108 @@ export async function startRun(input: {
     attempt,
     startedAt,
     runner,
-    lease,
   } = input;
+  const lease = newRunLease(dependencies.clock, dependencies.config, context.owner ?? 'execution');
   await dependencies.repository.append(currentRunId, 0, [
     createRunEvent({
       runId: currentRunId,
-      eventId: `${currentRunId}:started`,
-      eventType: ExecutionEventType.RunStarted,
+      eventId: `${currentRunId}:preparation-started`,
+      eventType: ExecutionEventType.RunPreparationStarted,
       occurredAt: startedAt,
       correlationId: context.orchestrationGroupId,
       causationId: activation.activationId,
       payload: {
-        activationId: activation.activationId,
-        activity: activation.activity,
-        ...(activation.stage === undefined ? {} : { stage: activation.stage }),
-        workflowInstanceId: context.workflowInstanceId,
-        orchestrationGroupId: context.orchestrationGroupId,
-        attempt,
+        ...runPreparationPayload(activation, context, attempt, runner),
         startedAt,
-        ...(runner.name === undefined
-          ? {}
-          : {
-              runner: {
-                name: runner.name,
-                ...(runner.model === undefined ? {} : { model: runner.model }),
-                ...(runner.effort === undefined ? {} : { effort: runner.effort }),
-                ...(runner.pool === undefined ? {} : { pool: runner.pool }),
-                ...(runner.cli === undefined ? {} : { cli: runner.cli }),
-              },
-            }),
-        ...(lease === undefined
-          ? {}
-          : {
-              workspace: {
-                mode: lease.mode,
-                path: lease.path,
-                ...(lease.branch === undefined ? {} : { branch: lease.branch }),
-              },
-            }),
       },
     }),
+    createRunEvent({
+      runId: currentRunId,
+      eventId: `${currentRunId}:lease-claimed`,
+      eventType: ExecutionEventType.RunLeaseClaimed,
+      occurredAt: lease.acquiredAt,
+      correlationId: context.orchestrationGroupId,
+      causationId: activation.activationId,
+      payload: lease,
+    }),
   ]);
-  await claimRun(
-    dependencies.repository,
-    dependencies.clock,
-    dependencies.config,
-    currentRunId,
-    context.owner ?? 'execution',
-  );
+}
+
+export async function startRun(input: {
+  readonly dependencies: RunLifecycleDependencies;
+  readonly runId: ReturnType<typeof runId>;
+  readonly activation: ExecutionActivation;
+  readonly context: ExecutionAttemptContext;
+  readonly attempt: number;
+  readonly runner: ResolvedRunner;
+  readonly lease: WorkspaceLease | undefined;
+}): Promise<string | undefined> {
+  const { dependencies, runId: currentRunId, activation, context, attempt, runner, lease } = input;
+  let retriedAfterSequence: number | undefined;
+  while (true) {
+    const loaded = await dependencies.repository.load(currentRunId);
+    if (loaded.view?.status !== RunStatus.Starting || loaded.view.cancellation !== undefined)
+      return undefined;
+    if (retriedAfterSequence !== undefined && loaded.sequence <= retriedAfterSequence)
+      throw new Error(`Run ${currentRunId} did not advance after a start append conflict`);
+    const startedAt = dependencies.clock.now().toISOString();
+    try {
+      await dependencies.repository.append(currentRunId, loaded.sequence, [
+        createRunEvent({
+          runId: currentRunId,
+          eventId: `${currentRunId}:started`,
+          eventType: ExecutionEventType.RunStarted,
+          occurredAt: startedAt,
+          correlationId: context.orchestrationGroupId,
+          causationId: activation.activationId,
+          payload: {
+            ...runPreparationPayload(activation, context, attempt, runner),
+            startedAt,
+            ...(lease === undefined
+              ? {}
+              : {
+                  workspace: {
+                    mode: lease.mode,
+                    path: lease.path,
+                    ...(lease.branch === undefined ? {} : { branch: lease.branch }),
+                  },
+                }),
+          },
+        }),
+      ]);
+      return startedAt;
+    } catch (error) {
+      if (!(error instanceof WrongExpectedSequenceError)) throw error;
+      retriedAfterSequence = loaded.sequence;
+    }
+  }
+}
+
+function runPreparationPayload(
+  activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
+  attempt: number,
+  runner: ResolvedRunner,
+): Omit<RunPreparationStartedPayload, 'startedAt'> {
+  return {
+    activationId: activation.activationId,
+    activity: activation.activity,
+    ...(activation.stage === undefined ? {} : { stage: activation.stage }),
+    workflowInstanceId: context.workflowInstanceId,
+    orchestrationGroupId: context.orchestrationGroupId,
+    attempt,
+    ...(runner.name === undefined
+      ? {}
+      : {
+          runner: {
+            name: runner.name,
+            ...(runner.model === undefined ? {} : { model: runner.model }),
+            ...(runner.effort === undefined ? {} : { effort: runner.effort }),
+            ...(runner.pool === undefined ? {} : { pool: runner.pool }),
+            ...(runner.cli === undefined ? {} : { cli: runner.cli }),
+          },
+        }),
+  };
 }
 
 export async function recordWorkspaceCleanupFailure(input: {
@@ -150,43 +206,70 @@ export async function recordRunFailure(input: {
   readonly activation: ExecutionActivation;
   readonly context: ExecutionAttemptContext;
   readonly error: unknown;
-}): Promise<void> {
+}): Promise<RunView | null | undefined> {
   const { dependencies, runId: currentRunId, activation, context, error } = input;
-  const loaded = await dependencies.repository.load(currentRunId);
-  if (loaded.sequence === 0) throw error;
-  if (loaded.view?.status !== RunStatus.Started) return;
-  const finishedAt = dependencies.clock.now().toISOString();
-  await dependencies.repository.append(currentRunId, loaded.sequence, [
-    createRunEvent({
-      runId: currentRunId,
-      eventId: `${currentRunId}:failed`,
-      eventType: ExecutionEventType.RunFailed,
-      occurredAt: finishedAt,
-      correlationId: context.orchestrationGroupId,
-      causationId: activation.activationId,
-      payload: { failure: failureFrom(error), finishedAt },
-    }),
-  ]);
+  let retriedAfterSequence: number | undefined;
+  while (true) {
+    const loaded = await dependencies.repository.load(currentRunId);
+    if (loaded.sequence === 0) throw error;
+    if (loaded.view === null || !isActiveRunStatus(loaded.view.status)) return;
+    if (loaded.view.cancellation !== undefined) return loaded.view;
+    if (retriedAfterSequence !== undefined && loaded.sequence <= retriedAfterSequence)
+      throw new Error(`Run ${currentRunId} did not advance after a failure append conflict`);
+    const finishedAt = dependencies.clock.now().toISOString();
+    try {
+      await dependencies.repository.append(currentRunId, loaded.sequence, [
+        createRunEvent({
+          runId: currentRunId,
+          eventId: `${currentRunId}:failed`,
+          eventType: ExecutionEventType.RunFailed,
+          occurredAt: finishedAt,
+          correlationId: context.orchestrationGroupId,
+          causationId: activation.activationId,
+          payload: { failure: failureFrom(error), finishedAt },
+        }),
+      ]);
+      return (await dependencies.repository.load(currentRunId)).view;
+    } catch (appendError) {
+      if (!(appendError instanceof WrongExpectedSequenceError)) throw appendError;
+      retriedAfterSequence = loaded.sequence;
+    }
+  }
 }
 
-export function createRunEvent<Type extends keyof RunExecutionEventPayloads>(input: {
-  runId: ReturnType<typeof runId>;
-  eventId: string;
-  eventType: Type;
-  occurredAt: string;
-  correlationId: string;
-  causationId: string;
-  payload: RunExecutionEventPayloads[Type];
-}) {
-  return createEventDraft({
-    eventId: input.eventId,
-    eventType: input.eventType,
-    occurredAt: input.occurredAt,
-    correlationId: input.correlationId,
-    causationId: input.causationId,
-    actor: { kind: EventActorKind.System, id: 'execution' },
-    source: { kind: EventSourceKind.Internal, id: 'execution' },
-    stream: runStream(input.runId),
-    payload: input.payload,
-  });
+interface RunEventMetadata {
+  readonly runId: ReturnType<typeof runId>;
+  readonly eventId: string;
+  readonly occurredAt: string;
+  readonly correlationId: string;
+  readonly causationId: string;
+}
+
+type RunEventInput = {
+  [Type in keyof RunExecutionEventPayloads]: RunEventMetadata & {
+    readonly eventType: Type;
+    readonly payload: RunExecutionEventPayloads[Type];
+  };
+}[keyof RunExecutionEventPayloads];
+
+export function createRunEvent(input: RunEventInput): RunExecutionEventData {
+  const { runId: currentRunId, ...event } = input;
+  void currentRunId;
+  return requireRunEventData(
+    createExecutionEventData({
+      ...event,
+      actor: { kind: EventActorKind.System, id: 'execution' },
+      source: { kind: EventSourceKind.Internal, id: 'execution' },
+    }),
+  );
+}
+
+function requireRunEventData(event: ExecutionEventData): RunExecutionEventData {
+  switch (event.eventType) {
+    case ExecutionEventType.ActivationClaimed:
+    case ExecutionEventType.ActivationReleased:
+      throw new Error(`Expected Run event data, received ${event.eventType}`);
+    default:
+      return event;
+  }
 }

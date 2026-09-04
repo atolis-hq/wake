@@ -1,9 +1,7 @@
-import type { ElkNode } from 'elkjs/lib/elk-api.js';
-import * as ELK from 'elkjs/lib/elk.bundled.js';
-
+import { createElkLayoutEngine } from './elk-runtime.js';
 import type { WorkflowDiagram } from './model.js';
 
-export const elk = new ELK.default.default();
+export const elk = createElkLayoutEngine();
 
 export type WorkflowDiagramLayoutDirection = 'RIGHT' | 'DOWN';
 
@@ -57,7 +55,7 @@ export async function layoutWorkflowDiagram(
   diagram: WorkflowDiagram,
   direction: WorkflowDiagramLayoutDirection,
 ): Promise<WorkflowDiagramLayout> {
-  const graph = await elk.layout<ElkNode>({
+  const graph = await elk.layout({
     id: diagram.id,
     layoutOptions: {
       'elk.algorithm': 'layered',

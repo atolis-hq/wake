@@ -1,12 +1,20 @@
+import {
+  type CheckpointStore,
+  type EventJournal,
+  type ProcessorRunSerialiser,
+  type ProcessorStateStore,
+  type ProjectionStore,
+} from '@atolis-hq/eventing';
 import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
 import {
-  ControlStreamKind,
   DispatchPolicy,
-  createAdvanceOnce,
+  createActivationScheduler,
+  createActivationSchedulerSubscriber,
   createControlPlaneService,
+  createDurableRunnerIneligibility,
   createRunnerControlService,
-  ineligibleRunners,
-  type ControlPlaneView,
+  type ActivationScheduler,
+  type ActivationSchedulerSubscriber,
   type IntakePipeline,
   type RunnerPipeline,
   type ScheduleCheckpointStore,
@@ -35,14 +43,7 @@ import type {
   ProviderCompositionFailure,
   ProviderInstance,
 } from '../integrations/index.js';
-import {
-  SystemClock,
-  UlidIdGenerator,
-  type CheckpointStore,
-  type Clock,
-  type EventJournal,
-  type ProjectionStore,
-} from '../kernel/index.js';
+import { SystemClock, UlidIdGenerator, type Clock } from '../kernel/index.js';
 import { compileWorkflow, createOrchestrationService } from '../orchestration/index.js';
 import {
   createResourceLookup,
@@ -51,16 +52,15 @@ import {
   type ResourceLinkResolver,
 } from '../resources/index.js';
 import { createWorkService } from '../work/index.js';
+import { createFileActivationSchedulerSerialiser } from './activation-scheduler-serialiser.js';
 import { createBuiltInActivityRegistry } from './activity-registry.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
+import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime } from './integration-runtime.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { composePersistence } from './persistence-composition.js';
-import {
-  createFileProjectionRunSerialiser,
-  type createRuntimeProjectionRunner,
-} from './projection-runtime.js';
+import type { RuntimeProjectionSubscriptions } from './projection-runtime.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import { FileScheduleCheckpointStore } from './schedule-checkpoint-store.js';
@@ -75,6 +75,7 @@ export interface CompositionRootOptions {
   readonly journal?: EventJournal;
   readonly projections?: ProjectionStore;
   readonly checkpoints?: CheckpointStore;
+  readonly processorState?: ProcessorStateStore;
   readonly activities?: ActivityRegistry;
   readonly clock?: Clock;
   readonly transcriptStore?: TranscriptStore;
@@ -86,6 +87,7 @@ export interface CompositionRootOptions {
   readonly decorateJournal?: (journal: EventJournal) => EventJournal;
   readonly decorateProjections?: (projections: ProjectionStore) => ProjectionStore;
   readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
+  readonly subscriptionRunSerialiser?: ProcessorRunSerialiser;
   readonly scheduleCheckpoints?: ScheduleCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
@@ -104,10 +106,12 @@ export interface CompositionRoot {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
+  readonly processorState: ProcessorStateStore;
   readonly activities: ActivityRegistry;
   readonly work: ReturnType<typeof createWorkService>;
   readonly conversations: ReturnType<typeof createConversationService>;
   readonly resources: ReturnType<typeof createResourceService>;
+  readonly pullRequests: ReturnType<typeof createPullRequestService>;
   readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
@@ -118,8 +122,11 @@ export interface CompositionRoot {
   readonly controlPlane: ReturnType<typeof createControlPlaneService>;
   /** Shared operator-or-maintenance pause supplier for every resident runtime loop. */
   readonly isPaused: () => Promise<boolean>;
-  readonly advanceOnce: ReturnType<typeof createAdvanceOnce>;
-  readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
+  readonly activationScheduler: ActivationScheduler;
+  readonly activationSchedulerSubscriber: ActivationSchedulerSubscriber;
+  readonly processorRuntime: EventProcessorRuntime;
+  readonly advanceOnce: ActivationScheduler['runOnce'];
+  readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
@@ -147,7 +154,14 @@ export async function createCompositionRoot(
   const maintenance = createUpdateMaintenanceLease(paths.wakeRoot);
   const clock = options.clock ?? new SystemClock();
   const ids = new UlidIdGenerator();
-  const { journal, projections, checkpoints } = composePersistence(paths, clock, options);
+  const { journal, projections, checkpoints, processorState, subscriptionRunSerialiser } =
+    composePersistence(paths, clock, options);
+  const processorRuntime = new EventProcessorRuntime(
+    journal,
+    checkpoints,
+    subscriptionRunSerialiser,
+    clock,
+  );
   const work = createWorkService(journal);
   const conversations = createConversationService(journal);
   const lookup = createResourceLookup({ journal, projections });
@@ -255,7 +269,7 @@ export async function createCompositionRoot(
     ids,
     runners: new Set(Object.values(config.execution.runnerPools).flat()),
   });
-  const advanceOnce = createAdvanceOnce(
+  const activationScheduler = createActivationScheduler(
     orchestration,
     {
       ...execution,
@@ -268,32 +282,32 @@ export async function createCompositionRoot(
       dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
       maxConcurrentRuns: config.controlPlane.maxConcurrentRuns,
       maxDispatches: config.controlPlane.maxDispatches,
+      schedulerSerialiser: createFileActivationSchedulerSerialiser(paths.dataRoot),
       isDispatchPaused: isRuntimePaused,
       workspaceRecovery: workspaces,
       work,
       ...(transcriptStore === undefined
         ? {}
         : createTranscriptRetention(transcriptStore, projections, config, clock)),
-      runnerIneligibility: async () => {
-        const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
-        return stored === null
-          ? new Set()
-          : ineligibleRunners(stored.value, clock.now().toISOString());
-      },
+      runnerIneligibility: createDurableRunnerIneligibility(journal, () =>
+        clock.now().toISOString(),
+      ),
     },
   );
+  const advanceOnce = activationScheduler.runOnce.bind(activationScheduler);
+  const activationSchedulerSubscriber = createActivationSchedulerSubscriber(activationScheduler);
   const runtime = await composeIntegrationRuntime({
     config,
     journal,
     projections,
     checkpoints,
+    processorState,
     resources,
     lookup,
     pullRequests,
     orchestration,
     execution,
     ...(transcriptStore === undefined ? {} : { transcriptStore }),
-    advanceOnce,
     controlPlane,
     isPaused: isRuntimePaused,
     clock,
@@ -301,7 +315,8 @@ export async function createCompositionRoot(
     conversations,
     ids,
     wakeRoot,
-    projectionRunSerialiser: createFileProjectionRunSerialiser(paths.dataRoot),
+    subscriptionRunSerialiser,
+    processorRuntime,
     scheduleCheckpoints:
       options.scheduleCheckpoints ?? new FileScheduleCheckpointStore(paths.dataRoot),
     ...(options.decorateDeliveryAdapter === undefined
@@ -312,6 +327,7 @@ export async function createCompositionRoot(
       : { fakeDeliveryProvider: options.fakeDeliveryProvider }),
     providerDefinitions: [gitHubProviderDefinition],
   });
+  processorRuntime.register([activationSchedulerSubscriber.processor, ...runtime.processors]);
   return {
     config,
     fakeScenarios,
@@ -320,10 +336,12 @@ export async function createCompositionRoot(
     journal,
     projections,
     checkpoints,
+    processorState,
     activities,
     work,
     conversations,
     resources,
+    pullRequests,
     lookup,
     orchestration,
     execution,
@@ -332,6 +350,9 @@ export async function createCompositionRoot(
     runnerControls,
     controlPlane,
     isPaused: isRuntimePaused,
+    activationScheduler,
+    activationSchedulerSubscriber,
+    processorRuntime,
     advanceOnce,
     resolveResourceLink,
     ...runtime,

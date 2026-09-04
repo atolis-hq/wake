@@ -1,9 +1,10 @@
+import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
-import { correlationId } from '../../../src/kernel/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService, workItemStream } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
+import { InterleavingEventJournal } from '../../support/interleaving-event-journal.js';
 
 const context = {
   commandId: 'command-1',
@@ -58,6 +59,39 @@ describe('WorkService', () => {
     await service.create(command, context);
 
     expect(await journal.readStream(workItemStream(workId('1')))).toHaveLength(1);
+  });
+
+  it('treats concurrent identical commands as one idempotent Work change', async () => {
+    const inner = new InMemoryEventJournal(new FakeClock());
+    const journal = new InterleavingEventJournal(
+      inner,
+      (events) => events[0]?.eventType === 'work.item-created',
+    );
+    const service = createWorkService(journal);
+    const command = { workItemId: workId('concurrent'), objective: 'One objective' };
+
+    const results = await Promise.all([
+      service.create(command, context),
+      service.create(command, context),
+    ]);
+
+    expect(results).toEqual([
+      expect.objectContaining({ objective: 'One objective' }),
+      expect.objectContaining({ objective: 'One objective' }),
+    ]);
+    expect(await inner.readStream(workItemStream(command.workItemId))).toHaveLength(1);
+  });
+
+  it('rejects reuse of a command event identity with different Work data', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createWorkService(journal);
+    const workItemId = workId('identity-conflict');
+    await service.create({ workItemId, objective: 'Original objective' }, context);
+
+    await expect(
+      service.create({ workItemId, objective: 'Different objective' }, context),
+    ).rejects.toThrow('has already been used with different content');
+    expect(await journal.readStream(workItemStream(workItemId))).toHaveLength(1);
   });
 
   it('rejects lifecycle changes after work is closed', async () => {

@@ -27,25 +27,27 @@ it(
     expect(workItems).toHaveLength(1);
 
     const publishIntents = (await world.events()).filter(
-      (event) => event.eventType === 'agent-run.publish-requested',
+      (event) => event.event.eventType === 'agent-run.publish-requested',
     );
     expect(publishIntents.length).toBeGreaterThanOrEqual(2);
 
     const orchestrationViews = await world.readProjection<{
-      readonly view: { readonly status: string; readonly workflowInstanceId: string } | null;
-    }>('orchestration');
+      readonly status: string;
+      readonly workflowInstanceId: string;
+    } | null>('orchestration');
     expect(orchestrationViews).toHaveLength(1);
-    expect(orchestrationViews[0]?.value.view?.status).toBe('completed');
-    expect(orchestrationViews[0]?.value.view?.workflowInstanceId).toBe(workflowInstanceId);
+    expect(orchestrationViews[0]?.value?.status).toBe('completed');
+    expect(orchestrationViews[0]?.value?.workflowInstanceId).toBe(workflowInstanceId);
   },
   15000,
 );
 
 async function approveWaitingStage(world: ProcessWorld, evidenceId: string): Promise<string> {
   const orchestrationViews = await world.readProjection<{
-    readonly view: { readonly status: string; readonly workflowInstanceId: string } | null;
-  }>('orchestration');
-  const view = orchestrationViews[0]?.value.view;
+    readonly status: string;
+    readonly workflowInstanceId: string;
+  } | null>('orchestration');
+  const view = orchestrationViews[0]?.value;
   if (view === null || view === undefined || view.status !== 'waiting')
     throw new Error(`Expected exactly one waiting workflow instance, got ${JSON.stringify(view)}`);
   await world.acceptSignal(view.workflowInstanceId, {

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "vitest*.ts"],
+  "exclude": ["dist/**", "node_modules/**", "src/surfaces/web/**"],
+  "references": [{ "path": "./packages/eventing" }, { "path": "./packages/eventing-filesystem" }]
+}

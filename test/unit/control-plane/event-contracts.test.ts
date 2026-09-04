@@ -1,3 +1,4 @@
+import { causationId, correlationId, eventId, type EventEnvelope } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import {
   ControlEventType,
@@ -5,25 +6,21 @@ import {
   decodeControlEvent,
   selectControlEvent,
 } from '../../../src/control-plane/index.js';
-import {
-  causationId,
-  correlationId,
-  eventId,
-  type EventEnvelope,
-} from '../../../src/kernel/index.js';
 
 const envelope = (eventType: string, payload: unknown): EventEnvelope => ({
-  eventId: eventId('event-1'),
-  eventType,
-  schemaVersion: 1 as const,
-  occurredAt: '2026-07-31T12:00:00.000Z',
+  event: {
+    eventId: eventId('event-1'),
+    eventType,
+    schemaVersion: 1 as const,
+    occurredAt: '2026-07-31T12:00:00.000Z',
+    correlationId: correlationId('correlation-1'),
+    causationId: causationId('causation-1'),
+    actor: { kind: 'system' as const, id: 'control-plane' },
+    source: { kind: 'internal' as const, id: 'control-plane' },
+    payload,
+  },
   recordedAt: '2026-07-31T12:00:00.000Z',
-  correlationId: correlationId('correlation-1'),
-  causationId: causationId('causation-1'),
-  actor: { kind: 'system' as const, id: 'control-plane' },
-  source: { kind: 'internal' as const, id: 'control-plane' },
   stream: controlPlaneStream(),
-  payload,
   sequence: 1,
   globalPosition: 1,
 });
@@ -35,9 +32,9 @@ it('decodes and selects strict dispatch pause/resume events', () => {
       reason: 'quota',
     }),
   );
-  expect(decoded.eventType).toBe(ControlEventType.DispatchPaused);
-  if (decoded.eventType === ControlEventType.DispatchPaused)
-    expect(decoded.payload.reason).toBe('quota');
+  expect(decoded.event.eventType).toBe(ControlEventType.DispatchPaused);
+  if (decoded.event.eventType === ControlEventType.DispatchPaused)
+    expect(decoded.event.payload.reason).toBe('quota');
   expect(
     selectControlEvent(
       envelope(ControlEventType.DispatchResumed, { resumedAt: '2026-07-31T12:05:00.000Z' }),
@@ -54,14 +51,14 @@ it('decodes strict runner quota pause and manual resume events', () => {
       resumeAt: '2026-08-01T12:30:00.000Z',
     }),
   );
-  expect(paused.eventType).toBe('control-plane.runner-paused');
+  expect(paused.event.eventType).toBe('control-plane.runner-paused');
   const resumed = decodeControlEvent(
     envelope('control-plane.runner-resumed', {
       runnerName: 'sonnet',
       resumedAt: '2026-08-01T12:05:00.000Z',
     }),
   );
-  expect(resumed.eventType).toBe('control-plane.runner-resumed');
+  expect(resumed.event.eventType).toBe('control-plane.runner-resumed');
   expect(() =>
     decodeControlEvent(
       envelope('control-plane.runner-paused', {

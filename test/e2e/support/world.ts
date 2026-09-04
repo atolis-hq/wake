@@ -1,4 +1,19 @@
 import {
+  correlationId,
+  createEventData,
+  createProjectionProcessor,
+  EventProcessorHost,
+  type EventData,
+  type EventEnvelope,
+  type EventProcessor,
+} from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
+import {
   ActivityRegistry,
   createPullRequestService,
   activationId as parseActivationId,
@@ -19,20 +34,14 @@ import {
   type ExternalExecutionInspector,
   type RunView,
 } from '../../../src/execution/index.js';
-import {
-  correlationId,
-  createEventDraft,
-  type Clock,
-  type EntityRef,
-  type EventEnvelope,
-  type IdGenerator,
-} from '../../../src/kernel/index.js';
+import { type Clock, type EntityRef, type IdGenerator } from '../../../src/kernel/index.js';
 import {
   compileWorkflow,
   createOrchestrationService,
   createPullRequestTransitionEvidence,
   createResourceTransitionReactor,
   createWatchReactor,
+  createWatchReconciler,
   orchestrationGroupId,
   workflowInstanceId as parseWorkflowInstanceId,
   workflowDefinitionsProjection,
@@ -41,12 +50,6 @@ import {
   type WorkflowDefinitionConfig,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-  ProjectionRunner,
-} from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
   createResourceLookup,
@@ -110,11 +113,17 @@ export class TestWorld {
   );
 
   // resolve() falls back to this projection for historical (non-current) workflow
-  // fingerprints; keep it caught up before any call that may hit that path.
-  private readonly definitionProjections = new ProjectionRunner(
+  // fingerprints; keep its durable subscription caught up before any call that may hit that path.
+  private readonly definitionProjectionHost = new EventProcessorHost(
     this.journal,
-    this.projections,
     this.checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    this.clock,
+  );
+
+  private readonly definitionProjectionSubscription = createProjectionProcessor(
+    workflowDefinitionsProjection,
+    this.projections,
   );
 
   private recovery: RecoveryService | undefined;
@@ -143,6 +152,12 @@ export class TestWorld {
 
   private readonly watchReactor = createWatchReactor(
     this.orchestration,
+    () => this.orchestration.watchEventTypes(),
+    new RunRepository(this.journal),
+  );
+
+  private readonly watchReconciler = createWatchReconciler(
+    this.orchestration,
     this.journal,
     this.checkpoints,
     new RunRepository(this.journal),
@@ -163,8 +178,13 @@ export class TestWorld {
         },
       ],
     }),
+  );
+
+  private readonly reactorHost = new EventProcessorHost(
     this.journal,
     this.checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    this.clock,
   );
 
   constructor() {
@@ -176,7 +196,10 @@ export class TestWorld {
         ),
     });
     this.orchestration.setAcceptSignalOperationCoordinator(async (operation) => {
-      await this.resourceTransitionReactor.drain();
+      await this.reactorHost.runThrough(
+        this.resourceTransitionReactor.processor,
+        await this.journal.latestGlobalPosition(),
+      );
       return operation();
     });
   }
@@ -190,23 +213,23 @@ export class TestWorld {
     eventType: Type,
     payload: Payload,
     cause: string,
-  ): Promise<EventEnvelope<Type, Payload>> {
+  ): Promise<EventEnvelope<EventData<Type, Payload>, typeof this.stream>> {
     const currentEvents = await this.journal.readStream(this.stream);
-    const [appended] = await this.journal.append(this.stream, currentEvents.length, [
-      createEventDraft({
-        eventId: this.ids.next('event'),
-        eventType,
-        occurredAt: this.clock.now().toISOString(),
-        correlationId: 'scenario-1',
-        causationId: cause,
-        actor: { kind: 'system', id: 'test' },
-        source: { kind: 'internal', id: 'test' },
-        stream: this.stream,
-        payload,
-      }),
+    const draft = createEventData({
+      eventId: this.ids.next('event'),
+      eventType,
+      occurredAt: this.clock.now().toISOString(),
+      correlationId: 'scenario-1',
+      causationId: cause,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload,
+    });
+    const [appended] = await this.journal.appendToStream(this.stream, currentEvents.length, [
+      draft,
     ]);
     if (appended === undefined) throw new Error('Scenario fact was not appended');
-    return appended as EventEnvelope<Type, Payload>;
+    return { ...appended, event: draft, stream: this.stream };
   }
 
   async trace(): Promise<string> {
@@ -323,7 +346,7 @@ export class TestWorld {
   }
 
   private async syncWorkflowDefinitions(): Promise<void> {
-    await this.definitionProjections.runOnce(workflowDefinitionsProjection);
+    await this.definitionProjectionHost.runOnce(this.definitionProjectionSubscription);
   }
 
   async startWorkflow(input: {
@@ -422,9 +445,9 @@ export class TestWorld {
       ...(workItemId === undefined ? {} : { workItemId }),
       maxProgress: 1,
     });
-    await this.watchReactor.runOnce();
-    await this.watchReactor.reconcileOnce();
-    await this.resourceTransitionReactor.runOnce();
+    await this.reactorHost.runOnce(this.watchReactor.processor);
+    await this.watchReconciler.reconcileOnce();
+    await this.reactorHost.runOnce(this.resourceTransitionReactor.processor);
     return result;
   }
 
@@ -448,8 +471,8 @@ export class TestWorld {
     stream: EntityRef = this.stream,
   ): Promise<void> {
     const events = await this.journal.readStream(stream);
-    const [event] = await this.journal.append(stream, events.length, [
-      createEventDraft({
+    const [event] = await this.journal.appendToStream(stream, events.length, [
+      createEventData({
         eventId,
         eventType,
         occurredAt: this.clock.now().toISOString(),
@@ -457,18 +480,21 @@ export class TestWorld {
         causationId: eventId,
         actor: { kind: 'integration', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream,
         payload,
       }),
     ]);
     if (event === undefined) throw new Error('Watch trigger was not appended');
     await this.syncWorkflowDefinitions();
-    await this.watchReactor.runOnce();
+    await this.reactorHost.runOnce(this.watchReactor.processor);
+  }
+
+  async process(processor: EventProcessor): Promise<void> {
+    await this.reactorHost.runOnce(processor);
   }
 
   async events(type?: string): Promise<readonly EventEnvelope[]> {
     const events = await this.journal.readAll(0);
-    return type === undefined ? events : events.filter((event) => event.eventType === type);
+    return type === undefined ? events : events.filter((event) => event.event.eventType === type);
   }
 
   viewWork(id: WorkItemId) {

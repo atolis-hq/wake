@@ -1,10 +1,12 @@
-import { z } from 'zod';
 import {
-  brandedStringSchema,
+  eventDataSchema,
   eventEnvelopeSchema,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
-} from '../../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { z } from 'zod';
+import { brandedStringSchema } from '../../../kernel/index.js';
 import {
   ResourceStreamKind,
   resourceId,
@@ -61,6 +63,8 @@ export interface DeliveryIntentEventPayloads {
 }
 
 export type DeliveryIntentEvent = EventUnion<DeliveryIntentEventPayloads, ResourceStreamRef>;
+
+export type DeliveryIntentEventData = EventDataUnion<DeliveryIntentEventPayloads>;
 const resourceStreamSchema = z
   .object({ kind: z.literal(ResourceStreamKind.Resource), id: brandedStringSchema(resourceId) })
   .strict();
@@ -105,28 +109,34 @@ const agentSchema = z
   })
   .strict();
 const intentEventSchema: z.ZodType<DeliveryIntentEvent> = z
-  .discriminatedUnion('eventType', [
+  .union([
     eventEnvelopeSchema.extend({
-      eventType: z.literal(DeliveryIntentEventType.StatusPublishRequested),
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryIntentEventType.StatusPublishRequested),
+        payload: publishSchema,
+      }),
       stream: resourceStreamSchema,
-      payload: publishSchema,
     }),
     eventEnvelopeSchema.extend({
-      eventType: z.literal(DeliveryIntentEventType.ReplyPublishRequested),
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryIntentEventType.ReplyPublishRequested),
+        payload: publishSchema,
+      }),
       stream: resourceStreamSchema,
-      payload: publishSchema,
     }),
     eventEnvelopeSchema.extend({
-      eventType: z.literal(DeliveryIntentEventType.AgentRunPublishRequested),
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryIntentEventType.AgentRunPublishRequested),
+        payload: agentSchema,
+      }),
       stream: resourceStreamSchema,
-      payload: agentSchema,
     }),
   ])
   .superRefine((event, ctx) => {
-    if (event.stream.id !== event.payload.resourceId)
+    if (event.stream.id !== event.event.payload.resourceId)
       ctx.addIssue({
         code: 'custom',
-        path: ['payload', 'resourceId'],
+        path: ['event', 'payload', 'resourceId'],
         message: 'Delivery intent resource id must identify its stream',
       });
   });
@@ -135,16 +145,16 @@ export function decodeDeliveryIntentEvent(event: EventEnvelope): DeliveryIntentE
   const result = intentEventSchema.safeParse(event);
   if (!result.success)
     throw new Error(
-      `Invalid Delivery intent event ${event.eventId} at global position ${event.globalPosition} (${event.eventType}): ${result.error.message}`,
+      `Invalid Delivery intent event ${event.event.eventId} at global position ${event.globalPosition} (${event.event.eventType}): ${result.error.message}`,
       { cause: result.error },
     );
   return result.data;
 }
 
 export function selectDeliveryIntentEvent(event: EventEnvelope): DeliveryIntentEvent | null {
-  return event.eventType.startsWith(DeliveryIntentEventNamespace.Status) ||
-    event.eventType.startsWith(DeliveryIntentEventNamespace.Reply) ||
-    event.eventType === DeliveryIntentEventType.AgentRunPublishRequested
+  return event.event.eventType.startsWith(DeliveryIntentEventNamespace.Status) ||
+    event.event.eventType.startsWith(DeliveryIntentEventNamespace.Reply) ||
+    event.event.eventType === DeliveryIntentEventType.AgentRunPublishRequested
     ? decodeDeliveryIntentEvent(event)
     : null;
 }

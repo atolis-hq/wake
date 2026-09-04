@@ -1,7 +1,7 @@
 import { HostStopReason, type HostBudget, type HostResult } from '../contracts/commands.js';
 
 interface BoundedHost {
-  run(budget: HostBudget): Promise<HostResult>;
+  run(budget: HostBudget, signal?: AbortSignal): Promise<HostResult>;
 }
 
 export interface ResidentCadence {
@@ -39,7 +39,7 @@ export class ResidentHost {
       let madeProgress = false;
       let errored = false;
       try {
-        const result = await this.tick.run(budget);
+        const result = await this.tick.run(budget, signal);
         madeProgress = result.advances > 0;
         total = {
           advances: total.advances + result.advances,
@@ -47,6 +47,7 @@ export class ResidentHost {
           stoppedBecause: result.stoppedBecause,
         };
       } catch (error) {
+        if (signal.aborted) break;
         errored = true;
         await this.reportError(error);
       }

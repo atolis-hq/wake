@@ -1,6 +1,13 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import {} from '../../support/identities.js';
 
+import { EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
+} from '@atolis-hq/eventing/memory';
 import { createPullRequestService } from '../../../src/activities/index.js';
 import {
   InboundTranslator,
@@ -9,11 +16,6 @@ import {
   createGitHubPullRequestSource,
   type GitHubPullRequestSourceClient,
 } from '../../../src/integrations/github/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
@@ -267,13 +269,13 @@ it('emits changed check evidence when GitHub checks change without PR metadata c
     statuses: async () => [{ state: 'success' }],
   });
   const runtime = sourceRuntime(client);
-  const { journal, lookup, translator, poll, pullRequests } = runtime;
+  const { journal, checkpoints, lookup, translator, poll, pullRequests } = runtime;
   await admitPullRequest(runtime, 'checks-changed', 'owner/repo#7');
 
   await poll.pollOnce(new AbortController().signal);
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
   await poll.pollOnce(new AbortController().signal);
-  await translator.runOnce();
+  await processInbound(translator, journal, checkpoints);
 
   const resource = await lookup.resourceIdForExternalKey({
     adapter: 'github',
@@ -281,7 +283,9 @@ it('emits changed check evidence when GitHub checks change without PR metadata c
   });
   expect(resource).not.toBeNull();
   expect((await pullRequests.get(resource!))?.checks).toBe('passing');
-  expect((await journal.readAll(0)).map((event) => event.eventType)).toContain('pr.checks-changed');
+  expect((await journal.readAll(0)).map((event) => event.event.eventType)).toContain(
+    'pr.checks-changed',
+  );
 });
 
 it('distinguishes pending to passing to a new pending run and deduplicates identical repolls', async () => {
@@ -304,17 +308,17 @@ it('distinguishes pending to passing to a new pending run and deduplicates ident
     statuses: async () => [{ id: 1, context: 'legacy', state: 'success' }],
   });
   const runtime = sourceRuntime(client);
-  const { journal, lookup, translator, poll, pullRequests } = runtime;
+  const { journal, checkpoints, lookup, translator, poll, pullRequests } = runtime;
   await admitPullRequest(runtime, 'pending-passing-pending', 'owner/repo#7');
 
   for (let index = 0; index < 4; index += 1) {
     await poll.pollOnce(new AbortController().signal);
-    await translator.runOnce();
+    await processInbound(translator, journal, checkpoints);
   }
 
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'integration.github.work-observed',
+      (event) => event.event.eventType === 'integration.github.work-observed',
     ),
   ).toHaveLength(3);
   const resource = await lookup.resourceIdForExternalKey({
@@ -518,17 +522,31 @@ function sourceRuntime(client: GitHubPullRequestSourceClient) {
   );
   return {
     journal,
+    checkpoints,
     lookup,
     resources,
     work,
     clock,
     pullRequests,
     poll,
-    translator: new InboundTranslator(journal, checkpoints, work, resources, {
+    translator: new InboundTranslator(journal, work, resources, {
       pullRequests,
       lookup,
     }),
   };
+}
+
+async function processInbound(
+  translator: InboundTranslator,
+  journal: InMemoryEventJournal,
+  checkpoints: InMemoryCheckpointStore,
+) {
+  return new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  ).runOnce(translator.processor);
 }
 
 // These tests prove check-evidence translation, not admission, so the WorkItem/Resource are

@@ -2,8 +2,8 @@ import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { resId } from '../../support/identities.js';
 
+import { correlationId } from '@atolis-hq/eventing';
 import { activityName } from '../../../src/activities/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { TestWorld } from '../support/world.js';
@@ -71,10 +71,10 @@ it(`${scenario.id} cancels Work with a live fake Run across Execution restart`, 
     status: 'cancelled',
     cancellation: { reason: 'work-cancelled', confirmedAt: expect.any(String) },
   });
-  expect((await world.events()).map((event) => event.eventType)).toContain(
+  expect((await world.events()).map((event) => event.event.eventType)).toContain(
     'execution.run-cancellation-requested',
   );
-  expect((await world.events()).map((event) => event.eventType)).toContain(
+  expect((await world.events()).map((event) => event.event.eventType)).toContain(
     'execution.run-cancellation-confirmed',
   );
 

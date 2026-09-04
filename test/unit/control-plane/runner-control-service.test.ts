@@ -1,12 +1,12 @@
 import { expect, it } from 'vitest';
 
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import {
   ControlEventType,
   controlPlaneStream,
-  createControlEventDraft,
+  createControlPlaneEventData,
   createRunnerControlService,
 } from '../../../src/control-plane/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 
 it('writes durable manual pause and explicit resume facts for a configured runner', async () => {
@@ -24,11 +24,11 @@ it('writes durable manual pause and explicit resume facts for a configured runne
   await service.unpause('sonnet', 'operator-43');
 
   const events = await journal.readAll(0);
-  expect(events.map((event) => event.eventType)).toEqual([
+  expect(events.map((event) => event.event.eventType)).toEqual([
     ControlEventType.RunnerPaused,
     ControlEventType.RunnerResumed,
   ]);
-  expect(events[0]?.payload).toMatchObject({
+  expect(events[0]?.event.payload).toMatchObject({
     runnerName: 'sonnet',
     cause: 'manual',
     reason: 'paused by operator',
@@ -68,7 +68,7 @@ it('deduplicates an unpause after recreating the service from the same journal',
 
   const second = createRunnerControlService({ ...input, ids: new SequentialIds() });
   await second.unpause('sonnet', 'operator-43');
-  expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
+  expect((await journal.readAll(0)).map((event) => event.event.eventType)).toEqual([
     ControlEventType.RunnerPaused,
     ControlEventType.RunnerResumed,
   ]);
@@ -77,22 +77,22 @@ it('deduplicates an unpause after recreating the service from the same journal',
 it('rejects unpause after a quota pause has elapsed', async () => {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
-  await journal.append(controlPlaneStream(), 0, [
-    createControlEventDraft(
-      ControlEventType.RunnerPaused,
-      {
+  await journal.appendToStream(controlPlaneStream(), 0, [
+    createControlPlaneEventData({
+      eventId: 'quota:control-plane.runner-paused',
+      eventType: ControlEventType.RunnerPaused,
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'quota',
+      causationId: 'quota',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {
         runnerName: 'sonnet',
         cause: 'quota',
         reason: 'quota',
         resumeAt: new Date(clock.now().getTime() + 1_000).toISOString(),
       },
-      {
-        commandId: 'quota',
-        correlationId: 'quota' as never,
-        occurredAt: clock.now().toISOString(),
-        actor: { kind: 'system', id: 'test' },
-      },
-    ),
+    }),
   ]);
   clock.advance(1_000);
   const service = createRunnerControlService({
@@ -117,7 +117,7 @@ it('converges concurrent durable unpause commands from separate service instance
   ).resolves.toEqual([undefined, undefined]);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === ControlEventType.RunnerResumed,
+      (event) => event.event.eventType === ControlEventType.RunnerResumed,
     ),
   ).toHaveLength(1);
 });

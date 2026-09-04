@@ -12,6 +12,9 @@ import {
   foldWorkflowInstance,
   orchestrationActivityOutcome,
   startInstance,
+  workflowInstanceStream,
+  type WorkflowOrchestrationEvent,
+  type WorkflowOrchestrationEventData,
 } from '../../../src/orchestration/index.js';
 import {} from '../../../src/work/index.js';
 import { workId } from '../../support/identities.js';
@@ -73,7 +76,7 @@ function fail(
   causationId: string,
   retrySafety: 'safe-to-retry' | 'requires-reconciliation' = 'safe-to-retry',
 ) {
-  const state = foldWorkflowInstance(events)!;
+  const state = foldWorkflowInstance(recorded(events))!;
   return acceptActivityOutcome(fixture.definition, state, {
     activationId: state.pendingActivation!.activationId,
     outcome: orchestrationActivityOutcome({ kind: 'failed', data: { retrySafety } }),
@@ -88,7 +91,7 @@ describe('workflow retry policy', () => {
     const decision = fail(fixture, fixture.events, 'run-1');
     expect(decision.kind).toBe('append');
     if (decision.kind !== 'append') return;
-    const retried = foldWorkflowInstance([...fixture.events, ...decision.events])!;
+    const retried = foldWorkflowInstance(recorded([...fixture.events, ...decision.events]))!;
     expect(retried.pendingActivation).toMatchObject({
       activationId: activationId('workflow-1:activity:2'),
       ordinal: 2,
@@ -102,7 +105,7 @@ describe('workflow retry policy', () => {
     const decision = fail(fixture, fixture.events, 'run-1', 'requires-reconciliation');
     expect(decision.kind).toBe('append');
     if (decision.kind !== 'append') return;
-    const waiting = foldWorkflowInstance([...fixture.events, ...decision.events])!;
+    const waiting = foldWorkflowInstance(recorded([...fixture.events, ...decision.events]))!;
     expect(waiting.status).toBe('waiting');
     expect(waiting.retryCounts).toEqual({});
     expect(waiting.pendingActivation?.ordinal).toBe(1);
@@ -115,9 +118,19 @@ describe('workflow retry policy', () => {
     const retriedEvents = [...fixture.events, ...first.events];
     const exhausted = fail(fixture, retriedEvents, 'run-2');
     if (exhausted.kind !== 'append') throw new Error('expected route events');
-    const waiting = foldWorkflowInstance([...retriedEvents, ...exhausted.events])!;
+    const waiting = foldWorkflowInstance(recorded([...retriedEvents, ...exhausted.events]))!;
     expect(waiting.status).toBe('waiting');
     expect(waiting.retryCounts).toEqual({ 'implement:failed': 1 });
     expect(waiting.pendingActivation?.ordinal).toBe(2);
   });
 });
+
+function recorded(events: readonly WorkflowOrchestrationEventData[]): WorkflowOrchestrationEvent[] {
+  return events.map((event, index) => ({
+    event,
+    stream: workflowInstanceStream(workflowInstanceId('workflow-1')),
+    recordedAt: event.occurredAt,
+    sequence: index + 1,
+    globalPosition: index + 1,
+  }));
+}

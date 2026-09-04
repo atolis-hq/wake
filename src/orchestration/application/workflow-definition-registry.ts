@@ -1,15 +1,15 @@
-import { createHash } from 'node:crypto';
 import {
-  createEventDraft,
   EventActorKind,
   EventSourceKind,
   WrongExpectedSequenceError,
   type EventJournal,
   type ProjectionDefinition,
   type ProjectionStore,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import { createHash } from 'node:crypto';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
+import { createOrchestrationEventData } from '../contracts/event-factory.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { type WorkflowName } from '../contracts/identifiers.js';
 import { OrchestrationStreamKind, workflowDefinitionsStream } from '../contracts/streams.js';
@@ -25,16 +25,21 @@ export const workflowDefinitionsProjection: ProjectionDefinition<CompiledWorkflo
   name: OrchestrationStreamKind.WorkflowDefinitions,
   select(event) {
     const owned = selectOrchestrationEvent(event);
-    return owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered
-      ? { key: workflowDefinitionKey(owned.payload.workflowName, owned.payload.fingerprint) }
+    return owned?.event.eventType === OrchestrationEventType.WorkflowDefinitionRegistered
+      ? {
+          key: workflowDefinitionKey(
+            owned.event.payload.workflowName,
+            owned.event.payload.fingerprint,
+          ),
+        }
       : null;
   },
   initial: () => undefined as never,
   project(_previous, event) {
     const owned = selectOrchestrationEvent(event);
-    if (owned?.eventType !== OrchestrationEventType.WorkflowDefinitionRegistered)
+    if (owned?.event.eventType !== OrchestrationEventType.WorkflowDefinitionRegistered)
       throw new Error('Expected workflow definition registration');
-    return owned.payload.compiledDefinition;
+    return owned.event.payload.compiledDefinition;
   },
 };
 
@@ -89,7 +94,7 @@ export class WorkflowDefinitionRegistry {
   ): Promise<void> {
     if (await this.isRegistered(name, fingerprint)) return;
     const stream = workflowDefinitionsStream();
-    const draft = createEventDraft({
+    const draft = createOrchestrationEventData({
       eventId: `workflow-definition:${name}:${fingerprint}`,
       eventType: OrchestrationEventType.WorkflowDefinitionRegistered,
       occurredAt: context.occurredAt,
@@ -97,7 +102,6 @@ export class WorkflowDefinitionRegistry {
       causationId: context.commandId,
       actor: { kind: EventActorKind.System, id: 'orchestration' },
       source: { kind: EventSourceKind.Internal, id: 'orchestration' },
-      stream,
       payload: { workflowName: name, fingerprint, compiledDefinition: definition },
     });
     // The deterministic event id makes retries idempotent; CAS protects the
@@ -105,7 +109,7 @@ export class WorkflowDefinitionRegistry {
     for (;;) {
       const sequence = (await this.journal.readStream(stream)).length;
       try {
-        await this.journal.append(stream, sequence, [draft]);
+        await this.journal.appendToStream(stream, sequence, [draft]);
         this.knownRegistered.add(workflowDefinitionKey(name, fingerprint));
         return;
       } catch (error) {
@@ -121,9 +125,9 @@ export class WorkflowDefinitionRegistry {
     const found = (await this.journal.readStream(workflowDefinitionsStream())).some((event) => {
       const owned = selectOrchestrationEvent(event);
       return (
-        owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
-        owned.payload.workflowName === name &&
-        owned.payload.fingerprint === fingerprint
+        owned?.event.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
+        owned.event.payload.workflowName === name &&
+        owned.event.payload.fingerprint === fingerprint
       );
     });
     if (found) this.knownRegistered.add(key);

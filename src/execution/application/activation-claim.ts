@@ -1,12 +1,8 @@
+import { EventActorKind, EventSourceKind, type EventJournal } from '@atolis-hq/eventing';
 import type { ActivationId } from '../../activities/index.js';
-import {
-  EventActorKind,
-  EventSourceKind,
-  type Clock,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { type Clock } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { createActivationExecutionEventDraft } from '../contracts/event-factory.js';
+import { createExecutionEventData } from '../contracts/event-factory.js';
 import {
   decodeActivationExecutionEvent,
   ExecutionEventType,
@@ -35,10 +31,13 @@ export async function claimActivation(input: {
   const stream = activationStream(activationId);
   const events = (await journal.readStream(stream)).map(decodeActivationExecutionEvent);
   const last = events.at(-1);
-  if (last?.eventType === ExecutionEventType.ActivationClaimed && claimIsUnexpired(last, clock))
+  if (
+    last?.event.eventType === ExecutionEventType.ActivationClaimed &&
+    claimIsUnexpired(last.event, clock)
+  )
     throw new ActivationClaimConflictError(activationId);
-  await journal.append(stream, events.length, [
-    createActivationExecutionEventDraft({
+  await journal.appendToStream(stream, events.length, [
+    createExecutionEventData({
       eventId: `${activationId}:claim:${runId}`,
       eventType: ExecutionEventType.ActivationClaimed,
       occurredAt,
@@ -46,7 +45,6 @@ export async function claimActivation(input: {
       causationId: runId,
       actor: { kind: EventActorKind.System, id: owner },
       source: { kind: EventSourceKind.Internal, id: 'execution' },
-      stream,
       payload: {
         runId,
         owner,
@@ -67,8 +65,8 @@ export async function releaseActivation(input: {
   const { journal, clock, activationId, runId } = input;
   const stream = activationStream(activationId);
   const events = (await journal.readStream(stream)).map(decodeActivationExecutionEvent);
-  await journal.append(stream, events.length, [
-    createActivationExecutionEventDraft({
+  await journal.appendToStream(stream, events.length, [
+    createExecutionEventData({
       eventId: `${activationId}:released:${runId}`,
       eventType: ExecutionEventType.ActivationReleased,
       occurredAt: clock.now().toISOString(),
@@ -76,7 +74,6 @@ export async function releaseActivation(input: {
       causationId: runId,
       actor: { kind: EventActorKind.System, id: 'execution' },
       source: { kind: EventSourceKind.Internal, id: 'execution' },
-      stream,
       payload: { runId },
     }),
   ]);
@@ -84,7 +81,7 @@ export async function releaseActivation(input: {
 
 function claimIsUnexpired(
   event: Extract<
-    ActivationExecutionEvent,
+    ActivationExecutionEvent['event'],
     { readonly eventType: typeof ExecutionEventType.ActivationClaimed }
   >,
   clock: Clock,

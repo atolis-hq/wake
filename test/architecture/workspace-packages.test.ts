@@ -1,0 +1,320 @@
+import { exec } from 'node:child_process';
+import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
+
+import { describe, expect, it } from 'vitest';
+
+type PackageManifest = {
+  readonly dependencies?: Record<string, string>;
+  readonly exports?: Record<string, unknown>;
+  readonly files?: readonly string[];
+  readonly name: string;
+  readonly publishConfig?: { readonly access?: string };
+  readonly scripts?: Record<string, string>;
+  readonly version: string;
+  readonly workspaces?: readonly string[];
+};
+
+type TsConfig = {
+  readonly compilerOptions?: {
+    readonly noEmit?: boolean;
+    readonly paths?: Record<string, readonly string[]>;
+  };
+  readonly include?: readonly string[];
+  readonly references?: readonly { readonly path: string }[];
+};
+
+type PackageLock = {
+  readonly packages: Record<
+    string,
+    {
+      readonly link?: boolean;
+      readonly resolved?: string;
+      readonly dependencies?: Record<string, string>;
+    }
+  >;
+};
+
+interface PackedFile {
+  readonly path: string;
+}
+
+interface PackedPackage {
+  readonly files: readonly PackedFile[];
+}
+
+interface WorkspacePackageConfiguration {
+  readonly appTsConfig: TsConfig;
+  readonly eventing: PackageManifest;
+  readonly eventingTestTsConfig: TsConfig;
+  readonly filesystem: PackageManifest;
+  readonly filesystemTestTsConfig: TsConfig;
+  readonly filesystemTsConfig: TsConfig;
+  readonly lockfile: PackageLock;
+  readonly rootTsConfig: TsConfig;
+  readonly sourceTsConfig: TsConfig;
+  readonly wake: PackageManifest;
+}
+
+const execAsync = promisify(exec);
+
+const readJson = async <Value>(path: string): Promise<Value> =>
+  JSON.parse(await readFile(new URL(`../../${path}`, import.meta.url), 'utf8')) as Value;
+
+async function packedFiles(workspace: string): Promise<readonly string[]> {
+  const { stdout } = await execAsync(`npm pack --dry-run --json --workspace ${workspace}`, {
+    cwd: new URL('../../', import.meta.url),
+  });
+  const json = stdout.slice(stdout.indexOf('['));
+  const packed = JSON.parse(json) as readonly PackedPackage[];
+  return packed[0]?.files.map((file) => file.path) ?? [];
+}
+
+function expectEventingSourcePaths(sourceTsConfig: TsConfig): void {
+  expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing']).toEqual([
+    './packages/eventing/src/index.ts',
+  ]);
+  expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing/memory']).toEqual([
+    './packages/eventing/src/memory.ts',
+  ]);
+  expect(sourceTsConfig.compilerOptions?.paths?.['@atolis-hq/eventing-filesystem']).toEqual([
+    './packages/eventing-filesystem/src/index.ts',
+  ]);
+}
+
+async function readWorkspacePackageConfiguration(): Promise<WorkspacePackageConfiguration> {
+  const [
+    wake,
+    eventing,
+    filesystem,
+    rootTsConfig,
+    appTsConfig,
+    filesystemTsConfig,
+    eventingTestTsConfig,
+    filesystemTestTsConfig,
+    sourceTsConfig,
+    lockfile,
+  ] = await Promise.all([
+    readJson<PackageManifest>('package.json'),
+    readJson<PackageManifest>('packages/eventing/package.json'),
+    readJson<PackageManifest>('packages/eventing-filesystem/package.json'),
+    readJson<TsConfig>('tsconfig.json'),
+    readJson<TsConfig>('tsconfig.app.json'),
+    readJson<TsConfig>('packages/eventing-filesystem/tsconfig.json'),
+    readJson<TsConfig>('packages/eventing/tsconfig.test.json'),
+    readJson<TsConfig>('packages/eventing-filesystem/tsconfig.test.json'),
+    readJson<TsConfig>('tsconfig.source.json'),
+    readJson<PackageLock>('package-lock.json'),
+  ]);
+  return {
+    appTsConfig,
+    eventing,
+    eventingTestTsConfig,
+    filesystem,
+    filesystemTestTsConfig,
+    filesystemTsConfig,
+    lockfile,
+    rootTsConfig,
+    sourceTsConfig,
+    wake,
+  };
+}
+
+function expectPublicPackageManifests({
+  eventing,
+  filesystem,
+  wake,
+}: WorkspacePackageConfiguration): void {
+  expect(wake.workspaces).toEqual(expect.arrayContaining(['packages/*', 'src/surfaces/web']));
+  expect(eventing).toMatchObject({
+    name: '@atolis-hq/eventing',
+    version: '0.1.0',
+    publishConfig: { access: 'public' },
+  });
+  expect(filesystem).toMatchObject({
+    name: '@atolis-hq/eventing-filesystem',
+    version: '0.1.0',
+    publishConfig: { access: 'public' },
+  });
+  expect(eventing.files).toEqual(expect.arrayContaining(['dist', 'README.md', 'LICENSE']));
+  expect(filesystem.files).toEqual(expect.arrayContaining(['dist', 'README.md', 'LICENSE']));
+  expect(eventing.exports).toHaveProperty('./memory');
+  expect(filesystem.exports).toHaveProperty('.');
+}
+
+function expectPackageBuildScripts({
+  eventing,
+  filesystem,
+  wake,
+}: WorkspacePackageConfiguration): void {
+  expect(eventing.scripts?.clean).toBe('node scripts/clean-dist.mjs');
+  expect(eventing.scripts?.build).toBe('npm run clean && tsc --build --force tsconfig.json');
+  expect(eventing.scripts?.prepack).toBe('npm run build');
+  expect(eventing.scripts?.['typecheck:test']).toBe('tsc --noEmit --project tsconfig.test.json');
+  expect(eventing.scripts?.test).toBe(
+    'npm run typecheck:test && vitest run --config vitest.config.ts',
+  );
+  expect(filesystem.scripts?.clean).toBe('node scripts/clean-dist.mjs');
+  expect(filesystem.scripts?.build).toBe('npm run clean && tsc --build --force tsconfig.json');
+  expect(filesystem.scripts?.prepack).toBe('npm run build');
+  expect(filesystem.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);
+  expect(wake.dependencies?.['@atolis-hq/eventing']).toBe(eventing.version);
+  expect(wake.dependencies?.['@atolis-hq/eventing-filesystem']).toBe(filesystem.version);
+}
+
+function expectWorkspaceProjectReferences({
+  appTsConfig,
+  eventingTestTsConfig,
+  filesystemTestTsConfig,
+  filesystemTsConfig,
+  rootTsConfig,
+  sourceTsConfig,
+}: WorkspacePackageConfiguration): void {
+  expect(rootTsConfig.references).toEqual([
+    { path: './packages/eventing' },
+    { path: './packages/eventing-filesystem' },
+    { path: './tsconfig.app.json' },
+  ]);
+  expect(appTsConfig.references).toEqual([
+    { path: './packages/eventing' },
+    { path: './packages/eventing-filesystem' },
+  ]);
+  expect(filesystemTsConfig.references).toEqual([{ path: '../eventing' }]);
+  expect(filesystemTsConfig.include).toEqual(['src/**/*.ts']);
+  expect(eventingTestTsConfig.compilerOptions?.noEmit).toBe(true);
+  expect(eventingTestTsConfig.include).toEqual(['src/**/*.ts', 'test/**/*.ts']);
+  expect(filesystemTestTsConfig.compilerOptions?.noEmit).toBe(true);
+  expect(filesystemTestTsConfig.include).toEqual(['src/**/*.ts', 'test/**/*.ts']);
+  expectEventingSourcePaths(sourceTsConfig);
+}
+
+function expectWorkspacePackageLinks({ lockfile }: WorkspacePackageConfiguration): void {
+  expect(lockfile.packages['node_modules/@atolis-hq/eventing']).toEqual({
+    resolved: 'packages/eventing',
+    link: true,
+  });
+  expect(lockfile.packages['node_modules/@atolis-hq/eventing-filesystem']).toEqual({
+    resolved: 'packages/eventing-filesystem',
+    link: true,
+  });
+}
+
+describe('eventing workspace packages', () => {
+  it('declares public, exact-versioned eventing package relationships', async () => {
+    expect.hasAssertions();
+    const configuration = await readWorkspacePackageConfiguration();
+    expectPublicPackageManifests(configuration);
+    expectPackageBuildScripts(configuration);
+    expectWorkspaceProjectReferences(configuration);
+    expectWorkspacePackageLinks(configuration);
+  });
+
+  it('builds the Docker application through Eventing project references', async () => {
+    const [wake, dockerTsConfig] = await Promise.all([
+      readJson<PackageManifest>('package.json'),
+      readJson<TsConfig>('tsconfig.docker.json'),
+    ]);
+
+    expect(dockerTsConfig.references).toEqual([
+      { path: './packages/eventing' },
+      { path: './packages/eventing-filesystem' },
+    ]);
+    expect(wake.scripts?.['build:docker']).toContain('tsc --build tsconfig.docker.json');
+  });
+
+  it('keeps published exports on dist while source tools use workspace aliases', async () => {
+    const [eventing, aliases, sourceResolutionCheck, configs] = await Promise.all([
+      readJson<PackageManifest>('packages/eventing/package.json'),
+      readFile(new URL('../../vitest.workspace-aliases.ts', import.meta.url), 'utf8'),
+      readFile(
+        new URL('../../scripts/check-workspace-source-resolution.ts', import.meta.url),
+        'utf8',
+      ),
+      Promise.all(
+        [
+          'vitest.unit.config.ts',
+          'vitest.architecture.config.ts',
+          'vitest.integration.config.ts',
+          'vitest.e2e.config.ts',
+          'vitest.live-e2e.config.ts',
+        ].map((path) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')),
+      ),
+    ]);
+
+    expect(eventing.exports).toEqual({
+      '.': {
+        types: './dist/index.d.ts',
+        default: './dist/index.js',
+      },
+      './memory': {
+        types: './dist/memory.d.ts',
+        default: './dist/memory.js',
+      },
+    });
+    expect(aliases).toContain("'./packages'");
+    expect(aliases).toContain("'src/index.ts'");
+    expect(sourceResolutionCheck).toContain('import.meta.resolve(manifest.name)');
+    expect(sourceResolutionCheck).toContain("import('@atolis-hq/eventing/memory')");
+    for (const config of configs) expect(config).toContain('workspaceSourceAliases');
+  });
+
+  it('prepares package entrypoints before running clean-checkout tools', async () => {
+    const [launcher, wake, webVitestConfig, packageCheck] = await Promise.all([
+      readFile(new URL('../../bin/wake-dev.js', import.meta.url), 'utf8'),
+      readJson<PackageManifest>('package.json'),
+      readFile(new URL('../../src/surfaces/web/vitest.config.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../../scripts/check-workspace-packages.mjs', import.meta.url), 'utf8'),
+    ]);
+
+    expect(launcher).toContain("'--tsconfig', sourceTsConfig");
+    expect(wake.scripts?.['build:eventing-packages']).toBe(
+      'tsc --build packages/eventing-filesystem/tsconfig.json',
+    );
+    expect(wake.scripts?.['build:web']).toContain('npm run build:eventing-packages');
+    expect(wake.scripts?.['test:web']).toContain('npm run build:eventing-packages');
+    expect(webVitestConfig).toContain('maxWorkers: 4');
+    expect(packageCheck).toContain("['install', '--ignore-scripts', '--no-audit', '--no-fund']");
+    expect(packageCheck).not.toContain("['install', '--offline'");
+    expect(packageCheck).toContain("['exec', '--offline', '--', 'wake', '--help']");
+    expect(wake.scripts?.['check:workspace-packages']).toBe(
+      'node scripts/check-workspace-packages.mjs',
+    );
+    expect(packageCheck).toContain("const requiredArchiveFiles = ['README.md', 'LICENSE'];");
+    expect(packageCheck).toContain('archive is missing required package file');
+  });
+
+  it('builds public dist entrypoints into package archives', async () => {
+    const eventingFiles = await packedFiles('@atolis-hq/eventing');
+    const filesystemFiles = await packedFiles('@atolis-hq/eventing-filesystem');
+
+    expect(eventingFiles).toEqual(
+      expect.arrayContaining([
+        'dist/index.js',
+        'dist/index.d.ts',
+        'dist/memory.js',
+        'dist/memory.d.ts',
+      ]),
+    );
+    expect(filesystemFiles).toEqual(expect.arrayContaining(['dist/index.js', 'dist/index.d.ts']));
+  }, 15_000);
+
+  it('cleans stale generated files before packaging public Eventing packages', async () => {
+    for (const workspace of ['eventing', 'eventing-filesystem']) {
+      const staleOutput = new URL(
+        `../../packages/${workspace}/dist/stale-package-artifact.js`,
+        import.meta.url,
+      );
+      await writeFile(staleOutput, 'export const stale = true;\n');
+
+      try {
+        await execAsync(`npm run build --workspace @atolis-hq/${workspace}`, {
+          cwd: new URL('../../', import.meta.url),
+          timeout: 30_000,
+        });
+        await expect(access(staleOutput)).rejects.toThrow();
+      } finally {
+        await rm(staleOutput, { force: true });
+      }
+    }
+  }, 45_000);
+});

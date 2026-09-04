@@ -8,6 +8,7 @@ import {
 import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
+import type { EventData, EventJournal } from '@atolis-hq/eventing';
 import {
   activationId,
   createPullRequestMergeActivity,
@@ -15,7 +16,6 @@ import {
   type PullRequestService,
 } from '../../../src/activities/index.js';
 import { appendIntentOnce } from '../../../src/activities/pr/intent.js';
-import type { EventDraft, EventJournal } from '../../../src/kernel/index.js';
 import { type ResourceView } from '../../../src/resources/index.js';
 import {} from '../../../src/work/index.js';
 import { TestWorld } from '../../e2e/support/world.js';
@@ -50,7 +50,11 @@ it('atomically keeps one activation decision across interleaved authority evalua
     },
   ]);
   expect(await world.events('pr.merge-decision-claimed')).toEqual([
-    expect.objectContaining({ payload: expect.objectContaining({ decisionKind: 'requested' }) }),
+    expect.objectContaining({
+      event: expect.objectContaining({
+        payload: expect.objectContaining({ decisionKind: 'requested' }),
+      }),
+    }),
   ]);
   expect(await world.events('pr.merge-requested')).toHaveLength(1);
   expect(await world.events('pr.merge-denied')).toHaveLength(0);
@@ -104,13 +108,13 @@ function interleavingJournal(base: EventJournal) {
     releaseDenied = resolve;
   });
   const journal: EventJournal = {
-    async append(stream, sequence, events) {
+    async appendToStream(stream, sequence, events) {
       const kind = decisionKind(events[0]);
       if (kind === 'denied') {
         signalDenied();
         await requestedDecisionWritten;
       }
-      const appended = await base.append(stream, sequence, events);
+      const appended = await base.appendToStream(stream, sequence, events);
       if (kind === 'requested') releaseDenied();
       return appended;
     },
@@ -120,12 +124,13 @@ function interleavingJournal(base: EventJournal) {
       return base.readAll(position, limit);
     },
     latestGlobalPosition: base.latestGlobalPosition.bind(base),
+    waitForEventsAfter: base.waitForEventsAfter.bind(base),
     changeSignal: base.changeSignal,
   };
   return { journal, deniedDecisionReached, globalReads: () => globalReadCount };
 }
 
-function decisionKind(event: EventDraft | undefined): 'requested' | 'denied' | undefined {
+function decisionKind(event: EventData | undefined): 'requested' | 'denied' | undefined {
   if (event?.eventType.endsWith('-decision-claimed')) {
     const payload = event.payload as { decisionKind?: 'requested' | 'denied' };
     return payload.decisionKind;

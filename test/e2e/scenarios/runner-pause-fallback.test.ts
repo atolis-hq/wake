@@ -1,3 +1,9 @@
+import { correlationId } from '@atolis-hq/eventing';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { ActivityRegistry, agentActivityDefinition } from '../../../src/activities/index.js';
 import {
@@ -8,19 +14,13 @@ import {
 import {
   ControlEventType,
   controlPlaneStream,
-  createControlEventDraft,
+  createControlPlaneEventData,
 } from '../../../src/control-plane/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
 import { workId } from '../../support/identities.js';
 import { FakeClock } from '../support/world.js';
 
@@ -32,7 +32,7 @@ it('E2E-CONTROL-QUOTA-001: a durable quota pause falls sideways, replays, expire
   const root = await createRoot(clock, journal, projections, checkpoints);
 
   await appendQuotaPause(journal, clock, '2026-07-30T12:30:00.000Z');
-  await root.projectionRunner.runRegisteredOnce();
+  await root.projectionSubscriptions.catchUpOnce();
   expect(await runnerHealth(root, clock)).toContainEqual(
     expect.objectContaining({ runnerId: 'sonnet', status: 'paused', available: false }),
   );
@@ -40,7 +40,7 @@ it('E2E-CONTROL-QUOTA-001: a durable quota pause falls sideways, replays, expire
   expect((await root.execution.list()).at(-1)?.runner?.name).toBe('codex-mini');
 
   const restarted = await createRoot(clock, journal, projections, checkpoints);
-  await restarted.projectionRunner.runRegisteredOnce();
+  await restarted.projectionSubscriptions.catchUpOnce();
   await startAndAdvance(restarted, 'replayed');
   expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('codex-mini');
 
@@ -49,9 +49,9 @@ it('E2E-CONTROL-QUOTA-001: a durable quota pause falls sideways, replays, expire
   expect((await restarted.execution.list()).at(-1)?.runner?.name).toBe('sonnet');
 
   await appendQuotaPause(journal, clock, '2026-07-30T13:30:00.000Z');
-  await restarted.projectionRunner.runRegisteredOnce();
+  await restarted.projectionSubscriptions.catchUpOnce();
   await restarted.runnerControls.unpause('sonnet', 'operator-resume-1');
-  await restarted.projectionRunner.runRegisteredOnce();
+  await restarted.projectionSubscriptions.catchUpOnce();
   expect(await runnerHealth(restarted, clock)).toContainEqual(
     expect.objectContaining({ runnerId: 'sonnet', status: 'available', available: true }),
   );
@@ -110,22 +110,22 @@ async function appendQuotaPause(
 ): Promise<void> {
   const stream = controlPlaneStream();
   const occurredAt = clock.now().toISOString();
-  await journal.append(stream, (await journal.readStream(stream)).length, [
-    createControlEventDraft(
-      ControlEventType.RunnerPaused,
-      {
+  await journal.appendToStream(stream, (await journal.readStream(stream)).length, [
+    createControlPlaneEventData({
+      eventId: `quota-${occurredAt}:control-plane.runner-paused`,
+      eventType: ControlEventType.RunnerPaused,
+      occurredAt,
+      correlationId: correlationId(`quota-${occurredAt}`),
+      causationId: `quota-${occurredAt}`,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {
         runnerName: 'sonnet',
         cause: 'quota',
         reason: 'provider quota exhausted',
         resumeAt,
       },
-      {
-        commandId: `quota-${occurredAt}`,
-        correlationId: correlationId(`quota-${occurredAt}`),
-        occurredAt,
-        actor: { kind: 'system', id: 'test' },
-      },
-    ),
+    }),
   ]);
 }
 

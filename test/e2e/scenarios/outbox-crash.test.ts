@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { composeDeliveryRuntime } from '../../../src/bootstrap/index.js';
+import { InMemoryCheckpointStore, InMemoryProjectionStore } from '@atolis-hq/eventing/memory';
+import { rm } from 'node:fs/promises';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   decodeDeliveryEvent,
   DeliveryEventType,
@@ -12,50 +13,62 @@ import {
 } from '../../../src/integrations/index.js';
 import { OrchestrationEventType } from '../../../src/orchestration/index.js';
 import {
-  InMemoryCheckpointStore,
-  InMemoryProjectionStore,
-} from '../../../src/persistence/index.js';
-import { TestWorld } from '../support/world.js';
-import { executeMerge, setupMergeScenario } from './pr-activity-fixtures.js';
+  createComposedMergeRoot,
+  prepareComposedSafeMerge,
+  runComposedDeliveryCycle,
+} from './pr-activity-fixtures.js';
 
 const scenario = { id: 'E2E-DELIVERY-001' } as const;
+const wakeRoots = new Set<string>();
+
+afterEach(async () => {
+  const roots = [...wakeRoots];
+  wakeRoots.clear();
+  await Promise.all(roots.map((wakeRoot) => rm(wakeRoot, { recursive: true, force: true })));
+});
 
 describe(scenario.id, () => {
   it('reconciles provider acceptance after a crash without a second merge', async () => {
-    const world = new TestWorld();
-    const setup = await setupMergeScenario(world, 'safe');
-    const workflowId = await executeMerge(world, setup.workItemId);
     const provider = new DurableFakeDeliveryProvider();
     provider.crashAfterNextEffect();
-    const projections = new InMemoryProjectionStore();
-    const dependencies = {
-      journal: world.journal,
-      projections,
-      checkpoints: world.checkpoints,
-      resource: async (id: string) => ({ resourceId: id, adapter: 'fake' }),
-      adapter: () => provider,
-      now: () => world.clock.now().toISOString(),
-      orchestration: world.orchestration,
-    };
+    const root = await createComposedMergeRoot({ provider });
+    wakeRoots.add(root.paths.wakeRoot);
+    const workflowId = await prepareComposedSafeMerge(root);
 
-    await expect(
-      composeDeliveryRuntime(dependencies).runOnce(new AbortController().signal),
-    ).rejects.toThrow('simulated provider crash after accepted effect');
+    await expect(runComposedDeliveryCycle(root)).rejects.toThrow(
+      'simulated provider crash after accepted effect',
+    );
 
     expect(provider.effects).toHaveLength(1);
     expect(provider.deliveryCalls).toBe(1);
-    expect((await world.viewWorkflow(workflowId))?.status).toBe('waiting');
-    expect(await world.events(DeliveryEventType.Confirmed)).toHaveLength(0);
+    expect((await root.orchestration.get(workflowId))?.status).toBe('waiting');
+    expect(
+      (await root.journal.readAll(0)).filter(
+        ({ event }) => event.eventType === DeliveryEventType.Confirmed,
+      ),
+    ).toHaveLength(0);
 
-    await composeDeliveryRuntime(dependencies).runOnce(new AbortController().signal);
-    await composeDeliveryRuntime(dependencies).runOnce(new AbortController().signal);
+    await runComposedDeliveryCycle(root);
+    await runComposedDeliveryCycle(root);
 
     expect(provider.effects).toHaveLength(1);
     expect(provider.deliveryCalls).toBe(1);
-    expect((await world.viewWorkflow(workflowId))?.status).toBe('completed');
-    expect(await world.events(DeliveryEventType.Reconciled)).toHaveLength(1);
-    expect(await world.events(DeliveryEventType.Confirmed)).toHaveLength(0);
-    expect(await world.events(OrchestrationEventType.InstanceCompleted)).toHaveLength(1);
+    expect((await root.orchestration.get(workflowId))?.status).toBe('completed');
+    expect(
+      (await root.journal.readAll(0)).filter(
+        ({ event }) => event.eventType === DeliveryEventType.Reconciled,
+      ),
+    ).toHaveLength(1);
+    expect(
+      (await root.journal.readAll(0)).filter(
+        ({ event }) => event.eventType === DeliveryEventType.Confirmed,
+      ),
+    ).toHaveLength(0);
+    expect(
+      (await root.journal.readAll(0)).filter(
+        ({ event }) => event.eventType === OrchestrationEventType.InstanceCompleted,
+      ),
+    ).toHaveLength(1);
   });
 
   it(
@@ -65,58 +78,57 @@ describe(scenario.id, () => {
 
   it('uses a new durable event occurrence when reconciliation retries and remains unknown', async () => {
     // Given an ambiguous provider effect that survives each delivery-runtime restart.
-    const world = new TestWorld();
-    const setup = await setupMergeScenario(world, 'safe');
-    const workflowId = await executeMerge(world, setup.workItemId);
     const provider = new EventuallyConsistentDeliveryProvider();
-    const dependencies = {
-      journal: world.journal,
-      projections: new InMemoryProjectionStore(),
-      checkpoints: world.checkpoints,
-      resource: async (id: string) => ({ resourceId: id, adapter: 'fake' }),
-      adapter: () => provider,
-      now: () => world.clock.now().toISOString(),
-      orchestration: world.orchestration,
-    };
+    const clock = new MutableClock();
+    const root = await createComposedMergeRoot({ provider, clock });
+    wakeRoots.add(root.paths.wakeRoot);
+    const workflowId = await prepareComposedSafeMerge(root);
 
-    await composeDeliveryRuntime(dependencies).runOnce(new AbortController().signal);
+    await runComposedDeliveryCycle(root);
 
     // When a restart cannot find the effect, it retries with the same provider key.
-    world.clock.advance(1_000);
-    await composeDeliveryRuntime(dependencies).runOnce(new AbortController().signal);
+    clock.advance(1_000);
+    await runComposedDeliveryCycle(root);
 
     // And later restarts repeatedly receive an unknown reconciliation result.
-    world.clock.advance(1_000);
-    await composeDeliveryRuntime(dependencies).runOnce(new AbortController().signal);
-    world.clock.advance(1_000);
-    await composeDeliveryRuntime(dependencies).runOnce(new AbortController().signal);
+    clock.advance(1_000);
+    await runComposedDeliveryCycle(root);
+    clock.advance(1_000);
+    await runComposedDeliveryCycle(root);
 
     // Then the provider effect is exactly once and every journal fact is a distinct occurrence.
     expect(provider.effects).toHaveLength(1);
     expect(provider.deliveryCalls).toBe(2);
     expect(provider.reconciliationCalls).toBe(3);
-    expect((await world.viewWorkflow(workflowId))?.status).toBe('waiting');
+    expect((await root.orchestration.get(workflowId))?.status).toBe('waiting');
 
-    const deliveryEvents = (await world.events(DeliveryEventType.AttemptStarted))
+    const deliveryEvents = (await root.journal.readAll(0))
+      .filter(({ event }) => event.eventType === DeliveryEventType.AttemptStarted)
       .concat(
-        await world.events(DeliveryEventType.Ambiguous),
-        await world.events(DeliveryEventType.Reconciled),
+        (await root.journal.readAll(0)).filter(
+          ({ event }) => event.eventType === DeliveryEventType.Ambiguous,
+        ),
+        (await root.journal.readAll(0)).filter(
+          ({ event }) => event.eventType === DeliveryEventType.Reconciled,
+        ),
       )
       .map(decodeDeliveryEvent);
-    expect(new Set(deliveryEvents.map((event) => event.eventId)).size).toBe(deliveryEvents.length);
+    expect(new Set(deliveryEvents.map(({ event }) => event.eventId)).size).toBe(
+      deliveryEvents.length,
+    );
     for (const event of deliveryEvents)
-      expect(event.eventId).toBe(
-        `${event.payload.intentEventId}:${event.eventType}:${event.payload.occurrenceOrdinal}`,
+      expect(event.event.eventId).toBe(
+        `${event.event.payload.intentEventId}:${event.event.eventType}:${event.event.payload.occurrenceOrdinal}`,
       );
     expect(
       deliveryEvents
-        .filter((event) => event.eventType === DeliveryEventType.AttemptStarted)
-        .map((event) => event.payload.occurrenceOrdinal),
+        .filter(({ event }) => event.eventType === DeliveryEventType.AttemptStarted)
+        .map(({ event }) => event.payload.occurrenceOrdinal),
     ).toEqual([1, 2]);
     expect(
       deliveryEvents
-        .filter((event) => event.eventType === DeliveryEventType.Reconciled)
-        .map((event) => event.payload),
+        .filter(({ event }) => event.eventType === DeliveryEventType.Reconciled)
+        .map(({ event }) => event.payload),
     ).toMatchObject([
       { result: DeliveryResultKind.NotFound, occurrenceOrdinal: 2 },
       { result: DeliveryResultKind.Unknown, occurrenceOrdinal: 3 },
@@ -127,39 +139,53 @@ describe(scenario.id, () => {
 
 async function rebuildUnresolvedDeliveryWork(): Promise<void> {
   // Given a provider effect accepted before Wake records confirmation.
-  const world = new TestWorld();
-  const setup = await setupMergeScenario(world, 'safe');
-  const workflowId = await executeMerge(world, setup.workItemId);
   const provider = new DurableFakeDeliveryProvider();
   provider.crashAfterNextEffect();
-  const dependencies = {
-    journal: world.journal,
-    projections: new InMemoryProjectionStore(),
-    checkpoints: world.checkpoints,
-    resource: async (id: string) => ({ resourceId: id, adapter: 'fake' }),
-    adapter: () => provider,
-    now: () => world.clock.now().toISOString(),
-    orchestration: world.orchestration,
-  };
+  const root = await createComposedMergeRoot({ provider });
+  wakeRoots.add(root.paths.wakeRoot);
+  const workflowId = await prepareComposedSafeMerge(root);
 
-  await expect(
-    composeDeliveryRuntime(dependencies).runOnce(new AbortController().signal),
-  ).rejects.toThrow('simulated provider crash after accepted effect');
+  await expect(runComposedDeliveryCycle(root)).rejects.toThrow(
+    'simulated provider crash after accepted effect',
+  );
 
   // When delivery projections and their checkpoints are lost before restart.
-  const restartedDependencies = {
-    ...dependencies,
+  const restarted = await createComposedMergeRoot({
+    provider,
+    journal: root.journal,
     projections: new InMemoryProjectionStore(),
     checkpoints: new InMemoryCheckpointStore(),
-  };
-  await composeDeliveryRuntime(restartedDependencies).runOnce(new AbortController().signal);
+  });
+  wakeRoots.add(restarted.paths.wakeRoot);
+  expect(restarted.paths.wakeRoot).not.toBe(root.paths.wakeRoot);
+  await runComposedDeliveryCycle(restarted);
 
   // Then journal replay reconciles the original effect without delivering again.
   expect(provider.effects).toHaveLength(1);
   expect(provider.deliveryCalls).toBe(1);
-  expect((await world.viewWorkflow(workflowId))?.status).toBe('completed');
-  expect(await world.events(DeliveryEventType.Reconciled)).toHaveLength(1);
-  expect(await world.events(OrchestrationEventType.InstanceCompleted)).toHaveLength(1);
+  expect((await restarted.orchestration.get(workflowId))?.status).toBe('completed');
+  expect(
+    (await restarted.journal.readAll(0)).filter(
+      ({ event }) => event.eventType === DeliveryEventType.Reconciled,
+    ),
+  ).toHaveLength(1);
+  expect(
+    (await restarted.journal.readAll(0)).filter(
+      ({ event }) => event.eventType === OrchestrationEventType.InstanceCompleted,
+    ),
+  ).toHaveLength(1);
+}
+
+class MutableClock {
+  private current = new Date('2026-07-30T12:00:00.000Z');
+
+  now(): Date {
+    return new Date(this.current);
+  }
+
+  advance(milliseconds: number): void {
+    this.current = new Date(this.current.getTime() + milliseconds);
+  }
 }
 
 class EventuallyConsistentDeliveryProvider implements ExternalDeliveryAdapter {

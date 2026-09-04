@@ -1,11 +1,10 @@
+import { EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import { ReviewActorKind, ReviewerAuthorizationSource } from '../../../activities/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
-import { integrationStream } from '../../contracts/streams.js';
-import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
+import { createGitHubEventData } from '../contracts/event-factory.js';
+import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { GitHubPullRequestPayload, GitHubReviewPayload } from '../contracts/payloads.js';
 import {
-  GitHubAdapter,
   GitHubBuiltInCommand,
   GitHubReviewState,
   UnknownGitHubIdentity,
@@ -17,7 +16,7 @@ export function githubReviewObservation(input: {
   readonly review: GitHubReviewPayload;
   readonly authorizedReviewers: readonly string[];
 }): readonly Extract<
-  GitHubAdapterEventDraft,
+  GitHubAdapterEventData,
   { eventType: typeof GitHubEventType.CommentObserved }
 >[] {
   const body = input.review.body?.trim();
@@ -27,8 +26,8 @@ export function githubReviewObservation(input: {
     ...parseRepository(input.repository),
     number: input.pullRequest.number,
   });
-  const draft = (eventId: string, content: string) =>
-    createEventDraft({
+  const draft = (eventId: string, content: string) => {
+    const event = createGitHubEventData({
       eventId,
       eventType: GitHubEventType.CommentObserved,
       occurredAt: input.review.submitted_at,
@@ -36,7 +35,6 @@ export function githubReviewObservation(input: {
       causationId: `github:review:${input.review.id}`,
       actor: { kind: EventActorKind.Integration, id: 'github' },
       source: { kind: EventSourceKind.Adapter, id: 'github' },
-      stream: integrationStream(GitHubAdapter),
       payload: {
         externalKey: key,
         reviewKind: 'formal' as const,
@@ -51,6 +49,10 @@ export function githubReviewObservation(input: {
         raw: { reviewId: input.review.id, state: input.review.state },
       },
     });
+    if (event.eventType !== GitHubEventType.CommentObserved)
+      throw new Error(`Expected GitHub CommentObserved event data, received ${event.eventType}`);
+    return event;
+  };
   return [
     ...(body === undefined || body.length === 0
       ? []

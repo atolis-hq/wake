@@ -1,5 +1,5 @@
 ---
-asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
+asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ---
 
 # Activities ? Module Specification
@@ -45,6 +45,15 @@ Activities does not own:
   result. Activities records the *intent* to deliver as a durable fact and
   reports a `waiting` outcome; something outside this module performs
   delivery and reports the result as a signal Orchestration correlates back.
+
+## Event publishing boundary
+
+Activities owns its event types, payload map, stream references, selector and
+decoder, and `createActivityEventData` factory. It creates immutable event data
+without stream or journal metadata; its services and handlers append non-empty
+batches through `EventJournal.appendToStream` with an expected sequence.
+Activities handles its own idempotency and conflicts; it does not construct
+envelopes or host processors.
 
 ## Ubiquitous language
 
@@ -159,8 +168,9 @@ Activities does not own:
 
 ## Dependencies and system role
 
-- Kernel ? event journal, envelope, closed-vocabulary, and branded-identifier
-  conventions Activities builds its own events and identifiers from.
+- Eventing — the public event-data, envelope, journal, and command-context
+  contracts Activities uses to append and decode its own facts.
+- Kernel — generic closed-vocabulary and branded-identifier conventions.
 - Resources (Activities depends on it) ? Activities reads `ResourceView` and
   correlation facts to resolve which Resource a PR command or Activity
   concerns; it never writes a resource-identity fact, only its own

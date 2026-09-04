@@ -1,10 +1,11 @@
+import { createEventData, EventProcessorHost } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { workId } from '../../support/identities.js';
 import { configureIntakeRouting } from '../support/intake-routing.js';
 
+import { createInMemoryProcessorRunSerialiser } from '@atolis-hq/eventing/memory';
 import {
   BuiltInAdapterId,
-  createEventDraft,
   githubReviewObservation,
   InboundTranslator,
   integrationStream,
@@ -18,7 +19,7 @@ it('allows current-revision human acceptance through real merge authority', asyn
   const translator = translatorFor(world);
   await appendObservation(world);
   await appendAcceptance(world, 'reviewer', ['reviewer']);
-  await translator.runOnce();
+  await processInbound(translator, world);
 
   expect(await world.pullRequests.authorizeMerge(workId('2'), context(world))).toBe(true);
   expect(await world.events('pr.review-accepted')).toHaveLength(1);
@@ -29,20 +30,29 @@ it('accepts a GitHub approval without replicating repository permissions', async
   const translator = translatorFor(world);
   await appendObservation(world);
   await appendAcceptance(world, 'outsider', []);
-  await translator.runOnce();
+  await processInbound(translator, world);
 
   expect(await world.events('pr.review-accepted')).toHaveLength(1);
   expect(await world.events('pr.review-rejected')).toHaveLength(0);
 });
 
 function translatorFor(world: TestWorld, routing: WorkflowRouter = configureIntakeRouting(world)) {
-  return new InboundTranslator(world.journal, world.checkpoints, world.work, world.resources, {
+  return new InboundTranslator(world.journal, world.work, world.resources, {
     pullRequests: world.pullRequests,
     ids: world.ids,
     lookup: world.resourceLookup,
     orchestration: world.orchestration,
     routing,
   });
+}
+
+function processInbound(translator: InboundTranslator, world: TestWorld) {
+  return new EventProcessorHost(
+    world.journal,
+    world.checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    world.clock,
+  ).runOnce(translator.processor);
 }
 
 async function appendObservation(world: TestWorld): Promise<void> {
@@ -81,7 +91,8 @@ async function appendAcceptance(
   });
   const event = events.find((candidate) => candidate.payload.body === '/accepted');
   if (event === undefined) throw new Error('Approved GitHub review was not translated');
-  await world.journal.append(event.stream, (await world.journal.readStream(event.stream)).length, [
+  const stream = integrationStream(BuiltInAdapterId.GitHub);
+  await world.journal.appendToStream(stream, (await world.journal.readStream(stream)).length, [
     event,
   ]);
 }
@@ -93,8 +104,8 @@ async function appendIntegrationEvent(
   payload: Record<string, unknown>,
 ): Promise<void> {
   const stream = integrationStream(BuiltInAdapterId.GitHub);
-  await world.journal.append(stream, (await world.journal.readStream(stream)).length, [
-    createEventDraft({
+  await world.journal.appendToStream(stream, (await world.journal.readStream(stream)).length, [
+    createEventData({
       eventId,
       eventType,
       occurredAt: world.clock.now().toISOString(),
@@ -102,7 +113,6 @@ async function appendIntegrationEvent(
       causationId: eventId,
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream,
       payload,
     }),
   ]);

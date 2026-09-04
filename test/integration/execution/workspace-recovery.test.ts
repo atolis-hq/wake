@@ -51,17 +51,21 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(deleted.markerPath)).rejects.toThrow();
   });
 
-  it('retains started and ambiguous owned workspaces', async () => {
+  it('retains starting, started, and ambiguous owned workspaces', async () => {
     const root = await workspaceRoot();
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const starting = await ownedWorkspace(root, 'starting', 'starting-run');
     const started = await ownedWorkspace(root, 'started', 'started-run');
     const ambiguous = await ownedWorkspace(root, 'ambiguous', 'ambiguous-run');
 
     await (provider as WorkspaceRecovery).recover([
+      run('starting-run', RunStatus.Starting),
       run('started-run', RunStatus.Started),
       run('ambiguous-run', RunStatus.Ambiguous),
     ]);
 
+    await expect(access(starting.path)).resolves.toBeUndefined();
+    await expect(access(starting.markerPath)).resolves.toBeUndefined();
     await expect(access(started.path)).resolves.toBeUndefined();
     await expect(access(started.markerPath)).resolves.toBeUndefined();
     await expect(access(ambiguous.path)).resolves.toBeUndefined();

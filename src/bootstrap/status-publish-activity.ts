@@ -1,3 +1,4 @@
+import { EventActorKind, EventSourceKind, type EventJournal } from '@atolis-hq/eventing';
 import { z } from 'zod';
 import {
   ActivityExecutionKind,
@@ -5,13 +6,7 @@ import {
   ActivityOutcomeKind,
   type ActivityDefinition,
 } from '../activities/index.js';
-import { DeliveryIntentEventType } from '../integrations/index.js';
-import {
-  createEventDraft,
-  EventActorKind,
-  EventSourceKind,
-  type EventJournal,
-} from '../kernel/index.js';
+import { createDeliveryIntentEventData, DeliveryIntentEventType } from '../integrations/index.js';
 import { resourceStream } from '../resources/index.js';
 
 export function createStatusPublishActivity(
@@ -33,8 +28,8 @@ export function createStatusPublishActivity(
         const resource = invocation.resources[0];
         if (resource === undefined) throw new Error('status.publish requires an intake resource');
         const sequence = (await journal.readStream(resourceStream(resource.resourceId))).length;
-        await journal.append(resourceStream(resource.resourceId), sequence, [
-          createEventDraft({
+        await journal.appendToStream(resourceStream(resource.resourceId), sequence, [
+          createDeliveryIntentEventData({
             eventId: `${invocation.activationId}:status.publish`,
             eventType: DeliveryIntentEventType.StatusPublishRequested,
             occurredAt: new Date().toISOString(),
@@ -42,7 +37,6 @@ export function createStatusPublishActivity(
             causationId: invocation.causationId,
             actor: { kind: EventActorKind.System, id: 'status.publish' },
             source: { kind: EventSourceKind.Internal, id: 'status.publish' },
-            stream: resourceStream(resource.resourceId),
             payload: {
               workflowInstanceId: invocation.workflowInstanceId,
               activationId: invocation.activationId,

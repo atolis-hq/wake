@@ -1,11 +1,6 @@
 import { z } from 'zod';
 
-import {
-  createEventDraft,
-  EventActorKind,
-  EventSourceKind,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { EventActorKind, EventSourceKind, type EventJournal } from '@atolis-hq/eventing';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
@@ -14,6 +9,7 @@ import {
   type ResourceService,
 } from '../../resources/index.js';
 import type { ActivityDefinition, ActivityInvocation } from '../contracts/activity.js';
+import { createActivityEventData } from '../contracts/event-factory.js';
 import { ActivityEventType } from '../contracts/events.js';
 import {
   ActivityExecutionKind,
@@ -120,9 +116,9 @@ async function execute(
   const eventId = `${invocation.activationId}:${ActivityEventType.IssueCompleteRequested}`;
   const stream = resourceStream(target.resourceId);
   const existing = await journal.readStream(stream);
-  if (!existing.some((event) => event.eventId === eventId)) {
-    await journal.append(stream, existing.length, [
-      createEventDraft({
+  if (!existing.some((event) => event.event.eventId === eventId)) {
+    await journal.appendToStream(stream, existing.length, [
+      createActivityEventData({
         eventId,
         eventType: ActivityEventType.IssueCompleteRequested,
         occurredAt,
@@ -130,7 +126,6 @@ async function execute(
         causationId: invocation.activationId,
         actor: { kind: EventActorKind.System, id: 'activities-issue' },
         source: { kind: EventSourceKind.Internal, id: 'activities-issue' },
-        stream,
         payload: {
           idempotencyKey: eventId,
           activationId: invocation.activationId,

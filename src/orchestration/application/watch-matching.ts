@@ -1,9 +1,9 @@
+import type { CommandContext } from '@atolis-hq/eventing';
 import {
   ActivityEventType,
   PullRequestCheckState,
   selectActivityEvent,
 } from '../../activities/index.js';
-import type { CommandContext } from '../../kernel/index.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import type { StartWorkflow } from './start-workflow.js';
 
@@ -29,7 +29,7 @@ export async function matchWatches(
       return definition.watches
         .filter(
           (watch) =>
-            watch.on?.events.includes(event.eventType) === true &&
+            watch.on?.events.includes(event.event.eventType) === true &&
             watch.while.stages.includes(parent.currentStage) &&
             watch.while.statuses.some((status) => status === parent.status) &&
             matchesWatchPredicate(watch.where, event),
@@ -47,7 +47,7 @@ function matchesWatchPredicate(
   if (predicate === undefined) return true;
   const activityEvent = selectActivityEvent(event);
   return (
-    activityEvent?.eventType === ActivityEventType.PrChecksChanged &&
-    activityEvent.payload.checks === PullRequestCheckState.Failing
+    activityEvent?.event.eventType === ActivityEventType.PrChecksChanged &&
+    activityEvent.event.payload.checks === PullRequestCheckState.Failing
   );
 }

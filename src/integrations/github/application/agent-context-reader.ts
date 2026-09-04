@@ -1,3 +1,4 @@
+import type { EventJournal } from '@atolis-hq/eventing';
 import {
   PullRequestCheckState,
   type AgentContextComment,
@@ -9,7 +10,6 @@ import {
   type ConversationEntryView,
   type ConversationService,
 } from '../../../conversations/index.js';
-import type { EventJournal } from '../../../kernel/index.js';
 import {
   BuiltInResourceKind,
   ResourceCorrelationRole,
@@ -19,7 +19,11 @@ import type { WorkItemId } from '../../../work/index.js';
 import { adapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
-import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
+import {
+  GitHubEventType,
+  selectGitHubAdapterEvent,
+  type GitHubAdapterEventOf,
+} from '../contracts/events.js';
 import {
   createCommentHistoryReader,
   deliveryIntentIdForComment,
@@ -189,13 +193,18 @@ async function currentPullRequestContext(
       const observed = selectGitHubAdapterEvent(event);
       if (!isCurrentPullRequestObservedEvent(observed, adapter, resource.externalKey.key)) continue;
       if (current === undefined || event.globalPosition > current.position)
-        current = { context: pullRequestContext(observed.payload), position: event.globalPosition };
+        current = {
+          context: pullRequestContext(observed.event.payload),
+          position: event.globalPosition,
+        };
     }
   }
   return current?.context;
 }
 
-function pullRequestContext(payload: WorkObservedEvent['payload']): AgentContextPullRequest {
+function pullRequestContext(
+  payload: WorkObservedEvent['event']['payload'],
+): AgentContextPullRequest {
   return {
     checks: payload.checks ?? PullRequestCheckState.Unknown,
     checkRuns: rawEvidenceList(payload.raw.checkRuns),
@@ -220,7 +229,7 @@ function latestWorkObservedContent(
   for (const event of events) {
     const observed = selectGitHubAdapterEvent(event);
     if (!isCurrentWorkObservedEvent(observed, adapter, externalKey)) continue;
-    current = observed.payload;
+    current = observed.event.payload;
   }
   return current ?? emptyWorkItemContent;
 }
@@ -231,10 +240,10 @@ function isCurrentWorkObservedEvent(
   externalKey: string,
 ): observed is WorkObservedEvent {
   return (
-    observed?.eventType === GitHubEventType.WorkObserved &&
+    observed?.event.eventType === GitHubEventType.WorkObserved &&
     observed.stream.id === adapter &&
-    observed.source.id === adapter &&
-    observed.payload.externalKey === externalKey
+    observed.event.source.id === adapter &&
+    observed.event.payload.externalKey === externalKey
   );
 }
 
@@ -245,14 +254,11 @@ function isCurrentPullRequestObservedEvent(
 ): observed is WorkObservedEvent {
   return (
     isCurrentWorkObservedEvent(observed, adapter, externalKey) &&
-    observed.payload.kind === 'pull-request'
+    observed.event.payload.kind === 'pull-request'
   );
 }
 
-type WorkObservedEvent = Extract<
-  NonNullable<ReturnType<typeof selectGitHubAdapterEvent>>,
-  { readonly eventType: typeof GitHubEventType.WorkObserved }
->;
+type WorkObservedEvent = GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved>;
 
 function parseAdapterId(value: string) {
   try {

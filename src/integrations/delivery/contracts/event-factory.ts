@@ -1,32 +1,48 @@
-import { createEventDraft, type EventDraftInput } from '../../../kernel/index.js';
-import type { DeliveryStreamRef } from '../../contracts/streams.js';
+import { createEventData, type EventDataInput } from '@atolis-hq/eventing';
+import { DeliveryEventType, type DeliveryEventData, type DeliveryEventPayloads } from './events.js';
 import {
-  DeliveryEventType,
-  type DeliveryEventDraft,
-  type DeliveryEventPayloads,
-} from './events.js';
+  DeliveryIntentEventType,
+  type DeliveryIntentEventData,
+  type DeliveryIntentEventPayloads,
+} from './intents.js';
 
-export type DeliveryEventDraftInput = {
-  [Type in keyof DeliveryEventPayloads]: EventDraftInput<
-    Type,
-    DeliveryEventPayloads[Type],
-    DeliveryStreamRef
-  >;
+export type DeliveryEventDataInput = {
+  [Type in keyof DeliveryEventPayloads]: EventDataInput<Type, DeliveryEventPayloads[Type]>;
 }[keyof DeliveryEventPayloads];
 
-export function createDeliveryEventDraft(input: DeliveryEventDraftInput): DeliveryEventDraft {
+export function createDeliveryEventData(input: DeliveryEventDataInput): DeliveryEventData {
   switch (input.eventType) {
     case DeliveryEventType.AttemptStarted:
-      return createEventDraft(input);
+      return createEventData(input);
     case DeliveryEventType.Confirmed:
-      return createEventDraft(input);
+      return createEventData(input);
     case DeliveryEventType.Failed:
-      return createEventDraft(input);
+      return createEventData(input);
     case DeliveryEventType.Ambiguous:
-      return createEventDraft(input);
+      return createEventData(input);
     case DeliveryEventType.Escalated:
-      return createEventDraft(input);
+      return createEventData(input);
     case DeliveryEventType.Reconciled:
-      return createEventDraft(input);
+      return createEventData(input);
+  }
+}
+
+export type DeliveryIntentEventDataInput = {
+  [Type in keyof DeliveryIntentEventPayloads]: EventDataInput<
+    Type,
+    DeliveryIntentEventPayloads[Type]
+  >;
+}[keyof DeliveryIntentEventPayloads];
+
+export function createDeliveryIntentEventData(
+  input: DeliveryIntentEventDataInput,
+): DeliveryIntentEventData {
+  switch (input.eventType) {
+    case DeliveryIntentEventType.StatusPublishRequested:
+      return createEventData(input);
+    case DeliveryIntentEventType.ReplyPublishRequested:
+      return createEventData(input);
+    case DeliveryIntentEventType.AgentRunPublishRequested:
+      return createEventData(input);
   }
 }

@@ -1,8 +1,9 @@
+import { type EventJournal } from '@atolis-hq/eventing';
 import { type ActivityExecutionContext, type ActivityRegistry } from '../../activities/index.js';
-import { type Clock, type EventJournal, type IdGenerator } from '../../kernel/index.js';
+import { type Clock, type IdGenerator } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { ExecutionEventType, type RunExecutionEventDraft } from '../contracts/events.js';
+import { ExecutionEventType, type RunExecutionEventData } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
 import { ProviderQuotaExceededFailureKind } from '../contracts/runner.js';
 import { ExecutionCancellationReason } from '../contracts/vocabulary.js';
@@ -32,7 +33,20 @@ export interface ExecutionRuntime {
   readonly dependencies: ExecutionDependencies;
   readonly repository: RunRepository;
   readonly active: Map<string, AbortController>;
+  readonly localAttempts: Set<string>;
+  readonly lifecycle: ExecutionLifecycle;
   readonly journal: EventJournal;
+}
+
+export interface ExecutionLifecycle {
+  closed: boolean;
+  shutdown: Promise<void> | undefined;
+  readonly attempts: Set<Promise<unknown>>;
+  readonly cancellations: Map<string, Promise<boolean>>;
+  readonly workers: Map<
+    string,
+    { readonly controller: AbortController; readonly completion: Promise<unknown> }
+  >;
 }
 
 export async function executeActivity(
@@ -60,7 +74,7 @@ export async function executeActivity(
   },
 ) {
   const { activation, context, occurredAt, runner } = request;
-  const controller = new AbortController();
+  const controller = activityController(runtime, currentRunId);
   runtime.active.set(currentRunId, controller);
   const executionContext: ActivityExecutionContext = {
     signal: controller.signal,
@@ -108,6 +122,13 @@ export async function executeActivity(
     },
     executionContext,
   );
+}
+
+function activityController(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+): AbortController {
+  return runtime.active.get(currentRunId) ?? new AbortController();
 }
 
 function runnerTimeoutReporter(
@@ -167,7 +188,7 @@ function runnerResultReporter(
       correlationId: context.orchestrationGroupId,
       causationId: activation.activationId,
       payload: { transport: result.transport, agent: parseAgentRunnerResponse(result) },
-    }) as RunExecutionEventDraft;
+    });
     await appendIdempotently(runtime.repository, currentRunId, loaded.sequence, event);
     if (
       result.failure?.kind === ProviderQuotaExceededFailureKind &&
@@ -188,7 +209,7 @@ async function appendIdempotently(
   repository: RunRepository,
   currentRunId: ReturnType<typeof runId>,
   sequence: number,
-  event: RunExecutionEventDraft,
+  event: RunExecutionEventData,
 ): Promise<void> {
   try {
     await repository.append(currentRunId, sequence, [event]);

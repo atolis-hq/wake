@@ -1,10 +1,10 @@
-import type { z } from 'zod';
 import {
-  type EventDraft,
-  type EventDraftUnion,
+  type EventData,
+  type EventDataUnion,
   type EventEnvelope,
   type EventUnion,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import type { z } from 'zod';
 import { type ResourceId, type ResourceStreamRef } from '../../resources/index.js';
 import { type WorkItemId, type WorkItemStreamRef } from '../../work/index.js';
 import type { PullRequestActivityOutcome, PullRequestTarget } from '../pr/contracts.js';
@@ -104,23 +104,14 @@ type DeniedOutcome = Extract<
 >;
 
 type RequestedFact<Action extends PullRequestDecisionAction> = Action extends 'approve'
-  ? EventDraft<
-      typeof ActivityEventType.PrApproveRequested,
-      PullRequestApproveRequestedPayload,
-      ResourceStreamRef
-    >
-  : EventDraft<
-      typeof ActivityEventType.PrMergeRequested,
-      PullRequestMergeRequestedPayload,
-      ResourceStreamRef
-    >;
+  ? EventData<typeof ActivityEventType.PrApproveRequested, PullRequestApproveRequestedPayload>
+  : EventData<typeof ActivityEventType.PrMergeRequested, PullRequestMergeRequestedPayload>;
 
-type DeniedFact<Action extends PullRequestDecisionAction> = EventDraft<
+type DeniedFact<Action extends PullRequestDecisionAction> = EventData<
   Action extends 'approve'
     ? typeof ActivityEventType.PrApproveDenied
     : typeof ActivityEventType.PrMergeDenied,
-  PullRequestDenialPayload,
-  ResourceStreamRef | WorkItemStreamRef
+  PullRequestDenialPayload
 >;
 
 type PullRequestDecisionClaimPayload<Action extends PullRequestDecisionAction> =
@@ -130,6 +121,7 @@ type PullRequestDecisionClaimPayload<Action extends PullRequestDecisionAction> =
       readonly decisionKind: 'requested';
       readonly outcome: RequestedOutcome;
       readonly fact: RequestedFact<Action>;
+      readonly factStream: ResourceStreamRef;
     }
   | {
       readonly action: Action;
@@ -137,6 +129,7 @@ type PullRequestDecisionClaimPayload<Action extends PullRequestDecisionAction> =
       readonly decisionKind: 'denied';
       readonly outcome: DeniedOutcome;
       readonly fact: DeniedFact<Action>;
+      readonly factStream: ResourceStreamRef | WorkItemStreamRef;
     };
 
 export interface ActivityEventPayloads {
@@ -222,19 +215,18 @@ export type ActivityFact =
   | EventUnion<ResourceFactPayloads, ResourceStreamRef>
   | EventUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
 
-export type ActivityFactDraft =
-  | EventDraftUnion<ResourceFactPayloads, ResourceStreamRef>
-  | EventDraftUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
+export type ActivityFactEventData =
+  EventDataUnion<ResourceFactPayloads> | EventDataUnion<DenialPayloads>;
 
 export type ActivityEvent =
   | ActivityFact
   | EventUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
   | EventUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
 
-export type ActivityEventDraft =
-  | ActivityFactDraft
-  | EventDraftUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
-  | EventDraftUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
+export type ActivityEventData =
+  | ActivityFactEventData
+  | EventDataUnion<ApproveDecisionPayloads>
+  | EventDataUnion<MergeDecisionPayloads>;
 
 const { draftSchema, eventSchema } = createActivityEventSchemas(ActivityEventType);
 
@@ -245,14 +237,14 @@ export function decodeActivityEvent(event: EventEnvelope): ActivityEvent {
 }
 
 export function selectActivityEvent(event: EventEnvelope): ActivityEvent | null {
-  return ownsActivityEventType(event.eventType) ? decodeActivityEvent(event) : null;
+  return ownsActivityEventType(event.event.eventType) ? decodeActivityEvent(event) : null;
 }
 
-export function decodeActivityEventDraft(draft: EventDraft): ActivityEventDraft {
+export function decodeActivityEventData(draft: EventData): ActivityEventData {
   const result = draftSchema.safeParse(draft);
   if (!result.success)
     throw new Error(
-      `Invalid Activity event draft ${draft.eventId} (${draft.eventType}): ${result.error.message}`,
+      `Invalid Activity event data ${draft.eventId} (${draft.eventType}): ${result.error.message}`,
       { cause: result.error },
     );
   return result.data;
@@ -269,7 +261,7 @@ function ownsActivityEventType(eventType: string): boolean {
 
 function invalidActivityEvent(event: EventEnvelope, cause: z.ZodError): Error {
   return new Error(
-    `Invalid Activity event ${event.eventId} at global position ${event.globalPosition} (${event.eventType}): ${cause.message}`,
+    `Invalid Activity event ${event.event.eventId} at global position ${event.globalPosition} (${event.event.eventType}): ${cause.message}`,
     { cause },
   );
 }

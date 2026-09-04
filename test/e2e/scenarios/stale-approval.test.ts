@@ -3,13 +3,13 @@ import { workflowName } from '../../../src/orchestration/contracts/identifiers.j
 import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
+import { createEventData } from '@atolis-hq/eventing';
 import {
   createPullRequestMergeAuthorityGate,
   decidePullRequestAuthority,
   pullRequestProjection,
   type PullRequestAuthorityInput,
 } from '../../../src/activities/index.js';
-import { createEventDraft } from '../../../src/kernel/index.js';
 import type { resourceId } from '../../../src/resources/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import {} from '../../../src/work/index.js';
@@ -112,11 +112,11 @@ it(`${scenario.id} denies a merge after an accepted review becomes stale`, async
   await world.advance(work.workItemId);
   await world.advance(work.workItemId);
 
-  expect((await world.events()).map((event) => event.eventType)).toContain('pr.merge-denied');
-  expect((await world.events()).map((event) => event.eventType)).toContain(
+  expect((await world.events()).map((event) => event.event.eventType)).toContain('pr.merge-denied');
+  expect((await world.events()).map((event) => event.event.eventType)).toContain(
     'orchestration.instance-blocked',
   );
-  expect((await world.events()).map((event) => event.eventType)).not.toContain(
+  expect((await world.events()).map((event) => event.event.eventType)).not.toContain(
     'pr.merge-requested',
   );
 });
@@ -164,7 +164,7 @@ function prEvent(
   payload: Record<string, unknown>,
 ) {
   return {
-    ...createEventDraft({
+    event: createEventData({
       eventId: `event-${position}`,
       eventType,
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -172,9 +172,9 @@ function prEvent(
       causationId: `cause-${position}`,
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: resourceStream(resource),
       payload,
     }),
+    stream: resourceStream(resource),
     globalPosition: position,
     sequence: position,
     recordedAt: '2026-07-30T12:00:00.000Z',

@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
+import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
-import type { CommandContext, EventJournal, ProjectionStore } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
@@ -269,6 +269,18 @@ export class OrchestrationService {
     return this.definitions.currentDefinitions();
   }
 
+  watchEventTypes(): readonly string[] {
+    return [
+      ...new Set(
+        this.definitions
+          .currentDefinitions()
+          .flatMap(({ definition }) =>
+            definition.watches.flatMap((watch) => watch.on?.events ?? []),
+          ),
+      ),
+    ];
+  }
+
   definitionFor(view: {
     readonly workflowName: WorkflowInstanceView['workflowName'];
     readonly workflowDefinitionFingerprint?: string;
@@ -379,7 +391,9 @@ async function journalGroupBudgetExhaustion(
 ) {
   return (await journal.readStream(workflowInstanceStream(workflowInstanceId))).flatMap((event) => {
     const owned = selectOrchestrationEvent(event);
-    return owned?.eventType === OrchestrationEventType.GroupBudgetExhausted ? [owned.payload] : [];
+    return owned?.event.eventType === OrchestrationEventType.GroupBudgetExhausted
+      ? [owned.event.payload]
+      : [];
   });
 }
 

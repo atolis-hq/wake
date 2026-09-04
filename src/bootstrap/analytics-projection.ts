@@ -1,5 +1,5 @@
+import type { ProjectionDefinition } from '@atolis-hq/eventing';
 import { ExecutionEventType } from '../execution/index.js';
-import type { ProjectionDefinition } from '../kernel/index.js';
 import { WorkEventType } from '../work/index.js';
 
 export interface AnalyticsProjectionView {
@@ -16,10 +16,10 @@ export const analyticsProjection: ProjectionDefinition<AnalyticsProjectionView> 
   select: () => ({ key: 'global' }),
   initial: () => ({ events: 0, workItems: 0, runs: 0, days: {} }),
   project(previous, event) {
-    const day = event.occurredAt.slice(0, 10);
+    const day = event.event.occurredAt.slice(0, 10);
     const bucket = previous.days[day] ?? { events: 0, workItems: 0, runs: 0 };
-    const workItems = event.eventType === WorkEventType.ItemCreated ? 1 : 0;
-    const runs = event.eventType === ExecutionEventType.RunStarted ? 1 : 0;
+    const workItems = event.event.eventType === WorkEventType.ItemCreated ? 1 : 0;
+    const runs = event.event.eventType === ExecutionEventType.RunStarted ? 1 : 0;
     return {
       events: previous.events + 1,
       workItems: previous.workItems + workItems,

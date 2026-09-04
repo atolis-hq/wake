@@ -1,14 +1,21 @@
-import { BoardConditionValue as BoardConditionValues } from './transport-values.js';
+import {
+  type BoardActiveRunPhaseValue,
+  BoardConditionValue as BoardConditionValues,
+} from './transport-values.js';
 
 export const BoardCondition = BoardConditionValues;
 
 export type BoardCardCondition = (typeof BoardCondition)[keyof typeof BoardCondition];
+
+export type BoardActiveRunPhase =
+  (typeof BoardActiveRunPhaseValue)[keyof typeof BoardActiveRunPhaseValue];
 
 export interface BoardCardActiveRun {
   readonly action: string;
   readonly runnerName?: string;
   readonly startedAt: string;
   readonly elapsedMs: number;
+  readonly phase: BoardActiveRunPhase;
 }
 
 export interface BoardCardResponse {

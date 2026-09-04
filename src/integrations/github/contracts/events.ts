@@ -1,3 +1,10 @@
+import {
+  eventDataSchema,
+  eventEnvelopeSchema,
+  type EventDataUnion,
+  type EventEnvelope,
+  type EventUnion,
+} from '@atolis-hq/eventing';
 import { z } from 'zod';
 import {
   ProviderPermission,
@@ -7,13 +14,7 @@ import {
   ReviewerAuthorizationSource,
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
-import {
-  brandedStringSchema,
-  eventEnvelopeSchema,
-  type EventDraftUnion,
-  type EventEnvelope,
-  type EventUnion,
-} from '../../../kernel/index.js';
+import { brandedStringSchema } from '../../../kernel/index.js';
 import { resourceId, type ResourceId } from '../../../resources/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
 import { adapterId } from '../../contracts/identifiers.js';
@@ -175,7 +176,12 @@ export interface GitHubEventPayloads {
 
 export type GitHubAdapterEvent = EventUnion<GitHubEventPayloads, IntegrationStreamRef>;
 
-export type GitHubAdapterEventDraft = EventDraftUnion<GitHubEventPayloads, IntegrationStreamRef>;
+export type GitHubAdapterEventData = EventDataUnion<GitHubEventPayloads>;
+
+export type GitHubAdapterEventOf<Type extends keyof GitHubEventPayloads> = EventEnvelope<
+  Extract<GitHubAdapterEventData, { readonly eventType: Type }>,
+  IntegrationStreamRef
+>;
 
 const streamSchema = z
   .object({
@@ -209,21 +215,19 @@ const authorizationSchema = z.discriminatedUnion('source', [
     .strict(),
   z.object({ source: z.literal(ReviewerAuthorizationSource.None) }).strict(),
 ]);
-const eventSchema = z.discriminatedUnion('eventType', [
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.ConversationRecordDeferred),
-    stream: streamSchema,
-    payload: z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.ConversationRecordRecovered),
-    stream: streamSchema,
-    payload: z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.WorkObserved),
-    stream: streamSchema,
-    payload: z
+
+const githubEventSchemas = {
+  [GitHubEventType.ConversationRecordDeferred]: githubEventSchema(
+    GitHubEventType.ConversationRecordDeferred,
+    z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
+  ),
+  [GitHubEventType.ConversationRecordRecovered]: githubEventSchema(
+    GitHubEventType.ConversationRecordRecovered,
+    z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
+  ),
+  [GitHubEventType.WorkObserved]: githubEventSchema(
+    GitHubEventType.WorkObserved,
+    z
       .object({
         externalKey: z.string(),
         kind: z.enum(['issue', 'pull-request']),
@@ -249,22 +253,20 @@ const eventSchema = z.discriminatedUnion('eventType', [
         raw: rawSchema,
       })
       .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.AdmissionStarted),
-    stream: streamSchema,
-    payload: z
+  ),
+  [GitHubEventType.AdmissionStarted]: githubEventSchema(
+    GitHubEventType.AdmissionStarted,
+    z
       .object({
         sourceEventId: z.string(),
         resourceId: brandedStringSchema(resourceId),
         workItemId: brandedStringSchema(workItemId),
       })
       .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.CommentObserved),
-    stream: streamSchema,
-    payload: z.discriminatedUnion('reviewKind', [
+  ),
+  [GitHubEventType.CommentObserved]: githubEventSchema(
+    GitHubEventType.CommentObserved,
+    z.discriminatedUnion('reviewKind', [
       z
         .object({
           externalKey: z.string(),
@@ -297,16 +299,14 @@ const eventSchema = z.discriminatedUnion('eventType', [
         })
         .strict(),
     ]),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.DeliveryObserved),
-    stream: streamSchema,
-    payload: z.object({ deliveryId: z.string(), raw: rawSchema }).strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.DeletedWorkObservationSkipped),
-    stream: streamSchema,
-    payload: z
+  ),
+  [GitHubEventType.DeliveryObserved]: githubEventSchema(
+    GitHubEventType.DeliveryObserved,
+    z.object({ deliveryId: z.string(), raw: rawSchema }).strict(),
+  ),
+  [GitHubEventType.DeletedWorkObservationSkipped]: githubEventSchema(
+    GitHubEventType.DeletedWorkObservationSkipped,
+    z
       .object({
         externalKey: z.string(),
         workItemId: brandedStringSchema(workItemId),
@@ -315,11 +315,10 @@ const eventSchema = z.discriminatedUnion('eventType', [
         reason: z.literal('work-item-deleted'),
       })
       .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.InboundTranslationRetried),
-    stream: streamSchema,
-    payload: z
+  ),
+  [GitHubEventType.InboundTranslationRetried]: githubEventSchema(
+    GitHubEventType.InboundTranslationRetried,
+    z
       .object({
         adapter: z.string(),
         sourceEventId: z.string(),
@@ -327,16 +326,14 @@ const eventSchema = z.discriminatedUnion('eventType', [
         message: z.string(),
       })
       .strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.InboundTranslationRecovered),
-    stream: streamSchema,
-    payload: z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
-  }),
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(GitHubEventType.InboundTranslationFailed),
-    stream: streamSchema,
-    payload: z
+  ),
+  [GitHubEventType.InboundTranslationRecovered]: githubEventSchema(
+    GitHubEventType.InboundTranslationRecovered,
+    z.object({ adapter: z.string(), sourceEventId: z.string() }).strict(),
+  ),
+  [GitHubEventType.InboundTranslationFailed]: githubEventSchema(
+    GitHubEventType.InboundTranslationFailed,
+    z
       .object({
         adapter: z.string(),
         sourceEventId: z.string(),
@@ -349,22 +346,52 @@ const eventSchema = z.discriminatedUnion('eventType', [
         failedAt: z.string(),
       })
       .strict(),
-  }),
-]);
+  ),
+} as const;
+
+const githubEventTypes = new Set<string>(Object.values(GitHubEventType));
+
+function githubEventSchemaFor(eventType: string) {
+  return isGitHubEventType(eventType) ? githubEventSchemas[eventType] : null;
+}
+
+function isGitHubEventType(eventType: string): eventType is keyof typeof githubEventSchemas {
+  return githubEventTypes.has(eventType);
+}
+
+function githubEventSchema<Type extends string, Payload extends z.ZodType>(
+  eventType: Type,
+  payload: Payload,
+) {
+  return eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({ eventType: z.literal(eventType), payload }),
+    stream: streamSchema,
+  });
+}
 
 export function decodeGitHubAdapterEvent(event: EventEnvelope): GitHubAdapterEvent {
-  const result = eventSchema.safeParse(event);
+  const header = eventEnvelopeSchema.safeParse(event);
+  if (!header.success) throw invalidGitHubEvent(event, header.error);
+  const schema = githubEventSchemaFor(header.data.event.eventType);
+  if (schema === null) {
+    const unsupported = z.never().safeParse(header.data.event.eventType);
+    if (unsupported.success) throw new Error('Expected unsupported event type validation to fail');
+    throw invalidGitHubEvent(event, unsupported.error);
+  }
+  const result = schema.safeParse(event);
   if (!result.success) throw invalidGitHubEvent(event, result.error);
   return result.data;
 }
 
 export function selectGitHubAdapterEvent(event: EventEnvelope): GitHubAdapterEvent | null {
-  return event.eventType.startsWith('integration.github.') ? decodeGitHubAdapterEvent(event) : null;
+  return event.event.eventType.startsWith('integration.github.')
+    ? decodeGitHubAdapterEvent(event)
+    : null;
 }
 
 function invalidGitHubEvent(event: EventEnvelope, cause: z.ZodError): Error {
   return new Error(
-    `Invalid GitHub adapter event ${event.eventId} at global position ${event.globalPosition} (${event.eventType}): ${cause.message}`,
+    `Invalid GitHub adapter event ${event.event.eventId} at global position ${event.globalPosition} (${event.event.eventType}): ${cause.message}`,
     { cause },
   );
 }

@@ -1,3 +1,8 @@
+import {
+  EventProcessorCategory,
+  EventProcessorReplayPolicy,
+  defineEventProcessor,
+} from '@atolis-hq/eventing';
 import { describe, expect, it } from 'vitest';
 import { DurableFakeDeliveryProvider } from '../../../src/integrations/fake/durable-delivery-provider.js';
 import {
@@ -27,10 +32,17 @@ function definition(): ProviderDefinition<{ readonly enabled: boolean }> {
         },
         delivery: new DurableFakeDeliveryProvider(),
         inbound: {
-          async runOnce() {
-            return 0;
-          },
+          processor: defineEventProcessor({
+            consumer: `reactor:integration.${adapter}.inbound`,
+            name: 'fake-inbound',
+            owner: 'integrations',
+            category: EventProcessorCategory.Translator,
+            replayPolicy: EventProcessorReplayPolicy.Idempotent,
+            select: () => null,
+            async handle() {},
+          }),
         },
+        reconciler: { async reconcileOnce() {} },
         async verifyArtifact() {
           return 'not-found' as const;
         },
@@ -54,6 +66,10 @@ describe('ProviderRegistry', () => {
       adapterId('second'),
     ]);
     expect(instances.map((instance) => instance.provider)).toEqual(['fake', 'fake']);
+    expect(instances.map((instance) => instance.inbound.processor.consumer)).toEqual([
+      'reactor:integration.fake.inbound',
+      'reactor:integration.second.inbound',
+    ]);
     expect(failures).toEqual([]);
   });
 

@@ -1,9 +1,9 @@
+import { EventActorKind, type EventActor } from '@atolis-hq/eventing';
 import { ActivityOutcomeKind } from '../../activities/index.js';
-import { EventActorKind, type EventActor } from '../../kernel/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type {
   SupplementalActivityRequest,
-  WorkflowOrchestrationEventDraft,
+  WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
@@ -30,11 +30,13 @@ export function requestSupplementalActivity(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.SupplementalActivityQueued,
         {
-          activity: request.activity,
-          input: request.input,
-          requestedBy: request.requestedBy,
+          eventType: OrchestrationEventType.SupplementalActivityQueued,
+          payload: {
+            activity: request.activity,
+            input: request.input,
+            requestedBy: request.requestedBy,
+          },
         },
         1,
       ),
@@ -43,7 +45,7 @@ export function requestSupplementalActivity(
 }
 
 export function finishSupplemental(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: AcceptActivityOutcome,
@@ -53,8 +55,10 @@ export function finishSupplemental(
       stateDraft(
         state,
         input,
-        OrchestrationEventType.InstanceBlocked,
-        { reason: `supplemental activity returned ${input.outcome.kind}` },
+        {
+          eventType: OrchestrationEventType.InstanceBlocked,
+          payload: { reason: `supplemental activity returned ${input.outcome.kind}` },
+        },
         events.length + 1,
       ),
     );
@@ -69,18 +73,26 @@ export function finishSupplemental(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-        stage: stageName(state.currentStage),
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          stage.activity,
+          stage.with,
+          {
+            execution: stage.execution,
+            stage: stageName(state.currentStage),
+          },
+        ),
+      },
       events.length + 1,
     ),
   );
 }
 
 export function requestNextSupplemental(
-  events: WorkflowOrchestrationEventDraft[],
+  events: WorkflowOrchestrationEventData[],
   state: WorkflowInstanceView,
   input: DecisionContext,
 ): void {
@@ -89,18 +101,28 @@ export function requestNextSupplemental(
     stateDraft(
       state,
       input,
-      OrchestrationEventType.SupplementalActivityDequeued,
-      { activity: next.activity, requestedBy: next.requestedBy },
+      {
+        eventType: OrchestrationEventType.SupplementalActivityDequeued,
+        payload: { activity: next.activity, requestedBy: next.requestedBy },
+      },
       events.length + 1,
     ),
     stateDraft(
       state,
       input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), next.activity, next.input, {
-        execution: undefined,
-        supplemental: true,
-      }),
+      {
+        eventType: OrchestrationEventType.ActivityRequested,
+        payload: activation(
+          state.workflowInstanceId,
+          nextOrdinal(state),
+          next.activity,
+          next.input,
+          {
+            execution: undefined,
+            supplemental: true,
+          },
+        ),
+      },
       events.length + 2,
     ),
   );

@@ -1,7 +1,7 @@
 # Execution service — Component Specification
 
 ---
-asOf: 725a0bc
+asOf: 2fd4c4f2149f50cc802266489b7686b4ef8be8dd
 ---
 
 ## Type, purpose, and scope
@@ -67,18 +67,24 @@ workspace mechanics itself — it only resolves and invokes them.
 
 **Existing-attempt semantics**
 
+- `starting` and `started` are both active Run states. Existing-attempt
+  checks, capacity, cancellation, quiescence, and Run leases apply to both;
+  recovery fails an expired `starting` Run without inspecting an external
+  execution because the runner has not started yet.
+
 - An attempt for an Activation that already has a `succeeded` Run MUST
   return that Run unchanged; the same applies to an `ambiguous` Run. Neither
   case creates a new Run or touches the activation claim.
-- An attempt for an Activation whose most recently listed Run is `started`
+- An attempt for an Activation whose most recently listed Run is active
+  (`starting` or `started`)
   MUST reject with an error when that Run's lease is unexpired and held by
-  a different owner. When the `started` Run's lease is unexpired and held
+  a different owner. When the active Run's lease is unexpired and held
   by the same owner, or is absent, or has expired, the attempt MUST return
-  that same `started` Run unchanged rather than create a new one — a new
-  attempt is never created while any Run for the Activation is `started`,
-  regardless of that Run's lease state. Moving a stale `started` Run out of
+  that same active Run unchanged rather than create a new one — a new
+  attempt is never created while any Run for the Activation is active,
+  regardless of that Run's lease state. Moving a stale active Run out of
   that status (via Recovery) is a precondition for a genuinely new attempt.
-- Only when no `succeeded`, `ambiguous`, or `started` Run exists for the
+- Only when no `succeeded`, `ambiguous`, `starting`, or `started` Run exists for the
   Activation does an attempt proceed to claim the Activation and create a
   fresh Run, with attempt number one greater than the count of Runs already
   recorded for it.
@@ -97,6 +103,19 @@ workspace mechanics itself — it only resolves and invokes them.
 - Claiming the Activation for the fresh `RunId` happens before any Run
   event is appended; if the claim is rejected (a concurrent attempt won the
   race), the attempt MUST fail with no Run stream created at all.
+- After a successful claim, `RunPreparationStarted` and the initial Run lease are
+  appended atomically in one sequence-0 batch before workspace acquisition. That creates the durable `starting`
+  Run and its whole-attempt `startedAt` before any workspace operation. For an
+  agent- or script-kind Activity, `attempt` returns this durable `starting` view
+  immediately and schedules a detached local worker for a later event-loop
+  turn. No workspace-provider acquisition code runs before that return; the
+  detached worker owns the remaining lifecycle.
+- After durable preparation, Execution MUST register an `AbortController` for
+  every execution kind before workspace acquisition. The same signal MUST
+  cover workspace acquisition and the Activity handler so cancellation has no
+  gap between those phases. Agent/script detached workers and deterministic
+  handler completions MUST both be registered as service-owned before their
+  caller can outlive them.
 - Once claimed, a workspace MUST be acquired when the Activation requests
   `read-only` or `branch` mode, and MUST NOT be acquired for `none`
   (including when no mode is specified). Acquiring for a non-`none` mode
@@ -107,19 +126,31 @@ workspace mechanics itself — it only resolves and invokes them.
   clone source instead. Acquiring for a non-`none` mode with none of the
   three kinds present among the attempt's resources MUST reject the
   attempt.
-- `RunStarted` MUST be appended before the Activity handler is invoked, and
-  the Run's own lease MUST be claimed for the requesting owner (defaulting
-  to `"execution"` when none is supplied) as part of the same creation step.
+- `RunStarted` MUST be appended after workspace preparation and immediately
+  before the Activity handler is invoked. It updates the preparation-created
+  Run with `executionStartedAt` and any acquired workspace; it does not mint
+  another Run or lease.
 
 **Execution and reporting**
 
-- Invoking the Activity handler MUST track an `AbortController` for the
-  Run's id for the duration of the call, so a cancellation request against
-  this Run can signal it while it is still running in this process.
-- While that local handler is running, Execution MUST renew the Run lease and
-  local recovery MUST exclude the tracked Run. A fresh process has no tracked
-  worker and therefore remains responsible for reconciling an expired durable
-  Run after restart.
+- Workspace acquisition and Activity invocation MUST share the tracked
+  `AbortController` for the Run's id, so a cancellation request can signal
+  either phase while it is still running in this process.
+- From `RunPreparationStarted` until terminal cleanup, Execution MUST renew the
+  Run lease and keep a process-local attempt ownership marker that excludes the
+  Run from local recovery, including while workspace preparation is blocked. The same rule
+  continues while the local handler is running, while the workspace is released,
+  and while any workspace-cleanup diagnostic is persisted. The marker is removed
+  only when the detached worker actually finishes; a fresh process has no
+  tracked worker and therefore remains responsible for reconciling an expired
+  durable Run after restart.
+- Stopping lease renewal MUST be an unconditional local-lifecycle finalization action.
+  A repository read failing while recovery tries to settle an attempt MUST NOT
+  leave its renewal timer running.
+- If a cancellation request is observed before `RunStarted`, Execution MUST
+  confirm it itself before cleanup, whether preparation subsequently completes
+  or throws; request-only cancellation therefore reaches the same terminal
+  `cancelled` Run rather than being recorded as a workspace failure.
 - The handler's reported external-execution identity and final runner
   result MUST each be appended to the Run stream as they arrive,
   independent of the Run's current status — these facts are appended even
@@ -134,34 +165,57 @@ workspace mechanics itself — it only resolves and invokes them.
   named runner MUST invoke the configured runner-quota callback, naming
   that runner; Execution does not itself decide what happens to a
   quota-ineligible runner beyond reporting the signal.
-- An ordinary agent attempt MUST return once its runner invocation has
-  actually started, while its completion remains detached and owns the normal
-  terminal-recording and cleanup path. A deterministic attempt normally
-  yields one event-loop turn before returning; only a caller that explicitly
-  requests immediate completion waits for that deterministic completion.
-- When the Activity handler returns normally, its outcome MUST be recorded
-  via `RunSucceeded` regardless of what outcome kind it reports — Execution
-  does not distinguish a `done` outcome from a `failed` or `blocked` one at
-  the transport level.
-- When the Activity handler throws, the thrown error MUST be recorded via
-  `RunFailed` when the Run's `RunStarted` fact was already appended;
-  MUST propagate unchanged to the attempt's caller when it was not (an
-  error before Run creation is a hard failure of the attempt, not a
-  recorded Run failure).
+- An agent- or script-kind attempt MUST return its durable `starting` Run before
+  workspace acquisition completes. Its detached local worker acquires the
+  workspace, appends `RunStarted`, invokes the Activity, records success or
+  failure, and performs cleanup. A deterministic attempt preserves the inline
+  preparation path: it normally yields one event-loop turn before returning;
+  only a caller that explicitly requests immediate completion waits for that
+  deterministic completion opportunity.
+- When the Activity handler returns normally, its outcome MUST ordinarily be
+  recorded via `RunSucceeded` regardless of what outcome kind it reports —
+  Execution does not distinguish a `done` outcome from a `failed` or `blocked`
+  one at the transport level. A concurrent shutdown cancellation that was
+  durably persisted wins instead and MUST suppress `RunSucceeded`.
+- When workspace preparation or the Activity handler throws after
+  `RunPreparationStarted` was appended, the error MUST be recorded via
+  `RunFailed` unless a concurrent durable cancellation request is observed
+  first; in that case Execution confirms and terminalizes the cancellation
+  instead. Only validation, claim, or another error before preparation creates
+  the Run propagates unchanged to the caller.
 - Whether the attempt succeeds, fails, or the Run was already moved to a
-  terminal status by a concurrent cancellation, the Activation claim MUST
-  be released, the tracked `AbortController` MUST be removed, and any
-  acquired workspace lease MUST be released — in that order — before the
-  attempt call returns or its error propagates. A workspace lease's
+  terminal status by a concurrent cancellation, cleanup MUST release the
+  Activation claim, remove any tracked `AbortController`, release any acquired
+  workspace lease, and best-effort persist a workspace-cleanup diagnostic, in
+  that order as applicable. A deterministic completion removes its local-attempt
+  marker at the end of that cleanup. An agent- or script-kind worker preserves
+  the marker through cleanup and its final Run reload; only the outer scheduled
+  worker promise's `finally` removes it. A workspace lease's
   `release()` failing MUST NOT propagate from `attempt`: it MUST instead be
   recorded as a `RunWorkspaceCleanupFailed` diagnostic fact on the Run, and
   recording that diagnostic is itself best-effort — a failure while
   recording it is swallowed rather than raised.
 - `attempt` only rejects (propagates an error to its caller) for upfront
   validation failures, an unexpired different-owner lease, a lost
-  activation-claim race, or an error before `RunStarted` was appended. Every
-  other failure during execution surfaces as a `RunView` with status
-  `failed`, returned normally.
+  activation-claim race, or an error before `RunPreparationStarted` was appended. Every
+  other failure during deterministic execution surfaces as a normally returned
+  `RunView` with status `failed`; for an agent- or script-kind attempt, the
+  detached worker records the same durable failed status for later observation.
+- `shutdown` MUST be idempotent and reject later `attempt` calls predictably.
+  It MUST own deterministic and agent/script work uniformly: start a durable
+  cancellation request with reason `shutdown`, abort each locally tracked
+  controller without waiting for that journal operation, and await all
+  attempt-establishment, cancellation, and completion promises. Every terminal
+  settlement caused by that abort MUST await the same Run's keyed shutdown
+  cancellation promise before deciding between `cancelled` and the Activity's
+  actual outcome, so a successful cancellation append wins even when an
+  abort-aware handler throws or returns normally immediately. A rejected
+  cancellation append MUST instead preserve normal failure or success
+  settlement. The keyed promise remains observable until recovery/cleanup or
+  worker finalization completes. Shutdown MUST repeat this snapshot/drain
+  boundary until none remain, so ownership created by an in-flight attempt
+  cannot escape between snapshots. Resident shutdown invokes this drain before
+  closing server resources that terminal cleanup may still need.
 
 ## Conceptual schema
 

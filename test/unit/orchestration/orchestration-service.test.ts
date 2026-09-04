@@ -1,9 +1,15 @@
 import { readFile } from 'node:fs/promises';
 
+import { correlationId, createProjectionProcessor, EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
-import { correlationId } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -14,12 +20,6 @@ import {
   createOrchestrationService,
   workflowDefinitionsProjection,
 } from '../../../src/orchestration/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-  ProjectionRunner,
-} from '../../../src/persistence/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
@@ -87,13 +87,16 @@ it('persists instances and accepts outcomes idempotently', async () => {
   expect(instance.workflowDefinitionFingerprint).toMatch(/^[a-f0-9]{64}$/);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.workflow-definition-registered',
+      (event) => event.event.eventType === 'orchestration.workflow-definition-registered',
     ),
   ).toHaveLength(1);
   const projections = new InMemoryProjectionStore();
-  await new ProjectionRunner(journal, projections, new InMemoryCheckpointStore()).runOnce(
-    workflowDefinitionsProjection,
-  );
+  await new EventProcessorHost(
+    journal,
+    new InMemoryCheckpointStore(),
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  ).runOnce(createProjectionProcessor(workflowDefinitionsProjection, projections));
   const changedDefinition = compileWorkflow(
     'default',
     {
@@ -128,7 +131,7 @@ it('persists instances and accepts outcomes idempotently', async () => {
   );
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.workflow-definition-registered',
+      (event) => event.event.eventType === 'orchestration.workflow-definition-registered',
     ),
   ).toHaveLength(2);
   expect(newInstance.workflowDefinitionFingerprint).not.toBe(

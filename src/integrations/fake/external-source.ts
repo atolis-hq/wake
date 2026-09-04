@@ -1,15 +1,14 @@
-import type { ReviewActorKind } from '../../activities/index.js';
-import { PullRequestCheckState } from '../../activities/index.js';
 import {
   causationId,
   correlationId,
   EventActorKind,
   eventId,
   EventSourceKind,
-} from '../../kernel/index.js';
+} from '@atolis-hq/eventing';
+import type { ReviewActorKind } from '../../activities/index.js';
+import { PullRequestCheckState } from '../../activities/index.js';
 import type { AdapterId } from '../contracts/identifiers.js';
-import type { ExternalEventSource, ProviderEventDraft } from '../contracts/intake.js';
-import { integrationStream } from '../contracts/streams.js';
+import type { ExternalEventSource, ProviderEventData } from '../contracts/intake.js';
 
 export const FakeEventType = {
   WorkObserved: 'fake.work-observed',
@@ -47,7 +46,7 @@ export class FakeExternalEventSource implements ExternalEventSource {
     private readonly events: readonly FakeWorkEvidence[],
   ) {}
 
-  async poll(signal: AbortSignal): Promise<readonly ProviderEventDraft[]> {
+  async poll(signal: AbortSignal): Promise<readonly ProviderEventData[]> {
     void signal;
     return this.events.flatMap((payload, ordinal) => {
       const identity = `fake:${this.adapter}:${payload.key}:${payload.revision ?? missingIdentityPart}:${payload.checks ?? PullRequestCheckState.Unknown}:${payload.watchEvent ?? missingIdentityPart}:${ordinal}`;
@@ -58,7 +57,6 @@ export class FakeExternalEventSource implements ExternalEventSource {
         causationId: causationId(`fake:${this.adapter}:${payload.key}`),
         actor: { kind: EventActorKind.Integration, id: this.adapter },
         source: { kind: EventSourceKind.Adapter, id: this.adapter },
-        stream: integrationStream(this.adapter),
       };
       return [
         { ...metadata, eventId: eventId(identity), eventType: FakeEventType.WorkObserved, payload },

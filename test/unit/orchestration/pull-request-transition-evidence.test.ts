@@ -1,3 +1,5 @@
+import { correlationId, type EventEnvelope } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
 import {
   ActivityEventType,
@@ -6,13 +8,11 @@ import {
   PullRequestState,
   type PullRequestService,
 } from '../../../src/activities/index.js';
-import { correlationId, type EventEnvelope } from '../../../src/kernel/index.js';
 import {
   createPullRequestTransitionEvidence,
   TransitionTargetKind,
   type CompiledResourceTransition,
 } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { resourceCapability, resourceKind, resourceStream } from '../../../src/resources/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
@@ -74,7 +74,7 @@ async function factOfType(
   eventType: string,
 ): Promise<EventEnvelope> {
   const events = await pullRequests.factsFor(resource);
-  const fact = events.find((event) => event.eventType === eventType);
+  const fact = events.find((event) => event.event.eventType === eventType);
   if (fact === undefined) throw new Error(`No ${eventType} fact recorded`);
   return fact;
 }
@@ -113,7 +113,7 @@ describe('createPullRequestTransitionEvidence', () => {
       fact: mergedFact,
     });
 
-    expect(resolved?.evidenceId).toBe(mergedFact.eventId);
+    expect(resolved?.evidenceId).toBe(mergedFact.event.eventId);
     expect(resolved?.transition).toBe(mergedTransition);
   });
 
@@ -161,7 +161,7 @@ describe('createPullRequestTransitionEvidence', () => {
       context('observe-other-merged'),
     );
     const otherResourceFact = (await journal.readStream(resourceStream(otherResource))).find(
-      (event) => event.eventType === ActivityEventType.PrStateChanged,
+      (event) => event.event.eventType === ActivityEventType.PrStateChanged,
     );
     if (otherResourceFact === undefined) throw new Error('No pr.state-changed fact recorded');
 
@@ -280,7 +280,7 @@ describe('createPullRequestTransitionEvidence', () => {
     const evidence = createPullRequestTransitionEvidence(pullRequests);
     const resolved = await evidence.resolve({ workItemId, transitions: [mergedTransition] });
 
-    expect(resolved?.evidenceId).toBe(mergedFact.eventId);
+    expect(resolved?.evidenceId).toBe(mergedFact.event.eventId);
   });
 
   it('confirms a trusted accepted review at the current head revision', async () => {
@@ -317,7 +317,7 @@ describe('createPullRequestTransitionEvidence', () => {
       fact: acceptedFact,
     });
 
-    expect(resolved?.evidenceId).toBe(acceptedFact.eventId);
+    expect(resolved?.evidenceId).toBe(acceptedFact.event.eventId);
   });
 
   it('rejects an approval that has since been revoked', async () => {
@@ -519,6 +519,6 @@ describe('createPullRequestTransitionEvidence', () => {
       fact: failingFact,
     });
 
-    expect(resolved?.evidenceId).toBe(failingFact.eventId);
+    expect(resolved?.evidenceId).toBe(failingFact.event.eventId);
   });
 });

@@ -1,16 +1,22 @@
+import {
+  correlationId,
+  createEventData,
+  eventId,
+  EventProcessorHost,
+  type CommandContext,
+  type EventJournal,
+} from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
 import { createAdvanceOnce } from '../../../src/control-plane/index.js';
 import { createExecutionService } from '../../../src/execution/index.js';
-import {
-  correlationId,
-  createEventDraft,
-  eventId,
-  type CommandContext,
-  type EntityRef,
-  type EventJournal,
-} from '../../../src/kernel/index.js';
+import { type EntityRef } from '../../../src/kernel/index.js';
 import {
   orchestrationGroupId,
   signalName,
@@ -24,7 +30,6 @@ import {
   isWorkflowInstanceStream,
   type OrchestrationService,
 } from '../../../src/orchestration/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService, type WorkItemId } from '../../../src/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
@@ -157,8 +162,8 @@ it('binds durable primary ownership to the first exact WorkflowInstance across a
   });
   const roots = (await journal.readAll(0)).filter(
     (event) =>
-      event.eventType === 'orchestration.instance-started' &&
-      !(event.payload as Record<string, unknown>).parentWorkflowInstanceId,
+      event.event.eventType === 'orchestration.instance-started' &&
+      !(event.event.payload as Record<string, unknown>).parentWorkflowInstanceId,
   );
   expect(roots.map((event) => event.stream.id)).toEqual(['primary-a']);
   expect(await service.get(workflowInstanceId('primary-b'))).toBeNull();
@@ -171,9 +176,8 @@ it('retries the same durable child claim after a crash before checkpointing the 
     kind: 'test',
     id: 'watch-trigger',
   };
-  const before = (await journal.readAll(0)).length;
-  const [trigger] = await journal.append(stream, 0, [
-    createEventDraft({
+  const [trigger] = await journal.appendToStream(stream, 0, [
+    createEventData({
       eventId: 'review-trigger-1',
       eventType: 'review.requested',
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -181,7 +185,6 @@ it('retries the same durable child claim after a crash before checkpointing the 
       causationId: 'review-trigger-1',
       actor: { kind: 'integration', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream,
       payload: {},
     }),
   ]);
@@ -192,21 +195,33 @@ it('retries the same durable child claim after a crash before checkpointing the 
     work,
     definitions,
   );
-  const first = createWatchReactor(crashingService, journal, checkpoints);
-  await expect(first.runOnce()).rejects.toThrow('injected start crash');
-  expect(await checkpoints.load('reactor:orchestration.watch')).toBe(before);
+  const first = createWatchReactor(crashingService, () => crashingService.watchEventTypes());
+  const firstHost = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
+  await expect(firstHost.runOnce(first.processor)).rejects.toThrow('injected start crash');
+  expect(await checkpoints.load('reactor:orchestration.watch')).toBe(0);
   expect(await service.get(workflowInstanceId(childId))).toBeNull();
 
   const restartedService = createOrchestrationService(journal, work, definitions);
-  const restarted = createWatchReactor(restartedService, journal, checkpoints);
-  await restarted.runOnce();
+  const restarted = createWatchReactor(restartedService, () => restartedService.watchEventTypes());
+  const restartedHost = new EventProcessorHost(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
+  await restartedHost.runOnce(restarted.processor);
   expect(await checkpoints.load('reactor:orchestration.watch')).toBeGreaterThanOrEqual(
     trigger!.globalPosition,
   );
   expect((await service.get(workflowInstanceId(childId)))?.workflowInstanceId).toBe(childId);
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.child-requested',
+      (event) => event.event.eventType === 'orchestration.child-requested',
     ),
   ).toHaveLength(1);
   await expect(
@@ -229,7 +244,9 @@ it('retries the same durable child claim after a crash before checkpointing the 
     requestId: `${parent.workflowInstanceId}:watch:review:trigger:distinct-trigger`,
   });
   expect(
-    (await journal.readAll(0)).filter((event) => event.eventType === 'orchestration.group-claimed'),
+    (await journal.readAll(0)).filter(
+      (event) => event.event.eventType === 'orchestration.group-claimed',
+    ),
   ).toHaveLength(1);
 });
 
@@ -240,10 +257,10 @@ it('uses unique durable event identities for the same trigger across two parents
   const event = watchEvent('shared-trigger');
   await createWatchReactor(service).react(event, command('shared-trigger:watch'));
   const requested = (await journal.readAll(0)).filter(
-    (candidate) => candidate.eventType === 'orchestration.child-requested',
+    (candidate) => candidate.event.eventType === 'orchestration.child-requested',
   );
   expect(requested).toHaveLength(2);
-  expect(new Set(requested.map((candidate) => candidate.eventId)).size).toBe(2);
+  expect(new Set(requested.map((candidate) => candidate.event.eventId)).size).toBe(2);
 
   await createWatchReactor({
     listWatchMatches: (eventType) => service.listWatchMatches(eventType),
@@ -254,10 +271,10 @@ it('uses unique durable event identities for the same trigger across two parents
     },
   }).react(watchEvent('shared-causal-trigger'), command('shared-causal-trigger:watch'));
   const rejected = (await journal.readAll(0)).filter(
-    (candidate) => candidate.eventType === 'orchestration.causal-activation-rejected',
+    (candidate) => candidate.event.eventType === 'orchestration.causal-activation-rejected',
   );
   expect(rejected).toHaveLength(2);
-  expect(new Set(rejected.map((candidate) => candidate.eventId)).size).toBe(2);
+  expect(new Set(rejected.map((candidate) => candidate.event.eventId)).size).toBe(2);
 });
 
 it('reconciles an unconsumed child completion during ordinary restarted advancement', async () => {
@@ -314,7 +331,7 @@ it('reconciles an unconsumed child completion during ordinary restarted advancem
     ).rejects.toThrow('injected handoff crash');
   expect(
     (await journal.readAll(0)).filter(
-      (event) => event.eventType === 'orchestration.signal-accepted',
+      (event) => event.event.eventType === 'orchestration.signal-accepted',
     ),
   ).toHaveLength(0);
 
@@ -337,14 +354,14 @@ it('reconciles an unconsumed child completion during ordinary restarted advancem
       children[index]!.workflowInstanceId,
     ]);
   const accepted = (await journal.readAll(0)).filter(
-    (event) => event.eventType === 'orchestration.signal-accepted',
+    (event) => event.event.eventType === 'orchestration.signal-accepted',
   );
   const consumed = (await journal.readAll(0)).filter(
-    (event) => event.eventType === 'orchestration.child-completion-consumed',
+    (event) => event.event.eventType === 'orchestration.child-completion-consumed',
   );
   expect(accepted).toHaveLength(2);
   expect(consumed).toHaveLength(2);
-  expect(new Set([...accepted, ...consumed].map((event) => event.eventId)).size).toBe(4);
+  expect(new Set([...accepted, ...consumed].map((event) => event.event.eventId)).size).toBe(4);
 });
 
 function failWorkflowStartOnce(journal: EventJournal, id: string): EventJournal {
@@ -360,37 +377,43 @@ function failWorkflowStartOnce(journal: EventJournal, id: string): EventJournal 
 
 function failAllParentSignals(journal: EventJournal): EventJournal {
   return {
-    async append(stream, sequence, events) {
+    async appendToStream(stream, sequence, events) {
       if (events.some((event) => event.eventType === 'orchestration.signal-accepted'))
         throw new Error('injected handoff crash');
-      return journal.append(stream, sequence, events);
+      return journal.appendToStream(stream, sequence, events);
     },
     readStream: (stream) => journal.readStream(stream),
     readAll: (position, limit) => journal.readAll(position, limit),
     latestGlobalPosition: () => journal.latestGlobalPosition(),
+    waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
     changeSignal: journal.changeSignal,
   };
 }
 
 function failAppendOnce(
   journal: EventJournal,
-  shouldFail: Parameters<EventJournal['append']> extends [infer Stream, number, infer Events]
+  shouldFail: Parameters<EventJournal['appendToStream']> extends [
+    infer Stream,
+    number,
+    infer Events,
+  ]
     ? (stream: Stream, events: Events) => boolean
     : never,
   message: string,
 ): EventJournal {
   let armed = true;
   return {
-    async append(stream, sequence, events) {
+    async appendToStream(stream, sequence, events) {
       if (armed && shouldFail(stream, events)) {
         armed = false;
         throw new Error(message);
       }
-      return journal.append(stream, sequence, events);
+      return journal.appendToStream(stream, sequence, events);
     },
     readStream: (stream) => journal.readStream(stream),
     readAll: (position, limit) => journal.readAll(position, limit),
     latestGlobalPosition: () => journal.latestGlobalPosition(),
+    waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
     changeSignal: journal.changeSignal,
   };
 }

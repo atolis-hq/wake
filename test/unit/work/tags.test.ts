@@ -1,6 +1,6 @@
+import { correlationId } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
-import { correlationId } from '../../../src/kernel/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {
   createWorkService,
   decodeWorkEvent,
@@ -28,8 +28,8 @@ describe('Work item tags', () => {
     await service.create({ workItemId: workId('1'), objective: 'Fix it', tags: ['bug'] }, context);
 
     const events = await journal.readStream(stream);
-    expect(events[0]?.eventType).toBe(WorkEventType.ItemCreated);
-    expect(decodeWorkEvent(events[0]!).payload).toMatchObject({ tags: ['bug'] });
+    expect(events[0]?.event.eventType).toBe(WorkEventType.ItemCreated);
+    expect(decodeWorkEvent(events[0]!).event.payload).toMatchObject({ tags: ['bug'] });
   });
 
   it('projects tags onto the WorkItem view', async () => {

@@ -1,6 +1,6 @@
+import { correlationId, type CommandContext } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { ScheduleService, type ScheduleConfig } from '../../../src/control-plane/index.js';
-import { correlationId, type CommandContext } from '../../../src/kernel/index.js';
 
 const config: ScheduleConfig = {
   id: 'hourly',

@@ -68,6 +68,11 @@ function inspectLiteral(detail, literal, catalogues, rules, diagnostics) {
 function inspectRegistrations(detail, literal, value, rule, registrations, rules, diagnostics) {
   if (!rules.has(rule)) return;
   for (const registration of registrations.get(value) ?? []) {
+    if (
+      registration.moduleScope !== undefined &&
+      moduleScope(detail.path) !== registration.moduleScope
+    )
+      continue;
     if (isInsideInitializer(detail, literal, registration)) continue;
     diagnostics.push(
       createDiagnostic(
@@ -80,6 +85,11 @@ function inspectRegistrations(detail, literal, value, rule, registrations, rules
       ),
     );
   }
+}
+
+function moduleScope(path) {
+  const parts = path.split('/');
+  return parts[0] === 'src' ? parts[1] : parts[0];
 }
 
 function isRegisteredCatalogueLiteral(detail, literal, catalogues) {
@@ -111,7 +121,7 @@ function allowsRegisteredLiterals(path) {
   const parts = normalized.split('/');
   const fileName = basename(normalized);
   if (fileName.endsWith('.corrupt-fixture.ts')) return true;
-  if (parts.includes('persistence')) return true;
+  if (parts.includes('eventing-filesystem')) return true;
   return (
     parts.includes('integrations') && /^.+-(?:decoder|translator|translation)\.ts$/.test(fileName)
   );

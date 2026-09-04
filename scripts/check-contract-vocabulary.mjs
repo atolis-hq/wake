@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { checkContractVocabulary, CONTRACT_VOCABULARY_RULES } from './lib/contract-vocabulary.mjs';
 
@@ -8,9 +9,17 @@ if (selection.error !== undefined) {
   process.stderr.write(`${selection.error}\n${usage}\n`);
   process.exitCode = 1;
 } else {
-  const diagnostics = await checkContractVocabulary(resolve('src'), {
-    rules: selection.rules,
-  });
+  const diagnostics = (
+    await Promise.all(
+      [
+        resolve('src'),
+        resolve('packages/eventing/src'),
+        resolve('packages/eventing-filesystem/src'),
+      ]
+        .filter((root) => existsSync(root))
+        .map((root) => checkContractVocabulary(root, { rules: selection.rules })),
+    )
+  ).flat();
   if (diagnostics.length > 0) {
     process.stderr.write(`${diagnostics.map(({ message }) => message).join('\n')}\n`);
     process.exitCode = 1;

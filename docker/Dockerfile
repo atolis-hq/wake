@@ -37,11 +37,14 @@ RUN echo "cursor cache bust: ${CURSOR_CACHE_BUST}" \
 
 WORKDIR /app
 COPY package*.json ./
+COPY packages/eventing/package.json packages/eventing/package.json
+COPY packages/eventing-filesystem/package.json packages/eventing-filesystem/package.json
 COPY src/surfaces/web/package.json src/surfaces/web/package.json
 RUN --mount=type=cache,target=/root/.npm \
   if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
 
-COPY tsconfig.json tsconfig.docker.json ./
+COPY tsconfig.json tsconfig.base.json tsconfig.app.json tsconfig.docker.json ./
+COPY packages/ packages/
 COPY scripts/embed-version.mjs scripts/embed-version.mjs
 COPY assets/ assets/
 COPY src/ src/
@@ -75,9 +78,7 @@ EXPOSE 4317
 # that's fine since it's the very first thing that runs.
 ENV WAKE_MAIN_JS=/app/dist/src/main.js
 
-# /wake/.wake is bind-mounted from the host and self-update actively creates
-# and deletes its own lock files there while this container is starting, so
-# a recursive chown can race a file disappearing mid-walk. That single ENOENT
-# must not be fatal under set -eu — it would otherwise crash the container
-# before wake start ever runs.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake || true; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]
+# Startup ownership repair is best effort because bind-mounted paths or host
+# permissions may prevent chown. The bounded direct-child pass avoids traversing
+# accumulated runtime data.
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]

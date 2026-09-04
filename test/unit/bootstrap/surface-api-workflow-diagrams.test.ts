@@ -61,7 +61,7 @@ it('uses one compiled definition card per stage child and overlays repeated acti
     runs: [
       run('refine-1', primary.workflowInstanceId, 'refine', RunStatus.Succeeded),
       run('refine-2', primary.workflowInstanceId, 'refine', RunStatus.Succeeded),
-      run('review-1', child.workflowInstanceId, 'review', RunStatus.Started),
+      run('review-1', child.workflowInstanceId, 'review', RunStatus.Starting),
     ],
   };
 
@@ -79,7 +79,7 @@ function run(
   runId: string,
   workflowInstanceId: string,
   stage: string,
-  status: typeof RunStatus.Succeeded | typeof RunStatus.Started,
+  status: typeof RunStatus.Succeeded | typeof RunStatus.Starting | typeof RunStatus.Started,
 ) {
   return {
     runId,

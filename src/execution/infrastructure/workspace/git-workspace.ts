@@ -1,10 +1,12 @@
+/* eslint-disable max-lines */
+
 import { execFile } from 'node:child_process';
 import { access, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorkItemId } from '../../../work/index.js';
 import type { RunView } from '../../contracts/views.js';
-import { RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
+import { isActiveRunStatus, RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
 import type {
   WorkspaceProvider,
   WorkspaceRecovery,
@@ -18,10 +20,10 @@ import { prepareWorkspace, type WorkspacePrepareHook } from './prepare-workspace
 const exec = promisify(execFile);
 
 export interface RepositoryCloneResolver {
-  cloneLocator(resourceId: string): Promise<string>;
+  cloneLocator(resourceId: string, signal: AbortSignal): Promise<string>;
 }
 
-export type GitRunner = (arguments_: readonly string[]) => Promise<void>;
+export type GitRunner = (arguments_: readonly string[], signal: AbortSignal) => Promise<void>;
 
 export interface WorkspaceRecoveryFileSystem {
   remove(path: string): Promise<void>;
@@ -35,8 +37,8 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
   constructor(
     private readonly root: string,
     private readonly resolver: RepositoryCloneResolver,
-    private readonly git: GitRunner = async (arguments_) => {
-      await exec('git', arguments_);
+    private readonly git: GitRunner = async (arguments_, signal) => {
+      await exec('git', arguments_, { signal });
     },
     recoveryFileSystem: WorkspaceRecoveryFileSystem = {
       remove: async (path) =>
@@ -50,11 +52,15 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
   }
 
   async acquire(request: WorkspaceRequest) {
-    const locator = await this.resolver.cloneLocator(request.repositoryResource.resourceId);
+    const { signal } = request;
+    signal.throwIfAborted();
+    const locator = await this.resolver.cloneLocator(request.repositoryResource.resourceId, signal);
+    signal.throwIfAborted();
     const name = `${request.workItemId}-${request.mode}-${slug(locator)}`;
     const path = resolve(this.root, name);
     const markerPath = join(this.markerRoot, `${name}.json`);
     await mkdir(dirname(markerPath), { recursive: true });
+    signal.throwIfAborted();
     await writeFile(
       markerPath,
       JSON.stringify({
@@ -65,17 +71,22 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
         workspaceId: name,
         path,
       }),
-      'utf8',
+      { encoding: 'utf8', signal },
     );
-    const existingWorkspace = await exists(join(path, '.git'));
+    const existingWorkspace = await exists(join(path, '.git'), signal);
     if (!existingWorkspace) {
       await mkdir(dirname(path), { recursive: true });
-      await this.git(['clone', locator, path]);
+      signal.throwIfAborted();
+      await this.git(['clone', locator, path], signal);
     }
     const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
     if (branch !== undefined)
-      await this.git(['-C', path, 'switch', ...(existingWorkspace ? [] : ['--create']), branch]);
-    if (this.prepareHook !== undefined) await prepareWorkspace(path, this.prepareHook);
+      await this.git(
+        ['-C', path, 'switch', ...(existingWorkspace ? [] : ['--create']), branch],
+        signal,
+      );
+    if (this.prepareHook !== undefined) await prepareWorkspace(path, this.prepareHook, signal);
+    signal.throwIfAborted();
     return {
       workspaceId: name,
       path,
@@ -182,7 +193,7 @@ async function reclaimOwnedMarker(
   if (
     input.runs.some(
       (run) =>
-        (run.status === RunStatus.Started || run.status === RunStatus.Ambiguous) &&
+        (isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous) &&
         (run.runId === marker.runId || run.workspace?.path === marker.path),
     )
   )
@@ -306,11 +317,14 @@ function isNotFound(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 }
 
-async function exists(path: string): Promise<boolean> {
+async function exists(path: string, signal: AbortSignal): Promise<boolean> {
+  signal.throwIfAborted();
   try {
     await access(path);
+    signal.throwIfAborted();
     return true;
   } catch {
+    signal.throwIfAborted();
     return false;
   }
 }

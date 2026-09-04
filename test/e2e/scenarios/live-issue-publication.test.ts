@@ -19,7 +19,7 @@ it('E2E-LIVE-010 publishes to a commentable non-PR issue Resource', async () => 
   expect(resource?.value.capabilities).not.toContain(BuiltInResourceCapability.Revisioned);
   expect(
     (await world.events()).filter(
-      (event) => event.eventType === DeliveryIntentEventType.StatusPublishRequested,
+      (event) => event.event.eventType === DeliveryIntentEventType.StatusPublishRequested,
     ),
   ).toHaveLength(1);
 });

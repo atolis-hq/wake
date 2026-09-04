@@ -56,8 +56,9 @@ design notes do not describe the active implementation.
 
 | Module | Responsibility |
 | --- | --- |
-| `kernel` | Event envelopes, identifiers, relations, clocks, and storage contracts. |
-| `persistence` | Filesystem and in-memory journals, projections, checkpoints, and locks. |
+| `kernel` | Identifiers, relations, clocks, and universal contracts. |
+| `@atolis-hq/eventing` | Persistence-neutral event contracts, journals, processor runtime, checkpoints, projections, processor state ports, and in-memory adapters. |
+| `@atolis-hq/eventing-filesystem` | Node filesystem adapters for Eventing journals, read-model projections, processor state, checkpoints, locks, and run serialisation. |
 | `work` | Work-item facts and projections. |
 | `resources` | External-resource facts and work correlation. |
 | `activities` | Activity contracts and PR/review activities. |
@@ -66,7 +67,7 @@ design notes do not describe the active implementation.
 | `control-plane` | Intake, bounded advancement, selection, schedules, quotas, and hosts. |
 | `integrations` | Provider polling, translation, artifacts, and delivery. |
 | `surfaces` | CLI, API, and web presentation. |
-| `bootstrap` | Root config, paths, concrete composition, and production projections. |
+| `bootstrap` | Root config, paths, storage-package composition, and production projections. |
 
 Each module exposes only its `index.ts`. Bootstrap is the only place that knows
 the complete application graph; it composes concrete runners, providers,
@@ -83,8 +84,14 @@ Keep ownership explicit:
 - Compare closed concepts through exported vocabulary values. Do not introduce
   magic strings for event types, stream kinds, statuses, outcomes, relations,
   or config keys.
-- The journal is authoritative. Projections are pure, rebuildable, and
-  registered in Bootstrap; surfaces never define or reconstruct events.
+- The journal is authoritative. `ProjectionStore` holds pure, rebuildable read
+  models registered in Bootstrap; `ProcessorStateStore` holds processor-owned
+  recovery state and is not a projection. Surfaces never define or reconstruct
+  events.
+- Production code imports Eventing only from `@atolis-hq/eventing` (and memory
+  adapters from `@atolis-hq/eventing/memory`) and filesystem adapters only from
+  `@atolis-hq/eventing-filesystem`. Do not import package internals or revive
+  `src/eventing` or `src/persistence` paths.
 - Validate genuinely open provider payloads at the integration boundary, then
   translate them into typed internal contracts. Do not recover domain state
   with `Record<string, unknown>`, reflection, coercion, or synthetic envelopes.

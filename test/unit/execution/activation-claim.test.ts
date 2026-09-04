@@ -1,3 +1,4 @@
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { describe, expect, it } from 'vitest';
 import { activationId } from '../../../src/activities/index.js';
 import {
@@ -10,7 +11,6 @@ import {
   ExecutionEventType,
   runId,
 } from '../../../src/execution/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 const config = {
@@ -65,12 +65,12 @@ describe('activation claims', () => {
     const events = (await journal.readStream(activationStream(activation))).map(
       decodeActivationExecutionEvent,
     );
-    expect(events.map((event) => event.eventType)).toEqual([
+    expect(events.map((event) => event.event.eventType)).toEqual([
       ExecutionEventType.ActivationClaimed,
       ExecutionEventType.ActivationReleased,
       ExecutionEventType.ActivationClaimed,
     ]);
-    expect(events[0]?.payload).toEqual({
+    expect(events[0]?.event.payload).toEqual({
       runId: runId('run-1'),
       owner: 'resident-a',
       expiresAt: '2026-07-30T12:01:00.000Z',

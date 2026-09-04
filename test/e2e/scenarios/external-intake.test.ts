@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
+import { createEventData, EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import {
   BuiltInAdapterId,
-  createEventDraft,
   InboundTranslator,
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
@@ -38,7 +42,7 @@ describe(`${scenario.id} ${scenario.title}`, () => {
       actor: { id: 'octocat', kind: 'human' },
       raw: { providerOnly: true },
     };
-    const evidence = createEventDraft({
+    const evidence = createEventData({
       eventId: 'github:delivery-7',
       eventType: 'integration.github.work-observed',
       occurredAt: clock.now().toISOString(),
@@ -46,20 +50,29 @@ describe(`${scenario.id} ${scenario.title}`, () => {
       causationId: 'github:delivery-7',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload,
     });
-    await journal.append(evidence.stream, 0, [evidence]);
+    await journal.appendToStream(integrationStream(BuiltInAdapterId.GitHub), 0, [evidence]);
     const { orchestration, routing } = createTestIntakeRouting(journal, work);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    const translator = new InboundTranslator(journal, work, resources, {
       lookup,
       orchestration,
       routing,
     });
 
-    await translator.runOnce();
+    await new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
+    ).runOnce(translator.processor);
     await checkpoints.reset('reactor:integration.github.inbound');
-    await translator.runOnce();
+    await new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
+    ).runOnce(translator.processor);
 
     const resourceIdValue = await lookup.resourceIdForExternalKey({
       adapter: 'github',

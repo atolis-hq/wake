@@ -2,22 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { resId, workId } from '../../support/identities.js';
 
 import {
-  activityProjectionDefinitions,
-  pullRequestProjection,
-} from '../../../src/activities/index.js';
-import { createEventDraft, type EventEnvelope } from '../../../src/kernel/index.js';
+  createEventData,
+  createProjectionProcessor,
+  EventProcessorHost,
+  type EventEnvelope,
+} from '@atolis-hq/eventing';
 import {
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  ProjectionRunner,
-} from '../../../src/persistence/index.js';
+} from '@atolis-hq/eventing/memory';
+import {
+  activityProjectionDefinitions,
+  pullRequestProjection,
+} from '../../../src/activities/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 function event(type: string, payload: Record<string, unknown>): EventEnvelope {
   return {
-    ...createEventDraft({
+    event: createEventData({
       eventId: `event-${type}`,
       eventType: type,
       occurredAt: '2026-07-30T12:00:00.000Z',
@@ -25,9 +30,9 @@ function event(type: string, payload: Record<string, unknown>): EventEnvelope {
       causationId: 'command-1',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: resourceStream(resId('1')),
       payload,
     }),
+    stream: resourceStream(resId('1')),
     globalPosition: 1,
     recordedAt: '2026-07-30T12:00:00.000Z',
     sequence: 1,
@@ -75,7 +80,7 @@ describe('pullRequestProjection', () => {
     ).toMatchObject({ checks: 'failing' });
   });
 
-  it('registers activities-pr for named runtime replay', async () => {
+  it('projects activities-pr through a named durable subscription', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const draft = event('pr.discovered', {
       workItemId: workId('1'),
@@ -84,19 +89,19 @@ describe('pullRequestProjection', () => {
       baseRevision: 'base-a',
       checks: 'passing',
     });
-    await journal.append(draft.stream, 0, [draft]);
+    await journal.appendToStream(draft.stream, 0, [draft.event]);
     const store = new InMemoryProjectionStore();
-    const runner = new ProjectionRunner(
+    const host = new EventProcessorHost(
       journal,
-      store,
       new InMemoryCheckpointStore(),
-      activityProjectionDefinitions,
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
     );
 
     expect(activityProjectionDefinitions.map((definition) => definition.name)).toContain(
       'activities-pr',
     );
-    await runner.runRegisteredOnce();
+    await host.runOnce(createProjectionProcessor(pullRequestProjection, store));
     expect(await store.read('activities-pr', resId('1'))).toMatchObject({
       value: { headRevision: 'head-a' },
     });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { brandedStringSchema, eventDraftSchema, eventEnvelopeSchema } from '../../kernel/index.js';
+import { eventDataSchema, eventEnvelopeSchema } from '@atolis-hq/eventing';
+import { brandedStringSchema } from '../../kernel/index.js';
 import { ResourceStreamKind, resourceId } from '../../resources/index.js';
 import { WorkStreamKind, workItemId } from '../../work/index.js';
 import {
@@ -10,8 +11,18 @@ import {
   PullRequestState,
 } from '../pr/vocabulary.js';
 import { ReviewActorKind } from '../review/contracts.js';
+import {
+  legacyClaimPayload,
+  newClaimPayload,
+  normalizeLegacyFact,
+} from './decision-claim-schema.js';
+import {
+  decisionClaimDataIdentity,
+  decisionClaimIdentity,
+  resourcePayloadIdentity,
+} from './event-integrity.js';
 import { activationId } from './identifiers.js';
-import { ActivityStreamKind, activityDecisionId, activityDecisionStream } from './streams.js';
+import { ActivityStreamKind, activityDecisionId } from './streams.js';
 import { ActivityOutcomeKind, ActivityResourceRole } from './vocabulary.js';
 
 type PullRequestEventName<Suffix extends string> = `pr.${Suffix}`;
@@ -225,68 +236,42 @@ function resourceFactDraft<Type extends string, Payload extends z.ZodType>(
   eventType: Type,
   payload: Payload,
 ) {
-  return eventDraftSchema
-    .extend({
-      eventType: z.literal(eventType),
-      stream: resourceStreamSchema,
-      payload,
-    })
-    .superRefine((event, context) =>
-      resourcePayloadIdentity(
-        event as {
-          readonly stream: { readonly kind: string; readonly id: string };
-          readonly payload: unknown;
-        },
-        context,
-      ),
-    );
+  return eventDataSchema.extend({ eventType: z.literal(eventType), payload });
 }
 
 function denialFactDraft<Type extends string>(eventType: Type) {
-  return eventDraftSchema
-    .extend({
-      eventType: z.literal(eventType),
-      stream: denialStreamSchema,
-      payload: denialSchema,
-    })
-    .superRefine(resourcePayloadIdentity);
-}
-
-function resourcePayloadIdentity(
-  event: {
-    readonly stream: { readonly kind: string; readonly id: string };
-    readonly payload: unknown;
-  },
-  context: z.RefinementCtx,
-): void {
-  if (
-    event.stream.kind !== ResourceStreamKind.Resource ||
-    !isRecord(event.payload) ||
-    typeof event.payload.resourceId !== 'string'
-  )
-    return;
-  if (event.payload.resourceId !== event.stream.id)
-    context.addIssue({
-      code: 'custom',
-      path: ['payload', 'resourceId'],
-      message: 'Activity resource payload id must identify its stream',
-    });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return eventDataSchema.extend({ eventType: z.literal(eventType), payload: denialSchema });
 }
 
 export function createActivityEventSchemas(eventTypes: ActivityEventTypes) {
   const resourceFacts = createResourceFactDraftSchemas(eventTypes);
   const denials = createDenialDraftSchemas(eventTypes);
   const claims = createDecisionClaimSchemas(eventTypes, resourceFacts, denials);
-  const factEnvelopeSchema = z.intersection(
-    eventEnvelopeSchema,
-    z.preprocess(withoutEnvelopeMetadata, z.union([...resourceFacts, ...denials])),
-  );
+  const resourceFactEnvelope = eventEnvelopeSchema
+    .extend({ event: z.union(resourceFacts), stream: resourceStreamSchema })
+    .superRefine((envelope, context) =>
+      resourcePayloadIdentity(
+        { stream: envelope.stream, payload: envelope.event.payload },
+        context,
+        ['event'],
+      ),
+    );
+  const denialEnvelope = eventEnvelopeSchema
+    .extend({ event: z.union(denials), stream: denialStreamSchema })
+    .superRefine((envelope, context) =>
+      resourcePayloadIdentity(
+        { stream: envelope.stream, payload: envelope.event.payload },
+        context,
+        ['event'],
+      ),
+    );
   return {
-    eventSchema: z.union([factEnvelopeSchema, claims.approveEnvelope, claims.mergeEnvelope]),
+    eventSchema: z.union([
+      resourceFactEnvelope,
+      denialEnvelope,
+      claims.approveEnvelope,
+      claims.mergeEnvelope,
+    ]),
     draftSchema: z.union([...resourceFacts, ...denials, claims.approveDraft, claims.mergeDraft]),
   };
 }
@@ -296,144 +281,109 @@ function createDecisionClaimSchemas(
   resourceFacts: ReturnType<typeof createResourceFactDraftSchemas>,
   denials: ReturnType<typeof createDenialDraftSchemas>,
 ) {
-  const approveClaimPayloadSchema = z.discriminatedUnion('decisionKind', [
-    z
-      .object({
-        action: z.literal('approve'),
-        activationId: brandedStringSchema(activationId),
-        decisionKind: z.literal('requested'),
-        outcome: requestedOutcomeSchema,
-        fact: resourceFacts[10],
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal('approve'),
-        activationId: brandedStringSchema(activationId),
-        decisionKind: z.literal('denied'),
-        outcome: deniedOutcomeSchema,
-        fact: denials[1],
-      })
-      .strict(),
-  ]);
-  const mergeClaimPayloadSchema = z.discriminatedUnion('decisionKind', [
-    z
-      .object({
-        action: z.literal(MergeMethod.Merge),
-        activationId: brandedStringSchema(activationId),
-        decisionKind: z.literal('requested'),
-        outcome: requestedOutcomeSchema,
-        fact: resourceFacts[11],
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal(MergeMethod.Merge),
-        activationId: brandedStringSchema(activationId),
-        decisionKind: z.literal('denied'),
-        outcome: deniedOutcomeSchema,
-        fact: denials[0],
-      })
-      .strict(),
-  ]);
-  const approveClaimContract = {
-    eventType: z.literal(eventTypes.PrApproveDecisionClaimed),
-    stream: approveDecisionStreamSchema,
-    payload: approveClaimPayloadSchema,
-  };
-  const mergeClaimContract = {
-    eventType: z.literal(eventTypes.PrMergeDecisionClaimed),
-    stream: mergeDecisionStreamSchema,
-    payload: mergeClaimPayloadSchema,
-  };
+  const { approveDraftPayload, mergeDraftPayload, approveEnvelopePayload, mergeEnvelopePayload } =
+    createDecisionClaimPayloadSchemas(resourceFacts, denials);
+  const approveDraft = eventDataSchema
+    .extend({
+      eventType: z.literal(eventTypes.PrApproveDecisionClaimed),
+      payload: approveDraftPayload,
+    })
+    .superRefine(decisionClaimDataIdentity);
+  const mergeDraft = eventDataSchema
+    .extend({
+      eventType: z.literal(eventTypes.PrMergeDecisionClaimed),
+      payload: mergeDraftPayload,
+    })
+    .superRefine(decisionClaimDataIdentity);
   const approveEnvelope = eventEnvelopeSchema
-    .extend(approveClaimContract)
+    .extend({
+      event: eventDataSchema.extend({
+        eventType: z.literal(eventTypes.PrApproveDecisionClaimed),
+        payload: approveEnvelopePayload,
+      }),
+      stream: approveDecisionStreamSchema,
+    })
     .superRefine(decisionClaimIdentity);
   const mergeEnvelope = eventEnvelopeSchema
-    .extend(mergeClaimContract)
+    .extend({
+      event: eventDataSchema.extend({
+        eventType: z.literal(eventTypes.PrMergeDecisionClaimed),
+        payload: mergeEnvelopePayload,
+      }),
+      stream: mergeDecisionStreamSchema,
+    })
     .superRefine(decisionClaimIdentity);
-  const approveDraft = eventDraftSchema
-    .extend(approveClaimContract)
-    .superRefine(decisionClaimIdentity);
-  const mergeDraft = eventDraftSchema.extend(mergeClaimContract).superRefine(decisionClaimIdentity);
   return { approveEnvelope, mergeEnvelope, approveDraft, mergeDraft };
 }
 
-function decisionClaimIdentity(
-  event: {
-    readonly stream: { readonly id: string };
-    readonly payload:
-      | {
-          readonly action: 'approve' | typeof MergeMethod.Merge;
-          readonly activationId: string;
-          readonly decisionKind: 'requested';
-          readonly outcome: {
-            readonly kind: typeof ActivityOutcomeKind.Waiting;
-            readonly data: { readonly intentEventId: string };
-          };
-          readonly fact: {
-            readonly eventId: string;
-            readonly payload: { readonly activationId: string };
-          };
-        }
-      | {
-          readonly action: 'approve' | typeof MergeMethod.Merge;
-          readonly activationId: string;
-          readonly decisionKind: 'denied';
-          readonly outcome: {
-            readonly kind: typeof ActivityOutcomeKind.Blocked;
-            readonly data: { readonly reason: string };
-          };
-          readonly fact: {
-            readonly eventId: string;
-            readonly payload: { readonly activationId: string; readonly reason: string };
-          };
-        };
-  },
-  context: z.RefinementCtx,
-): void {
-  if (
-    event.stream.id !==
-    activityDecisionStream(activationId(event.payload.activationId), event.payload.action).id
-  )
-    context.addIssue({
-      code: 'custom',
-      path: ['payload', 'activationId'],
-      message: 'Activity decision activation and action must identify its stream',
-    });
-  if (event.payload.fact.payload.activationId !== event.payload.activationId)
-    context.addIssue({
-      code: 'custom',
-      path: ['payload', 'fact', 'payload', 'activationId'],
-      message: 'Activity decision fact activation must match its claim',
-    });
-  if (
-    event.payload.decisionKind === 'requested' &&
-    event.payload.outcome.data.intentEventId !== event.payload.fact.eventId
-  )
-    context.addIssue({
-      code: 'custom',
-      path: ['payload', 'outcome', 'data', 'intentEventId'],
-      message: 'Requested decision intent event id must match its fact',
-    });
-  if (
-    event.payload.decisionKind === 'denied' &&
-    event.payload.outcome.data.reason !== event.payload.fact.payload.reason
-  )
-    context.addIssue({
-      code: 'custom',
-      path: ['payload', 'outcome', 'data', 'reason'],
-      message: 'Denied decision reason must match its fact',
-    });
-}
-
-function withoutEnvelopeMetadata(input: unknown): unknown {
-  if (!isRecord(input)) return input;
-  const {
-    recordedAt: _recordedAt,
-    sequence: _sequence,
-    globalPosition: _globalPosition,
-    ...draft
-  } = input;
-  return draft;
+function createDecisionClaimPayloadSchemas(
+  resourceFacts: ReturnType<typeof createResourceFactDraftSchemas>,
+  denials: ReturnType<typeof createDenialDraftSchemas>,
+) {
+  const approveRequested = newClaimPayload(
+    'approve',
+    'requested',
+    requestedOutcomeSchema,
+    resourceFacts[10],
+    resourceStreamSchema,
+  );
+  const approveDenied = newClaimPayload(
+    'approve',
+    'denied',
+    deniedOutcomeSchema,
+    denials[1],
+    denialStreamSchema,
+  );
+  const mergeRequested = newClaimPayload(
+    MergeMethod.Merge,
+    'requested',
+    requestedOutcomeSchema,
+    resourceFacts[11],
+    resourceStreamSchema,
+  );
+  const mergeDenied = newClaimPayload(
+    MergeMethod.Merge,
+    'denied',
+    deniedOutcomeSchema,
+    denials[0],
+    denialStreamSchema,
+  );
+  const approveDraftPayload = z.union([approveRequested, approveDenied]);
+  const mergeDraftPayload = z.union([mergeRequested, mergeDenied]);
+  const approveEnvelopePayload = z.union([
+    approveDraftPayload,
+    legacyClaimPayload(
+      'approve',
+      'requested',
+      requestedOutcomeSchema,
+      resourceFacts[10].extend({ stream: resourceStreamSchema }),
+    ).transform((claim) => ({ ...claim, ...normalizeLegacyFact(claim.fact) })),
+    legacyClaimPayload(
+      'approve',
+      'denied',
+      deniedOutcomeSchema,
+      denials[1].extend({ stream: denialStreamSchema }),
+    ).transform((claim) => ({ ...claim, ...normalizeLegacyFact(claim.fact) })),
+  ]);
+  const mergeEnvelopePayload = z.union([
+    mergeDraftPayload,
+    legacyClaimPayload(
+      MergeMethod.Merge,
+      'requested',
+      requestedOutcomeSchema,
+      resourceFacts[11].extend({ stream: resourceStreamSchema }),
+    ).transform((claim) => ({ ...claim, ...normalizeLegacyFact(claim.fact) })),
+    legacyClaimPayload(
+      MergeMethod.Merge,
+      'denied',
+      deniedOutcomeSchema,
+      denials[0].extend({ stream: denialStreamSchema }),
+    ).transform((claim) => ({ ...claim, ...normalizeLegacyFact(claim.fact) })),
+  ]);
+  return {
+    approveDraftPayload,
+    mergeDraftPayload,
+    approveEnvelopePayload,
+    mergeEnvelopePayload,
+  };
 }

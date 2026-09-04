@@ -8,15 +8,11 @@ import {
 import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
+import { correlationId, WrongExpectedSequenceError, type EventJournal } from '@atolis-hq/eventing';
+import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
 import { activationId, createPullRequestMergeActivity } from '../../../src/activities/index.js';
-import { mergeDenied } from '../../../src/activities/pr/event-drafts.js';
+import { mergeDenied } from '../../../src/activities/pr/event-data.js';
 import { appendIntentOnce } from '../../../src/activities/pr/intent.js';
-import {
-  correlationId,
-  InProcessJournalChangeSignal,
-  WrongExpectedSequenceError,
-  type EventJournal,
-} from '../../../src/kernel/index.js';
 import {} from '../../../src/resources/index.js';
 import type { workItemId } from '../../../src/work/index.js';
 import { workItemStream } from '../../../src/work/index.js';
@@ -63,19 +59,21 @@ it('queries by event id before trusting a genuinely uncertain requested append',
   await setupApprovedPullRequest(world, work.workItemId);
   let reconciliationReads = 0;
   const queryingJournal: EventJournal = {
-    append: (stream, sequence, events) => world.journal.append(stream, sequence, events),
+    appendToStream: (stream, sequence, events) =>
+      world.journal.appendToStream(stream, sequence, events),
     readAll: (position, limit) => world.journal.readAll(position, limit),
     readStream(stream) {
       reconciliationReads += 1;
       return world.journal.readStream(stream);
     },
     latestGlobalPosition: () => world.journal.latestGlobalPosition(),
+    waitForEventsAfter: world.journal.waitForEventsAfter.bind(world.journal),
     changeSignal: world.journal.changeSignal,
   };
   const activity = createPullRequestMergeActivity(queryingJournal, world.pullRequests, {
     async append(stream, intent) {
       const events = await world.journal.readStream(stream);
-      await world.journal.append(stream, events.length, [intent]);
+      await world.journal.appendToStream(stream, events.length, [intent]);
       return 'ambiguous';
     },
   });
@@ -95,7 +93,7 @@ it('treats exhausted sequence conflicts without the event as a failed append', a
   const stream = workItemStream(workId('1'));
   let attempts = 0;
   const journal: EventJournal = {
-    async append() {
+    async appendToStream() {
       attempts += 1;
       throw new WrongExpectedSequenceError('conflict');
     },
@@ -108,9 +106,10 @@ it('treats exhausted sequence conflicts without the event as a failed append', a
     async latestGlobalPosition() {
       return 0;
     },
+    async waitForEventsAfter() {},
     changeSignal: new InProcessJournalChangeSignal(),
   };
-  const intent = mergeDenied(stream, PullRequestDenialCode.MissingResource, {
+  const intent = mergeDenied(PullRequestDenialCode.MissingResource, {
     commandId: 'activation-1',
     occurredAt: '2026-07-30T12:00:00.000Z',
     correlationId: correlationId('scenario-1'),

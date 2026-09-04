@@ -1,3 +1,9 @@
+import { createEventData, EventActorKind, EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import { describe, expect, it, vi } from 'vitest';
 import {
   activationId,
@@ -8,22 +14,67 @@ import {
   createAgentActivity,
 } from '../../../src/activities/index.js';
 import { ArtifactRegistrationReactor } from '../../../src/integrations/index.js';
-import { createEventDraft, EventActorKind } from '../../../src/kernel/index.js';
 import { workflowInstanceId, workflowInstanceStream } from '../../../src/orchestration/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src/persistence/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
 
 describe('ArtifactRegistrationReactor', () => {
+  it('exposes its stable event processor identity', () => {
+    const reactor = new ArtifactRegistrationReactor({ journal: {} } as never);
+
+    expect(reactor).toMatchObject({
+      processor: {
+        consumer: 'reactor:artifact-registration',
+        name: 'artifact-registration',
+        owner: 'integrations',
+      },
+    });
+  });
+
+  it('skips unrelated facts while advancing its processor checkpoint', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const checkpoints = new InMemoryCheckpointStore();
+    const host = new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
+    );
+    await journal.appendToStream({ kind: 'test', id: 'unrelated' }, 0, [
+      createEventData({
+        eventId: 'unrelated-artifact-fact',
+        eventType: 'work.created',
+        occurredAt: '2026-08-30T00:00:00.000Z',
+        correlationId: 'artifact-correlation',
+        causationId: 'artifact-cause',
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: 'internal', id: 'test' },
+        payload: {},
+      }),
+    ]);
+    const reactor = new ArtifactRegistrationReactor({ journal } as never);
+
+    await expect(host.runOnce(reactor.processor)).resolves.toMatchObject({
+      eventCount: 1,
+      handledCount: 0,
+    });
+  });
+
   it('verifies a reported artifact before discovering and correlating it', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const checkpoints = new InMemoryCheckpointStore();
+    const host = new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
+    );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact');
     const activation = activationId('activation-artifact');
-    await journal.append(workflowInstanceStream(workflow), 0, [
+    await journal.appendToStream(workflowInstanceStream(workflow), 0, [
       draft(
         'orchestration.instance-started',
         {
@@ -54,7 +105,6 @@ describe('ArtifactRegistrationReactor', () => {
 
     const reactor = new ArtifactRegistrationReactor({
       journal,
-      checkpoints,
       resources,
       ids: { next: () => 'resource-00000000000000000000000000' },
       runs: {
@@ -80,7 +130,7 @@ describe('ArtifactRegistrationReactor', () => {
       ],
     });
 
-    await reactor.runOnce();
+    await host.runOnce(reactor.processor);
 
     const resource = await resources.findByExternalKey({ adapter: 'fake', key: 'repo#42' });
     expect(resource).toMatchObject({ kind: resourceKind('pull-request'), revision: 'head-a' });
@@ -92,6 +142,12 @@ describe('ArtifactRegistrationReactor', () => {
   it('correlates a PR declared in a raw agent report with the originating WorkItem', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const checkpoints = new InMemoryCheckpointStore();
+    const host = new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
+    );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact-raw');
     const activation = activationId('activation-artifact-raw');
@@ -126,7 +182,7 @@ DONE`;
         async reportExternalExecution() {},
       },
     );
-    await journal.append(workflowInstanceStream(workflow), 0, [
+    await journal.appendToStream(workflowInstanceStream(workflow), 0, [
       draft(
         'orchestration.instance-started',
         {
@@ -145,7 +201,6 @@ DONE`;
     ]);
     const reactor = new ArtifactRegistrationReactor({
       journal,
-      checkpoints,
       resources,
       ids: { next: () => 'resource-00000000000000000000000000' },
       runs: {
@@ -171,7 +226,7 @@ DONE`;
       ],
     });
 
-    await reactor.runOnce();
+    await host.runOnce(reactor.processor);
 
     const resource = await resources.findByExternalKey({
       adapter: 'github',
@@ -185,9 +240,15 @@ DONE`;
   it('records a durable failed verification instead of trusting a missing artifact', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const checkpoints = new InMemoryCheckpointStore();
+    const host = new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
+    );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact-missing');
-    await journal.append(workflowInstanceStream(workflow), 0, [
+    await journal.appendToStream(workflowInstanceStream(workflow), 0, [
       draft(
         'orchestration.instance-started',
         {
@@ -217,7 +278,6 @@ DONE`;
     ]);
     const reactor = new ArtifactRegistrationReactor({
       journal,
-      checkpoints,
       resources,
       ids: { next: () => 'resource-00000000000000000000000000' },
       runs: {
@@ -242,11 +302,11 @@ DONE`;
       ],
     });
 
-    await reactor.runOnce();
+    await host.runOnce(reactor.processor);
 
     expect(
       (await journal.readAll(0)).some(
-        (event) => event.eventType === 'integration.artifact-verification-unresolved',
+        (event) => event.event.eventType === 'integration.artifact-verification-unresolved',
       ),
     ).toBe(true);
     expect(await checkpoints.load('reactor:artifact-registration')).toBeGreaterThan(0);
@@ -255,9 +315,15 @@ DONE`;
   it('stops re-scanning the full journal for ambiguous reconciliation once nothing is pending', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const checkpoints = new InMemoryCheckpointStore();
+    const host = new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
+    );
     const { resources } = createTestResourceServices(journal);
     const workflow = workflowInstanceId('workflow-artifact-ambiguous');
-    await journal.append(workflowInstanceStream(workflow), 0, [
+    await journal.appendToStream(workflowInstanceStream(workflow), 0, [
       draft(
         'orchestration.instance-started',
         {
@@ -287,7 +353,6 @@ DONE`;
     ]);
     const reactor = new ArtifactRegistrationReactor({
       journal,
-      checkpoints,
       resources,
       ids: { next: () => 'resource-00000000000000000000000000' },
       maxAmbiguityReconciliationAttempts: 1,
@@ -315,11 +380,11 @@ DONE`;
 
     // First attempt is escalated immediately (max attempts = 1), so this
     // settles into a stable, unresolved-but-no-longer-retried state.
-    await reactor.runOnce();
+    await host.runOnce(reactor.processor);
 
     const readAllSpy = vi.spyOn(journal, 'readAll');
-    await reactor.runOnce();
-    await reactor.runOnce();
+    await host.runOnce(reactor.processor);
+    await host.runOnce(reactor.processor);
 
     const fullRescans = readAllSpy.mock.calls.filter(([position]) => position === 0);
     expect(fullRescans).toHaveLength(0);
@@ -329,9 +394,9 @@ DONE`;
 function draft(
   eventType: string,
   payload: unknown,
-  workflow: ReturnType<typeof workflowInstanceId>,
+  _workflow: ReturnType<typeof workflowInstanceId>,
 ) {
-  return createEventDraft({
+  return createEventData({
     eventId: `${eventType}:artifact`,
     eventType,
     occurredAt: '2026-08-02T00:00:00.000Z',
@@ -339,7 +404,6 @@ function draft(
     causationId: 'artifact-cause',
     actor: { kind: EventActorKind.System, id: 'test' },
     source: { kind: 'internal', id: 'test' },
-    stream: workflowInstanceStream(workflow),
     payload,
   });
 }

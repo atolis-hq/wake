@@ -1,5 +1,5 @@
+import { WrongExpectedSequenceError } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
-import { WrongExpectedSequenceError } from '../../../src/kernel/index.js';
 import {
   appendWithIntentRecovery,
   claimWithCasRetry,

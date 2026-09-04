@@ -1,4 +1,5 @@
-import type { EntityRef, EventId } from '../../kernel/index.js';
+import type { EventId } from '@atolis-hq/eventing';
+import type { EntityRef } from '../../kernel/index.js';
 import type { AdapterId } from './identifiers.js';
 
 export const IntegrationStreamKind = { Integration: 'integration', Delivery: 'delivery' } as const;

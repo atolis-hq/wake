@@ -1,43 +1,68 @@
-import { EventActorKind } from '../../kernel/index.js';
+import { EventActorKind } from '@atolis-hq/eventing';
 import { ExecutionEventType, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
-import { ExecutionFailureCode, RunStatus } from '../contracts/vocabulary.js';
+import { ExecutionFailureCode, isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
 
 export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
-  const started = events.find((event) => event.eventType === ExecutionEventType.RunStarted);
-  if (started === undefined) return null;
+  const creation = events[0];
+  if (creation === undefined) return null;
+  const creationEvent = creation.event;
+  if (
+    creationEvent.eventType !== ExecutionEventType.RunPreparationStarted &&
+    creationEvent.eventType !== ExecutionEventType.RunStarted
+  )
+    throw invalidRunStream(creation.stream.id, 'first event must create the run');
+  for (const event of events.slice(1))
+    if (event.event.eventType === ExecutionEventType.RunPreparationStarted)
+      throw invalidRunStream(creation.stream.id, 'RunPreparationStarted must be the first event');
+
+  const startedFromPreparation =
+    creationEvent.eventType === ExecutionEventType.RunPreparationStarted;
   const state: RunView = {
-    runId: started.stream.id,
-    activationId: started.payload.activationId,
-    activity: started.payload.activity,
-    ...(started.payload.stage === undefined ? {} : { stage: started.payload.stage }),
-    workflowInstanceId: started.payload.workflowInstanceId,
-    orchestrationGroupId: started.payload.orchestrationGroupId,
-    attempt: started.payload.attempt,
-    status: RunStatus.Started,
+    runId: creation.stream.id,
+    activationId: creationEvent.payload.activationId,
+    activity: creationEvent.payload.activity,
+    ...(creationEvent.payload.stage === undefined ? {} : { stage: creationEvent.payload.stage }),
+    workflowInstanceId: creationEvent.payload.workflowInstanceId,
+    orchestrationGroupId: creationEvent.payload.orchestrationGroupId,
+    attempt: creationEvent.payload.attempt,
+    status: startedFromPreparation ? RunStatus.Starting : RunStatus.Started,
     ambiguityAttempts: 0,
     escalated: false,
-    startedAt: started.payload.startedAt,
-    ...(started.payload.runner === undefined ? {} : { runner: started.payload.runner }),
-    ...(started.payload.workspace === undefined ? {} : { workspace: started.payload.workspace }),
+    startedAt: creationEvent.payload.startedAt,
+    ...(startedFromPreparation ? {} : { executionStartedAt: creationEvent.payload.startedAt }),
+    ...(creationEvent.payload.runner === undefined ? {} : { runner: creationEvent.payload.runner }),
+    ...creationWorkspace(creationEvent),
   };
-  for (const event of events) applyRunEvent(state, event);
+  for (const event of events.slice(1)) applyRunEvent(state, event.event);
   return state;
 }
 
-function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
-  if (state.status !== RunStatus.Started) {
-    if (
-      state.status === RunStatus.Ambiguous &&
-      event.actor.kind === EventActorKind.Operator &&
-      (event.eventType === ExecutionEventType.RunSucceeded ||
-        event.eventType === ExecutionEventType.RunFailed)
-    )
-      return applyTerminalEvent(state, event);
+type RunEventData = RunExecutionEvent['event'];
+
+function creationWorkspace(event: RunEventData): Pick<RunView, 'workspace'> {
+  if (event.eventType !== ExecutionEventType.RunStarted || event.payload.workspace === undefined)
+    return {};
+  return { workspace: event.payload.workspace };
+}
+
+function applyRunEvent(state: RunView, event: RunEventData): void {
+  if (!isActiveRunStatus(state.status)) {
+    if (isOperatorAmbiguousTerminalEvent(state, event)) return applyTerminalEvent(state, event);
     return;
   }
   switch (event.eventType) {
+    case ExecutionEventType.RunPreparationStarted:
+      throw invalidRunStream(state.runId, 'RunPreparationStarted must be the first event');
     case ExecutionEventType.RunStarted:
+      if (state.status !== RunStatus.Starting)
+        throw invalidRunStream(state.runId, 'RunStarted is only valid while starting');
+      validateRunStart(state, event);
+      Object.assign(state, {
+        status: RunStatus.Started,
+        executionStartedAt: event.payload.startedAt,
+        ...(event.payload.workspace === undefined ? {} : { workspace: event.payload.workspace }),
+      });
       return;
     case ExecutionEventType.RunSucceeded:
     case ExecutionEventType.RunFailed:
@@ -48,10 +73,81 @@ function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
   }
 }
 
+function isOperatorAmbiguousTerminalEvent(
+  state: RunView,
+  event: RunEventData,
+): event is Extract<
+  RunEventData,
+  {
+    eventType: typeof ExecutionEventType.RunSucceeded | typeof ExecutionEventType.RunFailed;
+  }
+> {
+  return (
+    state.status === RunStatus.Ambiguous &&
+    event.actor.kind === EventActorKind.Operator &&
+    (event.eventType === ExecutionEventType.RunSucceeded ||
+      event.eventType === ExecutionEventType.RunFailed)
+  );
+}
+
+function validateRunStart(
+  state: RunView,
+  event: Extract<RunEventData, { eventType: typeof ExecutionEventType.RunStarted }>,
+): void {
+  validateRunStartField(
+    state.runId,
+    state.activationId,
+    event.payload.activationId,
+    'activationId',
+  );
+  validateRunStartField(state.runId, state.activity, event.payload.activity, 'activity');
+  validateRunStartField(state.runId, state.stage, event.payload.stage, runStartField.Stage);
+  validateRunStartField(
+    state.runId,
+    state.workflowInstanceId,
+    event.payload.workflowInstanceId,
+    'workflowInstanceId',
+  );
+  validateRunStartField(
+    state.runId,
+    state.orchestrationGroupId,
+    event.payload.orchestrationGroupId,
+    'orchestrationGroupId',
+  );
+  validateRunStartField(state.runId, state.attempt, event.payload.attempt, 'attempt');
+  if (!sameRunner(state.runner, event.payload.runner))
+    throw invalidRunStream(state.runId, 'RunStarted contradicts RunPreparationStarted runner');
+}
+
+const runStartFieldShape = { stage: true };
+const runStartField = { Stage: Object.keys(runStartFieldShape)[0]! } as const;
+
+function validateRunStartField(
+  runId: RunView['runId'],
+  actual: unknown,
+  expected: unknown,
+  field: string,
+): void {
+  if (actual !== expected)
+    throw invalidRunStream(runId, `RunStarted contradicts RunPreparationStarted ${field}`);
+}
+
+function sameRunner(
+  left: RunView['runner'],
+  right: Extract<
+    RunEventData,
+    { eventType: typeof ExecutionEventType.RunStarted }
+  >['payload']['runner'],
+): boolean {
+  return runnerFields.every((field) => left?.[field] === right?.[field]);
+}
+
+const runnerFields = ['name', 'model', 'effort', 'pool', 'cli'] as const;
+
 function applyTerminalEvent(
   state: RunView,
   event: Extract<
-    RunExecutionEvent,
+    RunEventData,
     {
       eventType:
         | typeof ExecutionEventType.RunSucceeded
@@ -85,9 +181,10 @@ function applyTerminalEvent(
 function applyLivenessEvent(
   state: RunView,
   event: Exclude<
-    RunExecutionEvent,
+    RunEventData,
     {
       eventType:
+        | typeof ExecutionEventType.RunPreparationStarted
         | typeof ExecutionEventType.RunStarted
         | typeof ExecutionEventType.RunSucceeded
         | typeof ExecutionEventType.RunFailed
@@ -178,4 +275,8 @@ function recoveredState(
 
 function assertNever(value: never): never {
   throw new Error(`Unhandled Execution event: ${JSON.stringify(value)}`);
+}
+
+function invalidRunStream(runId: string, message: string): Error {
+  return new Error(`Invalid Run stream ${runId}: ${message}`);
 }

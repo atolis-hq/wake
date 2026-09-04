@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
+import { BoardActiveRunPhaseValue } from '../../api/contracts/index.js';
 import { WakeApiClient } from '../src/api/client.js';
+import { decodeBoardCard } from '../src/api/decoders.js';
 import { App } from '../src/app/app.js';
 
 const asOf = '2026-07-31T10:00:00.000Z';
@@ -32,12 +34,14 @@ function boardClient(fetchSpy?: (url: string) => void) {
           runnerName: 'fake',
           startedAt: asOf,
           elapsedMs: 12_000,
+          phase: BoardActiveRunPhaseValue.Starting,
         },
         'run-implementation': {
           action: 'implement',
           runnerName: 'codex',
           startedAt: asOf,
           elapsedMs: 8_000,
+          phase: BoardActiveRunPhaseValue.Started,
         },
       },
     },
@@ -162,12 +166,36 @@ describe('board', () => {
     );
     const active = await screen.findByRole('listitem', { name: 'Alpha' });
     const inactive = screen.getByRole('listitem', { name: 'Beta' });
-    expect(within(active).getByText('pr-review running')).toBeTruthy();
-    expect(within(active).getByText('implement running')).toBeTruthy();
+    expect(within(active).getByText('pr-review Starting')).toBeTruthy();
+    expect(within(active).getByText('implement Running')).toBeTruthy();
     expect(within(active).getByTestId('active-run-dot-run-pr-review').dataset.activeRun).toBe(
       'true',
     );
     expect(within(inactive).queryByText(/running/i)).toBeNull();
+  });
+
+  it('rejects active runs with an invalid phase from the board API', () => {
+    expect(() =>
+      decodeBoardCard({
+        workItemKey: 'wk_invalid',
+        workItemId: 'work-invalid',
+        objective: 'Invalid phase',
+        condition: 'active',
+        dwellSince: asOf,
+        runCount: 1,
+        totalTokens: 0,
+        totalCostUsd: 0,
+        totalDurationMs: 0,
+        activeRuns: {
+          'run-invalid': {
+            action: 'implement',
+            startedAt: asOf,
+            elapsedMs: 1,
+            phase: 'queued',
+          },
+        },
+      }),
+    ).toThrow(/phase/);
   });
   it('shows the last run outcome returned by the board API', async () => {
     const client = new WakeApiClient(async (input) => {

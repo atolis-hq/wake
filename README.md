@@ -96,6 +96,11 @@ For more detail, see [docs/vision.md](docs/vision.md) and
 - **Event-sourced and restart-safe.** The durable record is an append-only event
   log; projections can be rebuilt, and the loop can crash and resume without
   losing its place.
+- **Reusable eventing packages.** `@atolis-hq/eventing` supplies
+  persistence-neutral event contracts and runtime services; the separate
+  `@atolis-hq/eventing-filesystem` package supplies Node filesystem adapters.
+  Wake's Bootstrap composition selects those adapters, so domain modules never
+  depend on the filesystem package.
 - **Canonical work discussion.** GitHub comments and Wake agent reports are
   recorded in one immutable conversation per work item, preserving origin and
   context independently of the surface where they appeared.
@@ -181,6 +186,10 @@ any time for the full command list, or see
 - [docs/cli.md](docs/cli.md) - full CLI command reference.
 - [docs/vision.md](docs/vision.md) - the rationale and long-term direction for Wake.
 - [docs/architecture.md](docs/architecture.md) - module boundaries and the event-sourced core.
+- [packages/eventing/README.md](packages/eventing/README.md) - public Eventing contracts,
+  runtime, and in-memory test adapters.
+- [packages/eventing-filesystem/README.md](packages/eventing-filesystem/README.md) - public
+  Node filesystem adapters for Eventing ports.
 - [docs/workflows.md](docs/workflows.md) - how stages, prompts, and runner routes are configured.
 - [docs/prompts.md](docs/prompts.md) - how prompt templates map to workflow stages.
 - [docs/configuration.md](docs/configuration.md) - `config.yaml`/`config.workflows.yaml` options and the operator correlation escape hatch.

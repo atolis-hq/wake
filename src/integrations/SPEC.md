@@ -1,5 +1,5 @@
 ---
-asOf: f1cd25e219207b9710ccb19632faac67ee757ae8
+asOf: 6e394e8258d688f3d98220d995cc0c38093b7745
 ---
 
 # Integrations — Module Specification
@@ -56,6 +56,25 @@ Integrations does not own:
   inbound translator only calls its `observe`/`acceptReviewSignal`/
   `requestChangesSignal` commands and does not re-implement their rules.
 
+## Event publishing boundary
+
+Integrations owns its observation, artifact, delivery, and provider event
+types, payload maps, stream references, selectors/decoders, and event-data
+factories. It appends immutable event data to the selected stream with expected
+sequence; it does not construct envelopes or a processor host. Its
+delivery outcome reactor keeps ProcessorStateStore-backed recovery state for
+pending confirmations and uses ProjectionStore for the delivery-intent read
+model. It is not a rebuildable Eventing projection: recovery decodes
+legacy flat and interim nested stored records, then writes the reactor-owned
+canonical pending-confirmations record. Its processor delivery and explicit
+reconciliation share one injected serialiser, so only one may change that state
+at a time.
+
+The delivery outcome reactor exports its recovery consumer identity for
+Bootstrap composition. Bootstrap uses that identity to reserve the established
+filesystem paths for this processor state while clearing rebuildable
+projections; the reactor itself remains storage-port only.
+
 ## Ubiquitous language
 
 - **AdapterId** — the operator-assigned name of one configured provider
@@ -93,9 +112,11 @@ Integrations does not own:
 
 ## Core policies, invariants, and behaviours
 
-- Polled evidence MUST be appended to a provider's own `integration` stream
-  only for event ids not already present on that stream; the same evidence
-  never records twice no matter how many times a provider re-reports it.
+- The polling persistence boundary filters event ids already present on a
+  provider's own `integration` stream and duplicates within the fetched batch
+  before appending. Repeated evidence therefore does not record twice or
+  retrigger translation after restart; the source-local observation cache is
+  only a performance optimization.
 - With no intake rules configured, every observation MUST be admitted with
   no tags. With rules configured, an observation MUST be admitted only if at
   least one rule matches, and MUST collect the union of every matched rule's
@@ -215,8 +236,11 @@ Integrations does not own:
 
 ## Dependencies and system role
 
-- Kernel — event journal, checkpoint store, envelope/stream conventions, and
-  closed-vocabulary helpers every component in this module builds on.
+- Eventing — public journal, checkpoint, envelope/stream, processor-state, and
+  processor contracts. The delivery outcome reactor uses `ProcessorStateStore`
+  for recovery and `ProjectionStore` only for its rebuildable delivery-intent
+  read model.
+- Kernel — closed-vocabulary and generic identity helpers.
 - Work (Integrations depends on it) — `work-admission` creates WorkItems,
   `work-conclusion` closes/cancels them, and both read correlation/current
   state; Integrations never writes `work.*` facts directly.
@@ -250,12 +274,14 @@ Integrations does not own:
   module's own event type constants; Bootstrap composes GitHub Agent
   Context and `resolveGitHubResourceUrl` directly, and supplies the real
   `WorkConclusion` cascade from control-plane's own conclusion policy.
-- The runtime composition root (outside any module) — instantiates
-  `ProviderInstance`s from configuration, tolerating a construction failure
-  per provider, and drives the poll, inbound translation, delivery,
-  agent-run-publication, and outcome-reactor loops each tick, plus each
-  provider's own `maintenance` cycle. No domain module other than Bootstrap
-  depends on Integrations directly.
+- Bootstrap (depends on Integrations) instantiates `ProviderInstance`s from
+  configuration, tolerating a construction failure per provider, and registers
+  each provider processor in the shared Eventing runtime. Processors handle
+  inbound translation and publication (including delivery-outcome reaction);
+  the intake pipeline polls providers and admits their observations; and the
+  runner pipeline schedules work and performs maintenance and delivery. These
+  remain explicit bounded lanes. No domain module other than Bootstrap depends
+  on Integrations directly.
 
 ## Decisions, exclusions, and deferred capability
 

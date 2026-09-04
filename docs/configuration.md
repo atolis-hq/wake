@@ -343,6 +343,10 @@ execution:
 | `controlPlane.resident.pollBackoffMs` | positive integer; default `1000` | Exponential backoff base for intake's idle-or-erroring poll cadence and the runner's error-retry cadence — courtesy toward a rate-limited external API. Unrelated to journal consumption, which waits on a change signal instead of polling. |
 | `controlPlane.resident.maxPollBackoffMs` | positive integer; optional | Ceiling for that exponential backoff (default: `pollBackoffMs * 16`). |
 
+Activation scheduling is always performed by the durable scheduler
+subscription. It reconsiders every durable fact, reconciles on startup and a
+bounded fallback, and shares the global scheduler lock with one-shot ticks.
+
 Each `controlPlane.schedules[]` entry requires `id`, `workflow`, `cron`, and
 `objective`, all non-empty strings. `id` identifies the schedule,
 `workflow` names a configured workflow, `cron` is its schedule expression, and
