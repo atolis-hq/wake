@@ -468,6 +468,37 @@ markers.
 
 `publication.replies.rules` controls where terminal agent-run reply comments go. Each rule has a
 required `target` of `primary`, `issue`, `pull-request`, or `none`; `none` suppresses the comment.
+
+### Conversation command policy
+
+Wake records every conversation entry before interpreting its first trimmed line as a command.
+Workflow `commands` are therefore surface-neutral: a configured command is available on every
+conversation surface and still enforces its `allowedActors` policy. It takes precedence over a
+built-in command with the same spelling. Arguments after the command are accepted for syntax
+compatibility but are not passed to the Activity.
+
+Built-ins are `/approved`, `/accepted`, `/changes`, `/retry`, `/restart`, and `/extend`. Their
+availability is controlled by the `orchestration.commandPolicy` capability policy, not adapter
+names. `review-surface` and `operator-surface` permit all six; `chat-surface` permits none.
+The control-plane composer is an `operator-surface`, GitHub is a `review-surface`, and unknown
+adapters have no built-in capability by default. This makes a newly enabled chat integration safe
+until it is explicitly granted authority.
+
+```yaml
+orchestration:
+  commandPolicy:
+    capabilities:
+      slack: [chat-surface]
+      emergency-console: [operator-surface]
+    replace: false # add to known defaults; true replaces them
+```
+
+`capabilities` maps a surface name to `review-surface`, `chat-surface`, and/or
+`operator-surface`. With `replace: false` (the default), declared capabilities add to the known
+default; with `replace: true`, they replace it. Granting `review-surface` or `operator-surface`
+allows approval and workflow-control commands, so use it only for surfaces whose actor evidence
+and authorization are trusted. A command unavailable on its surface remains a durable,
+immutable conversation entry and has no workflow effect.
 `match.stage` and `match.outcome` are independently optional facets, each accepting one value or a
 non-empty list. Outcomes are case-sensitive lowercase-kebab values: `done`, `rejected`, `blocked`,
 `failed`, and `needs-clarification`. Facets are combined with `matchMode` (`any` by default, or

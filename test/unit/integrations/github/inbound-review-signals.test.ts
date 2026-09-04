@@ -42,9 +42,9 @@ it('recognizes /changes followed by a blank line and feedback as an issue comman
   expect(await issueCommentSignals('/changes\n\nplease retry the error handling')).toHaveLength(1);
 });
 
-it('recognizes only an exact /extend issue command', () => {
+it('recognizes /extend with optional arguments', () => {
   expect(recognizedCommand('/extend')).toBe('/extend');
-  expect(recognizedCommand('/extend another review')).toBeNull();
+  expect(recognizedCommand('/extend another review')).toBe('/extend');
 });
 
 it('fails closed for an unauthorized /extend comment', async () => {

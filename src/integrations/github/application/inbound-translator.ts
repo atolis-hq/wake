@@ -25,6 +25,7 @@ import {
 import type { RunRepository } from '../../../execution/index.js';
 import { UlidIdGenerator, type IdGenerator } from '../../../kernel/index.js';
 import type { OrchestrationService } from '../../../orchestration/index.js';
+import { ConversationSurfaceCapability } from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
   BuiltInResourceCapability,
@@ -389,6 +390,23 @@ export class InboundTranslator {
             ? {}
             : { location: event.event.payload.location }),
         },
+      },
+      commandContext(event),
+    );
+    await this.applyConversationCommand(correlation.workItemId, event);
+  }
+
+  private async applyConversationCommand(
+    workItemId: WorkItemId,
+    event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
+  ): Promise<void> {
+    await this.orchestration?.applyConversationCommand(
+      workItemId,
+      {
+        body: event.event.payload.body,
+        surface: this.adapter,
+        actorId: event.event.payload.actor.id,
+        capabilities: [ConversationSurfaceCapability.Review],
       },
       commandContext(event),
     );

@@ -7,6 +7,7 @@ export function isHumanNonWakeReply(actorKind: ReviewActorKind, body: string): b
 
 type IssueCommand =
   | typeof GitHubBuiltInCommand.Approved
+  | typeof GitHubBuiltInCommand.Accepted
   | typeof GitHubBuiltInCommand.Changes
   | typeof GitHubBuiltInCommand.Retry
   | typeof GitHubBuiltInCommand.Restart
@@ -26,10 +27,11 @@ function matchesCommand(line: string, command: string): boolean {
 export function recognizedCommand(body: string): IssueCommand | null {
   const line = commandLine(body);
   if (matchesCommand(line, GitHubBuiltInCommand.Approved)) return GitHubBuiltInCommand.Approved;
+  if (matchesCommand(line, GitHubBuiltInCommand.Accepted)) return GitHubBuiltInCommand.Accepted;
   if (matchesCommand(line, GitHubBuiltInCommand.Changes)) return GitHubBuiltInCommand.Changes;
   if (matchesCommand(line, GitHubBuiltInCommand.Retry)) return GitHubBuiltInCommand.Retry;
   if (matchesCommand(line, GitHubBuiltInCommand.Restart)) return GitHubBuiltInCommand.Restart;
-  if (line === GitHubBuiltInCommand.Extend) return GitHubBuiltInCommand.Extend;
+  if (matchesCommand(line, GitHubBuiltInCommand.Extend)) return GitHubBuiltInCommand.Extend;
   return null;
 }
 

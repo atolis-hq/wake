@@ -83,6 +83,28 @@ async function fixture(actor: 'operator' | 'agent' = 'operator') {
 }
 
 describe('supplemental Activity commands', () => {
+  it('dispatches a supplemental command from a control-plane conversation surface', async () => {
+    const { service, instance, context } = await fixture();
+    await service.markActivationStarted(
+      instance.workflowInstanceId,
+      instance.pendingActivation!.activationId,
+      {
+        ...context,
+        commandId: 'run-started',
+      },
+    );
+    expect(
+      await service.applyConversationCommand(
+        instance.workItemId,
+        { body: ' /codereview with context', surface: 'control-plane', actorId: 'owner' },
+        { ...context, commandId: 'conversation-command' },
+      ),
+    ).toBe(true);
+    expect((await service.listForWorkItem(instance.workItemId))[0]!.supplementalQueue).toHaveLength(
+      1,
+    );
+  });
+
   it('queues a configured supplemental Activity behind an active Run', async () => {
     const { service, instance, context } = await fixture();
     await service.markActivationStarted(
