@@ -1,4 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
@@ -26,6 +27,53 @@ describe('control-plane mutation and connection state', () => {
     expect(screen.queryByRole('button', { name: 'Tick now' })).toBeNull();
     expect(screen.queryByText('Command pending')).toBeNull();
     expect(await screen.findByRole('button', { name: 'Pause ticks' })).toBeTruthy();
+  });
+
+  it('pauses and resumes dispatch without exposing a tick action', async () => {
+    const user = userEvent.setup();
+    let paused = false;
+    const commands: string[] = [];
+    const client = new WakeApiClient(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/control-plane/status'))
+        return json({ data: { paused, updatedAt: instant }, meta: { asOf: instant } });
+      if (
+        url.endsWith('/control-plane/commands/pause') ||
+        url.endsWith('/control-plane/commands/resume')
+      ) {
+        paused = url.endsWith('/pause');
+        commands.push(url);
+        return json({
+          data: {
+            commandId: `command-${commands.length}`,
+            idempotencyKey: JSON.parse(String(init?.body)).idempotencyKey,
+            acceptedAt: instant,
+            status: 'accepted',
+          },
+          meta: { asOf: instant },
+        });
+      }
+      if (url.endsWith('/control-plane/commands/tick'))
+        throw new Error('The removed tick endpoint must not be requested');
+      return fixtureResponse(url, init);
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Pause ticks' }));
+    await screen.findByRole('button', { name: 'Resume ticks' });
+    await user.click(screen.getByRole('button', { name: 'Resume ticks' }));
+    await screen.findByRole('button', { name: 'Pause ticks' });
+    await waitFor(() =>
+      expect(commands).toEqual([
+        '/api/v1/control-plane/commands/pause',
+        '/api/v1/control-plane/commands/resume',
+      ]),
+    );
+    expect(screen.queryByRole('button', { name: 'Tick now' })).toBeNull();
   });
 
   it('shows a distinct maintenance badge when a retained lease is pausing every resident loop', async () => {
@@ -65,6 +113,7 @@ describe('control-plane mutation and connection state', () => {
         <App client={client} />
       </MemoryRouter>,
     );
+    await screen.findByRole('button', { name: 'Pause ticks' });
     window.dispatchEvent(new Event('offline'));
     expect(await screen.findByText('Connection lost; reconnecting')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeTruthy();

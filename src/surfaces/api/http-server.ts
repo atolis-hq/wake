@@ -193,8 +193,8 @@ function errorResult(error: unknown): ApiHttpResponse {
 // Duck-types an octokit RequestError (or any similarly-shaped upstream HTTP
 // client failure) by its `.status` field — the same detection already used
 // for GitHub 404s in integrations/github/provider.ts's verifyArtifact. A
-// synchronous command (like manual tick) that happens to run while an
-// external provider is rate-limited or unreachable should surface as a
+// synchronous command that happens to run while an external provider is
+// rate-limited or unreachable should surface as a
 // distinguishable gateway failure, not an opaque "Internal Server Error"
 // indistinguishable from an actual Wake bug.
 function isUpstreamProviderError(error: unknown): boolean {
