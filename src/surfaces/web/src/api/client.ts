@@ -9,7 +9,6 @@ import {
   decodeResourceItem,
   decodeRun,
   decodeRunner,
-  decodeTickCommand,
   decodeTranscript,
   decodeWorkDetail,
   decodeWorkflow,
@@ -84,8 +83,6 @@ export class WakeApiClient {
       this.command('/control-plane/commands/pause', idempotencyKey, decodeAcceptedCommand, signal),
     resume: (idempotencyKey: string, signal?: AbortSignal) =>
       this.command('/control-plane/commands/resume', idempotencyKey, decodeAcceptedCommand, signal),
-    tick: (idempotencyKey: string, signal?: AbortSignal) =>
-      this.command('/control-plane/commands/tick', idempotencyKey, decodeTickCommand, signal),
   };
 
   readonly work = {

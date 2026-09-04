@@ -4,7 +4,6 @@ import type {
   ApiCommandResult,
   AuditEventResponse,
   RunTranscriptResponse,
-  TickCommandResponse,
   WorkItemResponse,
   WorkItemTranscriptResponse,
 } from '../../../src/surfaces/api/contracts/index.js';
@@ -460,35 +459,13 @@ describe('API command conflicts', () => {
     }
   });
 
-  it('rejects malformed command bodies instead of deriving success defaults', async () => {
-    const dispatcher = createApiDispatcher(
-      applications({ controlPlaneTick: async () => tickCommandResult('operator-42') }),
+  it('rejects the removed control-plane tick route', async () => {
+    const response = await createApiDispatcher(applications()).dispatch(
+      'POST',
+      '/api/v1/control-plane/commands/tick',
+      { idempotencyKey: 'operator-42' },
     );
-    const response = await dispatcher.dispatch('POST', '/api/v1/control-plane/commands/tick', {
-      idempotencyKey: '',
-    });
-    expect(response?.status).toBe(422);
-    expect(response?.body).toMatchObject({
-      code: 'invalid-request',
-      violations: [{ path: 'idempotencyKey' }],
-    });
-  });
-
-  it('maps a typed public application command conflict with current state', async () => {
-    const dispatcher = createApiDispatcher(
-      applications({
-        controlPlaneTick: async () => ({
-          conflict: true,
-          code: 'already-advanced',
-          current: { paused: false },
-        }),
-      }),
-    );
-    const response = await dispatcher.dispatch('POST', '/api/v1/control-plane/commands/tick', {
-      idempotencyKey: 'operator-42',
-    });
-    expect(response?.status).toBe(409);
-    expect(response?.body).toMatchObject({ code: 'already-advanced', current: { paused: false } });
+    expect(response?.status).toBe(404);
   });
 
   it('returns the retry application conflict as a 409 problem', async () => {
@@ -574,10 +551,6 @@ function applications(
       transcript(runId: string): Promise<ApiResourceResult<RunTranscriptResponse>>;
     }>;
     readonly workItems?: readonly WorkItemResponse[];
-    readonly controlPlaneTick?: () => Promise<
-      | TickCommandResponse
-      | { readonly conflict: true; readonly code: string; readonly current?: unknown }
-    >;
     readonly eventsList?: (
       query: CollectionQuery,
     ) => Promise<ApiCollectionPage<AuditEventResponse>>;
@@ -587,7 +560,6 @@ function applications(
     now: () => '2026-07-31T10:00:00.000Z',
     controlPlane: {
       status: async () => resource({ paused: false, updatedAt: '2026-07-31T10:00:00.000Z' }),
-      ...(overrides.controlPlaneTick === undefined ? {} : { tick: overrides.controlPlaneTick }),
     },
     work: {
       list: async (query: CollectionQuery) => workItemsPage(overrides.workItems ?? [], query),
@@ -649,12 +621,5 @@ function commandResult(idempotencyKey: string): AcceptedCommandResponse {
     idempotencyKey,
     acceptedAt: '2026-07-31T10:00:00.000Z',
     status: 'accepted',
-  };
-}
-
-function tickCommandResult(idempotencyKey: string): TickCommandResponse {
-  return {
-    ...commandResult(idempotencyKey),
-    result: resource({ paused: false, updatedAt: instant }),
   };
 }

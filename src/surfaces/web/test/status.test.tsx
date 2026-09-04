@@ -11,48 +11,12 @@ describe('control-plane mutation and connection state', () => {
     window.dispatchEvent(new Event('online'));
   });
 
-  it('suppresses duplicate advances, applies confirmed status, and invalidates related queries', async () => {
-    const user = userEvent.setup();
-    let advances = 0;
-    const idempotencyKeys: string[] = [];
-    let statusReads = 0;
-    let workReads = 0;
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+  it('does not expose a tick action or tick command feedback', async () => {
     const client = new WakeApiClient(async (input, init) => {
       const url = String(input);
       if (url.endsWith('/control-plane/commands/tick')) {
-        advances += 1;
-        const request = JSON.parse(String(init?.body)) as { idempotencyKey: string };
-        idempotencyKeys.push(request.idempotencyKey);
-        await pending;
-        return json(
-          {
-            data: {
-              commandId: 'advance-1',
-              idempotencyKey: request.idempotencyKey,
-              acceptedAt: instant,
-              status: 'accepted',
-              result: {
-                data: { paused: true, updatedAt: instant, reason: 'Advanced 1 item' },
-                meta: { asOf: instant, position: 42 },
-              },
-            },
-            meta: { asOf: instant },
-          },
-          202,
-        );
+        throw new Error('The removed tick endpoint must not be requested');
       }
-      if (url.endsWith('/control-plane/status')) {
-        statusReads += 1;
-        return json({
-          data: { paused: false, updatedAt: instant },
-          meta: { asOf: instant },
-        });
-      }
-      if (url.includes('/board')) workReads += 1;
       return fixtureResponse(url, init);
     });
     render(
@@ -60,21 +24,56 @@ describe('control-plane mutation and connection state', () => {
         <App client={client} />
       </MemoryRouter>,
     );
-    const advance = await screen.findByRole('button', { name: 'Tick now' });
-    await screen.findByText('No work items');
-    const initialWorkReads = workReads;
-    await user.click(advance);
-    expect(screen.getByText(/Command pending/)).toBeTruthy();
-    expect(advance.hasAttribute('disabled')).toBe(true);
-    await user.click(advance);
-    expect(advances).toBe(1);
-    release();
-    expect(await screen.findByText('Dispatch paused')).toBeTruthy();
-    await waitFor(() => expect(workReads).toBeGreaterThan(initialWorkReads));
-    expect(statusReads).toBe(1);
     expect(screen.queryByRole('button', { name: 'Tick now' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Resume ticks' })).toBeTruthy();
-    expect(idempotencyKeys[0]).toMatch(/^web:tick:/);
+    expect(screen.queryByText('Command pending')).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Pause ticks' })).toBeTruthy();
+  });
+
+  it('pauses and resumes dispatch without exposing a tick action', async () => {
+    const user = userEvent.setup();
+    let paused = false;
+    const commands: string[] = [];
+    const client = new WakeApiClient(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/control-plane/status'))
+        return json({ data: { paused, updatedAt: instant }, meta: { asOf: instant } });
+      if (
+        url.endsWith('/control-plane/commands/pause') ||
+        url.endsWith('/control-plane/commands/resume')
+      ) {
+        paused = url.endsWith('/pause');
+        commands.push(url);
+        return json({
+          data: {
+            commandId: `command-${commands.length}`,
+            idempotencyKey: JSON.parse(String(init?.body)).idempotencyKey,
+            acceptedAt: instant,
+            status: 'accepted',
+          },
+          meta: { asOf: instant },
+        });
+      }
+      if (url.endsWith('/control-plane/commands/tick'))
+        throw new Error('The removed tick endpoint must not be requested');
+      return fixtureResponse(url, init);
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Pause ticks' }));
+    await screen.findByRole('button', { name: 'Resume ticks' });
+    await user.click(screen.getByRole('button', { name: 'Resume ticks' }));
+    await screen.findByRole('button', { name: 'Pause ticks' });
+    await waitFor(() =>
+      expect(commands).toEqual([
+        '/api/v1/control-plane/commands/pause',
+        '/api/v1/control-plane/commands/resume',
+      ]),
+    );
+    expect(screen.queryByRole('button', { name: 'Tick now' })).toBeNull();
   });
 
   it('shows a distinct maintenance badge when a retained lease is pausing every resident loop', async () => {
@@ -107,29 +106,14 @@ describe('control-plane mutation and connection state', () => {
     );
   });
 
-  it('presents Problem conflict state and a reconnecting banner without erasing the shell', async () => {
-    const user = userEvent.setup();
-    const client = new WakeApiClient(async (input, init) =>
-      String(input).endsWith('/control-plane/commands/tick')
-        ? json(
-            {
-              type: 'https://wake.atolis.dev/problems/conflict',
-              title: 'Advance conflict',
-              status: 409,
-              code: 'current-state',
-              current: { paused: true },
-            },
-            409,
-          )
-        : fixtureResponse(String(input), init),
-    );
+  it('presents a reconnecting banner without erasing the shell', async () => {
+    const client = new WakeApiClient(async (input, init) => fixtureResponse(String(input), init));
     render(
       <MemoryRouter initialEntries={['/board']}>
         <App client={client} />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Tick now' }));
-    expect(await screen.findByText('Conflict: Advance conflict')).toBeTruthy();
+    await screen.findByRole('button', { name: 'Pause ticks' });
     window.dispatchEvent(new Event('offline'));
     expect(await screen.findByText('Connection lost; reconnecting')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeTruthy();

@@ -22,7 +22,6 @@ import type {
 import {
   WorkflowDiagramChildKind,
   type AcceptedCommandResponse,
-  type TickCommandResponse,
 } from '../../../api/contracts/index.js';
 import {
   AcceptedCommandStatusValue,
@@ -125,14 +124,6 @@ export const decodeAcceptedCommand: Decoder<AcceptedCommandResponse> = (value, p
     idempotencyKey: string(record.idempotencyKey, child(path, 'idempotencyKey')),
     acceptedAt: string(record.acceptedAt, child(path, 'acceptedAt')),
     status,
-  };
-};
-
-export const decodeTickCommand: Decoder<TickCommandResponse> = (value, path = '') => {
-  const record = object(value, path);
-  return {
-    ...decodeAcceptedCommand(value, path),
-    result: resourceDecoder(decodeControlPlaneStatus)(record.result, child(path, 'result')),
   };
 };
 

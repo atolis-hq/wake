@@ -1,50 +1,7 @@
 import { tmpdir } from 'node:os';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
 import { createSurfaceApiApplications } from '../../../src/bootstrap/surface-api-applications.js';
-
-it('uses the subscriber one-shot scheduler pass without duplicating dispatch through the API tick', async () => {
-  const scheduler = {
-    poke: vi.fn(async () => ({
-      kind: 'progressed' as const,
-      dispatched: [{ activationId: 'activation-one', runId: 'run-one' }],
-    })),
-  };
-  const runnerPipeline = {
-    run: vi.fn(async (_options, _signal, beforeDelivery: (() => Promise<void>) | undefined) => {
-      await beforeDelivery?.();
-      return { kind: 'no-work' as const };
-    }),
-  };
-  const applications = createSurfaceApiApplications(
-    {
-      paths: { wakeRoot: tmpdir() },
-      config: {},
-      providers: [],
-      activationSchedulerSubscriber: {
-        ...scheduler,
-        processor: {} as never,
-        lastResult: () => undefined,
-      },
-      processorRuntime: { processors: [], catchUp: async () => 0 },
-      projectionSubscriptions: { catchUpOnce: async () => 0 },
-      runnerPipeline,
-      projections: { read: async () => null },
-      journal: { readAll: async () => [] },
-      maintenance: { read: async () => null },
-    } as unknown as CompositionRoot,
-    () => '2026-08-17T00:00:00.000Z',
-  );
-
-  await expect(
-    applications.controlPlane.tick?.({ idempotencyKey: 'api-tick-one' }),
-  ).resolves.toMatchObject({
-    status: 'completed',
-  });
-
-  expect(scheduler.poke).toHaveBeenCalledOnce();
-  expect(runnerPipeline.run).toHaveBeenCalledOnce();
-});
 
 it('surfaces adapter health checks from provider instances alongside system checks', async () => {
   const applications = createSurfaceApiApplications(

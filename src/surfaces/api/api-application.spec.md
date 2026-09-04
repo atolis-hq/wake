@@ -89,10 +89,6 @@ Does not own:
   It returns HTTP 202 with the command acceptance resource. Invalid outcomes
   return a 422 problem, and a Run that is missing or not an escalated ambiguity
   returns the normal 404 or 409 problem.
-- The control-plane `tick` command MUST be rejected as a 409 conflict (code
-  `paused`, carrying the current control-plane status) before it reaches the
-  domain application, whenever that status reports the control plane as
-  paused; `pause` and `resume` are never blocked this way.
 - A command or read capability absent from the composed `ApiApplications`
   facade for the current runtime (for example `board`, `status`,
   `execution.runners`, or `work.freeze`) MUST be presented as a 409 conflict
@@ -161,7 +157,6 @@ Does not own:
 | `idempotencyKey` | string | Echoes the request's idempotency key. |
 | `acceptedAt` | UTC instant | When the domain application accepted the command. |
 | `status` | closed vocabulary: `accepted` / `completed` | Whether the command is still processing or already resolved. |
-| `result` | Response envelope, optional | Present only on a control-plane advance result; nests the resulting status resource. |
 | `conflict` | boolean, present only on a conflict result | Discriminates a conflict result from an accepted one. |
 | `code` | closed vocabulary | Machine-comparable conflict reason on a conflict result. |
 | `current` | domain view, optional | The state that caused the conflict, when available. |

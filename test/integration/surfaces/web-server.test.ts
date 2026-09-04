@@ -62,12 +62,27 @@ describe('HTTP Surface hardening', () => {
     }
   });
 
-  it('requires a configured auth boundary for every operational API route', async () => {
+  it('does not expose the removed control-plane tick route', async () => {
     const server = surfaceServer(createApiDispatcher(applications()));
     try {
       const response = await server.inject({
         method: 'POST',
         url: '/api/v1/control-plane/commands/tick',
+        headers: { cookie: await login(server) },
+        payload: { idempotencyKey: 'operator-42' },
+      });
+      expect(response.statusCode).toBe(404);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('requires a configured auth boundary for every operational API route', async () => {
+    const server = surfaceServer(createApiDispatcher(applications()));
+    try {
+      const response = await server.inject({
+        method: 'POST',
+        url: '/api/v1/control-plane/commands/pause',
         payload: 'x'.repeat(1024 * 1024),
       });
       expect(response.statusCode).toBe(401);
@@ -178,7 +193,7 @@ describe('HTTP Surface hardening', () => {
     try {
       const response = await server.inject({
         method: 'POST',
-        url: '/api/v1/control-plane/commands/tick',
+        url: '/api/v1/control-plane/commands/pause',
         headers: { 'content-type': 'application/json', cookie: await login(server) },
         payload: '{not-json',
       });

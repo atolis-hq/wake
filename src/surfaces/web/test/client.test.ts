@@ -22,26 +22,6 @@ describe('typed Wake API client', () => {
     expect(requests).toEqual(['/api/v1/control-plane/status']);
   });
 
-  it('decodes Problem Details without parsing detail text', async () => {
-    const client = new WakeApiClient(
-      async () =>
-        new Response(
-          JSON.stringify({
-            type: 'https://wake.atolis.dev/problems/conflict',
-            title: 'Conflict',
-            status: 409,
-            code: 'current-state',
-            current: { paused: true },
-          }),
-          { status: 409, headers: { 'content-type': 'application/problem+json' } },
-        ),
-    );
-
-    await expect(client.controlPlane.tick('command-1')).rejects.toMatchObject({
-      problem: { status: 409, code: 'current-state', current: { paused: true } },
-    });
-  });
-
   it('invokes the fetch transport without binding it to the API client instance', async () => {
     let calledUnbound = false;
     const transport = function (this: unknown) {

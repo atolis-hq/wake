@@ -209,16 +209,6 @@
   align-items: center;
   gap: 0.6rem;
 }
-.tickButton {
-  border: 1px solid var(--accent);
-  background: rgb(45 212 191 / 0.14);
-  color: var(--accent-light);
-  font-weight: 700;
-}
-.tickButton:hover:not(:disabled) {
-  background: rgb(45 212 191 / 0.24);
-  border-color: var(--accent-light);
-}
 .pauseControl {
   display: inline-flex;
   align-items: center;
