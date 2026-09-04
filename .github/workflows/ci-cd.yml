@@ -203,11 +203,9 @@ jobs:
         env:
           WAKE_VERSION: ${{ needs.tag.outputs.version }}
         run: |
-          npm --workspace @atolis-hq/eventing version "$WAKE_VERSION" --no-git-tag-version --ignore-scripts
-          npm --workspace @atolis-hq/eventing-filesystem version "$WAKE_VERSION" --no-git-tag-version --ignore-scripts
-          npm version "$WAKE_VERSION" --workspaces=false --no-git-tag-version --ignore-scripts
-          npm --workspace @atolis-hq/eventing-filesystem pkg set dependencies.@atolis-hq/eventing="$WAKE_VERSION"
-          npm pkg set dependencies.@atolis-hq/eventing="$WAKE_VERSION" dependencies.@atolis-hq/eventing-filesystem="$WAKE_VERSION"
+          npm --workspace @atolis-hq/eventing pkg set version="$WAKE_VERSION"
+          npm --workspace @atolis-hq/eventing-filesystem pkg set version="$WAKE_VERSION" dependencies.@atolis-hq/eventing="$WAKE_VERSION"
+          npm pkg set version="$WAKE_VERSION" dependencies.@atolis-hq/eventing="$WAKE_VERSION" dependencies.@atolis-hq/eventing-filesystem="$WAKE_VERSION"
           npm install --package-lock-only --ignore-scripts
       - name: Verify public package archives
         run: npm run check:workspace-packages

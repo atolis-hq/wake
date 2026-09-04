@@ -51,21 +51,16 @@ describe('release packaging', () => {
     );
     expect(workflow).toContain('WAKE_VERSION: ${{ needs.tag.outputs.version }}');
     expect(workflow).toContain(
-      'npm version "$WAKE_VERSION" --workspaces=false --no-git-tag-version --ignore-scripts',
+      'npm --workspace @atolis-hq/eventing pkg set version="$WAKE_VERSION"',
     );
     expect(workflow).toContain(
-      'npm --workspace @atolis-hq/eventing version "$WAKE_VERSION" --no-git-tag-version --ignore-scripts',
+      'npm --workspace @atolis-hq/eventing-filesystem pkg set version="$WAKE_VERSION" dependencies.@atolis-hq/eventing="$WAKE_VERSION"',
     );
     expect(workflow).toContain(
-      'npm --workspace @atolis-hq/eventing-filesystem version "$WAKE_VERSION" --no-git-tag-version --ignore-scripts',
-    );
-    expect(workflow).toContain(
-      'npm pkg set dependencies.@atolis-hq/eventing="$WAKE_VERSION" dependencies.@atolis-hq/eventing-filesystem="$WAKE_VERSION"',
-    );
-    expect(workflow).toContain(
-      'npm --workspace @atolis-hq/eventing-filesystem pkg set dependencies.@atolis-hq/eventing="$WAKE_VERSION"',
+      'npm pkg set version="$WAKE_VERSION" dependencies.@atolis-hq/eventing="$WAKE_VERSION" dependencies.@atolis-hq/eventing-filesystem="$WAKE_VERSION"',
     );
     expect(workflow).toContain('npm install --package-lock-only --ignore-scripts');
+    expect(workflow).not.toContain('npm version "$WAKE_VERSION"');
     expect(workflow).not.toMatch(/npm publish --workspaces(?:\s|$)/u);
 
     const eventingPublish = workflow.indexOf('npm --workspace @atolis-hq/eventing publish');
