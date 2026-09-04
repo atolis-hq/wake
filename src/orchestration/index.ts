@@ -22,6 +22,8 @@ export * from './application/watch-reactor.js';
 
 export * from './application/trigger-workflow-instance.js';
 
+export * from './application/conversation-command.js';
+
 export * from './application/workflow-definition-registry.js';
 
 export * from './contracts/activity-outcome.js';

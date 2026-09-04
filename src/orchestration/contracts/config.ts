@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { ApprovalAuthorityKind, WorkflowStatus } from './vocabulary.js';
+import {
+  ApprovalAuthorityKind,
+  ConversationSurfaceCapability,
+  WorkflowStatus,
+} from './vocabulary.js';
 
 import {
   ActivityEventType,
@@ -69,6 +73,22 @@ const resourceTransitionConfigSchema = z.union([
     .strict(),
 ]);
 const commandName = z.string().regex(/^\/[a-z][a-z0-9-]*$/);
+
+export const surfaceCapabilitySchema = z.enum([
+  ConversationSurfaceCapability.Review,
+  ConversationSurfaceCapability.Chat,
+  ConversationSurfaceCapability.Operator,
+]);
+
+export const commandPolicyConfigSchema = z
+  .object({
+    capabilities: z
+      .record(z.string().trim().min(1), z.array(surfaceCapabilitySchema).readonly())
+      .default({}),
+    replace: z.boolean().default(false),
+  })
+  .strict()
+  .default({ capabilities: {}, replace: false });
 const canonicalEventName = z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/);
 const watchStatus = z.enum([WorkflowStatus.Active, WorkflowStatus.Waiting, WorkflowStatus.Blocked]);
 const failingChecksWatchPredicateSchema = z
@@ -155,6 +175,8 @@ export const workflowDefinitionConfigSchema = z
       .refine((value) => Object.keys(value).length > 0),
   })
   .strict();
+
+export type CommandPolicyConfig = z.infer<typeof commandPolicyConfigSchema>;
 
 // A single identifier is shorthand for a one-entry list, so every facet is matched the same way.
 const selectorValues = z

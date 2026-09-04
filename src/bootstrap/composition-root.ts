@@ -190,7 +190,13 @@ export async function createCompositionRoot(
       compileWorkflow(name, definition, activities, Object.keys(config.orchestration.workflows)),
     ]),
   );
-  const orchestration = createOrchestrationService(journal, work, definitions, projections);
+  const orchestration = createOrchestrationService(
+    journal,
+    work,
+    definitions,
+    projections,
+    config.orchestration.commandPolicy,
+  );
   const workspaces = new GitWorkspaceProvider(
     paths.workspacesRoot,
     {
