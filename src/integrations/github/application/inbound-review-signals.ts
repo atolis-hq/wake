@@ -138,6 +138,8 @@ async function applyIssueReviewSignal(input: {
   const resource = await resources.get(resourceIdValue);
   const command = recognizedCommand(event.event.payload.body);
   const plainReply = isPlainReply(event.event.payload.body);
+  // Compatibility callers still apply the command here; the normal inbound path
+  // also dispatches after durable conversation recording, using idempotent context.
   if (command !== null)
     return applyIssueCommand({
       event,

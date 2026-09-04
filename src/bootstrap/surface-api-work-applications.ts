@@ -12,6 +12,7 @@ import {
 } from '../execution/index.js';
 import {
   ApprovalAuthorityKind,
+  ConversationSurfaceCapability,
   GroupBudgetExtensionIneligibleError,
   isGroupBudgetExtensionEligible,
   OperatorRetryIneligibleError,
@@ -181,7 +182,23 @@ export function createSurfaceWorkApplications(
               },
               context,
             );
-            await resumeAgentStages(root, id, context);
+            const dispatch = (root.orchestration as Partial<typeof root.orchestration>)
+              .applyConversationCommand;
+            const applied =
+              dispatch === undefined
+                ? false
+                : await dispatch.call(
+                    root.orchestration,
+                    id,
+                    {
+                      body: command.body,
+                      surface: ConversationOriginKind.ControlPlane,
+                      actorId: context.actor.id,
+                      capabilities: [ConversationSurfaceCapability.Operator],
+                    },
+                    context,
+                  );
+            if (!applied) await resumeAgentStages(root, id, context);
             return accepted(command.idempotencyKey, now());
           },
         }

@@ -4,6 +4,7 @@ import { controlPlaneConfigSchema, type ControlPlaneConfig } from '../../control
 import { executionConfigSchema, type ExecutionConfig } from '../../execution/index.js';
 import { integrationsConfigSchema, type IntegrationsConfig } from '../../integrations/index.js';
 import {
+  commandPolicyConfigSchema,
   workflowDefinitionConfigSchema,
   workflowSelectorConfigSchema,
 } from '../../orchestration/index.js';
@@ -16,6 +17,7 @@ const orchestrationConfigSchema = z
     workflows: z.record(z.string().trim().min(1), workflowDefinitionConfigSchema).default({}),
     workflowSelectors: z.array(workflowSelectorConfigSchema).readonly().default([]),
     default: z.string().trim().min(1).default('default'),
+    commandPolicy: commandPolicyConfigSchema,
   })
   .strict()
   // Routing may only name a workflow that exists; a root with no workflows configured
@@ -38,7 +40,12 @@ const orchestrationConfigSchema = z
       });
     }
   })
-  .default({ workflows: {}, workflowSelectors: [], default: 'default' });
+  .default({
+    workflows: {},
+    workflowSelectors: [],
+    default: 'default',
+    commandPolicy: { capabilities: {}, replace: false },
+  });
 
 const transcriptsConfigSchema = z
   .object({

@@ -44,3 +44,22 @@ export const ApprovalAuthorityKind = defineClosedVocabulary({
 } as const);
 
 export type ApprovalAuthorityKind = ValueOf<typeof ApprovalAuthorityKind>;
+
+export const ConversationBuiltInCommand = defineClosedVocabulary({
+  Approved: '/approved',
+  Accepted: '/accepted',
+  Changes: '/changes',
+  Retry: '/retry',
+  Restart: '/restart',
+  Extend: '/extend',
+} as const);
+
+export type ConversationBuiltInCommand = ValueOf<typeof ConversationBuiltInCommand>;
+
+export const ConversationSurfaceCapability = defineClosedVocabulary({
+  Review: 'review-surface',
+  Chat: 'chat-surface',
+  Operator: 'operator-surface',
+} as const);
+
+export type ConversationSurfaceCapability = ValueOf<typeof ConversationSurfaceCapability>;
