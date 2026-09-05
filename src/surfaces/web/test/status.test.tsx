@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -114,7 +114,9 @@ describe('control-plane mutation and connection state', () => {
       </MemoryRouter>,
     );
     await screen.findByRole('button', { name: 'Pause ticks' });
-    window.dispatchEvent(new Event('offline'));
+    await act(async () => {
+      window.dispatchEvent(new Event('offline'));
+    });
     expect(await screen.findByText('Connection lost; reconnecting')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeTruthy();
   });
