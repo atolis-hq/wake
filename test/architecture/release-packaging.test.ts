@@ -63,6 +63,7 @@ describe('release packaging', () => {
     );
     expect(workflow).toContain('WAKE_VERSION: ${{ needs.tag.outputs.version }}');
     expect(workflow).toContain('npm pkg set version="$WAKE_VERSION"');
+    expect(publishJob).toContain('WAKE_BUILD_TAG: v${{ needs.tag.outputs.version }}');
     expect(workflow).not.toContain('npm version "$WAKE_VERSION"');
     expect(workflow).not.toMatch(/npm publish --workspaces(?:\s|$)/u);
     expect(workflow).not.toContain('npm install --package-lock-only --ignore-scripts');

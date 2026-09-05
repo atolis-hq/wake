@@ -206,4 +206,6 @@ jobs:
       - name: Verify public package archives
         run: npm run check:workspace-packages
       - name: Publish Wake
+        env:
+          WAKE_BUILD_TAG: v${{ needs.tag.outputs.version }}
         run: npm publish --workspaces=false --access public --provenance
