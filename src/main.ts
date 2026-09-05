@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { initialiseWakeRoot } from './bootstrap/initialise.js';
 import { wakeVersion } from './bootstrap/version.js';
 import {
@@ -219,7 +220,15 @@ function runDocker(arguments_: readonly string[]): Promise<void> {
   });
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+export function isMainEntrypoint(moduleUrl: string, invokedPath: string | undefined): boolean {
+  return (
+    invokedPath !== undefined &&
+    pathToFileURL(realpathSync(fileURLToPath(moduleUrl))).href ===
+      pathToFileURL(realpathSync(invokedPath)).href
+  );
+}
+
+if (isMainEntrypoint(import.meta.url, process.argv[1])) {
   try {
     await main();
   } catch (error) {
