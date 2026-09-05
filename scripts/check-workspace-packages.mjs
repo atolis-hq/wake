@@ -183,10 +183,7 @@ async function verifyCleanInstall(manifest, archive, projectDirectory) {
     `${JSON.stringify({ name: 'wake-package-check', private: true, version: '0.0.0', dependencies }, null, 2)}\n`,
   );
 
-  await runNpm(
-    ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'],
-    projectDirectory,
-  );
+  await runNpm(['install', '--ignore-scripts', '--no-audit', '--no-fund'], projectDirectory);
 
   const lock = JSON.parse(await readFile(resolve(projectDirectory, 'package-lock.json'), 'utf8'));
   const installed = lock.packages?.[`node_modules/${manifest.name}`];

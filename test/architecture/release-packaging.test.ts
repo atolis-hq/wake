@@ -26,6 +26,9 @@ describe('release packaging', () => {
       'COPY tsconfig.json tsconfig.base.json tsconfig.app.json tsconfig.docker.json ./',
     );
     expect(sourceDockerfile).toContain('COPY packages/ packages/');
+    expect(sourceDockerfile).toContain(
+      'COPY scripts/embed-runtime-workspaces.mjs scripts/embed-runtime-workspaces.mjs',
+    );
     expect(sourceDockerfile).toContain('COPY src/ src/');
     expect(sourceDockerfile.indexOf('COPY packages/eventing/package.json')).toBeLessThan(
       sourceDockerfile.indexOf('npm ci --include=dev'),

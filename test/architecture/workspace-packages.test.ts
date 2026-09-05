@@ -250,11 +250,12 @@ describe('eventing workspace packages', () => {
   });
 
   it('prepares the embedded runtime before running clean-checkout tools', async () => {
-    const [launcher, wake, webVitestConfig, packageCheck] = await Promise.all([
+    const [launcher, wake, webVitestConfig, packageCheck, knipConfig] = await Promise.all([
       readFile(new URL('../../bin/wake-dev.js', import.meta.url), 'utf8'),
       readJson<PackageManifest>('package.json'),
       readFile(new URL('../../src/surfaces/web/vitest.config.ts', import.meta.url), 'utf8'),
       readFile(new URL('../../scripts/check-workspace-packages.mjs', import.meta.url), 'utf8'),
+      readFile(new URL('../../knip.json', import.meta.url), 'utf8'),
     ]);
 
     expect(launcher).toContain("'--tsconfig', sourceTsConfig");
@@ -267,9 +268,7 @@ describe('eventing workspace packages', () => {
     expect(packageCheck).toContain(
       "const packageLocations = [{ directory: repoRoot, label: 'Wake' }];",
     );
-    expect(packageCheck).toContain(
-      "['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund']",
-    );
+    expect(packageCheck).toContain("['install', '--ignore-scripts', '--no-audit', '--no-fund']");
     expect(packageCheck).not.toContain('packages/eventing');
     expect(packageCheck).not.toContain('packages/eventing-filesystem');
     expect(packageCheck).toContain("['exec', '--offline', '--', 'wake', '--help']");
@@ -285,5 +284,8 @@ describe('eventing workspace packages', () => {
     );
     expect(packageCheck).toContain('if (!entry.isDirectory() || entry.isSymbolicLink())');
     expect(packageCheck).toContain('archive is missing required package file');
+    expect(knipConfig).toContain(
+      '"ignoreDependencies": ["@atolis-hq/eventing", "@atolis-hq/eventing-filesystem"]',
+    );
   });
 });

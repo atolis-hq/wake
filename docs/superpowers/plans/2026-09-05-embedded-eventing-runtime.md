@@ -4,7 +4,7 @@
 
 **Goal:** Package Eventing runtime code inside the single published Wake archive while retaining separate workspace builds and tests.
 
-**Architecture:** A build script copies each compiled workspace package and its manifest into Wake's `dist/src/node_modules/@atolis-hq`. Node resolves those embedded packages from the installed Wake entrypoint. Release and archive checks package only Wake and validate an offline clean install.
+**Architecture:** A build script copies each compiled workspace package and its manifest into Wake's `dist/src/node_modules/@atolis-hq`. Node resolves those embedded packages from the installed Wake entrypoint. Release and archive checks package only Wake and validate a clean install plus an offline CLI invocation.
 
 **Tech Stack:** npm workspaces, Node filesystem APIs, GitHub Actions, Vitest.
 

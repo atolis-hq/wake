@@ -23,4 +23,5 @@ public publication. Wake no longer declares them as registry dependencies.
 
 The release workflow versions and publishes only Wake. Package verification
 packs Wake, installs that one archive into a clean temporary project, and proves
-the embedded Eventing runtime packages and Wake CLI are available offline.
+the embedded Eventing runtime packages are present before executing the Wake CLI
+offline.
