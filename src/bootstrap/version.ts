@@ -16,6 +16,19 @@ export interface ResolveWakeVersionOptions {
 
 const defaultRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+function packageVersion(repoRoot: string): string | undefined {
+  try {
+    const manifest = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
+      version?: unknown;
+    };
+    return typeof manifest.version === 'string' && manifest.version.length > 0
+      ? manifest.version
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function gitOutputFromRoot(repoRoot: string, args: readonly string[]): string {
   try {
     return execFileSync('git', args as string[], {
@@ -130,3 +143,6 @@ export function resolveWakeVersion(options: ResolveWakeVersionOptions = {}): str
 }
 
 export const wakeVersion = resolveWakeVersion();
+
+/** The registry-installable version used by packaged sandbox images. */
+export const wakePackageVersion = packageVersion(defaultRepoRoot) ?? wakeVersion;

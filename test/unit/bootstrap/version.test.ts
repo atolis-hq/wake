@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveWakeVersion } from '../../../src/bootstrap/version.js';
+import { readFileSync } from 'node:fs';
+
+import { resolveWakeVersion, wakePackageVersion } from '../../../src/bootstrap/version.js';
 
 describe('target Wake version resolution', () => {
   it('uses an exact git tag at HEAD', () => {
@@ -89,5 +91,10 @@ describe('target Wake version resolution', () => {
         listTextFiles: () => [],
       }),
     ).toBe('0.1.0-dev');
+  });
+
+  it('uses the package manifest version for packaged sandbox builds', () => {
+    const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+    expect(wakePackageVersion).toBe(manifest.version);
   });
 });
