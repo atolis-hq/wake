@@ -17,16 +17,19 @@ export interface ResolveWakeVersionOptions {
 const defaultRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function packageVersion(repoRoot: string): string | undefined {
-  try {
-    const manifest = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
-      version?: unknown;
-    };
-    return typeof manifest.version === 'string' && manifest.version.length > 0
-      ? manifest.version
-      : undefined;
-  } catch {
-    return undefined;
+  for (const candidate of [
+    resolve(repoRoot, 'package.json'),
+    resolve(repoRoot, '..', 'package.json'),
+  ]) {
+    try {
+      const manifest = JSON.parse(readFileSync(candidate, 'utf8')) as { version?: unknown };
+      if (typeof manifest.version === 'string' && manifest.version.length > 0)
+        return manifest.version;
+    } catch {
+      // Source and compiled layouts place the package manifest at different depths.
+    }
   }
+  return undefined;
 }
 
 function gitOutputFromRoot(repoRoot: string, args: readonly string[]): string {
