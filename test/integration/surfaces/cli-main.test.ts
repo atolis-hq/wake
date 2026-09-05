@@ -100,6 +100,24 @@ describe('wake surface CLI', () => {
     expect(calls).toEqual(['C:\\wake-home', 'tick --wake-root /wake --no-sandbox']);
   });
 
+  it('delegates UI token generation into the sandbox', async () => {
+    const calls: string[][] = [];
+    await main(['ui', 'token'], {
+      compose: async () => {
+        throw new Error('host credentials must not be touched');
+      },
+      sandboxRuntime: {
+        hasDockerfile: async () => true,
+        exec: async (_wakeRoot, arguments_) => {
+          calls.push([...arguments_]);
+        },
+      },
+      output: { write: () => undefined },
+      signal: new AbortController().signal,
+    });
+    expect(calls).toEqual([['ui', 'token', '--wake-root', '/wake', '--no-sandbox']]);
+  });
+
   it('runs a sandboxed validate-state rebuild with the container Wake root', async () => {
     const calls: string[] = [];
     await main(['validate-state', '--rebuild-projections'], {
