@@ -35,7 +35,7 @@ const expectedUsage = [
   '  2. cd wake-home && wake start',
   '  https://github.com/atolis-hq/wake#readme',
   '',
-  'Runtime commands (tick/start/ui/smoke/audit/correlate/validate-state) auto-delegate into the sandbox',
+  'Runtime commands (tick/start/ui/ui-token/smoke/audit/correlate/validate-state) auto-delegate into the sandbox',
   'when docker/Dockerfile exists at --wake-root (i.e. after `wake sandbox build`),',
   'defaulting --wake-root to the current directory. Pass --no-sandbox to run',
   'directly on the host instead.',

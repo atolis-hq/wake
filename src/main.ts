@@ -140,7 +140,16 @@ async function runInSandboxIfAvailable(input: {
 }
 
 function isRuntimeCommand(kind: string): boolean {
-  return ['tick', 'start', 'ui', 'smoke', 'audit', 'correlate', 'validate-state'].includes(kind);
+  return [
+    'tick',
+    'start',
+    'ui',
+    'ui-token',
+    'smoke',
+    'audit',
+    'correlate',
+    'validate-state',
+  ].includes(kind);
 }
 
 function rewriteSandboxArguments(arguments_: readonly string[]): readonly string[] {
