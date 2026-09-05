@@ -72,7 +72,7 @@ import {
 import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
 import { createUpdateLedger } from './update-ledger.js';
-import { resolveWakeVersion, wakeVersion } from './version.js';
+import { resolveWakeVersion, wakePackageVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
 
@@ -522,7 +522,7 @@ async function resolveSandboxBuildVersion(root: CompositionRoot): Promise<string
   const development = root.config.host.development;
   return development.mode === 'source' && development.repoRoot !== undefined
     ? resolveWakeVersion({ repoRoot: development.repoRoot })
-    : wakeVersion;
+    : wakePackageVersion;
 }
 
 function sandboxWakeInvocation(root: CompositionRoot): readonly string[] {
