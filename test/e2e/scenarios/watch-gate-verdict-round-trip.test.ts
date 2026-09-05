@@ -332,13 +332,14 @@ async function waitingWatchGate(childOutcome: 'done' | 'rejected' = 'done') {
   return { world, parent, child, workItemId: work.workItemId };
 }
 
-function processInbound(translator: InboundTranslator, world: TestWorld) {
-  return new EventProcessorHost(
+async function processInbound(translator: InboundTranslator, world: TestWorld): Promise<void> {
+  const host = new EventProcessorHost(
     world.journal,
     world.checkpoints,
     createInMemoryProcessorRunSerialiser(),
     world.clock,
-  ).runOnce(translator.processor);
+  );
+  await host.runThrough(translator.processor, await world.journal.latestGlobalPosition());
 }
 
 async function appendTerminalAgentRun(
