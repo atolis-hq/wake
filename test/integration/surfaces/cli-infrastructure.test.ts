@@ -140,7 +140,7 @@ describe('CLI infrastructure', () => {
     await docker.up();
     await docker.down();
     expect(calls).toEqual([
-      ['build', '-t', 'wake-sandbox', '-f', '/wake-root/docker/Dockerfile', '/wake-root'],
+      ['build', '-t', 'wake-sandbox', '-f', '/wake-root/docker/Dockerfile.packaged', '/wake-root'],
       [
         'run',
         '-d',
