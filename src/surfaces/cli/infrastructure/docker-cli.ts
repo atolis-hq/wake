@@ -139,7 +139,7 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
   return {
     build: async () => {
       const source = options.development?.mode === 'source';
-      const packaged = options.development?.mode === 'packaged';
+      const packaged = !source;
       const context = source ? options.development?.repoRoot : options.wakeRoot;
       if (context === undefined)
         throw new Error('source sandbox build requires host.development.repoRoot');
