@@ -65,7 +65,7 @@ describe('sandbox build version tagging', () => {
     ]);
   });
 
-  it('omits build-args entirely when no version resolver is configured', async () => {
+  it('uses the packaged Dockerfile when development mode is not configured', async () => {
     const calls: string[][] = [];
     const docker = createSandboxDockerPort(
       createDockerCli(async (arguments_) => {
@@ -75,7 +75,7 @@ describe('sandbox build version tagging', () => {
     );
     await docker.build();
     expect(calls).toEqual([
-      ['build', '-t', 'wake-sandbox', '-f', '/wake-root/docker/Dockerfile', '/wake-root'],
+      ['build', '-t', 'wake-sandbox', '-f', '/wake-root/docker/Dockerfile.packaged', '/wake-root'],
     ]);
   });
 });
