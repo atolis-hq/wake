@@ -209,6 +209,8 @@ function productionSandboxRuntime(): SandboxRuntimeRouter {
       await runDocker([
         'exec',
         '-i',
+        '-u',
+        'wake',
         config.host.sandbox.containerName,
         ...invocation,
         ...arguments_,
