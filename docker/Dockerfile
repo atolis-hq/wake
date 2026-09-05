@@ -46,6 +46,7 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY tsconfig.json tsconfig.base.json tsconfig.app.json tsconfig.docker.json ./
 COPY packages/ packages/
 COPY scripts/embed-version.mjs scripts/embed-version.mjs
+COPY scripts/embed-runtime-workspaces.mjs scripts/embed-runtime-workspaces.mjs
 COPY assets/ assets/
 COPY src/ src/
 ARG WAKE_BUILD_TAG

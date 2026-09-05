@@ -2,6 +2,7 @@
   "ignoreExportsUsedInFile": true,
   "workspaces": {
     ".": {
+      "ignoreDependencies": ["@atolis-hq/eventing", "@atolis-hq/eventing-filesystem"],
       "entry": [
         "src/*/index.ts",
         "test/**/*.test.ts",
