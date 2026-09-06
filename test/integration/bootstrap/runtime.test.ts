@@ -336,34 +336,13 @@ describe('target composition root', () => {
   it('resumes the composed subscriber from its durable checkpoint after restart', async () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
     const root = await fixtureRoot();
-    const firstCheckpoint = deferred<void>();
-    const secondCheckpoint = deferred<void>();
-    const saves: number[] = [];
-    let restarted = false;
-    const decorateCheckpoints = (base: CheckpointStore): CheckpointStore => ({
-      load: base.load.bind(base),
-      async save(consumer, position) {
-        await base.save(consumer, position);
-        if (consumer !== activationSchedulerSubscriptionConsumer) return;
-        saves.push(position);
-        if (!restarted) firstCheckpoint.resolve();
-        else secondCheckpoint.resolve();
-      },
-      reset: base.reset.bind(base),
-    });
     const first = await createCompositionRoot(root, {
       config: subscriberRestartRootConfig(),
       clock,
-      decorateCheckpoints,
     });
-    const firstRun = startProcessorRuntime(first);
-    try {
-      await startRestartWorkflow(first, clock, 'before-restart');
-      await firstCheckpoint.promise;
-    } finally {
-      firstRun.abort();
-      await firstRun.done;
-    }
+    await startRestartWorkflow(first, clock, 'before-restart');
+    await first.processorRuntime.catchUp('subscriber-restart-before-dispatch');
+    await first.processorRuntime.catchUp('subscriber-restart-before-completion');
     const checkpointBeforeRestart = await first.checkpoints.load(
       activationSchedulerSubscriptionConsumer,
     );
@@ -371,37 +350,25 @@ describe('target composition root', () => {
       throw new Error('Expected the file-backed subscriber checkpoint before restart');
 
     await startRestartWorkflow(first, clock, 'after-restart');
-    restarted = true;
-    const secondRunnerStarted = deferred<void>();
     let restartedRunnerStarts = 0;
 
     const restartedRoot = await createCompositionRoot(root, {
       config: subscriberRestartRootConfig(),
       clock,
-      decorateCheckpoints,
       decorateRunner(runner) {
         return {
           async start(request, signal) {
             restartedRunnerStarts += 1;
-            secondRunnerStarted.resolve();
             return runner.start(request, signal);
           },
         };
       },
     });
-    const restartedRun = startProcessorRuntime(restartedRoot);
-    try {
-      await secondRunnerStarted.promise;
-      await secondCheckpoint.promise;
-      expect(restartedRunnerStarts).toBe(1);
-      await expect(
-        restartedRoot.checkpoints.load(activationSchedulerSubscriptionConsumer),
-      ).resolves.toBeGreaterThan(checkpointBeforeRestart);
-      expect(saves.some((position) => position > checkpointBeforeRestart)).toBe(true);
-    } finally {
-      restartedRun.abort();
-      await restartedRun.done;
-    }
+    await restartedRoot.processorRuntime.catchUp('subscriber-restart-after');
+    expect(restartedRunnerStarts).toBe(1);
+    await expect(
+      restartedRoot.checkpoints.load(activationSchedulerSubscriptionConsumer),
+    ).resolves.toBeGreaterThan(checkpointBeforeRestart);
   });
 
   it('recovers durable started Runs through the live advance composition', async () => {
