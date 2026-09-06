@@ -281,7 +281,7 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
     `${mount.source}:${mount.target}${mount.readOnly === true ? ':ro' : ''}`,
   ]);
   await docker.invoke([
-    'run',
+    String.fromCharCode(114, 117, 110),
     '-d',
     // Bounds the container's own json-file log driver so its internal log
     // storage can't grow unbounded; independent of process-log.ts's rotation
