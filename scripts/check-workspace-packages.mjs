@@ -90,10 +90,16 @@ function publicDistEntries(manifest) {
 }
 
 function parsePackOutput(output, label) {
-  const jsonStarts = [
-    0,
-    ...[...output.matchAll(/\n[\[{]/gu)].map((match) => (match.index ?? -1) + 1),
-  ];
+  const jsonStarts = [0];
+  let lineStart = 0;
+  while (lineStart < output.length) {
+    const lineEnd = output.indexOf('\n', lineStart);
+    if (lineStart > 0 && (output[lineStart] === '[' || output[lineStart] === '{')) {
+      jsonStarts.push(lineStart);
+    }
+    if (lineEnd === -1) break;
+    lineStart = lineEnd + 1;
+  }
   for (const jsonStart of jsonStarts.reverse()) {
     try {
       const result = JSON.parse(output.slice(jsonStart).trim());
