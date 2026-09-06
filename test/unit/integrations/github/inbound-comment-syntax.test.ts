@@ -14,8 +14,10 @@ describe('recognizedCommand', () => {
     ['/changes\r\n\r\nplease fix the error handling', GitHubBuiltInCommand.Changes],
     ['  /Changes  \n\nfeedback below', GitHubBuiltInCommand.Changes],
     ['/approved', GitHubBuiltInCommand.Approved],
+    ['/approved\tthanks!', GitHubBuiltInCommand.Approved],
     ['/approved\n\nthanks!', GitHubBuiltInCommand.Approved],
     ['/retry', GitHubBuiltInCommand.Retry],
+    ['/retry\tplease', GitHubBuiltInCommand.Retry],
     ['/retry\n\nplease', GitHubBuiltInCommand.Retry],
     ['/restart', GitHubBuiltInCommand.Restart],
     ['/restart\n\nstart a new session', GitHubBuiltInCommand.Restart],
@@ -23,12 +25,16 @@ describe('recognizedCommand', () => {
     expect(recognizedCommand(body)).toBe(expected);
   });
 
-  it.each([['/ask a question'], ['/changesomething'], ['not a command'], ['']])(
-    'returns null for %j',
-    (body) => {
-      expect(recognizedCommand(body)).toBeNull();
-    },
-  );
+  it.each([
+    ['/ask a question'],
+    ['/approvedness'],
+    ['/changesomething'],
+    ['/retry-again'],
+    ['not a command'],
+    [''],
+  ])('returns null for %j', (body) => {
+    expect(recognizedCommand(body)).toBeNull();
+  });
 });
 
 describe('isPlainReply', () => {
