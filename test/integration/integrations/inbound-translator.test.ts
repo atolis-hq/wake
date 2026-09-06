@@ -238,7 +238,13 @@ describe('InboundTranslator', () => {
       routing,
       intake: [
         {
-          where: { kind: 'issue', requiredAssignees: [], requiredAuthors: [], labels: [] },
+          where: {
+            kind: 'issue',
+            state: [],
+            requiredAssignees: [],
+            requiredAuthors: [],
+            labels: [],
+          },
           matchMode: 'any',
           ignoredLabels: ['security'],
           tags: [],

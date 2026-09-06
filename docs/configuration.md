@@ -160,6 +160,7 @@ integrations:
     intake:
       - where:
           kind: issue
+          state: [open]
           requiredAssignees: []
           requiredAuthors: []
           labels: [automation]
@@ -462,10 +463,12 @@ Each `intake[]` rule has `where`, optional `matchMode` (`any` by default or
 observation carrying any `ignoredLabels` value is discarded before Wake creates
 or correlates work, regardless of whether it otherwise matches an intake rule.
 `where.kind` is `issue` or
-`pull-request`; `where.requiredAssignees`, `where.requiredAuthors`, and
-`where.labels` are string lists, each defaulting to `[]`. Intake tags must not
-use a Wake-owned marker family, so Wake cannot ingest and reroute its own
-markers.
+`pull-request`; `where.state` is an optional list of `open`, `closed`, or
+`merged` states, and `where.requiredAssignees`, `where.requiredAuthors`, and
+`where.labels` are string lists, each defaulting to `[]`. State restricts
+admission only: Wake continues to poll all states so it can reconcile closure
+of work it already admitted. Intake tags must not use a Wake-owned marker
+family, so Wake cannot ingest and reroute its own markers.
 
 `publication.replies.rules` controls where terminal agent-run reply comments go. Each rule has a
 required `target` of `primary`, `issue`, `pull-request`, or `none`; `none` suppresses the comment.

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PullRequestState } from '../../../activities/index.js';
 import { MatchMode } from '../../../kernel/index.js';
 import {
   type ReplyOutcome,
@@ -63,6 +64,9 @@ const intakeRuleSchema = z
     where: z
       .object({
         kind: z.enum(['issue', 'pull-request']).optional(),
+        state: z
+          .array(z.enum([PullRequestState.Open, PullRequestState.Closed, PullRequestState.Merged]))
+          .default([]),
         requiredAssignees: z.array(z.string().trim().min(1)).default([]),
         requiredAuthors: z.array(z.string().trim().min(1)).default([]),
         labels: z.array(z.string().trim().min(1)).default([]),
