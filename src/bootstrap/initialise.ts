@@ -463,7 +463,7 @@ RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash \\
   && chown -R wake:wake /home/wake/.local
 
 USER root
-WORKDIR /home/wake
+WORKDIR /wake
 
 EXPOSE 4317
 
