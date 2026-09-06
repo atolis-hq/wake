@@ -2,8 +2,8 @@ import {
   ReviewerAuthorizationSource,
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
+import { recognizedCommand } from '../application/inbound-comment-syntax.js';
 import type { GitHubIssueCommentPayload } from '../contracts/payloads.js';
-import { GitHubBuiltInCommand } from '../contracts/vocabulary.js';
 import { issueCommentObservation } from './issue-source.js';
 import { mergeBatches, reportPartialPollFailure, type PollBatch } from './poll-watermark.js';
 import { githubReviewObservation } from './review-source.js';
@@ -118,7 +118,7 @@ async function issueCommentEventsForComment(
   issue: Pick<Parameters<typeof issueCommentObservation>[0]['issue'], 'number'>,
   comment: GitHubIssueCommentPayload,
 ) {
-  const authorization = await retryAuthorization(context, comment);
+  const authorization = await commandAuthorization(context, comment);
   const event = issueCommentObservation({
     repository: context.repository,
     issue,
@@ -129,12 +129,15 @@ async function issueCommentEventsForComment(
   return event === null ? [] : [event];
 }
 
-async function retryAuthorization(
+async function commandAuthorization(
   context: RepositoryPollContext,
   comment: GitHubIssueCommentPayload,
 ): Promise<ReviewerAuthorizationEvidence | undefined> {
-  const command = comment.body?.trim().toLowerCase();
-  if (command !== GitHubBuiltInCommand.Retry && command !== GitHubBuiltInCommand.Restart)
+  if (
+    comment.body === null ||
+    comment.body === undefined ||
+    recognizedCommand(comment.body) === null
+  )
     return undefined;
   const login = comment.user?.login;
   if (login === undefined || context.client.collaboratorPermission === undefined)

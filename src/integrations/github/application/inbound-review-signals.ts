@@ -152,7 +152,8 @@ async function applyIssueReviewSignal(input: {
   const plainReply = isPlainReply(event.event.payload.body);
   // Direct compatibility callers retain the legacy handler; the normal inbound
   // path records first and has the shared dispatcher handle the command exactly once.
-  if (command !== null && applyIssueCommands !== false)
+  if (command !== null) {
+    if (applyIssueCommands === false) return;
     return applyIssueCommand({
       event,
       command,
@@ -164,6 +165,7 @@ async function applyIssueReviewSignal(input: {
       adapter,
       resourceId: resourceIdValue,
     });
+  }
   if (resource?.kind === BuiltInResourceKind.PullRequest) {
     await applyWorkflowSignal({
       event,

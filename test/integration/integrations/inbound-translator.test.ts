@@ -5,6 +5,7 @@ import { createEventData, EventProcessorHost, type EventProcessor } from '@atoli
 import {
   activityName,
   ActivityOutcomeKind,
+  ProviderPermission,
   ReviewerAuthorizationSource,
 } from '../../../src/activities/index.js';
 import { RunRepository } from '../../../src/execution/index.js';
@@ -29,7 +30,7 @@ import {
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
 import { adapterId } from '../../../src/integrations/index.js';
-import { workflowName } from '../../../src/orchestration/index.js';
+import { ConversationSurfaceCapability, workflowName } from '../../../src/orchestration/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,
@@ -625,6 +626,80 @@ describe('InboundTranslator', () => {
     ]);
   });
 
+  it('requires provider authorization and treats /accepted as approval on an issue wait', async () => {
+    const fixture = await waitingIssueWorkflow();
+    const apply = vi.spyOn(fixture.world.orchestration, 'applyConversationCommand');
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        conversations: createConversationService(fixture.world.journal),
+        conversationCapabilities: [ConversationSurfaceCapability.Review],
+      },
+    );
+    const unauthorized = issueCommandEvent(fixture.world, '/approved', 3, {
+      source: ReviewerAuthorizationSource.None,
+    });
+    await fixture.world.journal.appendToStream(githubStream, 0, [unauthorized]);
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
+    expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
+      'waiting',
+    );
+
+    const accepted = issueCommandEvent(fixture.world, '/accepted looks good', 4, {
+      source: ReviewerAuthorizationSource.ProviderPermission,
+      permission: ProviderPermission.Write,
+    });
+    await fixture.world.journal.appendToStream(githubStream, 1, [accepted]);
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
+    expect(apply).toHaveBeenLastCalledWith(
+      fixture.workflow.workItemId,
+      expect.objectContaining({ authorized: true }),
+      expect.anything(),
+    );
+    await expect(apply.mock.results.at(-1)?.value).resolves.toBe(true);
+    expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
+      'completed',
+    );
+  });
+
+  it('replays a command after its conversation entry was durably recorded', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        conversations: createConversationService(fixture.world.journal),
+        conversationCapabilities: [ConversationSurfaceCapability.Review],
+      },
+    );
+    vi.spyOn(fixture.world.orchestration, 'applyConversationCommand').mockRejectedValueOnce(
+      new Error('interrupted after recording'),
+    );
+    const event = issueCommandEvent(fixture.world, '/changes please revise', 5, {
+      source: ReviewerAuthorizationSource.ProviderPermission,
+      permission: ProviderPermission.Write,
+    });
+    await fixture.world.journal.appendToStream(githubStream, 0, [event]);
+
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
+    expect(await fixture.world.events(GitHubEventType.ConversationRecordDeferred)).toHaveLength(1);
+    expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
+      'blocked',
+    );
+
+    await translator.reconciler.reconcileOnce();
+    expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
+      'active',
+    );
+  });
+
   it('records an unverified delivery marker as external feedback rather than agent publication', async () => {
     const fixture = await blockedIssueWorkflow();
     const conversations = createConversationService(fixture.world.journal);
@@ -1130,6 +1205,82 @@ async function blockedIssueWorkflow() {
     kind: ActivityOutcomeKind.Blocked,
   });
   return { world, workflow };
+}
+
+async function waitingIssueWorkflow() {
+  const world = new TestWorld();
+  world.registerActivity({
+    name: activityName('agent'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.literal(ActivityOutcomeKind.Done) }).strict(),
+    outcomeKinds: [ActivityOutcomeKind.Done],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: ActivityOutcomeKind.Done } as const;
+      },
+    },
+  });
+  world.configureWorkflow('waiting-issue-approval', {
+    stages: {
+      review: {
+        activity: 'agent',
+        with: {},
+        on: { done: { then: 'done', await: { signal: 'approved', from: ['human'] } } },
+      },
+    },
+  });
+  const work = await world.createWork({ objective: 'await issue approval' });
+  const resource = await world.discoverResource({
+    resourceId: `resource-${'0'.repeat(25)}4` as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: 'github', key: 'atolis-hq/wake#583' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(resource.resourceId, work.workItemId, 'primary', {
+    commandId: 'correlate-waiting-issue',
+    correlationId: 'waiting-issue-approval' as never,
+    occurredAt: world.clock.now().toISOString(),
+    actor: { kind: 'system', id: 'test' },
+  });
+  const workflow = await world.startWorkflow({
+    workItemId: work.workItemId,
+    workflowName: workflowName('waiting-issue-approval'),
+  });
+  await world.acceptOutcome(workflow.workflowInstanceId, workflow.pendingActivation!.activationId, {
+    kind: ActivityOutcomeKind.Done,
+  });
+  return { world, workflow };
+}
+
+function issueCommandEvent(
+  world: TestWorld,
+  body: string,
+  id: number,
+  authorization: {
+    readonly source: ReviewerAuthorizationSource;
+    readonly permission?: ProviderPermission;
+  },
+) {
+  return createEventData({
+    eventId: `github:issue-comment:atolis-hq/wake#583:${id}`,
+    eventType: GitHubEventType.CommentObserved,
+    occurredAt: world.clock.now().toISOString(),
+    correlationId: 'github:atolis-hq/wake#583',
+    causationId: `github:issue-comment:${id}`,
+    actor: { kind: 'integration', id: 'github' },
+    source: { kind: 'adapter', id: 'github' },
+    payload: {
+      reviewKind: 'issue',
+      externalKey: 'atolis-hq/wake#583',
+      body,
+      revision: world.clock.now().toISOString(),
+      actor: { id: 'maintainer', kind: 'human' },
+      authorization,
+      raw: { id },
+    },
+  });
 }
 
 function testActivity(name: string) {

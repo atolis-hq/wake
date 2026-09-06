@@ -434,8 +434,9 @@ non-empty string or a non-empty list. `matchMode` is `any` by default, or
 
 `integrations` is a mapping from a lowercase, hyphenated integration name to a
 provider entry. Every entry accepts `provider` (optional lower-case provider
-id) and `enabled` (boolean, default `true`). Provider-owned fields are allowed
-at this boundary and are validated when that provider is composed.
+id), `enabled` (boolean, default `true`), and optional `conversation.capabilities`.
+Provider-owned fields are allowed at this boundary and are validated when that provider is composed.
+The generic conversation setting is removed before provider-specific validation.
 
 ### Built-in GitHub provider
 

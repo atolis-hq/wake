@@ -368,7 +368,7 @@ export class InboundTranslator {
         ),
       )
     )
-      return;
+      return this.applyConversationCommand(correlation.workItemId, event);
     if (priorEntry !== undefined) {
       if (priorEntry.body !== event.event.payload.body)
         await this.conversations.revise(
@@ -379,7 +379,7 @@ export class InboundTranslator {
           },
           commandContext(event),
         );
-      return;
+      return this.applyConversationCommand(correlation.workItemId, event);
     }
     await this.conversations.record(
       {

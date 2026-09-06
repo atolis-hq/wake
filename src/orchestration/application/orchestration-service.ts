@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
-import type { WorkItemId, WorkService } from '../../work/index.js';
+import { WorkStatus, type WorkItemId, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
@@ -51,6 +51,7 @@ export class OrchestrationService {
   private readonly claims: CoordinationClaims;
   private readonly journal: EventJournal;
   private readonly definitions: WorkflowDefinitionRegistry;
+  private readonly work: WorkService;
 
   constructor(
     journal: EventJournal,
@@ -60,6 +61,7 @@ export class OrchestrationService {
   ) {
     this.projections = projections;
     this.journal = journal;
+    this.work = work;
     const repository = new OrchestrationRepository(journal);
     this.claims = new CoordinationClaims(journal);
     this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
@@ -160,7 +162,14 @@ export class OrchestrationService {
     const command = conversationCommand(input.body);
     if (command === null) return false;
     if (!input.authorized) return false;
-    const workflows = await this.listForWorkItem(workItemId);
+    const work = await this.work.get(workItemId);
+    if (work === null || work.deleted || work.frozen || work.state !== WorkStatus.Open)
+      return false;
+    // A command is causally adjacent to its conversation entry; projections may lag
+    // the journal, so command application must read the authoritative workflow state.
+    const workflows = (await this.advanceWorkflow.listAll()).filter(
+      (workflow) => workflow.workItemId === workItemId,
+    );
     // Configured commands deliberately win over built-ins, even when their spelling collides.
     let supplemental = false;
     for (const workflow of workflows) {

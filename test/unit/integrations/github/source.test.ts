@@ -238,7 +238,14 @@ it('keeps an approved review body separate from its acceptance command', async (
   expect(bodies).toEqual(['general approval feedback', '/accepted']);
 });
 
-it('attaches collaborator permission evidence to a /retry comment', async () => {
+it.each([
+  '/approved',
+  '/accepted looks good',
+  '/changes please revise',
+  '/retry please retry',
+  '/restart in a new session',
+  '/extend one more review',
+])('attaches collaborator permission evidence to built-in command %s', async (body) => {
   const source = createGitHubSource(
     gitHubConfigSchema.parse({
       enabled: true,
@@ -247,7 +254,7 @@ it('attaches collaborator permission evidence to a /retry comment', async () => 
     }),
     fakeClient({
       issues: [issue(5, 'A plain issue')],
-      issueComments: { 5: [comment(1, '/retry')] },
+      issueComments: { 5: [comment(1, body)] },
       collaboratorPermission: ProviderPermission.Write,
     }),
   );
@@ -258,37 +265,7 @@ it('attaches collaborator permission evidence to a /retry comment', async () => 
     expect.objectContaining({
       eventType: GitHubEventType.CommentObserved,
       payload: expect.objectContaining({
-        body: '/retry',
-        authorization: {
-          source: ReviewerAuthorizationSource.ProviderPermission,
-          permission: ProviderPermission.Write,
-        },
-      }),
-    }),
-  );
-});
-
-it('attaches collaborator permission evidence to a /restart comment', async () => {
-  const source = createGitHubSource(
-    gitHubConfigSchema.parse({
-      enabled: true,
-      token: 'token',
-      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
-    }),
-    fakeClient({
-      issues: [issue(5, 'A plain issue')],
-      issueComments: { 5: [comment(1, '/restart')] },
-      collaboratorPermission: ProviderPermission.Write,
-    }),
-  );
-
-  const drafts = await source.poll(new AbortController().signal);
-
-  expect(drafts).toContainEqual(
-    expect.objectContaining({
-      eventType: GitHubEventType.CommentObserved,
-      payload: expect.objectContaining({
-        body: '/restart',
+        body,
         authorization: {
           source: ReviewerAuthorizationSource.ProviderPermission,
           permission: ProviderPermission.Write,
