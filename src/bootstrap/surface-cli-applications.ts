@@ -58,6 +58,7 @@ import {
 import { WorkStreamKind, workItemId } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { loadConfig } from './config/load-config.js';
+import { createNpmUpdatePort } from './npm-update-port.js';
 import { runtimeProjectionDefinitions } from './projection-runtime.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import {
@@ -492,13 +493,17 @@ function createDockerCliForRoot(root: CompositionRoot): DockerCli {
 
 function sandboxDockerOptions(
   root: CompositionRoot,
-  overrides?: { readonly image?: string },
+  overrides?: {
+    readonly image?: string;
+    readonly development?: SandboxDockerOptions['development'];
+    readonly buildVersion?: string;
+  },
 ): SandboxDockerOptions {
   return {
     wakeRoot: root.paths.wakeRoot,
     containerHomeRoot: root.paths.containerHomeRoot,
     image: overrides?.image ?? root.config.host.sandbox.image,
-    development: root.config.host.development,
+    development: overrides?.development ?? root.config.host.development,
     containerName: root.config.host.sandbox.containerName,
     ...(root.config.surfaces.api.enabled ? { publishedPort: root.config.surfaces.api.port } : {}),
     wakeMountPath: root.config.host.sandbox.wakeMountPath,
@@ -507,7 +512,10 @@ function sandboxDockerOptions(
     startEnabled: root.config.host.sandbox.start.enabled,
     ...(process.env.WAKE_MEMORY_PROFILE === 'runner' ? { memoryProfile: 'runner' as const } : {}),
     inspect: createDockerInspection(root.paths.wakeRoot),
-    resolveBuildVersion: () => resolveSandboxBuildVersion(root),
+    resolveBuildVersion: async () =>
+      overrides?.buildVersion === undefined
+        ? resolveSandboxBuildVersion(root)
+        : overrides.buildVersion,
   };
 }
 
@@ -607,11 +615,18 @@ async function deploySandboxTag(
   docker: DockerCli,
   tag: string,
   image: string,
+  overrides?: {
+    readonly development?: SandboxDockerOptions['development'];
+    readonly buildVersion?: string;
+  },
 ) {
-  const port = createSandboxDockerPort(docker, sandboxDockerOptions(root, { image }));
+  const port = createSandboxDockerPort(docker, sandboxDockerOptions(root, { image, ...overrides }));
   await port.build();
   await port.update();
-  const wakeInvocation = sandboxWakeInvocation(root);
+  const wakeInvocation =
+    overrides?.development?.mode === 'source'
+      ? ['node', '/app/dist/src/main.js']
+      : sandboxWakeInvocation(root);
   await verifyResidentStart(
     docker,
     root.config.host.sandbox.containerName,
@@ -625,10 +640,18 @@ async function deploySandboxTag(
   ]);
 }
 
-async function rollbackSandboxTag(root: CompositionRoot, docker: DockerCli, image: string) {
+async function rollbackSandboxTag(
+  root: CompositionRoot,
+  docker: DockerCli,
+  image: string,
+  development?: SandboxDockerOptions['development'],
+) {
   const port = createSandboxDockerPort(docker, sandboxDockerOptions(root, { image }));
   await port.update();
-  const wakeInvocation = sandboxWakeInvocation(root);
+  const wakeInvocation =
+    development?.mode === 'source'
+      ? ['node', '/app/dist/src/main.js']
+      : sandboxWakeInvocation(root);
   await verifyResidentStart(
     docker,
     root.config.host.sandbox.containerName,
@@ -662,19 +685,41 @@ function createOperationalApplications(root: CompositionRoot) {
     sandboxEntrypoint: async () => {
       await runSandboxEntrypoint(createSandboxEntrypointDependencies(root));
     },
+    // eslint-disable-next-line complexity -- update source and loop options are validated at this CLI boundary.
     selfUpdate: async (arguments_: readonly string[]) => {
-      if (root.config.host.development.mode !== 'source')
-        throw new Error('wake self-update requires host.development.mode: source');
-      const repoRoot = root.config.host.development.repoRoot;
-      if (repoRoot === undefined)
+      const sourceRoot = optionalOperationalOption(arguments_, '--source');
+      const configuredSource = root.config.host.development.mode === 'source';
+      const repoRoot = sourceRoot ?? root.config.host.development.repoRoot;
+      if (sourceRoot !== undefined && root.config.host.development.mode === 'source')
+        throw new Error('wake self-update --source cannot override source-mode configuration');
+      if (configuredSource && repoRoot === undefined)
         throw new Error('wake self-update requires host.development.repoRoot');
       const tag = optionalOperationalOption(arguments_, '--tag');
+      const version = optionalOperationalOption(arguments_, '--version');
+      if (tag !== undefined && version !== undefined)
+        throw new Error('wake self-update accepts only one of --tag or --version');
+      if (version !== undefined && (configuredSource || sourceRoot !== undefined))
+        throw new Error('wake self-update --version is only valid for npm updates');
+      const useSource = configuredSource || sourceRoot !== undefined;
+      const updatePort = useSource
+        ? createSourceUpdatePort({ repoRoot: repoRoot! })
+        : createNpmUpdatePort({
+            packageName: root.config.host.selfUpdate.npm.package,
+            distTag: root.config.host.selfUpdate.npm.distTag,
+            ...(root.config.host.selfUpdate.npm.registry === undefined
+              ? {}
+              : { registry: root.config.host.selfUpdate.npm.registry }),
+          });
+      const updateTag = tag ?? version;
+      const updateDevelopment = useSource
+        ? { mode: 'source' as const, repoRoot: repoRoot! }
+        : { mode: 'packaged' as const };
       const dockerCli = createDockerCliForRoot(root);
       const imageRepository = root.config.host.sandbox.imageRepository;
       const failureLog = createSelfUpdateFailureLog(root.paths.wakeRoot);
       const application = createSelfUpdateApplication({
         ledger: createUpdateLedger(root.paths.wakeRoot),
-        source: createSourceUpdatePort({ repoRoot }),
+        source: updatePort,
         rollout: {
           async deploy(deployTag) {
             await waitForActiveRuns({
@@ -682,12 +727,20 @@ function createOperationalApplications(root: CompositionRoot) {
               sleep: async (milliseconds) =>
                 new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
             });
-            await deploySandboxTag(root, dockerCli, deployTag, `${imageRepository}:${deployTag}`);
+            await deploySandboxTag(root, dockerCli, deployTag, `${imageRepository}:${deployTag}`, {
+              development: updateDevelopment,
+              buildVersion: deployTag,
+            });
             // A later deploy succeeding after a prior rollback clears the stale warning.
             await failureLog.clear();
           },
           async rollback(rollbackTag) {
-            await rollbackSandboxTag(root, dockerCli, `${imageRepository}:${rollbackTag}`);
+            await rollbackSandboxTag(
+              root,
+              dockerCli,
+              `${imageRepository}:${rollbackTag}`,
+              updateDevelopment,
+            );
           },
           recordFailure: (failedTag, error) => failureLog.record(failedTag, error),
         },
@@ -698,9 +751,9 @@ function createOperationalApplications(root: CompositionRoot) {
       const force = arguments_.includes('--force');
       if (arguments_.includes('--loop')) {
         const intervalMs = selfUpdateLoopInterval(arguments_);
-        if (tag !== undefined)
+        if (updateTag !== undefined)
           return runSelfUpdateLatestLoop(
-            async () => application.update(tag, force),
+            async () => application.update(updateTag, force),
             () => delay(intervalMs),
           );
         return runSelfUpdateLatestLoop(
@@ -708,7 +761,8 @@ function createOperationalApplications(root: CompositionRoot) {
           () => delay(intervalMs),
         );
       }
-      if (tag !== undefined) return { tag, updated: await application.update(tag, force) };
+      if (updateTag !== undefined)
+        return { tag: updateTag, updated: await application.update(updateTag, force) };
       return application.updateLatest(force);
     },
     smoke: async () =>

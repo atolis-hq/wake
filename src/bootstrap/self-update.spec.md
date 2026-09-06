@@ -160,9 +160,10 @@ a CLI command.
 - The maintenance lease is operational JSON under `.wake`, not a journal
   fact: it controls the installation that owns the journal and must survive
   process replacement before normal services resume.
-- Self-update requires `host.development.mode: source` and a configured
-  `host.development.repoRoot`; there is no packaged-install self-update
-  path composed here.
+- Packaged self-update resolves an exact version from `host.selfUpdate.npm`
+  and installs it through the versioned sandbox rollout. Source mode uses the
+  configured checkout, and `--source <repo-root>` selects a source checkout
+  for one command without changing configuration.
 - The update ledger and failure log are both plain JSON files under the
   Wake root, not journal-backed facts — a self-update's own history is
   operational state, not domain history.

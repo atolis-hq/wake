@@ -99,9 +99,21 @@ const hostConfigSchema = z
       .object({
         drainTimeoutMs: z.number().int().positive().default(30_000),
         cancellationTimeoutMs: z.number().int().positive().default(30_000),
+        npm: z
+          .object({
+            package: z.string().trim().min(1).default('@atolis-hq/wake'),
+            distTag: z.string().trim().min(1).default('latest'),
+            registry: z.string().url().optional(),
+          })
+          .strict()
+          .default({ package: '@atolis-hq/wake', distTag: 'latest' }),
       })
       .strict()
-      .default({ drainTimeoutMs: 30_000, cancellationTimeoutMs: 30_000 }),
+      .default({
+        drainTimeoutMs: 30_000,
+        cancellationTimeoutMs: 30_000,
+        npm: { package: '@atolis-hq/wake', distTag: 'latest' },
+      }),
   })
   .strict()
   .default({
@@ -115,7 +127,11 @@ const hostConfigSchema = z
       extraMounts: [],
     },
     development: {},
-    selfUpdate: { drainTimeoutMs: 30_000, cancellationTimeoutMs: 30_000 },
+    selfUpdate: {
+      drainTimeoutMs: 30_000,
+      cancellationTimeoutMs: 30_000,
+      npm: { package: '@atolis-hq/wake', distTag: 'latest' },
+    },
   })
   .superRefine((value, context) => {
     if (value.development.mode === 'source' && value.development.repoRoot === undefined)
