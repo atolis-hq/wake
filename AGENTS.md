@@ -38,15 +38,20 @@ Run a focused test with `npx vitest run <path>` or
 
 Start with the smallest check that exercises the changed behavior. UI/API work
 also needs the relevant surface test; domain/service work needs its focused
-unit or integration coverage; persistence, runner, workflow, or provider work
-needs the relevant E2E scenario. Use `npm run verify` for cross-cutting changes
-or when explicitly requested. Before handoff, report the checks actually run.
+unit or integration coverage. Use `npm run verify:agent` before raising or
+updating a PR: it is the agent finishing gate for static checks, builds, unit,
+architecture, and integration suites. It deliberately excludes browser and
+end-to-end suites, which CI owns unless the changed behavior directly requires
+one. Use `npm run verify` for a fast local pass while iterating. Before handoff,
+report the checks actually run.
 
-E2E scenarios that use processes or filesystem fixtures run serially; use the
-relevant E2E scenario when changing workflow, persistence, runner, or provider
-behaviour. CI runs the `verify:ci` coverage as separate fast-verification,
-integration, E2E, and web jobs, plus the Docker smoke job, on relevant changes.
-Report focused checks run and checks intentionally left to CI.
+E2E scenarios that use processes or filesystem fixtures run serially. Do not
+make local E2E or web suites a general PR requirement: run their focused suite
+only when the change directly affects that surface. CI runs the `verify:ci`
+coverage as separate fast-verification, integration, E2E, and web jobs, plus
+the Docker smoke job, on relevant changes. Investigate a failed CI suite and
+add or correct focused coverage before handoff; report checks intentionally
+left to CI.
 
 ## Architecture
 

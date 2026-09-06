@@ -100,7 +100,7 @@ it('bounds every nested GitHub read to the repository poll limit while retaining
 
   const drafts = await source.poll(new AbortController().signal);
 
-  expect(nestedLimits).toEqual([2, 2, 2, 2, 2, 2]);
+  expect(nestedLimits).toEqual([2, 2, 2, 2, 2, 2, 2]);
   expect(drafts).toContainEqual(
     expect.objectContaining({
       eventType: GitHubEventType.CommentObserved,
