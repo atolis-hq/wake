@@ -60,4 +60,6 @@ export * from './self-update-application.js';
 
 export * from './source-update-port.js';
 
+export * from './npm-update-port.js';
+
 export * from './version.js';

@@ -67,9 +67,7 @@ export function createSelfUpdateApplication(input: {
     ): Promise<{ readonly tag: string; readonly updated: boolean }> {
       const candidates = await input.source.candidateTags();
       const [latestCandidate] = candidates;
-      if (latestCandidate === undefined) {
-        throw new Error('No source version tags available');
-      }
+      if (latestCandidate === undefined) throw new Error('No update versions are available');
       for (const tag of candidates) {
         if (!force && (await input.ledger.isBad(tag))) {
           continue;

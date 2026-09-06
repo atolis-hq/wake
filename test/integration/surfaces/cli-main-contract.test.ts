@@ -28,7 +28,7 @@ const expectedUsage = [
   '  wake run resolve <run-id> --failed --reason <message>',
   '  wake api                   Run the target API surface',
   '  wake sandbox-entrypoint    Run the sandbox resident entrypoint',
-  '  wake self-update           Safely update a source installation',
+  '  wake self-update           Safely update Wake from npm or a source checkout',
   '',
   'Getting started:',
   '  1. wake init ./wake-home',

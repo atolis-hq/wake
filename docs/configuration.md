@@ -595,6 +595,9 @@ fields are for deterministic testing, not normal operation.
 | `host.development.repoRoot` | non-empty string; optional | Source checkout path. Required when `mode: source`. |
 | `host.selfUpdate.drainTimeoutMs` | positive integer; default `30000` | Maximum wait for a controlled update drain. |
 | `host.selfUpdate.cancellationTimeoutMs` | positive integer; default `30000` | Maximum wait for cancellation during controlled self-update. |
+| `host.selfUpdate.npm.package` | non-empty string; default `@atolis-hq/wake` | npm package to resolve for packaged self-updates. |
+| `host.selfUpdate.npm.distTag` | non-empty string; default `latest` | npm dist-tag checked by `wake self-update` and its loop. |
+| `host.selfUpdate.npm.registry` | URL; optional | npm registry used to resolve the package version. |
 
 ### Temporary runner memory profile
 

@@ -42,6 +42,11 @@ The Dockerfile template is selected from `host.development.mode`: source mode
 uses the configured `host.development.repoRoot`; packaged mode uses the
 installed package. `host.development.repoRoot` is required for source mode.
 
+`wake self-update` resolves the configured `host.selfUpdate.npm` package's
+dist-tag by default. Use `--version <exact-version>` to pin an npm release, or
+`--source <repo-root> [--tag <git-tag>]` for a one-off source update without
+changing `config.yaml`. `--loop` repeats either form at the selected interval.
+
 ## Operational model
 
 `tick`, `start`, `ui`, `smoke`, `audit`, `correlate`, and `validate-state` are

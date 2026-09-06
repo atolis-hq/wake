@@ -26,7 +26,11 @@ describe('target host configuration', () => {
         extraMounts: [],
       },
       development: {},
-      selfUpdate: { drainTimeoutMs: 30_000, cancellationTimeoutMs: 30_000 },
+      selfUpdate: {
+        drainTimeoutMs: 30_000,
+        cancellationTimeoutMs: 30_000,
+        npm: { package: '@atolis-hq/wake', distTag: 'latest' },
+      },
     });
   });
 
@@ -57,7 +61,11 @@ describe('target host configuration', () => {
         ...baseConfig,
         host: { selfUpdate: { drainTimeoutMs: 1, cancellationTimeoutMs: 2 } },
       }).host.selfUpdate,
-    ).toEqual({ drainTimeoutMs: 1, cancellationTimeoutMs: 2 });
+    ).toEqual({
+      drainTimeoutMs: 1,
+      cancellationTimeoutMs: 2,
+      npm: { package: '@atolis-hq/wake', distTag: 'latest' },
+    });
     expect(() =>
       parseRootConfig({
         ...baseConfig,
