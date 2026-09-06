@@ -236,10 +236,10 @@ defineScenario(
 defineScenario(
   {
     id: 'E2E-OPS-SELF-UPDATE-008',
-    title: 'a Run completing during a cancellation write collision does not block maintenance',
+    title: 'a completing Run drains without a maintenance cancellation request',
     given: ['a composed root with an active Run about to complete'],
-    when: ['maintenance cancellation reports a concurrent journal-write failure'],
-    then: ['Wake rereads the public Run view and safely updates once it is empty'],
+    when: ['maintenance waits for the Run to complete'],
+    then: ['Wake safely updates once the public Run view is empty'],
   },
   async () => {
     const root = await createRoot(5);
@@ -250,14 +250,7 @@ defineScenario(
     const application = createSelfUpdateApplication({
       ledger: ledger(calls),
       source: source(calls, root),
-      quiesce: {
-        ...realQuiesce,
-        requestMaintenanceCancellation: async () => {
-          await advancing;
-          await waitForRunStatus(root, active.runId, 'succeeded');
-          throw new Error('event journal lock lost to completing Run');
-        },
-      },
+      quiesce: realQuiesce,
       drainTimeoutMs: 0,
       cancellationTimeoutMs: 50,
     });
@@ -275,18 +268,18 @@ defineScenario(
 defineScenario(
   {
     id: 'E2E-OPS-SELF-UPDATE-002',
-    title: 'maintenance blocks dispatch and waits for a real active Run to become empty',
-    given: ['a composed source-mode root with one pending and one slow active Run'],
+    title: 'maintenance blocks dispatch and waits for a real active Run to finish',
+    given: ['a composed source-mode root with one pending and one completing active Run'],
     when: ['self-update enters its maintenance lease'],
     then: [
       'advance-once dispatches no new Run while quiescing',
-      'the active Run receives a durable maintenance cancellation request',
+      'the active Run completes without a maintenance cancellation request',
       'checkout does not occur until the active execution view is empty',
     ],
   },
   async () => {
-    const root = await createRoot();
-    await start(root, 'slow');
+    const root = await createRoot(5);
+    await start(root, 'completing');
     await start(root, 'pending');
     const { active, advancing } = await waitForActiveRun(root);
 
@@ -295,18 +288,10 @@ defineScenario(
     expect(await root.execution.list()).toHaveLength(1);
 
     const calls: string[] = [];
-    const realQuiesce = createSelfUpdateQuiescePort(root);
     const application = createSelfUpdateApplication({
       ledger: ledger(calls),
       source: source(calls, root),
-      quiesce: {
-        ...realQuiesce,
-        requestMaintenanceCancellation: async (runIds) => {
-          await realQuiesce.requestMaintenanceCancellation(runIds);
-          await advancing;
-          await waitForRunStatus(root, active.runId, 'failed');
-        },
-      },
+      quiesce: createSelfUpdateQuiescePort(root),
       drainTimeoutMs: 1,
       cancellationTimeoutMs: 50,
     });
@@ -314,7 +299,7 @@ defineScenario(
     await expect(application.update('v2')).resolves.toBe(true);
     await advancing;
     expect((await root.execution.list()).find((run) => run.runId === active.runId)).toMatchObject({
-      cancellation: { reason: 'maintenance', requestedAt: expect.any(String) },
+      status: 'succeeded',
     });
     expect(calls).toEqual(['begin:v2', 'checkout:v2', 'ledger:v2']);
   },
@@ -605,21 +590,6 @@ async function waitForActiveRun(root: Awaited<ReturnType<typeof createRoot>>) {
   }
   await advancing;
   throw new Error('Expected a slow active Run');
-}
-
-async function waitForRunStatus(
-  root: Awaited<ReturnType<typeof createRoot>>,
-  expectedRunId: string,
-  expectedStatus: string,
-) {
-  for (let index = 0; index < 1_000; index += 1) {
-    const run = (await root.execution.list()).find(
-      (candidate) => candidate.runId === expectedRunId,
-    );
-    if (run?.status === expectedStatus) return;
-    await new Promise((resolve) => setTimeout(resolve, 1));
-  }
-  throw new Error(`Expected Run ${expectedRunId} to reach ${expectedStatus}`);
 }
 
 function ledger(calls: string[]) {

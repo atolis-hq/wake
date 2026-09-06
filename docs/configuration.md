@@ -219,9 +219,6 @@ host:
     extraMounts: []
   development:
     mode: packaged
-  selfUpdate:
-    drainTimeoutMs: 30000
-    cancellationTimeoutMs: 30000
 ```
 
 `config.workflows.yaml`:
@@ -596,8 +593,8 @@ fields are for deterministic testing, not normal operation.
 | `host.sandbox.extraMounts` | list; default `[]` | Explicit additional bind mounts. Each is `{ source, target, readOnly? }`; `source` and `target` are non-empty strings. |
 | `host.development.mode` | `source` or `packaged`; optional | Installation mode used for development and self-update routing. |
 | `host.development.repoRoot` | non-empty string; optional | Source checkout path. Required when `mode: source`. |
-| `host.selfUpdate.drainTimeoutMs` | positive integer; default `30000` | Maximum wait for a controlled update drain. |
-| `host.selfUpdate.cancellationTimeoutMs` | positive integer; default `30000` | Maximum wait for cancellation during controlled self-update. |
+| `host.selfUpdate.drainTimeoutMs` | positive integer; deprecated | Accepted for compatibility but ignored: self-update waits for active Runs to finish. |
+| `host.selfUpdate.cancellationTimeoutMs` | positive integer; deprecated | Accepted for compatibility but ignored: self-update never cancels active Runs. |
 | `host.selfUpdate.npm.package` | non-empty string; default `@atolis-hq/wake` | npm package to resolve for packaged self-updates. |
 | `host.selfUpdate.npm.distTag` | non-empty string; default `latest` | npm dist-tag checked by `wake self-update` and its loop. |
 | `host.selfUpdate.npm.registry` | URL; optional | npm registry used to resolve the package version. |

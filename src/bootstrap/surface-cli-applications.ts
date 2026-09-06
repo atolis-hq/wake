@@ -15,7 +15,6 @@ import {
   type HostResult,
 } from '../control-plane/index.js';
 import {
-  ExecutionCancellationReason,
   ExecutionFailureCode,
   RunStatus,
   isActiveRunStatus,
@@ -74,6 +73,7 @@ import {
 import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
 import { createUpdateLedger } from './update-ledger.js';
+import { UpdateMaintenancePhase } from './update-maintenance-lease.js';
 import { resolveWakeVersion, wakePackageVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
@@ -591,10 +591,6 @@ export function createSelfUpdateQuiescePort(root: CompositionRoot): SelfUpdateQu
     exclusive: (tag, retryFailed, operation) =>
       root.maintenance.runExclusive(tag, retryFailed, operation),
     activeRuns: () => activeExecutionRuns(root),
-    requestMaintenanceCancellation: async (runIds) => {
-      for (const runId of runIds)
-        await root.execution.requestCancellation(runId, ExecutionCancellationReason.Maintenance);
-    },
     sleep: (milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
     now: () => Date.now(),
     fail: async (error, attemptId) => {
@@ -700,8 +696,16 @@ function createOperationalApplications(root: CompositionRoot) {
         createSandboxSetupDependencies(root.config.host.sandbox.containerHomeMountPath),
       );
     },
-    sandbox: async (arguments_: readonly string[]) =>
-      runSandbox(arguments_, await createSandboxDockerForCommand(root, arguments_)),
+    sandbox: async (arguments_: readonly string[]) => {
+      await runSandbox(arguments_, await createSandboxDockerForCommand(root, arguments_));
+      // A manual sandbox replacement can recover a previously failed update,
+      // but never clear an in-progress self-update owned by another process.
+      if (
+        arguments_[0] === 'update' &&
+        (await root.maintenance.read())?.phase === UpdateMaintenancePhase.Failed
+      )
+        await root.maintenance.clear();
+    },
     sandboxEntrypoint: async () => {
       await runSandboxEntrypoint(createSandboxEntrypointDependencies(root));
     },
@@ -765,8 +769,6 @@ function createOperationalApplications(root: CompositionRoot) {
           recordFailure: (failedTag, error) => failureLog.record(failedTag, error),
         },
         quiesce: createSelfUpdateQuiescePort(root),
-        drainTimeoutMs: root.config.host.selfUpdate.drainTimeoutMs,
-        cancellationTimeoutMs: root.config.host.selfUpdate.cancellationTimeoutMs,
       });
       const force = arguments_.includes('--force');
       if (arguments_.includes('--loop')) {
