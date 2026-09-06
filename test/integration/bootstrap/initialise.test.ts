@@ -173,6 +173,15 @@ describe('target initialise root', () => {
     expect(dockerfile).not.toContain('WAKE_START_ENABLED" = "true"');
   });
 
+  it('starts the packaged runtime in the mounted Wake root', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
+    await initialiseWakeRoot(root);
+
+    const dockerfile = await readFile(join(root, 'docker', 'Dockerfile.runtime.packaged'), 'utf8');
+
+    expect(dockerfile).toContain('WORKDIR /wake');
+  });
+
   it('bootstraps only config-derived sandbox-home mount parents before dropping privileges', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
