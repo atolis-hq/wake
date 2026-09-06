@@ -38,7 +38,11 @@ const orchestrationConfigSchema = z
       });
     }
   })
-  .default({ workflows: {}, workflowSelectors: [], default: 'default' });
+  .default({
+    workflows: {},
+    workflowSelectors: [],
+    default: 'default',
+  });
 
 const transcriptsConfigSchema = z
   .object({

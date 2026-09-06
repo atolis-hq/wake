@@ -434,8 +434,9 @@ non-empty string or a non-empty list. `matchMode` is `any` by default, or
 
 `integrations` is a mapping from a lowercase, hyphenated integration name to a
 provider entry. Every entry accepts `provider` (optional lower-case provider
-id) and `enabled` (boolean, default `true`). Provider-owned fields are allowed
-at this boundary and are validated when that provider is composed.
+id), `enabled` (boolean, default `true`), and optional `conversation.capabilities`.
+Provider-owned fields are allowed at this boundary and are validated when that provider is composed.
+The generic conversation setting is removed before provider-specific validation.
 
 ### Built-in GitHub provider
 
@@ -468,6 +469,39 @@ markers.
 
 `publication.replies.rules` controls where terminal agent-run reply comments go. Each rule has a
 required `target` of `primary`, `issue`, `pull-request`, or `none`; `none` suppresses the comment.
+
+### Conversation command policy
+
+Wake records every conversation entry before interpreting its first trimmed line as a command.
+Workflow `commands` are therefore surface-neutral: a configured command is available on every
+conversation surface and still enforces its `allowedActors` policy. It takes precedence over a
+built-in command with the same spelling. Arguments after the command are accepted for syntax
+compatibility but are not passed to the Activity.
+
+Built-ins are `/approved`, `/accepted`, `/changes`, `/retry`, `/restart`, and `/extend`. Their
+availability is controlled by each named integration instance's capabilities. `review-surface`
+and `operator-surface` permit all six; `chat-surface` permits none. The control-plane composer is
+an `operator-surface`; the built-in GitHub provider defaults to `review-surface`; and an unknown
+provider defaults to no capability. This makes a newly enabled chat integration safe until it is
+explicitly granted authority.
+
+```yaml
+integrations:
+  slack:
+    provider: slack
+    conversation:
+      capabilities: [chat-surface]
+```
+
+`integrations.<adapter>.conversation.capabilities` is an optional replacement for that adapter's
+provider default and accepts `review-surface`, `chat-surface`, and/or `operator-surface`. It is
+adapter-instance configuration: two instances of the same provider may use different capability
+sets. Granting `review-surface` or `operator-surface` enables command classes but does not itself
+authorize an actor; the adapter must still verify its actor evidence before Wake applies a command.
+GitHub obtains collaborator permission evidence for every syntactically valid slash command and
+rejects a resource author approving their own issue or pull request.
+A command unavailable to its surface, or issued by an unauthorized actor, remains a durable,
+immutable conversation entry and has no workflow effect.
 `match.stage` and `match.outcome` are independently optional facets, each accepting one value or a
 non-empty list. Outcomes are case-sensitive lowercase-kebab values: `done`, `rejected`, `blocked`,
 `failed`, and `needs-clarification`. Facets are combined with `matchMode` (`any` by default, or

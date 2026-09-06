@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { ApprovalAuthorityKind, WorkflowStatus } from './vocabulary.js';
+import {
+  ApprovalAuthorityKind,
+  ConversationSurfaceCapability,
+  WorkflowStatus,
+} from './vocabulary.js';
 
 import {
   ActivityEventType,
@@ -69,6 +73,13 @@ const resourceTransitionConfigSchema = z.union([
     .strict(),
 ]);
 const commandName = z.string().regex(/^\/[a-z][a-z0-9-]*$/);
+
+export const surfaceCapabilitySchema = z.enum([
+  ConversationSurfaceCapability.Review,
+  ConversationSurfaceCapability.Chat,
+  ConversationSurfaceCapability.Operator,
+]);
+
 const canonicalEventName = z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/);
 const watchStatus = z.enum([WorkflowStatus.Active, WorkflowStatus.Waiting, WorkflowStatus.Blocked]);
 const failingChecksWatchPredicateSchema = z

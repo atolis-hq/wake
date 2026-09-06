@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
-import type { WorkItemId, WorkService } from '../../work/index.js';
+import { WorkStatus, type WorkItemId, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
@@ -13,6 +13,7 @@ import type {
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import {
+  commandName,
   workflowInstanceId as toWorkflowInstanceId,
   type SignalName,
   type WorkflowInstanceId,
@@ -24,6 +25,11 @@ import { isGroupBudgetExtensionEligible } from '../domain/operator-retry-policy.
 import { AcceptActivityOutcome } from './accept-activity-outcome.js';
 import { AcceptSignal } from './accept-signal.js';
 import { AdvanceWorkflow } from './advance-workflow.js';
+import {
+  applyBuiltInConversationCommand,
+  conversationCommand,
+  type SurfaceCapability,
+} from './conversation-command.js';
 import { CoordinationClaims } from './coordination-claims.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { workflowsByWorkItemProjection } from './orchestration-projection.js';
@@ -45,6 +51,7 @@ export class OrchestrationService {
   private readonly claims: CoordinationClaims;
   private readonly journal: EventJournal;
   private readonly definitions: WorkflowDefinitionRegistry;
+  private readonly work: WorkService;
 
   constructor(
     journal: EventJournal,
@@ -54,6 +61,7 @@ export class OrchestrationService {
   ) {
     this.projections = projections;
     this.journal = journal;
+    this.work = work;
     const repository = new OrchestrationRepository(journal);
     this.claims = new CoordinationClaims(journal);
     this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
@@ -138,6 +146,68 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.advanceWorkflow.requestSupplementalActivity(workflowInstanceId, request, context);
+  }
+
+  async applyConversationCommand(
+    workItemId: WorkItemId,
+    input: {
+      readonly body: string;
+      readonly actorId: string;
+      readonly capabilities: readonly SurfaceCapability[];
+      /** The adapter authenticated and authorized the actor for command control. */
+      readonly authorized: boolean;
+    },
+    context: CommandContext,
+  ): Promise<boolean> {
+    const command = conversationCommand(input.body);
+    if (command === null) return false;
+    if (!input.authorized) return false;
+    const work = await this.work.get(workItemId);
+    if (work === null || work.deleted || work.frozen || work.state !== WorkStatus.Open)
+      return false;
+    // A command is causally adjacent to its conversation entry; projections may lag
+    // the journal, so command application must read the authoritative workflow state.
+    const workflows = (await this.advanceWorkflow.listAll()).filter(
+      (workflow) => workflow.workItemId === workItemId,
+    );
+    // Configured commands deliberately win over built-ins, even when their spelling collides.
+    let supplemental = false;
+    for (const workflow of workflows) {
+      const definition = await this.definitions.resolve(workflow);
+      if (definition.commands[command as keyof typeof definition.commands] === undefined) continue;
+      supplemental = true;
+      await this.requestSupplementalActivity(
+        workflow.workflowInstanceId,
+        { command: commandName(command) },
+        context,
+      );
+    }
+    if (supplemental) return true;
+    return applyBuiltInConversationCommand({
+      command,
+      capabilities: input.capabilities,
+      workflows,
+      context,
+      acceptSignal: (id, outcome) =>
+        this.acceptSignal(
+          id,
+          {
+            kind: (workflows.find((workflow) => workflow.workflowInstanceId === id)?.waitingFor
+              ?.signalKind ?? 'approved') as SignalName,
+            outcome,
+            actorId: input.actorId,
+            actorDecision: { authorized: true, evidenceId: context.commandId },
+            providerEventId: context.commandId,
+            authority: { kind: ApprovalAuthorityKind.Human },
+          },
+          context,
+        ),
+      retry: (id) => this.retryBlockedFailedStage(id, context),
+      restart: (id) => this.restartBlockedFailedStage(id, context),
+      extend: (id) =>
+        this.extendBlockedGroupBudget(id, { kind: ApprovalAuthorityKind.Human }, context),
+      resumeChanges: (id) => this.resumeBlockedStageForChanges(id, context),
+    });
   }
 
   markActivationStarted(

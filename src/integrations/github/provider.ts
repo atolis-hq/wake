@@ -1,4 +1,5 @@
 import { BuiltInActivityName, PullRequestState } from '../../activities/index.js';
+import { ConversationSurfaceCapability } from '../../orchestration/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
@@ -24,10 +25,16 @@ import { createGitHubSource } from './infrastructure/source.js';
 export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
   provider: 'github',
   eventTypes: Object.values(GitHubEventType),
+  defaultConversationCapabilities: [ConversationSurfaceCapability.Review],
   parseConfig(value) {
     return gitHubConfigSchema.parse(value);
   },
-  create({ adapter, config, services }) {
+  create({
+    adapter,
+    config,
+    conversationCapabilities = [ConversationSurfaceCapability.Review],
+    services,
+  }) {
     if (services === undefined) throw new Error('GitHub provider requires composed services');
     const client = createGitHubClient(config.token ?? resolveGitHubCliToken());
     const requests = createGitHubRequestCoordinator({
@@ -45,6 +52,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
       intake: config.intake,
       conclusion: services.conclusion,
       conversations: services.conversations,
+      conversationCapabilities,
     });
     return {
       adapter,

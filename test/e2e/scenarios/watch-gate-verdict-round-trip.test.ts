@@ -7,6 +7,7 @@ import {
   ReviewActorKind,
   activityName,
 } from '../../../src/activities/index.js';
+import { createConversationService } from '../../../src/conversations/index.js';
 import {
   ExecutionEventType,
   RunRepository,
@@ -22,6 +23,7 @@ import {
   integrationStream,
 } from '../../../src/integrations/github/index.js';
 import {
+  ConversationSurfaceCapability,
   OrchestrationEventType,
   WatchGateVerdictSignal,
   signalName,
@@ -181,6 +183,8 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
       orchestration: fixture.world.orchestration,
       runs: new RunRepository(fixture.world.journal),
       lookup: fixture.world.resourceLookup,
+      conversations: createConversationService(fixture.world.journal),
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
     },
   );
   await processInbound(translator, fixture.world);

@@ -86,9 +86,10 @@ function parseRepository(repository: string): { readonly owner: string; readonly
   return { owner, repo };
 }
 
+// eslint-disable-next-line complexity -- provider payload normalization keeps one canonical envelope.
 export function issueCommentObservation(input: {
   readonly repository: string;
-  readonly issue: Pick<GitHubIssuePayload, 'number'>;
+  readonly issue: Pick<GitHubIssuePayload, 'number' | 'user'>;
   readonly comment: GitHubIssueCommentPayload;
   readonly authorization?: ReviewerAuthorizationEvidence;
   readonly adapter?: AdapterId;
@@ -118,6 +119,7 @@ export function issueCommentObservation(input: {
         id: input.comment.user?.login ?? UnknownGitHubIdentity,
         kind: input.comment.user?.type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human,
       },
+      resourceAuthorId: input.issue.user?.login ?? UnknownGitHubIdentity,
       ...(input.authorization === undefined ? {} : { authorization: input.authorization }),
       raw: { id: input.comment.id },
     },

@@ -11,7 +11,9 @@ import {
   type ProviderDefinition,
 } from '../../../src/integrations/index.js';
 
-function definition(): ProviderDefinition<{ readonly enabled: boolean }> {
+function definition(
+  capabilityCalls?: (readonly string[])[],
+): ProviderDefinition<{ readonly enabled: boolean }> {
   return {
     provider: 'fake',
     eventTypes: ['integration.fake.observed'],
@@ -20,8 +22,9 @@ function definition(): ProviderDefinition<{ readonly enabled: boolean }> {
         throw new Error('enabled is required');
       return { enabled: value.enabled === true };
     },
-    create({ adapter, config }) {
+    create({ adapter, config, conversationCapabilities }) {
       if (!config.enabled) throw new Error('disabled providers are not composed');
+      capabilityCalls?.push(conversationCapabilities ?? []);
       return {
         adapter,
         eventTypes: ['integration.fake.observed'],
@@ -77,6 +80,26 @@ describe('ProviderRegistry', () => {
     expect(() => new ProviderRegistry().compose({ missing: { enabled: true } })).toThrow(
       'not registered',
     );
+  });
+
+  it('uses provider defaults and lets each adapter replace them', () => {
+    const capabilities: (readonly string[])[] = [];
+    const registry = new ProviderRegistry();
+    registry.register({
+      ...definition(capabilities),
+      defaultConversationCapabilities: ['review-surface'],
+    });
+
+    registry.compose({
+      trusted: { provider: 'fake', enabled: true },
+      chat: {
+        provider: 'fake',
+        enabled: true,
+        conversation: { capabilities: ['chat-surface'] },
+      },
+    });
+
+    expect(capabilities).toEqual([['review-surface'], ['chat-surface']]);
   });
 
   it('reports a provider that fails to construct as a failure instead of throwing', () => {

@@ -5,6 +5,7 @@ import type { RunRepository } from '../../execution/index.js';
 import type { Clock, IdGenerator } from '../../kernel/index.js';
 import type {
   OrchestrationService,
+  SurfaceCapability,
   WorkflowCandidate,
   WorkflowName,
 } from '../../orchestration/index.js';
@@ -119,12 +120,15 @@ export type ComposedProviderInstance = Omit<ProviderInstance, 'provider'>;
 export interface ProviderDefinition<Config = unknown> {
   readonly provider: string;
   readonly eventTypes: readonly string[];
+  /** Conservative default authority for each instance of this provider type. */
+  readonly defaultConversationCapabilities?: readonly SurfaceCapability[];
   /** Provider-owned periodic reconciliation, invoked in the tick react phase. */
   readonly maintenance?: { readonly runOnce: () => Promise<void> };
   parseConfig(value: unknown): Config;
   create(input: {
     readonly adapter: AdapterId;
     readonly config: Config;
+    readonly conversationCapabilities?: readonly SurfaceCapability[];
     readonly services?: ProviderServices;
   }): ComposedProviderInstance;
 }
@@ -164,10 +168,13 @@ export class ProviderRegistry {
       if (definition === undefined) throw new Error(`Provider ${provider} is not registered`);
       const adapter = adapterId(name);
       try {
+        const { conversation: _conversation, provider: _provider, ...providerConfig } = entry;
         instances.push({
           ...definition.create({
             adapter,
-            config: definition.parseConfig(entry),
+            config: definition.parseConfig(providerConfig),
+            conversationCapabilities:
+              entry.conversation?.capabilities ?? definition.defaultConversationCapabilities ?? [],
             ...(services === undefined ? {} : { services }),
           }),
           provider,

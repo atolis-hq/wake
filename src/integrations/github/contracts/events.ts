@@ -55,6 +55,8 @@ export interface ExternalWorkObservedPayload {
     readonly id: string;
     readonly kind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
   };
+  /** Issue or pull-request author, used to reject self-approval. */
+  readonly resourceAuthorId?: string | undefined;
   // Optional so observations recorded before intake matching still decode.
   readonly labels?: readonly string[] | undefined;
   readonly assignees?: readonly string[] | undefined;
@@ -109,6 +111,8 @@ interface GitHubIssueCommentObservedPayload {
     readonly id: string;
     readonly kind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
   };
+  /** Issue or pull-request author, used to reject self-approval. */
+  readonly resourceAuthorId?: string | undefined;
   /** Provider-derived authority for an operator command, when available. */
   readonly authorization?: ReviewerAuthorizationEvidence | undefined;
   readonly raw: Readonly<Record<string, unknown>>;
@@ -294,6 +298,7 @@ const githubEventSchemas = {
             .strict()
             .optional(),
           actor: actorSchema,
+          resourceAuthorId: z.string().optional(),
           authorization: authorizationSchema.optional(),
           raw: rawSchema,
         })
