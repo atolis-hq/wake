@@ -245,7 +245,8 @@ it.each([
   '/retry please retry',
   '/restart in a new session',
   '/extend one more review',
-])('attaches collaborator permission evidence to built-in command %s', async (body) => {
+  '/codereview focused on error handling',
+])('attaches collaborator permission evidence to slash command %s', async (body) => {
   const source = createGitHubSource(
     gitHubConfigSchema.parse({
       enabled: true,
