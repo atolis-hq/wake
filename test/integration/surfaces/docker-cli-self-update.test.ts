@@ -3,6 +3,7 @@ import {
   createDockerCli,
   createLoggedDockerCli,
   createSandboxDockerPort,
+  promoteSandboxImage,
   verifyResidentStart,
 } from '../../../src/surfaces/cli/infrastructure/docker-cli.js';
 
@@ -77,6 +78,30 @@ describe('sandbox build version tagging', () => {
     expect(calls).toEqual([
       ['build', '-t', 'wake-sandbox', '-f', '/wake-root/docker/Dockerfile.packaged', '/wake-root'],
     ]);
+  });
+
+  it('promotes a verified versioned image to the configured sandbox image', async () => {
+    const calls: string[][] = [];
+    await promoteSandboxImage(
+      createDockerCli(async (arguments_) => {
+        calls.push([...arguments_]);
+      }),
+      'wake-sandbox:1.4.0',
+      'wake-sandbox',
+    );
+    expect(calls).toEqual([['tag', 'wake-sandbox:1.4.0', 'wake-sandbox']]);
+  });
+
+  it('does not retag when the verified image is already the configured image', async () => {
+    const calls: string[][] = [];
+    await promoteSandboxImage(
+      createDockerCli(async (arguments_) => {
+        calls.push([...arguments_]);
+      }),
+      'wake-sandbox',
+      'wake-sandbox',
+    );
+    expect(calls).toEqual([]);
   });
 });
 
