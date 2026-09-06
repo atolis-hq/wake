@@ -177,7 +177,10 @@ async function withLeaseLock<Value>(path: string, operation: () => Promise<Value
   while (true) {
     let lock;
     try {
-      lock = await acquireFileLock(lockPath, { staleAfterMs: 60_000 });
+      lock = await acquireFileLock(lockPath, {
+        staleAfterMs: 60_000,
+        staleRequiresDeadProcess: true,
+      });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
       await new Promise<void>((resolve) => setTimeout(resolve, 1));
