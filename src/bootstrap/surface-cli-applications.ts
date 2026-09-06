@@ -73,6 +73,7 @@ import {
 import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
 import { createUpdateLedger } from './update-ledger.js';
+import { UpdateMaintenancePhase } from './update-maintenance-lease.js';
 import { resolveWakeVersion, wakePackageVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
@@ -699,7 +700,10 @@ function createOperationalApplications(root: CompositionRoot) {
       await runSandbox(arguments_, await createSandboxDockerForCommand(root, arguments_));
       // A manual sandbox replacement can recover a previously failed update,
       // but never clear an in-progress self-update owned by another process.
-      if (arguments_[0] === 'update' && (await root.maintenance.read())?.phase === 'failed')
+      if (
+        arguments_[0] === 'update' &&
+        (await root.maintenance.read())?.phase === UpdateMaintenancePhase.Failed
+      )
         await root.maintenance.clear();
     },
     sandboxEntrypoint: async () => {
