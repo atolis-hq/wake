@@ -173,6 +173,13 @@ describe('target initialise root', () => {
     expect(dockerfile).not.toContain('WAKE_START_ENABLED" = "true"');
   });
 
+  it('keeps repository source-mode startup supervised after a resident failure', async () => {
+    const dockerfile = await readFile(join(process.cwd(), 'docker', 'Dockerfile.runtime'), 'utf8');
+
+    expect(dockerfile).toContain('sandbox-entrypoint --wake-root /wake');
+    expect(dockerfile).not.toContain('start --wake-root /wake --no-sandbox');
+  });
+
   it('starts the packaged runtime in the mounted Wake root', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);

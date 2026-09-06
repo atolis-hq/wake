@@ -777,10 +777,12 @@ function createOperationalApplications(root: CompositionRoot) {
           return runSelfUpdateLatestLoop(
             async () => application.update(updateTag, force),
             () => delay(intervalMs),
+            (message) => process.stderr.write(`${message}\n`),
           );
         return runSelfUpdateLatestLoop(
           async () => application.updateLatest(force),
           () => delay(intervalMs),
+          (message) => process.stderr.write(`${message}\n`),
         );
       }
       if (updateTag !== undefined)

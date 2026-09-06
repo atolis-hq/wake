@@ -45,7 +45,8 @@ installed package. `host.development.repoRoot` is required for source mode.
 `wake self-update` resolves the configured `host.selfUpdate.npm` package's
 dist-tag by default. Use `--version <exact-version>` to pin an npm release, or
 `--source <repo-root> [--tag <git-tag>]` for a one-off source update without
-changing `config.yaml`. `--loop` repeats either form at the selected interval.
+changing `config.yaml`. `--loop` repeats either form at the selected interval
+and writes the result of every check or failure to standard error.
 
 ## Operational model
 

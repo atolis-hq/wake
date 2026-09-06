@@ -8,6 +8,8 @@ export interface SelfUpdateDependencies {
   readonly rollback?: (priorTag: string) => Promise<void>;
 }
 
+export type SelfUpdateLog = (message: string) => void;
+
 /** Updates application files only; journal and projection ownership stay outside this command. */
 export async function runSelfUpdate(input: SelfUpdateDependencies): Promise<boolean> {
   if (!input.force && (await input.readLedger()) === input.tag) return false;
@@ -30,12 +32,14 @@ export async function runSelfUpdate(input: SelfUpdateDependencies): Promise<bool
 export async function runSelfUpdateLoop(
   input: SelfUpdateDependencies,
   wait: () => Promise<void>,
+  log?: SelfUpdateLog,
 ): Promise<never> {
   for (;;) {
     try {
-      await runSelfUpdate(input);
-    } catch {
-      // A failed update is already rolled back when possible; the resident host retries later.
+      const updated = await runSelfUpdate(input);
+      log?.(`wake self-update: ${updated ? 'applied' : 'already current'} ${input.tag}`);
+    } catch (error) {
+      log?.(`wake self-update: ${formatError(error)}`);
     }
     await wait();
   }
@@ -45,13 +49,32 @@ export async function runSelfUpdateLoop(
 export async function runSelfUpdateLatestLoop(
   updateLatest: () => Promise<unknown>,
   wait: () => Promise<void>,
+  log?: SelfUpdateLog,
 ): Promise<never> {
   for (;;) {
     try {
-      await updateLatest();
-    } catch {
-      // Update failures are isolated to this iteration; the wait boundary controls retry cadence and shutdown.
+      const result = await updateLatest();
+      log?.(describeLatestUpdate(result));
+    } catch (error) {
+      log?.(`wake self-update: ${formatError(error)}`);
     }
     await wait();
   }
+}
+
+function describeLatestUpdate(result: unknown): string {
+  if (
+    typeof result === 'object' &&
+    result !== null &&
+    'tag' in result &&
+    typeof result.tag === 'string' &&
+    'updated' in result &&
+    typeof result.updated === 'boolean'
+  )
+    return `wake self-update: ${result.updated ? 'applied' : 'no eligible update'} ${result.tag}`;
+  return 'wake self-update: check completed';
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
