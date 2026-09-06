@@ -295,10 +295,18 @@ defineScenario(
     expect(await root.execution.list()).toHaveLength(1);
 
     const calls: string[] = [];
+    const realQuiesce = createSelfUpdateQuiescePort(root);
     const application = createSelfUpdateApplication({
       ledger: ledger(calls),
       source: source(calls, root),
-      quiesce: createSelfUpdateQuiescePort(root),
+      quiesce: {
+        ...realQuiesce,
+        requestMaintenanceCancellation: async (runIds) => {
+          await realQuiesce.requestMaintenanceCancellation(runIds);
+          await advancing;
+          await waitForRunStatus(root, active.runId, 'failed');
+        },
+      },
       drainTimeoutMs: 1,
       cancellationTimeoutMs: 50,
     });
