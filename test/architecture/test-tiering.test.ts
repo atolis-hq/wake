@@ -51,7 +51,9 @@ describe('target test tiers', () => {
     expect(workflow).toContain('architecture:');
     expect(workflow).toContain('run: npm run test:architecture');
     expect(workflow).toContain('package-contract:');
-    expect(workflow).toContain('run: npm run check:workspace-packages');
+    expect(workflow).toContain(
+      'node scripts/check-workspace-packages.mjs --archive artifacts/*.tgz',
+    );
     expect(workflow).toContain('knip:');
     expect(workflow).toContain('run: npm run knip');
     expect(workflow).not.toContain(
@@ -64,7 +66,7 @@ describe('target test tiers', () => {
     expect(workflow).toContain('npm run test:e2e');
     expect(workflow).toContain('web:');
     expect(workflow).toContain('npm run test:web');
-    expect(workflow.match(/cache: npm/g) ?? []).toHaveLength(8);
+    expect(workflow.match(/cache: npm/g) ?? []).toHaveLength(7);
 
     for (const command of [
       'start',

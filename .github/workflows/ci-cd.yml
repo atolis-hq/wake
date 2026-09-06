@@ -35,6 +35,23 @@ jobs:
               - 'tsconfig*.json'
               - 'vitest*.config.ts'
 
+  release-version:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Determine next version
+        id: semver
+        uses: paulhatch/semantic-version@v6.0.2
+        with:
+          tag_prefix: 'v'
+          major_pattern: '(MAJOR)'
+          minor_pattern: '(MINOR)'
+
   fast-verify:
     needs: changes
     if: "needs.changes.outputs.relevant == 'true'"
@@ -71,8 +88,8 @@ jobs:
       - run: npm run test:architecture
 
   package-contract:
-    needs: changes
-    if: "needs.changes.outputs.relevant == 'true'"
+    needs: [changes, release-version]
+    if: "always() && needs.changes.outputs.relevant == 'true'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -81,7 +98,29 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run check:workspace-packages
+      - name: Set Wake version from release version
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          WAKE_VERSION: ${{ needs.release-version.outputs.version }}
+        run: npm pkg set version="$WAKE_VERSION"
+      - name: Build package archive
+        env:
+          WAKE_BUILD_TAG: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && format('v{0}', needs.release-version.outputs.version) || '' }}
+        run: |
+          npm run build
+          npm run build:web
+          mkdir artifacts
+          npm pack --ignore-scripts --json --pack-destination artifacts
+      - name: Verify package archive
+        run: node scripts/check-workspace-packages.mjs --archive artifacts/*.tgz
+      - name: Upload release package
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wake-package-${{ github.sha }}
+          path: artifacts/*.tgz
+          if-no-files-found: error
+          retention-days: 1
 
   knip:
     needs: changes
@@ -160,52 +199,49 @@ jobs:
                 node /app/dist/src/main.js tick --wake-root /tmp/wake-smoke --no-sandbox'
 
   tag:
-    needs: [fast-verify, architecture, package-contract, knip, integration, e2e, web, docker-smoke]
+    needs:
+      [
+        release-version,
+        fast-verify,
+        architecture,
+        package-contract,
+        knip,
+        integration,
+        e2e,
+        web,
+        docker-smoke,
+      ]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
-      version: ${{ steps.semver.outputs.version }}
+      version: ${{ needs.release-version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Determine next version
-        id: semver
-        uses: paulhatch/semantic-version@v6.0.2
-        with:
-          tag_prefix: 'v'
-          major_pattern: '(MAJOR)'
-          minor_pattern: '(MINOR)'
       - name: Push tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag v${{ steps.semver.outputs.version }}
-          git push origin v${{ steps.semver.outputs.version }}
+          git tag v${{ needs.release-version.outputs.version }} ${{ github.sha }}
+          git push origin v${{ needs.release-version.outputs.version }}
 
   publish:
     needs: [tag]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-          cache: npm
-      - run: npm ci
-      - name: Set Wake version from tag
-        env:
-          WAKE_VERSION: ${{ needs.tag.outputs.version }}
-        run: npm pkg set version="$WAKE_VERSION"
-      - name: Verify public package archives
-        run: npm run check:workspace-packages
+      - name: Download verified Wake package
+        uses: actions/download-artifact@v5
+        with:
+          name: wake-package-${{ github.sha }}
+          path: artifacts
       - name: Publish Wake
-        env:
-          WAKE_BUILD_TAG: v${{ needs.tag.outputs.version }}
-        run: npm publish --workspaces=false --access public --provenance
+        run: npm publish ./artifacts/atolis-hq-wake-${{ needs.tag.outputs.version }}.tgz --workspaces=false --access public --provenance
