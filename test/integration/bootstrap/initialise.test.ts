@@ -7,7 +7,12 @@ import { initialiseWakeRoot } from '../../../src/bootstrap/initialise.js';
 import { loadPromptTemplate, renderPromptTemplate } from '../../../src/execution/index.js';
 
 function expectBoundedWakeOwnershipRepair(dockerfile: string): void {
-  expect(dockerfile).toContain('chown wake:wake /wake/.wake /wake/workspaces || true');
+  expect(dockerfile).toContain(
+    'chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true',
+  );
+  expect(dockerfile).toContain(
+    'find /wake/.wake/auth -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} + || true',
+  );
   expect(dockerfile).toContain(
     'find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true',
   );
@@ -189,8 +194,10 @@ describe('target initialise root', () => {
     for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
       const dockerfile = await readFile(join(root, 'docker', filename), 'utf8');
 
-      expect(dockerfile).toContain('mkdir -p /wake/.wake /wake/workspaces');
-      expect(dockerfile).toContain('chown wake:wake /wake/.wake /wake/workspaces || true');
+      expect(dockerfile).toContain('mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth');
+      expect(dockerfile).toContain(
+        'chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true',
+      );
       expectBoundedWakeOwnershipRepair(dockerfile);
       expect(dockerfile).toContain('su wake');
     }
@@ -201,8 +208,10 @@ describe('target initialise root', () => {
       const dockerfile = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
 
       expect(dockerfile).toContain('USER root');
-      expect(dockerfile).toContain('mkdir -p /wake/.wake /wake/workspaces');
-      expect(dockerfile).toContain('chown wake:wake /wake/.wake /wake/workspaces || true');
+      expect(dockerfile).toContain('mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth');
+      expect(dockerfile).toContain(
+        'chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true',
+      );
       expectBoundedWakeOwnershipRepair(dockerfile);
       expect(dockerfile).toContain('su wake');
     }
