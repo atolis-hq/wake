@@ -20,6 +20,7 @@ import {
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
+import { InterleavingEventJournal } from '../../support/interleaving-event-journal.js';
 
 const context = (commandId: string): CommandContext => ({
   commandId,
@@ -28,8 +29,7 @@ const context = (commandId: string): CommandContext => ({
   actor: { kind: 'system', id: 'test' },
 });
 
-async function fixture() {
-  const journal = new InMemoryEventJournal(new FakeClock());
+async function fixture(journal: EventJournal = new InMemoryEventJournal(new FakeClock())) {
   const work = createWorkService(journal);
   await work.create(
     { workItemId: workId('1'), objective: 'coordinate children' },
@@ -152,6 +152,43 @@ it('allows only one primary start in a Promise.all race', async () => {
       !(event.event.payload as Record<string, unknown>).parentWorkflowInstanceId,
   );
   expect(roots).toHaveLength(1);
+});
+
+it('treats concurrent starts of the same child workflow as one durable start', async () => {
+  const inner = new InMemoryEventJournal(new FakeClock());
+  const journal = new InterleavingEventJournal(inner, (events) =>
+    events.some(
+      (event) =>
+        event.eventType === 'orchestration.instance-started' &&
+        event.eventId.startsWith('start-child-race:'),
+    ),
+  );
+  const { service } = await fixture(journal);
+  await startParent(service);
+  const command = {
+    workflowInstanceId: workflowInstanceId('child-race'),
+    workItemId: workId('1'),
+    workflowName: workflowName('child'),
+    orchestrationGroupId: orchestrationGroupId('group-1'),
+    parentWorkflowInstanceId: workflowInstanceId('parent-1'),
+    watchId: 'review',
+    triggerId: 'trigger-race',
+    causalCycleId: 'cycle-race',
+    requestId: workflowInstanceId('child-race'),
+  } as const;
+
+  const [first, second] = await Promise.all([
+    service.start(command, context('start-child-race')),
+    service.start(command, context('start-child-race')),
+  ]);
+
+  expect(first.workflowInstanceId).toBe(command.workflowInstanceId);
+  expect(second.workflowInstanceId).toBe(command.workflowInstanceId);
+  expect(
+    (await inner.readStream({ kind: 'workflow-instance', id: command.workflowInstanceId })).filter(
+      (event) => event.event.eventType === 'orchestration.instance-started',
+    ),
+  ).toHaveLength(1);
 });
 
 it('enforces a group budget in a Promise.all race and durably records the loser', async () => {
