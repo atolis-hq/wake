@@ -621,23 +621,20 @@ async function deploySandboxTag(
   },
 ) {
   const port = createSandboxDockerPort(docker, sandboxDockerOptions(root, { image, ...overrides }));
-  await port.build();
-  await port.update();
   const wakeInvocation =
     overrides?.development?.mode === 'source'
       ? ['node', '/app/dist/src/main.js']
       : sandboxWakeInvocation(root);
+  const healthcheckRoot = `/tmp/wake-self-update-healthcheck-${tag}`;
+  await port.build();
+  await port.update();
   await verifyResidentStart(
     docker,
     root.config.host.sandbox.containerName,
     [...wakeInvocation, 'start', '--wake-root', '/wake'].join(' '),
   );
-  await port.exec([
-    ...wakeInvocation,
-    'tick',
-    '--wake-root',
-    `/tmp/wake-self-update-healthcheck-${tag}`,
-  ]);
+  await port.exec([...wakeInvocation, 'init', healthcheckRoot]);
+  await port.exec([...wakeInvocation, 'tick', '--wake-root', healthcheckRoot, '--no-sandbox']);
 }
 
 async function rollbackSandboxTag(
