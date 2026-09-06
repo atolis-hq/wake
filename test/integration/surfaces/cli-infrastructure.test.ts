@@ -161,9 +161,10 @@ describe('CLI infrastructure', () => {
         'wake-sandbox',
         'sh',
         '-c',
-        'mkdir -p "$1" && chown wake:wake "$1"',
-        'wake-workspace-ownership',
+        'mkdir -p "$1" "$2" && chown wake:wake "$1" "$2" && find "$2" -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} +',
+        'wake-sandbox-runtime-ownership',
         '/wake/workspaces',
+        '/wake/.wake/auth',
       ],
       ['stop', '--time', '60', 'wake-sandbox'],
     ]);
@@ -234,9 +235,10 @@ describe('CLI infrastructure', () => {
         'configured-name',
         'sh',
         '-c',
-        'mkdir -p "$1" && chown wake:wake "$1"',
-        'wake-workspace-ownership',
+        'mkdir -p "$1" "$2" && chown wake:wake "$1" "$2" && find "$2" -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} +',
+        'wake-sandbox-runtime-ownership',
         '/workspace/workspaces',
+        '/workspace/.wake/auth',
       ],
     ]);
   });
@@ -332,9 +334,10 @@ describe('CLI infrastructure', () => {
         'wake-sandbox',
         'sh',
         '-c',
-        'mkdir -p "$1" && chown wake:wake "$1"',
-        'wake-workspace-ownership',
+        'mkdir -p "$1" "$2" && chown wake:wake "$1" "$2" && find "$2" -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} +',
+        'wake-sandbox-runtime-ownership',
         '/wake/workspaces',
+        '/wake/.wake/auth',
       ],
     ]);
   });
@@ -362,9 +365,10 @@ describe('CLI infrastructure', () => {
         'wake-sandbox',
         'sh',
         '-c',
-        'mkdir -p "$1" && chown wake:wake "$1"',
-        'wake-workspace-ownership',
+        'mkdir -p "$1" "$2" && chown wake:wake "$1" "$2" && find "$2" -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} +',
+        'wake-sandbox-runtime-ownership',
         '/wake/workspaces',
+        '/wake/.wake/auth',
       ],
     ]);
   });

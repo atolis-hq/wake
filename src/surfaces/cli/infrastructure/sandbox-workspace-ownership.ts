@@ -7,7 +7,7 @@ interface WorkspaceSandbox {
   readonly wakeMountPath?: string;
 }
 
-/** Ensures the bind-mounted workspace root is usable by the unprivileged sandbox process. */
+/** Ensures the bind-mounted workspace and auth roots are usable by the sandbox process. */
 export async function ensureSandboxWorkspaceOwnership(
   docker: RootDockerExecutor,
   options: WorkspaceSandbox,
@@ -19,8 +19,9 @@ export async function ensureSandboxWorkspaceOwnership(
     options.containerName,
     'sh',
     '-c',
-    'mkdir -p "$1" && chown wake:wake "$1"',
-    'wake-workspace-ownership',
+    'mkdir -p "$1" "$2" && chown wake:wake "$1" "$2" && find "$2" -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} +',
+    'wake-sandbox-runtime-ownership',
     `${options.wakeMountPath ?? '/wake'}/workspaces`,
+    `${options.wakeMountPath ?? '/wake'}/.wake/auth`,
   ]);
 }
