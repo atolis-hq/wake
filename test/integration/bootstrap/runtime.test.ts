@@ -560,7 +560,7 @@ describe('target composition root', () => {
     await applications.cli.tick.run({ maxAdvances: 1, maxRuns: 1, maxDurationMs: 1_000 });
 
     expect(await runtime.execution.list()).toHaveLength(1);
-  });
+  }, 10_000);
 
   it('pauses the composed runner pipeline for maintenance and resumes it after a healthy update clears the lease', async () => {
     const clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };

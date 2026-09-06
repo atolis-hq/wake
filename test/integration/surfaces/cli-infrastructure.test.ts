@@ -154,6 +154,17 @@ describe('CLI infrastructure', () => {
         '/wake-root:/wake',
         'wake-sandbox',
       ],
+      [
+        'exec',
+        '-u',
+        'root',
+        'wake-sandbox',
+        'sh',
+        '-c',
+        'mkdir -p "$1" && chown wake:wake "$1"',
+        'wake-workspace-ownership',
+        '/wake/workspaces',
+      ],
       ['stop', '--time', '60', 'wake-sandbox'],
     ]);
   });
@@ -215,6 +226,17 @@ describe('CLI infrastructure', () => {
         '-e',
         'WAKE_START_ENABLED=true',
         'configured-image',
+      ],
+      [
+        'exec',
+        '-u',
+        'root',
+        'configured-name',
+        'sh',
+        '-c',
+        'mkdir -p "$1" && chown wake:wake "$1"',
+        'wake-workspace-ownership',
+        '/workspace/workspaces',
       ],
     ]);
   });
@@ -288,7 +310,7 @@ describe('CLI infrastructure', () => {
     await docker.up();
     expect(calls[0]).toEqual(expect.arrayContaining(['-p', '127.0.0.1:4317:4317']));
   });
-  it('does not create a second container when the sandbox is already running', async () => {
+  it('repairs workspace ownership without creating a second container when the sandbox is already running', async () => {
     const calls: string[][] = [];
     const docker = createSandboxDockerPort(
       createDockerCli(async (arguments_) => {
@@ -302,7 +324,19 @@ describe('CLI infrastructure', () => {
       },
     );
     await docker.up();
-    expect(calls).toEqual([]);
+    expect(calls).toEqual([
+      [
+        'exec',
+        '-u',
+        'root',
+        'wake-sandbox',
+        'sh',
+        '-c',
+        'mkdir -p "$1" && chown wake:wake "$1"',
+        'wake-workspace-ownership',
+        '/wake/workspaces',
+      ],
+    ]);
   });
 
   it('starts an existing stopped sandbox rather than recreating it', async () => {
@@ -319,7 +353,20 @@ describe('CLI infrastructure', () => {
       },
     );
     await docker.up();
-    expect(calls).toEqual([['start', 'wake-sandbox']]);
+    expect(calls).toEqual([
+      ['start', 'wake-sandbox'],
+      [
+        'exec',
+        '-u',
+        'root',
+        'wake-sandbox',
+        'sh',
+        '-c',
+        'mkdir -p "$1" && chown wake:wake "$1"',
+        'wake-workspace-ownership',
+        '/wake/workspaces',
+      ],
+    ]);
   });
 
   it('requires an image before starting the sandbox', async () => {

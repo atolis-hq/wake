@@ -5,6 +5,7 @@ import {
   type DockerInvokeOptions,
 } from './docker-invocation.js';
 import { scrubProcessLog, type ProcessLogSink } from './process-log.js';
+import { ensureSandboxWorkspaceOwnership } from './sandbox-workspace-ownership.js';
 
 export {
   DockerProcessError,
@@ -168,12 +169,12 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
     up: async () => {
       await requireImage(inspect, options.image);
       const state = await inspect.containerState(options.containerName);
-      if (state === 'live') return;
       if (state === 'halted') {
         await docker.invoke(['start', options.containerName]);
-        return;
+      } else if (state === null) {
+        await createContainer(docker, options);
       }
-      await createContainer(docker, options);
+      await ensureSandboxWorkspaceOwnership(docker, options);
     },
     down: () => docker.invoke(['stop', '--time', '60', options.containerName]),
     update: async () => {
@@ -182,6 +183,7 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
       if (state === 'live') await docker.invoke(['stop', '--time', '60', options.containerName]);
       if (state !== null) await docker.invoke(['rm', options.containerName]);
       await createContainer(docker, options);
+      await ensureSandboxWorkspaceOwnership(docker, options);
     },
     exec: (command: readonly string[]) =>
       docker.invoke(
