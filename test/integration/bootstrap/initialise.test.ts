@@ -146,7 +146,7 @@ describe('target initialise root', () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
 
-    const dockerfile = await readFile(join(root, 'docker', 'Dockerfile'), 'utf8');
+    const dockerfile = await readFile(join(root, 'docker', 'Dockerfile.runtime'), 'utf8');
 
     expect(dockerfile).toContain('@anthropic-ai/claude-code');
     expect(dockerfile).toContain('@openai/codex');
@@ -165,7 +165,7 @@ describe('target initialise root', () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
 
-    const dockerfile = await readFile(join(root, 'docker', 'Dockerfile'), 'utf8');
+    const dockerfile = await readFile(join(root, 'docker', 'Dockerfile.runtime'), 'utf8');
 
     expect(dockerfile).toContain('ENV WAKE_MAIN_JS=/app/dist/src/main.js');
     expect(dockerfile).toContain('sandbox-entrypoint');
@@ -177,7 +177,7 @@ describe('target initialise root', () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
 
-    for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
+    for (const filename of ['Dockerfile.runtime', 'Dockerfile.runtime.packaged']) {
       const dockerfile = await readFile(join(root, 'docker', filename), 'utf8');
       expect(dockerfile).toContain('WAKE_HOME_INIT_DIRS');
       expect(dockerfile).toContain('mkdir -p \\"$directory\\"');
@@ -191,7 +191,7 @@ describe('target initialise root', () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
 
-    for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
+    for (const filename of ['Dockerfile.runtime', 'Dockerfile.runtime.packaged']) {
       const dockerfile = await readFile(join(root, 'docker', filename), 'utf8');
 
       expect(dockerfile).toContain('mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth');
@@ -204,7 +204,7 @@ describe('target initialise root', () => {
   });
 
   it('keeps repository sandbox images able to repair Wake runtime ownership', async () => {
-    for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
+    for (const filename of ['Dockerfile.runtime', 'Dockerfile.runtime.packaged']) {
       const dockerfile = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
 
       expect(dockerfile).toContain('USER root');
@@ -221,7 +221,7 @@ describe('target initialise root', () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
 
-    for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
+    for (const filename of ['Dockerfile.runtime', 'Dockerfile.runtime.packaged']) {
       const scaffolded = await readFile(join(root, 'docker', filename), 'utf8');
       const repository = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
 

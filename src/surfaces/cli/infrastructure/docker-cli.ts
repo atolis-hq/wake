@@ -4,6 +4,7 @@ import {
   type DockerInvocationResult,
   type DockerInvokeOptions,
 } from './docker-invocation.js';
+import { managedRuntimeDockerfile, managedRuntimeImage } from './managed-runtime-image.js';
 import { scrubProcessLog, type ProcessLogSink } from './process-log.js';
 import { ensureSandboxWorkspaceOwnership } from './sandbox-workspace-ownership.js';
 
@@ -130,18 +131,13 @@ function mergeDockerOutput(
   };
 }
 
-/** Bounded target sandbox lifecycle; domain modules never name Docker. */
-const dockerRunCommand = String.fromCharCode(114, 117, 110);
-
-// The bounded lifecycle is intentionally co-located for command parity.
 // eslint-disable-next-line max-lines-per-function
 export function createSandboxDockerPort(docker: DockerCli, options: SandboxDockerOptions) {
   const inspect = options.inspect ?? unknownSandboxInspection;
   return {
     build: async () => {
-      const source = options.development?.mode === 'source';
-      const packaged = !source;
-      const context = source ? options.development?.repoRoot : options.wakeRoot;
+      const packaged = options.development?.mode !== 'source';
+      const context = packaged ? options.wakeRoot : options.development?.repoRoot;
       if (context === undefined)
         throw new Error('source sandbox build requires host.development.repoRoot');
       // Stamps the image with the resolved wake version so a running
@@ -153,9 +149,15 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
         buildVersion === undefined
           ? []
           : ['--build-arg', `${packaged ? 'WAKE_VERSION' : 'WAKE_BUILD_TAG'}=${buildVersion}`];
-      // Dockerfile always comes from the target Wake home, not the source
-      // checkout, so it stays user-customizable per home; only the build
-      // context (what COPY can see) varies with dev mode.
+      await docker.invoke([
+        'build',
+        '-t',
+        managedRuntimeImage,
+        '-f',
+        managedRuntimeDockerfile(packaged),
+        ...buildArgs,
+        context,
+      ]);
       return docker.invoke([
         'build',
         '-t',
@@ -230,7 +232,6 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
   };
 }
 
-/** Promotes a verified versioned sandbox image to the configured default image. */
 export async function promoteSandboxImage(
   docker: DockerCli,
   sourceImage: string,
@@ -250,11 +251,8 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-// The Cursor CLI's own first subcommand, not the ActivityExecutionKind/EventActorKind
-// vocabulary word "agent" — spelled indirectly so it isn't misread as that domain term.
 const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);
 
-/** Static per-agent-CLI resume argv; mirrors each CLI's own resume flag shape. */
 function buildResumeCommandForCli(cli: string, sessionId: string): readonly string[] | null {
   const normalized = cli.trim().toLowerCase();
   if (normalized === 'claude') return ['claude', '--resume', sessionId];
@@ -283,7 +281,7 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
     `${mount.source}:${mount.target}${mount.readOnly === true ? ':ro' : ''}`,
   ]);
   await docker.invoke([
-    dockerRunCommand,
+    'run',
     '-d',
     // Bounds the container's own json-file log driver so its internal log
     // storage can't grow unbounded; independent of process-log.ts's rotation
