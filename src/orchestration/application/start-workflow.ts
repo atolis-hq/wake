@@ -8,6 +8,7 @@ import { validateChildProvenance } from '../domain/child-policy.js';
 import { workflowEventData } from '../domain/decision-events.js';
 import { startInstance } from '../domain/interpreter.js';
 import type { CoordinationClaims } from './coordination-claims.js';
+import { appendWithIntentRecovery } from './durable-append.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 import { WorkflowDefinitionUnavailableError } from './workflow-definition-registry.js';
@@ -52,8 +53,16 @@ export class StartWorkflow {
       correlationId: context.correlationId,
       causationId: context.commandId,
     });
-    if (decision.kind === 'append')
-      await this.repository.append(command.workflowInstanceId, 0, decision.events);
+    if (decision.kind === 'append') {
+      const recovered = await appendWithIntentRecovery({
+        append: async () => {
+          await this.repository.append(command.workflowInstanceId, 0, decision.events);
+        },
+        load: () => this.repository.load(command.workflowInstanceId),
+        alreadyApplied: (reloaded) => reloaded.view !== null,
+      });
+      if (recovered !== undefined) return recovered.view!;
+    }
     return (await this.repository.loadRequired(command.workflowInstanceId)).view;
   }
 
