@@ -228,6 +228,16 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
   };
 }
 
+/** Promotes a verified versioned sandbox image to the configured default image. */
+export async function promoteSandboxImage(
+  docker: DockerCli,
+  sourceImage: string,
+  defaultImage: string,
+): Promise<void> {
+  if (sourceImage === defaultImage) return;
+  await docker.invoke(['tag', sourceImage, defaultImage]);
+}
+
 export interface SandboxResumeTarget {
   readonly sessionId: string;
   readonly cwd: string;

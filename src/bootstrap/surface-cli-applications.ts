@@ -33,6 +33,7 @@ import {
   createSurfaceHttpServer,
   drainProcessOutput,
   loadOrCreateCredentials,
+  promoteSandboxImage,
   redeemPairingGrant,
   replaceAccessKey,
   runDoctor,
@@ -519,11 +520,31 @@ function sandboxDockerOptions(
   };
 }
 
-function createSandboxDocker(root: CompositionRoot, overrides?: { readonly image?: string }) {
+function createSandboxDocker(
+  root: CompositionRoot,
+  overrides?: {
+    readonly image?: string;
+    readonly development?: SandboxDockerOptions['development'];
+    readonly buildVersion?: string;
+  },
+) {
   return createSandboxDockerPort(
     createDockerCliForRoot(root),
     sandboxDockerOptions(root, overrides),
   );
+}
+
+async function createSandboxDockerForCommand(root: CompositionRoot, arguments_: readonly string[]) {
+  if (arguments_[0] !== 'build' || root.config.host.development.mode === 'source')
+    return createSandboxDocker(root);
+  const buildVersion = await createNpmUpdatePort({
+    packageName: root.config.host.selfUpdate.npm.package,
+    distTag: root.config.host.selfUpdate.npm.distTag,
+    ...(root.config.host.selfUpdate.npm.registry === undefined
+      ? {}
+      : { registry: root.config.host.selfUpdate.npm.registry }),
+  }).latestTag();
+  return createSandboxDocker(root, { buildVersion });
 }
 
 async function resolveSandboxBuildVersion(root: CompositionRoot): Promise<string> {
@@ -635,6 +656,7 @@ async function deploySandboxTag(
   );
   await port.exec([...wakeInvocation, 'init', healthcheckRoot]);
   await port.exec([...wakeInvocation, 'tick', '--wake-root', healthcheckRoot, '--no-sandbox']);
+  await promoteSandboxImage(docker, image, root.config.host.sandbox.image);
 }
 
 async function rollbackSandboxTag(
@@ -654,6 +676,7 @@ async function rollbackSandboxTag(
     root.config.host.sandbox.containerName,
     [...wakeInvocation, 'start', '--wake-root', '/wake'].join(' '),
   );
+  await promoteSandboxImage(docker, image, root.config.host.sandbox.image);
 }
 
 function createOperationalApplications(root: CompositionRoot) {
@@ -678,7 +701,7 @@ function createOperationalApplications(root: CompositionRoot) {
       );
     },
     sandbox: async (arguments_: readonly string[]) =>
-      runSandbox(arguments_, createSandboxDocker(root)),
+      runSandbox(arguments_, await createSandboxDockerForCommand(root, arguments_)),
     sandboxEntrypoint: async () => {
       await runSandboxEntrypoint(createSandboxEntrypointDependencies(root));
     },
