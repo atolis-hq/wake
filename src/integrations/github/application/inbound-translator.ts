@@ -13,6 +13,8 @@ import {
 import {
   ActivityEventType,
   createPullRequestService,
+  isReviewAuthorized,
+  ReviewerAuthorizationSource,
   selectActivityEvent,
   type ObservePullRequest,
   type PullRequestService,
@@ -24,8 +26,10 @@ import {
 } from '../../../conversations/index.js';
 import type { RunRepository } from '../../../execution/index.js';
 import { UlidIdGenerator, type IdGenerator } from '../../../kernel/index.js';
-import type { OrchestrationService } from '../../../orchestration/index.js';
-import { ConversationSurfaceCapability } from '../../../orchestration/index.js';
+import type {
+  ConversationSurfaceCapability,
+  OrchestrationService,
+} from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
   BuiltInResourceCapability,
@@ -56,7 +60,7 @@ import type {
   GitHubEventPayloads,
 } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
-import { GitHubAdapter } from '../contracts/vocabulary.js';
+import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { commandContext } from './inbound-context.js';
 import { applyReviewSignal } from './inbound-review-signals.js';
 import { applyWatchGateVerdictSignal } from './inbound-watch-gate-signals.js';
@@ -116,6 +120,7 @@ interface InboundTranslatorDependencies {
   readonly intake?: readonly GitHubIntakeRuleConfig[];
   readonly conclusion?: WorkConclusion;
   readonly conversations?: ConversationService;
+  readonly conversationCapabilities?: readonly ConversationSurfaceCapability[];
 }
 
 export class InboundTranslator {
@@ -163,6 +168,7 @@ export class InboundTranslator {
     this.intake = gitHubIntakeRules(dependencies.intake ?? []);
     this.conclusion = dependencies.conclusion;
     this.conversations = dependencies.conversations;
+    this.conversationCapabilities = dependencies.conversationCapabilities ?? [];
     this.processor = defineEventProcessor({
       consumer: `reactor:integration.${this.adapter}.inbound`,
       name: `integration.${this.adapter}.inbound`,
@@ -185,6 +191,7 @@ export class InboundTranslator {
   private readonly intake: readonly IntakeRule[];
   private readonly conclusion: WorkConclusion | undefined;
   private readonly conversations: ConversationService | undefined;
+  private readonly conversationCapabilities: readonly ConversationSurfaceCapability[];
   private conversationRecordRecoveryPending: boolean | undefined;
 
   private async reconcileOnce(): Promise<void> {
@@ -227,6 +234,7 @@ export class InboundTranslator {
             ids: this.ids,
             adapter: this.adapter,
             orchestration: this.orchestration,
+            applyIssueCommands: false,
           });
         await applyWatchGateVerdictSignal({
           event: owned,
@@ -400,13 +408,15 @@ export class InboundTranslator {
     workItemId: WorkItemId,
     event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
   ): Promise<void> {
+    // Native formal reviews already carry their own verified decision and workflow signal.
+    if (event.event.payload.reviewKind !== 'issue') return;
     await this.orchestration?.applyConversationCommand(
       workItemId,
       {
         body: event.event.payload.body,
-        surface: this.adapter,
         actorId: event.event.payload.actor.id,
-        capabilities: [ConversationSurfaceCapability.Review],
+        capabilities: this.conversationCapabilities,
+        authorized: isAuthorizedConversationActor(event),
       },
       commandContext(event),
     );
@@ -995,6 +1005,18 @@ export class InboundTranslator {
       }
     }
   }
+}
+
+function isAuthorizedConversationActor(
+  event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
+): boolean {
+  const { actor, authorization } = event.event.payload;
+  return isReviewAuthorized({
+    actorId: actor.id,
+    actorKind: actor.kind,
+    resourceAuthorId: UnknownGitHubIdentity,
+    authorization: authorization ?? { source: ReviewerAuthorizationSource.None },
+  });
 }
 
 function observedCommentExternalId(

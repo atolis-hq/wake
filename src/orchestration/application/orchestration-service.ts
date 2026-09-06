@@ -3,11 +3,7 @@ import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/e
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
-import type {
-  CommandPolicyConfig,
-  CompiledWorkflow,
-  TransitionTarget,
-} from '../contracts/config.js';
+import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import type {
   ChildWorkflowRequest,
@@ -32,7 +28,6 @@ import { AdvanceWorkflow } from './advance-workflow.js';
 import {
   applyBuiltInConversationCommand,
   conversationCommand,
-  resolveSurfaceCapabilities,
   type SurfaceCapability,
 } from './conversation-command.js';
 import { CoordinationClaims } from './coordination-claims.js';
@@ -56,21 +51,18 @@ export class OrchestrationService {
   private readonly claims: CoordinationClaims;
   private readonly journal: EventJournal;
   private readonly definitions: WorkflowDefinitionRegistry;
-  private readonly commandPolicy: CommandPolicyConfig | undefined;
 
   constructor(
     journal: EventJournal,
     work: WorkService,
     definitions: Readonly<Record<string, CompiledWorkflow>>,
     projections?: ProjectionStore,
-    commandPolicy?: CommandPolicyConfig,
   ) {
     this.projections = projections;
     this.journal = journal;
     const repository = new OrchestrationRepository(journal);
     this.claims = new CoordinationClaims(journal);
     this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
-    this.commandPolicy = commandPolicy;
     this.startWorkflow = new StartWorkflow(repository, this.claims, work, this.definitions);
     this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow);
     this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
@@ -154,25 +146,20 @@ export class OrchestrationService {
     return this.advanceWorkflow.requestSupplementalActivity(workflowInstanceId, request, context);
   }
 
-  resolvedConversationCapabilities(
-    surface: string,
-    defaults: readonly SurfaceCapability[] = [],
-  ): readonly SurfaceCapability[] {
-    return resolveSurfaceCapabilities(surface, this.commandPolicy, defaults);
-  }
-
   async applyConversationCommand(
     workItemId: WorkItemId,
     input: {
       readonly body: string;
-      readonly surface: string;
       readonly actorId: string;
-      readonly capabilities?: readonly SurfaceCapability[];
+      readonly capabilities: readonly SurfaceCapability[];
+      /** The adapter authenticated and authorized the actor for command control. */
+      readonly authorized: boolean;
     },
     context: CommandContext,
   ): Promise<boolean> {
     const command = conversationCommand(input.body);
     if (command === null) return false;
+    if (!input.authorized) return false;
     const workflows = await this.listForWorkItem(workItemId);
     // Configured commands deliberately win over built-ins, even when their spelling collides.
     let supplemental = false;
@@ -189,7 +176,7 @@ export class OrchestrationService {
     if (supplemental) return true;
     return applyBuiltInConversationCommand({
       command,
-      capabilities: this.resolvedConversationCapabilities(input.surface, input.capabilities),
+      capabilities: input.capabilities,
       workflows,
       context,
       acceptSignal: (id, outcome) =>
@@ -482,5 +469,4 @@ export const createOrchestrationService = (
   work: WorkService,
   definitions: Readonly<Record<string, CompiledWorkflow>>,
   projections?: ProjectionStore,
-  commandPolicy?: CommandPolicyConfig,
-) => new OrchestrationService(journal, work, definitions, projections, commandPolicy);
+) => new OrchestrationService(journal, work, definitions, projections);

@@ -96,7 +96,12 @@ describe('supplemental Activity commands', () => {
     expect(
       await service.applyConversationCommand(
         instance.workItemId,
-        { body: ' /codereview with context', surface: 'control-plane', actorId: 'owner' },
+        {
+          body: ' /codereview with context',
+          actorId: 'owner',
+          capabilities: ['operator-surface'],
+          authorized: true,
+        },
         { ...context, commandId: 'conversation-command' },
       ),
     ).toBe(true);

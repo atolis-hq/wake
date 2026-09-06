@@ -478,26 +478,26 @@ built-in command with the same spelling. Arguments after the command are accepte
 compatibility but are not passed to the Activity.
 
 Built-ins are `/approved`, `/accepted`, `/changes`, `/retry`, `/restart`, and `/extend`. Their
-availability is controlled by the `orchestration.commandPolicy` capability policy, not adapter
-names. `review-surface` and `operator-surface` permit all six; `chat-surface` permits none.
-The control-plane composer is an `operator-surface`, GitHub is a `review-surface`, and unknown
-adapters have no built-in capability by default. This makes a newly enabled chat integration safe
-until it is explicitly granted authority.
+availability is controlled by each named integration instance's capabilities. `review-surface`
+and `operator-surface` permit all six; `chat-surface` permits none. The control-plane composer is
+an `operator-surface`; the built-in GitHub provider defaults to `review-surface`; and an unknown
+provider defaults to no capability. This makes a newly enabled chat integration safe until it is
+explicitly granted authority.
 
 ```yaml
-orchestration:
-  commandPolicy:
-    capabilities:
-      slack: [chat-surface]
-      emergency-console: [operator-surface]
-    replace: false # add to known defaults; true replaces them
+integrations:
+  slack:
+    provider: slack
+    conversation:
+      capabilities: [chat-surface]
 ```
 
-`capabilities` maps a surface name to `review-surface`, `chat-surface`, and/or
-`operator-surface`. With `replace: false` (the default), declared capabilities add to the known
-default; with `replace: true`, they replace it. Granting `review-surface` or `operator-surface`
-allows approval and workflow-control commands, so use it only for surfaces whose actor evidence
-and authorization are trusted. A command unavailable on its surface remains a durable,
+`integrations.<adapter>.conversation.capabilities` is an optional replacement for that adapter's
+provider default and accepts `review-surface`, `chat-surface`, and/or `operator-surface`. It is
+adapter-instance configuration: two instances of the same provider may use different capability
+sets. Granting `review-surface` or `operator-surface` enables command classes but does not itself
+authorize an actor; the adapter must still verify its actor evidence before Wake applies a command.
+A command unavailable to its surface, or issued by an unauthorized actor, remains a durable,
 immutable conversation entry and has no workflow effect.
 `match.stage` and `match.outcome` are independently optional facets, each accepting one value or a
 non-empty list. Outcomes are case-sensitive lowercase-kebab values: `done`, `rejected`, `blocked`,

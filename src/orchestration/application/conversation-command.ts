@@ -1,6 +1,5 @@
 import type { CommandContext } from '@atolis-hq/eventing';
 import { ActivityOutcomeKind } from '../../activities/index.js';
-import type { CommandPolicyConfig } from '../contracts/config.js';
 import { type WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
@@ -18,16 +17,6 @@ export const BuiltInConversationCommands = Object.values(ConversationBuiltInComm
 export type SurfaceCapability = ConversationSurfaceCapability;
 
 export type ConversationCommandSurface = { readonly capabilities: readonly SurfaceCapability[] };
-
-export function resolveSurfaceCapabilities(
-  surface: string,
-  policy: CommandPolicyConfig | undefined,
-  defaults: readonly SurfaceCapability[] = [],
-): readonly SurfaceCapability[] {
-  const configured = policy?.capabilities[surface];
-  if (configured === undefined) return defaults;
-  return [...new Set([...(policy?.replace ? [] : defaults), ...configured])];
-}
 
 export function conversationCommand(body: string): string | null {
   const line = body.trim().split('\n', 1)[0]?.trim().toLowerCase() ?? '';

@@ -50,12 +50,23 @@ export async function applyReviewSignal(input: {
   readonly ids: IdGenerator;
   readonly adapter: AdapterId;
   readonly orchestration: OrchestrationService | undefined;
+  /** The shared conversation dispatcher owns slash commands in the normal inbound path. */
+  readonly applyIssueCommands?: boolean;
 }): Promise<void> {
-  const { event, journal, resources, work, lookup, adapter, orchestration } = input;
+  const { event, journal, resources, work, lookup, adapter, orchestration, applyIssueCommands } =
+    input;
   if (journal === undefined || resources === undefined || work === undefined) return;
   const payload = event.event.payload;
   if (payload.reviewKind === 'issue') {
-    await applyIssueReviewSignal({ event, resources, work, lookup, orchestration, adapter });
+    await applyIssueReviewSignal({
+      event,
+      resources,
+      work,
+      lookup,
+      orchestration,
+      adapter,
+      ...(applyIssueCommands === undefined ? {} : { applyIssueCommands }),
+    });
     return;
   }
   await applyFormalReviewSignal({ ...input, journal, resources, work });
@@ -126,8 +137,9 @@ async function applyIssueReviewSignal(input: {
   readonly lookup: ResourceLookup | undefined;
   readonly orchestration: OrchestrationService | undefined;
   readonly adapter: AdapterId;
+  readonly applyIssueCommands?: boolean;
 }): Promise<void> {
-  const { event, resources, work, lookup, orchestration, adapter } = input;
+  const { event, resources, work, lookup, orchestration, adapter, applyIssueCommands } = input;
   if (!isHumanNonWakeReply(event.event.payload.actor.kind, event.event.payload.body)) return;
   if (resources === undefined || lookup === undefined || orchestration === undefined) return;
   const resourceIdValue = await lookup.resourceIdForExternalKey({
@@ -138,9 +150,9 @@ async function applyIssueReviewSignal(input: {
   const resource = await resources.get(resourceIdValue);
   const command = recognizedCommand(event.event.payload.body);
   const plainReply = isPlainReply(event.event.payload.body);
-  // Compatibility callers still apply the command here; the normal inbound path
-  // also dispatches after durable conversation recording, using idempotent context.
-  if (command !== null)
+  // Direct compatibility callers retain the legacy handler; the normal inbound
+  // path records first and has the shared dispatcher handle the command exactly once.
+  if (command !== null && applyIssueCommands !== false)
     return applyIssueCommand({
       event,
       command,

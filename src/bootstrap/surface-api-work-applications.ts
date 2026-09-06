@@ -192,9 +192,9 @@ export function createSurfaceWorkApplications(
                     id,
                     {
                       body: command.body,
-                      surface: ConversationOriginKind.ControlPlane,
                       actorId: context.actor.id,
                       capabilities: [ConversationSurfaceCapability.Operator],
+                      authorized: true,
                     },
                     context,
                   );

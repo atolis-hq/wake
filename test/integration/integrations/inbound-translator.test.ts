@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { createEventData, EventProcessorHost, type EventProcessor } from '@atolis-hq/eventing';
-import { activityName, ActivityOutcomeKind } from '../../../src/activities/index.js';
+import {
+  activityName,
+  ActivityOutcomeKind,
+  ReviewerAuthorizationSource,
+} from '../../../src/activities/index.js';
 import { RunRepository } from '../../../src/execution/index.js';
 import { FakeEventType } from '../../../src/integrations/fake/external-source.js';
 import { FakeInboundTranslator } from '../../../src/integrations/fake/inbound-translator.js';
@@ -575,6 +579,50 @@ describe('InboundTranslator', () => {
       pendingActivation: { activity: activityName('agent'), ordinal: 2 },
     });
     expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
+  });
+
+  it('records but does not apply an unauthorized GitHub workflow command', async () => {
+    const fixture = await blockedIssueWorkflow();
+    const conversations = createConversationService(fixture.world.journal);
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        lookup: fixture.world.resourceLookup,
+        orchestration: fixture.world.orchestration,
+        pullRequests: fixture.world.pullRequests,
+        conversations,
+      },
+    );
+    const event = createEventData({
+      eventId: 'github:issue-comment:atolis-hq/wake#583:unauthorized-changes',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#583',
+      causationId: 'github:issue-comment:unauthorized-changes',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#583',
+        body: '/changes please revise this',
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'untrusted-user', kind: 'human' },
+        authorization: { source: ReviewerAuthorizationSource.None },
+        raw: { id: 2 },
+      },
+    });
+    await fixture.world.journal.appendToStream(githubStream, 0, [event]);
+
+    await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
+
+    expect(await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId)).toMatchObject({
+      status: 'blocked',
+    });
+    expect((await conversations.forWorkItem(fixture.workflow.workItemId))?.entries).toMatchObject([
+      { body: '/changes please revise this' },
+    ]);
   });
 
   it('records an unverified delivery marker as external feedback rather than agent publication', async () => {
