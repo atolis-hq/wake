@@ -14,7 +14,7 @@ describe('source Docker build context', () => {
   it('includes only inputs copied by the source Dockerfile', async () => {
     const [ignore, dockerfile] = await Promise.all([
       readFile(join(process.cwd(), '.dockerignore'), 'utf8'),
-      readFile(join(process.cwd(), 'docker/Dockerfile'), 'utf8'),
+      readFile(join(process.cwd(), 'docker/Dockerfile.runtime'), 'utf8'),
     ]);
 
     expect(ignore.split(/\r?\n/)).toEqual([

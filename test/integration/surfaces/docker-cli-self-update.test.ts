@@ -23,18 +23,30 @@ describe('sandbox build version tagging', () => {
       },
     );
     await docker.build();
-    expect(calls).toEqual([
-      [
-        'build',
-        '-t',
-        'wake-sandbox',
-        '-f',
-        '/wake-root/docker/Dockerfile',
-        '--build-arg',
-        'WAKE_BUILD_TAG=v1.2.3+gabc1234',
-        '/repo-root',
-      ],
-    ]);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        [
+          'build',
+          '-t',
+          'wake-sandbox-runtime:managed',
+          '-f',
+          expect.stringContaining('docker/Dockerfile.runtime'),
+          '--build-arg',
+          'WAKE_BUILD_TAG=v1.2.3+gabc1234',
+          '/repo-root',
+        ],
+        [
+          'build',
+          '-t',
+          'wake-sandbox',
+          '-f',
+          '/wake-root/docker/Dockerfile',
+          '--build-arg',
+          'WAKE_BUILD_TAG=v1.2.3+gabc1234',
+          '/repo-root',
+        ],
+      ]),
+    );
   });
 
   it('stamps a packaged build with the resolved version as WAKE_VERSION', async () => {
@@ -52,18 +64,30 @@ describe('sandbox build version tagging', () => {
       },
     );
     await docker.build();
-    expect(calls).toEqual([
-      [
-        'build',
-        '-t',
-        'wake-sandbox',
-        '-f',
-        '/wake-root/docker/Dockerfile.packaged',
-        '--build-arg',
-        'WAKE_VERSION=1.4.0',
-        '/wake-root',
-      ],
-    ]);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        [
+          'build',
+          '-t',
+          'wake-sandbox-runtime:managed',
+          '-f',
+          expect.stringContaining('docker/Dockerfile.runtime.packaged'),
+          '--build-arg',
+          'WAKE_VERSION=1.4.0',
+          '/wake-root',
+        ],
+        [
+          'build',
+          '-t',
+          'wake-sandbox',
+          '-f',
+          '/wake-root/docker/Dockerfile.packaged',
+          '--build-arg',
+          'WAKE_VERSION=1.4.0',
+          '/wake-root',
+        ],
+      ]),
+    );
   });
 
   it('uses the packaged Dockerfile when development mode is not configured', async () => {
@@ -75,9 +99,26 @@ describe('sandbox build version tagging', () => {
       { wakeRoot: '/wake-root', image: 'wake-sandbox', containerName: 'wake-sandbox' },
     );
     await docker.build();
-    expect(calls).toEqual([
-      ['build', '-t', 'wake-sandbox', '-f', '/wake-root/docker/Dockerfile.packaged', '/wake-root'],
-    ]);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        [
+          'build',
+          '-t',
+          'wake-sandbox-runtime:managed',
+          '-f',
+          expect.stringContaining('docker/Dockerfile.runtime.packaged'),
+          '/wake-root',
+        ],
+        [
+          'build',
+          '-t',
+          'wake-sandbox',
+          '-f',
+          '/wake-root/docker/Dockerfile.packaged',
+          '/wake-root',
+        ],
+      ]),
+    );
   });
 
   it('promotes a verified versioned image to the configured sandbox image', async () => {

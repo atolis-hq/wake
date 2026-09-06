@@ -1,0 +1,85 @@
+# syntax=docker/dockerfile:1
+FROM node:24-bookworm-slim
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+  apt-get update \
+  && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl gnupg \
+  && mkdir -p /etc/apt/keyrings \
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+    > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends gh
+
+RUN --mount=type=cache,target=/root/.npm \
+  npm install -g @anthropic-ai/claude-code @openai/codex
+
+RUN useradd --create-home --shell /bin/bash wake \
+  && mkdir -p /home/wake/.codex-runtime \
+  && mkdir -p /home/wake/.cursor \
+  && chown -R wake:wake /home/wake/.codex-runtime \
+  && chown -R wake:wake /home/wake/.cursor
+
+ENV CODEX_HOME=/home/wake/.codex-runtime
+ENV PATH=/home/wake/.local/bin:$PATH
+
+# Bump this date to force a fresh cursor.com/install instead of an indefinitely cached one.
+ARG CURSOR_CACHE_BUST=2026-07-26
+RUN echo "cursor cache bust: ${CURSOR_CACHE_BUST}" \
+  && curl https://cursor.com/install -fsS | HOME=/home/wake bash \
+  && printf '#!/bin/bash\n[ "$1" = "agent" ] && shift\nexec ~/.local/bin/agent "$@"\n' \
+     > /home/wake/.local/bin/cursor \
+  && chmod +x /home/wake/.local/bin/cursor \
+  && chown -R wake:wake /home/wake/.local
+
+WORKDIR /app
+COPY package*.json ./
+COPY packages/eventing/package.json packages/eventing/package.json
+COPY packages/eventing-filesystem/package.json packages/eventing-filesystem/package.json
+COPY src/surfaces/web/package.json src/surfaces/web/package.json
+RUN --mount=type=cache,target=/root/.npm \
+  if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
+
+COPY tsconfig.json tsconfig.base.json tsconfig.app.json tsconfig.docker.json ./
+COPY packages/ packages/
+COPY scripts/embed-version.mjs scripts/embed-version.mjs
+COPY scripts/embed-runtime-workspaces.mjs scripts/embed-runtime-workspaces.mjs
+COPY assets/ assets/
+COPY src/ src/
+ARG WAKE_BUILD_TAG
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:docker
+
+RUN mkdir -p /etc/codex /usr/local/lib/wake \
+  && cp /app/dist/src/execution/infrastructure/codex-stop-hook.js /usr/local/lib/wake/codex-stop-hook.js \
+  && printf '%s\n' \
+    '[features]' \
+    'hooks = true' \
+    '' \
+    '[hooks]' \
+    'managed_dir = "/usr/local/lib/wake"' \
+    '' \
+    '[[hooks.Stop]]' \
+    '[[hooks.Stop.hooks]]' \
+    'type = "command"' \
+    'command = "node /usr/local/lib/wake/codex-stop-hook.js"' \
+    'timeout = 10' \
+    > /etc/codex/requirements.toml
+
+USER root
+WORKDIR /home/wake
+
+EXPOSE 4317
+
+# Baked at build time so wake sandbox-entrypoint (and anything it spawns) can
+# find the compiled CLI without hardcoding /app in multiple places. Docker's
+# exec-form ENTRYPOINT below does not expand env vars, so it stays literal —
+# that's fine since it's the very first thing that runs.
+ENV WAKE_MAIN_JS=/app/dist/src/main.js
+
+# Startup ownership repair is best effort because bind-mounted paths or host
+# permissions may prevent chown. The bounded direct-child pass avoids traversing
+# accumulated runtime data.
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth; chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; find /wake/.wake/auth -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} + || true; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]

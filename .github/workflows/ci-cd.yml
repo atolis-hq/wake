@@ -185,7 +185,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile
+          file: docker/Dockerfile.runtime
           tags: wake-ci-smoke
           load: true
           cache-from: type=gha,scope=docker-smoke
