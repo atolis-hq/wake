@@ -640,9 +640,16 @@ describe('InboundTranslator', () => {
         conversationCapabilities: [ConversationSurfaceCapability.Review],
       },
     );
-    const unauthorized = issueCommandEvent(fixture.world, '/approved', 3, {
-      source: ReviewerAuthorizationSource.None,
-    });
+    const unauthorized = issueCommandEvent(
+      fixture.world,
+      '/approved',
+      3,
+      {
+        source: ReviewerAuthorizationSource.ProviderPermission,
+        permission: ProviderPermission.Write,
+      },
+      'maintainer',
+    );
     await fixture.world.journal.appendToStream(githubStream, 0, [unauthorized]);
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
     expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
@@ -1262,6 +1269,7 @@ function issueCommandEvent(
     readonly source: ReviewerAuthorizationSource;
     readonly permission?: ProviderPermission;
   },
+  resourceAuthorId = 'another-user',
 ) {
   return createEventData({
     eventId: `github:issue-comment:atolis-hq/wake#583:${id}`,
@@ -1277,6 +1285,7 @@ function issueCommandEvent(
       body,
       revision: world.clock.now().toISOString(),
       actor: { id: 'maintainer', kind: 'human' },
+      resourceAuthorId,
       authorization,
       raw: { id },
     },

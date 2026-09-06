@@ -45,6 +45,16 @@ export class OrchestrationRepository {
     sequence: number,
     drafts: readonly WorkflowOrchestrationEventData[],
   ): Promise<readonly WorkflowOrchestrationEvent[]> {
+    // Command and processor recovery may replay a completed append. Event IDs are
+    // deterministic from the command causation, so acknowledge that exact intent
+    // instead of appending a second copy after a crash between append and receipt.
+    const existing = await this.journal.readStream(workflowInstanceStream(workflowInstanceId(id)));
+    const existingIds = new Set(existing.map((event) => event.event.eventId));
+    if (drafts.every((draft) => existingIds.has(draft.eventId)))
+      return existing
+        .filter((event) => drafts.some((draft) => draft.eventId === event.event.eventId))
+        .map(decodeOrchestrationEvent)
+        .filter(isWorkflowEvent);
     const events = await this.journal.appendToStream(
       workflowInstanceStream(workflowInstanceId(id)),
       sequence,

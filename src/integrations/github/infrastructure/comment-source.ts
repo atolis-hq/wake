@@ -2,7 +2,7 @@ import {
   ReviewerAuthorizationSource,
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
-import { recognizedCommand } from '../application/inbound-comment-syntax.js';
+import { conversationCommand } from '../../../orchestration/index.js';
 import type { GitHubIssueCommentPayload } from '../contracts/payloads.js';
 import { issueCommentObservation } from './issue-source.js';
 import { mergeBatches, reportPartialPollFailure, type PollBatch } from './poll-watermark.js';
@@ -115,7 +115,7 @@ export async function issueCommentEventsFor(
 
 async function issueCommentEventsForComment(
   context: RepositoryPollContext,
-  issue: Pick<Parameters<typeof issueCommentObservation>[0]['issue'], 'number'>,
+  issue: Parameters<typeof issueCommentObservation>[0]['issue'],
   comment: GitHubIssueCommentPayload,
 ) {
   const authorization = await commandAuthorization(context, comment);
@@ -136,7 +136,7 @@ async function commandAuthorization(
   if (
     comment.body === null ||
     comment.body === undefined ||
-    recognizedCommand(comment.body) === null
+    conversationCommand(comment.body) === null
   )
     return undefined;
   const login = comment.user?.login;

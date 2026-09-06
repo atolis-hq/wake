@@ -498,6 +498,8 @@ provider default and accepts `review-surface`, `chat-surface`, and/or `operator-
 adapter-instance configuration: two instances of the same provider may use different capability
 sets. Granting `review-surface` or `operator-surface` enables command classes but does not itself
 authorize an actor; the adapter must still verify its actor evidence before Wake applies a command.
+GitHub obtains collaborator permission evidence for every syntactically valid slash command and
+rejects a resource author approving their own issue or pull request.
 A command unavailable to its surface, or issued by an unauthorized actor, remains a durable,
 immutable conversation entry and has no workflow effect.
 `match.stage` and `match.outcome` are independently optional facets, each accepting one value or a

@@ -1010,11 +1010,11 @@ export class InboundTranslator {
 function isAuthorizedConversationActor(
   event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
 ): boolean {
-  const { actor, authorization } = event.event.payload;
+  const { actor, authorization, resourceAuthorId } = event.event.payload;
   return isReviewAuthorized({
     actorId: actor.id,
     actorKind: actor.kind,
-    resourceAuthorId: UnknownGitHubIdentity,
+    resourceAuthorId: resourceAuthorId ?? UnknownGitHubIdentity,
     authorization: authorization ?? { source: ReviewerAuthorizationSource.None },
   });
 }
