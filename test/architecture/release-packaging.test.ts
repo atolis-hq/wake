@@ -8,8 +8,8 @@ const readRepositoryFile = (path: string): Promise<string> =>
 describe('release packaging', () => {
   it('uses the source workspace context only where a Docker image builds Wake', async () => {
     const [sourceDockerfile, packagedDockerfile] = await Promise.all([
-      readRepositoryFile('docker/Dockerfile'),
-      readRepositoryFile('docker/Dockerfile.packaged'),
+      readRepositoryFile('docker/Dockerfile.runtime'),
+      readRepositoryFile('docker/Dockerfile.runtime.packaged'),
     ]);
 
     expect(sourceDockerfile).toContain('COPY package*.json ./');
