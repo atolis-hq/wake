@@ -337,17 +337,27 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
           ...check,
         })),
       );
+      const failedAdapters = (root.providerFailures ?? []).map((failure) => ({
+        adapter: failure.adapter,
+        provider: failure.provider,
+        scope: 'configuration',
+        channel: 'initialization',
+        status: 'degraded' as const,
+        detail: sanitizeHealthErrorText(failure.error, maximumHealthErrorMessageLength),
+        successCount: 0,
+        failureCount: 1,
+      }));
       return {
         data: {
           status:
             checks.some((check) => check.status === 'degraded') ||
-            adapters.some((check) => check.status === 'degraded')
+            [...adapters, ...failedAdapters].some((check) => check.status === 'degraded')
               ? 'degraded'
               : 'ok',
           version: wakeVersion,
           checkedAt,
           checks,
-          adapters,
+          adapters: [...adapters, ...failedAdapters],
         },
         meta: sampledMeta(checkedAt),
       };
