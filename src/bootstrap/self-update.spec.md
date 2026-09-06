@@ -40,8 +40,8 @@ a CLI command.
 ## Core policies, invariants, and behaviours
 
 - Quiescence treats both `starting` workspace preparation and `started` runner
-  execution as active; request-only maintenance cancellation is confirmed by
-  the local preparation owner before it releases the activation.
+  execution as active. Updates wait for those Runs to finish; maintenance
+  never requests their cancellation.
 
 - `update(tag)` MUST first recover any update left pending by a prior
   invocation that did not complete: check the source back out to the last
@@ -82,20 +82,19 @@ a CLI command.
   throw.
 
 - Before any recovery or forward checkout, an update with a composed quiesce
-  port MUST acquire maintenance. The existing Bootstrap pause checks then
+  port MUST first establish that a candidate is later than the current healthy
+  tag, then acquire maintenance. The existing Bootstrap pause checks then
   stop intake/polling, projection advancement, schedules, reactions, direct
   and host-driven advancement, recovery, reconciliation, and delivery. The
   only work observed in the maintenance window is existing active Run views.
 - Lease phases are `quiescing` -> `updating` -> `rolling-back`, with `failed`
   reachable from an active phase. State contains attempt id, tag, start time,
-  and operator-visible failure. Only healthy update or verified recovery
-  clears the lease; failure retains it and the complete runtime pause.
-- In `quiescing`, the updater waits for every active or ambiguous Run view to
-  empty for the configured positive drain timeout. It then requests durable
-  `maintenance` cancellation for `starting` and `started`, not already-cancelled Runs,
-  waits the configured cancellation timeout, and fails without checkout if
-  any active/ambiguous view remains. A cancellation write collision is safe
-  only when rereading the public view proves the Run has become terminal.
+  and operator-visible failure. A healthy update or verified recovery clears
+  the lease. A successful manual `wake sandbox update` also clears a retained
+  failed lease, but never an in-progress attempt owned by another process.
+- In `quiescing`, the updater waits until every active Run view is terminal,
+  however long that takes. It does not request cancellation: a running job may
+  legitimately take hours and must be allowed to complete.
 - Restarting `updating` or `rolling-back` restores and verifies the last
   healthy source (and rollout when configured), records the interrupted tag
   bad, and clears maintenance without repeating a forward checkout. Recovery

@@ -19,6 +19,16 @@ export function createSourceUpdatePort(input: {
     async isClean() {
       return (await execute('git', ['status', '--porcelain'], input.repoRoot)).trim().length === 0;
     },
+    async currentTag() {
+      try {
+        const tag = (
+          await execute('git', ['describe', '--tags', '--exact-match'], input.repoRoot)
+        ).trim();
+        return tag.length === 0 ? null : tag;
+      } catch {
+        return null;
+      }
+    },
     async latestTag() {
       const tag = (await candidateTags(execute, input.repoRoot)).at(0);
       if (tag === undefined) throw new Error('No source version tag is available');

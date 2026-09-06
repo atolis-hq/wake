@@ -4,6 +4,8 @@ import { UpdateMaintenancePhase, type UpdateMaintenanceState } from './update-ma
 
 export interface SourceUpdatePort {
   isClean(): Promise<boolean>;
+  /** The version currently running before any update starts, when available. */
+  currentTag?(): Promise<string | null>;
   latestTag(): Promise<string>;
   candidateTags(): Promise<readonly string[]>;
   checkout(tag: string): Promise<void>;
@@ -38,7 +40,8 @@ export interface SelfUpdateQuiescePort {
   activeRuns(): Promise<
     readonly { readonly runId: string; readonly maintenanceCancellable: boolean }[]
   >;
-  requestMaintenanceCancellation(runIds: readonly string[]): Promise<void>;
+  /** @deprecated Active Runs are never cancelled for maintenance. */
+  requestMaintenanceCancellation?(runIds: readonly string[]): Promise<void>;
   sleep(milliseconds: number): Promise<void>;
   now(): number;
   fail(error: unknown, attemptId?: string): Promise<void>;
@@ -54,12 +57,15 @@ export function createSelfUpdateApplication(input: {
   readonly source: SourceUpdatePort;
   readonly rollout?: SelfUpdateRolloutPort;
   readonly quiesce?: SelfUpdateQuiescePort;
+  /** @deprecated Draining is unbounded so active work can finish normally. */
   readonly drainTimeoutMs?: number;
+  /** @deprecated Active work is never cancelled for maintenance. */
   readonly cancellationTimeoutMs?: number;
 }) {
   return {
     async update(tag: string, force = false): Promise<boolean> {
       if (!force && (await input.ledger.isBad(tag))) return false;
+      if (!force && !(await isLaterCandidate(input, tag))) return false;
       return startUpdateAttempt(input, tag, force);
     },
     async updateLatest(
@@ -68,13 +74,20 @@ export function createSelfUpdateApplication(input: {
       const candidates = await input.source.candidateTags();
       const [latestCandidate] = candidates;
       if (latestCandidate === undefined) throw new Error('No update versions are available');
-      for (const tag of candidates) {
+      const current = await currentTag(input);
+      const currentIndex = current === null ? -1 : candidates.indexOf(current);
+      // Candidates are newest-first. The current healthy tag is a hard
+      // boundary: never enter maintenance to reapply or downgrade from it.
+      const laterCandidates = currentIndex === -1 ? candidates : candidates.slice(0, currentIndex);
+      for (const tag of laterCandidates) {
         if (!force && (await input.ledger.isBad(tag))) {
           continue;
         }
         let updated: boolean;
         try {
-          updated = await this.update(tag, force);
+          // `laterCandidates` already established this tag is newer than the
+          // current version, so do not rediscover candidates for each attempt.
+          updated = await startUpdateAttempt(input, tag, force);
         } catch (error) {
           if (error instanceof UpdateCandidateFailure) continue;
           throw error;
@@ -82,16 +95,30 @@ export function createSelfUpdateApplication(input: {
         if (updated) {
           return { tag, updated: true };
         }
-        // If update returned false (same tag or skipped), try the next candidate
-        if (!force && (await input.ledger.read()) === tag) {
-          // Already on this tag, no need to try others
-          return { tag, updated: false };
-        }
       }
-      // All candidates exhausted
       return { tag: latestCandidate, updated: false };
     },
   };
+}
+
+async function isLaterCandidate(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+  tag: string,
+): Promise<boolean> {
+  const candidates = await input.source.candidateTags();
+  const candidateIndex = candidates.indexOf(tag);
+  if (candidateIndex === -1) return false;
+  const current = await currentTag(input);
+  if (current === null) return candidateIndex === 0;
+  const currentIndex = candidates.indexOf(current);
+  if (currentIndex === -1) return candidateIndex === 0;
+  return candidateIndex < currentIndex;
+}
+
+async function currentTag(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+): Promise<string | null> {
+  return (await input.source.currentTag?.()) ?? (await input.ledger.read());
 }
 
 async function startUpdateAttempt(
@@ -172,11 +199,7 @@ async function quiesceForUpdate(
   input: Parameters<typeof createSelfUpdateApplication>[0],
 ): Promise<void> {
   if (input.quiesce === undefined) return;
-  await quiesceActiveRuns(
-    input.quiesce,
-    input.drainTimeoutMs ?? 30_000,
-    input.cancellationTimeoutMs ?? 30_000,
-  );
+  await quiesceActiveRuns(input.quiesce);
 }
 
 async function runForwardUpdate(
@@ -312,48 +335,14 @@ async function resumePendingMaintenance(
   await input.quiesce?.clear(lease.attemptId);
 }
 
-async function quiesceActiveRuns(
-  quiesce: SelfUpdateQuiescePort,
-  drainTimeoutMs: number,
-  cancellationTimeoutMs: number,
-): Promise<void> {
-  let remaining = await waitForActiveRunsToDrain(quiesce, drainTimeoutMs);
-  if (remaining.length === 0) return;
-
-  const cancellationIds = remaining
-    .filter((run) => run.maintenanceCancellable)
-    .map((run) => run.runId);
-  let cancellationError: unknown;
-  try {
-    await quiesce.requestMaintenanceCancellation(cancellationIds);
-  } catch (error) {
-    cancellationError = error;
+async function quiesceActiveRuns(quiesce: SelfUpdateQuiescePort): Promise<void> {
+  while ((await quiesce.activeRuns()).length > 0) {
+    await quiesce.sleep(100);
   }
-  remaining = await waitForActiveRunsToDrain(quiesce, cancellationTimeoutMs);
-  if (remaining.length === 0) return;
-
-  if (cancellationError !== undefined) throw cancellationError;
-
-  throw new Error(
-    `active Runs remain after maintenance cancellation: ${remaining.map((run) => run.runId).join(', ')}`,
-  );
 }
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function waitForActiveRunsToDrain(
-  quiesce: SelfUpdateQuiescePort,
-  timeoutMs: number,
-): Promise<readonly { readonly runId: string; readonly maintenanceCancellable: boolean }[]> {
-  const deadline = quiesce.now() + timeoutMs;
-  let activeRuns = await quiesce.activeRuns();
-  while (activeRuns.length > 0 && quiesce.now() < deadline) {
-    await quiesce.sleep(Math.min(100, deadline - quiesce.now()));
-    activeRuns = await quiesce.activeRuns();
-  }
-  return activeRuns;
 }
 
 async function recoverPendingUpdate(ledger: UpdateLedger, source: SourceUpdatePort): Promise<void> {
