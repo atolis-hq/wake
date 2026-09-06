@@ -254,6 +254,7 @@ defineScenario(
         ...realQuiesce,
         requestMaintenanceCancellation: async () => {
           await advancing;
+          await waitForRunStatus(root, active.runId, 'succeeded');
           throw new Error('event journal lock lost to completing Run');
         },
       },
@@ -596,6 +597,21 @@ async function waitForActiveRun(root: Awaited<ReturnType<typeof createRoot>>) {
   }
   await advancing;
   throw new Error('Expected a slow active Run');
+}
+
+async function waitForRunStatus(
+  root: Awaited<ReturnType<typeof createRoot>>,
+  expectedRunId: string,
+  expectedStatus: string,
+) {
+  for (let index = 0; index < 1_000; index += 1) {
+    const run = (await root.execution.list()).find(
+      (candidate) => candidate.runId === expectedRunId,
+    );
+    if (run?.status === expectedStatus) return;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error(`Expected Run ${expectedRunId} to reach ${expectedStatus}`);
 }
 
 function ledger(calls: string[]) {
