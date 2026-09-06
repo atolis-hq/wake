@@ -181,6 +181,72 @@ it('polls pull request reviews into comment-observed review signals', async () =
   });
 });
 
+it('polls ordinary pull request conversation comments', async () => {
+  const config = gitHubConfigSchema.parse({
+    enabled: true,
+    token: 'token',
+    repositories: [{ owner: 'org', repo: 'repo' }],
+  });
+  const requestedCommentThreads: number[] = [];
+  const source = createGitHubSource(config, {
+    async listIssues() {
+      return [];
+    },
+    async listPullRequests() {
+      return [
+        {
+          number: 7,
+          title: 'PR',
+          body: null,
+          state: 'open',
+          updated_at: '2026-08-01T00:00:00.000Z',
+          head: { sha: 'head-a' },
+          base: { sha: 'base-a' },
+          user: { login: 'author', type: 'User' },
+        },
+      ];
+    },
+    async listIssueComments(_owner, _repo, number) {
+      requestedCommentThreads.push(number);
+      return [
+        {
+          id: 101,
+          body: '/changes',
+          created_at: '2026-08-01T00:01:00.000Z',
+          updated_at: '2026-08-01T00:01:00.000Z',
+          user: { login: 'reviewer', type: 'User' },
+        },
+      ];
+    },
+    async listReviews() {
+      return [];
+    },
+    async listCheckRunsForRef() {
+      return [];
+    },
+    async getCombinedStatusForRef() {
+      return [];
+    },
+    async listPullRequestFiles() {
+      return [];
+    },
+  });
+
+  const events = await source.poll(new AbortController().signal);
+
+  expect(requestedCommentThreads).toEqual([7]);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      eventType: 'integration.github.comment-observed',
+      payload: expect.objectContaining({
+        externalKey: 'org/repo#7',
+        body: '/changes',
+        reviewKind: 'issue',
+      }),
+    }),
+  );
+});
+
 it('flows a tracked PR review from GitHub source polling through Activities acceptance', async () => {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
