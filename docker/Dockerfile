@@ -82,4 +82,4 @@ ENV WAKE_MAIN_JS=/app/dist/src/main.js
 # Startup ownership repair is best effort because bind-mounted paths or host
 # permissions may prevent chown. The bounded direct-child pass avoids traversing
 # accumulated runtime data.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake /wake/workspaces; chown wake:wake /wake/.wake /wake/workspaces || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]
