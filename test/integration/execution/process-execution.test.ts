@@ -249,7 +249,7 @@ describe('cliRunner', () => {
         '--json',
         '--skip-git-repo-check',
         '--sandbox',
-        'workspace-write',
+        'danger-full-access',
         '--cd',
         '/workspace',
         '--model',
@@ -525,7 +525,7 @@ describe('cliRunner', () => {
     );
   });
 
-  it('maps Wake workspace modes to Codex sandbox modes', () => {
+  it('uses the Wake Docker sandbox for every Codex workspace mode', () => {
     const request = {
       runId: 'run-1',
       prompt: 'ship',
@@ -534,7 +534,7 @@ describe('cliRunner', () => {
     };
 
     expect(codexCommandArgs({ ...request, workspaceMode: 'read-only' })).toEqual(
-      expect.arrayContaining(['--sandbox', 'workspace-write', '--cd', '/workspace']),
+      expect.arrayContaining(['--sandbox', 'danger-full-access', '--cd', '/workspace']),
     );
     expect(codexCommandArgs({ ...request, workspaceMode: 'branch' })).toEqual(
       expect.arrayContaining(['--sandbox', 'danger-full-access', '--cd', '/workspace']),
