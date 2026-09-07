@@ -1,6 +1,5 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
-import { WorkspaceMode } from '../../contracts/vocabulary.js';
 import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
 
 // Deliberately narrow: only genuine provider usage/rate-limit phrasing.
@@ -84,8 +83,10 @@ export function codexCommandArgs(
 // Work around Codex's missing background-command lifecycle contract (https://github.com/openai/codex/issues/32505, https://github.com/openai/codex/issues/34866).
 const waitBackgroundInstruction = `When a command you started is still running or lacks a terminal result, do not report a normal Wake outcome. Make your entire final response exactly WAIT_BACKGROUND. Wake will reject that stop attempt and ask you to continue. After that hook prompt, poll the still-running command and report a normal terminal status only after it has settled. Do not use WAIT_BACKGROUND for a human-input or implementation blocker.`;
 
-function codexSandboxMode(workspaceMode: NonNullable<RunnerRequest['workspaceMode']>) {
-  return workspaceMode === WorkspaceMode.Branch ? 'danger-full-access' : 'workspace-write';
+function codexSandboxMode(_workspaceMode: NonNullable<RunnerRequest['workspaceMode']>) {
+  // Wake executes runners inside its Docker sandbox. Avoid asking Codex to
+  // create a second Linux namespace sandbox, which container runtimes may deny.
+  return 'danger-full-access';
 }
 
 export function parseCodexOutput(
