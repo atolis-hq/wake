@@ -23,7 +23,7 @@ also owns `isDispatchPaused`, the read Advancement's `isDispatchPaused` supplier
 calls. It does not decide whether pausing is warranted, does not implement
 the quota-driven, count-based dispatch pause Dispatch Policy computes (that
 path is not composed by anything today), and does not read or write through
-the Control Plane view projection — `isPaused` and the no-op guard inside
+the Control Plane view projection — `isDispatchPaused` and the no-op guard inside
 `pauseDispatch`/`resumeDispatch` each independently fold the same `control-plane:global`
 stream's `DispatchPaused`/`DispatchResumed` events themselves.
 
@@ -71,7 +71,7 @@ stream's `DispatchPaused`/`DispatchResumed` events themselves.
   `DispatchPaused`/`DispatchResumed` events this component appends, for
   status display; this component does not read that projection itself.
 - Advancement (dependent) — in production composition, this component's
-  `isPaused` is Advancement's injected `isDispatchPaused` supplier.
+  `isDispatchPaused` is Advancement's injected `isDispatchPaused` supplier.
 - Bootstrap's API pause-dispatch/resume-dispatch command surface (depends on this component) —
   the only caller of `pauseDispatch`/`resumeDispatch`.
 

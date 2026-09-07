@@ -102,7 +102,7 @@ read time from stored history, not by rewriting that history.
   `dispatchPausedUntil`/`dispatchPauseReason` do leave their initial `null`/absent state in the
   current composed system. Advancement's own dispatch-pause gate does not
   read this projection to learn that, though — it calls Control Plane
-  Service's independently-folding `isPaused` instead; this projection's
+  Service's independently-folding `isDispatchPaused` instead; this projection's
   `dispatchPausedUntil` is read only for status display (the API's control-plane
   status surface).
 - The count-based, quota-driven dispatch pause Dispatch Policy computes is
