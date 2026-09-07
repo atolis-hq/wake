@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createGitHubAdapterHealthRegistry } from '../../../../src/integrations/github/infrastructure/adapter-health-registry.js';
 
 describe('createGitHubAdapterHealthRegistry', () => {
-  it('pre-seeds a read and write check for every configured repository', () => {
+  it('pre-seeds poll, delivery, and webhook checks for every configured repository', () => {
     const registry = createGitHubAdapterHealthRegistry([
       { owner: 'atolis-hq', repo: 'wake' },
       { owner: 'atolis-hq', repo: 'other' },
@@ -10,13 +10,15 @@ describe('createGitHubAdapterHealthRegistry', () => {
 
     const checks = registry.snapshotAll();
 
-    expect(checks).toHaveLength(4);
+    expect(checks).toHaveLength(6);
     expect(checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ scope: 'atolis-hq/wake', channel: 'poll', status: 'ok' }),
         expect.objectContaining({ scope: 'atolis-hq/wake', channel: 'deliver', status: 'ok' }),
+        expect.objectContaining({ scope: 'atolis-hq/wake', channel: 'webhook', status: 'ok' }),
         expect.objectContaining({ scope: 'atolis-hq/other', channel: 'poll', status: 'ok' }),
         expect.objectContaining({ scope: 'atolis-hq/other', channel: 'deliver', status: 'ok' }),
+        expect.objectContaining({ scope: 'atolis-hq/other', channel: 'webhook', status: 'ok' }),
       ]),
     );
   });

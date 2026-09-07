@@ -14,9 +14,12 @@ export class PollService {
   ) {}
 
   /** Persists every independently durable draft and reports partial progress. */
-  async pollOnce(signal: AbortSignal): Promise<PollResult> {
+  async pollOnce(
+    signal: AbortSignal,
+    options?: { readonly bypassInterval?: boolean },
+  ): Promise<PollResult> {
     const adapter = this.instance.adapter;
-    const drafts = await this.instance.source.poll(signal);
+    const drafts = await this.instance.source.poll(signal, options);
     let appended = 0;
     let failed = 0;
     for (const draft of drafts) {

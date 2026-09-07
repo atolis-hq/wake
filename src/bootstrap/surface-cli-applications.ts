@@ -132,8 +132,15 @@ export function createSurfaceCliApplications(
     },
     start: {
       async run(signal, budget) {
+        const listening = root.config.surfaces.web.enabled || root.config.surfaces.api.enabled;
         if (root.config.surfaces.web.enabled) await startHttp({}, true);
         else if (root.config.surfaces.api.enabled) await startHttp({}, false);
+        if (listening)
+          await Promise.all(
+            root.providers.flatMap((provider) =>
+              provider.webhook === undefined ? [] : [provider.webhook.provision()],
+            ),
+          );
         return runResidentLifecycle({
           signal,
           budget,
@@ -457,6 +464,7 @@ function createHttpStarter(
         redeemGrant: (grant) =>
           redeemPairingGrant(root.paths.wakeRoot, grant, undefined, serialiseCredentialMutation),
       },
+      webhookReceiver: createProviderWebhookReceiver(root.providers, root.requestImmediatePoll),
       ...(assets === undefined ? {} : { assets }),
     });
     servers.add(server);
@@ -469,6 +477,25 @@ function createHttpStarter(
       servers.delete(server);
       throw error;
     }
+  };
+}
+
+export function createProviderWebhookReceiver(
+  providers: readonly CompositionRoot['providers'][number][],
+  requestImmediatePoll: (adapter: string) => void,
+) {
+  return async (body: Buffer, headers: Readonly<Record<string, string | string[] | undefined>>) => {
+    const statuses = await Promise.all(
+      providers.flatMap((provider) =>
+        provider.webhook === undefined
+          ? []
+          : [provider.webhook.receive(body, headers, () => requestImmediatePoll(provider.adapter))],
+      ),
+    );
+    if (statuses.includes(202)) return 202;
+    if (statuses.includes(401)) return 401;
+    if (statuses.includes(400)) return 400;
+    return 404;
   };
 }
 

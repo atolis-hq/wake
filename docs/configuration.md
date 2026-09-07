@@ -157,6 +157,9 @@ integrations:
       commentPageSize: 25
       lookbackMs: 60000
       intervalMs: 30000
+    # Optional immediate intake. Requires surfaces.web.publicUrl and wake start.
+    webhooks:
+      enabled: false
     intake:
       - where:
           kind: issue
@@ -450,6 +453,7 @@ Use `provider: github` for the built-in GitHub integration.
 | `polling.commentPageSize` | integer `1..100`; default `25` | Page size for issue and pull-request comments. |
 | `polling.lookbackMs` | non-negative integer; default `60000` | Overlap retained when querying since the repository's durable last-successful-poll watermark. The first poll, or one with no persisted watermark, uses the provider's bounded bootstrap query. |
 | `polling.intervalMs` | positive integer; default `30000` | Minimum time between real GitHub polls. Ticks that land before this interval has elapsed since the last real poll skip the GitHub API call and return no drafts, independent of `controlPlane.resident.pollBackoffMs`, which governs the intake resident loop's own tick cadence, not any one adapter's call rate. |
+| `webhooks.enabled` | boolean; default `false` | Opts this adapter into Wake-managed GitHub repository webhooks. `wake start` creates or updates only hooks whose IDs Wake has persisted under `.wake/`; `wake ui` does not provision hooks. A configured `surfaces.web.publicUrl` is required. Verified deliveries trigger a coalesced full poll immediately, bypassing this adapter's normal interval while retaining polling as the source of observations. The token needs GitHub repository **Webhooks: read/write** permission (or the equivalent classic-token repository administration/webhook scope). |
 | `intake` | list; default `[]` | Admission/tagging rules. With no rules, every observation is admitted with no added tags. |
 | `publication.postStatusComments` | boolean; default `true` | Allows GitHub status-comment publication. |
 | `publication.replies` | object; default `{ rules: [], default: primary }` | Routes agent-run reply comments. Rules are evaluated in order and the first match wins. |

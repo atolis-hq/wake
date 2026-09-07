@@ -35,6 +35,10 @@ export interface SurfaceHttpServerOptions {
     readonly disabled: boolean;
     readonly redeemGrant: (grant: string) => Promise<boolean>;
   };
+  readonly webhookReceiver?: (
+    body: Buffer,
+    headers: Readonly<Record<string, string | string[] | undefined>>,
+  ) => Promise<number>;
 }
 
 /**
@@ -76,6 +80,26 @@ export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): Fast
       return sendFastifyJson(reply, errorResult(new MalformedJsonError()), false);
     return sendFastifyJson(reply, errorResult(error), false);
   });
+  if (options.webhookReceiver !== undefined) {
+    app.register(
+      (webhooks, _pluginOptions, done) => {
+        webhooks.removeAllContentTypeParsers();
+        webhooks.addContentTypeParser('*', { parseAs: 'buffer' }, (_request, body, callback) =>
+          callback(null, body),
+        );
+        webhooks.post<{ Body: Buffer }>(
+          '/github',
+          { bodyLimit: 64 * 1024 },
+          async (request, reply) => {
+            const status = await options.webhookReceiver!(request.body, request.headers);
+            return reply.code(status).send();
+          },
+        );
+        done();
+      },
+      { prefix: '/webhooks' },
+    );
+  }
 
   app.get('/api/v1/auth/session', async (request, reply) => {
     if (authDisabled) return { authenticated: true };

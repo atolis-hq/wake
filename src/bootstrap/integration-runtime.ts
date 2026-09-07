@@ -82,6 +82,7 @@ export interface IntegrationRuntime {
   readonly delivery: DeliveryService;
   readonly intakePipeline: IntakePipeline;
   readonly runnerPipeline: RunnerPipeline;
+  readonly requestImmediatePoll: (adapter: string) => void;
 }
 
 export interface IntegrationRuntimeInput {
@@ -131,6 +132,7 @@ export async function composeIntegrationRuntime(
     await hydrateFakeProviderEvidence(input.wakeRoot, input.config.integrations),
     {
       publicUiUrl: input.config.surfaces.web.publicUrl,
+      providerStateRoot: join(input.wakeRoot, '.wake'),
       work: input.work,
       conversations: input.conversations,
       resources: input.resources,
@@ -313,6 +315,11 @@ export async function composeIntegrationRuntime(
         await delivery.deliverNext(signal);
       }),
   });
+  const requestImmediatePoll = createImmediatePollRequester(
+    providers,
+    input.journal,
+    input.wakeRoot,
+  );
   return {
     projectionSubscriptions,
     processors: [
@@ -330,6 +337,32 @@ export async function composeIntegrationRuntime(
     delivery,
     intakePipeline,
     runnerPipeline,
+    requestImmediatePoll,
+  };
+}
+
+/** Coalesces provider webhook requests while retaining the source's durable poll semantics. */
+export function createImmediatePollRequester(
+  providers: readonly ProviderInstance[],
+  journal: EventJournal,
+  wakeRoot: string,
+): (adapter: string) => void {
+  const immediatePolls = new Map<string, Promise<void>>();
+  return (adapter: string) => {
+    if (immediatePolls.has(adapter)) return;
+    const provider = providers.find((candidate) => candidate.adapter === adapter);
+    if (provider === undefined) return;
+    const run = withFileLock(
+      join(wakeRoot, '.wake', 'locks', `poll-${provider.adapter}.lock`),
+      async () => {
+        await new PollService(journal, provider).pollOnce(new AbortController().signal, {
+          bypassInterval: true,
+        });
+      },
+    )
+      .catch((error) => console.error(`Webhook polling ${adapter} failed`, error))
+      .finally(() => immediatePolls.delete(adapter));
+    immediatePolls.set(adapter, run);
   };
 }
 

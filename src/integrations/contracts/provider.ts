@@ -41,6 +41,8 @@ export interface WorkConclusion {
 export interface ProviderServices {
   /** Stable operator-configured UI address included in provider notifications when present. */
   readonly publicUiUrl?: string | undefined;
+  /** Durable provider-owned operational state, rooted at .wake/. */
+  readonly providerStateRoot: string;
   readonly work: WorkService;
   readonly conversations: ConversationService;
   readonly resources: ResourceService;
@@ -110,6 +112,16 @@ export interface ProviderInstance {
   // configuration-defined additions. Synchronous and cheap, like health().
   readonly commands?: () => readonly AdapterCommand[];
   readonly replyPublication?: ReplyPublicationConfig | undefined;
+  readonly webhook?: ProviderWebhook | undefined;
+}
+
+export interface ProviderWebhook {
+  provision(): Promise<void>;
+  receive(
+    body: Buffer,
+    headers: Readonly<Record<string, string | string[] | undefined>>,
+    trigger: () => void,
+  ): Promise<404 | 400 | 401 | 202>;
 }
 
 // What a definition's create() builds, before ProviderRegistry.compose() stamps

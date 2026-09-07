@@ -99,6 +99,10 @@ export const gitHubConfigSchema = z
         lookbackMs: 60_000,
         intervalMs: 30_000,
       }),
+    webhooks: z
+      .object({ enabled: z.boolean().default(false) })
+      .strict()
+      .default({ enabled: false }),
     intake: z.array(intakeRuleSchema).default([]),
     publication: z
       .object({

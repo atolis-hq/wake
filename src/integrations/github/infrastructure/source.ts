@@ -51,9 +51,13 @@ export function createGitHubSource(
   // the same tradeoff already made for lastEventIds above.
   let lastPolledAt: number | undefined;
   return {
-    async poll(signal) {
+    async poll(signal, options) {
       const currentTime = now();
-      if (lastPolledAt !== undefined && currentTime - lastPolledAt < config.polling.intervalMs) {
+      if (
+        options?.bypassInterval !== true &&
+        lastPolledAt !== undefined &&
+        currentTime - lastPolledAt < config.polling.intervalMs
+      ) {
         return [];
       }
       lastPolledAt = currentTime;
