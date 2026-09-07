@@ -93,6 +93,17 @@ export class WakeApiClient {
         decodeAcceptedCommand,
         signal,
       ),
+    clearMaintenance: (attemptId: string, idempotencyKey: string, signal?: AbortSignal) =>
+      this.request(
+        '/control-plane/commands/clear-maintenance',
+        resourceDecoder(decodeAcceptedCommand),
+        {
+          method: 'POST',
+          body: JSON.stringify({ attemptId, idempotencyKey }),
+          headers: { 'content-type': 'application/json' },
+          ...(signal === undefined ? {} : { signal }),
+        },
+      ),
   };
 
   readonly work = {

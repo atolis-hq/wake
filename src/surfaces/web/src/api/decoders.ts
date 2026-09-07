@@ -87,7 +87,6 @@ export const decodeControlPlaneStatus: Decoder<ControlPlaneStatusResponse> = (va
     dispatchPaused: boolean(record.dispatchPaused, child(path, 'dispatchPaused')),
     ...optionalStringProperty(record, 'dispatchPausedUntil', path),
     ...optionalStringProperty(record, 'dispatchPauseReason', path),
-    ...optionalStringProperty(record, 'reason', path),
     updatedAt: string(record.updatedAt, child(path, 'updatedAt')),
     ...(record.maintenanceLease === undefined
       ? {}
@@ -106,6 +105,7 @@ function decodeControlPlaneMaintenanceLease(
 ): NonNullable<ControlPlaneStatusResponse['maintenanceLease']> {
   const record = object(value, path);
   return {
+    attemptId: string(record.attemptId, child(path, 'attemptId')),
     phase: string(record.phase, child(path, 'phase')),
     startedAt: string(record.startedAt, child(path, 'startedAt')),
     ...optionalStringProperty(record, 'failure', path),

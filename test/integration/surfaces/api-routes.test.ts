@@ -479,6 +479,34 @@ describe('API command conflicts', () => {
     }
   });
 
+  it('clears a failed maintenance lease only when the caller supplies its observed attempt', async () => {
+    const calls: string[] = [];
+    const dispatcher = createApiDispatcher({
+      ...applications(),
+      controlPlane: {
+        status: async () =>
+          resource({
+            dispatchPaused: false,
+            updatedAt: instant,
+            maintenanceLease: { attemptId: 'attempt-1', phase: 'failed', startedAt: instant },
+          }),
+        clearMaintenance: async ({ attemptId, idempotencyKey }) => {
+          calls.push(`${attemptId}:${idempotencyKey}`);
+          return commandResult(idempotencyKey);
+        },
+      },
+    });
+
+    const response = await dispatcher.dispatch(
+      'POST',
+      '/api/v1/control-plane/commands/clear-maintenance',
+      { idempotencyKey: 'operator-42', attemptId: 'attempt-1' },
+    );
+
+    expect(response?.status).toBe(202);
+    expect(calls).toEqual(['attempt-1:operator-42']);
+  });
+
   it('returns the retry application conflict as a 409 problem', async () => {
     const dispatcher = createApiDispatcher(
       applications({

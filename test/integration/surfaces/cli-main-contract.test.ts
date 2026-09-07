@@ -20,6 +20,7 @@ const expectedUsage = [
   '  wake correlate             Manually correlate a resource to a work item',
   '  wake run resolve           Resolve an escalated ambiguous run',
   '  wake doctor                Diagnose config/GitHub/Docker/sandbox setup problems',
+  '  wake maintenance clear     Clear an abandoned failed self-update maintenance lease',
   '  wake --version             Print the installed Wake version',
   '  wake --help                Show this message',
   '',
@@ -29,6 +30,7 @@ const expectedUsage = [
   '  wake api                   Run the target API surface',
   '  wake sandbox-entrypoint    Run the sandbox resident entrypoint',
   '  wake self-update           Safely update Wake from npm or a source checkout',
+  '  wake maintenance clear --failed',
   '',
   'Getting started:',
   '  1. wake init ./wake-home',
@@ -287,6 +289,7 @@ function applications(calls: string[] = []) {
         calls.push(`doctor:${arguments_.join(' ')}`);
         return { failures: [], notices: [] };
       },
+      maintenance: async () => ({}),
       sandbox: async () => ({}),
       sandboxSetup: async () => ({}),
       sandboxEntrypoint: async () => undefined,

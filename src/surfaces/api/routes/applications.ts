@@ -46,6 +46,10 @@ export interface ApiCommandRequest {
   readonly idempotencyKey: string;
 }
 
+export interface ApiClearMaintenanceRequest extends ApiCommandRequest {
+  readonly attemptId: string;
+}
+
 export type ApiRunResolutionRequest =
   | (ApiCommandRequest & { readonly status: typeof RunStatus.Succeeded; readonly outcome: unknown })
   | (ApiCommandRequest & { readonly status: typeof RunStatus.Failed; readonly reason: string });
@@ -70,6 +74,7 @@ export interface ApiApplications {
     status(): Promise<ApiResourceResult<ControlPlaneStatusResponse>>;
     pauseDispatch?(command: ApiCommandRequest): Promise<ApiCommandResult>;
     resumeDispatch?(command: ApiCommandRequest): Promise<ApiCommandResult>;
+    clearMaintenance?(command: ApiClearMaintenanceRequest): Promise<ApiCommandResult>;
   };
   readonly work: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<WorkItemResponse>>;

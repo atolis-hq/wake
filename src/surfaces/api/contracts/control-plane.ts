@@ -12,6 +12,7 @@ export interface ControlPlaneStatusResponse {
    * lease exists, including a failed one -- see update-maintenance-lease.ts.
    */
   readonly maintenanceLease?: {
+    readonly attemptId: string;
     readonly phase: string;
     readonly startedAt: string;
     readonly failure?: string;

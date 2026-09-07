@@ -87,6 +87,7 @@ describe('control-plane mutation and connection state', () => {
               dispatchPaused: false,
               updatedAt: instant,
               maintenanceLease: {
+                attemptId: 'attempt-1',
                 phase: 'failed',
                 startedAt: instant,
                 failure: 'active Runs remain after maintenance cancellation: run-1',
