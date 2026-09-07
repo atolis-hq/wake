@@ -84,8 +84,9 @@ export function collectionDecoder<Value>(
 export const decodeControlPlaneStatus: Decoder<ControlPlaneStatusResponse> = (value, path = '') => {
   const record = object(value, path);
   return {
-    paused: boolean(record.paused, child(path, 'paused')),
-    ...optionalStringProperty(record, 'pausedUntil', path),
+    dispatchPaused: boolean(record.dispatchPaused, child(path, 'dispatchPaused')),
+    ...optionalStringProperty(record, 'dispatchPausedUntil', path),
+    ...optionalStringProperty(record, 'dispatchPauseReason', path),
     ...optionalStringProperty(record, 'reason', path),
     updatedAt: string(record.updatedAt, child(path, 'updatedAt')),
     ...(record.maintenanceLease === undefined

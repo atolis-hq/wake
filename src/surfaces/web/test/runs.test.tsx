@@ -53,7 +53,7 @@ function runsClient(available: boolean) {
         }
       : url.includes('/runs/run-1')
         ? { data: run, meta: { asOf } }
-        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -96,7 +96,7 @@ function activeRunsClient() {
         }
       : url.includes('/runs/run-starting')
         ? { data: starting, meta: { asOf } }
-        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },

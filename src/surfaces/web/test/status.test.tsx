@@ -26,7 +26,7 @@ describe('control-plane mutation and connection state', () => {
     );
     expect(screen.queryByRole('button', { name: 'Tick now' })).toBeNull();
     expect(screen.queryByText('Command pending')).toBeNull();
-    expect(await screen.findByRole('button', { name: 'Pause ticks' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Pause dispatch' })).toBeTruthy();
   });
 
   it('pauses and resumes dispatch without exposing a tick action', async () => {
@@ -36,12 +36,15 @@ describe('control-plane mutation and connection state', () => {
     const client = new WakeApiClient(async (input, init) => {
       const url = String(input);
       if (url.endsWith('/control-plane/status'))
-        return json({ data: { paused, updatedAt: instant }, meta: { asOf: instant } });
+        return json({
+          data: { dispatchPaused: paused, updatedAt: instant },
+          meta: { asOf: instant },
+        });
       if (
-        url.endsWith('/control-plane/commands/pause') ||
-        url.endsWith('/control-plane/commands/resume')
+        url.endsWith('/control-plane/commands/pause-dispatch') ||
+        url.endsWith('/control-plane/commands/resume-dispatch')
       ) {
-        paused = url.endsWith('/pause');
+        paused = url.endsWith('/pause-dispatch');
         commands.push(url);
         return json({
           data: {
@@ -63,14 +66,14 @@ describe('control-plane mutation and connection state', () => {
       </MemoryRouter>,
     );
 
-    await user.click(await screen.findByRole('button', { name: 'Pause ticks' }));
-    await screen.findByRole('button', { name: 'Resume ticks' });
-    await user.click(screen.getByRole('button', { name: 'Resume ticks' }));
-    await screen.findByRole('button', { name: 'Pause ticks' });
+    await user.click(await screen.findByRole('button', { name: 'Pause dispatch' }));
+    await screen.findByRole('button', { name: 'Resume dispatch' });
+    await user.click(screen.getByRole('button', { name: 'Resume dispatch' }));
+    await screen.findByRole('button', { name: 'Pause dispatch' });
     await waitFor(() =>
       expect(commands).toEqual([
-        '/api/v1/control-plane/commands/pause',
-        '/api/v1/control-plane/commands/resume',
+        '/api/v1/control-plane/commands/pause-dispatch',
+        '/api/v1/control-plane/commands/resume-dispatch',
       ]),
     );
     expect(screen.queryByRole('button', { name: 'Tick now' })).toBeNull();
@@ -81,7 +84,7 @@ describe('control-plane mutation and connection state', () => {
       String(input).endsWith('/control-plane/status')
         ? json({
             data: {
-              paused: false,
+              dispatchPaused: false,
               updatedAt: instant,
               maintenanceLease: {
                 phase: 'failed',
@@ -113,7 +116,7 @@ describe('control-plane mutation and connection state', () => {
         <App client={client} />
       </MemoryRouter>,
     );
-    await screen.findByRole('button', { name: 'Pause ticks' });
+    await screen.findByRole('button', { name: 'Pause dispatch' });
     await act(async () => {
       window.dispatchEvent(new Event('offline'));
     });
@@ -131,7 +134,7 @@ function json(body: unknown, status = 200) {
 }
 function fixtureResponse(url: string, _init?: RequestInit) {
   if (url.endsWith('/control-plane/status'))
-    return json({ data: { paused: false, updatedAt: instant }, meta: { asOf: instant } });
+    return json({ data: { dispatchPaused: false, updatedAt: instant }, meta: { asOf: instant } });
   if (url.includes('/board'))
     return json({
       items: [],

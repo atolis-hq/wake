@@ -161,7 +161,8 @@ describe('API domain routes', () => {
       ...applications(),
       now: () => '2026-07-31T11:00:00.000Z',
       controlPlane: {
-        status: async () => resource({ paused: false, updatedAt: '2026-07-31T10:00:00.000Z' }),
+        status: async () =>
+          resource({ dispatchPaused: false, updatedAt: '2026-07-31T10:00:00.000Z' }),
       },
     });
 
@@ -444,8 +445,8 @@ describe('API command conflicts', () => {
   it('keeps every required unavailable command route explicit and conflicting', async () => {
     const dispatcher = createApiDispatcher(applications());
     for (const path of [
-      '/api/v1/control-plane/commands/pause',
-      '/api/v1/control-plane/commands/resume',
+      '/api/v1/control-plane/commands/pause-dispatch',
+      '/api/v1/control-plane/commands/resume-dispatch',
       '/api/v1/work-items/wk_demo/commands/freeze',
       '/api/v1/work-items/wk_demo/commands/unfreeze',
       '/api/v1/work-items/wk_demo/commands/delete',
@@ -466,6 +467,16 @@ describe('API command conflicts', () => {
       { idempotencyKey: 'operator-42' },
     );
     expect(response?.status).toBe(404);
+  });
+
+  it('rejects the removed generic control-plane pause and resume routes', async () => {
+    const dispatcher = createApiDispatcher(applications());
+    for (const name of ['pause', 'resume']) {
+      const response = await dispatcher.dispatch('POST', `/api/v1/control-plane/commands/${name}`, {
+        idempotencyKey: 'operator-42',
+      });
+      expect(response?.status).toBe(404);
+    }
   });
 
   it('returns the retry application conflict as a 409 problem', async () => {
@@ -559,7 +570,8 @@ function applications(
   return {
     now: () => '2026-07-31T10:00:00.000Z',
     controlPlane: {
-      status: async () => resource({ paused: false, updatedAt: '2026-07-31T10:00:00.000Z' }),
+      status: async () =>
+        resource({ dispatchPaused: false, updatedAt: '2026-07-31T10:00:00.000Z' }),
     },
     work: {
       list: async (query: CollectionQuery) => workItemsPage(overrides.workItems ?? [], query),

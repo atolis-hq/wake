@@ -142,7 +142,7 @@ function client(
       },
     ];
     const data = url.endsWith('/control-plane/status')
-      ? { paused: false, updatedAt: asOf }
+      ? { dispatchPaused: false, updatedAt: asOf }
       : url.endsWith('/system/health')
         ? { status: 'ok', version: '0.1.0-test', checkedAt: asOf, checks: [] }
         : url.endsWith('/work-items/wk_demo')

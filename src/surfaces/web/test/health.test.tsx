@@ -71,7 +71,7 @@ function client() {
       : url.endsWith('/runners')
         ? { items: [], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
         : url.endsWith('/control-plane/status')
-          ? { data: { paused: false, updatedAt: asOf }, meta: { asOf } }
+          ? { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } }
           : { data: {}, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,

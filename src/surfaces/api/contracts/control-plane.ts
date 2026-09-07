@@ -1,13 +1,13 @@
 import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 
 export interface ControlPlaneStatusResponse {
-  readonly paused: boolean;
-  readonly pausedUntil?: string;
-  readonly reason?: string;
+  readonly dispatchPaused: boolean;
+  readonly dispatchPausedUntil?: string;
+  readonly dispatchPauseReason?: string;
   readonly updatedAt: string;
   /**
    * A retained update-maintenance lease pauses every resident loop
-   * (intake and dispatch) independent of `paused`/`pausedUntil`, which only
+   * (intake and dispatch) independent of `dispatchPaused`/`dispatchPausedUntil`, which only
    * reflect an explicit pause or a runner-quota backoff. Present whenever a
    * lease exists, including a failed one -- see update-maintenance-lease.ts.
    */

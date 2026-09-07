@@ -262,7 +262,7 @@ export async function createCompositionRoot(
   );
   const controlPlane = createControlPlaneService({ journal, clock, ids });
   const isRuntimePaused = async () =>
-    (await controlPlane.isPaused()) || (await maintenance.read()) !== null;
+    (await controlPlane.isDispatchPaused()) || (await maintenance.read()) !== null;
   const runnerControls = createRunnerControlService({
     journal,
     clock,

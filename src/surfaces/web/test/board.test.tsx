@@ -82,7 +82,7 @@ function boardClient(fetchSpy?: (url: string) => void) {
           page: { nextCursor: null, hasMore: false },
           meta: { asOf },
         }
-      : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+      : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -219,7 +219,7 @@ describe('board', () => {
             page: { nextCursor: null, hasMore: false },
             meta: { asOf },
           }
-        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -258,7 +258,7 @@ describe('board', () => {
             page: { nextCursor: null, hasMore: false },
             meta: { asOf },
           }
-        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -296,7 +296,7 @@ describe('board', () => {
             page: { nextCursor: null, hasMore: false },
             meta: { asOf },
           }
-        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -334,7 +334,7 @@ describe('board', () => {
             page: { nextCursor: null, hasMore: false },
             meta: { asOf },
           }
-        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -473,7 +473,7 @@ describe('board', () => {
             page: { nextCursor: null, hasMore: false },
             meta: { asOf },
           }
-        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -517,7 +517,7 @@ describe('board', () => {
             page: { nextCursor: null, hasMore: false },
             meta: { asOf },
           }
-        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' },

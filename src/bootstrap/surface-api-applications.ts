@@ -476,12 +476,12 @@ function toHealthErrorText(value: unknown): string {
 function createControlPlaneApplications(root: CompositionRoot, now: () => string) {
   return {
     status: () => readControlPlaneStatus(root, now),
-    async pause(command: { readonly idempotencyKey: string }) {
-      await root.controlPlane.pause(command.idempotencyKey);
+    async pauseDispatch(command: { readonly idempotencyKey: string }) {
+      await root.controlPlane.pauseDispatch(command.idempotencyKey);
       return commandAccepted(command, now());
     },
-    async resume(command: { readonly idempotencyKey: string }) {
-      await root.controlPlane.resume(command.idempotencyKey);
+    async resumeDispatch(command: { readonly idempotencyKey: string }) {
+      await root.controlPlane.resumeDispatch(command.idempotencyKey);
       return commandAccepted(command, now());
     },
   };
@@ -489,16 +489,22 @@ function createControlPlaneApplications(root: CompositionRoot, now: () => string
 
 export async function readControlPlaneStatus(root: CompositionRoot, now: () => string) {
   const stored = await root.projections.read<{
-    readonly pausedUntil: string | null;
-    readonly reason?: string;
+    readonly dispatchPausedUntil: string | null;
+    readonly dispatchPauseReason?: string;
   }>(ControlStreamKind.Global, 'global');
   const meta = await projectionMeta(root.journal, stored === null ? [] : [stored], now());
   const lease = await root.maintenance.read();
   return {
     data: {
-      paused: stored?.value.pausedUntil !== null && stored?.value.pausedUntil !== undefined,
-      ...(stored?.value.pausedUntil == null ? {} : { pausedUntil: stored.value.pausedUntil }),
-      ...(stored?.value.reason === undefined ? {} : { reason: stored.value.reason }),
+      dispatchPaused:
+        stored?.value.dispatchPausedUntil !== null &&
+        stored?.value.dispatchPausedUntil !== undefined,
+      ...(stored?.value.dispatchPausedUntil == null
+        ? {}
+        : { dispatchPausedUntil: stored.value.dispatchPausedUntil }),
+      ...(stored?.value.dispatchPauseReason === undefined
+        ? {}
+        : { dispatchPauseReason: stored.value.dispatchPauseReason }),
       updatedAt: meta.asOf,
       ...(lease === null
         ? {}
