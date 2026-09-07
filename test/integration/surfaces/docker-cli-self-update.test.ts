@@ -6,6 +6,7 @@ import {
   promoteSandboxImage,
   verifyResidentStart,
 } from '../../../src/surfaces/cli/infrastructure/docker-cli.js';
+import { describeSandboxStartupFailure } from '../../../src/surfaces/cli/infrastructure/sandbox-startup-failure.js';
 
 describe('sandbox build version tagging', () => {
   it('stamps a source-mode build with the resolved version as WAKE_BUILD_TAG', async () => {
@@ -143,6 +144,41 @@ describe('sandbox build version tagging', () => {
       'wake-sandbox',
     );
     expect(calls).toEqual([]);
+  });
+});
+
+describe('describeSandboxStartupFailure', () => {
+  it('preserves the startup failure and includes scrubbed replacement logs', async () => {
+    const calls: string[][] = [];
+    const failure = await describeSandboxStartupFailure(
+      createDockerCli(async (arguments_) => {
+        calls.push([...arguments_]);
+        return { stdout: 'wake: configuration rejected token=super-secret\n', stderr: '' };
+      }),
+      'wake-sandbox',
+      new Error('container is not running'),
+    );
+
+    expect(failure.message).toBe(
+      'Sandbox replacement "wake-sandbox" failed during startup: container is not running\n' +
+        'Container logs:\nwake: configuration rejected token=[REDACTED]',
+    );
+    expect(calls).toEqual([['logs', '--tail', '100', 'wake-sandbox']]);
+  });
+
+  it('retains the original failure when replacement logs cannot be read', async () => {
+    const failure = await describeSandboxStartupFailure(
+      createDockerCli(async () => {
+        throw new Error('No such container');
+      }),
+      'wake-sandbox',
+      new Error('container is not running'),
+    );
+
+    expect(failure.message).toBe(
+      'Sandbox replacement "wake-sandbox" failed during startup: container is not running. ' +
+        'Could not collect its logs: No such container',
+    );
   });
 });
 
