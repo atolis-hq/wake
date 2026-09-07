@@ -464,23 +464,7 @@ function createHttpStarter(
         redeemGrant: (grant) =>
           redeemPairingGrant(root.paths.wakeRoot, grant, undefined, serialiseCredentialMutation),
       },
-      webhookReceiver: async (body, headers) => {
-        const statuses = await Promise.all(
-          root.providers.flatMap((provider) =>
-            provider.webhook === undefined
-              ? []
-              : [
-                  provider.webhook.receive(body, headers, () =>
-                    root.requestImmediatePoll(provider.adapter),
-                  ),
-                ],
-          ),
-        );
-        if (statuses.includes(202)) return 202;
-        if (statuses.includes(401)) return 401;
-        if (statuses.includes(400)) return 400;
-        return 404;
-      },
+      webhookReceiver: createGitHubWebhookReceiver(root.providers, root.requestImmediatePoll),
       ...(assets === undefined ? {} : { assets }),
     });
     servers.add(server);
@@ -493,6 +477,25 @@ function createHttpStarter(
       servers.delete(server);
       throw error;
     }
+  };
+}
+
+export function createGitHubWebhookReceiver(
+  providers: readonly CompositionRoot['providers'][number][],
+  requestImmediatePoll: (adapter: string) => void,
+) {
+  return async (body: Buffer, headers: Readonly<Record<string, string | string[] | undefined>>) => {
+    const statuses = await Promise.all(
+      providers.flatMap((provider) =>
+        provider.webhook === undefined
+          ? []
+          : [provider.webhook.receive(body, headers, () => requestImmediatePoll(provider.adapter))],
+      ),
+    );
+    if (statuses.includes(202)) return 202;
+    if (statuses.includes(401)) return 401;
+    if (statuses.includes(400)) return 400;
+    return 404;
   };
 }
 
