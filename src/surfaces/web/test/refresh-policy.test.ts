@@ -15,6 +15,7 @@ describe('independent operational refresh policy', () => {
       observability: false,
       configuration: false,
       commands: false,
+      webhooks: false,
       workflowDiagrams: 3_000,
     });
     // The API presents Starting runs as active; this policy intentionally consumes only that flag.

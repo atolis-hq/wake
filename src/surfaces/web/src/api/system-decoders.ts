@@ -6,6 +6,7 @@ import type {
   WakeProblemDetails,
   WebhookSetupResponse,
 } from '../../../api/contracts/index.js';
+import { ApiAdapterHealthStatus } from '../../../api/contracts/index.js';
 import {
   array,
   boolean,
@@ -46,7 +47,7 @@ function decodeAnalyticsWindow(value: unknown, path: string) {
 export const decodeHealth: Decoder<HealthResponse> = (value, path = '') => {
   const record = object(value, path);
   return {
-    status: healthStatus(record.status, child(path, 'status')),
+    status: overallHealthStatus(record.status, child(path, 'status')),
     version: string(record.version, child(path, 'version')),
     checkedAt: string(record.checkedAt, child(path, 'checkedAt')),
     ...(record.checks === undefined
@@ -56,7 +57,7 @@ export const decodeHealth: Decoder<HealthResponse> = (value, path = '') => {
             const check = object(item, itemPath);
             return {
               name: string(check.name, child(itemPath, 'name')),
-              status: healthStatus(check.status, child(itemPath, 'status')),
+              status: overallHealthStatus(check.status, child(itemPath, 'status')),
               ...optionalStringProperty(check, 'detail', itemPath),
             };
           }),
@@ -71,7 +72,7 @@ export const decodeHealth: Decoder<HealthResponse> = (value, path = '') => {
               provider: string(check.provider, child(itemPath, 'provider')),
               scope: string(check.scope, child(itemPath, 'scope')),
               channel: string(check.channel, child(itemPath, 'channel')),
-              status: healthStatus(check.status, child(itemPath, 'status')),
+              status: adapterHealthStatus(check.status, child(itemPath, 'status')),
               successCount: number(check.successCount, child(itemPath, 'successCount')),
               failureCount: number(check.failureCount, child(itemPath, 'failureCount')),
               ...optionalStringProperty(check, 'detail', itemPath),
@@ -163,8 +164,19 @@ export function decodeProblem(value: unknown, status: number): WakeProblemDetail
   }
 }
 
-function healthStatus(value: unknown, path: string): 'ok' | 'degraded' | 'unknown' {
+function overallHealthStatus(value: unknown, path: string): 'ok' | 'degraded' {
   const decoded = string(value, path);
-  if (decoded !== 'ok' && decoded !== 'degraded' && decoded !== 'unknown') invalid(path);
+  if (decoded !== 'ok' && decoded !== 'degraded') invalid(path);
+  return decoded;
+}
+
+function adapterHealthStatus(
+  value: unknown,
+  path: string,
+): 'ok' | 'degraded' | typeof ApiAdapterHealthStatus.Unknown {
+  const decoded = string(value, path);
+  if (decoded !== 'ok' && decoded !== 'degraded' && decoded !== ApiAdapterHealthStatus.Unknown) {
+    invalid(path);
+  }
   return decoded;
 }

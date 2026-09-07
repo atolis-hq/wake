@@ -1,3 +1,11 @@
+import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
+
+export const ApiAdapterHealthStatus = defineClosedVocabulary({
+  Unknown: 'unknown',
+} as const);
+
+export type ApiAdapterHealthStatus = 'ok' | 'degraded' | ValueOf<typeof ApiAdapterHealthStatus>;
+
 export interface HealthResponse {
   readonly status: 'ok' | 'degraded';
   readonly version: string;
@@ -12,7 +20,7 @@ export interface HealthResponse {
     readonly provider: string;
     readonly scope: string;
     readonly channel: string;
-    readonly status: 'ok' | 'degraded' | 'unknown';
+    readonly status: ApiAdapterHealthStatus;
     readonly detail?: string;
     readonly successCount: number;
     readonly failureCount: number;
