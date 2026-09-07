@@ -17,8 +17,10 @@ import { issueObservation } from './issue-source.js';
 import {
   loadWatermark,
   overlapSince,
+  providerWatermark,
   reportPartialPollFailure,
   watermarkCheckpoint,
+  type PollBatch,
 } from './poll-watermark.js';
 import { createGitHubPullRequestSource } from './pr-source.js';
 import {
@@ -71,13 +73,13 @@ export function createGitHubSource(
             owner,
             repo,
             watermark: await loadWatermark(state?.checkpoints, adapter, owner, repo),
-            now,
             health,
           }),
         ),
       );
       for (const result of perRepository)
-        if (result.succeeded) pendingWatermarks.set(result.repository, result.completedAt);
+        if (result.watermark !== undefined)
+          pendingWatermarks.set(result.repository, result.watermark);
       return perRepository
         .flatMap((result) => result.drafts)
         .filter((draft) => {
@@ -151,11 +153,9 @@ async function pollRepository(input: {
   readonly owner: string;
   readonly repo: string;
   readonly watermark: number;
-  readonly now: () => number;
   readonly health: GitHubAdapterHealthRegistry;
 }) {
   const { client, config, adapter, signal, owner, repo, health } = input;
-  const queriedAt = input.now();
   const context: RepositoryPollContext = {
     client,
     config,
@@ -173,12 +173,14 @@ async function pollRepository(input: {
     since,
   });
   reportRepositoryReadResults(context, health, issuesResult, pullRequestsResult);
-  const issues = isFulfilled(issuesResult) ? issuesResult.value : [];
-  const pullRequestPayloads = isFulfilled(pullRequestsResult)
-    ? pullRequestsResult.value.filter(
-        (pullRequest) => since === undefined || pullRequest.updated_at >= since,
-      )
+  const returnedIssues = isFulfilled(issuesResult) ? issuesResult.value : [];
+  const issues = returnedIssues.filter(hasProviderTimestamp);
+  const returnedPullRequestPayloads = isFulfilled(pullRequestsResult)
+    ? pullRequestsResult.value
     : [];
+  const pullRequestPayloads = returnedPullRequestPayloads
+    .filter(hasProviderTimestamp)
+    .filter((pullRequest) => since === undefined || pullRequest.updated_at >= since);
   const [pullRequests, reviews, reviewComments, issueComments] = await Promise.all([
     createGitHubPullRequestSource({
       client: { ...client, listPullRequests: async () => pullRequestPayloads },
@@ -192,7 +194,14 @@ async function pollRepository(input: {
   ]);
   return {
     repository: context.repository,
-    completedAt: queriedAt,
+    watermark: completedWatermark({
+      previous: input.watermark,
+      maximumResults: config.polling.maxPerRepo,
+      issues: returnedIssues,
+      pullRequests: returnedPullRequestPayloads,
+      topLevelSucceeded: isFulfilled(issuesResult) && isFulfilled(pullRequestsResult),
+      nestedBatches: [reviews, reviewComments, issueComments],
+    }),
     succeeded:
       isFulfilled(issuesResult) &&
       isFulfilled(pullRequestsResult) &&
@@ -215,6 +224,31 @@ async function pollRepository(input: {
       ...issueComments.drafts,
     ],
   };
+}
+
+function hasProviderTimestamp(payload: { readonly updated_at: string }): boolean {
+  return Number.isFinite(Date.parse(payload.updated_at));
+}
+
+function completedWatermark(input: {
+  readonly previous: number;
+  readonly maximumResults: number;
+  readonly issues: readonly { readonly updated_at: string }[];
+  readonly pullRequests: readonly { readonly updated_at: string }[];
+  readonly topLevelSucceeded: boolean;
+  readonly nestedBatches: readonly PollBatch[];
+}): number | undefined {
+  if (
+    !input.topLevelSucceeded ||
+    !input.nestedBatches.every((batch) => batch.succeeded) ||
+    input.issues.length >= input.maximumResults ||
+    input.pullRequests.length >= input.maximumResults
+  )
+    return undefined;
+  return providerWatermark(input.previous, [
+    ...input.issues.map((issue) => issue.updated_at),
+    ...input.pullRequests.map((pullRequest) => pullRequest.updated_at),
+  ]);
 }
 
 function fetchRepositoryItems(input: {
