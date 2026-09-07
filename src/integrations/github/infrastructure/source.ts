@@ -15,6 +15,7 @@ import {
 } from './comment-source.js';
 import { issueObservation } from './issue-source.js';
 import {
+  batchesComplete,
   batchesSucceeded,
   hasProviderTimestamp,
   loadWatermark,
@@ -205,6 +206,7 @@ async function pollRepository(input: {
       topLevelTimestampsValid &&
       isFulfilled(issuesResult) &&
       isFulfilled(pullRequestsResult) &&
+      batchesComplete(nestedBatches) &&
       batchesSucceeded(nestedBatches),
     drafts: [
       ...issues
@@ -247,6 +249,7 @@ function completedWatermark(input: {
     !input.topLevelSucceeded ||
     !input.topLevelTimestampsValid ||
     !batchesSucceeded(input.nestedBatches) ||
+    !batchesComplete(input.nestedBatches) ||
     input.issues.length >= input.maximumResults ||
     input.pullRequests.length >= input.maximumResults
   )

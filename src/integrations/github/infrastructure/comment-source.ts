@@ -13,7 +13,8 @@ export async function reviewCommentEventsFor(
   context: RepositoryPollContext,
   pullRequests: readonly Parameters<typeof githubReviewObservation>[0]['pullRequest'][],
 ): Promise<PollBatch> {
-  if (context.client.listReviewComments === undefined) return { drafts: [], succeeded: true };
+  if (context.client.listReviewComments === undefined)
+    return { drafts: [], succeeded: true, complete: true };
   const items = await Promise.all(
     pullRequests.map(async (pullRequest): Promise<PollBatch> => {
       try {
@@ -26,6 +27,7 @@ export async function reviewCommentEventsFor(
         );
         return {
           succeeded: true,
+          complete: comments.length < context.config.polling.maxPerRepo,
           drafts: (
             await Promise.all(
               comments.map((comment) =>
@@ -39,7 +41,7 @@ export async function reviewCommentEventsFor(
           context.repository,
           `pull-request review comments #${pullRequest.number}`,
         );
-        return { drafts: [], succeeded: false };
+        return { drafts: [], succeeded: false, complete: false };
       }
     }),
   );
@@ -62,6 +64,7 @@ export async function reviewEventsFor(
         );
         return {
           succeeded: true,
+          complete: reviews.length < context.config.polling.maxPerRepo,
           drafts: reviews.flatMap((review) =>
             githubReviewObservation({
               repository: context.repository,
@@ -73,7 +76,7 @@ export async function reviewEventsFor(
         };
       } catch {
         reportPartialPollFailure(context.repository, `pull-request reviews #${pullRequest.number}`);
-        return { drafts: [], succeeded: false };
+        return { drafts: [], succeeded: false, complete: false };
       }
     }),
   );
@@ -98,6 +101,7 @@ export async function issueCommentEventsFor(
         );
         return {
           succeeded: true,
+          complete: comments.length < context.config.polling.maxPerRepo,
           drafts: (
             await Promise.all(
               comments.map((comment) => issueCommentEventsForComment(context, issue, comment)),
@@ -106,7 +110,7 @@ export async function issueCommentEventsFor(
         };
       } catch {
         reportPartialPollFailure(context.repository, `issue comments #${issue.number}`);
-        return { drafts: [], succeeded: false };
+        return { drafts: [], succeeded: false, complete: false };
       }
     }),
   );

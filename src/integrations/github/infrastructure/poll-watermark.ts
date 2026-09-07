@@ -7,12 +7,14 @@ export const minimumPollOverlapMs = 5 * 60_000;
 export interface PollBatch {
   readonly drafts: readonly GitHubAdapterEventData[];
   readonly succeeded: boolean;
+  readonly complete: boolean;
 }
 
 export function mergeBatches(batches: readonly PollBatch[]): PollBatch {
   return {
     drafts: batches.flatMap((batch) => batch.drafts),
     succeeded: batches.every((batch) => batch.succeeded),
+    complete: batches.every((batch) => batch.complete),
   };
 }
 
@@ -59,6 +61,10 @@ export function timestampsValid(
 
 export function batchesSucceeded(batches: readonly PollBatch[]): boolean {
   return batches.every((batch) => batch.succeeded);
+}
+
+export function batchesComplete(batches: readonly PollBatch[]): boolean {
+  return batches.every((batch) => batch.complete);
 }
 
 export function reportPartialPollFailure(repository: string, query: string): void {
