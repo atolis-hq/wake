@@ -30,6 +30,7 @@ export interface ActivityActivationView {
 
 export interface SignalExpectationView {
   readonly signalKind: SignalName;
+  readonly suppressWatchDispatch?: true;
   readonly intentEventId?: string;
   readonly resourceId?: string;
   readonly revision?: string;

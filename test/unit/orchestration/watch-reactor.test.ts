@@ -27,6 +27,7 @@ import {
   createWatchReactor,
   createWatchReconciler,
   OrchestrationEventType,
+  signalName,
   workflowInstanceId,
   workflowInstanceStream,
 } from '../../../src/orchestration/index.js';
@@ -172,6 +173,38 @@ it('rejects a malformed owned orchestration envelope before routing watches', as
       actor: { kind: 'system', id: 'test' },
     }),
   ).rejects.toThrow(/invalid orchestration event/i);
+});
+
+it('does not dispatch a watch for the re-arm event emitted by a group budget extension', async () => {
+  let matches = 0;
+  const reactor = createWatchReactor({
+    async listWatchMatches() {
+      matches += 1;
+      return [];
+    },
+    async requestChild() {},
+    async rejectCausalActivation() {},
+  });
+
+  await reactor.react(
+    canonicalEvent(
+      OrchestrationEventType.SignalWaitStarted,
+      'extended-gate-rearmed',
+      {
+        signalKind: signalName('orchestration.watch-gate-verdict'),
+        suppressWatchDispatch: true,
+      },
+      workflowInstanceStream(workflowInstanceId('parent-1')),
+    ),
+    {
+      commandId: 'extend-gate',
+      correlationId: 'corr-1' as never,
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      actor: { kind: 'system', id: 'test' },
+    },
+  );
+
+  expect(matches).toBe(0);
 });
 
 it('does not inspect an unrelated domain payload for causal metadata', async () => {
@@ -554,6 +587,46 @@ it('reconciles a durable watch trigger orphaned after its checkpoint advanced', 
   expect(requested).toEqual(['parent-1:watch:review:trigger:orphaned-trigger']);
   expect(await checkpoints.load('reconciler:orchestration.watch')).toBe(1);
   expect(await checkpoints.load('reactor:orchestration.watch')).toBe(0);
+});
+
+it('checkpoints a re-armed gate without replaying it as a watch trigger', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await journal.appendToStream(workflowInstanceStream(workflowInstanceId('parent-1')), 0, [
+    createEventData({
+      eventId: 'extended-gate-rearmed',
+      eventType: OrchestrationEventType.SignalWaitStarted,
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      correlationId: 'corr-1',
+      causationId: 'extend-gate',
+      actor: { kind: 'operator', id: 'operator' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {
+        signalKind: signalName('orchestration.watch-gate-verdict'),
+        suppressWatchDispatch: true,
+      },
+    }),
+  ]);
+  const checkpoints = new InMemoryCheckpointStore();
+  let matches = 0;
+  const reconciler = createWatchReconciler(
+    {
+      async listWatchMatches() {
+        matches += 1;
+        return [];
+      },
+      async listWaiting() {
+        return [];
+      },
+      async requestChild() {},
+      async rejectCausalActivation() {},
+    },
+    journal,
+    checkpoints,
+  );
+
+  await expect(reconciler.reconcileOnce()).resolves.toBe(0);
+  expect(matches).toBe(0);
+  expect(await checkpoints.load('reconciler:orchestration.watch')).toBe(1);
 });
 
 it('scopes an orchestration state-transition event to its own stream, not an unrelated match', async () => {
