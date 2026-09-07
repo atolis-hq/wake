@@ -37,7 +37,7 @@ import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { createSurfaceWorkApplications } from './surface-api-work-applications.js';
 import { createWorkflowDiagramApplications } from './surface-api-workflow-diagrams.js';
-import { UpdateMaintenancePhase } from './update-maintenance-lease.js';
+import { UpdateMaintenancePhase, type UpdateMaintenanceState } from './update-maintenance-lease.js';
 import { wakeVersion } from './version.js';
 
 export function createSurfaceApiApplications(
@@ -506,9 +506,7 @@ function createControlPlaneApplications(root: CompositionRoot, now: () => string
   };
 }
 
-function maintenanceClearConflict(
-  lease: Awaited<ReturnType<CompositionRoot['maintenance']['read']>>,
-) {
+function maintenanceClearConflict(lease: UpdateMaintenanceState | null) {
   return {
     conflict: true as const,
     code: 'maintenance-not-clearable',
