@@ -11,6 +11,7 @@ import {
   requestFreshOperatorRetry as decideFreshOperatorRetry,
   requestOperatorRetry as decideOperatorRetry,
   requestSupplementalActivity as decideSupplementalActivity,
+  isNeedsClarificationResumeEligible,
   requestRunnerQuotaRetry,
 } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
@@ -247,6 +248,13 @@ export class AdvanceWorkflow {
     });
     if (recovered !== undefined) return recovered.view;
     return (await this.repository.loadRequired(id)).view;
+  }
+
+  async resumeNeedsClarificationStage(id: WorkflowInstanceId, context: CommandContext) {
+    const loaded = await this.repository.load(id);
+    if (loaded.view === null || !isNeedsClarificationResumeEligible(loaded.view))
+      return loaded.view;
+    return this.resumeBlockedStageForChanges(id, context);
   }
 
   async get(id: WorkflowInstanceId) {

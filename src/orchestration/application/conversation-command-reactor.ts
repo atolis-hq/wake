@@ -64,10 +64,13 @@ export function createConversationCommandReactor(orchestration: OrchestrationSer
           occurredAt: event.occurredAt,
           actor: { kind: EventActorKind.Integration, id: entry.origin.adapter },
         });
-        if (conversationCommand(entry.body) !== null || !input.authorized) return;
+        if (conversationCommand(entry.body) !== null) return;
         for (const workflow of await orchestration.listAll()) {
           if (workflow.workItemId !== workItemId) continue;
-          await orchestration.resumeBlockedStageForChanges(workflow.workflowInstanceId, {
+          const resume = input.authorized
+            ? orchestration.resumeBlockedStageForChanges.bind(orchestration)
+            : orchestration.resumeNeedsClarificationStage.bind(orchestration);
+          await resume(workflow.workflowInstanceId, {
             commandId: `${event.eventId}:conversation-reply`,
             correlationId: correlationId(event.correlationId),
             occurredAt: event.occurredAt,
