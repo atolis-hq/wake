@@ -464,7 +464,7 @@ function createHttpStarter(
         redeemGrant: (grant) =>
           redeemPairingGrant(root.paths.wakeRoot, grant, undefined, serialiseCredentialMutation),
       },
-      webhookReceiver: createGitHubWebhookReceiver(root.providers, root.requestImmediatePoll),
+      webhookReceiver: createProviderWebhookReceiver(root.providers, root.requestImmediatePoll),
       ...(assets === undefined ? {} : { assets }),
     });
     servers.add(server);
@@ -480,7 +480,7 @@ function createHttpStarter(
   };
 }
 
-export function createGitHubWebhookReceiver(
+export function createProviderWebhookReceiver(
   providers: readonly CompositionRoot['providers'][number][],
   requestImmediatePoll: (adapter: string) => void,
 ) {
