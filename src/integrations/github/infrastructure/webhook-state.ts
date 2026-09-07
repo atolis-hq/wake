@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AdapterId } from '../../contracts/identifiers.js';
 
@@ -43,6 +43,21 @@ export class GitHubWebhookStateStore {
     await rename(temporary, path);
   }
 
+  async serialise<Value>(
+    owner: string,
+    repo: string,
+    operation: () => Promise<Value>,
+  ): Promise<Value> {
+    await mkdir(join(this.root, 'locks'), { recursive: true });
+    const lock = this.lockPath(owner, repo);
+    await acquireLock(lock);
+    try {
+      return await operation();
+    } finally {
+      await unlink(lock);
+    }
+  }
+
   private path(owner: string, repo: string): string {
     return join(
       this.root,
@@ -50,5 +65,27 @@ export class GitHubWebhookStateStore {
       this.adapter,
       `${encodeURIComponent(owner)}--${encodeURIComponent(repo)}.json`,
     );
+  }
+
+  private lockPath(owner: string, repo: string): string {
+    return join(
+      this.root,
+      'locks',
+      `github-webhook-${this.adapter}-${encodeURIComponent(owner)}--${encodeURIComponent(repo)}.lock`,
+    );
+  }
+}
+
+async function acquireLock(path: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (true) {
+    try {
+      const handle = await open(path, 'wx', 0o600);
+      await handle.close();
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || Date.now() >= deadline) throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
   }
 }

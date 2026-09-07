@@ -550,6 +550,28 @@ it('skips the GitHub API call and returns no drafts when polled again before the
   expect(secondDrafts).toEqual([]);
 });
 
+it('bypasses only the adapter polling interval for an immediate poll request', async () => {
+  let listIssueCalls = 0;
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+      polling: { intervalMs: 30_000 },
+    }),
+    fakeClient({
+      issues: [issue(5, 'A plain issue')],
+      issueComments: {},
+      onListIssues: () => {
+        listIssueCalls += 1;
+      },
+    }),
+  );
+  await source.poll(new AbortController().signal);
+  await source.poll(new AbortController().signal, { bypassInterval: true });
+  expect(listIssueCalls).toBe(2);
+});
+
 it('polls GitHub again once the configured interval has elapsed', async () => {
   let listIssueCalls = 0;
   let currentTime = Date.parse('2026-08-16T19:23:00.000Z');

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createSurfaceHttpServer,
   type ApiDispatcher,
@@ -43,6 +43,31 @@ describe('browser history routing', () => {
 });
 
 describe('HTTP Surface hardening', () => {
+  it('accepts raw GitHub webhook deliveries outside the UI session boundary', async () => {
+    const receiver = vi.fn().mockResolvedValue(202);
+    const server = createSurfaceHttpServer({
+      dispatcher: createApiDispatcher(applications()),
+      credentials: {
+        accessKey: 'operator-key',
+        sessionPassword: Buffer.alloc(32, 4).toString('base64url'),
+        createdAt: '2026-08-26T00:00:00.000Z',
+      },
+      webhookReceiver: receiver,
+    });
+    try {
+      const response = await server.inject({
+        method: 'POST',
+        url: '/webhooks/github',
+        headers: { 'content-type': 'application/json' },
+        payload: '{"raw":true}',
+      });
+      expect(response.statusCode).toBe(202);
+      expect(receiver).toHaveBeenCalledWith(Buffer.from('{"raw":true}'), expect.any(Object));
+    } finally {
+      await server.close();
+    }
+  });
+
   it('allows operational API access only when auth is explicitly disabled', async () => {
     const server = createSurfaceHttpServer({
       dispatcher: createApiDispatcher(applications()),

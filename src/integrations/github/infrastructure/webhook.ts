@@ -57,7 +57,9 @@ export function createGitHubWebhook(
           );
           continue;
         }
-        await provisionRepository(repository, endpoint, state, client, health);
+        await state.serialise(repository.owner, repository.repo, () =>
+          provisionRepository(repository, endpoint, state, client, health),
+        );
       }
     },
     async receive(body, headers, trigger) {
@@ -76,11 +78,13 @@ export function createGitHubWebhook(
         !config.repositories.some((value) => value.owner === owner && value.repo === repo)
       )
         return 404;
-      const saved = await state.load(owner, repo);
-      const expected = `sha256=${createHmac('sha256', saved.secret).update(body).digest('hex')}`;
-      if (!safeEqual(signature, expected)) return 401;
-      trigger();
-      return 202;
+      return state.serialise(owner, repo, async () => {
+        const saved = await state.load(owner, repo);
+        const expected = `sha256=${createHmac('sha256', saved.secret).update(body).digest('hex')}`;
+        if (!safeEqual(signature, expected)) return 401;
+        trigger();
+        return 202;
+      });
     },
   };
 }
