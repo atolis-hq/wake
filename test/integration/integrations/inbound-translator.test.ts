@@ -30,7 +30,11 @@ import {
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
 import { adapterId } from '../../../src/integrations/index.js';
-import { ConversationSurfaceCapability, workflowName } from '../../../src/orchestration/index.js';
+import {
+  ConversationSurfaceCapability,
+  createConversationCommandReactor,
+  workflowName,
+} from '../../../src/orchestration/index.js';
 import {
   resourceCapability,
   ResourceCorrelationRole,
@@ -557,6 +561,8 @@ describe('InboundTranslator', () => {
         lookup: fixture.world.resourceLookup,
         orchestration: fixture.world.orchestration,
         pullRequests: fixture.world.pullRequests,
+        conversations: createConversationService(fixture.world.journal),
+        conversationCapabilities: [ConversationSurfaceCapability.Review],
       },
     );
     const event = createEventData({
@@ -573,12 +579,17 @@ describe('InboundTranslator', () => {
         body: 'The missing context is in the latest commit.',
         revision: fixture.world.clock.now().toISOString(),
         actor: { id: 'maintainer', kind: 'human' },
+        authorization: {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Maintain,
+        },
         raw: { id: 1 },
       },
     });
     await fixture.world.journal.appendToStream(githubStream, 0, [event]);
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
+    await processConversationCommands(fixture.world);
 
     expect(await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId)).toMatchObject({
       status: 'active',
@@ -635,6 +646,7 @@ describe('InboundTranslator', () => {
   it('requires provider authorization and treats /accepted as approval on an issue wait', async () => {
     const fixture = await waitingIssueWorkflow();
     const apply = vi.spyOn(fixture.world.orchestration, 'applyConversationCommand');
+    const conversations = createConversationService(fixture.world.journal);
     const translator = new InboundTranslator(
       fixture.world.journal,
       fixture.world.work,
@@ -642,7 +654,7 @@ describe('InboundTranslator', () => {
       {
         lookup: fixture.world.resourceLookup,
         orchestration: fixture.world.orchestration,
-        conversations: createConversationService(fixture.world.journal),
+        conversations,
         conversationCapabilities: [ConversationSurfaceCapability.Review],
       },
     );
@@ -658,6 +670,7 @@ describe('InboundTranslator', () => {
     );
     await fixture.world.journal.appendToStream(githubStream, 0, [unauthorized]);
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
+    await processConversationCommands(fixture.world);
     expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
       'waiting',
     );
@@ -668,6 +681,7 @@ describe('InboundTranslator', () => {
     });
     await fixture.world.journal.appendToStream(githubStream, 1, [accepted]);
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
+    await processConversationCommands(fixture.world);
     expect(apply).toHaveBeenLastCalledWith(
       fixture.workflow.workItemId,
       expect.objectContaining({ authorized: true }),
@@ -679,7 +693,7 @@ describe('InboundTranslator', () => {
     );
   });
 
-  it('replays a command after its conversation entry was durably recorded', async () => {
+  it('leaves a recorded command for the conversation processor', async () => {
     const fixture = await blockedIssueWorkflow();
     const translator = new InboundTranslator(
       fixture.world.journal,
@@ -692,9 +706,6 @@ describe('InboundTranslator', () => {
         conversationCapabilities: [ConversationSurfaceCapability.Review],
       },
     );
-    vi.spyOn(fixture.world.orchestration, 'applyConversationCommand').mockRejectedValueOnce(
-      new Error('interrupted after recording'),
-    );
     const event = issueCommandEvent(fixture.world, '/changes please revise', 5, {
       source: ReviewerAuthorizationSource.ProviderPermission,
       permission: ProviderPermission.Write,
@@ -702,12 +713,11 @@ describe('InboundTranslator', () => {
     await fixture.world.journal.appendToStream(githubStream, 0, [event]);
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
-    expect(await fixture.world.events(GitHubEventType.ConversationRecordDeferred)).toHaveLength(1);
     expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
       'blocked',
     );
 
-    await translator.reconciler.reconcileOnce();
+    await processConversationCommands(fixture.world);
     expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
       'active',
     );
@@ -840,7 +850,7 @@ describe('InboundTranslator', () => {
     ]);
   });
 
-  it('defers canonical recording without blocking inbound workflow signals', async () => {
+  it('defers canonical recording without applying an inbound workflow signal', async () => {
     const fixture = await blockedIssueWorkflow();
     const translator = new InboundTranslator(
       fixture.world.journal,
@@ -878,7 +888,7 @@ describe('InboundTranslator', () => {
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
 
     expect(await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId)).toMatchObject({
-      status: 'active',
+      status: 'blocked',
       currentStage: 'refine',
     });
     await expect(
@@ -969,7 +979,7 @@ describe('InboundTranslator', () => {
         (recovered) => recovered.event.payload,
       ),
     ).toContainEqual({ adapter: BuiltInAdapterId.GitHub, sourceEventId: event.eventId });
-    expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
+    expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(0);
   });
 });
 
@@ -1127,6 +1137,14 @@ async function processInbound(
     createInMemoryProcessorRunSerialiser(),
     new FakeClock(),
   ).runOnce(translator.processor);
+}
+
+async function processConversationCommands(world: TestWorld) {
+  return processInbound(
+    createConversationCommandReactor(world.orchestration),
+    world.journal,
+    world.checkpoints,
+  );
 }
 
 async function waitingWatchGate() {

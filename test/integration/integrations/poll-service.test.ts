@@ -25,10 +25,10 @@ describe('PollService', () => {
             source: { kind: 'adapter', id: 'github' },
             payload: {
               externalKey: 'owner/repo#7',
-              kind: 'issue',
+              kind: 'issue' as const,
               title: 'Issue 7',
               body: '',
-              state: 'open',
+              state: 'open' as const,
               revision: 'revision-1',
               actor: { id: 'octocat', kind: 'human' },
               raw: {},

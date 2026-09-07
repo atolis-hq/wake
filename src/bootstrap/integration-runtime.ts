@@ -49,6 +49,7 @@ import {
 import { type Clock, type UlidIdGenerator } from '../kernel/index.js';
 import {
   compileWorkflowSelectors,
+  createConversationCommandReactor,
   createPullRequestTransitionEvidence,
   createResourceTransitionReactor,
   createWatchReactor,
@@ -260,6 +261,7 @@ export async function composeIntegrationRuntime(
     input.conversations,
     input.subscriptionRunSerialiser,
   );
+  const conversationCommands = createConversationCommandReactor(input.orchestration);
   // Only poll hits a rate-limited external API, so only this half of the
   // Tick needs a backing-off host; see bootstrap/surface-cli-applications.ts.
   // Inbound translation reads durable provider facts through its own services,
@@ -320,6 +322,7 @@ export async function composeIntegrationRuntime(
       artifacts.processor,
       outcomes.processor,
       agentRunPublications.processor,
+      conversationCommands.processor,
       ...providers.map((provider) => provider.inbound.processor),
     ],
     providers,
