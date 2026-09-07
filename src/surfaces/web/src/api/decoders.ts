@@ -105,6 +105,7 @@ function decodeControlPlaneMaintenanceLease(
 ): NonNullable<ControlPlaneStatusResponse['maintenanceLease']> {
   const record = object(value, path);
   return {
+    attemptId: string(record.attemptId, child(path, 'attemptId')),
     phase: string(record.phase, child(path, 'phase')),
     startedAt: string(record.startedAt, child(path, 'startedAt')),
     ...optionalStringProperty(record, 'failure', path),

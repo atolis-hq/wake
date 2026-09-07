@@ -1,6 +1,6 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
 import { App } from '../src/app/app.js';
 
@@ -31,7 +31,70 @@ describe('adapter health table', () => {
     // the existing generic checks list is untouched, outside the new table
     expect(screen.getByText(/journal: ok/)).toBeTruthy();
   });
+
+  it('offers confirmed recovery only for the failed maintenance lease the operator observed', async () => {
+    const calls: unknown[] = [];
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const asOf = '2026-07-31T10:00:00.000Z';
+    const client = new WakeApiClient(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/control-plane/status'))
+        return json({
+          data: {
+            paused: false,
+            updatedAt: asOf,
+            maintenanceLease: {
+              attemptId: 'attempt-1',
+              phase: 'failed',
+              startedAt: asOf,
+              failure: 'sandbox health check failed',
+            },
+          },
+          meta: { asOf },
+        });
+      if (url.endsWith('/control-plane/commands/clear-maintenance')) {
+        calls.push(JSON.parse(String(init?.body)));
+        return json({
+          data: {
+            commandId: 'control:operator-1',
+            idempotencyKey: 'operator-1',
+            acceptedAt: asOf,
+            status: 'accepted',
+          },
+          meta: { asOf },
+        });
+      }
+      if (url.endsWith('/system/health'))
+        return json({
+          data: { status: 'degraded', version: '0.1.0-test', checkedAt: asOf },
+          meta: { asOf },
+        });
+      if (url.endsWith('/runners'))
+        return json({ items: [], page: { nextCursor: null, hasMore: false }, meta: { asOf } });
+      return json({ data: {}, meta: { asOf } });
+    });
+    render(
+      <MemoryRouter initialEntries={['/health']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear failed maintenance' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toMatchObject({ attemptId: 'attempt-1' });
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Clear this failed maintenance lease? This immediately resumes intake and dispatch. Confirm the update attempt is abandoned.',
+    );
+  });
 });
+
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
 
 function client() {
   const asOf = '2026-07-31T10:00:00.000Z';

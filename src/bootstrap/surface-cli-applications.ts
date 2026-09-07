@@ -690,6 +690,15 @@ function createOperationalApplications(root: CompositionRoot) {
           },
         },
       }),
+    maintenance: async (arguments_: readonly string[]) => {
+      const command = withoutOperationalWakeRoot(arguments_);
+      if (command.length !== 2 || command[0] !== 'clear' || command[1] !== '--failed')
+        throw new Error('wake maintenance clear requires --failed');
+      const lease = await root.maintenance.read();
+      if (lease === null) return { cleared: false };
+      await root.maintenance.clearFailed(lease.attemptId);
+      return { cleared: true, tag: lease.tag };
+    },
     sandboxSetup: async (arguments_: readonly string[]) => {
       if (arguments_.length > 0) throw new Error('wake sandbox-setup accepts no arguments');
       await runSandboxSetup(
@@ -1050,6 +1059,20 @@ function selfUpdateLoopInterval(arguments_: readonly string[]): number {
   if (!Number.isInteger(interval) || interval <= 0)
     throw new Error('wake self-update --loop-interval-ms must be a positive integer');
   return interval;
+}
+
+function withoutOperationalWakeRoot(arguments_: readonly string[]): readonly string[] {
+  const result: string[] = [];
+  for (let index = 0; index < arguments_.length; index += 1) {
+    if (arguments_[index] !== '--wake-root') {
+      result.push(arguments_[index]!);
+      continue;
+    }
+    if (arguments_[index + 1] === undefined)
+      throw new Error('wake maintenance requires --wake-root <path>');
+    index += 1;
+  }
+  return result;
 }
 
 function delay(milliseconds: number): Promise<void> {

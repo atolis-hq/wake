@@ -37,6 +37,7 @@ import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { createSurfaceWorkApplications } from './surface-api-work-applications.js';
 import { createWorkflowDiagramApplications } from './surface-api-workflow-diagrams.js';
+import { UpdateMaintenancePhase } from './update-maintenance-lease.js';
 import { wakeVersion } from './version.js';
 
 export function createSurfaceApiApplications(
@@ -484,6 +485,40 @@ function createControlPlaneApplications(root: CompositionRoot, now: () => string
       await root.controlPlane.resume(command.idempotencyKey);
       return commandAccepted(command, now());
     },
+    async clearMaintenance(command: {
+      readonly idempotencyKey: string;
+      readonly attemptId: string;
+    }) {
+      const lease = await root.maintenance.read();
+      if (
+        lease === null ||
+        lease.attemptId !== command.attemptId ||
+        lease.phase !== UpdateMaintenancePhase.Failed
+      )
+        return maintenanceClearConflict(lease);
+      try {
+        await root.maintenance.clearFailed(command.attemptId);
+      } catch {
+        return maintenanceClearConflict(await root.maintenance.read());
+      }
+      return commandAccepted(command, now());
+    },
+  };
+}
+
+function maintenanceClearConflict(
+  lease: Awaited<ReturnType<CompositionRoot['maintenance']['read']>>,
+) {
+  return {
+    conflict: true as const,
+    code: 'maintenance-not-clearable',
+    detail: 'The failed maintenance lease is no longer available to clear',
+    retryable: false,
+    ...(lease === null
+      ? {}
+      : {
+          current: { attemptId: lease.attemptId, phase: lease.phase, startedAt: lease.startedAt },
+        }),
   };
 }
 
@@ -504,6 +539,7 @@ export async function readControlPlaneStatus(root: CompositionRoot, now: () => s
         ? {}
         : {
             maintenanceLease: {
+              attemptId: lease.attemptId,
               phase: lease.phase,
               startedAt: lease.startedAt,
               ...(lease.failure === undefined ? {} : { failure: lease.failure }),

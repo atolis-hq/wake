@@ -6,6 +6,7 @@ import { problem } from './responses.js';
 
 export type {
   ApiApplications,
+  ApiClearMaintenanceRequest,
   ApiCollectionPage,
   ApiCommandRequest,
   ApiResourceResult,
