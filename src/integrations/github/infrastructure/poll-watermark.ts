@@ -47,6 +47,20 @@ export function providerWatermark(
   return latest === undefined || latest === previous ? undefined : latest;
 }
 
+export function hasProviderTimestamp(payload: { readonly updated_at: string }): boolean {
+  return Number.isFinite(Date.parse(payload.updated_at));
+}
+
+export function timestampsValid(
+  ...groups: readonly (readonly { readonly updated_at: string }[])[]
+): boolean {
+  return groups.flat().every(hasProviderTimestamp);
+}
+
+export function batchesSucceeded(batches: readonly PollBatch[]): boolean {
+  return batches.every((batch) => batch.succeeded);
+}
+
 export function reportPartialPollFailure(repository: string, query: string): void {
   process.stderr.write(
     `GitHub poll partial failure for ${repository}: ${query}; preserving watermark for replay\n`,

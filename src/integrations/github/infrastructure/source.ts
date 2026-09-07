@@ -15,10 +15,13 @@ import {
 } from './comment-source.js';
 import { issueObservation } from './issue-source.js';
 import {
+  batchesSucceeded,
+  hasProviderTimestamp,
   loadWatermark,
   overlapSince,
   providerWatermark,
   reportPartialPollFailure,
+  timestampsValid,
   watermarkCheckpoint,
   type PollBatch,
 } from './poll-watermark.js';
@@ -156,14 +159,7 @@ async function pollRepository(input: {
   readonly health: GitHubAdapterHealthRegistry;
 }) {
   const { client, config, adapter, signal, owner, repo, health } = input;
-  const context: RepositoryPollContext = {
-    client,
-    config,
-    adapter,
-    owner,
-    repo,
-    repository: `${owner}/${repo}`,
-  };
+  const context = createRepositoryPollContext(client, config, adapter, owner, repo);
   const since = overlapSince(input.watermark, config.polling.lookbackMs);
   const [issuesResult, pullRequestsResult] = await fetchRepositoryItems({
     client,
@@ -178,6 +174,7 @@ async function pollRepository(input: {
   const returnedPullRequestPayloads = isFulfilled(pullRequestsResult)
     ? pullRequestsResult.value
     : [];
+  const topLevelTimestampsValid = timestampsValid(returnedIssues, returnedPullRequestPayloads);
   const pullRequestPayloads = returnedPullRequestPayloads
     .filter(hasProviderTimestamp)
     .filter((pullRequest) => since === undefined || pullRequest.updated_at >= since);
@@ -192,6 +189,7 @@ async function pollRepository(input: {
     reviewCommentEventsFor(context, pullRequestPayloads),
     issueCommentEventsFor(context, [...issues, ...pullRequestPayloads], since),
   ]);
+  const nestedBatches = [reviews, reviewComments, issueComments];
   return {
     repository: context.repository,
     watermark: completedWatermark({
@@ -200,14 +198,14 @@ async function pollRepository(input: {
       issues: returnedIssues,
       pullRequests: returnedPullRequestPayloads,
       topLevelSucceeded: isFulfilled(issuesResult) && isFulfilled(pullRequestsResult),
-      nestedBatches: [reviews, reviewComments, issueComments],
+      topLevelTimestampsValid,
+      nestedBatches,
     }),
     succeeded:
+      topLevelTimestampsValid &&
       isFulfilled(issuesResult) &&
       isFulfilled(pullRequestsResult) &&
-      reviews.succeeded &&
-      reviewComments.succeeded &&
-      issueComments.succeeded,
+      batchesSucceeded(nestedBatches),
     drafts: [
       ...issues
         .filter((issue) => issue.pull_request === undefined)
@@ -226,8 +224,14 @@ async function pollRepository(input: {
   };
 }
 
-function hasProviderTimestamp(payload: { readonly updated_at: string }): boolean {
-  return Number.isFinite(Date.parse(payload.updated_at));
+function createRepositoryPollContext(
+  client: GitHubSourceClient,
+  config: GitHubConfig,
+  adapter: AdapterId | undefined,
+  owner: string,
+  repo: string,
+): RepositoryPollContext {
+  return { client, config, adapter, owner, repo, repository: `${owner}/${repo}` };
 }
 
 function completedWatermark(input: {
@@ -236,11 +240,13 @@ function completedWatermark(input: {
   readonly issues: readonly { readonly updated_at: string }[];
   readonly pullRequests: readonly { readonly updated_at: string }[];
   readonly topLevelSucceeded: boolean;
+  readonly topLevelTimestampsValid: boolean;
   readonly nestedBatches: readonly PollBatch[];
 }): number | undefined {
   if (
     !input.topLevelSucceeded ||
-    !input.nestedBatches.every((batch) => batch.succeeded) ||
+    !input.topLevelTimestampsValid ||
+    !batchesSucceeded(input.nestedBatches) ||
     input.issues.length >= input.maximumResults ||
     input.pullRequests.length >= input.maximumResults
   )

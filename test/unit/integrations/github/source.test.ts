@@ -568,6 +568,48 @@ it('retains the existing watermark for empty, older, and capped top-level result
   expect(saved).toEqual([]);
 });
 
+it('preserves the watermark when a mixed top-level result has an invalid timestamp', async () => {
+  const saved: Array<readonly [string, number]> = [];
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    fakeClient({
+      issues: [
+        { ...issue(1, 'valid'), updated_at: '2026-08-16T19:23:00.000Z' },
+        { ...issue(2, 'invalid'), updated_at: 'not-a-date' },
+      ],
+      issueComments: {},
+    }),
+    undefined,
+    undefined,
+    {
+      checkpoints: {
+        async load() {
+          return Date.parse('2026-08-16T19:22:00.000Z');
+        },
+        async save(consumer, position) {
+          saved.push([consumer, position]);
+        },
+        async reset() {},
+      },
+    },
+  );
+
+  const drafts = await source.poll(new AbortController().signal);
+  await source.markPollPersisted?.();
+
+  expect(drafts).toContainEqual(
+    expect.objectContaining({
+      eventType: GitHubEventType.WorkObserved,
+      payload: expect.objectContaining({ externalKey: 'atolis-hq/wake-test#1' }),
+    }),
+  );
+  expect(saved).toEqual([]);
+});
+
 it('ignores invalid provider timestamps when selecting a watermark', () => {
   const previous = Date.parse('2026-08-16T19:22:00.000Z');
 
