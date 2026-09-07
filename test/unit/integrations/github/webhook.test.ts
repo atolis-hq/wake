@@ -48,6 +48,34 @@ describe('GitHub webhooks', () => {
     await expect(webhook.receive(body, { 'x-github-event': 'issues' }, trigger)).resolves.toBe(401);
   });
 
+  it('updates the existing managed hook when the public URL changes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
+    const hooks = {
+      getHook: vi.fn(),
+      createHook: vi.fn().mockResolvedValue(42),
+      updateHook: vi.fn(),
+    };
+    const first = createWebhook(root, true, hooks);
+    await first.provision();
+    const config = gitHubConfigSchema.parse({
+      enabled: true,
+      repositories: [repository],
+      webhooks: { enabled: true },
+    });
+    const changed = createGitHubWebhook(
+      adapterId('github'),
+      config,
+      'https://changed.example/wake',
+      root,
+      hooks,
+      createGitHubAdapterHealthRegistry([repository]),
+    );
+    await changed.provision();
+    expect(hooks.updateHook).toHaveBeenCalledWith(
+      expect.objectContaining({ hookId: 42, url: 'https://changed.example/wake/webhooks/github' }),
+    );
+  });
+
   it('replaces a remotely deleted managed hook and reports provisioning failures immediately', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
     const health = createGitHubAdapterHealthRegistry([repository]);
@@ -117,6 +145,13 @@ describe('GitHub webhooks', () => {
       webhook.receive(
         Buffer.from(JSON.stringify({ repository: { full_name: 'atolis-hq/wake' } })),
         { 'x-hub-signature-256': 'sha256=bad', 'x-github-event': 'issues' },
+        trigger,
+      ),
+    ).resolves.toBe(401);
+    await expect(
+      webhook.receive(
+        Buffer.from(JSON.stringify({ repository: { full_name: 'atolis-hq/wake' } })),
+        { 'x-hub-signature-256': 'sha256=bad', 'x-github-event': 'unsupported' },
         trigger,
       ),
     ).resolves.toBe(401);

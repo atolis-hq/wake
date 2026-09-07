@@ -56,9 +56,13 @@ export function createGitHubWebhook(
           );
           continue;
         }
-        await state.serialise(repository.owner, repository.repo, () =>
-          provisionRepository(repository, endpoint, state, client, health),
-        );
+        try {
+          await state.serialise(repository.owner, repository.repo, () =>
+            provisionRepository(repository, endpoint, state, client, health),
+          );
+        } catch (error) {
+          health.recordFailure(`${repository.owner}/${repository.repo}`, 'webhook', error);
+        }
       }
     },
     async receive(body, headers, trigger) {
@@ -69,7 +73,7 @@ export function createGitHubWebhook(
       if (event === undefined) return 400;
       const fullName = parseRepository(body);
       if (fullName === null) return 400;
-      if (fullName === undefined || !events.has(event)) return 404;
+      if (fullName === undefined) return 404;
       const [owner, repo] = fullName.split('/');
       if (
         owner === undefined ||
@@ -81,6 +85,7 @@ export function createGitHubWebhook(
         const saved = await state.load(owner, repo);
         const expected = `sha256=${createHmac('sha256', saved.secret).update(body).digest('hex')}`;
         if (!safeEqual(signature, expected)) return 401;
+        if (!events.has(event)) return 404;
         trigger();
         return 202;
       });
