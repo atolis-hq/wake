@@ -315,23 +315,11 @@ export async function composeIntegrationRuntime(
         await delivery.deliverNext(signal);
       }),
   });
-  const immediatePolls = new Map<string, Promise<void>>();
-  const requestImmediatePoll = (adapter: string) => {
-    if (immediatePolls.has(adapter)) return;
-    const provider = providers.find((candidate) => candidate.adapter === adapter);
-    if (provider === undefined) return;
-    const run = withFileLock(
-      join(input.wakeRoot, '.wake', 'locks', `poll-${provider.adapter}.lock`),
-      async () => {
-        await new PollService(input.journal, provider).pollOnce(new AbortController().signal, {
-          bypassInterval: true,
-        });
-      },
-    )
-      .catch((error) => console.error(`Webhook polling ${adapter} failed`, error))
-      .finally(() => immediatePolls.delete(adapter));
-    immediatePolls.set(adapter, run);
-  };
+  const requestImmediatePoll = createImmediatePollRequester(
+    providers,
+    input.journal,
+    input.wakeRoot,
+  );
   return {
     projectionSubscriptions,
     processors: [
@@ -350,6 +338,31 @@ export async function composeIntegrationRuntime(
     intakePipeline,
     runnerPipeline,
     requestImmediatePoll,
+  };
+}
+
+/** Coalesces provider webhook requests while retaining the source's durable poll semantics. */
+export function createImmediatePollRequester(
+  providers: readonly ProviderInstance[],
+  journal: EventJournal,
+  wakeRoot: string,
+): (adapter: string) => void {
+  const immediatePolls = new Map<string, Promise<void>>();
+  return (adapter: string) => {
+    if (immediatePolls.has(adapter)) return;
+    const provider = providers.find((candidate) => candidate.adapter === adapter);
+    if (provider === undefined) return;
+    const run = withFileLock(
+      join(wakeRoot, '.wake', 'locks', `poll-${provider.adapter}.lock`),
+      async () => {
+        await new PollService(journal, provider).pollOnce(new AbortController().signal, {
+          bypassInterval: true,
+        });
+      },
+    )
+      .catch((error) => console.error(`Webhook polling ${adapter} failed`, error))
+      .finally(() => immediatePolls.delete(adapter));
+    immediatePolls.set(adapter, run);
   };
 }
 
