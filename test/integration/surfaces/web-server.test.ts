@@ -82,7 +82,7 @@ describe('HTTP Surface hardening', () => {
     try {
       const response = await server.inject({
         method: 'POST',
-        url: '/api/v1/control-plane/commands/pause',
+        url: '/api/v1/control-plane/commands/pause-dispatch',
         payload: 'x'.repeat(1024 * 1024),
       });
       expect(response.statusCode).toBe(401);
@@ -193,7 +193,7 @@ describe('HTTP Surface hardening', () => {
     try {
       const response = await server.inject({
         method: 'POST',
-        url: '/api/v1/control-plane/commands/pause',
+        url: '/api/v1/control-plane/commands/pause-dispatch',
         headers: { 'content-type': 'application/json', cookie: await login(server) },
         payload: '{not-json',
       });
@@ -269,7 +269,7 @@ function applications() {
     now: () => '2026-07-31T10:00:00.000Z',
     controlPlane: {
       status: async () => ({
-        data: { paused: false, updatedAt: '2026-07-31T10:00:00.000Z' },
+        data: { dispatchPaused: false, updatedAt: '2026-07-31T10:00:00.000Z' },
         meta,
       }),
     },

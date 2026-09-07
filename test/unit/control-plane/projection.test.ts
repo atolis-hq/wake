@@ -34,8 +34,8 @@ it('projects a durable quota pause and clears it only after resume', () => {
     ),
   );
   expect(paused).toEqual({
-    pausedUntil: '2026-07-31T12:05:00.000Z',
-    reason: 'quota',
+    dispatchPausedUntil: '2026-07-31T12:05:00.000Z',
+    dispatchPauseReason: 'quota',
     runnerPauses: {},
   });
   expect(
@@ -43,7 +43,7 @@ it('projects a durable quota pause and clears it only after resume', () => {
       paused,
       event(ControlEventType.DispatchResumed, { resumedAt: '2026-07-31T12:05:00.000Z' }, 2),
     ),
-  ).toEqual({ pausedUntil: null, runnerPauses: {} });
+  ).toEqual({ dispatchPausedUntil: null, runnerPauses: {} });
 });
 
 it('keeps manual and unexpired quota runner pauses in the durable projection', () => {

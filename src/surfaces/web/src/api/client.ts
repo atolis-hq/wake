@@ -79,10 +79,20 @@ export class WakeApiClient {
   readonly controlPlane = {
     status: (signal?: AbortSignal) =>
       this.get('/control-plane/status', resourceDecoder(decodeControlPlaneStatus), signal),
-    pause: (idempotencyKey: string, signal?: AbortSignal) =>
-      this.command('/control-plane/commands/pause', idempotencyKey, decodeAcceptedCommand, signal),
-    resume: (idempotencyKey: string, signal?: AbortSignal) =>
-      this.command('/control-plane/commands/resume', idempotencyKey, decodeAcceptedCommand, signal),
+    pauseDispatch: (idempotencyKey: string, signal?: AbortSignal) =>
+      this.command(
+        '/control-plane/commands/pause-dispatch',
+        idempotencyKey,
+        decodeAcceptedCommand,
+        signal,
+      ),
+    resumeDispatch: (idempotencyKey: string, signal?: AbortSignal) =>
+      this.command(
+        '/control-plane/commands/resume-dispatch',
+        idempotencyKey,
+        decodeAcceptedCommand,
+        signal,
+      ),
     clearMaintenance: (attemptId: string, idempotencyKey: string, signal?: AbortSignal) =>
       this.request(
         '/control-plane/commands/clear-maintenance',

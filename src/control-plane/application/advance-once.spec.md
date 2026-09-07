@@ -240,7 +240,7 @@ Work's own aggregate remains the source of that state.
 - Advancement does consult the injected `isDispatchPaused` supplier (default:
   always `false`) and returns `{ kind: 'paused' }` immediately when it
   resolves `true`, before recovery or reconciliation; in production this
-  supplier is Control Plane Service's `isPaused` (see
+  supplier is Control Plane Service's `isDispatchPaused` (see
   `control-plane-service.spec.md`), not a direct read of the Control Plane
   view projection. `HostStopReason.Paused` is still never produced by any
   path reachable through Advancement even so, because `TickHost` maps every

@@ -58,7 +58,7 @@ function applications(): ApiApplications {
     },
     controlPlane: {
       status: async () => ({
-        data: { paused: false, updatedAt: '2026-08-01T10:00:00.000Z' },
+        data: { dispatchPaused: false, updatedAt: '2026-08-01T10:00:00.000Z' },
         meta: { asOf: '2026-08-01T10:00:00.000Z' },
       }),
     },

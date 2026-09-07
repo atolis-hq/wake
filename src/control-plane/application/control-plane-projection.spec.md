@@ -23,13 +23,13 @@ read time from stored history, not by rewriting that history.
   anything else, and MUST key every recognised event to the single row
   `'global'` — this module has exactly one durable view, matching its single
   global stream.
-- The initial state MUST be `pausedUntil: null`, `runnerPauses: {}` (no
-  `reason`).
-- `DispatchPaused` MUST overwrite `pausedUntil` and `reason` unconditionally
+- The initial state MUST be `dispatchPausedUntil: null`, `runnerPauses: {}` (no
+  `dispatchPauseReason`).
+- `DispatchPaused` MUST overwrite `dispatchPausedUntil` and `dispatchPauseReason` unconditionally
   with the new event's values, regardless of any prior pause already
   recorded — the latest `DispatchPaused` fact always wins.
-- `DispatchResumed` MUST clear `pausedUntil` to `null` and MUST remove the
-  `reason` field entirely, not merely leave it stale.
+- `DispatchResumed` MUST clear `dispatchPausedUntil` to `null` and MUST remove the
+  `dispatchPauseReason` field entirely, not merely leave it stale.
 - `RunnerPaused` MUST upsert `runnerPauses[runnerName]` with the event's
   full payload (`cause`, `reason`, `resumeAt`), replacing any prior entry for
   that runner regardless of its previous `cause` — a quota pause can replace
@@ -59,8 +59,8 @@ read time from stored history, not by rewriting that history.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `pausedUntil` | timestamp or null | Current global dispatch pause deadline; `null` when not paused. |
-| `reason` | string, optional | Present only while `pausedUntil` is set; the last recorded pause's reason. |
+| `dispatchPausedUntil` | timestamp or null | Current global dispatch pause deadline; `null` when not paused. |
+| `dispatchPauseReason` | string, optional | Present only while `dispatchPausedUntil` is set; the last recorded pause's reason. |
 | `runnerPauses` | map of runner name to Runner pause entry | Every runner with an unresumed pause fact recorded for it, including stale, elapsed quota pauses. |
 
 **Runner pause entry** (child entity, one per paused runner name)
@@ -75,8 +75,8 @@ read time from stored history, not by rewriting that history.
 
 | Event | Occurs when | Business meaning |
 | --- | --- | --- |
-| `control-plane.dispatch-paused` | Folded into the view | Replaces `pausedUntil`/`reason` with this fact's values. |
-| `control-plane.dispatch-resumed` | Folded into the view | Clears `pausedUntil` and removes `reason`. |
+| `control-plane.dispatch-paused` | Folded into the view | Replaces `dispatchPausedUntil`/`dispatchPauseReason` with this fact's values. |
+| `control-plane.dispatch-resumed` | Folded into the view | Clears `dispatchPausedUntil` and removes `dispatchPauseReason`. |
 | `control-plane.runner-paused` | Folded into the view | Upserts the named runner's pause entry. |
 | `control-plane.runner-resumed` | Folded into the view | Removes the named runner's pause entry, if present. |
 
@@ -99,11 +99,11 @@ read time from stored history, not by rewriting that history.
 - Control Plane Service (`control-plane-service.spec.md`) is a composed,
   reachable appender of `control-plane.dispatch-paused`/
   `control-plane.dispatch-resumed` (a manual, operator-triggered pause), so
-  `pausedUntil`/`reason` do leave their initial `null`/absent state in the
+  `dispatchPausedUntil`/`dispatchPauseReason` do leave their initial `null`/absent state in the
   current composed system. Advancement's own dispatch-pause gate does not
   read this projection to learn that, though — it calls Control Plane
-  Service's independently-folding `isPaused` instead; this projection's
-  `pausedUntil` is read only for status display (the API's control-plane
+  Service's independently-folding `isDispatchPaused` instead; this projection's
+  `dispatchPausedUntil` is read only for status display (the API's control-plane
   status surface).
 - The count-based, quota-driven dispatch pause Dispatch Policy computes is
   not composed into any path that appends these two events; only the manual

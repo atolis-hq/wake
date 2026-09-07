@@ -100,12 +100,12 @@ for a single WorkItem (see the Work detail component).
 
 **Control plane**
 
-- `pause`/`resume` MUST delegate to the composed control-plane service
+- `pauseDispatch`/`resumeDispatch` MUST delegate to the composed control-plane service
   keyed by the caller's idempotency key and MUST report accepted once the
   command has been durably recorded, mirroring `pauseRunner`/`unpauseRunner`'s
   own idempotency contract below.
 - `status` MUST report whether dispatch is currently paused, from the
-  control-plane projection; `pausedUntil`/`reason` MUST be present only
+  control-plane projection; `dispatchPausedUntil`/`dispatchPauseReason` MUST be present only
   when a pause is currently recorded. A control plane that has never
   recorded a pause MUST report as not paused, using the call's current time
   as freshness — this is a valid, meaningful state, not an error.

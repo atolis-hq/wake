@@ -22,7 +22,7 @@ import {
 
 type WorkCommandName = 'freeze' | 'unfreeze' | 'delete' | 'retry' | 'extend';
 
-type ControlCommandName = 'pause' | 'resume' | 'clear-maintenance';
+type ControlCommandName = 'pauseDispatch' | 'resumeDispatch' | 'clear-maintenance';
 
 export async function dispatchCommand(
   applications: ApiApplications,
@@ -126,7 +126,10 @@ function controlCommandName(pathname: string): ControlCommandName | undefined {
   const prefix = '/api/v1/control-plane/commands/';
   if (!pathname.startsWith(prefix)) return undefined;
   const name = pathname.slice(prefix.length);
-  return name === 'pause' || name === 'resume' || name === 'clear-maintenance' ? name : undefined;
+  if (name === 'pause-dispatch') return 'pauseDispatch';
+  if (name === 'resume-dispatch') return 'resumeDispatch';
+  if (name === 'clear-maintenance') return 'clear-maintenance';
+  return undefined;
 }
 
 async function dispatchMaintenanceClear(

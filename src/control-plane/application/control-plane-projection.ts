@@ -3,8 +3,8 @@ import { ControlEventType, selectControlEvent, type ControlEvent } from '../cont
 import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
 
 export interface ControlPlaneView {
-  readonly pausedUntil: string | null;
-  readonly reason?: string;
+  readonly dispatchPausedUntil: string | null;
+  readonly dispatchPauseReason?: string;
   readonly runnerPauses: Readonly<
     Record<
       string,
@@ -56,7 +56,7 @@ export const controlPlaneProjection: ProjectionDefinition<ControlPlaneView> = {
   select(event: EventEnvelope) {
     return selectControlEvent(event) === null ? null : { key: 'global' };
   },
-  initial: () => ({ pausedUntil: null, runnerPauses: {} }),
+  initial: () => ({ dispatchPausedUntil: null, runnerPauses: {} }),
   project(previous, envelope) {
     const event = selectControlEvent(envelope);
     if (event === null) return previous;
@@ -64,8 +64,8 @@ export const controlPlaneProjection: ProjectionDefinition<ControlPlaneView> = {
       case ControlEventType.DispatchPaused:
         return {
           ...previous,
-          pausedUntil: event.event.payload.resumeAt,
-          reason: event.event.payload.reason,
+          dispatchPausedUntil: event.event.payload.resumeAt,
+          dispatchPauseReason: event.event.payload.reason,
         };
       case ControlEventType.DispatchResumed:
         return withoutDispatchPause(previous);
@@ -86,8 +86,8 @@ export const controlPlaneProjection: ProjectionDefinition<ControlPlaneView> = {
 };
 
 function withoutDispatchPause(previous: ControlPlaneView): ControlPlaneView {
-  const { reason: _, ...rest } = previous;
-  return { ...rest, pausedUntil: null };
+  const { dispatchPauseReason: _, ...rest } = previous;
+  return { ...rest, dispatchPausedUntil: null };
 }
 
 export const controlPlaneProjectionDefinitions: readonly ProjectionDefinition[] = [

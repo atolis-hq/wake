@@ -25,22 +25,23 @@ export function ControlPlaneStatus() {
       client.execution.unpauseRunner(runnerId, commandKey('unpause')),
     onSuccess: () => cache.invalidateQueries({ queryKey: queryKeys.execution.runners }),
   });
-  const pauseMutation = useMutation({
-    mutationKey: ['control-plane', 'pause'],
-    mutationFn: (idempotencyKey: string) => client.controlPlane.pause(idempotencyKey),
+  const pauseDispatchMutation = useMutation({
+    mutationKey: ['control-plane', 'pause-dispatch'],
+    mutationFn: (idempotencyKey: string) => client.controlPlane.pauseDispatch(idempotencyKey),
     onSuccess: () => cache.invalidateQueries({ queryKey: queryKeys.controlPlane.status }),
   });
-  const resumeMutation = useMutation({
-    mutationKey: ['control-plane', 'resume'],
-    mutationFn: (idempotencyKey: string) => client.controlPlane.resume(idempotencyKey),
+  const resumeDispatchMutation = useMutation({
+    mutationKey: ['control-plane', 'resume-dispatch'],
+    mutationFn: (idempotencyKey: string) => client.controlPlane.resumeDispatch(idempotencyKey),
     onSuccess: () => cache.invalidateQueries({ queryKey: queryKeys.controlPlane.status }),
   });
   const maintenanceLease = status.data?.data.maintenanceLease;
   // A maintenance lease pauses every resident loop the same way an operator
-  // pause does (see isRuntimePaused), but the status API's `paused` field only
+  // pause does (see isRuntimePaused), but the status API's `dispatchPaused` field only
   // reflects the operator toggle. Fold the lease in here so the dispatch badge
   // never reads "active" while maintenance is actually blocking dispatch.
-  const dispatchPaused = status.data?.data.paused === true || maintenanceLease !== undefined;
+  const dispatchPaused =
+    status.data?.data.dispatchPaused === true || maintenanceLease !== undefined;
   return (
     <div className={styles.statusActions}>
       {status.data ? (
@@ -60,21 +61,21 @@ export function ControlPlaneStatus() {
           Maintenance
         </StatusBadge>
       ) : null}
-      {status.data?.data.paused ? (
+      {status.data?.data.dispatchPaused ? (
         <Button
           type="button"
-          disabled={resumeMutation.isPending}
-          onClick={() => resumeMutation.mutate(commandKey('resume'))}
+          disabled={resumeDispatchMutation.isPending}
+          onClick={() => resumeDispatchMutation.mutate(commandKey('resume-dispatch'))}
         >
-          Resume ticks
+          Resume dispatch
         </Button>
       ) : (
         <Button
           type="button"
-          disabled={pauseMutation.isPending}
-          onClick={() => pauseMutation.mutate(commandKey('pause'))}
+          disabled={pauseDispatchMutation.isPending}
+          onClick={() => pauseDispatchMutation.mutate(commandKey('pause-dispatch'))}
         >
-          Pause ticks
+          Pause dispatch
         </Button>
       )}
       {pausedRunners.map((runner) => (

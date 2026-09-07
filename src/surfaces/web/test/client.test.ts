@@ -11,14 +11,14 @@ describe('typed Wake API client', () => {
       requests.push(String(input));
       return new Response(
         JSON.stringify({
-          data: { paused: false, updatedAt: '2026-07-31T10:00:00.000Z' },
+          data: { dispatchPaused: false, updatedAt: '2026-07-31T10:00:00.000Z' },
           meta: { asOf: '2026-07-31T10:00:00.000Z' },
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     });
 
-    expect((await client.controlPlane.status()).data.paused).toBe(false);
+    expect((await client.controlPlane.status()).data.dispatchPaused).toBe(false);
     expect(requests).toEqual(['/api/v1/control-plane/status']);
   });
 
@@ -30,7 +30,7 @@ describe('typed Wake API client', () => {
       return Promise.resolve(
         new Response(
           JSON.stringify({
-            data: { paused: false, updatedAt: '2026-07-31T10:00:00.000Z' },
+            data: { dispatchPaused: false, updatedAt: '2026-07-31T10:00:00.000Z' },
             meta: { asOf: '2026-07-31T10:00:00.000Z' },
           }),
         ),

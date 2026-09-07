@@ -66,9 +66,9 @@ const applications: ApiApplications = {
   controlPlane: {
     status: async () => ({
       data: {
-        paused: false,
+        dispatchPaused: false,
         updatedAt: instant,
-        ...(state.advanced ? { reason: 'Advanced one item' } : {}),
+        ...(state.advanced ? { dispatchPauseReason: 'Advanced one item' } : {}),
       },
       meta: { asOf: instant },
     }),
@@ -79,7 +79,7 @@ const applications: ApiApplications = {
           conflict: true,
           code: 'already-advanced',
           detail: 'Nothing is currently eligible to advance',
-          current: { paused: false },
+          current: { dispatchPaused: false },
         };
       state.advanced = true;
       state.events.push(event(2, 'control-plane.advanced'));
@@ -90,9 +90,9 @@ const applications: ApiApplications = {
         status: ApiCommandStatus.Accepted,
         result: {
           data: {
-            paused: false,
+            dispatchPaused: false,
             updatedAt: instant,
-            reason: 'Advanced one item',
+            dispatchPauseReason: 'Advanced one item',
           },
           meta: { asOf: instant },
         },

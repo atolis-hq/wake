@@ -72,8 +72,8 @@ export interface ApiApplications {
   readonly status?: { get(): Promise<ApiResourceResult<StatusResponse>> };
   readonly controlPlane: {
     status(): Promise<ApiResourceResult<ControlPlaneStatusResponse>>;
-    pause?(command: ApiCommandRequest): Promise<ApiCommandResult>;
-    resume?(command: ApiCommandRequest): Promise<ApiCommandResult>;
+    pauseDispatch?(command: ApiCommandRequest): Promise<ApiCommandResult>;
+    resumeDispatch?(command: ApiCommandRequest): Promise<ApiCommandResult>;
     clearMaintenance?(command: ApiClearMaintenanceRequest): Promise<ApiCommandResult>;
   };
   readonly work: {
