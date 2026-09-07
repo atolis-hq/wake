@@ -30,6 +30,7 @@ import {
   createProcessLogSink,
   createSandboxDockerPort,
   createSurfaceHttpServer,
+  describeSandboxStartupFailure,
   drainProcessOutput,
   loadOrCreateCredentials,
   promoteSandboxImage,
@@ -644,7 +645,15 @@ async function deploySandboxTag(
       : sandboxWakeInvocation(root);
   const healthcheckRoot = `/tmp/wake-self-update-healthcheck-${tag}`;
   await port.build();
-  await port.update();
+  try {
+    await port.update();
+  } catch (error) {
+    throw await describeSandboxStartupFailure(
+      docker,
+      root.config.host.sandbox.containerName,
+      error,
+    );
+  }
   await verifyResidentStart(
     docker,
     root.config.host.sandbox.containerName,

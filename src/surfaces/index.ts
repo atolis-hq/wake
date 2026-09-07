@@ -86,6 +86,8 @@ export * from './cli/infrastructure/docker-cli.js';
 
 export * from './cli/infrastructure/process-log.js';
 
+export * from './cli/infrastructure/sandbox-startup-failure.js';
+
 export * from './cli/main.js';
 
 export * from './cli/usage.js';
