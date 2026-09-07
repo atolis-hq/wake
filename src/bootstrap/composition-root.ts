@@ -132,6 +132,7 @@ export interface CompositionRoot {
   readonly delivery: DeliveryService;
   readonly intakePipeline: IntakePipeline;
   readonly runnerPipeline: RunnerPipeline;
+  readonly requestImmediatePoll: (adapter: string) => void;
   readonly resolveResourceLink: ResourceLinkResolver;
 }
 

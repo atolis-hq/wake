@@ -21,6 +21,7 @@ import { createGitHubDelivery } from './infrastructure/delivery.js';
 import { resolveGitHubCliToken } from './infrastructure/gh-auth.js';
 import { createGitHubRequestCoordinator } from './infrastructure/request-coordinator.js';
 import { createGitHubSource } from './infrastructure/source.js';
+import { createGitHubWebhook } from './infrastructure/webhook.js';
 
 export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
   provider: 'github',
@@ -71,6 +72,14 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         requests,
       }),
       health: () => health.snapshotAll(),
+      webhook: createGitHubWebhook(
+        adapter,
+        config,
+        services.publicUiUrl,
+        services.providerStateRoot,
+        client,
+        health,
+      ),
       commands: () => [
         ...Object.values(GitHubBuiltInCommand).map((syntax) => ({ syntax })),
         ...config.commands.map((syntax) => ({ syntax })),

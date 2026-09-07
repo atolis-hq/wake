@@ -82,6 +82,7 @@ export interface IntegrationRuntime {
   readonly delivery: DeliveryService;
   readonly intakePipeline: IntakePipeline;
   readonly runnerPipeline: RunnerPipeline;
+  readonly requestImmediatePoll: (adapter: string) => void;
 }
 
 export interface IntegrationRuntimeInput {
@@ -131,6 +132,7 @@ export async function composeIntegrationRuntime(
     await hydrateFakeProviderEvidence(input.wakeRoot, input.config.integrations),
     {
       publicUiUrl: input.config.surfaces.web.publicUrl,
+      providerStateRoot: join(input.wakeRoot, '.wake'),
       work: input.work,
       conversations: input.conversations,
       resources: input.resources,
@@ -313,6 +315,23 @@ export async function composeIntegrationRuntime(
         await delivery.deliverNext(signal);
       }),
   });
+  const immediatePolls = new Map<string, Promise<void>>();
+  const requestImmediatePoll = (adapter: string) => {
+    if (immediatePolls.has(adapter)) return;
+    const provider = providers.find((candidate) => candidate.adapter === adapter);
+    if (provider === undefined) return;
+    const run = withFileLock(
+      join(input.wakeRoot, '.wake', 'locks', `poll-${provider.adapter}.lock`),
+      async () => {
+        await new PollService(input.journal, provider).pollOnce(new AbortController().signal, {
+          bypassInterval: true,
+        });
+      },
+    )
+      .catch((error) => console.error(`Webhook polling ${adapter} failed`, error))
+      .finally(() => immediatePolls.delete(adapter));
+    immediatePolls.set(adapter, run);
+  };
   return {
     projectionSubscriptions,
     processors: [
@@ -330,6 +349,7 @@ export async function composeIntegrationRuntime(
     delivery,
     intakePipeline,
     runnerPipeline,
+    requestImmediatePoll,
   };
 }
 

@@ -132,8 +132,15 @@ export function createSurfaceCliApplications(
     },
     start: {
       async run(signal, budget) {
+        const listening = root.config.surfaces.web.enabled || root.config.surfaces.api.enabled;
         if (root.config.surfaces.web.enabled) await startHttp({}, true);
         else if (root.config.surfaces.api.enabled) await startHttp({}, false);
+        if (listening)
+          await Promise.all(
+            root.providers.flatMap((provider) =>
+              provider.webhook === undefined ? [] : [provider.webhook.provision()],
+            ),
+          );
         return runResidentLifecycle({
           signal,
           budget,
@@ -456,6 +463,23 @@ function createHttpStarter(
         disabled: root.config.surfaces.web.auth.disabled,
         redeemGrant: (grant) =>
           redeemPairingGrant(root.paths.wakeRoot, grant, undefined, serialiseCredentialMutation),
+      },
+      webhookReceiver: async (body, headers) => {
+        const statuses = await Promise.all(
+          root.providers.flatMap((provider) =>
+            provider.webhook === undefined
+              ? []
+              : [
+                  provider.webhook.receive(body, headers, () =>
+                    root.requestImmediatePoll(provider.adapter),
+                  ),
+                ],
+          ),
+        );
+        if (statuses.includes(202)) return 202;
+        if (statuses.includes(401)) return 401;
+        if (statuses.includes(400)) return 400;
+        return 404;
       },
       ...(assets === undefined ? {} : { assets }),
     });

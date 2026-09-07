@@ -85,6 +85,49 @@ export function createGitHubClient(token: string) {
       });
     },
     deliver: (command: GitHubDeliveryCommand) => deliver(octokit, command),
+    ...createGitHubWebhookClient(octokit),
+  };
+}
+
+function createGitHubWebhookClient(octokit: Octokit) {
+  return {
+    getHook: async (owner: string, repo: string, hookId: number) => {
+      await octokit.rest.repos.getWebhook({ owner, repo, hook_id: hookId });
+    },
+    createHook: async (input: {
+      owner: string;
+      repo: string;
+      url: string;
+      secret: string;
+      events: readonly string[];
+    }) => {
+      const response = await octokit.rest.repos.createWebhook({
+        owner: input.owner,
+        repo: input.repo,
+        name: 'web',
+        active: true,
+        events: [...input.events],
+        config: { url: input.url, content_type: 'json', secret: input.secret },
+      });
+      return response.data.id;
+    },
+    updateHook: async (input: {
+      owner: string;
+      repo: string;
+      hookId: number;
+      url: string;
+      secret: string;
+      events: readonly string[];
+    }) => {
+      await octokit.rest.repos.updateWebhook({
+        owner: input.owner,
+        repo: input.repo,
+        hook_id: input.hookId,
+        active: true,
+        events: [...input.events],
+        config: { url: input.url, content_type: 'json', secret: input.secret },
+      });
+    },
   };
 }
 

@@ -3,7 +3,10 @@ import type { EventData, EventProcessor } from '@atolis-hq/eventing';
 export type ProviderEventData = EventData<string, unknown>;
 
 export interface ExternalEventSource {
-  poll(signal: AbortSignal): Promise<readonly ProviderEventData[]>;
+  poll(
+    signal: AbortSignal,
+    options?: { readonly bypassInterval?: boolean },
+  ): Promise<readonly ProviderEventData[]>;
   /** Commits provider cursor state after every draft from the poll is durable. */
   markPollPersisted?(): Promise<void>;
 }
