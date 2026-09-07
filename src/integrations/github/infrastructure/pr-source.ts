@@ -26,12 +26,8 @@ import {
   UnknownGitHubRevision,
 } from '../contracts/vocabulary.js';
 import { withoutWakeMarkers } from './content-fingerprint.js';
-
-interface CheckEvidence {
-  readonly available: boolean;
-  readonly checkRuns: readonly GitHubCheckRunPayload[];
-  readonly statuses: readonly GitHubCommitStatusPayload[];
-}
+import type { PollBatch } from './poll-watermark.js';
+import { readPullRequestEvidence, type CheckEvidence } from './pr-evidence.js';
 
 export interface GitHubPullRequestSourceClient {
   listPullRequests(
@@ -59,34 +55,61 @@ export interface GitHubPullRequestSourceClient {
   ): Promise<readonly string[]>;
 }
 
-export function createGitHubPullRequestSource(input: {
+interface GitHubPullRequestSourceInput {
   readonly client: GitHubPullRequestSourceClient;
   readonly repository: string;
   readonly maxResults: number;
   readonly maxConcurrency?: number;
   readonly adapter?: AdapterId;
-}): ExternalEventSource {
-  const { owner, repo } = parseRepository(input.repository);
+}
+
+export function createGitHubPullRequestSource(
+  input: GitHubPullRequestSourceInput,
+): ExternalEventSource {
   return {
     async poll(signal) {
+      return (await pullRequestEventsFor(input, signal)).drafts;
+    },
+  };
+}
+
+export async function pullRequestEventsFor(
+  input: GitHubPullRequestSourceInput,
+  signal: AbortSignal,
+): Promise<PollBatch> {
+  const { owner, repo } = parseRepository(input.repository);
+  signal.throwIfAborted();
+  const pullRequests = await input.client.listPullRequests(owner, repo, input.maxResults);
+  const results = await mapConcurrent(
+    pullRequests,
+    input.maxConcurrency ?? 4,
+    async (pullRequest) => {
       signal.throwIfAborted();
-      const pullRequests = await input.client.listPullRequests(owner, repo, input.maxResults);
-      return mapConcurrent(pullRequests, input.maxConcurrency ?? 4, async (pullRequest) => {
-        signal.throwIfAborted();
-        const headRevision = fallback(pullRequest.head?.sha, pullRequest.updated_at);
-        const [evidence, changedFiles] = await Promise.all([
-          readCheckEvidence(input.client, owner, repo, headRevision, input.maxResults),
-          readChangedFiles(input.client, owner, repo, pullRequest.number, input.maxResults),
-        ]);
-        return pullRequestObservation({
+      const headRevision = fallback(pullRequest.head?.sha, pullRequest.updated_at);
+      const [evidence, changedFiles] = await readPullRequestEvidence(
+        input.client,
+        owner,
+        repo,
+        headRevision,
+        pullRequest.number,
+        input.maxResults,
+      );
+      return {
+        complete: evidence.complete && changedFiles.complete,
+        draft: pullRequestObservation({
           repository: input.repository,
           pullRequest,
           evidence,
-          changedFiles,
+          changedFiles: changedFiles.files,
           ...(input.adapter === undefined ? {} : { adapter: input.adapter }),
-        });
-      });
+        }),
+      };
     },
+  );
+  return {
+    drafts: results.map((result) => result.draft),
+    succeeded: true,
+    complete: results.every((result) => result.complete),
   };
 }
 
@@ -157,38 +180,6 @@ function normalizeCheckEvidence(
   if (states.includes(PullRequestCheckState.Pending)) return PullRequestCheckState.Pending;
   if (states.includes(PullRequestCheckState.Passing)) return PullRequestCheckState.Passing;
   return PullRequestCheckState.Unknown;
-}
-
-async function readCheckEvidence(
-  client: GitHubPullRequestSourceClient,
-  owner: string,
-  repo: string,
-  headRevision: string,
-  maxResults: number,
-): Promise<CheckEvidence> {
-  try {
-    const [checkRuns, statuses] = await Promise.all([
-      client.listCheckRunsForRef(owner, repo, headRevision, maxResults),
-      client.getCombinedStatusForRef(owner, repo, headRevision, maxResults),
-    ]);
-    return { available: true, checkRuns, statuses };
-  } catch {
-    return { available: false, checkRuns: [], statuses: [] };
-  }
-}
-
-async function readChangedFiles(
-  client: GitHubPullRequestSourceClient,
-  owner: string,
-  repo: string,
-  pullNumber: number,
-  maxResults: number,
-): Promise<readonly string[] | undefined> {
-  try {
-    return await client.listPullRequestFiles(owner, repo, pullNumber, maxResults);
-  } catch {
-    return undefined;
-  }
 }
 
 async function mapConcurrent<Input, Output>(

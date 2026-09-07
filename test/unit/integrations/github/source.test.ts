@@ -649,6 +649,51 @@ it('preserves the watermark when a nested comment read reaches its result cap', 
   expect(saved).toEqual([]);
 });
 
+it('preserves the watermark when pull-request check evidence reaches its result cap', async () => {
+  const saved: Array<readonly [string, number]> = [];
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+      polling: { maxPerRepo: 2 },
+    }),
+    {
+      ...fakeClient({
+        issues: [
+          {
+            ...issue(6, 'pull request'),
+            pull_request: {},
+            updated_at: '2026-08-16T19:23:00.000Z',
+          },
+        ],
+        issueComments: {},
+      }),
+      async listCheckRunsForRef() {
+        return [{}, {}];
+      },
+    },
+    undefined,
+    undefined,
+    {
+      checkpoints: {
+        async load() {
+          return Date.parse('2026-08-16T19:22:00.000Z');
+        },
+        async save(consumer, position) {
+          saved.push([consumer, position]);
+        },
+        async reset() {},
+      },
+    },
+  );
+
+  await source.poll(new AbortController().signal);
+  await source.markPollPersisted?.();
+
+  expect(saved).toEqual([]);
+});
+
 it('ignores invalid provider timestamps when selecting a watermark', () => {
   const previous = Date.parse('2026-08-16T19:22:00.000Z');
 

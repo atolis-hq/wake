@@ -17,16 +17,15 @@ import { issueObservation } from './issue-source.js';
 import {
   batchesComplete,
   batchesSucceeded,
+  completedProviderWatermark,
   hasProviderTimestamp,
   loadWatermark,
   overlapSince,
-  providerWatermark,
   reportPartialPollFailure,
   timestampsValid,
   watermarkCheckpoint,
-  type PollBatch,
 } from './poll-watermark.js';
-import { createGitHubPullRequestSource } from './pr-source.js';
+import { pullRequestEventsFor } from './pr-source.js';
 import {
   createGitHubRequestCoordinator,
   type GitHubRequestCoordinator,
@@ -180,20 +179,23 @@ async function pollRepository(input: {
     .filter(hasProviderTimestamp)
     .filter((pullRequest) => since === undefined || pullRequest.updated_at >= since);
   const [pullRequests, reviews, reviewComments, issueComments] = await Promise.all([
-    createGitHubPullRequestSource({
-      client: { ...client, listPullRequests: async () => pullRequestPayloads },
-      repository: context.repository,
-      maxResults: config.polling.maxPerRepo,
-      ...(adapter === undefined ? {} : { adapter }),
-    }).poll(signal),
+    pullRequestEventsFor(
+      {
+        client: { ...client, listPullRequests: async () => pullRequestPayloads },
+        repository: context.repository,
+        maxResults: config.polling.maxPerRepo,
+        ...(adapter === undefined ? {} : { adapter }),
+      },
+      signal,
+    ),
     reviewEventsFor(context, pullRequestPayloads),
     reviewCommentEventsFor(context, pullRequestPayloads),
     issueCommentEventsFor(context, [...issues, ...pullRequestPayloads], since),
   ]);
-  const nestedBatches = [reviews, reviewComments, issueComments];
+  const nestedBatches = [pullRequests, reviews, reviewComments, issueComments];
   return {
     repository: context.repository,
-    watermark: completedWatermark({
+    watermark: completedProviderWatermark({
       previous: input.watermark,
       maximumResults: config.polling.maxPerRepo,
       issues: returnedIssues,
@@ -218,7 +220,7 @@ async function pollRepository(input: {
             ...(adapter === undefined ? {} : { adapter }),
           }),
         ),
-      ...pullRequests,
+      ...pullRequests.drafts,
       ...reviews.drafts,
       ...reviewComments.drafts,
       ...issueComments.drafts,
@@ -234,30 +236,6 @@ function createRepositoryPollContext(
   repo: string,
 ): RepositoryPollContext {
   return { client, config, adapter, owner, repo, repository: `${owner}/${repo}` };
-}
-
-function completedWatermark(input: {
-  readonly previous: number;
-  readonly maximumResults: number;
-  readonly issues: readonly { readonly updated_at: string }[];
-  readonly pullRequests: readonly { readonly updated_at: string }[];
-  readonly topLevelSucceeded: boolean;
-  readonly topLevelTimestampsValid: boolean;
-  readonly nestedBatches: readonly PollBatch[];
-}): number | undefined {
-  if (
-    !input.topLevelSucceeded ||
-    !input.topLevelTimestampsValid ||
-    !batchesSucceeded(input.nestedBatches) ||
-    !batchesComplete(input.nestedBatches) ||
-    input.issues.length >= input.maximumResults ||
-    input.pullRequests.length >= input.maximumResults
-  )
-    return undefined;
-  return providerWatermark(input.previous, [
-    ...input.issues.map((issue) => issue.updated_at),
-    ...input.pullRequests.map((pullRequest) => pullRequest.updated_at),
-  ]);
 }
 
 function fetchRepositoryItems(input: {

@@ -67,6 +67,30 @@ export function batchesComplete(batches: readonly PollBatch[]): boolean {
   return batches.every((batch) => batch.complete);
 }
 
+export function completedProviderWatermark(input: {
+  readonly previous: number;
+  readonly maximumResults: number;
+  readonly issues: readonly { readonly updated_at: string }[];
+  readonly pullRequests: readonly { readonly updated_at: string }[];
+  readonly topLevelSucceeded: boolean;
+  readonly topLevelTimestampsValid: boolean;
+  readonly nestedBatches: readonly PollBatch[];
+}): number | undefined {
+  if (
+    !input.topLevelSucceeded ||
+    !input.topLevelTimestampsValid ||
+    !batchesSucceeded(input.nestedBatches) ||
+    !batchesComplete(input.nestedBatches) ||
+    input.issues.length >= input.maximumResults ||
+    input.pullRequests.length >= input.maximumResults
+  )
+    return undefined;
+  return providerWatermark(input.previous, [
+    ...input.issues.map((issue) => issue.updated_at),
+    ...input.pullRequests.map((pullRequest) => pullRequest.updated_at),
+  ]);
+}
+
 export function reportPartialPollFailure(repository: string, query: string): void {
   process.stderr.write(
     `GitHub poll partial failure for ${repository}: ${query}; preserving watermark for replay\n`,
