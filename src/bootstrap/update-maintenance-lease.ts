@@ -35,6 +35,7 @@ export interface UpdateMaintenanceLease {
   ): Promise<UpdateMaintenanceState>;
   fail(error: unknown, attemptId?: string): Promise<UpdateMaintenanceState>;
   clear(attemptId?: string): Promise<void>;
+  clearFailed(attemptId: string): Promise<void>;
 }
 
 export function createUpdateMaintenanceLease(
@@ -105,6 +106,15 @@ export function createUpdateMaintenanceLease(
           return;
         }
         requireOwnership(current, attemptId);
+        await rm(path, { force: true });
+      });
+    },
+    async clearFailed(attemptId) {
+      await withLeaseLock(path, async () => {
+        const current = await requireState(path);
+        requireOwnership(current, attemptId);
+        if (current.phase !== UpdateMaintenancePhase.Failed)
+          throw new Error('Only a failed maintenance lease can be cleared by an operator');
         await rm(path, { force: true });
       });
     },

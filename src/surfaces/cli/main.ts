@@ -2,12 +2,17 @@ import { readFile } from 'node:fs/promises';
 import qrcodeTerminal from 'qrcode-terminal';
 import type { HostBudget, HostResult } from '../../control-plane/index.js';
 import { ExecutionStreamKind, RunStatus } from '../../execution/index.js';
+import { defineClosedVocabulary } from '../../kernel/index.js';
 
 export interface HostOptions {
   readonly host?: string;
   readonly port?: number;
   readonly wakeRoot?: string;
 }
+
+export const WakeOperationalCommand = defineClosedVocabulary({
+  Maintenance: 'maintenance',
+} as const);
 
 export type WakeCommand =
   | ({ readonly kind: 'tick' | 'start' | 'stop' } & { readonly wakeRoot?: string })
@@ -33,7 +38,13 @@ export type WakeCommand =
     }
   | {
       readonly kind:
-        'init' | 'doctor' | 'sandbox-setup' | 'sandbox-entrypoint' | 'self-update' | 'smoke';
+        | 'init'
+        | 'doctor'
+        | typeof WakeOperationalCommand.Maintenance
+        | 'sandbox-setup'
+        | 'sandbox-entrypoint'
+        | 'self-update'
+        | 'smoke';
       readonly arguments: readonly string[];
     }
   | { readonly kind: 'sandbox'; readonly arguments: readonly string[] };
@@ -55,6 +66,7 @@ export interface WakeCliApplications {
   readonly operational?: {
     readonly init: (arguments_: readonly string[]) => Promise<unknown>;
     readonly doctor: (arguments_: readonly string[]) => Promise<unknown>;
+    readonly maintenance: (arguments_: readonly string[]) => Promise<unknown>;
     readonly sandbox: (arguments_: readonly string[]) => Promise<unknown>;
     readonly sandboxSetup: (arguments_: readonly string[]) => Promise<unknown>;
     readonly sandboxEntrypoint: (arguments_: readonly string[]) => Promise<unknown>;
@@ -120,6 +132,7 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
       return parseResidentCommand(command, arguments_.slice(1));
     case 'init':
     case 'doctor':
+    case WakeOperationalCommand.Maintenance:
     case 'sandbox-setup':
     case 'sandbox-entrypoint':
     case 'sandbox':
@@ -251,6 +264,9 @@ export async function runWakeCommand(
       return;
     case 'doctor':
       writeResult(output, await operational(applications).doctor(command.arguments));
+      return;
+    case WakeOperationalCommand.Maintenance:
+      writeResult(output, await operational(applications).maintenance(command.arguments));
       return;
     case 'sandbox':
       writeResult(output, await operational(applications).sandbox(command.arguments));

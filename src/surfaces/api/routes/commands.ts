@@ -3,6 +3,7 @@ import type { ConversationMessageRequest, RunnerResponse } from '../contracts/in
 import type { ApiHttpResponse } from '../http-server.js';
 import type {
   ApiApplications,
+  ApiClearMaintenanceRequest,
   ApiCommandRequest,
   ApiRunResolutionRequest,
 } from './applications.js';
@@ -21,7 +22,7 @@ import {
 
 type WorkCommandName = 'freeze' | 'unfreeze' | 'delete' | 'retry' | 'extend';
 
-type ControlCommandName = 'pause' | 'resume';
+type ControlCommandName = 'pause' | 'resume' | 'clear-maintenance';
 
 export async function dispatchCommand(
   applications: ApiApplications,
@@ -37,6 +38,8 @@ export async function dispatchCommand(
   if (ambiguityResolution !== undefined) return ambiguityResolution;
   const work = await dispatchWorkCommand(applications, url.pathname, body);
   if (work !== undefined) return work;
+  const maintenance = await dispatchMaintenanceClear(applications, url.pathname, body);
+  if (maintenance !== undefined) return maintenance;
   const request = commandRequest(body);
   if (isHttpResponse(request)) return request;
   const control = await dispatchControlCommand(applications, url.pathname, request);
@@ -111,6 +114,7 @@ async function dispatchControlCommand(
 ): Promise<ApiHttpResponse | undefined> {
   const name = controlCommandName(pathname);
   if (name === undefined) return undefined;
+  if (name === 'clear-maintenance') return undefined;
   const status = await applications.controlPlane.status();
   const operation = applications.controlPlane[name];
   return operation === undefined
@@ -122,7 +126,36 @@ function controlCommandName(pathname: string): ControlCommandName | undefined {
   const prefix = '/api/v1/control-plane/commands/';
   if (!pathname.startsWith(prefix)) return undefined;
   const name = pathname.slice(prefix.length);
-  return name === 'pause' || name === 'resume' ? name : undefined;
+  return name === 'pause' || name === 'resume' || name === 'clear-maintenance' ? name : undefined;
+}
+
+async function dispatchMaintenanceClear(
+  applications: ApiApplications,
+  pathname: string,
+  body: unknown,
+): Promise<ApiHttpResponse | undefined> {
+  if (pathname !== '/api/v1/control-plane/commands/clear-maintenance') return undefined;
+  const request = clearMaintenanceRequest(body);
+  if (isHttpResponse(request)) return request;
+  const operation = applications.controlPlane.clearMaintenance;
+  const status = await applications.controlPlane.status();
+  return operation === undefined
+    ? unavailable('clear-maintenance', status.data)
+    : accepted(await operation(request), applications.now());
+}
+
+function clearMaintenanceRequest(body: unknown): ApiClearMaintenanceRequest | ApiHttpResponse {
+  if (!isObject(body))
+    return invalidRequest('idempotencyKey', 'A JSON object with an idempotency key is required');
+  if (Object.keys(body).some((key) => key !== 'idempotencyKey' && key !== 'attemptId'))
+    return invalidRequest('', 'The command body contains unknown fields');
+  const command = commandRequest({ idempotencyKey: body.idempotencyKey });
+  if (isHttpResponse(command)) return command;
+  if (typeof body.attemptId !== 'string' || body.attemptId.trim() === '')
+    return invalidRequest('attemptId', 'Must be a non-empty string');
+  if (body.attemptId.length > 200)
+    return invalidRequest('attemptId', 'Must be at most 200 characters');
+  return { ...command, attemptId: body.attemptId };
 }
 
 async function dispatchRunnerCommand(

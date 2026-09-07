@@ -34,6 +34,7 @@ describe('readControlPlaneStatus', () => {
     );
 
     expect(status.data.maintenanceLease).toEqual({
+      attemptId: 'attempt-1',
       phase: 'failed',
       startedAt: '2026-08-20T22:34:48.328Z',
       failure: 'active Runs remain after maintenance cancellation: run-1',
@@ -52,6 +53,7 @@ describe('readControlPlaneStatus', () => {
     );
 
     expect(status.data.maintenanceLease).toEqual({
+      attemptId: 'attempt-2',
       phase: 'updating',
       startedAt: '2026-08-21T00:00:00.000Z',
     });

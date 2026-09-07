@@ -46,6 +46,7 @@ describe('operational CLI reachability', () => {
         operational: {
           init: async () => ({ wakeRoot: '/tmp/wake' }),
           doctor: async () => ({ failures: [], notices: ['target diagnostics'] }),
+          maintenance: async () => ({ cleared: false }),
           sandbox: async () => undefined,
           sandboxSetup: async () => undefined,
           sandboxEntrypoint: async () => undefined,
@@ -78,6 +79,7 @@ describe('operational CLI reachability', () => {
         operational: {
           init: async () => ({ wakeRoot: '/tmp/wake' }),
           doctor: async () => ({ failures: [], notices: [] }),
+          maintenance: async () => ({ cleared: false }),
           sandbox: async () => undefined,
           sandboxSetup: async () => undefined,
           sandboxEntrypoint: async () => undefined,
@@ -110,6 +112,7 @@ describe('operational CLI reachability', () => {
         operational: {
           init: async () => ({ wakeRoot: '/tmp/wake' }),
           doctor: async () => ({ failures: [], notices: [] }),
+          maintenance: async () => ({ cleared: false }),
           sandbox: async () => undefined,
           sandboxSetup: async () => undefined,
           sandboxEntrypoint: async (arguments_) => {
