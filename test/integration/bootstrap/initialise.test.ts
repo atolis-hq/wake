@@ -180,6 +180,15 @@ describe('target initialise root', () => {
     expect(dockerfile).not.toContain('start --wake-root /wake --no-sandbox');
   });
 
+  it('allows the optional sandbox-home initialization variables to be unset', async () => {
+    for (const filename of ['Dockerfile.runtime', 'Dockerfile.runtime.packaged']) {
+      const dockerfile = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
+
+      expect(dockerfile).toContain('${WAKE_HOME_INIT_DIRS:-}');
+      expect(dockerfile).toContain('${WAKE_HOME_INIT_ROOT:-}');
+    }
+  });
+
   it('starts the packaged runtime in the mounted Wake root', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
@@ -196,6 +205,8 @@ describe('target initialise root', () => {
     for (const filename of ['Dockerfile.runtime', 'Dockerfile.runtime.packaged']) {
       const dockerfile = await readFile(join(root, 'docker', filename), 'utf8');
       expect(dockerfile).toContain('WAKE_HOME_INIT_DIRS');
+      expect(dockerfile).toContain('${WAKE_HOME_INIT_DIRS:-}');
+      expect(dockerfile).toContain('${WAKE_HOME_INIT_ROOT:-}');
       expect(dockerfile).toContain('mkdir -p \\"$directory\\"');
       expect(dockerfile).toContain('chown wake:wake \\"$directory\\"');
       expect(dockerfile).toContain('su wake');
