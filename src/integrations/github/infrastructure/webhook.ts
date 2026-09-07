@@ -43,8 +43,7 @@ export function createGitHubWebhook(
   health: GitHubAdapterHealthRegistry,
 ): ProviderWebhook {
   const state = new GitHubWebhookStateStore(root, adapter);
-  const endpoint =
-    publicUrl === undefined ? undefined : new URL('/webhooks/github', publicUrl).href;
+  const endpoint = publicUrl === undefined ? undefined : webhookEndpoint(publicUrl);
   return {
     async provision() {
       for (const repository of config.repositories) {
@@ -185,4 +184,12 @@ function statusOf(error: unknown): number | undefined {
     typeof error.status === 'number'
     ? error.status
     : undefined;
+}
+
+function webhookEndpoint(publicUrl: string): string {
+  const base = new URL(publicUrl);
+  base.pathname = `${base.pathname.replace(/\/$/, '')}/webhooks/github`;
+  base.search = '';
+  base.hash = '';
+  return base.href;
 }

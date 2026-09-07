@@ -113,6 +113,13 @@ describe('GitHub webhooks', () => {
         trigger,
       ),
     ).resolves.toBe(404);
+    await expect(
+      webhook.receive(
+        Buffer.from(JSON.stringify({ repository: { full_name: 'atolis-hq/wake' } })),
+        { 'x-hub-signature-256': 'sha256=bad', 'x-github-event': 'issues' },
+        trigger,
+      ),
+    ).resolves.toBe(401);
   });
 
   it('retains polling when no public URL is configured and reports webhook health', async () => {
@@ -140,6 +147,32 @@ describe('GitHub webhooks', () => {
       status: 'degraded',
       failureCount: 1,
     });
+  });
+
+  it('preserves a configured public URL path prefix when provisioning', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
+    const hooks = {
+      getHook: vi.fn(),
+      createHook: vi.fn().mockResolvedValue(1),
+      updateHook: vi.fn(),
+    };
+    const config = gitHubConfigSchema.parse({
+      enabled: true,
+      repositories: [repository],
+      webhooks: { enabled: true },
+    });
+    const webhook = createGitHubWebhook(
+      adapterId('github'),
+      config,
+      'https://example.com/wake/',
+      root,
+      hooks,
+      createGitHubAdapterHealthRegistry([repository]),
+    );
+    await webhook.provision();
+    expect(hooks.createHook).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://example.com/wake/webhooks/github' }),
+    );
   });
 });
 
