@@ -15,12 +15,17 @@ import {
 } from './comment-source.js';
 import { issueObservation } from './issue-source.js';
 import {
+  batchesComplete,
+  batchesSucceeded,
+  completedProviderWatermark,
+  hasProviderTimestamp,
   loadWatermark,
   overlapSince,
   reportPartialPollFailure,
+  timestampsValid,
   watermarkCheckpoint,
 } from './poll-watermark.js';
-import { createGitHubPullRequestSource } from './pr-source.js';
+import { pullRequestEventsFor } from './pr-source.js';
 import {
   createGitHubRequestCoordinator,
   type GitHubRequestCoordinator,
@@ -71,13 +76,13 @@ export function createGitHubSource(
             owner,
             repo,
             watermark: await loadWatermark(state?.checkpoints, adapter, owner, repo),
-            now,
             health,
           }),
         ),
       );
       for (const result of perRepository)
-        if (result.succeeded) pendingWatermarks.set(result.repository, result.completedAt);
+        if (result.watermark !== undefined)
+          pendingWatermarks.set(result.repository, result.watermark);
       return perRepository
         .flatMap((result) => result.drafts)
         .filter((draft) => {
@@ -151,19 +156,10 @@ async function pollRepository(input: {
   readonly owner: string;
   readonly repo: string;
   readonly watermark: number;
-  readonly now: () => number;
   readonly health: GitHubAdapterHealthRegistry;
 }) {
   const { client, config, adapter, signal, owner, repo, health } = input;
-  const queriedAt = input.now();
-  const context: RepositoryPollContext = {
-    client,
-    config,
-    adapter,
-    owner,
-    repo,
-    repository: `${owner}/${repo}`,
-  };
+  const context = createRepositoryPollContext(client, config, adapter, owner, repo);
   const since = overlapSince(input.watermark, config.polling.lookbackMs);
   const [issuesResult, pullRequestsResult] = await fetchRepositoryItems({
     client,
@@ -173,32 +169,47 @@ async function pollRepository(input: {
     since,
   });
   reportRepositoryReadResults(context, health, issuesResult, pullRequestsResult);
-  const issues = isFulfilled(issuesResult) ? issuesResult.value : [];
-  const pullRequestPayloads = isFulfilled(pullRequestsResult)
-    ? pullRequestsResult.value.filter(
-        (pullRequest) => since === undefined || pullRequest.updated_at >= since,
-      )
+  const returnedIssues = isFulfilled(issuesResult) ? issuesResult.value : [];
+  const issues = returnedIssues.filter(hasProviderTimestamp);
+  const returnedPullRequestPayloads = isFulfilled(pullRequestsResult)
+    ? pullRequestsResult.value
     : [];
+  const topLevelTimestampsValid = timestampsValid(returnedIssues, returnedPullRequestPayloads);
+  const pullRequestPayloads = returnedPullRequestPayloads
+    .filter(hasProviderTimestamp)
+    .filter((pullRequest) => since === undefined || pullRequest.updated_at >= since);
   const [pullRequests, reviews, reviewComments, issueComments] = await Promise.all([
-    createGitHubPullRequestSource({
-      client: { ...client, listPullRequests: async () => pullRequestPayloads },
-      repository: context.repository,
-      maxResults: config.polling.maxPerRepo,
-      ...(adapter === undefined ? {} : { adapter }),
-    }).poll(signal),
+    pullRequestEventsFor(
+      {
+        client: { ...client, listPullRequests: async () => pullRequestPayloads },
+        repository: context.repository,
+        maxResults: config.polling.maxPerRepo,
+        ...(adapter === undefined ? {} : { adapter }),
+      },
+      signal,
+    ),
     reviewEventsFor(context, pullRequestPayloads),
     reviewCommentEventsFor(context, pullRequestPayloads),
     issueCommentEventsFor(context, [...issues, ...pullRequestPayloads], since),
   ]);
+  const nestedBatches = [pullRequests, reviews, reviewComments, issueComments];
   return {
     repository: context.repository,
-    completedAt: queriedAt,
+    watermark: completedProviderWatermark({
+      previous: input.watermark,
+      maximumResults: config.polling.maxPerRepo,
+      issues: returnedIssues,
+      pullRequests: returnedPullRequestPayloads,
+      topLevelSucceeded: isFulfilled(issuesResult) && isFulfilled(pullRequestsResult),
+      topLevelTimestampsValid,
+      nestedBatches,
+    }),
     succeeded:
+      topLevelTimestampsValid &&
       isFulfilled(issuesResult) &&
       isFulfilled(pullRequestsResult) &&
-      reviews.succeeded &&
-      reviewComments.succeeded &&
-      issueComments.succeeded,
+      batchesComplete(nestedBatches) &&
+      batchesSucceeded(nestedBatches),
     drafts: [
       ...issues
         .filter((issue) => issue.pull_request === undefined)
@@ -209,12 +220,22 @@ async function pollRepository(input: {
             ...(adapter === undefined ? {} : { adapter }),
           }),
         ),
-      ...pullRequests,
+      ...pullRequests.drafts,
       ...reviews.drafts,
       ...reviewComments.drafts,
       ...issueComments.drafts,
     ],
   };
+}
+
+function createRepositoryPollContext(
+  client: GitHubSourceClient,
+  config: GitHubConfig,
+  adapter: AdapterId | undefined,
+  owner: string,
+  repo: string,
+): RepositoryPollContext {
+  return { client, config, adapter, owner, repo, repository: `${owner}/${repo}` };
 }
 
 function fetchRepositoryItems(input: {

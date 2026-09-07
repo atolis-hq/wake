@@ -59,10 +59,14 @@ identity.
   fetched check-run/commit-status evidence, so a check-state-only change —
   with every other field unchanged — still produces new, distinct evidence.
 - Every repository has a durable last-successful-poll watermark. Subsequent
-  issue and comment queries use that watermark minus configured `lookbackMs`;
+  issue and comment queries use that watermark minus `max(lookbackMs, 300000)`;
   a repository with no watermark uses the provider's bounded bootstrap query.
-  The watermark advances only after every event data from a complete repository
-  query has been durably appended. Any failed query leaves it unchanged, so
+  After a complete repository query has been durably appended, the watermark
+  advances only to the greatest valid `updated_at` returned by its top-level
+  issue and pull-request reads, never moves backward, and remains unchanged
+  when no such timestamp is available. A read that reaches its bounded result
+  cap is treated as incomplete and does not advance the watermark. Any failed
+  query likewise leaves it unchanged, so
   the next poll replays the overlap and the polling persistence boundary
   deduplicates stable provider event ids against durable evidence.
   A pull-request query failure must not prevent available issue/comment evidence
