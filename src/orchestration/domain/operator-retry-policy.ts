@@ -1,4 +1,8 @@
-import { ActivityOutcomeKind, BuiltInActivityName } from '../../activities/index.js';
+import {
+  ActivityOutcomeKind,
+  BuiltInActivityName,
+  isNeedsClarificationAgentOutcome,
+} from '../../activities/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventData } from '../contracts/events.js';
 import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
@@ -82,20 +86,29 @@ export function selectOperatorRetryTarget(
 }
 
 export function isChangesResumeEligible(view: WorkflowInstanceView): boolean {
-  const pending = view.pendingActivation;
-  const completedAgentStage =
-    pending !== undefined &&
-    pending.activity === BuiltInActivityName.Agent &&
-    pending.status === ActivityActivationStatus.Completed &&
-    pending.supplemental !== true &&
-    pending.followOnIndex === undefined &&
-    view.acceptedOutcomes.includes(pending.activationId);
-  if (!completedAgentStage) return false;
+  if (!isCompletedAgentStage(view)) return false;
   return (
     (view.status === WorkflowStatus.Blocked &&
       view.blockReason === 'unconfigured outcome blocked' &&
       view.lastOutcome?.kind === ActivityOutcomeKind.Blocked) ||
     (view.status === WorkflowStatus.Waiting && view.waitingFor !== undefined)
+  );
+}
+
+/** A clarification reply may be supplied by any conversation participant. */
+export function isNeedsClarificationResumeEligible(view: WorkflowInstanceView): boolean {
+  return isChangesResumeEligible(view) && isNeedsClarificationAgentOutcome(view.lastOutcome);
+}
+
+function isCompletedAgentStage(view: WorkflowInstanceView): boolean {
+  const pending = view.pendingActivation;
+  return (
+    pending !== undefined &&
+    pending.activity === BuiltInActivityName.Agent &&
+    pending.status === ActivityActivationStatus.Completed &&
+    pending.supplemental !== true &&
+    pending.followOnIndex === undefined &&
+    view.acceptedOutcomes.includes(pending.activationId)
   );
 }
 

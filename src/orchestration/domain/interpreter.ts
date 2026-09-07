@@ -40,6 +40,7 @@ export type { SupplementalActivityRequest } from './supplemental-policy.js';
 export {
   isChangesResumeEligible,
   isGroupBudgetExtensionEligible,
+  isNeedsClarificationResumeEligible,
   isOperatorRetryEligible,
   requestChangesResume,
   requestFreshOperatorRetry,

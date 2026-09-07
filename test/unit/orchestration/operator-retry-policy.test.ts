@@ -19,6 +19,7 @@ import {
   compileWorkflow,
   foldWorkflowInstance,
   isChangesResumeEligible,
+  isNeedsClarificationResumeEligible,
   isOperatorRetryEligible,
   orchestrationActivityOutcome,
   OrchestrationEventType,
@@ -319,6 +320,19 @@ describe('operator retry policy', () => {
         },
       ],
     });
+  });
+
+  it('recognizes an agent stage that needs clarification as reply-resumable', () => {
+    const { state } = blockedAgentFixture();
+    const needsClarification = {
+      ...state,
+      lastOutcome: {
+        kind: ActivityOutcomeKind.Blocked,
+        data: { status: 'NEEDS_CLARIFICATION' },
+      },
+    };
+
+    expect(isNeedsClarificationResumeEligible(needsClarification)).toBe(true);
   });
 
   it('resumes the current agent stage when a conversation message arrives during a human wait', () => {

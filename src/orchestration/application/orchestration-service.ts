@@ -271,6 +271,12 @@ export class OrchestrationService {
     );
   }
 
+  resumeNeedsClarificationStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
+    return this.transitionWatchChildren(context, () =>
+      this.advanceWorkflow.resumeNeedsClarificationStage(workflowInstanceId, context),
+    );
+  }
+
   async extendBlockedGroupBudget(
     workflowInstanceId: WorkflowInstanceId,
     authority: { readonly kind: string },

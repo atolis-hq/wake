@@ -61,6 +61,17 @@ export const agentActivityOutcomeSchema = z.union([
 
 export type AgentActivityOutcome = z.output<typeof agentActivityOutcomeSchema>;
 
+/** Identifies the agent sentinel that explicitly asks a human for input. */
+export function isNeedsClarificationAgentOutcome(value: unknown): boolean {
+  const parsed = agentActivityOutcomeSchema.safeParse(value);
+  return (
+    parsed.success &&
+    parsed.data.kind === ActivityOutcomeKind.Blocked &&
+    'status' in parsed.data.data &&
+    parsed.data.data.status === 'NEEDS_CLARIFICATION'
+  );
+}
+
 export const agentActivityOutcomeKinds = [
   ActivityOutcomeKind.Done,
   ActivityOutcomeKind.Rejected,
