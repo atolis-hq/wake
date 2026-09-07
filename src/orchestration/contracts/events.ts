@@ -283,6 +283,8 @@ export interface ActivityRequestedPayload {
 
 export interface SignalExpectation {
   readonly signalKind: SignalName;
+  /** Re-arm a blocked gate without treating its wait event as a new watch trigger. */
+  readonly suppressWatchDispatch?: true | undefined;
   readonly resourceId?: string | undefined;
   readonly revision?: string | undefined;
   readonly from?: readonly ApprovalAuthority[] | undefined;

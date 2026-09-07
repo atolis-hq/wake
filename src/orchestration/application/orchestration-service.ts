@@ -303,7 +303,11 @@ export class OrchestrationService {
       );
     const group = childOrchestrationGroupStream(parent.orchestrationGroupId, exhausted.watchId);
     await this.claims.grantBudget(group, exhausted.requestId, context, authority);
-    await this.waitForSignal(parent.workflowInstanceId, parent.waitingFor!, context);
+    await this.waitForSignal(
+      parent.workflowInstanceId,
+      { ...parent.waitingFor!, suppressWatchDispatch: true },
+      context,
+    );
     return this.requestChild(
       {
         ...exhausted,

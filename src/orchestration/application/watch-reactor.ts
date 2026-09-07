@@ -69,6 +69,7 @@ export function createWatchReactor(
   runs?: Pick<RunRepository, 'load'>,
 ) {
   const react = async (event: PersistedEvent, context: CommandContext): Promise<void> => {
+    if (suppressesWatchDispatch(event)) return;
     await dispatch(
       orchestration,
       runs,
@@ -121,6 +122,10 @@ export function createWatchReconciler(
       );
       let reconciled = 0;
       for (const event of events) {
+        if (suppressesWatchDispatch(event)) {
+          await checkpoints.save(reconciliationCheckpoint, event.globalPosition);
+          continue;
+        }
         const context = reactorCommandContext(event, ApprovalAuthorityKind.Watch, 'watch-reactor');
         const matches = (
           await Promise.all(
@@ -142,6 +147,14 @@ export function createWatchReconciler(
       return reconciled;
     },
   };
+}
+
+function suppressesWatchDispatch(event: PersistedEvent): boolean {
+  const owned = selectOrchestrationEvent(event);
+  return (
+    owned?.event.eventType === OrchestrationEventType.SignalWaitStarted &&
+    owned.event.payload.suppressWatchDispatch === true
+  );
 }
 
 async function dispatch(

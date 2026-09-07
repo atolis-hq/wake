@@ -266,6 +266,7 @@ function applySignalWaitStarted(
   state.status = orchestrationStatusTransitions[OrchestrationEventType.SignalWaitStarted]!;
   state.waitingFor = {
     signalKind: event.payload.signalKind,
+    ...(event.payload.suppressWatchDispatch === true ? { suppressWatchDispatch: true } : {}),
     ...(event.payload.resourceId === undefined ? {} : { resourceId: event.payload.resourceId }),
     ...(event.payload.revision === undefined ? {} : { revision: event.payload.revision }),
     ...(event.payload.from === undefined ? {} : { from: event.payload.from }),
