@@ -4,6 +4,7 @@ import type {
   ApiCommandResult,
   AuditEventResponse,
   RunTranscriptResponse,
+  WebhookSetupResponse,
   WorkItemResponse,
   WorkItemTranscriptResponse,
 } from '../../../src/surfaces/api/contracts/index.js';
@@ -16,6 +17,36 @@ import type {
 import { createApiDispatcher } from '../../../src/surfaces/api/routes/index.js';
 
 describe('API domain routes', () => {
+  it('serves operator-only webhook setup instructions when the provider exposes them', async () => {
+    const dispatcher = createApiDispatcher(
+      applications({
+        webhooks: async () =>
+          resource({
+            adapters: [
+              {
+                adapter: 'github',
+                provider: 'github',
+                hooks: [
+                  {
+                    scope: 'atolis-hq/wake',
+                    endpoint: 'https://wake.example/webhooks/github',
+                    events: ['issues'],
+                    secret: 'secret',
+                  },
+                ],
+              },
+            ],
+          }),
+      }),
+    );
+
+    expect(
+      (await dispatcher.dispatch('GET', '/api/v1/system/webhooks', undefined))?.body,
+    ).toMatchObject({
+      data: { adapters: [{ hooks: [{ secret: 'secret' }] }] },
+    });
+  });
+
   it('serves definition diagrams and an optional work-item instance overlay from one endpoint', async () => {
     const diagrams = [
       {
@@ -593,6 +624,7 @@ function applications(
     readonly eventsList?: (
       query: CollectionQuery,
     ) => Promise<ApiCollectionPage<AuditEventResponse>>;
+    readonly webhooks?: () => Promise<ApiResourceResult<WebhookSetupResponse>>;
   } = {},
 ) {
   return {
@@ -628,6 +660,7 @@ function applications(
         }),
       configuration: async () => resource({ configuration: {} }),
       commands: async () => resource({ adapters: [] }),
+      ...(overrides.webhooks === undefined ? {} : { webhooks: overrides.webhooks }),
     },
   };
 }

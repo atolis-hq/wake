@@ -33,6 +33,16 @@ const replyIntent = {
 } as const;
 
 describe('GitHub adapter write health', () => {
+  it('reports webhook ingress as unknown until Wake accepts a delivery', async () => {
+    const provider = await composeProvider({ webhooks: { enabled: true } });
+
+    const webhook = provider.health!().find(
+      (c) => c.scope === 'org/repo' && c.channel === 'webhook',
+    );
+
+    expect(webhook).toMatchObject({ status: 'unknown', successCount: 0, failureCount: 0 });
+  });
+
   it('records a per-repository write success after a confirmed delivery', async () => {
     vi.clearAllMocks();
     octokit.createComment.mockResolvedValue({ data: { id: 99 } });
@@ -93,7 +103,12 @@ describe('GitHub adapter commands', () => {
   });
 });
 
-async function composeProvider(extraConfig: { readonly commands?: readonly string[] } = {}) {
+async function composeProvider(
+  extraConfig: {
+    readonly commands?: readonly string[];
+    readonly webhooks?: { readonly enabled: boolean };
+  } = {},
+) {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
   const lookup = createResourceLookup({ journal, projections: new InMemoryProjectionStore() });

@@ -12,7 +12,7 @@ export interface HealthResponse {
     readonly provider: string;
     readonly scope: string;
     readonly channel: string;
-    readonly status: 'ok' | 'degraded';
+    readonly status: 'ok' | 'degraded' | 'unknown';
     readonly detail?: string;
     readonly successCount: number;
     readonly failureCount: number;
@@ -28,5 +28,18 @@ export interface CommandsResponse {
     readonly adapter: string;
     readonly provider: string;
     readonly commands: readonly { readonly syntax: string }[];
+  }[];
+}
+
+export interface WebhookSetupResponse {
+  readonly adapters: readonly {
+    readonly adapter: string;
+    readonly provider: string;
+    readonly hooks: readonly {
+      readonly scope: string;
+      readonly endpoint: string;
+      readonly events: readonly string[];
+      readonly secret: string;
+    }[];
   }[];
 }

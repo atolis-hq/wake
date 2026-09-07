@@ -55,6 +55,10 @@ async function readSingleton(
       return noQuery(url, async () => ok(await applications.system.configuration()));
     case '/api/v1/system/commands':
       return noQuery(url, async () => ok(await applications.system.commands()));
+    case '/api/v1/system/webhooks':
+      return applications.system.webhooks === undefined
+        ? unavailable('webhooks')
+        : noQuery(url, async () => ok(await applications.system.webhooks!()));
     case '/api/v1/workflow-diagrams':
       return readWorkflowDiagrams(applications, url);
     default:

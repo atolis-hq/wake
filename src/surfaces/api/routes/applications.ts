@@ -17,6 +17,7 @@ import type {
   RunResponse,
   RunTranscriptResponse,
   StatusResponse,
+  WebhookSetupResponse,
   WorkDetailResponse,
   WorkflowDiagramsResponse,
   WorkflowInstanceResponse,
@@ -58,6 +59,7 @@ export interface ApiSystemApplications {
   health(): Promise<ApiResourceResult<HealthResponse>>;
   configuration(): Promise<ApiResourceResult<ConfigurationResponse>>;
   commands(): Promise<ApiResourceResult<CommandsResponse>>;
+  webhooks?(): Promise<ApiResourceResult<WebhookSetupResponse>>;
 }
 
 export interface ApiApplications {

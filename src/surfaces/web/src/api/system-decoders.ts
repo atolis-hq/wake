@@ -4,6 +4,7 @@ import type {
   HealthResponse,
   MetricsResponse,
   WakeProblemDetails,
+  WebhookSetupResponse,
 } from '../../../api/contracts/index.js';
 import {
   array,
@@ -109,6 +110,28 @@ export const decodeCommands: Decoder<CommandsResponse> = (value, path = '') => {
   };
 };
 
+export const decodeWebhookSetup: Decoder<WebhookSetupResponse> = (value, path = '') => {
+  const record = object(value, path);
+  return {
+    adapters: array(record.adapters, child(path, 'adapters'), (item, itemPath = '') => {
+      const adapter = object(item, itemPath);
+      return {
+        adapter: string(adapter.adapter, child(itemPath, 'adapter')),
+        provider: string(adapter.provider, child(itemPath, 'provider')),
+        hooks: array(adapter.hooks, child(itemPath, 'hooks'), (hook, hookPath = '') => {
+          const setup = object(hook, hookPath);
+          return {
+            scope: string(setup.scope, child(hookPath, 'scope')),
+            endpoint: string(setup.endpoint, child(hookPath, 'endpoint')),
+            events: array(setup.events, child(hookPath, 'events'), string),
+            secret: string(setup.secret, child(hookPath, 'secret')),
+          };
+        }),
+      };
+    }),
+  };
+};
+
 export function decodeProblem(value: unknown, status: number): WakeProblemDetails {
   try {
     const record = object(value, 'problem');
@@ -140,8 +163,8 @@ export function decodeProblem(value: unknown, status: number): WakeProblemDetail
   }
 }
 
-function healthStatus(value: unknown, path: string): 'ok' | 'degraded' {
+function healthStatus(value: unknown, path: string): 'ok' | 'degraded' | 'unknown' {
   const decoded = string(value, path);
-  if (decoded !== 'ok' && decoded !== 'degraded') invalid(path);
+  if (decoded !== 'ok' && decoded !== 'degraded' && decoded !== 'unknown') invalid(path);
   return decoded;
 }

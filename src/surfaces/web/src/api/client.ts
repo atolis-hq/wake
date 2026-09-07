@@ -24,6 +24,7 @@ import {
   decodeHealth,
   decodeMetrics,
   decodeProblem,
+  decodeWebhookSetup,
 } from './system-decoders.js';
 
 export class ApiProblem extends Error {
@@ -249,6 +250,8 @@ export class WakeApiClient {
       this.get('/system/configuration', resourceDecoder(decodeConfiguration), signal),
     commands: (signal?: AbortSignal) =>
       this.get('/system/commands', resourceDecoder(decodeCommands), signal),
+    webhooks: (signal?: AbortSignal) =>
+      this.get('/system/webhooks', resourceDecoder(decodeWebhookSetup), signal),
   };
 
   constructor(

@@ -71,7 +71,7 @@ export interface VerifiedArtifact {
 export interface AdapterHealthCheck {
   readonly scope: string;
   readonly channel: string;
-  readonly status: 'ok' | 'degraded';
+  readonly status: 'ok' | 'degraded' | 'unknown';
   readonly detail?: string;
   readonly successCount: number;
   readonly failureCount: number;
@@ -117,11 +117,20 @@ export interface ProviderInstance {
 
 export interface ProviderWebhook {
   provision(): Promise<void>;
+  setupInstructions(): Promise<readonly ProviderWebhookSetup[]>;
   receive(
     body: Buffer,
     headers: Readonly<Record<string, string | string[] | undefined>>,
     trigger: () => void,
   ): Promise<404 | 400 | 401 | 202>;
+}
+
+/** Operator-only material for configuring a provider webhook outside Wake. */
+export interface ProviderWebhookSetup {
+  readonly scope: string;
+  readonly endpoint: string;
+  readonly events: readonly string[];
+  readonly secret: string;
 }
 
 // What a definition's create() builds, before ProviderRegistry.compose() stamps

@@ -71,7 +71,12 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         setLabels: client.setIssueLabels,
         requests,
       }),
-      health: () => health.snapshotAll(),
+      health: () =>
+        health.snapshotAll().flatMap((check) => {
+          if (check.channel !== 'webhook') return [check];
+          if (!config.webhooks.enabled) return [];
+          return [check.successCount === 0 ? { ...check, status: 'unknown' as const } : check];
+        }),
       webhook: createGitHubWebhook(
         adapter,
         config,

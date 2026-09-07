@@ -385,6 +385,23 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
         meta: sampledMeta(sampledAt),
       };
     },
+    async webhooks() {
+      const sampledAt = now();
+      const adapters = await Promise.all(
+        root.providers.flatMap((instance) =>
+          instance.webhook === undefined
+            ? []
+            : [
+                instance.webhook.setupInstructions().then((hooks) => ({
+                  adapter: instance.adapter,
+                  provider: instance.provider,
+                  hooks,
+                })),
+              ],
+        ),
+      );
+      return { data: { adapters }, meta: sampledMeta(sampledAt) };
+    },
   };
 }
 

@@ -48,6 +48,48 @@ describe('GitHub webhooks', () => {
     await expect(webhook.receive(body, { 'x-github-event': 'issues' }, trigger)).resolves.toBe(401);
   });
 
+  it('counts verified deliveries as webhook health and exposes stable manual setup instructions', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
+    const health = createGitHubAdapterHealthRegistry([repository]);
+    const webhook = createGitHubWebhook(
+      adapterId('github'),
+      gitHubConfigSchema.parse({
+        enabled: true,
+        repositories: [repository],
+        webhooks: { enabled: true },
+      }),
+      'https://wake.example/base',
+      root,
+      { getHook: vi.fn(), createHook: vi.fn(), updateHook: vi.fn() },
+      health,
+    );
+    const [setup] = await webhook.setupInstructions();
+    if (setup === undefined) throw new Error('Expected webhook setup instructions');
+    expect(setup).toMatchObject({
+      scope: 'atolis-hq/wake',
+      endpoint: 'https://wake.example/base/webhooks/github',
+      events: expect.arrayContaining(['issues', 'status']),
+    });
+    expect(health.snapshotAll().find((check) => check.channel === 'webhook')).toMatchObject({
+      status: 'ok',
+      successCount: 0,
+    });
+    const body = Buffer.from(JSON.stringify({ repository: { full_name: 'atolis-hq/wake' } }));
+    const signature = `sha256=${createHmac('sha256', setup.secret).update(body).digest('hex')}`;
+    await expect(
+      webhook.receive(
+        body,
+        { 'x-hub-signature-256': signature, 'x-github-event': 'issues' },
+        vi.fn(),
+      ),
+    ).resolves.toBe(202);
+    expect(health.snapshotAll().find((check) => check.channel === 'webhook')).toMatchObject({
+      status: 'ok',
+      successCount: 1,
+    });
+    await expect(webhook.setupInstructions()).resolves.toEqual([setup]);
+  });
+
   it('updates the existing managed hook when the public URL changes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
     const hooks = {

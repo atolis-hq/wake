@@ -65,6 +65,23 @@ describe('configuration page commands tab', () => {
     expect(within(panel).getByText('/retry')).toBeTruthy();
     expect(within(panel).getByText('/deploy')).toBeTruthy();
   });
+
+  it('shows protected webhook setup instructions only on the webhooks tab', async () => {
+    render(
+      <MemoryRouter initialEntries={['/configuration']}>
+        <App client={client()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText('Signing secret:')).toBeNull();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('tab', { name: 'Webhooks' }));
+
+    const panel = await screen.findByRole('tabpanel', { name: 'Webhooks' });
+    expect(within(panel).getByText('atolis-hq/wake')).toBeTruthy();
+    expect(within(panel).getByText('https://wake.example/webhooks/github')).toBeTruthy();
+    expect(within(panel).getByText('secret-value')).toBeTruthy();
+  });
 });
 
 function client() {
@@ -73,28 +90,48 @@ function client() {
     const url = String(input);
     const body = url.endsWith('/system/configuration')
       ? { data: { configuration: {} }, meta: { asOf } }
-      : url.includes('/workflow-diagrams')
-        ? { data: { diagrams: [diagram()] }, meta: { asOf } }
-        : url.endsWith('/system/commands')
-          ? {
-              data: {
-                adapters: [
-                  {
-                    adapter: 'github',
-                    provider: 'github',
-                    commands: [
-                      { syntax: '/approved' },
-                      { syntax: '/accepted' },
-                      { syntax: '/changes' },
-                      { syntax: '/retry' },
-                      { syntax: '/deploy' },
-                    ],
-                  },
-                ],
-              },
-              meta: { asOf },
-            }
-          : { data: {}, meta: { asOf } };
+      : url.endsWith('/system/webhooks')
+        ? {
+            data: {
+              adapters: [
+                {
+                  adapter: 'github',
+                  provider: 'github',
+                  hooks: [
+                    {
+                      scope: 'atolis-hq/wake',
+                      endpoint: 'https://wake.example/webhooks/github',
+                      events: ['issues'],
+                      secret: 'secret-value',
+                    },
+                  ],
+                },
+              ],
+            },
+            meta: { asOf },
+          }
+        : url.includes('/workflow-diagrams')
+          ? { data: { diagrams: [diagram()] }, meta: { asOf } }
+          : url.endsWith('/system/commands')
+            ? {
+                data: {
+                  adapters: [
+                    {
+                      adapter: 'github',
+                      provider: 'github',
+                      commands: [
+                        { syntax: '/approved' },
+                        { syntax: '/accepted' },
+                        { syntax: '/changes' },
+                        { syntax: '/retry' },
+                        { syntax: '/deploy' },
+                      ],
+                    },
+                  ],
+                },
+                meta: { asOf },
+              }
+            : { data: {}, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
