@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import qrcodeTerminal from 'qrcode-terminal';
-import { defineClosedVocabulary } from '../../kernel/index.js';
 import type { HostBudget, HostResult } from '../../control-plane/index.js';
 import { ExecutionStreamKind, RunStatus } from '../../execution/index.js';
+import { defineClosedVocabulary } from '../../kernel/index.js';
 
 export interface HostOptions {
   readonly host?: string;
