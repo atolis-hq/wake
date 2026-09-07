@@ -2,7 +2,12 @@ import type { CheckpointStore, EventJournal } from '@atolis-hq/eventing';
 import type { PullRequestService } from '../../activities/index.js';
 import type { ConversationService } from '../../conversations/index.js';
 import type { RunRepository } from '../../execution/index.js';
-import type { Clock, IdGenerator } from '../../kernel/index.js';
+import {
+  defineClosedVocabulary,
+  type Clock,
+  type IdGenerator,
+  type ValueOf,
+} from '../../kernel/index.js';
 import type {
   OrchestrationService,
   SurfaceCapability,
@@ -65,13 +70,19 @@ export interface VerifiedArtifact {
   readonly revision?: string | undefined;
 }
 
+export const AdapterHealthStatus = defineClosedVocabulary({
+  Unknown: 'unknown',
+} as const);
+
+export type AdapterHealthStatus = 'ok' | 'degraded' | ValueOf<typeof AdapterHealthStatus>;
+
 // Health of one adapter-defined slice of its own traffic. scope and channel are
 // entirely adapter-owned (e.g. GitHub scopes by repository, with 'poll'/'deliver'
 // channels); callers attach adapter/provider identity from the owning ProviderInstance.
 export interface AdapterHealthCheck {
   readonly scope: string;
   readonly channel: string;
-  readonly status: 'ok' | 'degraded';
+  readonly status: AdapterHealthStatus;
   readonly detail?: string;
   readonly successCount: number;
   readonly failureCount: number;
@@ -117,11 +128,20 @@ export interface ProviderInstance {
 
 export interface ProviderWebhook {
   provision(): Promise<void>;
+  setupInstructions(): Promise<readonly ProviderWebhookSetup[]>;
   receive(
     body: Buffer,
     headers: Readonly<Record<string, string | string[] | undefined>>,
     trigger: () => void,
   ): Promise<404 | 400 | 401 | 202>;
+}
+
+/** Operator-only material for configuring a provider webhook outside Wake. */
+export interface ProviderWebhookSetup {
+  readonly scope: string;
+  readonly endpoint: string;
+  readonly events: readonly string[];
+  readonly secret: string;
 }
 
 // What a definition's create() builds, before ProviderRegistry.compose() stamps

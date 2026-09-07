@@ -4,7 +4,9 @@ import type {
   HealthResponse,
   MetricsResponse,
   WakeProblemDetails,
+  WebhookSetupResponse,
 } from '../../../api/contracts/index.js';
+import { ApiAdapterHealthStatus } from '../../../api/contracts/index.js';
 import {
   array,
   boolean,
@@ -45,7 +47,7 @@ function decodeAnalyticsWindow(value: unknown, path: string) {
 export const decodeHealth: Decoder<HealthResponse> = (value, path = '') => {
   const record = object(value, path);
   return {
-    status: healthStatus(record.status, child(path, 'status')),
+    status: overallHealthStatus(record.status, child(path, 'status')),
     version: string(record.version, child(path, 'version')),
     checkedAt: string(record.checkedAt, child(path, 'checkedAt')),
     ...(record.checks === undefined
@@ -55,7 +57,7 @@ export const decodeHealth: Decoder<HealthResponse> = (value, path = '') => {
             const check = object(item, itemPath);
             return {
               name: string(check.name, child(itemPath, 'name')),
-              status: healthStatus(check.status, child(itemPath, 'status')),
+              status: overallHealthStatus(check.status, child(itemPath, 'status')),
               ...optionalStringProperty(check, 'detail', itemPath),
             };
           }),
@@ -70,7 +72,7 @@ export const decodeHealth: Decoder<HealthResponse> = (value, path = '') => {
               provider: string(check.provider, child(itemPath, 'provider')),
               scope: string(check.scope, child(itemPath, 'scope')),
               channel: string(check.channel, child(itemPath, 'channel')),
-              status: healthStatus(check.status, child(itemPath, 'status')),
+              status: adapterHealthStatus(check.status, child(itemPath, 'status')),
               successCount: number(check.successCount, child(itemPath, 'successCount')),
               failureCount: number(check.failureCount, child(itemPath, 'failureCount')),
               ...optionalStringProperty(check, 'detail', itemPath),
@@ -109,6 +111,28 @@ export const decodeCommands: Decoder<CommandsResponse> = (value, path = '') => {
   };
 };
 
+export const decodeWebhookSetup: Decoder<WebhookSetupResponse> = (value, path = '') => {
+  const record = object(value, path);
+  return {
+    adapters: array(record.adapters, child(path, 'adapters'), (item, itemPath = '') => {
+      const adapter = object(item, itemPath);
+      return {
+        adapter: string(adapter.adapter, child(itemPath, 'adapter')),
+        provider: string(adapter.provider, child(itemPath, 'provider')),
+        hooks: array(adapter.hooks, child(itemPath, 'hooks'), (hook, hookPath = '') => {
+          const setup = object(hook, hookPath);
+          return {
+            scope: string(setup.scope, child(hookPath, 'scope')),
+            endpoint: string(setup.endpoint, child(hookPath, 'endpoint')),
+            events: array(setup.events, child(hookPath, 'events'), string),
+            secret: string(setup.secret, child(hookPath, 'secret')),
+          };
+        }),
+      };
+    }),
+  };
+};
+
 export function decodeProblem(value: unknown, status: number): WakeProblemDetails {
   try {
     const record = object(value, 'problem');
@@ -140,8 +164,19 @@ export function decodeProblem(value: unknown, status: number): WakeProblemDetail
   }
 }
 
-function healthStatus(value: unknown, path: string): 'ok' | 'degraded' {
+function overallHealthStatus(value: unknown, path: string): 'ok' | 'degraded' {
   const decoded = string(value, path);
   if (decoded !== 'ok' && decoded !== 'degraded') invalid(path);
+  return decoded;
+}
+
+function adapterHealthStatus(
+  value: unknown,
+  path: string,
+): 'ok' | 'degraded' | typeof ApiAdapterHealthStatus.Unknown {
+  const decoded = string(value, path);
+  if (decoded !== 'ok' && decoded !== 'degraded' && decoded !== ApiAdapterHealthStatus.Unknown) {
+    invalid(path);
+  }
   return decoded;
 }

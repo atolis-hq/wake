@@ -17,7 +17,9 @@ import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
 
 export function ConfigurationPage() {
   const client = useApiClient();
-  const [tab, setTab] = useState<'configuration' | 'commands' | 'workflows'>('configuration');
+  const [tab, setTab] = useState<'configuration' | 'commands' | 'webhooks' | 'workflows'>(
+    'configuration',
+  );
   const configurationQuery = useQuery({
     queryKey: queryKeys.system.configuration,
     queryFn: ({ signal }) => client.system.configuration(signal),
@@ -34,6 +36,12 @@ export function ConfigurationPage() {
     queryFn: ({ signal }) => client.workflowDiagrams.get(undefined, signal),
     refetchInterval: refreshPolicy.workflowDiagrams,
     enabled: tab === 'workflows',
+  });
+  const webhooksQuery = useQuery({
+    queryKey: queryKeys.system.webhooks,
+    queryFn: ({ signal }) => client.system.webhooks(signal),
+    refetchInterval: refreshPolicy.webhooks,
+    enabled: tab === 'webhooks',
   });
   const navigateTabs = (event: KeyboardEvent<HTMLButtonElement>) => {
     const tabs = Array.from(
@@ -66,11 +74,19 @@ export function ConfigurationPage() {
                 ? commandsQuery.refetch()
                 : tab === 'workflows'
                   ? workflowDiagramsQuery.refetch()
-                  : configurationQuery.refetch())
+                  : tab === 'webhooks'
+                    ? webhooksQuery.refetch()
+                    : configurationQuery.refetch())
             }
           >
             Refresh{' '}
-            {tab === 'commands' ? 'commands' : tab === 'workflows' ? 'workflows' : 'configuration'}
+            {tab === 'commands'
+              ? 'commands'
+              : tab === 'workflows'
+                ? 'workflows'
+                : tab === 'webhooks'
+                  ? 'webhooks'
+                  : 'configuration'}
           </Button>
         }
       />
@@ -100,6 +116,19 @@ export function ConfigurationPage() {
           onClick={() => setTab('commands')}
         >
           Commands
+        </button>
+        <button
+          type="button"
+          role="tab"
+          data-tab="webhooks"
+          id="webhooks-tab"
+          aria-controls="webhooks-panel"
+          aria-selected={tab === 'webhooks'}
+          tabIndex={tab === 'webhooks' ? 0 : -1}
+          onKeyDown={navigateTabs}
+          onClick={() => setTab('webhooks')}
+        >
+          Webhooks
         </button>
         <button
           type="button"
@@ -146,6 +175,40 @@ export function ConfigurationPage() {
                   ))
                 )}
               </>
+            )
+          )}
+        </section>
+      ) : tab === 'webhooks' ? (
+        <section id="webhooks-panel" role="tabpanel" aria-labelledby="webhooks-tab">
+          {webhooksQuery.isPending ? (
+            <LoadingState label="Loading webhook setup instructions" />
+          ) : webhooksQuery.error && !webhooksQuery.data ? (
+            <ErrorState error={webhooksQuery.error} retry={() => void webhooksQuery.refetch()} />
+          ) : webhooksQuery.data?.data.adapters.length === 0 ? (
+            <EmptyState>No webhook-enabled adapters are configured</EmptyState>
+          ) : (
+            webhooksQuery.data?.data.adapters.flatMap((adapter) =>
+              adapter.hooks.map((hook) => (
+                <Panel key={`${adapter.adapter}:${hook.scope}`}>
+                  <h2>{hook.scope}</h2>
+                  <p>
+                    Configure this webhook manually in {adapter.provider} when Wake cannot manage
+                    it.
+                  </p>
+                  <p>
+                    Payload URL: <code>{hook.endpoint}</code>
+                  </p>
+                  <p>
+                    Content type: <code>application/json</code>
+                  </p>
+                  <p>
+                    Events: <code>{hook.events.join(', ')}</code>
+                  </p>
+                  <p>
+                    Signing secret: <code>{hook.secret}</code>
+                  </p>
+                </Panel>
+              )),
             )
           )}
         </section>

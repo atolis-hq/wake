@@ -28,5 +28,6 @@ export const queryKeys = {
     health: ['systemHealth'] as const,
     configuration: ['systemConfiguration'] as const,
     commands: ['systemCommands'] as const,
+    webhooks: ['systemWebhooks'] as const,
   },
 };

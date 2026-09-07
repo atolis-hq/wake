@@ -8,7 +8,7 @@ import {
   resourceKind,
 } from '../../resources/index.js';
 import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
-import type { ProviderDefinition } from '../contracts/provider.js';
+import { AdapterHealthStatus, type ProviderDefinition } from '../contracts/provider.js';
 import { InboundTranslator } from './application/inbound-translator.js';
 import { translateGitHubOutbound } from './application/outbound-translator.js';
 import { createGitHubWakeLabelReconciler } from './application/wake-labels.js';
@@ -71,7 +71,14 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         setLabels: client.setIssueLabels,
         requests,
       }),
-      health: () => health.snapshotAll(),
+      health: () =>
+        health.snapshotAll().flatMap((check) => {
+          if (check.channel !== 'webhook') return [check];
+          if (!config.webhooks.enabled) return [];
+          return [
+            check.successCount === 0 ? { ...check, status: AdapterHealthStatus.Unknown } : check,
+          ];
+        }),
       webhook: createGitHubWebhook(
         adapter,
         config,

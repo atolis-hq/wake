@@ -68,6 +68,24 @@ describe('HTTP Surface hardening', () => {
     }
   });
 
+  it('keeps webhook setup secrets behind the operator session boundary', async () => {
+    const server = surfaceServer(createApiDispatcher(applications()));
+    try {
+      expect((await server.inject('/api/v1/system/webhooks')).statusCode).toBe(401);
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/system/webhooks',
+        headers: { cookie: await login(server) },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        data: { adapters: [{ hooks: [{ secret: 'webhook-secret' }] }] },
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
   it('allows operational API access only when auth is explicitly disabled', async () => {
     const server = createSurfaceHttpServer({
       dispatcher: createApiDispatcher(applications()),
@@ -324,6 +342,25 @@ function applications() {
       }),
       configuration: async () => ({ data: { configuration: {} }, meta }),
       commands: async () => ({ data: { adapters: [] }, meta }),
+      webhooks: async () => ({
+        data: {
+          adapters: [
+            {
+              adapter: 'github',
+              provider: 'github',
+              hooks: [
+                {
+                  scope: 'atolis-hq/wake',
+                  endpoint: 'https://wake.example/webhooks/github',
+                  events: ['issues'],
+                  secret: 'webhook-secret',
+                },
+              ],
+            },
+          ],
+        },
+        meta,
+      }),
     },
   };
 }

@@ -86,9 +86,23 @@ export function createGitHubWebhook(
         const expected = `sha256=${createHmac('sha256', saved.secret).update(body).digest('hex')}`;
         if (!safeEqual(signature, expected)) return 401;
         if (!events.has(event)) return 404;
+        health.recordSuccess(`${owner}/${repo}`, 'webhook');
         trigger();
         return 202;
       });
+    },
+    async setupInstructions() {
+      if (!config.webhooks.enabled || endpoint === undefined) return [];
+      return Promise.all(
+        config.repositories.map(({ owner, repo }) =>
+          state.serialise(owner, repo, async () => ({
+            scope: `${owner}/${repo}`,
+            endpoint,
+            events: [...events],
+            secret: (await state.load(owner, repo)).secret,
+          })),
+        ),
+      );
     },
   };
 }
@@ -107,7 +121,6 @@ async function provisionRepository(
       saved.hookId !== undefined &&
       (await updateManagedHook(repository, endpoint, saved, client))
     ) {
-      health.recordSuccess(scope, 'webhook');
       return;
     }
     const hookId = await client.createHook({
@@ -117,7 +130,6 @@ async function provisionRepository(
       events: [...events],
     });
     await state.save(repository.owner, repository.repo, { ...saved, hookId });
-    health.recordSuccess(scope, 'webhook');
   } catch (error) {
     health.recordFailure(scope, 'webhook', error);
   }
