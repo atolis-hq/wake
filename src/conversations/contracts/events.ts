@@ -74,6 +74,8 @@ const origin = z.discriminatedUnion('kind', [
       resourceId: z.string().min(1),
       threadId: z.string().min(1),
       messageId: z.string().min(1),
+      authorized: z.boolean().optional(),
+      capabilities: z.array(z.string().min(1)).readonly().optional(),
       location: z
         .object({
           path: z.string().min(1),

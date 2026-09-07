@@ -17,6 +17,10 @@ export type ConversationEntryOrigin =
       readonly resourceId: string;
       readonly threadId: string;
       readonly messageId: string;
+      /** Authority established by the receiving surface before the entry is recorded. */
+      readonly authorized?: boolean | undefined;
+      /** Commands available to this entry's receiving surface. */
+      readonly capabilities?: readonly string[] | undefined;
       readonly location?:
         | {
             readonly path: string;

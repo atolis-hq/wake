@@ -12,3 +12,7 @@ export function conversationId(value: string): ConversationId {
 export function conversationIdForWorkItem(workItemId: WorkItemId): ConversationId {
   return conversationId(`conversation-${String(workItemId).slice('work-'.length)}`);
 }
+
+export function workItemIdForConversation(conversationIdValue: ConversationId): WorkItemId {
+  return `work-${String(conversationIdValue).slice('conversation-'.length)}` as WorkItemId;
+}

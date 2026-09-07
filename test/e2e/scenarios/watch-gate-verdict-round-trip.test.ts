@@ -26,6 +26,7 @@ import {
   ConversationSurfaceCapability,
   OrchestrationEventType,
   WatchGateVerdictSignal,
+  createConversationCommandReactor,
   signalName,
   workflowInstanceStream,
   workflowName,
@@ -188,6 +189,7 @@ it('E2E-WATCH-GATE-EXTEND-001 accepts an authorized GitHub /extend command after
     },
   );
   await processInbound(translator, fixture.world);
+  await processConversationCommands(fixture.world);
 
   expect(await fixture.world.events('integration.github.inbound-translation-retried')).toHaveLength(
     0,
@@ -344,6 +346,17 @@ async function processInbound(translator: InboundTranslator, world: TestWorld): 
     world.clock,
   );
   await host.runThrough(translator.processor, await world.journal.latestGlobalPosition());
+}
+
+async function processConversationCommands(world: TestWorld): Promise<void> {
+  const host = new EventProcessorHost(
+    world.journal,
+    world.checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    world.clock,
+  );
+  const processor = createConversationCommandReactor(world.orchestration).processor;
+  await host.runThrough(processor, await world.journal.latestGlobalPosition());
 }
 
 async function appendTerminalAgentRun(

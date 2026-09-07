@@ -223,7 +223,10 @@ export class InboundTranslator {
     try {
       if (isGitHubAdapterEventType(owned, GitHubEventType.WorkObserved)) await this.apply(owned);
       if (isGitHubAdapterEventType(owned, GitHubEventType.CommentObserved)) {
-        if (!(await this.suppressWorkItemEffects(owned)))
+        if (
+          owned.event.payload.reviewKind === 'formal' &&
+          !(await this.suppressWorkItemEffects(owned))
+        )
           await applyReviewSignal({
             event: owned,
             journal: this.journal!,
@@ -368,7 +371,7 @@ export class InboundTranslator {
         ),
       )
     )
-      return this.applyConversationCommand(correlation.workItemId, event);
+      return;
     if (priorEntry !== undefined) {
       if (priorEntry.body !== event.event.payload.body)
         await this.conversations.revise(
@@ -379,7 +382,7 @@ export class InboundTranslator {
           },
           commandContext(event),
         );
-      return this.applyConversationCommand(correlation.workItemId, event);
+      return;
     }
     await this.conversations.record(
       {
@@ -393,30 +396,13 @@ export class InboundTranslator {
           resourceId: resource.resourceId,
           threadId: resource.externalKey.key,
           messageId: externalId,
+          authorized: isAuthorizedConversationActor(event),
+          capabilities: this.conversationCapabilities,
           ...(event.event.payload.reviewKind !== 'issue' ||
           event.event.payload.location === undefined
             ? {}
             : { location: event.event.payload.location }),
         },
-      },
-      commandContext(event),
-    );
-    await this.applyConversationCommand(correlation.workItemId, event);
-  }
-
-  private async applyConversationCommand(
-    workItemId: WorkItemId,
-    event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
-  ): Promise<void> {
-    // Native formal reviews already carry their own verified decision and workflow signal.
-    if (event.event.payload.reviewKind !== 'issue') return;
-    await this.orchestration?.applyConversationCommand(
-      workItemId,
-      {
-        body: event.event.payload.body,
-        actorId: event.event.payload.actor.id,
-        capabilities: this.conversationCapabilities,
-        authorized: isAuthorizedConversationActor(event),
       },
       commandContext(event),
     );
