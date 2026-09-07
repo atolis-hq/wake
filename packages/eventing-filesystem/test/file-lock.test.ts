@@ -412,6 +412,7 @@ it('uses an incomplete record filename only after proving its stale owner dead',
       staleAfterMs: 60_000,
       staleRequiresDeadProcess: true,
       isProcessAlive: () => true,
+      processStartedAt: async () => new Date(0),
     }),
   ).resolves.toMatchObject({ acquired: false });
   const recovered = await acquireFileLock(path, {

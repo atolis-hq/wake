@@ -121,6 +121,42 @@ it('stays ok when every adapter health check is ok', async () => {
   expect(response.data.status).toBe('ok');
 });
 
+it('surfaces provider initialization failures as degraded adapter health', async () => {
+  const applications = createSurfaceApiApplications(
+    {
+      paths: { wakeRoot: tmpdir() },
+      config: {},
+      activationSchedulerSubscriber: { health: () => undefined },
+      processorRuntime: { processors: [], health: async () => [] },
+      providers: [],
+      providerFailures: [
+        {
+          adapter: 'github',
+          provider: 'github',
+          error:
+            'GitHub authentication is unavailable. Run `wake sandbox setup` and complete `gh auth login`.',
+        },
+      ],
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+
+  const response = await applications.system.health();
+
+  expect(response.data.status).toBe('degraded');
+  expect(response.data.adapters).toContainEqual({
+    adapter: 'github',
+    provider: 'github',
+    scope: 'configuration',
+    channel: 'initialization',
+    status: 'degraded',
+    detail:
+      'GitHub authentication is unavailable. Run `wake sandbox setup` and complete `gh auth login`.',
+    successCount: 0,
+    failureCount: 1,
+  });
+});
+
 it('surfaces durable activation scheduler subscription health', async () => {
   const applications = createSurfaceApiApplications(
     {

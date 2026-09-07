@@ -140,6 +140,14 @@ describe('CLI infrastructure', () => {
     await docker.up();
     await docker.down();
     expect(calls).toEqual([
+      [
+        'build',
+        '-t',
+        'wake-sandbox-runtime:managed',
+        '-f',
+        expect.stringContaining('docker/Dockerfile.runtime.packaged'),
+        '/wake-root',
+      ],
       ['build', '-t', 'wake-sandbox', '-f', '/wake-root/docker/Dockerfile.packaged', '/wake-root'],
       [
         'run',
@@ -153,6 +161,18 @@ describe('CLI infrastructure', () => {
         '-v',
         '/wake-root:/wake',
         'wake-sandbox',
+      ],
+      [
+        'exec',
+        '-u',
+        'root',
+        'wake-sandbox',
+        'sh',
+        '-c',
+        'mkdir -p "$1" "$2" && chown wake:wake "$1" "$2" && find "$2" -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} +',
+        'wake-sandbox-runtime-ownership',
+        '/wake/workspaces',
+        '/wake/.wake/auth',
       ],
       ['stop', '--time', '60', 'wake-sandbox'],
     ]);
@@ -215,6 +235,18 @@ describe('CLI infrastructure', () => {
         '-e',
         'WAKE_START_ENABLED=true',
         'configured-image',
+      ],
+      [
+        'exec',
+        '-u',
+        'root',
+        'configured-name',
+        'sh',
+        '-c',
+        'mkdir -p "$1" "$2" && chown wake:wake "$1" "$2" && find "$2" -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} +',
+        'wake-sandbox-runtime-ownership',
+        '/workspace/workspaces',
+        '/workspace/.wake/auth',
       ],
     ]);
   });
@@ -288,7 +320,7 @@ describe('CLI infrastructure', () => {
     await docker.up();
     expect(calls[0]).toEqual(expect.arrayContaining(['-p', '127.0.0.1:4317:4317']));
   });
-  it('does not create a second container when the sandbox is already running', async () => {
+  it('repairs workspace ownership without creating a second container when the sandbox is already running', async () => {
     const calls: string[][] = [];
     const docker = createSandboxDockerPort(
       createDockerCli(async (arguments_) => {
@@ -302,7 +334,20 @@ describe('CLI infrastructure', () => {
       },
     );
     await docker.up();
-    expect(calls).toEqual([]);
+    expect(calls).toEqual([
+      [
+        'exec',
+        '-u',
+        'root',
+        'wake-sandbox',
+        'sh',
+        '-c',
+        'mkdir -p "$1" "$2" && chown wake:wake "$1" "$2" && find "$2" -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} +',
+        'wake-sandbox-runtime-ownership',
+        '/wake/workspaces',
+        '/wake/.wake/auth',
+      ],
+    ]);
   });
 
   it('starts an existing stopped sandbox rather than recreating it', async () => {
@@ -319,7 +364,21 @@ describe('CLI infrastructure', () => {
       },
     );
     await docker.up();
-    expect(calls).toEqual([['start', 'wake-sandbox']]);
+    expect(calls).toEqual([
+      ['start', 'wake-sandbox'],
+      [
+        'exec',
+        '-u',
+        'root',
+        'wake-sandbox',
+        'sh',
+        '-c',
+        'mkdir -p "$1" "$2" && chown wake:wake "$1" "$2" && find "$2" -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} +',
+        'wake-sandbox-runtime-ownership',
+        '/wake/workspaces',
+        '/wake/.wake/auth',
+      ],
+    ]);
   });
 
   it('requires an image before starting the sandbox', async () => {

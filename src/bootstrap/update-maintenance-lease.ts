@@ -35,6 +35,7 @@ export interface UpdateMaintenanceLease {
   ): Promise<UpdateMaintenanceState>;
   fail(error: unknown, attemptId?: string): Promise<UpdateMaintenanceState>;
   clear(attemptId?: string): Promise<void>;
+  clearFailed(attemptId: string): Promise<void>;
 }
 
 export function createUpdateMaintenanceLease(
@@ -108,6 +109,15 @@ export function createUpdateMaintenanceLease(
         await rm(path, { force: true });
       });
     },
+    async clearFailed(attemptId) {
+      await withLeaseLock(path, async () => {
+        const current = await requireState(path);
+        requireOwnership(current, attemptId);
+        if (current.phase !== UpdateMaintenancePhase.Failed)
+          throw new Error('Only a failed maintenance lease can be cleared by an operator');
+        await rm(path, { force: true });
+      });
+    },
   };
 }
 
@@ -177,7 +187,10 @@ async function withLeaseLock<Value>(path: string, operation: () => Promise<Value
   while (true) {
     let lock;
     try {
-      lock = await acquireFileLock(lockPath, { staleAfterMs: 60_000 });
+      lock = await acquireFileLock(lockPath, {
+        staleAfterMs: 60_000,
+        staleRequiresDeadProcess: true,
+      });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
       await new Promise<void>((resolve) => setTimeout(resolve, 1));

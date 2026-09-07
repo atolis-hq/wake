@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { gitHubIssueQueryFilters } from '../../../../src/integrations/github/application/intake-policy.js';
+import { evaluateIntakeRules } from '../../../../src/integrations/contracts/intake-rules.js';
+import {
+  gitHubIntakeFacts,
+  gitHubIntakeRules,
+  gitHubIssueQueryFilters,
+} from '../../../../src/integrations/github/application/intake-policy.js';
 import { gitHubConfigSchema } from '../../../../src/integrations/github/contracts/config.js';
 
 function intake(
   rules: readonly {
     readonly requiredAssignees?: readonly string[];
     readonly labels?: readonly string[];
+    readonly state?: readonly ('open' | 'closed' | 'merged')[];
   }[],
 ) {
   return gitHubConfigSchema.parse({
@@ -13,6 +19,7 @@ function intake(
     repositories: [{ owner: 'owner', repo: 'repo' }],
     intake: rules.map((rule) => ({
       where: {
+        state: rule.state ?? [],
         requiredAssignees: rule.requiredAssignees ?? [],
         labels: rule.labels ?? [],
       },
@@ -62,5 +69,26 @@ describe('gitHubIssueQueryFilters', () => {
     ['multiple labels', [{ labels: ['one', 'two'] }], {}],
   ])('omits filters for %s', (_description, rules, expected) => {
     expect(gitHubIssueQueryFilters(intake(rules))).toEqual(expected);
+  });
+});
+
+describe('gitHubIntakeRules', () => {
+  it('admits only configured states without changing the provider poll query', () => {
+    const rules = gitHubIntakeRules(intake([{ state: ['open'] }]));
+    const facts = (state: 'open' | 'closed') =>
+      gitHubIntakeFacts({
+        externalKey: 'owner/repo#1',
+        kind: 'issue',
+        title: 'Issue',
+        body: '',
+        state,
+        revision: state,
+        actor: { id: 'author', kind: 'human' },
+        raw: {},
+      });
+
+    expect(evaluateIntakeRules(rules, facts('open')).admitted).toBe(true);
+    expect(evaluateIntakeRules(rules, facts('closed')).admitted).toBe(false);
+    expect(gitHubIssueQueryFilters(intake([{ state: ['open'] }]))).toEqual({});
   });
 });

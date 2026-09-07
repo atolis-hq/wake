@@ -24,6 +24,7 @@ walkthrough and [Configuration](configuration.md) for Wake-home settings.
 | `wake run resolve <run-id> --succeeded (--outcome <json> \| --outcome-file <path>)` | Records an operator-confirmed, Activity-schema-validated success for an escalated ambiguous Run. |
 | `wake run resolve <run-id> --failed --reason <message>` | Records an operator-confirmed failure for an escalated ambiguous Run. |
 | `wake self-update` | Safely updates a source installation. |
+| `wake maintenance clear --failed` | Explicitly abandons a retained failed self-update maintenance lease and resumes normal intake and dispatch. It refuses an active update lease. |
 | `wake --help` / `wake --version` | Shows the authoritative command summary / installed version. |
 | `wake ui token` | Creates a single-use login grant valid for ten minutes and prints local/public login links with QR codes. |
 
@@ -41,6 +42,12 @@ walkthrough and [Configuration](configuration.md) for Wake-home settings.
 The Dockerfile template is selected from `host.development.mode`: source mode
 uses the configured `host.development.repoRoot`; packaged mode uses the
 installed package. `host.development.repoRoot` is required for source mode.
+
+`wake self-update` resolves the configured `host.selfUpdate.npm` package's
+dist-tag by default. Use `--version <exact-version>` to pin an npm release, or
+`--source <repo-root> [--tag <git-tag>]` for a one-off source update without
+changing `config.yaml`. `--loop` repeats either form at the selected interval
+and writes the result of every check or failure to standard error.
 
 ## Operational model
 

@@ -117,6 +117,25 @@ describe('update maintenance lease', () => {
     await expect(lease.read()).resolves.toBeNull();
   });
 
+  it('allows an operator to clear only the failed lease they observed', async () => {
+    const root = await createRoot(roots);
+    const lease = createUpdateMaintenanceLease(
+      root,
+      () => '2026-08-11T10:00:00.000Z',
+      () => 'attempt-1',
+    );
+    await lease.acquire('v2.0.0');
+
+    await expect(lease.clearFailed('attempt-1')).rejects.toThrow(
+      'Only a failed maintenance lease can be cleared by an operator',
+    );
+    await lease.fail(new Error('sandbox health check failed'));
+    await expect(lease.clearFailed('stale-attempt')).rejects.toThrow('no longer owns the lease');
+    await lease.clearFailed('attempt-1');
+
+    await expect(lease.read()).resolves.toBeNull();
+  });
+
   it('atomically replaces a failed attempt only for a different candidate tag', async () => {
     const root = await createRoot(roots);
     let attempt = 0;

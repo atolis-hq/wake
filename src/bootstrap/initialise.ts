@@ -408,7 +408,7 @@ ENV WAKE_MAIN_JS=/app/dist/src/main.js
 # Startup ownership repair is best effort because bind-mounted paths or host
 # permissions may prevent chown. The bounded direct-child pass avoids traversing
 # accumulated runtime data.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth; chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; find /wake/.wake/auth -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} + || true; if [ -n \\"\${WAKE_HOME_INIT_DIRS:-}\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"\${WAKE_HOME_INIT_ROOT:-}\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
 `;
 
 const packagedDockerfile = `# syntax=docker/dockerfile:1
@@ -463,7 +463,7 @@ RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash \\
   && chown -R wake:wake /home/wake/.local
 
 USER root
-WORKDIR /home/wake
+WORKDIR /wake
 
 EXPOSE 4317
 
@@ -476,7 +476,11 @@ EXPOSE 4317
 # Startup ownership repair is best effort because bind-mounted paths or host
 # permissions may prevent chown. The bounded direct-child pass avoids traversing
 # accumulated runtime data.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown wake:wake /wake/.wake || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth; chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; find /wake/.wake/auth -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} + || true; if [ -n \\"\${WAKE_HOME_INIT_DIRS:-}\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"\${WAKE_HOME_INIT_ROOT:-}\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
+`;
+
+const userDockerfile = `# User-owned sandbox extension. Wake updates the managed runtime image separately.
+FROM wake-sandbox-runtime:managed
 `;
 
 /** Creates an immediately-valid, human-readable target Wake root. */
@@ -488,8 +492,13 @@ export async function initialiseWakeRoot(wakeRoot: string): Promise<{ readonly w
     'prompts/refine.md': refinePrompt,
     'prompts/implement.md': implementPrompt,
     'SETUP.md': setupMd,
-    'docker/Dockerfile': dockerfile,
-    'docker/Dockerfile.packaged': packagedDockerfile,
+    'docker/Dockerfile': userDockerfile,
+    'docker/Dockerfile.packaged': userDockerfile,
+    // Retained as inspected reference assets for a newly initialized home.
+    // Wake builds from its installed copies so future npm updates are not
+    // coupled to these user-visible files.
+    'docker/Dockerfile.runtime': dockerfile,
+    'docker/Dockerfile.runtime.packaged': packagedDockerfile,
   });
   return { wakeRoot };
 }

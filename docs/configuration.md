@@ -160,6 +160,7 @@ integrations:
     intake:
       - where:
           kind: issue
+          state: [open]
           requiredAssignees: []
           requiredAuthors: []
           labels: [automation]
@@ -218,9 +219,6 @@ host:
     extraMounts: []
   development:
     mode: packaged
-  selfUpdate:
-    drainTimeoutMs: 30000
-    cancellationTimeoutMs: 30000
 ```
 
 `config.workflows.yaml`:
@@ -462,10 +460,12 @@ Each `intake[]` rule has `where`, optional `matchMode` (`any` by default or
 observation carrying any `ignoredLabels` value is discarded before Wake creates
 or correlates work, regardless of whether it otherwise matches an intake rule.
 `where.kind` is `issue` or
-`pull-request`; `where.requiredAssignees`, `where.requiredAuthors`, and
-`where.labels` are string lists, each defaulting to `[]`. Intake tags must not
-use a Wake-owned marker family, so Wake cannot ingest and reroute its own
-markers.
+`pull-request`; `where.state` is an optional list of `open`, `closed`, or
+`merged` states, and `where.requiredAssignees`, `where.requiredAuthors`, and
+`where.labels` are string lists, each defaulting to `[]`. State restricts
+admission only: Wake continues to poll all states so it can reconcile closure
+of work it already admitted. Intake tags must not use a Wake-owned marker
+family, so Wake cannot ingest and reroute its own markers.
 
 `publication.replies.rules` controls where terminal agent-run reply comments go. Each rule has a
 required `target` of `primary`, `issue`, `pull-request`, or `none`; `none` suppresses the comment.
@@ -593,8 +593,11 @@ fields are for deterministic testing, not normal operation.
 | `host.sandbox.extraMounts` | list; default `[]` | Explicit additional bind mounts. Each is `{ source, target, readOnly? }`; `source` and `target` are non-empty strings. |
 | `host.development.mode` | `source` or `packaged`; optional | Installation mode used for development and self-update routing. |
 | `host.development.repoRoot` | non-empty string; optional | Source checkout path. Required when `mode: source`. |
-| `host.selfUpdate.drainTimeoutMs` | positive integer; default `30000` | Maximum wait for a controlled update drain. |
-| `host.selfUpdate.cancellationTimeoutMs` | positive integer; default `30000` | Maximum wait for cancellation during controlled self-update. |
+| `host.selfUpdate.drainTimeoutMs` | positive integer; deprecated | Accepted for compatibility but ignored: self-update waits for active Runs to finish. |
+| `host.selfUpdate.cancellationTimeoutMs` | positive integer; deprecated | Accepted for compatibility but ignored: self-update never cancels active Runs. |
+| `host.selfUpdate.npm.package` | non-empty string; default `@atolis-hq/wake` | npm package to resolve for packaged self-updates. |
+| `host.selfUpdate.npm.distTag` | non-empty string; default `latest` | npm dist-tag checked by `wake self-update` and its loop. |
+| `host.selfUpdate.npm.registry` | URL; optional | npm registry used to resolve the package version. |
 
 ### Temporary runner memory profile
 

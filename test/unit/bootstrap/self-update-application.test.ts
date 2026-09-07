@@ -25,8 +25,6 @@ describe('self-update application: update operations', () => {
       ledger: ledger('v1', calls),
       source: source(calls),
       quiesce: quiesce(calls, [[]]),
-      drainTimeoutMs: 100,
-      cancellationTimeoutMs: 100,
     });
 
     await expect(application.update('v2')).resolves.toBe(true);
@@ -41,14 +39,12 @@ describe('self-update application: update operations', () => {
     ]);
   });
 
-  it('requests durable maintenance cancellation after the drain grace expires', async () => {
+  it('waits for active Runs to finish without requesting cancellation', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
       ledger: ledger('v1', calls),
       source: source(calls),
       quiesce: quiesce(calls, [['run-1'], ['run-1'], []]),
-      drainTimeoutMs: 100,
-      cancellationTimeoutMs: 100,
     });
 
     await expect(application.update('v2')).resolves.toBe(true);
@@ -57,110 +53,13 @@ describe('self-update application: update operations', () => {
       'active',
       'sleep:100',
       'active',
-      'cancel:run-1',
+      'sleep:100',
       'active',
       'begin:v2',
       'phase:updating',
       'checkout:v2',
       'ledger:v2',
       'clear',
-    ]);
-  });
-
-  it('continues when a concurrent completion makes a failed cancellation request irrelevant', async () => {
-    const calls: string[] = [];
-    const base = quiesce(calls, [['run-1'], ['run-1'], [], []]);
-    const application = createSelfUpdateApplication({
-      ledger: ledger('v1', calls),
-      source: source(calls),
-      quiesce: {
-        ...base,
-        requestMaintenanceCancellation: async (runIds: readonly string[]) => {
-          calls.push(`cancel:${runIds.join(',')}`);
-          throw new Error('journal lock lost to completion');
-        },
-      },
-      drainTimeoutMs: 100,
-      cancellationTimeoutMs: 100,
-    });
-
-    await expect(application.update('v2')).resolves.toBe(true);
-    expect(calls).toEqual([
-      'quiesce:v2',
-      'active',
-      'sleep:100',
-      'active',
-      'cancel:run-1',
-      'active',
-      'begin:v2',
-      'phase:updating',
-      'checkout:v2',
-      'ledger:v2',
-      'clear',
-    ]);
-  });
-
-  it('refuses to checkout when maintenance cancellation remains unconfirmed', async () => {
-    const calls: string[] = [];
-    const application = createSelfUpdateApplication({
-      ledger: ledger('v1', calls),
-      source: source(calls),
-      quiesce: quiesce(calls, [['run-1'], ['run-1'], ['run-1'], ['run-1']]),
-      drainTimeoutMs: 100,
-      cancellationTimeoutMs: 100,
-    });
-
-    await expect(application.update('v2')).rejects.toThrow('active Runs remain');
-    expect(calls).toEqual([
-      'quiesce:v2',
-      'active',
-      'sleep:100',
-      'active',
-      'cancel:run-1',
-      'active',
-      'sleep:100',
-      'active',
-      'quiesce-failed:active Runs remain after maintenance cancellation: run-1',
-      'bad:v2',
-    ]);
-  });
-
-  it('surfaces a failed maintenance-lease write while retaining the unresolved Run context', async () => {
-    const calls: string[] = [];
-    const application = createSelfUpdateApplication({
-      ledger: ledger('v1', calls),
-      source: source(calls),
-      quiesce: quiesce(
-        calls,
-        [['run-1'], ['run-1'], ['run-1'], ['run-1']],
-        new Error('maintenance lease store unavailable'),
-      ),
-      drainTimeoutMs: 100,
-      cancellationTimeoutMs: 100,
-    });
-
-    const error = await application.update('v2').catch((failure: unknown) => failure);
-
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain('Could not persist failed maintenance lease');
-    expect((error as Error).message).toContain('maintenance lease store unavailable');
-    expect((error as Error).message).toContain(
-      'active Runs remain after maintenance cancellation: run-1',
-    );
-    expect((error as Error & { cause?: unknown }).cause).toMatchObject({
-      message: 'maintenance lease store unavailable',
-    });
-    expect(calls).toEqual([
-      'quiesce:v2',
-      'active',
-      'sleep:100',
-      'active',
-      'cancel:run-1',
-      'active',
-      'sleep:100',
-      'active',
-      'quiesce-failed:active Runs remain after maintenance cancellation: run-1',
-      'bad:v2',
     ]);
   });
 
@@ -311,7 +210,11 @@ describe('self-update application: update operations', () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
       ledger: { ...ledger('v1', calls), recover: async () => (calls.push('recover'), 'v1') },
-      source: { ...source(calls), healthy: async () => false },
+      source: {
+        ...source(calls),
+        candidateTags: async () => ['v3', 'v2'],
+        healthy: async () => false,
+      },
       quiesce: {
         ...quiesce(calls, [[]]),
         acquire: async (tag: string) => {
@@ -336,26 +239,6 @@ describe('self-update application: update operations', () => {
     ]);
   });
 
-  it('keeps an ambiguous Run as a drain blocker without attempting to cancel it', async () => {
-    const calls: string[] = [];
-    const application = createSelfUpdateApplication({
-      ledger: ledger('v1', calls),
-      source: source(calls),
-      quiesce: quiesce(calls, [[{ runId: 'run-ambiguous', maintenanceCancellable: false }]]),
-      drainTimeoutMs: 0,
-      cancellationTimeoutMs: 0,
-    });
-    await expect(application.update('v2')).rejects.toThrow('run-ambiguous');
-    expect(calls).toEqual([
-      'quiesce:v2',
-      'active',
-      'cancel:',
-      'active',
-      'quiesce-failed:active Runs remain after maintenance cancellation: run-ambiguous',
-      'bad:v2',
-    ]);
-  });
-
   it('skips a known bad tag unless an operator explicitly forces a retry', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
@@ -374,15 +257,15 @@ describe('self-update application: update operations', () => {
     expect(calls).toEqual([]);
   });
 
-  it('clears maintenance when the requested tag is already healthy', async () => {
+  it('does not acquire maintenance when the latest candidate is already healthy', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
       ledger: ledger('v2', calls),
       source: source(calls),
       quiesce: quiesce(calls, [[]]),
     });
-    await expect(application.update('v2')).resolves.toBe(false);
-    expect(calls).toEqual(['quiesce:v2', 'active', 'clear']);
+    await expect(application.updateLatest()).resolves.toEqual({ tag: 'v2', updated: false });
+    expect(calls).toEqual([]);
   });
 
   it('clears maintenance when the requested tag is already known bad', async () => {
@@ -415,7 +298,6 @@ function quiesce(
     | readonly string[]
     | readonly { readonly runId: string; readonly maintenanceCancellable: boolean }[]
   )[],
-  failError?: Error,
 ) {
   let now = 0;
   let index = 0;
@@ -435,9 +317,6 @@ function quiesce(
         typeof run === 'string' ? { runId: run, maintenanceCancellable: true } : run,
       );
     },
-    requestMaintenanceCancellation: async (runIds: readonly string[]) => {
-      calls.push(`cancel:${runIds.join(',')}`);
-    },
     sleep: async (milliseconds: number) => {
       calls.push(`sleep:${milliseconds}`);
       now += milliseconds;
@@ -445,7 +324,6 @@ function quiesce(
     now: () => now,
     fail: async (error: unknown) => {
       calls.push(`quiesce-failed:${error instanceof Error ? error.message : String(error)}`);
-      if (failError !== undefined) throw failError;
     },
     transition: async (phase: string) => {
       calls.push(`phase:${phase}`);
@@ -457,7 +335,7 @@ function quiesce(
 }
 
 describe('self-update application: updateLatest with bad tag handling', () => {
-  it('continues to an older candidate when a failed update rolls back successfully', async () => {
+  it('tries a later candidate after a newer update fails and rolls back', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
       ledger: ledger('v1.0.0', calls),
@@ -573,7 +451,7 @@ describe('self-update application: updateLatest with bad tag handling', () => {
       },
     });
     await expect(application.updateLatest()).resolves.toEqual({
-      tag: 'v1.0.0',
+      tag: 'v2.0.0',
       updated: false,
     });
     expect(calls).toEqual([]);

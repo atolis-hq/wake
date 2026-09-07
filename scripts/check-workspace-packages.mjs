@@ -15,6 +15,15 @@ function fail(message) {
   throw new Error(message);
 }
 
+function suppliedArchivePath() {
+  const arguments_ = process.argv.slice(2);
+  if (arguments_.length === 0) return undefined;
+  if (arguments_.length !== 2 || arguments_[0] !== '--archive') {
+    fail('Usage: check-workspace-packages.mjs [--archive <path>]');
+  }
+  return resolve(repoRoot, arguments_[1]);
+}
+
 function run(command, arguments_, cwd) {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(command, arguments_, {
@@ -81,18 +90,32 @@ function publicDistEntries(manifest) {
 }
 
 function parsePackOutput(output, label) {
-  let jsonStart = output.lastIndexOf('[');
-  while (jsonStart >= 0) {
-    try {
-      const entries = JSON.parse(output.slice(jsonStart).trim());
-      if (Array.isArray(entries)) {
-        const entry = entries[0];
-        if (entry !== undefined && typeof entry === 'object') return entry;
-      }
-    } catch {
-      // Lifecycle output can contain bracket-prefixed build warnings before npm's final JSON array.
+  const jsonStarts = [0];
+  let lineStart = 0;
+  while (lineStart < output.length) {
+    const lineEnd = output.indexOf('\n', lineStart);
+    if (lineStart > 0 && (output[lineStart] === '[' || output[lineStart] === '{')) {
+      jsonStarts.push(lineStart);
     }
-    jsonStart = output.lastIndexOf('[', jsonStart - 1);
+    if (lineEnd === -1) break;
+    lineStart = lineEnd + 1;
+  }
+  for (const jsonStart of jsonStarts.reverse()) {
+    try {
+      const result = JSON.parse(output.slice(jsonStart).trim());
+      const entries = Array.isArray(result) ? result : Object.values(result);
+      const entry = entries.find(
+        (candidate) =>
+          candidate !== null &&
+          typeof candidate === 'object' &&
+          typeof candidate.filename === 'string' &&
+          typeof candidate.name === 'string' &&
+          typeof candidate.version === 'string',
+      );
+      if (entry !== undefined) return entry;
+    } catch {
+      // Lifecycle output can precede npm's final JSON report.
+    }
   }
 
   fail(`${label} npm pack did not return archive JSON metadata.`);
@@ -211,6 +234,7 @@ async function verifyCleanInstall(manifest, archive, projectDirectory) {
 
 async function main() {
   const [{ directory, label }] = packageLocations;
+  const suppliedArchive = suppliedArchivePath();
   const manifest = await readManifest(directory);
   if (manifest.dependencies?.['@atolis-hq/eventing'] !== undefined) {
     fail('Wake must embed Eventing instead of declaring it as a dependency.');
@@ -221,22 +245,37 @@ async function main() {
 
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), 'wake-workspace-packages-'));
   try {
-    const archiveDirectory = resolve(temporaryDirectory, 'archives');
     const installDirectory = resolve(temporaryDirectory, 'install');
-    await Promise.all([mkdir(archiveDirectory), mkdir(installDirectory)]);
+    await mkdir(installDirectory);
 
     const dryRun = parsePackOutput(
-      (await runNpm(['pack', '--dry-run', '--json'], directory)).stdout,
+      (
+        await runNpm(
+          [
+            'pack',
+            '--dry-run',
+            ...(suppliedArchive === undefined ? [] : ['--ignore-scripts']),
+            '--json',
+          ],
+          directory,
+        )
+      ).stdout,
       label,
     );
     verifyPackedEntries(manifest, dryRun, label);
 
-    const packed = parsePackOutput(
-      (await runNpm(['pack', '--json', '--pack-destination', archiveDirectory], directory)).stdout,
-      label,
-    );
-    verifyPackedEntries(manifest, packed, label);
-    const archive = archivePath(packed, archiveDirectory, label);
+    let archive = suppliedArchive;
+    if (archive === undefined) {
+      const archiveDirectory = resolve(temporaryDirectory, 'archives');
+      await mkdir(archiveDirectory);
+      const packed = parsePackOutput(
+        (await runNpm(['pack', '--json', '--pack-destination', archiveDirectory], directory))
+          .stdout,
+        label,
+      );
+      verifyPackedEntries(manifest, packed, label);
+      archive = archivePath(packed, archiveDirectory, label);
+    }
     if (!(await stat(archive)).isFile()) fail(`${label} archive was not written: ${archive}`);
 
     await verifyCleanInstall(manifest, archive, installDirectory);

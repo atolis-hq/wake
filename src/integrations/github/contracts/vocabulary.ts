@@ -60,6 +60,7 @@ export function isGitHubWakeMarker(label: string): boolean {
 // Facets a GitHub intake rule may constrain, and the observation fields they read.
 export const GitHubIntakeFacet = {
   Kind: 'kind',
+  State: 'state',
   Label: 'label',
   Assignee: 'assignee',
   Author: 'author',

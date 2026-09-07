@@ -103,6 +103,32 @@ describe('self-update', () => {
     expect(tags).toEqual(['update']);
   });
 
+  it('reports each completed check and isolated failure to the loop log', async () => {
+    const messages: string[] = [];
+    let attempts = 0;
+    let waits = 0;
+
+    await expect(
+      runSelfUpdateLatestLoop(
+        async () => {
+          attempts += 1;
+          if (attempts === 1) return { tag: 'v2', updated: false };
+          throw new Error('active runs are still draining');
+        },
+        async () => {
+          waits += 1;
+          if (waits === 2) throw new Error('shutdown');
+        },
+        (message) => messages.push(message),
+      ),
+    ).rejects.toThrow('shutdown');
+
+    expect(messages).toEqual([
+      'wake self-update: no eligible update v2',
+      'wake self-update: active runs are still draining',
+    ]);
+  });
+
   it('skips a failed tag on the next loop iteration and applies a newly published tag once', async () => {
     const calls: string[] = [];
     const badTags = new Set<string>();

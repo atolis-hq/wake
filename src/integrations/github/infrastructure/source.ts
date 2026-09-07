@@ -184,7 +184,7 @@ async function pollRepository(input: {
     }).poll(signal),
     reviewEventsFor(context, pullRequestPayloads),
     reviewCommentEventsFor(context, pullRequestPayloads),
-    issueCommentEventsFor(context, issues, since),
+    issueCommentEventsFor(context, [...issues, ...pullRequestPayloads], since),
   ]);
   return {
     repository: context.repository,

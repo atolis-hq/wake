@@ -12,6 +12,7 @@ export function gitHubIntakeRules(
   return configured.map((rule) => ({
     where: {
       ...(rule.where.kind === undefined ? {} : { [GitHubIntakeFacet.Kind]: [rule.where.kind] }),
+      [GitHubIntakeFacet.State]: rule.where.state,
       [GitHubIntakeFacet.Label]: rule.where.labels,
       [GitHubIntakeFacet.Assignee]: rule.where.requiredAssignees,
       [GitHubIntakeFacet.Author]: rule.where.requiredAuthors,
@@ -53,6 +54,7 @@ function sharedRequiredValue(
 export function gitHubIntakeFacts(payload: ExternalWorkObservedPayload): IntakeFacts {
   return {
     [GitHubIntakeFacet.Kind]: [payload.kind],
+    [GitHubIntakeFacet.State]: [payload.state],
     [GitHubIntakeFacet.Label]: payload.labels ?? [],
     [GitHubIntakeFacet.Assignee]: payload.assignees ?? [],
     [GitHubIntakeFacet.Author]: [payload.actor.id],

@@ -97,11 +97,23 @@ const hostConfigSchema = z
       .default({}),
     selfUpdate: z
       .object({
-        drainTimeoutMs: z.number().int().positive().default(30_000),
-        cancellationTimeoutMs: z.number().int().positive().default(30_000),
+        // Retained only so existing strict configs continue to load. Self-update
+        // now waits indefinitely for active Runs and never cancels them.
+        drainTimeoutMs: z.number().int().positive().optional(),
+        cancellationTimeoutMs: z.number().int().positive().optional(),
+        npm: z
+          .object({
+            package: z.string().trim().min(1).default('@atolis-hq/wake'),
+            distTag: z.string().trim().min(1).default('latest'),
+            registry: z.string().url().optional(),
+          })
+          .strict()
+          .default({ package: '@atolis-hq/wake', distTag: 'latest' }),
       })
       .strict()
-      .default({ drainTimeoutMs: 30_000, cancellationTimeoutMs: 30_000 }),
+      .default({
+        npm: { package: '@atolis-hq/wake', distTag: 'latest' },
+      }),
   })
   .strict()
   .default({
@@ -115,7 +127,9 @@ const hostConfigSchema = z
       extraMounts: [],
     },
     development: {},
-    selfUpdate: { drainTimeoutMs: 30_000, cancellationTimeoutMs: 30_000 },
+    selfUpdate: {
+      npm: { package: '@atolis-hq/wake', distTag: 'latest' },
+    },
   })
   .superRefine((value, context) => {
     if (value.development.mode === 'source' && value.development.repoRoot === undefined)

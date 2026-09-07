@@ -3,8 +3,10 @@ import {
   createDockerCli,
   createLoggedDockerCli,
   createSandboxDockerPort,
+  promoteSandboxImage,
   verifyResidentStart,
 } from '../../../src/surfaces/cli/infrastructure/docker-cli.js';
+import { describeSandboxStartupFailure } from '../../../src/surfaces/cli/infrastructure/sandbox-startup-failure.js';
 
 describe('sandbox build version tagging', () => {
   it('stamps a source-mode build with the resolved version as WAKE_BUILD_TAG', async () => {
@@ -22,18 +24,30 @@ describe('sandbox build version tagging', () => {
       },
     );
     await docker.build();
-    expect(calls).toEqual([
-      [
-        'build',
-        '-t',
-        'wake-sandbox',
-        '-f',
-        '/wake-root/docker/Dockerfile',
-        '--build-arg',
-        'WAKE_BUILD_TAG=v1.2.3+gabc1234',
-        '/repo-root',
-      ],
-    ]);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        [
+          'build',
+          '-t',
+          'wake-sandbox-runtime:managed',
+          '-f',
+          expect.stringContaining('docker/Dockerfile.runtime'),
+          '--build-arg',
+          'WAKE_BUILD_TAG=v1.2.3+gabc1234',
+          '/repo-root',
+        ],
+        [
+          'build',
+          '-t',
+          'wake-sandbox',
+          '-f',
+          '/wake-root/docker/Dockerfile',
+          '--build-arg',
+          'WAKE_BUILD_TAG=v1.2.3+gabc1234',
+          '/repo-root',
+        ],
+      ]),
+    );
   });
 
   it('stamps a packaged build with the resolved version as WAKE_VERSION', async () => {
@@ -51,18 +65,30 @@ describe('sandbox build version tagging', () => {
       },
     );
     await docker.build();
-    expect(calls).toEqual([
-      [
-        'build',
-        '-t',
-        'wake-sandbox',
-        '-f',
-        '/wake-root/docker/Dockerfile.packaged',
-        '--build-arg',
-        'WAKE_VERSION=1.4.0',
-        '/wake-root',
-      ],
-    ]);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        [
+          'build',
+          '-t',
+          'wake-sandbox-runtime:managed',
+          '-f',
+          expect.stringContaining('docker/Dockerfile.runtime.packaged'),
+          '--build-arg',
+          'WAKE_VERSION=1.4.0',
+          '/wake-root',
+        ],
+        [
+          'build',
+          '-t',
+          'wake-sandbox',
+          '-f',
+          '/wake-root/docker/Dockerfile.packaged',
+          '--build-arg',
+          'WAKE_VERSION=1.4.0',
+          '/wake-root',
+        ],
+      ]),
+    );
   });
 
   it('uses the packaged Dockerfile when development mode is not configured', async () => {
@@ -74,9 +100,85 @@ describe('sandbox build version tagging', () => {
       { wakeRoot: '/wake-root', image: 'wake-sandbox', containerName: 'wake-sandbox' },
     );
     await docker.build();
-    expect(calls).toEqual([
-      ['build', '-t', 'wake-sandbox', '-f', '/wake-root/docker/Dockerfile.packaged', '/wake-root'],
-    ]);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        [
+          'build',
+          '-t',
+          'wake-sandbox-runtime:managed',
+          '-f',
+          expect.stringContaining('docker/Dockerfile.runtime.packaged'),
+          '/wake-root',
+        ],
+        [
+          'build',
+          '-t',
+          'wake-sandbox',
+          '-f',
+          '/wake-root/docker/Dockerfile.packaged',
+          '/wake-root',
+        ],
+      ]),
+    );
+  });
+
+  it('promotes a verified versioned image to the configured sandbox image', async () => {
+    const calls: string[][] = [];
+    await promoteSandboxImage(
+      createDockerCli(async (arguments_) => {
+        calls.push([...arguments_]);
+      }),
+      'wake-sandbox:1.4.0',
+      'wake-sandbox',
+    );
+    expect(calls).toEqual([['tag', 'wake-sandbox:1.4.0', 'wake-sandbox']]);
+  });
+
+  it('does not retag when the verified image is already the configured image', async () => {
+    const calls: string[][] = [];
+    await promoteSandboxImage(
+      createDockerCli(async (arguments_) => {
+        calls.push([...arguments_]);
+      }),
+      'wake-sandbox',
+      'wake-sandbox',
+    );
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('describeSandboxStartupFailure', () => {
+  it('preserves the startup failure and includes scrubbed replacement logs', async () => {
+    const calls: string[][] = [];
+    const failure = await describeSandboxStartupFailure(
+      createDockerCli(async (arguments_) => {
+        calls.push([...arguments_]);
+        return { stdout: 'wake: configuration rejected token=super-secret\n', stderr: '' };
+      }),
+      'wake-sandbox',
+      new Error('container is not running'),
+    );
+
+    expect(failure.message).toBe(
+      'Sandbox replacement "wake-sandbox" failed during startup: container is not running\n' +
+        'Container logs:\nwake: configuration rejected token=[REDACTED]',
+    );
+    expect(calls).toEqual([['logs', '--tail', '100', 'wake-sandbox']]);
+  });
+
+  it('retains the original failure when replacement logs cannot be read', async () => {
+    const failure = await describeSandboxStartupFailure(
+      createDockerCli(async () => {
+        throw new Error('No such container');
+      }),
+      'wake-sandbox',
+      new Error('container is not running'),
+    );
+
+    expect(failure.message).toBe(
+      'Sandbox replacement "wake-sandbox" failed during startup: container is not running. ' +
+        'Could not collect its logs: No such container',
+    );
   });
 });
 
