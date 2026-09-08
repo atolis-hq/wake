@@ -46,6 +46,11 @@ export interface OrchestrationPort {
     activationId: string,
     context: CommandContext,
   ): Promise<WorkflowInstanceView | null>;
+  block?(
+    workflowInstanceId: string,
+    reason: string,
+    context: CommandContext,
+  ): Promise<WorkflowInstanceView | null>;
 }
 
 export interface ExecutionPort {

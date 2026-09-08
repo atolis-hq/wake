@@ -300,6 +300,98 @@ describe('ActivationScheduler', () => {
     }
   });
 
+  it('blocks a poisoned workflow and continues dispatching another ready workflow', async () => {
+    const poisoned = candidate('poisoned');
+    const ready = candidate('ready');
+    const blocks: Array<{ workflowInstanceId: string; reason: string }> = [];
+    const scheduler = createActivationScheduler(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [poisoned, ready],
+        listWaiting: async () => [],
+        acceptOutcome: async ({ workflowInstanceId }) => {
+          if (workflowInstanceId === poisoned.workflow.workflowInstanceId)
+            throw new Error('invalid poisoned outcome');
+          return ready.workflow;
+        },
+        markActivationStarted: async (workflowInstanceId) =>
+          workflowInstanceId === poisoned.workflow.workflowInstanceId
+            ? poisoned.workflow
+            : ready.workflow,
+        block: async (workflowInstanceId, reason) => {
+          blocks.push({ workflowInstanceId, reason });
+          return poisoned.workflow;
+        },
+      },
+      {
+        attempt: async (activation) =>
+          ({
+            runId: `run-${activation.activationId}`,
+            status: RunStatus.Succeeded,
+            outcome: { kind: 'succeeded' },
+          }) as never,
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-09-07T00:00:00.000Z') },
+      { ids: { next: () => 'command-isolation' } as never, maxDispatches: 1 },
+    );
+
+    await expect(scheduler.runOnce({ maxProgress: 1 })).resolves.toEqual({
+      kind: 'progressed',
+      dispatched: [{ activationId: ready.activation.activationId, runId: 'run-activation-ready' }],
+    });
+    expect(blocks).toEqual([
+      {
+        workflowInstanceId: poisoned.workflow.workflowInstanceId,
+        reason: 'workflow advancement failed: invalid poisoned outcome',
+      },
+    ]);
+  });
+
+  it('continues after blocking a poisoned terminal reconciliation', async () => {
+    const poisoned = candidate('terminal-poisoned');
+    const ready = candidate('terminal-ready');
+    const blocks: string[] = [];
+    const scheduler = createActivationScheduler(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [poisoned, ready],
+        listWaiting: async () => [],
+        acceptOutcome: async () => {
+          throw new Error('terminal outcome validation failed');
+        },
+        markActivationStarted: async () => ready.workflow,
+        block: async (workflowInstanceId) => {
+          blocks.push(workflowInstanceId);
+          return poisoned.workflow;
+        },
+      },
+      {
+        attempt: async () => ({ runId: 'run-ready', status: 'started' }) as never,
+        list: async (activationId) =>
+          activationId === poisoned.activation.activationId
+            ? [
+                {
+                  runId: 'run-terminal-poisoned',
+                  status: RunStatus.Succeeded,
+                  outcome: { kind: 'succeeded' },
+                } as never,
+              ]
+            : [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-09-07T00:00:00.000Z') },
+      { ids: { next: () => 'command-terminal-isolation' } as never, maxDispatches: 1 },
+    );
+
+    await expect(scheduler.runOnce({ maxProgress: 1 })).resolves.toEqual({
+      kind: 'progressed',
+      dispatched: [{ activationId: ready.activation.activationId, runId: 'run-ready' }],
+    });
+    expect(blocks).toEqual([poisoned.workflow.workflowInstanceId]);
+  });
+
   it('runs the full scheduler sequence in order before dispatching the selected activation', async () => {
     const trace: string[] = [];
     const pending = candidate();

@@ -19,6 +19,7 @@ import type {
   OrchestrationPort,
 } from './activation-scheduler-ports.js';
 import {
+  blockIsolatedWorkflow,
   isRunnerQuotaOutcome,
   reportUnappliedRunnerQuotaRetry,
   runDispatchLoop,
@@ -133,53 +134,86 @@ export function createActivationScheduler(
       (await findUnresolvedSucceededTerminal(blocked, execution));
     if (recovery !== undefined) {
       if (await isDispatchPaused()) return { kind: 'paused' };
-      if (recovery.run.status === RunStatus.Succeeded) {
-        if (isRunnerQuotaOutcome(recovery.run.outcome!)) {
-          const retried = await orchestration.retryRunnerQuotaFailure?.(
-            recovery.item.workflow.workflowInstanceId,
-            {
+      try {
+        if (recovery.run.status === RunStatus.Succeeded) {
+          if (isRunnerQuotaOutcome(recovery.run.outcome!)) {
+            const retried = await orchestration.retryRunnerQuotaFailure?.(
+              recovery.item.workflow.workflowInstanceId,
+              {
+                activationId: recovery.item.activation.activationId,
+                runId: recovery.run.runId,
+                runnerName: recovery.run.runner?.name ?? 'unknown-runner',
+                message: runnerQuotaMessage(recovery.run.outcome!),
+              },
+              context(recovery.run.runId),
+            );
+            reportUnappliedRunnerQuotaRetry(retried, {
               activationId: recovery.item.activation.activationId,
               runId: recovery.run.runId,
-              runnerName: recovery.run.runner?.name ?? 'unknown-runner',
-              message: runnerQuotaMessage(recovery.run.outcome!),
-            },
-            context(recovery.run.runId),
-          );
-          reportUnappliedRunnerQuotaRetry(retried, {
+            });
+          } else {
+            await orchestration.acceptOutcome(
+              {
+                workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+                activationId: recovery.item.activation.activationId,
+                outcome: recovery.run.outcome!,
+              },
+              context(recovery.run.runId),
+            );
+          }
+          return {
+            kind: 'progressed',
+            dispatched: [
+              { activationId: recovery.item.activation.activationId, runId: recovery.run.runId },
+            ],
+          };
+        }
+        await orchestration.resolveExecutionFailure?.(
+          recovery.item.workflow.workflowInstanceId,
+          {
             activationId: recovery.item.activation.activationId,
             runId: recovery.run.runId,
-          });
-        } else {
-          await orchestration.acceptOutcome(
-            {
-              workflowInstanceId: recovery.item.workflow.workflowInstanceId,
-              activationId: recovery.item.activation.activationId,
-              outcome: recovery.run.outcome!,
-            },
-            context(recovery.run.runId),
-          );
-        }
+            reason: recovery.run.failure?.message ?? 'execution failed',
+          },
+          context(recovery.run.runId),
+        );
         return {
-          kind: 'progressed',
-          dispatched: [
-            { activationId: recovery.item.activation.activationId, runId: recovery.run.runId },
-          ],
-        };
-      }
-      await orchestration.resolveExecutionFailure?.(
-        recovery.item.workflow.workflowInstanceId,
-        {
-          activationId: recovery.item.activation.activationId,
-          runId: recovery.run.runId,
+          kind: WorkflowStatus.Blocked,
+          workflowInstanceId: recovery.item.workflow.workflowInstanceId,
           reason: recovery.run.failure?.message ?? 'execution failed',
-        },
-        context(recovery.run.runId),
-      );
-      return {
-        kind: WorkflowStatus.Blocked,
-        workflowInstanceId: recovery.item.workflow.workflowInstanceId,
-        reason: recovery.run.failure?.message ?? 'execution failed',
-      };
+        };
+      } catch (error) {
+        const reason = await blockIsolatedWorkflow(
+          orchestration,
+          recovery.item.workflow.workflowInstanceId,
+          error,
+          context(recovery.run.runId),
+        );
+        const result = await runDispatchLoop(
+          pending.filter(
+            (item) =>
+              item.workflow.workflowInstanceId !== recovery.item.workflow.workflowInstanceId,
+          ),
+          {
+            orchestration,
+            execution,
+            resources,
+            dispatchPolicy,
+            maxConcurrentRuns,
+            maxDispatches,
+            runnerIneligibility,
+            isDispatchPaused,
+            commandContext: context,
+          },
+        );
+        return result.kind === 'progressed'
+          ? result
+          : {
+              kind: WorkflowStatus.Blocked,
+              workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+              reason,
+            };
+      }
     }
     const result = await runDispatchLoop(pending, {
       orchestration,
