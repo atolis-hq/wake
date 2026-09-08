@@ -79,12 +79,7 @@ describe('self-update application: update operations', () => {
       quiesce: quiesce(calls, [[]]),
     });
     await expect(application.update('v2')).rejects.toThrow('clean source checkout');
-    expect(calls).toEqual([
-      'quiesce:v2',
-      'active',
-      'quiesce-failed:Self-update requires a clean source checkout',
-      'bad:v2',
-    ]);
+    expect(calls).toEqual([]);
   });
 
   it('rolls back a failed health check and keeps the prior healthy ledger tag', async () => {
@@ -98,7 +93,7 @@ describe('self-update application: update operations', () => {
         checkout: async (tag) => {
           calls.push(`checkout:${tag}`);
         },
-        healthy: async () => false,
+        healthy: async () => calls.includes('checkout:v1'),
       },
     });
     await expect(application.update('v2')).rejects.toThrow('health verification');
@@ -160,6 +155,12 @@ describe('self-update application: update operations', () => {
       rollout: rollout(calls),
       quiesce: {
         ...quiesce(calls, [[]]),
+        read: async () => ({
+          attemptId: 'attempt-1',
+          tag: 'v2',
+          phase: 'updating' as const,
+          startedAt: '2026-08-11T10:00:00.000Z',
+        }),
         acquire: async (tag: string) => {
           calls.push(`quiesce:${tag}`);
           return {
@@ -346,7 +347,7 @@ describe('self-update application: updateLatest with bad tag handling', () => {
         checkout: async (tag) => {
           calls.push(`checkout:${tag}`);
         },
-        healthy: async () => calls.includes('checkout:v1.5.0'),
+        healthy: async () => calls.includes('checkout:v1.0.0'),
       },
     });
 
@@ -460,6 +461,9 @@ describe('self-update application: updateLatest with bad tag handling', () => {
 
 function rollout(calls: string[], deployError?: Error) {
   return {
+    prepare: async (tag: string) => {
+      calls.push(`prepare:${tag}`);
+    },
     deploy: async (tag: string) => {
       calls.push(`deploy:${tag}`);
       if (deployError !== undefined) throw deployError;
@@ -474,6 +478,54 @@ function rollout(calls: string[], deployError?: Error) {
 }
 
 describe('self-update application: Docker rollout', () => {
+  it('builds the candidate before acquiring maintenance', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: source(calls),
+      rollout: rollout(calls),
+      quiesce: quiesce(calls, [[]]),
+    });
+
+    await expect(application.update('v2')).resolves.toBe(true);
+    expect(calls).toEqual([
+      'checkout:v2',
+      'prepare:v2',
+      'quiesce:v2',
+      'active',
+      'begin:v2',
+      'phase:updating',
+      'deploy:v2',
+      'ledger:v2',
+      'clear',
+    ]);
+  });
+
+  it('does not acquire maintenance when candidate preparation fails', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: source(calls),
+      rollout: {
+        ...rollout(calls),
+        prepare: async (tag) => {
+          calls.push(`prepare:${tag}`);
+          throw new Error('candidate build failed');
+        },
+      },
+      quiesce: quiesce(calls, [[]]),
+    });
+
+    await expect(application.update('v2')).rejects.toThrow('candidate build failed');
+    expect(calls).toEqual([
+      'checkout:v2',
+      'prepare:v2',
+      'checkout:v1',
+      'record:v2:candidate build failed',
+      'bad:v2',
+    ]);
+  });
+
   it('deploys the sandbox container after a successful source checkout', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
@@ -490,7 +542,7 @@ describe('self-update application: Docker rollout', () => {
       rollout: rollout(calls),
     });
     await expect(application.update('v2')).resolves.toBe(true);
-    expect(calls).toEqual(['begin:v2', 'checkout:v2', 'deploy:v2', 'ledger:v2']);
+    expect(calls).toEqual(['checkout:v2', 'prepare:v2', 'begin:v2', 'deploy:v2', 'ledger:v2']);
   });
 
   it('rolls the container back and records the failure when a deploy fails', async () => {
@@ -511,8 +563,9 @@ describe('self-update application: Docker rollout', () => {
     });
     await expect(application.update('v2')).rejects.toThrow('health verification');
     expect(calls).toEqual([
-      'begin:v2',
       'checkout:v2',
+      'prepare:v2',
+      'begin:v2',
       'deploy:v2',
       'checkout:v1',
       'rollout-rollback:v1',
@@ -521,11 +574,11 @@ describe('self-update application: Docker rollout', () => {
     ]);
   });
 
-  it('marks maintenance failed after health failure and rollback', async () => {
+  it('clears maintenance after a failed health check rolls back successfully', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
       ledger: ledger('v1', calls),
-      source: { ...source(calls), healthy: async () => false },
+      source: { ...source(calls), healthy: async () => calls.includes('checkout:v1') },
       quiesce: quiesce(calls, [[]]),
     });
     await expect(application.update('v2')).rejects.toThrow('health verification');
@@ -537,7 +590,31 @@ describe('self-update application: Docker rollout', () => {
       'checkout:v2',
       'phase:rolling-back',
       'checkout:v1',
-      'quiesce-failed:Update v2 failed health verification',
+      'bad:v2',
+      'clear',
+    ]);
+  });
+
+  it('retains maintenance when rollback cannot verify the prior version', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: { ...source(calls), healthy: async () => false },
+      quiesce: quiesce(calls, [[]]),
+    });
+
+    await expect(application.update('v2')).rejects.toThrow(
+      'rollback could not verify the prior tag v1',
+    );
+    expect(calls).toEqual([
+      'quiesce:v2',
+      'active',
+      'begin:v2',
+      'phase:updating',
+      'checkout:v2',
+      'phase:rolling-back',
+      'checkout:v1',
+      'quiesce-failed:Self-update rollback could not verify the prior tag v1',
       'bad:v2',
     ]);
   });
@@ -553,9 +630,12 @@ describe('self-update application: Docker rollout', () => {
         checkout: async (tag) => {
           calls.push(`checkout:${tag}`);
         },
-        healthy: async () => false,
+        healthy: async () => calls.includes('checkout:v1'),
       },
       rollout: {
+        prepare: async (tag) => {
+          calls.push(`prepare:${tag}`);
+        },
         deploy: async (tag) => {
           calls.push(`deploy:${tag}`);
         },
@@ -569,8 +649,9 @@ describe('self-update application: Docker rollout', () => {
     });
     await expect(application.update('v2')).rejects.toThrow('health verification');
     expect(calls).toEqual([
-      'begin:v2',
       'checkout:v2',
+      'prepare:v2',
+      'begin:v2',
       'deploy:v2',
       'checkout:v1',
       'rollout-rollback:v1',
