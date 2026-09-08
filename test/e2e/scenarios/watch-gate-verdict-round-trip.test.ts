@@ -109,6 +109,30 @@ it('resumes the rejected watch gate at its configured re-entry stage without Git
   });
 });
 
+it.each(['blocked', 'failed'] as const)(
+  'normalizes a completed %s child to the configured rejected watch-gate route',
+  async (outcome) => {
+    const fixture = await waitingWatchGate(outcome);
+
+    await fixture.world.acceptOutcome(
+      fixture.child.workflowInstanceId,
+      fixture.child.pendingActivation!.activationId,
+      { kind: outcome },
+    );
+
+    expect(await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId)).toMatchObject({
+      status: 'active',
+      currentStage: 'work',
+    });
+    const [signal] = await fixture.world.events('orchestration.signal-accepted');
+    expect(signal?.event.payload).toMatchObject({
+      kind: WatchGateVerdictSignal,
+      outcome: 'rejected',
+      authority: { kind: 'watch', watch: 'pr-review' },
+    });
+  },
+);
+
 it('supersedes a queued watch child when human approval leaves its gate', async () => {
   const fixture = await waitingWatchGate();
 
@@ -289,7 +313,7 @@ it('supersedes a recovered child whose parent has already left its gate before d
   );
 });
 
-async function waitingWatchGate(childOutcome: 'done' | 'rejected' = 'done') {
+async function waitingWatchGate(childOutcome: 'done' | 'rejected' | 'blocked' | 'failed' = 'done') {
   const world = new TestWorld();
   world.registerActivity(activity('parent-work'));
   world.registerActivity(activity('pr-review', childOutcome));
@@ -301,6 +325,8 @@ async function waitingWatchGate(childOutcome: 'done' | 'rejected' = 'done') {
         on: {
           done: { then: 'done' },
           rejected: { then: 'done' },
+          blocked: { then: 'done' },
+          failed: { then: 'done' },
         },
         requiresApproval: false,
       },
@@ -440,12 +466,12 @@ async function appendStartedRun(
   ] as never);
 }
 
-function activity(name: string, outcome: 'done' | 'rejected' = 'done') {
+function activity(name: string, outcome: 'done' | 'rejected' | 'blocked' | 'failed' = 'done') {
   return {
     name: activityName(name),
     inputSchema: z.object({}).strict(),
-    outcomeSchema: z.object({ kind: z.enum(['done', 'rejected']) }).strict(),
-    outcomeKinds: ['done', 'rejected'],
+    outcomeSchema: z.object({ kind: z.enum(['done', 'rejected', 'blocked', 'failed']) }).strict(),
+    outcomeKinds: ['done', 'rejected', 'blocked', 'failed'],
     resources: [],
     executionKind: 'deterministic' as const,
     handler: {

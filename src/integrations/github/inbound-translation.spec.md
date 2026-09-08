@@ -111,11 +111,12 @@ poll GitHub itself — GitHub Inbound Evidence does.
   this component does not restrict which gate an issue approval resolves.
   The resulting signal's `actorDecision.authorized` MUST be `true` only
   when the commenting actor's kind is human.
-- A watch-gate verdict marker MUST be ignored unless its `outcome` is
-  `DONE` or `REJECTED` (never `BLOCKED`/`FAILED`), and unless the named
-  `runId` resolves to a run that actually succeeded with that same outcome
-  — this component MUST NOT trust the marker's own claim about a run
-  without independently verifying it against the run's own durable record.
+- A watch-gate verdict marker MUST be ignored unless its named `runId`
+  resolves to a run that actually succeeded with the same normalized outcome
+  — `DONE` remains approving, while `REJECTED`, `BLOCKED`, and `FAILED`
+  normalize to rejecting. This component MUST NOT trust the marker's own
+  claim about a run without independently verifying it against the run's own
+  durable record.
   A verified marker MUST also resolve to a workflow instance that is a
   watch's spawned child, whose parent workflow instance is currently
   waiting on a watch-gate-verdict signal naming that same child's watch;
