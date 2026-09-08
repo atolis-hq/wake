@@ -30,3 +30,13 @@ export interface HostResult {
 }
 
 export type AdvanceOnce = (options: AdvanceOptions, signal?: AbortSignal) => Promise<AdvanceResult>;
+
+/** Optional scheduler phases used by hosts that can make several dispatch attempts in one pass. */
+export interface AdvancePhases {
+  maintain(signal?: AbortSignal): Promise<MaintenanceResult>;
+  dispatch(options: AdvanceOptions, signal?: AbortSignal): Promise<AdvanceResult>;
+}
+
+export type MaintenanceResult = { readonly kind: 'ready' | 'paused' };
+
+export type PhasedAdvanceOnce = AdvanceOnce & Partial<AdvancePhases>;

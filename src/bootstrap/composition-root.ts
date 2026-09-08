@@ -295,7 +295,10 @@ export async function createCompositionRoot(
       ),
     },
   );
-  const advanceOnce = activationScheduler.runOnce.bind(activationScheduler);
+  const advanceOnce = Object.assign(activationScheduler.runOnce.bind(activationScheduler), {
+    maintain: activationScheduler.maintain!.bind(activationScheduler),
+    dispatch: activationScheduler.dispatch!.bind(activationScheduler),
+  });
   const activationSchedulerSubscriber = createActivationSchedulerSubscriber(activationScheduler);
   const runtime = await composeIntegrationRuntime({
     config,
