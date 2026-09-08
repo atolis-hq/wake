@@ -87,7 +87,9 @@ it does not construct envelope metadata or own durable subscriptions.
   satisfiable by either the named Watch or a human, then transitions to the
   route's own target on an approving (`done`) verdict or to a configured (or
   same-Stage default) `onReject` target on a rejecting (`rejected`) verdict.
-  A route MUST NOT configure both an explicit Await and a Watch gate.
+  A completed child that has any other, or no, terminal outcome produces a
+  rejecting verdict, so it cannot leave its parent waiting. A route MUST NOT
+  configure both an explicit Await and a Watch gate.
 - **Approval-by-default** — a `done` OutcomeRoute with neither an explicit
   Await nor a Watch gate compiles an implicit human-approval Await (the
   `approved` Signal, from `human`); a Stage opts out with

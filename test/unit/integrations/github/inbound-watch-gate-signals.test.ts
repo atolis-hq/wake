@@ -85,19 +85,24 @@ it('ignores a marker with an unknown runId', async () => {
   );
 });
 
-it('ignores a marker whose outcome is FAILED', async () => {
-  const fixture = await waitingWatchGate();
+it.each(['BLOCKED', 'FAILED'] as const)(
+  'normalizes a %s marker to a rejected gate verdict',
+  async (markerOutcome) => {
+    const fixture = await waitingWatchGate();
+    const terminalRunId = await appendTerminalChildRun(fixture, markerOutcome);
 
-  await applyWatchGateVerdictSignal({
-    event: commentEvent(marker(fixture.run.runId, 'FAILED')),
-    runs: new RunRepository(fixture.world.journal),
-    orchestration: fixture.world.orchestration,
-  });
+    await applyWatchGateVerdictSignal({
+      event: commentEvent(marker(terminalRunId, markerOutcome)),
+      runs: new RunRepository(fixture.world.journal),
+      orchestration: fixture.world.orchestration,
+    });
 
-  expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
-    'waiting',
-  );
-});
+    expect(await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId)).toMatchObject({
+      status: 'active',
+      currentStage: 'work',
+    });
+  },
+);
 
 it('ignores a malformed marker and a comment with no marker', async () => {
   const fixture = await waitingWatchGate();
@@ -186,6 +191,44 @@ async function appendNonterminalChildRun(fixture: Awaited<ReturnType<typeof wait
       },
     }) as never,
   ]);
+  return id;
+}
+
+async function appendTerminalChildRun(
+  fixture: Awaited<ReturnType<typeof waitingWatchGate>>,
+  outcome: 'BLOCKED' | 'FAILED',
+) {
+  const id = runId(`run-${outcome.toLowerCase()}-watch-child`);
+  const now = '2026-08-08T00:00:00.000Z';
+  await fixture.world.journal.appendToStream(runStream(id), 0, [
+    createEventData({
+      eventId: `execution:${id}:started`,
+      eventType: ExecutionEventType.RunStarted,
+      occurredAt: now,
+      correlationId: 'test:inbound-watch-gate',
+      causationId: 'test:inbound-watch-gate',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {
+        activationId: 'activation-terminal-watch-child',
+        activity: 'pr-review',
+        workflowInstanceId: fixture.child.workflowInstanceId,
+        orchestrationGroupId: fixture.child.orchestrationGroupId,
+        attempt: 1,
+        startedAt: now,
+      },
+    }),
+    createEventData({
+      eventId: `execution:${id}:succeeded`,
+      eventType: ExecutionEventType.RunSucceeded,
+      occurredAt: now,
+      correlationId: 'test:inbound-watch-gate',
+      causationId: 'test:inbound-watch-gate',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: { outcome: { kind: outcome.toLowerCase() }, finishedAt: now },
+    }),
+  ] as never);
   return id;
 }
 
