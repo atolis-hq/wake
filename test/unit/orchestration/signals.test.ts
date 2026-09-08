@@ -377,6 +377,26 @@ it('blocks a configured await at its deadline and rejects a late signal', async 
   ]);
 });
 
+it('lets an operator retry a stage blocked by an expired await', async () => {
+  const { service, baseContext } = await rejectedApprovalWaitingService(undefined, 60_000);
+  await service.expireTimedOutWaits({
+    ...baseContext,
+    commandId: 'expire-await',
+    occurredAt: '2026-07-30T12:01:00.000Z',
+  });
+
+  const retried = await service.retryBlockedFailedStage(workflowInstanceId('workflow-1'), {
+    ...baseContext,
+    commandId: 'retry-expired-await',
+  });
+
+  expect(retried).toMatchObject({
+    status: WorkflowStatus.Active,
+    pendingActivation: { ordinal: 2, activity: activityName('refine') },
+    operatorRetryCommandIds: ['retry-expired-await'],
+  });
+});
+
 it('leaves an explicit await without a deadline eligible for a later signal', async () => {
   const { service, baseContext } = await rejectedApprovalWaitingService();
 
