@@ -29,9 +29,9 @@ crashed owner can be reclaimed.
 
 ## Responsibilities and boundaries
 
-This component owns the maintenance-then-update-then-verify-then-commit-or-
-rollback sequence, its durable maintenance lease, and the ledger that makes
-it resumable after a crash mid-update. It does
+This component owns the candidate-prepare-then-maintenance-then-activate-
+then-verify-then-commit-or-rollback sequence, its durable maintenance lease,
+and the ledger that makes it resumable after a crash mid-update. It does
 not own how a source checkout is performed (the source-update port's own
 git plumbing), how a Docker rollout builds and swaps a container (composed
 by the CLI surface application from Docker primitives), or exposing this as
@@ -81,12 +81,12 @@ a CLI command.
   `updated: false`. With no candidate tags at all, `updateLatest` MUST
   throw.
 
-- Before any recovery or forward checkout, an update with a composed quiesce
-  port MUST first establish that a candidate is later than the current healthy
-  tag, then acquire maintenance. The existing Bootstrap pause checks then
-  stop intake/polling, projection advancement, schedules, reactions, direct
-  and host-driven advancement, recovery, reconciliation, and delivery. The
-  only work observed in the maintenance window is existing active Run views.
+- A sandboxed update MUST build its candidate image before acquiring
+  maintenance. The existing Bootstrap pause checks begin only for activation,
+  health verification, and rollback; they stop intake/polling, projection
+  advancement, schedules, reactions, direct and host-driven advancement,
+  recovery, reconciliation, and delivery. The only work observed in the
+  maintenance window is existing active Run views.
 - Lease phases are `quiescing` -> `updating` -> `rolling-back`, with `failed`
   reachable only when Wake cannot establish that the prior version is healthy.
   State contains attempt id, tag, start time, and operator-visible failure. A

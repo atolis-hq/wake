@@ -19,6 +19,7 @@ export interface SourceUpdatePort {
  * non-sandbox self-updates.
  */
 export interface SelfUpdateRolloutPort {
+  prepare(tag: string): Promise<void>;
   deploy(tag: string): Promise<void>;
   rollback(tag: string): Promise<void>;
   recordFailure(tag: string, error: unknown): Promise<void>;
@@ -31,6 +32,7 @@ export interface SelfUpdateRolloutPort {
  * durably record every supplied Run's maintenance request.
  */
 export interface SelfUpdateQuiescePort {
+  read?(): Promise<UpdateMaintenanceState | null>;
   acquire(tag: string, retryFailed?: boolean): Promise<UpdateMaintenanceState>;
   exclusive?<Value>(
     tag: string,
@@ -126,6 +128,13 @@ async function startUpdateAttempt(
   tag: string,
   force: boolean,
 ): Promise<boolean> {
+  const existing = await input.quiesce?.read?.();
+  if (
+    existing === null ||
+    existing === undefined ||
+    existing.phase === UpdateMaintenancePhase.Failed
+  )
+    await prepareCandidate(input, tag);
   if (input.quiesce?.exclusive !== undefined)
     return input.quiesce.exclusive(tag, force, (lease) => updateAttempt(input, tag, force, lease));
   return updateAttempt(input, tag, force, await input.quiesce?.acquire(tag, force));
@@ -140,7 +149,7 @@ async function updateAttempt(
   const maintenanceTag = lease?.tag ?? tag;
   const attemptId = lease?.attemptId;
   const context: UpdateAttemptContext = {
-    updateStarted: false,
+    activationStarted: false,
     rollbackSucceeded: false,
     recoveryRequired: false,
     recoveryVerified: false,
@@ -162,7 +171,7 @@ async function updateAttempt(
 
 interface UpdateAttemptContext {
   deployError?: unknown;
-  updateStarted: boolean;
+  activationStarted: boolean;
   rollbackSucceeded: boolean;
   recoveryRequired: boolean;
   recoveryVerified: boolean;
@@ -221,7 +230,6 @@ async function runForwardUpdate(
 ): Promise<boolean> {
   if (!(await input.source.isClean()))
     throw new Error('Self-update requires a clean source checkout');
-  context.updateStarted = true;
   await input.ledger.begin(tag);
   await input.quiesce?.transition(UpdateMaintenancePhase.Updating, attemptId);
   let rollbackSucceeded = false;
@@ -233,12 +241,15 @@ async function runForwardUpdate(
       readLedger: input.ledger.read,
       writeLedger: input.ledger.write,
       update: async (nextTag) => {
-        await input.source.checkout(nextTag);
+        if (input.rollout === undefined) await input.source.checkout(nextTag);
+        context.activationStarted = true;
         context.deployError = await deployRollout(input.rollout, nextTag);
       },
       health: async () => context.deployError === undefined && input.source.healthy(),
       rollback: async (priorTag) => {
         await rollbackUpdate(input, priorTag, attemptId);
+        if (!(await input.source.healthy()))
+          throw new Error(`Self-update rollback could not verify the prior tag ${priorTag}`);
         rollbackSucceeded = true;
         context.rollbackSucceeded = true;
       },
@@ -298,7 +309,7 @@ async function recordUpdateFailure(
 ): Promise<void> {
   if (
     context.rollbackSucceeded ||
-    (!context.updateStarted && (!context.recoveryRequired || context.recoveryVerified))
+    (!context.activationStarted && (!context.recoveryRequired || context.recoveryVerified))
   ) {
     try {
       await recordRolloutFailure(input.rollout, tag, rolloutError);
@@ -332,6 +343,25 @@ async function recordRolloutFailure(
     await rollout.recordFailure(tag, error);
   } catch {
     // Best-effort: a failure-log write must never mask the original update failure.
+  }
+}
+
+async function prepareCandidate(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+  tag: string,
+): Promise<void> {
+  if (!(await input.source.isClean()))
+    throw new Error('Self-update requires a clean source checkout');
+  if (input.rollout === undefined) return;
+  const priorTag = await input.ledger.read();
+  try {
+    await input.source.checkout(tag);
+    await input.rollout.prepare(tag);
+  } catch (error) {
+    if (priorTag !== null) await input.source.checkout(priorTag);
+    await recordRolloutFailure(input.rollout, tag, error);
+    await input.ledger.recordBad(tag);
+    throw new UpdateCandidateFailure(error);
   }
 }
 

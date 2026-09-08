@@ -615,6 +615,7 @@ async function activeExecutionRunIds(root: CompositionRoot): Promise<readonly st
 /** The production maintenance boundary shared by the CLI update application. */
 export function createSelfUpdateQuiescePort(root: CompositionRoot): SelfUpdateQuiescePort {
   return {
+    read: () => root.maintenance.read(),
     acquire: (tag, retryFailed) => root.maintenance.acquire(tag, retryFailed),
     exclusive: (tag, retryFailed, operation) =>
       root.maintenance.runExclusive(tag, retryFailed, operation),
@@ -650,15 +651,12 @@ function createSandboxRuntimeApplications(root: CompositionRoot) {
 }
 
 /**
- * Builds a running self-update on the sandbox container onto a specific
- * image tag: rebuild the image, swap the container onto it, and confirm the
- * resident `wake start` process actually came back up. Reused for both the
- * forward deploy and a same-shaped rollback to a previously-built tag.
+ * Builds a candidate image before the maintenance window. A failed build
+ * cannot affect the running sandbox.
  */
-async function deploySandboxTag(
+async function buildSandboxTag(
   root: CompositionRoot,
   docker: DockerCli,
-  tag: string,
   image: string,
   overrides?: {
     readonly development?: SandboxDockerOptions['development'];
@@ -666,12 +664,23 @@ async function deploySandboxTag(
   },
 ) {
   const port = createSandboxDockerPort(docker, sandboxDockerOptions(root, { image, ...overrides }));
+  await port.build();
+}
+
+/** Swaps the already-built candidate image and verifies the resident host. */
+async function deploySandboxTag(
+  root: CompositionRoot,
+  docker: DockerCli,
+  tag: string,
+  image: string,
+  development?: SandboxDockerOptions['development'],
+) {
+  const port = createSandboxDockerPort(docker, sandboxDockerOptions(root, { image, development }));
   const wakeInvocation =
-    overrides?.development?.mode === 'source'
+    development?.mode === 'source'
       ? ['node', '/app/dist/src/main.js']
       : sandboxWakeInvocation(root);
   const healthcheckRoot = `/tmp/wake-self-update-healthcheck-${tag}`;
-  await port.build();
   try {
     await port.update();
   } catch (error) {
@@ -790,16 +799,20 @@ function createOperationalApplications(root: CompositionRoot) {
         ledger: createUpdateLedger(root.paths.wakeRoot),
         source: updatePort,
         rollout: {
-          async deploy(deployTag) {
-            await waitForActiveRuns({
-              activeRunIds: () => activeExecutionRunIds(root),
-              sleep: async (milliseconds) =>
-                new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
-            });
-            await deploySandboxTag(root, dockerCli, deployTag, `${imageRepository}:${deployTag}`, {
+          async prepare(prepareTag) {
+            await buildSandboxTag(root, dockerCli, `${imageRepository}:${prepareTag}`, {
               development: updateDevelopment,
-              buildVersion: deployTag,
+              buildVersion: prepareTag,
             });
+          },
+          async deploy(deployTag) {
+            await deploySandboxTag(
+              root,
+              dockerCli,
+              deployTag,
+              `${imageRepository}:${deployTag}`,
+              updateDevelopment,
+            );
             // A later deploy succeeding after a prior rollback clears the stale warning.
             await failureLog.clear();
           },
