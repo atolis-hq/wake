@@ -88,17 +88,20 @@ a CLI command.
   and host-driven advancement, recovery, reconciliation, and delivery. The
   only work observed in the maintenance window is existing active Run views.
 - Lease phases are `quiescing` -> `updating` -> `rolling-back`, with `failed`
-  reachable from an active phase. State contains attempt id, tag, start time,
-  and operator-visible failure. A healthy update or verified recovery clears
-  the lease. A successful manual `wake sandbox update` also clears a retained
-  failed lease, but never an in-progress attempt owned by another process.
+  reachable only when Wake cannot establish that the prior version is healthy.
+  State contains attempt id, tag, start time, and operator-visible failure. A
+  healthy update, a verified rollback, or verified recovery clears the lease.
+  A successful manual `wake sandbox update` also clears a retained failed
+  lease, but never an in-progress attempt owned by another process.
 - In `quiescing`, the updater waits until every active Run view is terminal,
   however long that takes. It does not request cancellation: a running job may
   legitimately take hours and must be allowed to complete.
 - Restarting `updating` or `rolling-back` restores and verifies the last
   healthy source (and rollout when configured), records the interrupted tag
   bad, and clears maintenance without repeating a forward checkout. Recovery
-  failure leaves a visible failed lease.
+  failure leaves a visible failed lease. A failure before switching versions,
+  or after a verified rollback, records the candidate bad and clears
+  maintenance so the resident loop can continue.
 - Each resident-loop iteration re-discovers candidate tags. A bad `v2` is
   skipped on later ordinary iterations, but newly published `v3` can replace
   v2's failed lease and is attempted once. The same tag retries only with

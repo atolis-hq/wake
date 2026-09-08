@@ -139,7 +139,12 @@ async function updateAttempt(
 ): Promise<boolean> {
   const maintenanceTag = lease?.tag ?? tag;
   const attemptId = lease?.attemptId;
-  const context: UpdateAttemptContext = {};
+  const context: UpdateAttemptContext = {
+    updateStarted: false,
+    rollbackSucceeded: false,
+    recoveryRequired: false,
+    recoveryVerified: false,
+  };
   try {
     return await performUpdateAttempt(input, tag, force, lease, context);
   } catch (error) {
@@ -149,6 +154,7 @@ async function updateAttempt(
       attemptId,
       context.deployError ?? error,
       error,
+      context,
     );
     throw error;
   }
@@ -156,6 +162,10 @@ async function updateAttempt(
 
 interface UpdateAttemptContext {
   deployError?: unknown;
+  updateStarted: boolean;
+  rollbackSucceeded: boolean;
+  recoveryRequired: boolean;
+  recoveryVerified: boolean;
 }
 
 async function performUpdateAttempt(
@@ -166,12 +176,13 @@ async function performUpdateAttempt(
   context: UpdateAttemptContext,
 ): Promise<boolean> {
   if (lease !== undefined && requiresMaintenanceRecovery(lease)) {
+    context.recoveryRequired = true;
     await resumePendingMaintenance(input, lease);
     return false;
   }
   if (!isStartableMaintenanceLease(lease, tag)) return false;
   await quiesceForUpdate(input);
-  await recoverPendingUpdate(input.ledger, input.source);
+  await recoverPendingUpdate(input.ledger, input.source, context);
   if (!force && (await input.ledger.read()) === tag) {
     await input.quiesce?.clear(lease?.attemptId);
     return false;
@@ -210,6 +221,7 @@ async function runForwardUpdate(
 ): Promise<boolean> {
   if (!(await input.source.isClean()))
     throw new Error('Self-update requires a clean source checkout');
+  context.updateStarted = true;
   await input.ledger.begin(tag);
   await input.quiesce?.transition(UpdateMaintenancePhase.Updating, attemptId);
   let rollbackSucceeded = false;
@@ -228,6 +240,7 @@ async function runForwardUpdate(
       rollback: async (priorTag) => {
         await rollbackUpdate(input, priorTag, attemptId);
         rollbackSucceeded = true;
+        context.rollbackSucceeded = true;
       },
     });
   } catch (error) {
@@ -281,7 +294,20 @@ async function recordUpdateFailure(
   attemptId: string | undefined,
   rolloutError: unknown,
   originalError: unknown,
+  context: UpdateAttemptContext,
 ): Promise<void> {
+  if (
+    context.rollbackSucceeded ||
+    (!context.updateStarted && (!context.recoveryRequired || context.recoveryVerified))
+  ) {
+    try {
+      await recordRolloutFailure(input.rollout, tag, rolloutError);
+      await input.ledger.recordBad(tag);
+    } finally {
+      await input.quiesce?.clear(attemptId);
+    }
+    return;
+  }
   try {
     await input.quiesce?.fail(originalError, attemptId);
   } catch (persistenceError) {
@@ -345,10 +371,16 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function recoverPendingUpdate(ledger: UpdateLedger, source: SourceUpdatePort): Promise<void> {
+async function recoverPendingUpdate(
+  ledger: UpdateLedger,
+  source: SourceUpdatePort,
+  context: UpdateAttemptContext,
+): Promise<void> {
   const priorTag = await ledger.recover();
   if (priorTag === null) return;
+  context.recoveryRequired = true;
   await source.checkout(priorTag);
   if (!(await source.healthy()))
     throw new Error(`Self-update recovery could not verify the prior tag ${priorTag}`);
+  context.recoveryVerified = true;
 }

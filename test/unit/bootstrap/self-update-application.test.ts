@@ -79,12 +79,7 @@ describe('self-update application: update operations', () => {
       quiesce: quiesce(calls, [[]]),
     });
     await expect(application.update('v2')).rejects.toThrow('clean source checkout');
-    expect(calls).toEqual([
-      'quiesce:v2',
-      'active',
-      'quiesce-failed:Self-update requires a clean source checkout',
-      'bad:v2',
-    ]);
+    expect(calls).toEqual(['quiesce:v2', 'active', 'bad:v2', 'clear']);
   });
 
   it('rolls back a failed health check and keeps the prior healthy ledger tag', async () => {
@@ -521,7 +516,7 @@ describe('self-update application: Docker rollout', () => {
     ]);
   });
 
-  it('marks maintenance failed after health failure and rollback', async () => {
+  it('clears maintenance after a failed health check rolls back successfully', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
       ledger: ledger('v1', calls),
@@ -537,8 +532,8 @@ describe('self-update application: Docker rollout', () => {
       'checkout:v2',
       'phase:rolling-back',
       'checkout:v1',
-      'quiesce-failed:Update v2 failed health verification',
       'bad:v2',
+      'clear',
     ]);
   });
 
