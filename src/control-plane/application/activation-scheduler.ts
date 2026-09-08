@@ -5,6 +5,7 @@ import { type Clock } from '../../kernel/index.js';
 import { isAmbiguityResolutionBlock, WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import { WorkStatus } from '../../work/index.js';
+import type { MaintenanceResult } from '../contracts/commands.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import { DispatchPolicy } from '../domain/dispatch-policy.js';
@@ -26,6 +27,8 @@ import {
 
 export interface ActivationScheduler {
   runOnce(options: AdvanceOptions, signal?: AbortSignal): Promise<AdvanceResult>;
+  maintain?(signal?: AbortSignal): Promise<MaintenanceResult>;
+  dispatch?(options: AdvanceOptions, signal?: AbortSignal): Promise<AdvanceResult>;
 }
 
 export function createActivationScheduler(
@@ -48,8 +51,7 @@ export function createActivationScheduler(
     occurredAt: clock.now().toISOString(),
     actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
   });
-  const run = async (options: AdvanceOptions): Promise<AdvanceResult> => {
-    if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
+  const maintain = async (): Promise<MaintenanceResult> => {
     if (await isDispatchPaused()) return { kind: 'paused' };
     if (workspaceRecovery !== undefined) {
       await workspaceRecovery.recover(await execution.list(), {
@@ -91,6 +93,11 @@ export function createActivationScheduler(
     }
     if (await isDispatchPaused()) return { kind: 'paused' };
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    return { kind: 'ready' };
+  };
+  const dispatch = async (options: AdvanceOptions): Promise<AdvanceResult> => {
+    if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
     if (await isDispatchPaused()) return { kind: 'paused' };
     const rawPending = await orchestration.listPendingActivations(options.workItemId);
     const pending = (
@@ -178,7 +185,16 @@ export function createActivationScheduler(
     });
   };
   const serialise = dependencies.schedulerSerialiser ?? createInProcessSerialiser();
-  return { runOnce: (options, signal) => serialise(() => run(options), signal) };
+  return {
+    runOnce: (options, signal) =>
+      serialise(async () => {
+        if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
+        const maintenance = await maintain();
+        return maintenance.kind === 'paused' ? { kind: 'paused' } : dispatch(options);
+      }, signal),
+    maintain: (signal) => serialise(maintain, signal),
+    dispatch: (options, signal) => serialise(() => dispatch(options), signal),
+  };
 }
 
 function createInProcessSerialiser() {

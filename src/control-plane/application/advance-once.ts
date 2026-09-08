@@ -1,5 +1,6 @@
 import type { Clock } from '../../kernel/index.js';
 import type { ResourceService } from '../../resources/index.js';
+import type { PhasedAdvanceOnce } from '../contracts/commands.js';
 import type {
   ActivationSchedulerDependencies,
   ExecutionPort,
@@ -22,5 +23,8 @@ export function createAdvanceOnce(
     clock,
     dependencies,
   );
-  return (options: Parameters<typeof scheduler.runOnce>[0]) => scheduler.runOnce(options);
+  return Object.assign(scheduler.runOnce.bind(scheduler), {
+    maintain: scheduler.maintain!.bind(scheduler),
+    dispatch: scheduler.dispatch!.bind(scheduler),
+  }) satisfies PhasedAdvanceOnce;
 }

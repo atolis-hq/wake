@@ -2,17 +2,17 @@
 
 ## Type, purpose, and scope
 
-Policy/process. `ActivationScheduler.runOnce` is the single bounded scheduling
-operation for a control-plane activation pass. It preserves the former
-Advancement sequence: pause gate; workspace recovery (including reclaimed-work
-transcript cleanup); active-run recovery; transcript maintenance; child
-reconciliation; terminal-run reconciliation; then fair, capacity-aware
-dispatch. `createAdvanceOnce` is a compatibility facade over this same
-scheduler; it does not provide a second dispatch implementation.
+Policy/process. `ActivationScheduler` separates an explicit maintenance phase
+from dispatch. Maintenance performs the pause gates, workspace recovery
+(including reclaimed-work transcript cleanup), active-run recovery, transcript
+maintenance, and child reconciliation. Dispatch performs terminal-run
+reconciliation and fair, capacity-aware selection. `runOnce` composes exactly
+one maintenance phase and one dispatch phase; `createAdvanceOnce` is a
+compatibility facade over that same scheduler.
 
 ## Core policies and invariants
 
-- One scheduler pass is enclosed by an injected `ActivationSchedulerSerialiser`.
+- Each scheduler operation is enclosed by an injected `ActivationSchedulerSerialiser`.
   The critical section includes recovery, capacity reads, activation validation
   and claim, and the durable `RunPreparationStarted` capacity fact. Agent and
   script workspace acquisition and `RunStarted` happen in Execution's detached
@@ -30,6 +30,9 @@ scheduler; it does not provide a second dispatch implementation.
   waiting to enter its critical section; once the scheduler operation has
   started, that signal does not cancel domain recovery, reconciliation, or
   dispatch. Direct callers may omit it and use the default live signal.
+- A loop-capable host calls `maintain` once per bounded control-plane pass,
+  then calls `dispatch` for each attempt. Subscriber startup, event, and
+  fallback reconciliation use `runOnce`, so each remains one complete pass.
 - Subscriber scheduling is composed outside this component. Startup, durable
   event, and fallback passes pass their subscriber lifecycle signal through to
   this boundary, while Tick, resident, and API callers remain compatibility

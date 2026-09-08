@@ -89,6 +89,16 @@ export async function runDispatchLoop(
 
   while (dispatched.length < ctx.maxDispatches) {
     const allRuns = await ctx.execution.list();
+    const activeActivationIds = new Set(
+      allRuns.filter((run) => isActiveRunStatus(run.status)).map((run) => run.activationId),
+    );
+    const branchActiveWorkflowIds = new Set(
+      allRuns
+        .filter(
+          (run) => isActiveRunStatus(run.status) && run.workspace?.mode === WorkspaceMode.Branch,
+        )
+        .map((run) => run.workflowInstanceId),
+    );
     if (allRuns.filter((run) => isActiveRunStatus(run.status)).length >= ctx.maxConcurrentRuns) {
       stopReason = { kind: 'no-work' };
       break;
@@ -101,15 +111,8 @@ export async function runDispatchLoop(
           requestedPosition,
           hasActiveRun:
             dispatchedIds.has(item.activation.activationId) ||
-            (await ctx.execution.list(item.activation.activationId)).some((run) =>
-              isActiveRunStatus(run.status),
-            ) ||
-            allRuns.some(
-              (run) =>
-                isActiveRunStatus(run.status) &&
-                run.workflowInstanceId === item.workflow.workflowInstanceId &&
-                run.workspace?.mode === WorkspaceMode.Branch,
-            ),
+            activeActivationIds.has(item.activation.activationId) ||
+            branchActiveWorkflowIds.has(item.workflow.workflowInstanceId),
           cancelled: false,
         })),
       ),
