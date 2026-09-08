@@ -4,7 +4,7 @@ import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { writeFileAtomically } from './atomic-write.js';
 import { processorStateDirectoryNames } from './processor-state-paths.js';
-import { encodeLegacyStorageName, encodeStorageName } from './storage-name.js';
+import { encodeStorageName, projectionStorageAddress } from './storage-name.js';
 
 export interface FileProjectionStoreOptions {
   readonly protectedProcessorStateConsumers?: readonly string[];
@@ -167,29 +167,16 @@ function directoryRevision(info: Awaited<ReturnType<typeof stat>>): string {
 }
 
 function projectionPaths(root: string, namespace: string, key: string): ProjectionPaths {
-  const currentNamespace = encode(namespace);
-  const currentKey = encode(key);
-  const legacyNamespace = encodeLegacyStorageName(namespace);
-  const legacyKey = encodeLegacyStorageName(key);
   const current = projectionPath(
     root,
-    `%projection-${currentNamespace}`,
-    `%projection-${currentKey}`,
+    `v3-${projectionStorageAddress(namespace)}`,
+    projectionStorageAddress(key),
   );
-  const legacy = projectionPath(root, legacyNamespace, legacyKey);
-  return {
-    current,
-    legacy,
-    candidates: uniquePaths([current, legacy]),
-  };
+  return { current, legacy: current, candidates: [current] };
 }
 
 function projectionDirectories(root: string, namespace: string): readonly string[] {
-  const currentNamespace = encode(namespace);
-  return uniquePaths([
-    join(root, 'projections', `%projection-${currentNamespace}`),
-    join(root, 'projections', encodeLegacyStorageName(namespace)),
-  ]);
+  return [join(root, 'projections', `v3-${projectionStorageAddress(namespace)}`)];
 }
 
 function projectionPath(root: string, namespace: string, key: string): string {
@@ -269,7 +256,15 @@ function compareCachedProjectionFiles(
   left: CachedProjectionFile,
   right: CachedProjectionFile,
 ): number {
-  return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
+  return left.value.key < right.value.key
+    ? -1
+    : left.value.key > right.value.key
+      ? 1
+      : left.path < right.path
+        ? -1
+        : left.path > right.path
+          ? 1
+          : 0;
 }
 
 async function clearProjectionDirectory(directory: string, namespace: string): Promise<void> {

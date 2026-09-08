@@ -10,7 +10,7 @@ import {
   isCompatibleProcessorStateRecord,
   type CompatibleProcessorStateRecord,
 } from './processor-state-record.js';
-import { encodeLegacyStorageName } from './storage-name.js';
+import { projectionStorageAddress } from './storage-name.js';
 
 export class FileProcessorStateStore implements ProcessorStateStore {
   constructor(private readonly root: string) {}
@@ -83,8 +83,8 @@ function legacyProcessorStatePath(root: string, namespace: string, key: string):
   return join(
     root,
     'projections',
-    encodeLegacyStorageName(namespace),
-    `${encodeLegacyStorageName(key)}.json`,
+    `v3-state-${projectionStorageAddress(namespace)}`,
+    `${projectionStorageAddress(key)}.json`,
   );
 }
 

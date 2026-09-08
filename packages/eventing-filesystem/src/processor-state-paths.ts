@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { assertStorageName, encodeLegacyStorageName, encodeStorageName } from './storage-name.js';
+import { assertStorageName, projectionStorageAddress } from './storage-name.js';
 
 const pendingNamespaceSuffix = ':pending';
 
@@ -17,29 +17,17 @@ export function processorStatePaths(
   key: string,
 ): ProcessorStatePaths {
   const namespace = processorStateNamespace(consumer);
-  const currentNamespace = encodeStorageName(namespace);
-  const currentKey = encodeStorageName(key);
-  return {
-    key,
-    namespace,
-    current: processorStatePath(root, currentNamespace, currentKey),
-    isolated: processorStatePath(
-      root,
-      `%processor-state-${currentNamespace}`,
-      `%processor-state-${currentKey}`,
-    ),
-    legacy: processorStatePath(
-      root,
-      encodeLegacyStorageName(namespace),
-      encodeLegacyStorageName(key),
-    ),
-  };
+  const current = processorStatePath(
+    root,
+    `v3-state-${projectionStorageAddress(namespace)}`,
+    projectionStorageAddress(key),
+  );
+  return { key, namespace, current, isolated: current, legacy: current };
 }
 
 export function processorStateDirectoryNames(consumer: string): readonly string[] {
   const namespace = processorStateNamespace(consumer);
-  const current = encodeStorageName(namespace);
-  return [...new Set([current, `%processor-state-${current}`, encodeLegacyStorageName(namespace)])];
+  return [`v3-state-${projectionStorageAddress(namespace)}`];
 }
 
 function processorStateNamespace(consumer: string): string {
