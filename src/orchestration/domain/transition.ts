@@ -77,6 +77,9 @@ export function finishRoute(
             from: route.await.from,
             resume: route.await.resume,
             onRejectResume: route.reentryTarget,
+            ...(route.await.timeoutMs === undefined
+              ? {}
+              : { timeoutMs: route.await.timeoutMs, waitStartedAt: input.occurredAt }),
           },
         },
         events.length + 1,

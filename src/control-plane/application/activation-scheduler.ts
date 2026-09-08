@@ -90,6 +90,18 @@ export function createActivationScheduler(
       // Retention is operational filesystem maintenance, not Run lifecycle state.
     }
     if (await isDispatchPaused()) return { kind: 'paused' };
+    if (orchestration.expireTimedOutWaits !== undefined) {
+      const expired = await orchestration.expireTimedOutWaits(context('await-timeout-expiry'));
+      if (expired.length > 0) {
+        const workflow = expired[0]!;
+        return {
+          kind: WorkflowStatus.Blocked,
+          workflowInstanceId: workflow.workflowInstanceId,
+          reason: workflow.blockReason ?? 'await.timeout-exceeded',
+        };
+      }
+      if (await isDispatchPaused()) return { kind: 'paused' };
+    }
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     if (await isDispatchPaused()) return { kind: 'paused' };
     const rawPending = await orchestration.listPendingActivations(options.workItemId);

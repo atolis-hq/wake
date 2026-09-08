@@ -122,10 +122,10 @@ async function waitingService(
   return { service, baseContext, journal };
 }
 
-async function rejectedApprovalWaitingService(onRejectResume?: {
-  readonly kind: 'stage';
-  readonly stage: ReturnType<typeof stageName>;
-}) {
+async function rejectedApprovalWaitingService(
+  onRejectResume?: { readonly kind: 'stage'; readonly stage: ReturnType<typeof stageName> },
+  timeoutMs?: number,
+) {
   const journal = new InMemoryEventJournal(new FakeClock());
   const work = createWorkService(journal);
   const baseContext = {
@@ -163,7 +163,11 @@ async function rejectedApprovalWaitingService(onRejectResume?: {
           on: {
             blocked: {
               then: 'implement',
-              await: { signal: ApprovedSignal, from: ['human'] },
+              await: {
+                signal: ApprovedSignal,
+                from: ['human'],
+                ...(timeoutMs === undefined ? {} : { timeoutMs }),
+              },
             },
           },
         },
@@ -198,6 +202,7 @@ async function rejectedApprovalWaitingService(onRejectResume?: {
       revision: 'abc123',
       from: [{ kind: 'human' }],
       resume: { kind: 'stage', stage: stageName('implement') },
+      ...(timeoutMs === undefined ? {} : { timeoutMs, waitStartedAt: baseContext.occurredAt }),
       ...(onRejectResume === undefined ? {} : { onRejectResume }),
     },
     { ...baseContext, commandId: 'set-rejection-resume' },
@@ -342,6 +347,54 @@ it('lets an explicitly human-authorized signal resolve a retained blocked wait',
     OrchestrationEventType.StageEntered,
     OrchestrationEventType.ActivityRequested,
   ]);
+});
+
+it('blocks a configured await at its deadline and rejects a late signal', async () => {
+  const { service, baseContext, journal } = await rejectedApprovalWaitingService(undefined, 60_000);
+  const before = (await journal.readAll(0)).length;
+
+  const result = await service.acceptSignal(
+    workflowInstanceId('workflow-1'),
+    {
+      kind: ApprovedSignal,
+      resourceId: resId('pr-1'),
+      revision: 'abc123',
+      actorId: 'owner',
+      actorDecision: { authorized: true, evidenceId: 'late-approval' },
+      providerEventId: 'github-comment-late',
+      authority: { kind: 'human' },
+    },
+    { ...baseContext, commandId: 'late-approval', occurredAt: '2026-07-30T12:01:00.000Z' },
+  );
+
+  expect(result).toMatchObject({
+    status: WorkflowStatus.Blocked,
+    blockReason: 'await.timeout-exceeded',
+  });
+  expect(result.acceptedSignalIds).toEqual([]);
+  expect((await journal.readAll(0)).slice(before).map((event) => event.event.eventType)).toEqual([
+    OrchestrationEventType.InstanceBlocked,
+  ]);
+});
+
+it('leaves an explicit await without a deadline eligible for a later signal', async () => {
+  const { service, baseContext } = await rejectedApprovalWaitingService();
+
+  const result = await service.acceptSignal(
+    workflowInstanceId('workflow-1'),
+    {
+      kind: ApprovedSignal,
+      resourceId: resId('pr-1'),
+      revision: 'abc123',
+      actorId: 'owner',
+      actorDecision: { authorized: true, evidenceId: 'eventual-approval' },
+      providerEventId: 'github-comment-eventual',
+      authority: { kind: 'human' },
+    },
+    { ...baseContext, commandId: 'eventual-approval', occurredAt: '2027-07-30T12:00:00.000Z' },
+  );
+
+  expect(result.status).toBe(WorkflowStatus.Active);
 });
 
 it('blocks distinct workflow instances under one command without reusing an event id', async () => {

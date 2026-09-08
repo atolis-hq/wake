@@ -29,7 +29,13 @@ export type {
   StartInstanceInput,
 } from './activation-policy.js';
 
-export { acceptSignal, waitForSignal } from './signal-policy.js';
+export {
+  acceptSignal,
+  AwaitTimeoutBlockReason,
+  expireTimedOutAwait,
+  hasTimedOutAwait,
+  waitForSignal,
+} from './signal-policy.js';
 
 export type { AcceptSignal } from './signal-policy.js';
 

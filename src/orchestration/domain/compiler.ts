@@ -265,6 +265,7 @@ function compileAwait(
       config.from.map((entry) => compileAuthority(workflow, rawStageName, entry, declaredWatchIds)),
     ),
     resume,
+    ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }),
   });
 }
 

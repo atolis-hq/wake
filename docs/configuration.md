@@ -255,6 +255,7 @@ workflows:
             await:
               signal: approved
               from: [human]
+              timeoutMs: 86400000 # optional; block after one day
           blocked: { then: await-human }
           failed: { then: await-human }
   approval:
