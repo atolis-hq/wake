@@ -2,7 +2,11 @@
 import { correlationId, EventActorKind } from '@atolis-hq/eventing';
 import { RunStatus } from '../../execution/index.js';
 import { type Clock } from '../../kernel/index.js';
-import { isAmbiguityResolutionBlock, WorkflowStatus } from '../../orchestration/index.js';
+import {
+  isAmbiguityResolutionBlock,
+  WorkflowStatus,
+  type WorkflowInstanceView,
+} from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import { WorkStatus } from '../../work/index.js';
 import type { MaintenanceResult } from '../contracts/commands.js';
@@ -99,6 +103,11 @@ export function createActivationScheduler(
   const dispatch = async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
     if (await isDispatchPaused()) return { kind: 'paused' };
+    let expired: readonly WorkflowInstanceView[] = [];
+    if (orchestration.expireTimedOutWaits !== undefined) {
+      expired = await orchestration.expireTimedOutWaits(context('await-timeout-expiry'));
+      if (await isDispatchPaused()) return { kind: 'paused' };
+    }
     const rawPending = await orchestration.listPendingActivations(options.workItemId);
     const pending = (
       await Promise.all(
@@ -172,7 +181,7 @@ export function createActivationScheduler(
         reason: recovery.run.failure?.message ?? 'execution failed',
       };
     }
-    return runDispatchLoop(pending, {
+    const result = await runDispatchLoop(pending, {
       orchestration,
       execution,
       resources,
@@ -183,6 +192,17 @@ export function createActivationScheduler(
       isDispatchPaused,
       commandContext: context,
     });
+    if (
+      expired.length === 0 ||
+      (result.kind !== 'no-work' && result.kind !== WorkflowStatus.Waiting)
+    )
+      return result;
+    const workflow = expired[0]!;
+    return {
+      kind: WorkflowStatus.Blocked,
+      workflowInstanceId: workflow.workflowInstanceId,
+      reason: workflow.blockReason ?? 'await.timeout-exceeded',
+    };
   };
   const serialise = dependencies.schedulerSerialiser ?? createInProcessSerialiser();
   return {

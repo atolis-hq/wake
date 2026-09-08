@@ -5,6 +5,7 @@ import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import {
   acceptSignal as decideSignal,
   waitForSignal as decideSignalWait,
+  expireTimedOutAwait,
 } from '../domain/interpreter.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { StartWorkflow } from './start-workflow.js';
@@ -37,6 +38,14 @@ export class AcceptSignal {
     context: CommandContext,
   ) {
     const loaded = await this.repository.loadRequired(workflowInstanceId);
+    const expiry = expireTimedOutAwait(loaded.view, {
+      occurredAt: context.occurredAt,
+      causationId: context.commandId,
+    });
+    if (expiry.kind === 'append') {
+      await this.repository.append(workflowInstanceId, loaded.sequence, expiry.events);
+      return (await this.repository.loadRequired(workflowInstanceId)).view;
+    }
     const item = await this.work.get(loaded.view.workItemId);
     const definition = await this.workflows.definitionForOperation(
       loaded.view,

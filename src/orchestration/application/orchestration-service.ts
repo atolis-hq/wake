@@ -341,6 +341,10 @@ export class OrchestrationService {
     return this.advanceWorkflow.listWaiting(signalKind);
   }
 
+  expireTimedOutWaits(context: CommandContext) {
+    return this.advanceWorkflow.expireTimedOutWaits(context);
+  }
+
   listAll() {
     return this.advanceWorkflow.listAll();
   }

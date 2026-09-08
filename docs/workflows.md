@@ -260,6 +260,12 @@ Use `await` to make the policy explicit or to wait for a different signal.
   grants automatic authority.
 - `{ kind: watch, id: review }` accepts the verdict from that named watch.
 
+An explicit `await` can set a positive integer `timeoutMs`. Wake measures it
+from the durable wait-start event and blocks the instance with
+`await.timeout-exceeded` at or beyond that bound. Without `timeoutMs`, the
+wait remains indefinite. Timeouts do not apply to implicit approval defaults,
+activity-provided waits, watch gates, or resource-transition waits.
+
 Accepted signals must match the current signal name, resource, and revision;
 they are idempotent by provider-event identity. A rejected signal normally
 restarts the current stage. A watch gate can instead declare `onReject.then`

@@ -163,6 +163,8 @@ const resourceTransitionSchema = z
 export const expectationSchema = z
   .object({
     signalKind: brandedStringSchema(signalName),
+    timeoutMs: z.number().int().positive().optional(),
+    waitStartedAt: z.string().datetime().optional(),
     suppressWatchDispatch: z.literal(true).optional(),
     resourceId: z.string().optional(),
     revision: z.string().optional(),

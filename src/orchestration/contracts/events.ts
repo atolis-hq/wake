@@ -283,6 +283,10 @@ export interface ActivityRequestedPayload {
 
 export interface SignalExpectation {
   readonly signalKind: SignalName;
+  /** Present only for an explicit workflow await with a configured deadline. */
+  readonly timeoutMs?: number | undefined;
+  /** The control-plane time recorded by the durable wait-start event. */
+  readonly waitStartedAt?: string | undefined;
   /** Re-arm a blocked gate without treating its wait event as a new watch trigger. */
   readonly suppressWatchDispatch?: true | undefined;
   readonly resourceId?: string | undefined;

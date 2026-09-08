@@ -40,6 +40,73 @@ function candidate(id = 'one') {
 }
 
 describe('ActivationScheduler', () => {
+  it('checks configured await expiry on every normal advancement', async () => {
+    const clock = new FakeClock();
+    const expired = {
+      workflowInstanceId: 'workflow-expired',
+      blockReason: 'await.timeout-exceeded',
+    } as WorkflowInstanceView;
+    const expireTimedOutWaits = vi.fn(async () => [expired]);
+    const scheduler = createActivationScheduler(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [],
+        listWaiting: async () => [],
+        expireTimedOutWaits,
+        acceptOutcome: async () => expired,
+        markActivationStarted: async () => expired,
+      },
+      { attempt: async () => ({}) as never, list: async () => [] },
+      { correlationsForWork: async () => [] } as never,
+      clock,
+      { ids: { next: () => 'command-expiry' } as never },
+    );
+
+    await expect(scheduler.runOnce({ maxProgress: 1 })).resolves.toEqual({
+      kind: 'blocked',
+      workflowInstanceId: 'workflow-expired',
+      reason: 'await.timeout-exceeded',
+    });
+    expect(expireTimedOutWaits).toHaveBeenCalledOnce();
+  });
+
+  it('dispatches ready work after blocking expired awaits in the same advancement', async () => {
+    const clock = new FakeClock();
+    const ready = candidate('ready');
+    const expired = {
+      workflowInstanceId: 'workflow-expired',
+      blockReason: 'await.timeout-exceeded',
+    } as WorkflowInstanceView;
+    const markActivationStarted = vi.fn(async () => ready.workflow);
+    const scheduler = createActivationScheduler(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [ready],
+        listWaiting: async () => [],
+        expireTimedOutWaits: async () => [expired],
+        acceptOutcome: async () => ready.workflow,
+        markActivationStarted,
+      },
+      {
+        attempt: async () => ({ runId: 'run-ready', status: 'started' }) as never,
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      clock,
+      { ids: { next: () => 'command-expiry-with-ready-work' } as never },
+    );
+
+    await expect(scheduler.runOnce({ maxProgress: 1 })).resolves.toEqual({
+      kind: 'progressed',
+      dispatched: [{ activationId: 'activation-ready', runId: 'run-ready' }],
+    });
+    expect(markActivationStarted).toHaveBeenCalledWith(
+      'workflow-ready',
+      'activation-ready',
+      expect.anything(),
+    );
+  });
+
   it('releases its serialiser after durable agent preparation while workspace acquisition is pending', async () => {
     const clock = new FakeClock();
     const journal = new InMemoryEventJournal(clock);

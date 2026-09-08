@@ -25,6 +25,9 @@ import type {
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
 import { resumeToTarget } from './transition.js';
 
+/** Stable reason used whenever an explicit workflow await reaches its deadline. */
+export const AwaitTimeoutBlockReason = 'await.timeout-exceeded';
+
 export interface AcceptSignal extends DecisionContext {
   readonly signal: OrchestrationSignal;
   // Does the WorkItem carry operator consent for `auto` authority? Defaults to false.
@@ -80,6 +83,37 @@ export function acceptSignal(
   if (target !== undefined) resumeToTarget(events, definition, state, input, target);
   else requestLegacyReentry(events, definition, state, input);
   return { kind: 'append', events };
+}
+
+export function hasTimedOutAwait(state: WorkflowInstanceView, occurredAt: string): boolean {
+  const wait = state.waitingFor;
+  if (state.status !== WorkflowStatus.Waiting || wait?.timeoutMs === undefined) return false;
+  if (wait.waitStartedAt === undefined) return false;
+  const startedAt = Date.parse(wait.waitStartedAt);
+  const now = Date.parse(occurredAt);
+  return Number.isFinite(startedAt) && Number.isFinite(now) && now >= startedAt + wait.timeoutMs;
+}
+
+export function expireTimedOutAwait(
+  state: WorkflowInstanceView,
+  input: DecisionContext,
+): OrchestrationDecision {
+  if (!hasTimedOutAwait(state, input.occurredAt))
+    return { kind: 'ignored', reason: 'WorkflowInstance await has not timed out' };
+  return {
+    kind: 'append',
+    events: [
+      stateDraft(
+        state,
+        input,
+        {
+          eventType: OrchestrationEventType.InstanceBlocked,
+          payload: { reason: AwaitTimeoutBlockReason },
+        },
+        1,
+      ),
+    ],
+  };
 }
 
 function requestLegacyReentry(
@@ -139,6 +173,7 @@ function isBlockedHumanAuthorizedWait(
 ): boolean {
   return (
     state.status === WorkflowStatus.Blocked &&
+    state.blockReason !== AwaitTimeoutBlockReason &&
     signal.authority?.kind === ApprovalAuthorityKind.Human &&
     expected.from?.some((authority) => authority.kind === ApprovalAuthorityKind.Human) === true
   );

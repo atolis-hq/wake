@@ -277,6 +277,28 @@ describe('compileWorkflow', () => {
     expect(compiled.stages[stageName('implement')]?.on.done?.await).toBeUndefined();
   });
 
+  it('carries an explicit await deadline into the compiled route', () => {
+    const compiled = compileWorkflow(
+      'default',
+      {
+        stages: {
+          implement: {
+            activity: 'implement',
+            with: { prompt: 'x' },
+            on: {
+              done: {
+                then: 'done',
+                await: { signal: 'approved', from: ['human'], timeoutMs: 60_000 },
+              },
+            },
+          },
+        },
+      },
+      registry(),
+    );
+    expect(compiled.stages[stageName('implement')]?.on.done?.await?.timeoutMs).toBe(60_000);
+  });
+
   it('never layers the default approval on top of an explicit watchGate', () => {
     for (const requiresApproval of [undefined, true, false] as const) {
       const compiled = compileWorkflow(

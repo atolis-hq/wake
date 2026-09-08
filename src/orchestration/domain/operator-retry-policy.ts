@@ -15,6 +15,7 @@ import {
 } from '../contracts/vocabulary.js';
 import type { DecisionContext, OrchestrationDecision } from './activation-policy.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
+import { AwaitTimeoutBlockReason } from './signal-policy.js';
 
 export interface OperatorRetryRequest extends DecisionContext {
   readonly commandId: string;
@@ -44,6 +45,7 @@ function isRetryEligibleBlock(
   pending: NonNullable<WorkflowInstanceView['pendingActivation']>,
 ): boolean {
   return (
+    view.blockReason === AwaitTimeoutBlockReason ||
     (view.blockReason === 'unconfigured outcome failed' &&
       view.lastOutcome?.kind === ActivityOutcomeKind.Failed) ||
     view.executionFailure?.activationId === pending.activationId

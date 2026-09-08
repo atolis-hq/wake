@@ -39,6 +39,7 @@ export const awaitConfigSchema = z
   .object({
     signal: identifier,
     from: z.array(approvalAuthorityConfigSchema).min(1).readonly(),
+    timeoutMs: z.number().int().positive().optional(),
   })
   .strict();
 const watchGateConfigSchema = z.union([
@@ -226,6 +227,8 @@ export interface CompiledAwait {
   readonly signal: SignalName;
   readonly from: readonly ApprovalAuthority[];
   readonly resume: TransitionTarget;
+  /** Opt-in bound for this explicit await; omitted waits indefinitely. */
+  readonly timeoutMs?: number;
 }
 
 export interface CompiledWatchGate {
