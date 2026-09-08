@@ -278,6 +278,25 @@ describe('GitHub client transport contract', () => {
     expect(octokit.createComment).not.toHaveBeenCalled();
   });
 
+  it('does not create a comment when a marker-bearing comment has no valid id', async () => {
+    octokit.paginateIterator.mockImplementation(() =>
+      pagesOf({ data: [{ body: '<!-- wake:delivery:delivery-comment-8 -->' }] }),
+    );
+    const client = createGitHubClient('token');
+
+    await expect(
+      client.deliver({
+        owner: 'owner',
+        repo: 'repo',
+        issue_number: 8,
+        action: 'reply',
+        idempotencyKey: 'delivery-comment-8',
+      }),
+    ).rejects.toThrow('GitHub comment marker lookup returned an invalid comment id');
+
+    expect(octokit.createComment).not.toHaveBeenCalled();
+  });
+
   it('propagates an outbound GitHub failure unchanged', async () => {
     octokit.createComment.mockRejectedValueOnce(
       Object.assign(new Error('rate limited'), { status: 429 }),

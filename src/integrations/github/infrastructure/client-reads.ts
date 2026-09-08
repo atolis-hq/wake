@@ -22,7 +22,11 @@ export async function findIssueCommentByMarker(
     per_page: 100,
   })) {
     const comment = page.data.find((value) => value.body?.includes(marker));
-    if (comment !== undefined) return String(comment.id);
+    if (comment !== undefined) {
+      if (!Number.isSafeInteger(comment.id) || comment.id <= 0)
+        throw new Error('GitHub comment marker lookup returned an invalid comment id');
+      return String(comment.id);
+    }
   }
   return null;
 }
