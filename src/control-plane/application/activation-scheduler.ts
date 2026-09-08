@@ -2,7 +2,11 @@
 import { correlationId, EventActorKind } from '@atolis-hq/eventing';
 import { RunStatus } from '../../execution/index.js';
 import { type Clock } from '../../kernel/index.js';
-import { isAmbiguityResolutionBlock, WorkflowStatus } from '../../orchestration/index.js';
+import {
+  isAmbiguityResolutionBlock,
+  WorkflowStatus,
+  type WorkflowInstanceView,
+} from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import { WorkStatus } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
@@ -90,16 +94,9 @@ export function createActivationScheduler(
       // Retention is operational filesystem maintenance, not Run lifecycle state.
     }
     if (await isDispatchPaused()) return { kind: 'paused' };
+    let expired: readonly WorkflowInstanceView[] = [];
     if (orchestration.expireTimedOutWaits !== undefined) {
-      const expired = await orchestration.expireTimedOutWaits(context('await-timeout-expiry'));
-      if (expired.length > 0) {
-        const workflow = expired[0]!;
-        return {
-          kind: WorkflowStatus.Blocked,
-          workflowInstanceId: workflow.workflowInstanceId,
-          reason: workflow.blockReason ?? 'await.timeout-exceeded',
-        };
-      }
+      expired = await orchestration.expireTimedOutWaits(context('await-timeout-expiry'));
       if (await isDispatchPaused()) return { kind: 'paused' };
     }
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
@@ -177,7 +174,7 @@ export function createActivationScheduler(
         reason: recovery.run.failure?.message ?? 'execution failed',
       };
     }
-    return runDispatchLoop(pending, {
+    const result = await runDispatchLoop(pending, {
       orchestration,
       execution,
       resources,
@@ -188,6 +185,17 @@ export function createActivationScheduler(
       isDispatchPaused,
       commandContext: context,
     });
+    if (
+      expired.length === 0 ||
+      (result.kind !== 'no-work' && result.kind !== WorkflowStatus.Waiting)
+    )
+      return result;
+    const workflow = expired[0]!;
+    return {
+      kind: WorkflowStatus.Blocked,
+      workflowInstanceId: workflow.workflowInstanceId,
+      reason: workflow.blockReason ?? 'await.timeout-exceeded',
+    };
   };
   const serialise = dependencies.schedulerSerialiser ?? createInProcessSerialiser();
   return { runOnce: (options, signal) => serialise(() => run(options), signal) };
