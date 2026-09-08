@@ -4,6 +4,7 @@ const octokit = vi.hoisted(() => ({
   constructor: vi.fn(),
   paginateIterator: vi.fn(),
   listIssues: vi.fn(),
+  listComments: vi.fn(),
   getAuthenticated: vi.fn(),
   createComment: vi.fn(),
   merge: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('@octokit/rest', () => ({
         users: { getAuthenticated: octokit.getAuthenticated },
         issues: {
           listForRepo: octokit.listIssues,
+          listComments: octokit.listComments,
           createComment: octokit.createComment,
           get: octokit.getIssue,
         },
@@ -38,6 +40,7 @@ import { createGitHubClient } from '../../../src/integrations/github/infrastruct
 describe('GitHub client transport contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    octokit.paginateIterator.mockImplementation(() => pagesOf());
   });
 
   it('reads auto-merge labels directly without the ETag cache', async () => {
@@ -230,6 +233,70 @@ describe('GitHub client transport contract', () => {
     });
   });
 
+  it('returns an existing comment marker found beyond the first page without creating another', async () => {
+    octokit.paginateIterator.mockImplementation(() =>
+      pagesOf(
+        { data: [comment(1, 'Earlier comment')] },
+        { data: [comment(42, '<!-- wake:delivery:delivery-comment-8 -->')] },
+      ),
+    );
+    const client = createGitHubClient('token');
+
+    await expect(
+      client.deliver({
+        owner: 'owner',
+        repo: 'repo',
+        issue_number: 8,
+        action: 'reply',
+        idempotencyKey: 'delivery-comment-8',
+      }),
+    ).resolves.toBe('42');
+
+    expect(octokit.paginateIterator).toHaveBeenCalledWith(octokit.listComments, {
+      owner: 'owner',
+      repo: 'repo',
+      issue_number: 8,
+      per_page: 100,
+    });
+    expect(octokit.createComment).not.toHaveBeenCalled();
+  });
+
+  it('does not create a comment when searching its history fails', async () => {
+    octokit.paginateIterator.mockImplementation(() => failedPages('GitHub unavailable'));
+    const client = createGitHubClient('token');
+
+    await expect(
+      client.deliver({
+        owner: 'owner',
+        repo: 'repo',
+        issue_number: 8,
+        action: 'reply',
+        idempotencyKey: 'delivery-comment-8',
+      }),
+    ).rejects.toThrow('GitHub unavailable');
+
+    expect(octokit.createComment).not.toHaveBeenCalled();
+  });
+
+  it('does not create a comment when a marker-bearing comment has no valid id', async () => {
+    octokit.paginateIterator.mockImplementation(() =>
+      pagesOf({ data: [{ body: '<!-- wake:delivery:delivery-comment-8 -->' }] }),
+    );
+    const client = createGitHubClient('token');
+
+    await expect(
+      client.deliver({
+        owner: 'owner',
+        repo: 'repo',
+        issue_number: 8,
+        action: 'reply',
+        idempotencyKey: 'delivery-comment-8',
+      }),
+    ).rejects.toThrow('GitHub comment marker lookup returned an invalid comment id');
+
+    expect(octokit.createComment).not.toHaveBeenCalled();
+  });
+
   it('propagates an outbound GitHub failure unchanged', async () => {
     octokit.createComment.mockRejectedValueOnce(
       Object.assign(new Error('rate limited'), { status: 429 }),
@@ -331,9 +398,13 @@ function issue(number: number) {
   };
 }
 
+function comment(id: number, body: string) {
+  return { id, body };
+}
+
 function pagesOf(
   ...pages: readonly {
-    readonly data: readonly ReturnType<typeof issue>[];
+    readonly data: readonly unknown[];
     readonly headers?: Record<string, string>;
   }[]
 ) {
@@ -349,6 +420,15 @@ function notModifiedPages() {
     // eslint-disable-next-line require-yield -- a conditional GitHub read can reject before yielding a page
     async *[Symbol.asyncIterator]() {
       throw Object.assign(new Error('not modified'), { status: 304 });
+    },
+  };
+}
+
+function failedPages(message: string) {
+  return {
+    // eslint-disable-next-line require-yield -- a failed GitHub page read rejects before yielding a page
+    async *[Symbol.asyncIterator]() {
+      throw new Error(message);
     },
   };
 }

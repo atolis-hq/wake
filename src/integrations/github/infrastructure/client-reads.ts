@@ -8,6 +8,29 @@ import { GitHubListState } from '../contracts/vocabulary.js';
 import type { createEtagCache } from './etag-cache.js';
 import { fetchPaginatedWithEtag, fetchWithEtag } from './etag-cache.js';
 
+export async function findIssueCommentByMarker(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  marker: string,
+): Promise<string | null> {
+  for await (const page of octokit.paginate.iterator(octokit.rest.issues.listComments, {
+    owner,
+    repo,
+    issue_number: issueNumber,
+    per_page: 100,
+  })) {
+    const comment = page.data.find((value) => value.body?.includes(marker));
+    if (comment !== undefined) {
+      if (!Number.isSafeInteger(comment.id) || comment.id <= 0)
+        throw new Error('GitHub comment marker lookup returned an invalid comment id');
+      return String(comment.id);
+    }
+  }
+  return null;
+}
+
 export function listIssues(
   octokit: Octokit,
   cache: ReturnType<typeof createEtagCache>,

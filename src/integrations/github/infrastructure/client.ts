@@ -5,6 +5,7 @@ import { GitHubOutboundAction } from '../contracts/vocabulary.js';
 import { createBoundedGitHubFetch } from './bounded-fetch.js';
 import {
   branch,
+  findIssueCommentByMarker,
   getCombinedStatusForRef,
   getIssueLabels,
   getPullRequest,
@@ -17,6 +18,8 @@ import {
   listReviews,
 } from './client-reads.js';
 import { createEtagCache } from './etag-cache.js';
+
+/* eslint-disable max-lines */
 
 // Octokit's request-log plugin reports every non-2xx response through this
 // callback, including the expected 304 responses produced by conditional ETag
@@ -255,6 +258,14 @@ async function deliver(octokit: Octokit, command: GitHubDeliveryCommand): Promis
   const issueNumber = command.issue_number ?? command.pull_number;
   if (issueNumber === undefined)
     throw new Error('GitHub comment requires an issue or pull request');
+  const existingCommentId = await findIssueCommentByMarker(
+    octokit,
+    command.owner,
+    command.repo,
+    issueNumber,
+    marker,
+  );
+  if (existingCommentId !== null) return existingCommentId;
   const response = await octokit.rest.issues.createComment({
     owner: command.owner,
     repo: command.repo,
