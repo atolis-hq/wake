@@ -60,6 +60,12 @@ already happened before an intent reached delivery.
   commit sha for a merge, the comment id for a comment). A GitHub call that
   throws MUST report `DeliveryResultKind.Failed` with a fixed adapter error
   code and the underlying error's own message.
+- Before creating an issue or pull-request comment, delivery MUST search the
+  complete GitHub comment history, following pagination until its exact
+  idempotency marker is found or history is exhausted. If found, it MUST
+  report the existing comment id as confirmed without creating a comment. If
+  the search fails or is indeterminate, it MUST make no comment write and
+  report the delivery failure for retry.
 - `reconcile` MUST always report `DeliveryResultKind.Unknown`; this
   component does not currently query GitHub to resolve an ambiguous or
   interrupted delivery.

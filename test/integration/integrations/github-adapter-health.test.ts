@@ -10,11 +10,24 @@ import {
 import { FakeClock } from '../../e2e/support/world.js';
 import { resId } from '../../support/identities.js';
 
-const octokit = vi.hoisted(() => ({ createComment: vi.fn() }));
+const octokit = vi.hoisted(() => ({
+  createComment: vi.fn(),
+  listComments: vi.fn(),
+  paginateIterator: vi.fn(() => ({
+    async *[Symbol.asyncIterator]() {
+      yield { data: [] };
+    },
+  })),
+}));
 
 vi.mock('@octokit/rest', () => ({
   Octokit: class {
-    readonly rest = { issues: { createComment: octokit.createComment } };
+    readonly paginate = { iterator: octokit.paginateIterator };
+
+    readonly rest = {
+      issues: { createComment: octokit.createComment, listComments: octokit.listComments },
+    };
+
     constructor(_options: unknown) {}
   },
 }));
