@@ -96,11 +96,6 @@ export function createActivationScheduler(
       // Retention is operational filesystem maintenance, not Run lifecycle state.
     }
     if (await isDispatchPaused()) return { kind: 'paused' };
-    let expired: readonly WorkflowInstanceView[] = [];
-    if (orchestration.expireTimedOutWaits !== undefined) {
-      expired = await orchestration.expireTimedOutWaits(context('await-timeout-expiry'));
-      if (await isDispatchPaused()) return { kind: 'paused' };
-    }
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     if (await isDispatchPaused()) return { kind: 'paused' };
     return { kind: 'ready' };
@@ -108,6 +103,11 @@ export function createActivationScheduler(
   const dispatch = async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
     if (await isDispatchPaused()) return { kind: 'paused' };
+    let expired: readonly WorkflowInstanceView[] = [];
+    if (orchestration.expireTimedOutWaits !== undefined) {
+      expired = await orchestration.expireTimedOutWaits(context('await-timeout-expiry'));
+      if (await isDispatchPaused()) return { kind: 'paused' };
+    }
     const rawPending = await orchestration.listPendingActivations(options.workItemId);
     const pending = (
       await Promise.all(
