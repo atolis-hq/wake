@@ -3,7 +3,9 @@
 ## Type, purpose, and scope
 
 Surface application. `TickHost` repeats a supplied `AdvanceOnce`-shaped
-callback up to one bounded cycle's `HostBudget`. `IntakeHost` runs exactly
+callback up to one bounded cycle's `HostBudget`. When that callback exposes
+the scheduler's maintenance/dispatch phases, it runs maintenance once before
+repeating dispatch. `IntakeHost` runs exactly
 one poll-and-translate cycle per call. `ResidentHost` repeats either host's
 cycles across the lifetime of an `AbortSignal`, sleeping between cycles.
 Together these are the composed entry points CLI `tick` and `start` use to
@@ -13,9 +15,9 @@ hosts has any knowledge of what its wrapped callback actually does internally.
 
 ## Ubiquitous language
 
-- **Bounded cycle** — one `TickHost.run` call: a sequence of `advance`
-  calls stopping at the first non-`progressed` result, a budget cap, or a
-  wall-clock deadline, whichever comes first.
+- **Bounded cycle** — one `TickHost.run` call: one maintenance phase when
+  available, then a sequence of dispatch (or legacy `advance`) calls stopping
+  at the first non-`progressed` result, a budget cap, or a wall-clock deadline.
 - **Intake cycle** — one `IntakeHost.run` call: exactly one poll-and-translate
   pass, reported as one advance if it processed anything, zero otherwise.
 - **Resident run** — one `ResidentHost.run` call: repeated bounded (or
@@ -23,8 +25,8 @@ hosts has any knowledge of what its wrapped callback actually does internally.
 
 ## Responsibilities and boundaries
 
-`TickHost` owns looping its `advance` callback with `maxProgress: 1` per
-call, counting advances/runs, enforcing the budget's wall-clock and count
+`TickHost` owns running an optional maintenance phase once, looping its
+dispatch callback with `maxProgress: 1` per call, counting advances/runs, enforcing the budget's wall-clock and count
 caps, and mapping each stopping condition to a `HostStopReason`. It does not
 decide what one `advance` call does. In production composition, its one-shot
 adapter runs the non-scheduling `RunnerPipeline` and pokes the durable
@@ -45,7 +47,12 @@ Decisions below).
 
 ## Core policies, invariants, and behaviours
 
-- `TickHost.run` MUST call `advance({ maxProgress: 1 }, signal)` in a loop
+- When supplied, `TickHost.run` MUST call `maintain(signal)` once before its
+  first dispatch attempt. A paused maintenance result stops the cycle with
+  `HostStopReason.Paused`.
+- `TickHost.run` MUST call `dispatch({ maxProgress: 1 }, signal)` in a loop
+  when phase operations are supplied, or `advance({ maxProgress: 1 }, signal)`
+  otherwise,
   while `advances < maxAdvances` and `runs < maxRuns`, forwarding its optional
   lifecycle signal on every call and checking the wall-clock budget
   (`Date.now() - started >= maxDurationMs`) at the top of every iteration,

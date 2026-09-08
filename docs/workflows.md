@@ -471,7 +471,9 @@ is an additional durable circuit breaker.
 A route may declare exactly one `watchGates` entry. On its `done` outcome,
 Wake waits for the named child workflow's verdict; a `done` verdict follows
 the route's `then`, while a `rejected` verdict follows `onReject.then` or
-returns to the gated stage. A human may satisfy that gate as an override.
+returns to the gated stage. A completed child with a `blocked`, `failed`, or
+missing outcome is normalized to `rejected`, so the gate always resolves. A
+human may satisfy that gate as an override.
 
 ## Authoring checklist
 

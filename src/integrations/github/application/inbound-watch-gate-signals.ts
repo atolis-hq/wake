@@ -45,10 +45,9 @@ function extractMarker(body: string): { readonly runId: string; readonly outcome
 
 function translateOutcome(
   outcome: string,
-): typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected | null {
+): typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected {
   if (outcome === 'DONE') return ActivityOutcomeKind.Done;
-  if (outcome === 'REJECTED') return ActivityOutcomeKind.Rejected;
-  return null;
+  return ActivityOutcomeKind.Rejected;
 }
 
 export async function applyWatchGateVerdictSignal(input: {
@@ -61,7 +60,6 @@ export async function applyWatchGateVerdictSignal(input: {
   const marker = extractMarker(event.event.payload.body);
   if (marker === null) return;
   const outcome = translateOutcome(marker.outcome);
-  if (outcome === null) return;
 
   const verdict = await verifyWatchGateVerdict({ marker, outcome, runs, orchestration });
   if (verdict === null) return;
@@ -93,7 +91,12 @@ async function verifyWatchGateVerdict(input: {
   const { marker, outcome, runs, orchestration } = input;
   const run = (await runs.load(runId(marker.runId))).view;
   if (run === null) return null;
-  if (run.status !== RunStatus.Succeeded || run.outcome?.kind !== outcome) return null;
+  if (
+    run.status !== RunStatus.Succeeded ||
+    run.outcome === undefined ||
+    translateOutcome(run.outcome.kind.toUpperCase()) !== outcome
+  )
+    return null;
 
   const workflows = await orchestration.listAll();
   const child = workflows.find(

@@ -280,8 +280,7 @@ function watchGateVerdictOutcome(
   child: WorkflowInstanceView,
 ): typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected | undefined {
   if (parent.waitingFor?.signalKind !== WatchGateVerdictSignal) return undefined;
-  return child.lastOutcome?.kind === ActivityOutcomeKind.Done ||
-    child.lastOutcome?.kind === ActivityOutcomeKind.Rejected
-    ? child.lastOutcome.kind
-    : undefined;
+  return child.lastOutcome?.kind === ActivityOutcomeKind.Done
+    ? ActivityOutcomeKind.Done
+    : ActivityOutcomeKind.Rejected;
 }
