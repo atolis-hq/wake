@@ -37,6 +37,14 @@ interface PendingActivation {
   readonly activation: ActivityActivationView;
 }
 
+async function advancementWasDurablyApplied(
+  orchestration: OrchestrationPort,
+  workflow: WorkflowInstanceView,
+): Promise<boolean> {
+  const current = await orchestration.get?.(workflow.workflowInstanceId);
+  return current !== undefined && current !== null && current.pendingActivation === undefined;
+}
+
 const maximumIsolationReasonLength = 2_000;
 
 export function isolatedWorkflowReason(error: unknown): string {
@@ -256,6 +264,7 @@ export async function runDispatchLoop(
         stopReason = { kind: 'no-work' };
         break;
       }
+      if (await advancementWasDurablyApplied(ctx.orchestration, selected.workflow)) throw error;
       const reason = await blockIsolatedWorkflow(
         ctx.orchestration,
         selected.workflow.workflowInstanceId,
