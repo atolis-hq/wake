@@ -392,6 +392,47 @@ describe('ActivationScheduler', () => {
     expect(blocks).toEqual([poisoned.workflow.workflowInstanceId]);
   });
 
+  it('replays a terminal reconciliation error after its outcome was durably accepted', async () => {
+    const pending = candidate('terminal-replay');
+    const accepted = {
+      ...pending.workflow,
+      acceptedOutcomes: [pending.activation.activationId],
+      pendingActivation: { activationId: 'activation-next' },
+    } as unknown as WorkflowInstanceView;
+    const block = vi.fn(async () => pending.workflow);
+    const scheduler = createActivationScheduler(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [pending],
+        listWaiting: async () => [],
+        get: async () => accepted,
+        acceptOutcome: async () => {
+          throw new Error('after durable outcome acceptance');
+        },
+        markActivationStarted: async () => pending.workflow,
+        block,
+      },
+      {
+        attempt: async () => ({}) as never,
+        list: async () => [
+          {
+            runId: 'run-terminal-replay',
+            status: RunStatus.Succeeded,
+            outcome: { kind: 'succeeded' },
+          } as never,
+        ],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-09-09T00:00:00.000Z') },
+      { ids: { next: () => 'command-terminal-replay' } as never },
+    );
+
+    await expect(scheduler.runOnce({ maxProgress: 1 })).rejects.toThrow(
+      'after durable outcome acceptance',
+    );
+    expect(block).not.toHaveBeenCalled();
+  });
+
   it('runs the full scheduler sequence in order before dispatching the selected activation', async () => {
     const trace: string[] = [];
     const pending = candidate();

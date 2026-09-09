@@ -19,6 +19,7 @@ import type {
   OrchestrationPort,
 } from './activation-scheduler-ports.js';
 import {
+  advancementWasDurablyApplied,
   blockIsolatedWorkflow,
   isRunnerQuotaOutcome,
   reportUnappliedRunnerQuotaRetry,
@@ -183,6 +184,14 @@ export function createActivationScheduler(
           reason: recovery.run.failure?.message ?? 'execution failed',
         };
       } catch (error) {
+        if (
+          await advancementWasDurablyApplied(
+            orchestration,
+            recovery.item.workflow.workflowInstanceId,
+            recovery.item.activation.activationId,
+          )
+        )
+          throw error;
         const reason = await blockIsolatedWorkflow(
           orchestration,
           recovery.item.workflow.workflowInstanceId,
