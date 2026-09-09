@@ -5,7 +5,6 @@ import {
   ActivityOutcomeKind,
   type ActivityOutcome,
 } from '../../activities/index.js';
-import type { RunView } from '../../execution/index.js';
 import {
   ActivationClaimConflictError,
   isActiveRunStatus,
@@ -36,6 +35,39 @@ export interface DispatchLoopContext {
 interface PendingActivation {
   readonly workflow: WorkflowInstanceView;
   readonly activation: ActivityActivationView;
+}
+
+export async function advancementWasDurablyApplied(
+  orchestration: OrchestrationPort,
+  workflowInstanceId: WorkflowInstanceView['workflowInstanceId'],
+  activationId: ActivityActivationView['activationId'],
+): Promise<boolean> {
+  const current = await orchestration.get?.(workflowInstanceId);
+  return (
+    current !== undefined && current !== null && current.acceptedOutcomes.includes(activationId)
+  );
+}
+
+const maximumIsolationReasonLength = 2_000;
+
+export function isolatedWorkflowReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `workflow advancement failed: ${message}`.slice(0, maximumIsolationReasonLength);
+}
+
+export async function blockIsolatedWorkflow(
+  orchestration: OrchestrationPort,
+  workflowInstanceId: string,
+  error: unknown,
+  context: CommandContext,
+): Promise<string> {
+  const reason = isolatedWorkflowReason(error);
+  if (orchestration.block === undefined)
+    throw new Error('Orchestration port cannot durably block an isolated workflow', {
+      cause: error,
+    });
+  await orchestration.block(workflowInstanceId, reason, context);
+  return reason;
 }
 
 export function isRunnerQuotaOutcome(outcome: ActivityOutcome): boolean {
@@ -85,6 +117,8 @@ export async function runDispatchLoop(
 ): Promise<AdvanceResult> {
   const dispatched: DispatchedRun[] = [];
   const dispatchedIds = new Set<string>();
+  const isolatedIds = new Set<string>();
+  let isolated: Extract<AdvanceResult, { kind: typeof WorkflowStatus.Blocked }> | undefined;
   let stopReason: AdvanceResult | undefined;
 
   while (dispatched.length < ctx.maxDispatches) {
@@ -104,8 +138,9 @@ export async function runDispatchLoop(
       break;
     }
     const selectedCandidate = ctx.dispatchPolicy.select(
-      await Promise.all(
-        pending.map(async (item, requestedPosition) => ({
+      pending
+        .filter((item) => !isolatedIds.has(item.workflow.workflowInstanceId))
+        .map((item, requestedPosition) => ({
           workItemId: item.workflow.workItemId,
           activationId: item.activation.activationId,
           requestedPosition,
@@ -115,7 +150,6 @@ export async function runDispatchLoop(
             branchActiveWorkflowIds.has(item.workflow.workflowInstanceId),
           cancelled: false,
         })),
-      ),
     )[0];
     const selected =
       selectedCandidate === undefined
@@ -134,28 +168,27 @@ export async function runDispatchLoop(
       stopReason = { kind: 'paused' };
       break;
     }
-    if (
-      (await ctx.orchestration.validateActivationDispatch?.(
-        selected.workflow.workflowInstanceId,
-        ctx.commandContext(selected.activation.activationId),
-      )) === false
-    ) {
-      stopReason = { kind: 'no-work' };
-      break;
-    }
-    await ctx.orchestration.markActivationStarted(
-      selected.workflow.workflowInstanceId,
-      selected.activation.activationId,
-      ctx.commandContext(selected.activation.activationId),
-    );
-    const correlated = await ctx.resources.correlationsForWork(selected.workflow.workItemId);
-    const resourceViews = (
-      await Promise.all(correlated.map((entry) => ctx.resources.get(entry.resourceId)))
-    ).filter((resource) => resource !== null);
     const ineligible = await ctx.runnerIneligibility();
-    let run: RunView;
     try {
-      run = await ctx.execution.attempt(selected.activation, {
+      if (
+        (await ctx.orchestration.validateActivationDispatch?.(
+          selected.workflow.workflowInstanceId,
+          ctx.commandContext(selected.activation.activationId),
+        )) === false
+      ) {
+        stopReason = { kind: 'no-work' };
+        break;
+      }
+      await ctx.orchestration.markActivationStarted(
+        selected.workflow.workflowInstanceId,
+        selected.activation.activationId,
+        ctx.commandContext(selected.activation.activationId),
+      );
+      const correlated = await ctx.resources.correlationsForWork(selected.workflow.workItemId);
+      const resourceViews = (
+        await Promise.all(correlated.map((entry) => ctx.resources.get(entry.resourceId)))
+      ).filter((resource) => resource !== null);
+      const run = await ctx.execution.attempt(selected.activation, {
         workItemId: selected.workflow.workItemId,
         workflowInstanceId: selected.workflow.workflowInstanceId,
         orchestrationGroupId: selected.workflow.orchestrationGroupId,
@@ -168,19 +201,11 @@ export async function runDispatchLoop(
         awaitImmediateCompletion: true,
         ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
       });
-    } catch (error) {
-      if (error instanceof ActivationClaimConflictError) {
-        stopReason = { kind: 'no-work' };
-        break;
-      }
-      if (error instanceof NoEligibleRunnerError) {
-        stopReason = { kind: 'no-work' };
-        break;
-      }
-      throw error;
-    }
-    if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
-      if (isRunnerQuotaOutcome(run.outcome)) {
+      if (
+        run.status === RunStatus.Succeeded &&
+        run.outcome !== undefined &&
+        isRunnerQuotaOutcome(run.outcome)
+      ) {
         // No isDispatchPaused check here: a quota retry re-requests the same
         // stage's activity without publishing an outcome or consuming retry
         // budget, so it must not be held behind maintenance pause the way an
@@ -199,7 +224,7 @@ export async function runDispatchLoop(
           activationId: selected.activation.activationId,
           runId: run.runId,
         });
-      } else {
+      } else if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
         if (await ctx.isDispatchPaused()) {
           stopReason = { kind: 'paused' };
           break;
@@ -213,30 +238,60 @@ export async function runDispatchLoop(
           ctx.commandContext(run.runId),
         );
       }
-    }
-    if (isExecutionFailureTerminal(run.status))
-      await ctx.orchestration.resolveExecutionFailure?.(
-        selected.workflow.workflowInstanceId,
-        {
-          activationId: selected.activation.activationId,
-          runId: run.runId,
+      if (isExecutionFailureTerminal(run.status))
+        await ctx.orchestration.resolveExecutionFailure?.(
+          selected.workflow.workflowInstanceId,
+          {
+            activationId: selected.activation.activationId,
+            runId: run.runId,
+            reason: run.failure?.message ?? 'execution failed',
+          },
+          ctx.commandContext(run.runId),
+        );
+      if (run.status !== RunStatus.Succeeded && !isActiveRunStatus(run.status)) {
+        stopReason = {
+          kind: WorkflowStatus.Blocked,
+          workflowInstanceId: selected.workflow.workflowInstanceId,
           reason: run.failure?.message ?? 'execution failed',
-        },
-        ctx.commandContext(run.runId),
+        };
+        break;
+      }
+      dispatched.push({ activationId: selected.activation.activationId, runId: run.runId });
+      dispatchedIds.add(selected.activation.activationId);
+    } catch (error) {
+      if (error instanceof ActivationClaimConflictError) {
+        stopReason = { kind: 'no-work' };
+        break;
+      }
+      if (error instanceof NoEligibleRunnerError) {
+        stopReason = { kind: 'no-work' };
+        break;
+      }
+      if (
+        await advancementWasDurablyApplied(
+          ctx.orchestration,
+          selected.workflow.workflowInstanceId,
+          selected.activation.activationId,
+        )
+      )
+        throw error;
+      const reason = await blockIsolatedWorkflow(
+        ctx.orchestration,
+        selected.workflow.workflowInstanceId,
+        error,
+        ctx.commandContext(selected.activation.activationId),
       );
-    if (run.status !== RunStatus.Succeeded && !isActiveRunStatus(run.status)) {
-      stopReason = {
+      isolatedIds.add(selected.workflow.workflowInstanceId);
+      isolated = {
         kind: WorkflowStatus.Blocked,
         workflowInstanceId: selected.workflow.workflowInstanceId,
-        reason: run.failure?.message ?? 'execution failed',
+        reason,
       };
-      break;
+      continue;
     }
-    dispatched.push({ activationId: selected.activation.activationId, runId: run.runId });
-    dispatchedIds.add(selected.activation.activationId);
   }
 
   return dispatched.length > 0
     ? { kind: 'progressed', dispatched }
-    : (stopReason ?? { kind: 'no-work' });
+    : (stopReason ?? isolated ?? { kind: 'no-work' });
 }

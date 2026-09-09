@@ -12,6 +12,7 @@ export interface OrchestrationPort {
     workItemId?: string,
   ): Promise<readonly { workflow: WorkflowInstanceView; activation: ActivityActivationView }[]>;
   listWaiting(): Promise<readonly (WorkflowInstanceView | null)[]>;
+  get?(workflowInstanceId: string): Promise<WorkflowInstanceView | null>;
   expireTimedOutWaits?(context: CommandContext): Promise<readonly WorkflowInstanceView[]>;
   listAll?(): Promise<readonly WorkflowInstanceView[]>;
   validateActivationDispatch?(
@@ -44,6 +45,11 @@ export interface OrchestrationPort {
   markActivationStarted(
     workflowInstanceId: string,
     activationId: string,
+    context: CommandContext,
+  ): Promise<WorkflowInstanceView | null>;
+  block?(
+    workflowInstanceId: string,
+    reason: string,
     context: CommandContext,
   ): Promise<WorkflowInstanceView | null>;
 }
