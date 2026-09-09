@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { assertStorageName, encodeLegacyStorageName, encodeStorageName } from './storage-name.js';
+import { assertStorageName, projectionStorageAddress } from './storage-name.js';
 
 const pendingNamespaceSuffix = ':pending';
 
@@ -7,8 +7,6 @@ export interface ProcessorStatePaths {
   readonly key: string;
   readonly namespace: string;
   readonly current: string;
-  readonly isolated: string;
-  readonly legacy: string;
 }
 
 export function processorStatePaths(
@@ -16,37 +14,17 @@ export function processorStatePaths(
   consumer: string,
   key: string,
 ): ProcessorStatePaths {
-  const namespace = processorStateNamespace(consumer);
-  const currentNamespace = encodeStorageName(namespace);
-  const currentKey = encodeStorageName(key);
+  assertStorageName(consumer);
+  assertStorageName(key);
   return {
     key,
-    namespace,
-    current: processorStatePath(root, currentNamespace, currentKey),
-    isolated: processorStatePath(
+    namespace: `${consumer}${pendingNamespaceSuffix}`,
+    current: join(
       root,
-      `%processor-state-${currentNamespace}`,
-      `%processor-state-${currentKey}`,
-    ),
-    legacy: processorStatePath(
-      root,
-      encodeLegacyStorageName(namespace),
-      encodeLegacyStorageName(key),
+      'projections',
+      'processor-state',
+      projectionStorageAddress(consumer),
+      `${projectionStorageAddress(key)}.json`,
     ),
   };
-}
-
-export function processorStateDirectoryNames(consumer: string): readonly string[] {
-  const namespace = processorStateNamespace(consumer);
-  const current = encodeStorageName(namespace);
-  return [...new Set([current, `%processor-state-${current}`, encodeLegacyStorageName(namespace)])];
-}
-
-function processorStateNamespace(consumer: string): string {
-  assertStorageName(consumer);
-  return `${consumer}${pendingNamespaceSuffix}`;
-}
-
-function processorStatePath(root: string, namespace: string, key: string): string {
-  return join(root, 'projections', namespace, `${key}.json`);
 }

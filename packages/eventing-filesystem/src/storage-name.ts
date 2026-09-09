@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export function assertWellFormedUtf16(value: string, label: string): void {
   for (let index = 0; index < value.length; index += 1) {
     const codeUnit = value.charCodeAt(index);
@@ -18,14 +20,6 @@ export function assertStorageName(value: string): void {
     throw new Error('Storage name must not contain path separators');
 }
 
-export function encodeStorageName(value: string): string {
-  assertStorageName(value);
-  return encodeURIComponent(value)
-    .replace(/~/g, '%7E')
-    .replace(/%(?!7E)/g, '~')
-    .replace(/\./g, '~2E');
-}
-
 export function encodeLegacyStorageName(value: string): string {
   assertStorageName(value);
   return encodeURIComponent(value).replace(/%/g, '~').replace(/\./g, '~2E');
@@ -34,4 +28,9 @@ export function encodeLegacyStorageName(value: string): string {
 export function encodeCheckpointStorageName(consumer: string): string {
   assertStorageName(consumer);
   return Buffer.from(consumer, 'utf8').toString('base64url');
+}
+
+export function projectionStorageAddress(value: string): string {
+  assertStorageName(value);
+  return createHash('sha256').update(value, 'utf8').digest('base64url');
 }
