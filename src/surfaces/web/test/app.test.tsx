@@ -58,7 +58,8 @@ describe('Wake operator app', () => {
     expect(screen.getByRole('img', { name: 'Wake logo' }).getAttribute('src')).toMatch(
       /^data:image\/svg\+xml/,
     );
-    const status = await screen.findByRole('status', { name: 'Control plane' });
+    await screen.findByText('Dispatch active');
+    const status = screen.getByRole('status', { name: 'Control plane' });
     expect(status.textContent).toContain('Dispatch active');
     expect(within(banner).queryByText('Dispatch active')).toBeNull();
   });
