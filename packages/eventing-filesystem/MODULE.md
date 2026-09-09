@@ -23,11 +23,12 @@ adapter classes with a root and supply them through Eventing ports.
 
 ## Invariants
 
-Existing flat journal and processor-state representations remain readable and
-the adapter writes the canonical compatible format. `ProjectionStore` data is
-rebuildable; `ProcessorStateStore` data is processor recovery state. A
-projection store reserves the configured processor consumers' compatible state
-directories when it clears projections.
+`ProjectionStore` data is rebuildable and stored at
+`projections/projection/<namespace-sha256>/<key-sha256>.json`.
+`ProcessorStateStore` data is processor recovery state and stored separately at
+`projections/processor-state/<consumer-sha256>/<key-sha256>.json`. Projection
+clearing removes only the former subtree. Projection and processor-state paths
+are fresh-only: this adapter neither reads nor migrates prior projection paths.
 
 ## Extension rules
 
