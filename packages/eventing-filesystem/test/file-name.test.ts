@@ -1,12 +1,12 @@
 import { expect, it } from 'vitest';
-import { encode } from '../src/file-projection-store.js';
+import { projectionStorageAddress } from '../src/storage-name.js';
 
-it('uses filesystem-safe storage names without percent escapes', () => {
-  expect(encode('projection:operator-board')).toBe('projection~3Aoperator-board');
-  expect(encode('agent-run:run-1')).not.toContain('%');
+it('uses bounded, filesystem-safe addresses for projection names', () => {
+  const address = projectionStorageAddress('projection:operator-board');
+  expect(address).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(address).not.toMatch(/[~%]/);
 });
 
-it('distinguishes literal tildes from percent-escaped characters', () => {
-  expect(encode('item~24')).toBe('item%7E24');
-  expect(encode('item$')).toBe('item~24');
+it('distinguishes projection names with different source characters', () => {
+  expect(projectionStorageAddress('item~24')).not.toBe(projectionStorageAddress('item$'));
 });

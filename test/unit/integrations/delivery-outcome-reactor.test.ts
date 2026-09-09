@@ -15,9 +15,9 @@ import {
 } from '@atolis-hq/eventing/memory';
 import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { expect, it } from 'vitest';
-import { encode } from '../../../packages/eventing-filesystem/src/file-projection-store.js';
+import { projectionStorageAddress } from '../../../packages/eventing-filesystem/src/storage-name.js';
 import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
@@ -74,15 +74,16 @@ it('skips facts outside the delivery namespace', () => {
   ).toBeNull();
 });
 
-it('reads and normalizes legacy pending confirmation state from its exact existing file', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-legacy-pending-delivery-'));
-  const namespace = 'reactor:delivery-outcomes:pending';
+it('reads and normalizes pending confirmation state from its canonical file', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-pending-delivery-'));
+  const consumer = 'reactor:delivery-outcomes';
   const key = 'pending-confirmations';
-  const directory = join(root, 'projections', encode(namespace));
+  const path = processorStatePath(root, consumer, key);
+  const directory = dirname(path);
   await mkdir(directory, { recursive: true });
   await copyFile(
-    join(process.cwd(), 'test', 'fixtures', 'projections', 'legacy-flat-pending-delivery.json'),
-    join(directory, `${encode(key)}.json`),
+    join(process.cwd(), 'test', 'fixtures', 'projections', 'pending-delivery.json'),
+    path,
   );
   const states = new FileProcessorStateStore(root);
   const reactor = createReactor(
@@ -105,7 +106,7 @@ it('reads and normalizes legacy pending confirmation state from its exact existi
 
   const stored = await states.read<{
     readonly events: readonly StoredPendingDeliveryOutcome[];
-  }>('reactor:delivery-outcomes', key);
+  }>(consumer, key);
   expect(stored?.value.events).toEqual([
     {
       eventId: 'intent-1:confirmed',
@@ -128,7 +129,7 @@ it('fails recovery before rewriting corrupt pending state or advancing its check
   const root = await mkdtemp(join(tmpdir(), 'wake-corrupt-pending-delivery-'));
   const consumer = 'reactor:delivery-outcomes';
   const key = 'pending-confirmations';
-  const path = join(root, 'projections', encode(`${consumer}:pending`), `${encode(key)}.json`);
+  const path = processorStatePath(root, consumer, key);
   const raw = `${JSON.stringify({
     namespace: 'other:pending',
     key: 'other-key',
@@ -168,6 +169,16 @@ it('fails recovery before rewriting corrupt pending state or advancing its check
   expect(accepted).toBe(0);
   await expect(readFile(path, 'utf8')).resolves.toBe(raw);
 });
+
+function processorStatePath(root: string, consumer: string, key: string): string {
+  return join(
+    root,
+    'projections',
+    'processor-state',
+    projectionStorageAddress(consumer),
+    `${projectionStorageAddress(key)}.json`,
+  );
+}
 
 function confirmedEvent(overrides: {
   readonly intentEventId?: string;

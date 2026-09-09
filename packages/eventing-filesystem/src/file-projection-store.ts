@@ -1,35 +1,18 @@
 import type { ProjectionStore, StoredProjection } from '@atolis-hq/eventing';
 
 import { readFile, readdir, rm, stat } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { writeFileAtomically } from './atomic-write.js';
-import { processorStateDirectoryNames } from './processor-state-paths.js';
-import { encodeLegacyStorageName, encodeStorageName } from './storage-name.js';
-
-export interface FileProjectionStoreOptions {
-  readonly protectedProcessorStateConsumers?: readonly string[];
-}
+import { projectionStorageAddress } from './storage-name.js';
 
 export class FileProjectionStore implements ProjectionStore {
-  private readonly protectedDirectories: ReadonlySet<string>;
-
-  constructor(
-    private readonly root: string,
-    options: FileProjectionStoreOptions = {},
-  ) {
-    this.protectedDirectories = new Set(
-      (options.protectedProcessorStateConsumers ?? []).flatMap(processorStateDirectoryNames),
-    );
-  }
+  constructor(private readonly root: string) {}
 
   private readonly listCache = new Map<string, CachedProjectionDirectory>();
 
   async read<Value>(namespace: string, key: string): Promise<StoredProjection<Value> | null> {
-    for (const path of projectionPaths(this.root, namespace, key).candidates) {
-      const projection = await readProjection(path);
-      if (matchesProjection(projection, namespace, key))
-        return projection as StoredProjection<Value>;
-    }
+    const projection = await readProjection(projectionPaths(this.root, namespace, key).current);
+    if (matchesProjection(projection, namespace, key)) return projection as StoredProjection<Value>;
     return null;
   }
 
@@ -108,34 +91,11 @@ export class FileProjectionStore implements ProjectionStore {
   }
 
   private async clearProjectionNamespace(namespace: string): Promise<void> {
-    const [currentDirectory, ...legacyDirectories] = projectionDirectories(this.root, namespace);
-    // The versioned directory belongs exclusively to this namespace, unlike a
-    // legacy directory that can collide with another namespace's spelling.
-    await rm(currentDirectory!, { recursive: true, force: true });
-    await Promise.all(
-      legacyDirectories.map(async (directory) => {
-        if (this.protectedDirectories.has(directoryName(directory))) return;
-        await clearProjectionDirectory(directory, namespace);
-      }),
-    );
+    await rm(projectionDirectories(this.root, namespace)[0]!, { recursive: true, force: true });
   }
 
   private async clearAllProjectionDirectories(): Promise<void> {
-    const root = join(this.root, 'projections');
-    let namespaces: string[];
-    try {
-      namespaces = await readdir(root);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-      throw error;
-    }
-    await Promise.all(
-      namespaces.map(async (namespace) => {
-        const directory = join(root, namespace);
-        if (this.protectedDirectories.has(namespace)) return;
-        await rm(directory, { recursive: true, force: true });
-      }),
-    );
+    await rm(join(this.root, 'projections', 'projection'), { recursive: true, force: true });
   }
 }
 
@@ -158,8 +118,6 @@ interface DirectoryRevision {
 
 interface ProjectionPaths {
   readonly current: string;
-  readonly legacy: string;
-  readonly candidates: readonly string[];
 }
 
 function directoryRevision(info: Awaited<ReturnType<typeof stat>>): string {
@@ -167,29 +125,16 @@ function directoryRevision(info: Awaited<ReturnType<typeof stat>>): string {
 }
 
 function projectionPaths(root: string, namespace: string, key: string): ProjectionPaths {
-  const currentNamespace = encode(namespace);
-  const currentKey = encode(key);
-  const legacyNamespace = encodeLegacyStorageName(namespace);
-  const legacyKey = encodeLegacyStorageName(key);
   const current = projectionPath(
     root,
-    `%projection-${currentNamespace}`,
-    `%projection-${currentKey}`,
+    join('projection', projectionStorageAddress(namespace)),
+    projectionStorageAddress(key),
   );
-  const legacy = projectionPath(root, legacyNamespace, legacyKey);
-  return {
-    current,
-    legacy,
-    candidates: uniquePaths([current, legacy]),
-  };
+  return { current };
 }
 
 function projectionDirectories(root: string, namespace: string): readonly string[] {
-  const currentNamespace = encode(namespace);
-  return uniquePaths([
-    join(root, 'projections', `%projection-${currentNamespace}`),
-    join(root, 'projections', encodeLegacyStorageName(namespace)),
-  ]);
+  return [join(root, 'projections', 'projection', projectionStorageAddress(namespace))];
 }
 
 function projectionPath(root: string, namespace: string, key: string): string {
@@ -269,28 +214,15 @@ function compareCachedProjectionFiles(
   left: CachedProjectionFile,
   right: CachedProjectionFile,
 ): number {
-  return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
-}
-
-async function clearProjectionDirectory(directory: string, namespace: string): Promise<void> {
-  const entries = await readProjectionDirectory(directory);
-  await Promise.all(
-    entries
-      .filter((entry) => matchesProjection(entry.value, namespace))
-      .map((entry) => rm(entry.path, { force: true })),
-  );
-}
-
-function uniquePaths(paths: readonly string[]): readonly string[] {
-  return [...new Set(paths)];
-}
-
-function directoryName(path: string): string {
-  return basename(path);
-}
-
-export function encode(value: string): string {
-  return encodeStorageName(value);
+  return left.value.key < right.value.key
+    ? -1
+    : left.value.key > right.value.key
+      ? 1
+      : left.path < right.path
+        ? -1
+        : left.path > right.path
+          ? 1
+          : 0;
 }
 
 export async function atomicJson(path: string, value: unknown): Promise<void> {

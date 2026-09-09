@@ -17,9 +17,7 @@ eventingAdapterContract('filesystem', {
     return {
       journal,
       checkpoints: new FileCheckpointStore(root),
-      projections: new FileProjectionStore(root, {
-        protectedProcessorStateConsumers: ['consumer:projection-rebuild'],
-      }),
+      projections: new FileProjectionStore(root),
       processorState: new FileProcessorStateStore(root),
       serialiseRun: createFileProcessorRunSerialiser(root),
       async flatRecordCompatibility() {
