@@ -20,14 +20,6 @@ export function assertStorageName(value: string): void {
     throw new Error('Storage name must not contain path separators');
 }
 
-export function encodeStorageName(value: string): string {
-  assertStorageName(value);
-  return encodeURIComponent(value)
-    .replace(/~/g, '%7E')
-    .replace(/%(?!7E)/g, '~')
-    .replace(/\./g, '~2E');
-}
-
 export function encodeLegacyStorageName(value: string): string {
   assertStorageName(value);
   return encodeURIComponent(value).replace(/%/g, '~').replace(/\./g, '~2E');
