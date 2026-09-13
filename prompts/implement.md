@@ -37,6 +37,11 @@ Completion requirements:
     tooling or sandbox access—even if the code itself is correct.
   - Use `BLOCKED` only when completing the code change requires human
     clarification, a decision, or judgment call.
+  - Immediately before a `BLOCKED` or `NEEDS_CLARIFICATION` status line, add
+    `WAKE_HUMAN_INPUT_REQUIRED: <the specific decision or action needed>`.
+    Unfinished implementation, unrun verification, and remaining tests are
+    not human blockers: continue working. The Codex stop hook rejects a block
+    status without this line.
 
 Wake will provide the issue data and comments below in a delimited untrusted
 data block.
@@ -59,4 +64,10 @@ verbatim.
 If you cannot safely complete the change, report `FAILED` when a required
 execution step or tool access failed, and `BLOCKED` only when the code change
 needs human clarification, a decision, or judgment call.
+
+Immediately before a `BLOCKED` or `NEEDS_CLARIFICATION` status line, add
+`WAKE_HUMAN_INPUT_REQUIRED: <the specific decision or action needed>`.
+Unfinished implementation, unrun verification, and remaining tests are not
+human blockers: continue working. The Codex stop hook rejects a block status
+without this line.
 {{/if}}
