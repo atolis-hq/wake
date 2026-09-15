@@ -106,6 +106,10 @@ describe('board', () => {
       /\.board\s*\{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/s,
     );
     expect(stylesheet).toMatch(
+      /\.boardWithCollapsedColumn\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)\s*2\.65rem/s,
+    );
+    expect(stylesheet).toMatch(/\.columnCollapsed h2\s*\{\s*display:\s*none;/s);
+    expect(stylesheet).toMatch(
       /@media\s*\(max-width:\s*42rem\)[\s\S]*?\.board\s*\{[^}]*display:\s*block/s,
     );
   });
@@ -423,7 +427,7 @@ describe('board', () => {
 
     expect(await screen.findByRole('button', { name: 'Collapse Finished' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Collapse Ready' })).toBeNull();
-    expect(screen.getByRole('link', { name: /Alpha/ })).toBeTruthy();
+    expect(within(screen.getByRole('main')).getByRole('link', { name: /Alpha/ })).toBeTruthy();
     window.localStorage.clear();
   });
 

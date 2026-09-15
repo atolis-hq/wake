@@ -1,4 +1,4 @@
-﻿import { Link, useLocation } from 'react-router';
+﻿import { Link } from 'react-router';
 import {
   BoardActiveRunPhaseValue,
   type BoardCardResponse,
@@ -102,20 +102,10 @@ function activeRunLabel(
   return phase === BoardActiveRunPhaseValue.Starting ? 'Starting' : 'Running';
 }
 
-export function BoardCard({
-  item,
-  background,
-}: {
-  readonly item: BoardCardResponse;
-  readonly background: ReturnType<typeof useLocation>;
-}) {
+export function BoardCard({ item }: { readonly item: BoardCardResponse }) {
   return (
     <li className={styles.card} aria-label={item.objective}>
-      <Link
-        className={styles.cardLink!}
-        to={`/work/${encodeURIComponent(item.workItemKey)}`}
-        state={{ background }}
-      >
+      <Link className={styles.cardLink!} to={`/work/${encodeURIComponent(item.workItemKey)}`}>
         {item.externalRef !== undefined && (
           <span className={styles.cardRef}>{item.externalRef}</span>
         )}

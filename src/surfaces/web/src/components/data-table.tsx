@@ -10,15 +10,17 @@ export function DataTable<Row>({
   rows,
   rowKey,
   columns,
+  tableClassName,
 }: {
   readonly caption: string;
   readonly rows: readonly Row[];
   readonly rowKey: (row: Row) => string;
   readonly columns: readonly DataColumn<Row>[];
+  readonly tableClassName?: string;
 }) {
   return (
     <div className={styles.tableWrap}>
-      <table className={styles.table}>
+      <table className={[styles.table, tableClassName].filter(Boolean).join(' ')}>
         <caption>{caption}</caption>
         <thead>
           <tr>
@@ -33,7 +35,9 @@ export function DataTable<Row>({
           {rows.map((row) => (
             <tr key={rowKey(row)}>
               {columns.map((column) => (
-                <td key={column.label}>{column.render(row)}</td>
+                <td key={column.label} data-label={column.label}>
+                  <div>{column.render(row)}</div>
+                </td>
               ))}
             </tr>
           ))}

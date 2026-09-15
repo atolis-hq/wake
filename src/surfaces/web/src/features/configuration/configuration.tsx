@@ -62,34 +62,36 @@ export function ConfigurationPage() {
     setTab(nextTab.dataset.tab as typeof tab);
     nextTab.focus();
   };
+  const refreshControls = (
+    <PageHeader
+      actions={
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() =>
+            void (tab === 'commands'
+              ? commandsQuery.refetch()
+              : tab === 'workflows'
+                ? workflowDiagramsQuery.refetch()
+                : tab === 'webhooks'
+                  ? webhooksQuery.refetch()
+                  : configurationQuery.refetch())
+          }
+        >
+          Refresh{' '}
+          {tab === 'commands'
+            ? 'commands'
+            : tab === 'workflows'
+              ? 'workflows'
+              : tab === 'webhooks'
+                ? 'webhooks'
+                : 'configuration'}
+        </Button>
+      }
+    />
+  );
   return (
     <>
-      <PageHeader
-        actions={
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() =>
-              void (tab === 'commands'
-                ? commandsQuery.refetch()
-                : tab === 'workflows'
-                  ? workflowDiagramsQuery.refetch()
-                  : tab === 'webhooks'
-                    ? webhooksQuery.refetch()
-                    : configurationQuery.refetch())
-            }
-          >
-            Refresh{' '}
-            {tab === 'commands'
-              ? 'commands'
-              : tab === 'workflows'
-                ? 'workflows'
-                : tab === 'webhooks'
-                  ? 'webhooks'
-                  : 'configuration'}
-          </Button>
-        }
-      />
       <div className={styles.tabs} role="tablist" aria-label="Configuration sections">
         <button
           type="button"
@@ -145,7 +147,13 @@ export function ConfigurationPage() {
         </button>
       </div>
       {tab === 'commands' ? (
-        <section id="commands-panel" role="tabpanel" aria-labelledby="commands-tab">
+        <section
+          id="commands-panel"
+          role="tabpanel"
+          aria-labelledby="commands-tab"
+          className={styles.tabPanel}
+        >
+          {refreshControls}
           {commandsQuery.isPending ? (
             <LoadingState label="Loading commands" />
           ) : commandsQuery.error && !commandsQuery.data ? (
@@ -179,7 +187,13 @@ export function ConfigurationPage() {
           )}
         </section>
       ) : tab === 'webhooks' ? (
-        <section id="webhooks-panel" role="tabpanel" aria-labelledby="webhooks-tab">
+        <section
+          id="webhooks-panel"
+          role="tabpanel"
+          aria-labelledby="webhooks-tab"
+          className={styles.tabPanel}
+        >
+          {refreshControls}
           {webhooksQuery.isPending ? (
             <LoadingState label="Loading webhook setup instructions" />
           ) : webhooksQuery.error && !webhooksQuery.data ? (
@@ -213,7 +227,13 @@ export function ConfigurationPage() {
           )}
         </section>
       ) : tab === 'workflows' ? (
-        <section id="workflows-panel" role="tabpanel" aria-labelledby="workflows-tab">
+        <section
+          id="workflows-panel"
+          role="tabpanel"
+          aria-labelledby="workflows-tab"
+          className={styles.tabPanel}
+        >
+          {refreshControls}
           {workflowDiagramsQuery.isPending ? (
             <LoadingState label="Loading workflows" />
           ) : workflowDiagramsQuery.error && !workflowDiagramsQuery.data ? (
@@ -233,7 +253,13 @@ export function ConfigurationPage() {
           )}
         </section>
       ) : (
-        <section id="configuration-panel" role="tabpanel" aria-labelledby="configuration-tab">
+        <section
+          id="configuration-panel"
+          role="tabpanel"
+          aria-labelledby="configuration-tab"
+          className={styles.tabPanel}
+        >
+          {refreshControls}
           {configurationQuery.isPending ? (
             <LoadingState label="Loading redacted configuration" />
           ) : configurationQuery.error && !configurationQuery.data ? (

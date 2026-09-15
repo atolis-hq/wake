@@ -59,10 +59,10 @@ function useDiagramLayout(diagram: WorkflowDiagram, direction: WorkflowDiagramLa
 
 function useLayoutDirection(): WorkflowDiagramLayoutDirection {
   const [direction, setDirection] = useState<WorkflowDiagramLayoutDirection>(() =>
-    globalThis.matchMedia?.('(max-width: 42rem)').matches ? 'DOWN' : 'RIGHT',
+    globalThis.matchMedia?.('(max-width: 48rem)').matches ? 'DOWN' : 'RIGHT',
   );
   useEffect(() => {
-    const query = globalThis.matchMedia?.('(max-width: 42rem)');
+    const query = globalThis.matchMedia?.('(max-width: 48rem)');
     if (query === undefined) return;
     const update = () => setDirection(query.matches ? 'DOWN' : 'RIGHT');
     query.addEventListener('change', update);

@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
 import { ApiClientContext } from '../src/api/context.js';
 import { queryKeys } from '../src/api/query-keys.js';
@@ -143,6 +143,7 @@ function detailClient(
                           : 'DONE',
                       workflowName: 'delivery',
                       stage: 'implement',
+                      runnerName: 'Codex',
                       totalTokens: 0,
                       totalCostUsd: 0,
                     },
@@ -213,7 +214,7 @@ async function transcriptResponse(
 describe('work detail', () => {
   afterEach(cleanup);
 
-  it('places the mocked workflow diagram above runs in the overview main area', async () => {
+  it('places the workflow above the activity timeline', async () => {
     render(
       <MemoryRouter initialEntries={['/work/wk_a']}>
         <App
@@ -229,7 +230,7 @@ describe('work detail', () => {
     );
 
     const diagram = await screen.findByLabelText('Workflow Delivery');
-    const runs = screen.getByRole('table', { name: 'Runs' });
+    const runs = screen.getByRole('heading', { name: 'Activity timeline' });
     expect(diagram.compareDocumentPosition(runs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -241,7 +242,7 @@ describe('work detail', () => {
     );
     expect(await screen.findByRole('heading', { name: 'Alpha' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Resources' })).toBeTruthy();
-    expect(screen.getByRole('table', { name: 'Runs' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Activity timeline' })).toBeTruthy();
   });
 
   it('places overview navigation before sidebar actions and hides resource revisions', async () => {
@@ -251,7 +252,7 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     const title = await screen.findByRole('heading', { name: 'Alpha' });
-    expect(title.nextElementSibling?.getAttribute('role')).toBe('tablist');
+    expect(title.previousElementSibling?.getAttribute('role')).toBe('tablist');
     expect(screen.getByRole('tablist', { name: 'Work detail sections' }).textContent).toContain(
       'Overview',
     );
@@ -303,6 +304,19 @@ describe('work detail', () => {
     expect(screen.getByRole('tabpanel', { name: 'Events' }).id).toBe('work-detail-events-panel');
   });
 
+  it('omits work details from transcripts and restores them on overview', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+    expect(screen.queryByText('Work identity')).toBeNull();
+    await user.click(screen.getByRole('tab', { name: 'Overview' }));
+    expect(screen.getByText('Work identity')).toBeTruthy();
+  });
+
   it('does not offer a message composer when control-plane messages are disabled', async () => {
     const user = userEvent.setup();
     render(
@@ -313,6 +327,80 @@ describe('work detail', () => {
 
     await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
     expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
+  });
+
+  it('opens conversation at the latest message and preserves history position during refresh', async () => {
+    const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(1200);
+    const visible = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    const user = userEvent.setup();
+    const older = {
+      entryId: 'older',
+      body: 'Earlier message',
+      occurredAt: asOf,
+      origin: 'external',
+      actorId: 'operator',
+      deleted: false,
+      representations: [],
+    };
+    const newer = {
+      ...older,
+      entryId: 'newer',
+      body: 'Latest message',
+      occurredAt: '2026-07-31T10:01:00.000Z',
+    };
+    const client = detailClient(null, undefined, [], undefined, 'DONE', true, [newer, older]);
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    try {
+      render(
+        <QueryClientProvider client={cache}>
+          <ApiClientContext.Provider value={client}>
+            <MemoryRouter initialEntries={['/work/wk_a']}>
+              <Routes>
+                <Route path="/work/:workItemKey" element={<WorkDetail />} />
+              </Routes>
+            </MemoryRouter>
+          </ApiClientContext.Provider>
+        </QueryClientProvider>,
+      );
+      await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
+      const history = screen.getByRole('region', { name: 'Message history' });
+      expect(history.scrollTop).toBe(1200);
+      const entries = screen.getByRole('list', { name: 'Conversation' }).children;
+      expect(entries[0]?.textContent).toContain('Earlier message');
+      expect(entries[1]?.textContent).toContain('Latest message');
+      history.scrollTop = 100;
+      fireEvent.scroll(history);
+      const response = await client.work.detail('wk_a');
+      act(() =>
+        cache.setQueryData(queryKeys.work.detail('wk_a'), {
+          ...response,
+          data: {
+            ...response.data,
+            conversation: {
+              ...response.data.conversation,
+              entries: [
+                ...response.data.conversation.entries,
+                {
+                  ...newer,
+                  entryId: 'incoming',
+                  body: 'Incoming message',
+                  occurredAt: '2026-07-31T10:02:00.000Z',
+                },
+              ],
+            },
+          },
+        }),
+      );
+      await screen.findByText('Incoming message');
+      expect(history.scrollTop).toBe(100);
+      await user.click(screen.getByRole('button', { name: 'Jump to latest' }));
+      expect(history.scrollTop).toBe(1200);
+      expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
+    } finally {
+      height.mockRestore();
+      visible.mockRestore();
+      cache.clear();
+    }
   });
 
   it('formats conversation messages with canonical provenance and deleted-state handling', async () => {
@@ -360,8 +448,13 @@ describe('work detail', () => {
 
     await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
     expect(screen.getByRole('list', { name: 'Conversation' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Conversation' })).toBeNull();
     expect(screen.getByText('External feedback')).toBeTruthy();
     expect(screen.getByText('Agent response')).toBeTruthy();
+    expect(
+      screen.getByLabelText('octocat GitHub avatar').querySelector('img')?.getAttribute('src'),
+    ).toBe('https://github.com/octocat.png?size=64');
+    expect(screen.getByLabelText('agent-runner').textContent).toBe('AG');
     expect(screen.getAllByText('octocat')).toHaveLength(2);
     expect(screen.getByText('via github')).toBeTruthy();
     expect(screen.getByText('via external')).toBeTruthy();
@@ -370,6 +463,27 @@ describe('work detail', () => {
     );
     expect(screen.getByText('Published to unheard-of-kind resource-1')).toBeTruthy();
     expect(screen.getByText('Message deleted')).toBeTruthy();
+  });
+
+  it('merges runs and events into a compact, non-expandable activity timeline', async () => {
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+
+    const timeline = await screen.findByRole('list', { name: 'Activity timeline' });
+    expect(timeline.textContent).toContain('agent');
+    expect(timeline.textContent).toContain('work.created');
+    expect(timeline.textContent).toContain('Run');
+    expect(timeline.textContent).toContain('Event');
+    expect(timeline.textContent).toContain('Stage: implement');
+    expect(timeline.textContent).toContain('Runner: Codex');
+    expect(timeline.textContent).toContain('DONE');
+    expect(within(timeline).queryByRole('button')).toBeNull();
+    expect(within(timeline).getByRole('link', { name: 'agent' }).getAttribute('href')).toBe(
+      '/runs/run-1',
+    );
   });
 
   it('records an operator message from the dedicated Conversation tab', async () => {
@@ -382,15 +496,17 @@ describe('work detail', () => {
     );
 
     await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
+    expect(screen.queryByText('Message')).toBeNull();
     expect(screen.getByRole('tabpanel', { name: 'Conversation' }).id).toBe(
       'work-detail-conversation-panel',
     );
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Please continue.');
-    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    await user.keyboard('{Enter}');
 
     await waitFor(() =>
       expect(requests.filter(({ url }) => url.endsWith('/commands/message'))).toHaveLength(1),
     );
+    expect(await screen.findByText('Queued for Wake')).toBeTruthy();
     const message = requests.find(({ url }) => url.endsWith('/commands/message'));
     expect(message?.init?.method).toBe('POST');
     expect(JSON.parse(String(message?.init?.body))).toMatchObject({ body: 'Please continue.' });
@@ -407,20 +523,20 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     const overview = await screen.findByRole('tab', { name: 'Overview' });
+    const runs = screen.getByRole('tab', { name: 'Runs' });
     const conversation = screen.getByRole('tab', { name: 'Conversation' });
     const events = screen.getByRole('tab', { name: 'Events' });
-    const transcripts = screen.getByRole('tab', { name: 'Transcripts' });
     expect(overview.tabIndex).toBe(0);
     expect(events.tabIndex).toBe(-1);
 
     overview.focus();
     await user.keyboard('{ArrowRight}');
-    expect(document.activeElement).toBe(conversation);
-    expect(conversation.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(runs);
+    expect(runs.getAttribute('aria-selected')).toBe('true');
 
     await user.keyboard('{End}');
-    expect(document.activeElement).toBe(transcripts);
-    expect(transcripts.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(conversation);
+    expect(conversation.getAttribute('aria-selected')).toBe('true');
 
     await user.keyboard('{ArrowRight}');
     expect(document.activeElement).toBe(overview);
@@ -429,7 +545,7 @@ describe('work detail', () => {
     await user.keyboard('{Home}');
     expect(document.activeElement).toBe(overview);
     await user.keyboard('{ArrowLeft}');
-    expect(document.activeElement).toBe(transcripts);
+    expect(document.activeElement).toBe(conversation);
   });
 
   it('places work actions below the detail panel in the overview sidebar', async () => {
@@ -1029,6 +1145,7 @@ describe('work detail', () => {
         <App client={detailClient()} />
       </MemoryRouter>,
     );
+    await userEvent.setup().click(await screen.findByRole('tab', { name: 'Runs' }));
     const link = await screen.findByRole('link', { name: 'run-1' });
     expect(link.getAttribute('href')).toBe('/runs/run-1');
     expect(screen.getByRole('cell', { name: 'delivery' })).toBeTruthy();

@@ -1,5 +1,6 @@
-import { ActivityOutcomeKind } from '../../../activities/index.js';
+import type { ActivityOutcomeKind } from '../../../activities/index.js';
 import type { RunStatus } from '../../../execution/index.js';
+import { defineClosedVocabulary } from '../../../kernel/index.js';
 import type { ApiCommandStatus } from './control-plane.js';
 
 const commandStatusShape = { accepted: true, completed: true };
@@ -34,7 +35,14 @@ export const BoardActiveRunPhaseValue = {
   Started: boardActiveRunPhases[1]! as Extract<RunStatus, keyof typeof boardActiveRunPhaseShape>,
 } as const;
 
-export const ActivityOutcomeKindValue = ActivityOutcomeKind;
+// Keep the browser transport independent of the activity implementation graph.
+export const ActivityOutcomeKindValue: typeof ActivityOutcomeKind = defineClosedVocabulary({
+  Waiting: 'waiting',
+  Done: 'done',
+  Rejected: 'rejected',
+  Blocked: 'blocked',
+  Failed: 'failed',
+} as const);
 
 const boardConditionShape = {
   ready: true,

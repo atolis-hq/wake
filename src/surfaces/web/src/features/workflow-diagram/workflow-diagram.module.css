@@ -268,7 +268,9 @@
   display: grid;
   gap: 0.5rem;
   min-height: 0;
-  min-width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
 }
 
 .canvas[data-direction='DOWN'] .edges,

@@ -1,6 +1,7 @@
+import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router';
 import type { BoardCardResponse } from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
@@ -78,7 +79,6 @@ function groupItems(items: readonly BoardCardResponse[], groupBy: GroupBy): read
 
 export function Board() {
   const client = useApiClient();
-  const location = useLocation();
   const query = useQuery({
     queryKey: queryKeys.board.list(),
     queryFn: ({ signal }) => client.board.list(undefined, signal),
@@ -143,6 +143,9 @@ export function Board() {
                 : swimlaneStorageId(groupBy as Exclude<GroupBy, 'none'>, lane.key);
             const laneCollapsed = swimlaneId !== undefined && collapsedSwimlanes.has(swimlaneId);
             const laneLabel = `${lane.label} (${lane.items.length})`;
+            const hasCollapsedColumn = boardColumns.some(
+              (condition) => condition === 'finished' && collapsed.has(condition),
+            );
             return (
               <section key={lane.key}>
                 {lane.label !== undefined && (
@@ -159,7 +162,9 @@ export function Board() {
                   </h2>
                 )}
                 {!laneCollapsed && (
-                  <div className={styles.board}>
+                  <div
+                    className={`${styles.board} ${hasCollapsedColumn ? styles.boardWithCollapsedColumn : ''}`}
+                  >
                     {boardColumns.map((condition) => {
                       const columnItems = lane.items.filter((item) => item.condition === condition);
                       const canCollapse = mobile || condition === 'finished';
@@ -169,7 +174,10 @@ export function Board() {
                           ? label(condition)
                           : `${label(condition)} · ${lane.label}`;
                       return (
-                        <section className={styles.column} key={`${lane.key}-${condition}`}>
+                        <section
+                          className={`${styles.column} ${isCollapsed ? styles.columnCollapsed : ''}`}
+                          key={`${lane.key}-${condition}`}
+                        >
                           <div className={styles.columnHeader}>
                             <h2>{`${label(condition)} (${columnItems.length})`}</h2>
                             {canCollapse && (
@@ -180,18 +188,17 @@ export function Board() {
                                 aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${columnLabel}`}
                                 onClick={() => toggleColumn(condition)}
                               >
-                                {isCollapsed ? '+' : '−'}
+                                <FontAwesomeIcon
+                                  icon={isCollapsed ? faChevronRight : faChevronLeft}
+                                  aria-hidden="true"
+                                />
                               </button>
                             )}
                           </div>
                           {!isCollapsed && (
                             <ul className={styles.cards}>
                               {columnItems.map((item) => (
-                                <BoardCard
-                                  key={item.workItemKey}
-                                  item={item}
-                                  background={location}
-                                />
+                                <BoardCard key={item.workItemKey} item={item} />
                               ))}
                             </ul>
                           )}

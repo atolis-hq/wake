@@ -33,6 +33,14 @@
   --cond-error-bg: var(--wake-red-900);
   --cond-finished-fg: var(--wake-slate-400);
   --cond-finished-bg: var(--wake-slate-900);
+  --header-background: var(--brand);
+  --header-ink: var(--ink-inverse);
+  --chat-message-background: var(--surface-panel);
+  --chat-operator-background: var(--selection-bg);
+  --header-height: 3.5rem;
+  --selection-bg: color-mix(in srgb, var(--accent) 10%, var(--surface-panel));
+  --scrim: rgb(0 0 0 / 0.6);
+  --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
@@ -42,6 +50,7 @@
   --radius-sm: 0.4rem;
   --shadow: 0 1px 3px rgb(0 0 0 / 0.35);
   --focus-ring: var(--wake-mint-300);
+  --weight-control: 400;
   --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
   --text-xs: 0.72rem;

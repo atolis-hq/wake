@@ -1,3 +1,5 @@
+import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '../api/context.js';
 import { queryKeys } from '../api/query-keys.js';
@@ -64,32 +66,44 @@ export function ControlPlaneStatus() {
       {status.data?.data.dispatchPaused ? (
         <Button
           type="button"
+          aria-label="Resume dispatch"
           disabled={resumeDispatchMutation.isPending}
           onClick={() => resumeDispatchMutation.mutate(commandKey('resume-dispatch'))}
         >
-          Resume dispatch
+          Resume<span className={styles.desktopLabel}> dispatch</span>
         </Button>
       ) : (
         <Button
           type="button"
+          aria-label="Pause dispatch"
           disabled={pauseDispatchMutation.isPending}
           onClick={() => pauseDispatchMutation.mutate(commandKey('pause-dispatch'))}
         >
-          Pause dispatch
+          Pause<span className={styles.desktopLabel}> dispatch</span>
         </Button>
       )}
-      {pausedRunners.map((runner) => (
-        <span key={runner.runnerId} className={styles.pauseControl!}>
-          {runner.runnerId} paused
-          <button
-            type="button"
-            disabled={unpauseMutation.isPending}
-            onClick={() => unpauseMutation.mutate(runner.runnerId)}
-          >
-            Unpause
-          </button>
-        </span>
-      ))}
+      {pausedRunners.length > 0 && (
+        <details className={styles.dispatchMenu}>
+          <summary>
+            <span>{pausedRunners.length} paused</span>
+            <FontAwesomeIcon icon={faChevronDown} aria-hidden="true" />
+          </summary>
+          <div className={styles.dispatchPopover}>
+            {pausedRunners.map((runner) => (
+              <span key={runner.runnerId} className={styles.pauseControl!}>
+                {runner.runnerId} paused
+                <button
+                  type="button"
+                  disabled={unpauseMutation.isPending}
+                  onClick={() => unpauseMutation.mutate(runner.runnerId)}
+                >
+                  Unpause
+                </button>
+              </span>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

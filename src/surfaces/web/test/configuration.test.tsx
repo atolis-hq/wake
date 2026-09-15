@@ -16,6 +16,12 @@ describe('configuration page commands tab', () => {
     );
 
     expect(await screen.findByText(/Read-only effective configuration/)).toBeTruthy();
+    expect(screen.getByRole('main').firstElementChild?.getAttribute('role')).toBe('tablist');
+    expect(
+      within(screen.getByRole('tabpanel', { name: 'Configuration' })).getByRole('button', {
+        name: 'Refresh configuration',
+      }),
+    ).toBeTruthy();
   });
 
   it('shows configured workflow definitions only on the workflows tab', async () => {

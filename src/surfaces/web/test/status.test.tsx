@@ -11,6 +11,31 @@ describe('control-plane mutation and connection state', () => {
     window.dispatchEvent(new Event('online'));
   });
 
+  it('keeps paused models in an expandable dispatch menu', async () => {
+    const user = userEvent.setup();
+    const client = new WakeApiClient(async (input, init) =>
+      String(input).endsWith('/runners')
+        ? json({
+            items: [
+              { runnerId: 'model-a', status: 'paused', available: false, updatedAt: instant },
+            ],
+            page: { nextCursor: null, hasMore: false },
+            meta: { asOf: instant },
+          })
+        : fixtureResponse(String(input), init),
+    );
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+    const summary = await screen.findByText('1 paused');
+    expect(summary.closest('details')?.open).toBe(false);
+    await user.click(summary);
+    expect(summary.closest('details')?.open).toBe(true);
+    expect(screen.getByRole('button', { name: 'Unpause' })).toBeTruthy();
+  });
+
   it('does not expose a tick action or tick command feedback', async () => {
     const client = new WakeApiClient(async (input, init) => {
       const url = String(input);

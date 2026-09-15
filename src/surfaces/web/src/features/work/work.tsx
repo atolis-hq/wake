@@ -1,7 +1,13 @@
+import { faHourglassHalf, faPaperPlane } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type KeyboardEvent, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router';
-import type { AuditEventResponse, BoardCardResponse } from '../../../../api/contracts/index.js';
+import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router';
+import type {
+  AuditEventResponse,
+  BoardCardResponse,
+  RunResponse,
+} from '../../../../api/contracts/index.js';
 import {
   ActivityOutcomeKindValue,
   RunResolutionStatusValue,
@@ -34,7 +40,6 @@ const resourceIcons: Record<string, typeof GitHubIcon> = {
 };
 
 export function WorkList() {
-  const location = useLocation();
   const client = useApiClient();
   const query = useQuery({
     queryKey: queryKeys.board.list(),
@@ -55,21 +60,19 @@ export function WorkList() {
           caption="Work items"
           rows={items}
           rowKey={(item) => item.workItemKey}
-          columns={columns(location)}
+          columns={columns}
         />
       )}
     </>
   );
 }
 
-const columns = (location: ReturnType<typeof useLocation>) => [
+const columns = [
   { label: 'Ref', render: (item: BoardCardResponse) => item.externalRef ?? '?' },
   {
     label: 'Work item',
     render: (item: BoardCardResponse) => (
-      <Link to={`/work/${encodeURIComponent(item.workItemKey)}`} state={{ background: location }}>
-        {item.objective}
-      </Link>
+      <Link to={`/work/${encodeURIComponent(item.workItemKey)}`}>{item.objective}</Link>
     ),
   },
   {
@@ -92,8 +95,12 @@ const columns = (location: ReturnType<typeof useLocation>) => [
   { label: 'Cost', render: (item: BoardCardResponse) => fmtCost(item.totalCostUsd) },
   { label: 'Usage', render: (item: BoardCardResponse) => <TokenUsage usage={item} /> },
 ];
-export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
+export function WorkDetail() {
   const { workItemKey = '' } = useParams();
+  return <WorkDetailContent key={workItemKey} workItemKey={workItemKey} />;
+}
+
+function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
   const client = useApiClient();
   const navigate = useNavigate();
   const cache = useQueryClient();
@@ -112,6 +119,9 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     },
   });
   const [messageBody, setMessageBody] = useState('');
+  const [awaitingAgentReply, setAwaitingAgentReply] = useState(false);
+  const agentReplyCountAtSend = useRef(0);
+  const messageTextarea = useRef<HTMLTextAreaElement>(null);
   const message = useMutation({
     mutationFn: (body: string) =>
       client.work.message(
@@ -120,10 +130,21 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
         `web:conversation-message:${globalThis.crypto.randomUUID()}`,
       ),
     onSuccess: async () => {
+      agentReplyCountAtSend.current = conversationEntries.filter(
+        (entry) => entry.origin === 'agent',
+      ).length;
+      setAwaitingAgentReply(true);
+      followLatest.current = true;
+      setReadingHistory(false);
       setMessageBody('');
+      if (messageTextarea.current) messageTextarea.current.style.height = '';
       await refresh();
     },
   });
+  const sendMessage = () => {
+    const body = messageBody.trim();
+    if (body !== '' && !message.isPending) message.mutate(body);
+  };
   const query = useQuery({
     queryKey: queryKeys.work.detail(workItemKey),
     queryFn: ({ signal }) => client.work.detail(workItemKey, signal),
@@ -171,9 +192,31 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     },
     onSuccess: refresh,
   });
-  const [tab, setTab] = useState<'overview' | 'conversation' | 'events' | 'transcripts'>(
+  const [tab, setTab] = useState<'overview' | 'runs' | 'conversation' | 'events' | 'transcripts'>(
     'overview',
   );
+  const conversationViewport = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+  const [readingHistory, setReadingHistory] = useState(false);
+  const conversationEntries = [...(query.data?.data.conversation.entries ?? [])].sort((a, b) =>
+    a.occurredAt.localeCompare(b.occurredAt),
+  );
+  const latestMessage = conversationEntries.at(-1);
+  const activeRun = query.data?.data.execution.runs.find((run) => run.active);
+  useEffect(() => {
+    const agentReplies = conversationEntries.filter((entry) => entry.origin === 'agent').length;
+    if (awaitingAgentReply && agentReplies > agentReplyCountAtSend.current)
+      setAwaitingAgentReply(false);
+  }, [awaitingAgentReply, conversationEntries]);
+  useLayoutEffect(() => {
+    followLatest.current = true;
+    setReadingHistory(false);
+  }, [tab]);
+  useLayoutEffect(() => {
+    if (tab === 'conversation' && followLatest.current && conversationViewport.current) {
+      conversationViewport.current.scrollTop = conversationViewport.current.scrollHeight;
+    }
+  }, [tab, latestMessage?.entryId, latestMessage?.body]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>();
   const [thisRunOnly, setThisRunOnly] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string>();
@@ -247,188 +290,348 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     nextTab.focus();
   };
   const content = (
-    <div className={styles.detail}>
+    <div className={`${styles.detail} ${tab === 'conversation' ? styles.detailChat : ''}`}>
       {query.isPending ? (
         <LoadingState label="Loading work detail" />
       ) : query.error && !query.data ? (
         <ErrorState error={query.error} retry={() => void query.refetch()} />
       ) : query.data ? (
         <>
-          <h2>{query.data.data.work.objective}</h2>
           <div className={styles.tabs} role="tablist" aria-label="Work detail sections">
-            <button
-              type="button"
-              role="tab"
-              data-tab="overview"
-              id="work-detail-overview-tab"
-              aria-controls="work-detail-overview-panel"
-              aria-selected={tab === 'overview'}
-              tabIndex={tab === 'overview' ? 0 : -1}
-              onKeyDown={navigateTabs}
-              onClick={() => setTab('overview')}
-            >
-              Overview
-            </button>
-            <button
-              type="button"
-              role="tab"
-              data-tab="conversation"
-              id="work-detail-conversation-tab"
-              aria-controls="work-detail-conversation-panel"
-              aria-selected={tab === 'conversation'}
-              tabIndex={tab === 'conversation' ? 0 : -1}
-              onKeyDown={navigateTabs}
-              onClick={() => setTab('conversation')}
-            >
-              Conversation
-            </button>
-            <button
-              type="button"
-              role="tab"
-              data-tab="events"
-              id="work-detail-events-tab"
-              aria-controls="work-detail-events-panel"
-              aria-selected={tab === 'events'}
-              tabIndex={tab === 'events' ? 0 : -1}
-              onKeyDown={navigateTabs}
-              onClick={() => setTab('events')}
-            >
-              Events
-            </button>
-            <button
-              type="button"
-              role="tab"
-              data-tab="transcripts"
-              id="work-detail-transcripts-tab"
-              aria-controls="work-detail-transcripts-panel"
-              aria-selected={tab === 'transcripts'}
-              tabIndex={tab === 'transcripts' ? 0 : -1}
-              onKeyDown={navigateTabs}
-              onClick={() => setTab('transcripts')}
-            >
-              Transcripts
-            </button>
+            {(['overview', 'runs', 'events', 'transcripts', 'conversation'] as const).map(
+              (section) => (
+                <button
+                  key={section}
+                  type="button"
+                  role="tab"
+                  data-tab={section}
+                  id={`work-detail-${section}-tab`}
+                  aria-controls={`work-detail-${section}-panel`}
+                  aria-selected={tab === section}
+                  tabIndex={tab === section ? 0 : -1}
+                  onKeyDown={navigateTabs}
+                  onClick={() => setTab(section)}
+                >
+                  {section === 'overview'
+                    ? 'Overview'
+                    : section[0]!.toUpperCase() + section.slice(1)}
+                </button>
+              ),
+            )}
           </div>
-          {tab === 'conversation' ? (
+          <h1 className={styles.workTitle}>
+            {query.data.data.work.externalRef && <span>{query.data.data.work.externalRef}</span>}
+            {query.data.data.work.objective}
+          </h1>
+          {tab !== 'conversation' && tab !== 'transcripts' && (
+            <div className={styles.workSummary}>
+              <Panel>
+                <dl className={styles.summary}>
+                  <div>
+                    <dt>Work identity</dt>
+                    <dd>{query.data.data.work.workItemId}</dd>
+                  </div>
+                  <div>
+                    <dt>State</dt>
+                    <dd>
+                      <Chip variant="outline">{query.data.data.work.state}</Chip>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Workflow</dt>
+                    <dd>{query.data.data.orchestration.primary?.workflowName ?? '?'}</dd>
+                  </div>
+                  <div>
+                    <dt>Stage</dt>
+                    <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
+                  </div>
+                  {needsAmbiguityResolution && (
+                    <>
+                      <div>
+                        <dt>Blocked because</dt>
+                        <dd>Ambiguous run requires an operator decision</dd>
+                      </div>
+                    </>
+                  )}
+                  {query.data.data.work.lastRunOutcome !== undefined && (
+                    <>
+                      <div>
+                        <dt>Last run</dt>
+                        <dd>
+                          <OutcomeChip
+                            outcome={query.data.data.work.lastRunOutcome}
+                            title="Outcome of the most recent run"
+                          />
+                        </dd>
+                      </div>
+                    </>
+                  )}
+                </dl>
+              </Panel>
+              <div className={styles.actionBar}>
+                {query.data.data.orchestration.primary?.retryEligible === true && (
+                  <Button
+                    type="button"
+                    disabled={command.isPending}
+                    onClick={() => command.mutate('retry')}
+                  >
+                    Retry
+                  </Button>
+                )}
+                {query.data.data.orchestration.primary?.extendEligible === true && (
+                  <Button
+                    type="button"
+                    disabled={command.isPending}
+                    onClick={() => command.mutate('extend')}
+                  >
+                    Extend
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  disabled={command.isPending}
+                  onClick={() =>
+                    command.mutate(query.data.data.work.frozen ? 'unfreeze' : 'freeze')
+                  }
+                >
+                  {query.data.data.work.frozen ? 'Unfreeze' : 'Freeze'}
+                </Button>
+                <Button
+                  type="button"
+                  className={styles.dangerButton!}
+                  disabled={command.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        'Delete this work item from the board and remove its resource correlations?',
+                      )
+                    )
+                      command.mutate('delete');
+                  }}
+                >
+                  Delete
+                </Button>
+                <MutationFeedback
+                  pending={command.isPending}
+                  {...(command.error === null ? {} : { message: command.error?.message })}
+                />
+              </div>
+            </div>
+          )}
+          {tab === 'runs' ? (
+            <section
+              id="work-detail-runs-panel"
+              role="tabpanel"
+              aria-labelledby="work-detail-runs-tab"
+            >
+              {query.data.data.execution.runs.length === 0 ? (
+                <EmptyState>No runs</EmptyState>
+              ) : (
+                <DataTable
+                  caption="Runs"
+                  rows={query.data.data.execution.runs}
+                  rowKey={(run) => run.runId}
+                  columns={runColumns}
+                />
+              )}
+            </section>
+          ) : tab === 'conversation' ? (
             <section
               id="work-detail-conversation-panel"
               className={styles.conversationPanel}
               role="tabpanel"
               aria-labelledby="work-detail-conversation-tab"
             >
-              <div>
-                <h2 id="work-conversation">Conversation</h2>
-                <p className={styles.conversationHint}>
-                  Messages recorded here become part of this work item's canonical context.
-                </p>
+              <div
+                ref={conversationViewport}
+                className={styles.conversationViewport}
+                role="region"
+                aria-label="Message history"
+                tabIndex={0}
+                onScroll={(event) => {
+                  const viewport = event.currentTarget;
+                  followLatest.current =
+                    viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 64;
+                  setReadingHistory(!followLatest.current);
+                }}
+              >
+                {conversationEntries.length === 0 ? (
+                  <EmptyState>No conversation messages</EmptyState>
+                ) : (
+                  <ol className={styles.conversationTimeline} aria-label="Conversation">
+                    {conversationEntries.map((entry) => {
+                      const source = query.data.data.resources.find(
+                        (resource) => resource.resourceId === entry.sourceResourceId,
+                      );
+                      return (
+                        <li key={entry.entryId}>
+                          <article className={styles.conversationEntry} data-origin={entry.origin}>
+                            <ConversationAvatar
+                              actorId={entry.actorId}
+                              sourceAdapter={entry.sourceAdapter}
+                            />
+                            <header className={styles.conversationEntryHead}>
+                              <strong>{entry.actorId}</strong>
+                              <span className={styles.conversationSource}>
+                                via {entry.sourceAdapter ?? entry.origin}
+                              </span>
+                              <LocalTime value={entry.occurredAt} />
+                              {entry.runId !== undefined && (
+                                <span>
+                                  <Link to={`/runs/${encodeURIComponent(entry.runId)}`}>
+                                    run {entry.runId}
+                                  </Link>
+                                  {entry.stage === undefined ? '' : ` (${entry.stage})`}
+                                </span>
+                              )}
+                              {source !== undefined && (
+                                <span>
+                                  {source.externalUrl === undefined ? (
+                                    source.locatorLabel
+                                  ) : (
+                                    <a
+                                      href={source.externalUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      {source.locatorLabel}
+                                    </a>
+                                  )}
+                                </span>
+                              )}
+                            </header>
+                            {entry.deleted ? (
+                              <em>Message deleted</em>
+                            ) : (
+                              <div className={styles.conversationBody}>{entry.body}</div>
+                            )}
+                            {entry.representations.length > 0 && (
+                              <footer className={styles.conversationRepresentations}>
+                                {entry.representations.map((representation) => {
+                                  const resource = query.data.data.resources.find(
+                                    (candidate) =>
+                                      candidate.resourceId === representation.resourceId,
+                                  );
+                                  const label = resource?.locatorLabel ?? representation.resourceId;
+                                  return (
+                                    <span
+                                      key={`${representation.resourceId}:${representation.externalId}`}
+                                    >
+                                      Published to{' '}
+                                      {resource?.externalUrl === undefined ? (
+                                        label
+                                      ) : (
+                                        <a
+                                          href={resource.externalUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          {label}
+                                        </a>
+                                      )}
+                                    </span>
+                                  );
+                                })}
+                              </footer>
+                            )}
+                          </article>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
               </div>
-              {query.data.data.conversation.entries.length === 0 ? (
-                <EmptyState>No conversation messages</EmptyState>
-              ) : (
-                <ol className={styles.conversationTimeline} aria-label="Conversation">
-                  {query.data.data.conversation.entries.map((entry) => {
-                    const source = query.data.data.resources.find(
-                      (resource) => resource.resourceId === entry.sourceResourceId,
-                    );
-                    return (
-                      <li key={entry.entryId}>
-                        <article className={styles.conversationEntry}>
-                          <header className={styles.conversationEntryHead}>
-                            <strong>{entry.actorId}</strong>
-                            <span>via {entry.sourceAdapter ?? entry.origin}</span>
-                            <LocalTime value={entry.occurredAt} />
-                            {entry.runId !== undefined && (
-                              <span>
-                                <Link to={`/runs/${encodeURIComponent(entry.runId)}`}>
-                                  run {entry.runId}
-                                </Link>
-                                {entry.stage === undefined ? '' : ` (${entry.stage})`}
-                              </span>
-                            )}
-                            {source !== undefined && (
-                              <span>
-                                {source.externalUrl === undefined ? (
-                                  source.locatorLabel
-                                ) : (
-                                  <a
-                                    href={source.externalUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    {source.locatorLabel}
-                                  </a>
-                                )}
-                              </span>
-                            )}
-                          </header>
-                          {entry.deleted ? (
-                            <em>Message deleted</em>
-                          ) : (
-                            <pre className={styles.conversationBody}>{entry.body}</pre>
-                          )}
-                          {entry.representations.length > 0 && (
-                            <footer className={styles.conversationRepresentations}>
-                              {entry.representations.map((representation) => {
-                                const resource = query.data.data.resources.find(
-                                  (candidate) => candidate.resourceId === representation.resourceId,
-                                );
-                                const label = resource?.locatorLabel ?? representation.resourceId;
-                                return (
-                                  <span
-                                    key={`${representation.resourceId}:${representation.externalId}`}
-                                  >
-                                    Published to{' '}
-                                    {resource?.externalUrl === undefined ? (
-                                      label
-                                    ) : (
-                                      <a
-                                        href={resource.externalUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        {label}
-                                      </a>
-                                    )}
-                                  </span>
-                                );
-                              })}
-                            </footer>
-                          )}
-                        </article>
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-              {query.data.data.conversation.canCreateEntries && (
-                <form
-                  className={styles.conversationComposer}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const body = messageBody.trim();
-                    if (body !== '') message.mutate(body);
-                  }}
-                >
-                  <label htmlFor="work-conversation-message">Message</label>
-                  <textarea
-                    id="work-conversation-message"
-                    value={messageBody}
-                    disabled={message.isPending}
-                    onChange={(event) => setMessageBody(event.target.value)}
-                    placeholder="Add context, answer a question, or direct the current work."
-                    rows={4}
-                  />
-                  <div className={styles.conversationComposerActions}>
-                    <Button type="submit" disabled={message.isPending || messageBody.trim() === ''}>
-                      Send message
-                    </Button>
-                    <MutationFeedback
-                      pending={message.isPending}
-                      {...(message.error === null ? {} : { message: message.error?.message })}
-                    />
+              <div className={styles.conversationFooter}>
+                {awaitingAgentReply && (
+                  <div className={styles.conversationProgress} role="status" aria-live="polite">
+                    {activeRun === undefined ? (
+                      <FontAwesomeIcon
+                        icon={faHourglassHalf}
+                        className={styles.conversationWaitingIcon}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <span className={styles.conversationProgressDot} data-active-run="true" />
+                    )}
+                    <span className={styles.conversationProgressTitle}>
+                      {activeRun === undefined ? 'Queued for Wake' : activeRun.activity}
+                    </span>
+                    {activeRun !== undefined && (
+                      <span className={styles.conversationProgressMeta}>
+                        {activeRun.stage !== undefined && `Stage: ${activeRun.stage}`}
+                        {activeRun.stage !== undefined &&
+                          (activeRun.runnerName !== undefined ||
+                            activeRun.runnerModel !== undefined) &&
+                          ' · '}
+                        {(activeRun.runnerName !== undefined ||
+                          activeRun.runnerModel !== undefined) &&
+                          `Runner: ${activeRun.runnerName ?? activeRun.runnerModel}`}
+                      </span>
+                    )}
                   </div>
-                </form>
-              )}
+                )}
+                {readingHistory && (
+                  <Button
+                    className={styles.conversationLatest}
+                    onClick={() => {
+                      followLatest.current = true;
+                      setReadingHistory(false);
+                      if (conversationViewport.current)
+                        conversationViewport.current.scrollTop =
+                          conversationViewport.current.scrollHeight;
+                    }}
+                  >
+                    Jump to latest
+                  </Button>
+                )}
+                {query.data.data.conversation.canCreateEntries && (
+                  <form
+                    className={styles.conversationComposer}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      sendMessage();
+                    }}
+                  >
+                    <textarea
+                      ref={messageTextarea}
+                      id="work-conversation-message"
+                      aria-label="Message"
+                      value={messageBody}
+                      disabled={message.isPending}
+                      onChange={(event) => {
+                        setMessageBody(event.target.value);
+                        event.currentTarget.style.height = 'auto';
+                        event.currentTarget.style.height = `${Math.min(
+                          event.currentTarget.scrollHeight,
+                          192,
+                        )}px`;
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                          event.preventDefault();
+                          sendMessage();
+                        }
+                      }}
+                      placeholder="Add context, answer a question, or direct the current work."
+                      rows={1}
+                    />
+                    <div className={styles.conversationComposerActions}>
+                      <Button
+                        type="submit"
+                        className={styles.conversationSend}
+                        aria-label="Send message"
+                        disabled={message.isPending || messageBody.trim() === ''}
+                      >
+                        <FontAwesomeIcon icon={faPaperPlane} aria-hidden="true" />
+                      </Button>
+                      <MutationFeedback
+                        pending={message.isPending}
+                        {...(message.error === null ? {} : { message: message.error?.message })}
+                      />
+                    </div>
+                  </form>
+                )}
+              </div>
             </section>
           ) : tab === 'transcripts' ? (
             <section
@@ -570,38 +773,12 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
               role="tabpanel"
               aria-labelledby="work-detail-overview-tab"
             >
+              <div className={styles.overviewWorkflow}>
+                {diagramQuery.data?.data.diagrams[0] === undefined ? null : (
+                  <WorkflowDiagramView diagram={diagramQuery.data.data.diagrams[0]} />
+                )}
+              </div>
               <aside className={styles.overviewSidebar}>
-                <Panel>
-                  <dl className={styles.summary}>
-                    <dt>Work identity</dt>
-                    <dd>{query.data.data.work.workItemId}</dd>
-                    <dt>State</dt>
-                    <dd>
-                      <Chip variant="outline">{query.data.data.work.state}</Chip>
-                    </dd>
-                    <dt>Workflow</dt>
-                    <dd>{query.data.data.orchestration.primary?.workflowName ?? '?'}</dd>
-                    <dt>Stage</dt>
-                    <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
-                    {needsAmbiguityResolution && (
-                      <>
-                        <dt>Blocked because</dt>
-                        <dd>Ambiguous run requires an operator decision</dd>
-                      </>
-                    )}
-                    {query.data.data.work.lastRunOutcome !== undefined && (
-                      <>
-                        <dt>Last run</dt>
-                        <dd>
-                          <OutcomeChip
-                            outcome={query.data.data.work.lastRunOutcome}
-                            title="Outcome of the most recent run"
-                          />
-                        </dd>
-                      </>
-                    )}
-                  </dl>
-                </Panel>
                 {needsAmbiguityResolution && ambiguousRun !== undefined && (
                   <Panel labelledBy="ambiguous-run-resolution">
                     <h2 id="ambiguous-run-resolution" className={styles.sidebarSectionTitle}>
@@ -710,55 +887,6 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                     />
                   </Panel>
                 )}
-                <div className={styles.actionBar}>
-                  {query.data.data.orchestration.primary?.retryEligible === true && (
-                    <Button
-                      type="button"
-                      disabled={command.isPending}
-                      onClick={() => command.mutate('retry')}
-                    >
-                      Retry
-                    </Button>
-                  )}
-                  {query.data.data.orchestration.primary?.extendEligible === true && (
-                    <Button
-                      type="button"
-                      disabled={command.isPending}
-                      onClick={() => command.mutate('extend')}
-                    >
-                      Extend
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    disabled={command.isPending}
-                    onClick={() =>
-                      command.mutate(query.data.data.work.frozen ? 'unfreeze' : 'freeze')
-                    }
-                  >
-                    {query.data.data.work.frozen ? 'Unfreeze' : 'Freeze'}
-                  </Button>
-                  <Button
-                    type="button"
-                    className={styles.dangerButton!}
-                    disabled={command.isPending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          'Delete this work item from the board and remove its resource correlations?',
-                        )
-                      )
-                        command.mutate('delete');
-                    }}
-                  >
-                    Delete
-                  </Button>
-                  <MutationFeedback
-                    pending={command.isPending}
-                    {...(command.error === null ? {} : { message: command.error?.message })}
-                  />
-                </div>
-
                 <section aria-labelledby="work-resources">
                   <h2 id="work-resources" className={styles.sidebarSectionTitle}>
                     Resources
@@ -813,19 +941,61 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                 </section>
               </aside>
 
-              <section className={styles.overviewMain} aria-labelledby="work-runs">
-                {diagramQuery.data?.data.diagrams[0] === undefined ? null : (
-                  <WorkflowDiagramView diagram={diagramQuery.data.data.diagrams[0]} />
-                )}
-                {query.data.data.execution.runs.length === 0 ? (
-                  <EmptyState>No runs</EmptyState>
+              <section className={styles.overviewMain} aria-labelledby="work-activity">
+                <h2 id="work-activity" className={styles.sidebarSectionTitle}>
+                  Activity timeline
+                </h2>
+                {eventsQuery.isPending ? (
+                  <LoadingState label="Loading activity" />
+                ) : eventsQuery.error ? (
+                  <ErrorState error={eventsQuery.error} retry={() => void eventsQuery.refetch()} />
+                ) : activityTimeline(query.data.data.execution.runs, eventsQuery.data?.items ?? [])
+                    .length ? (
+                  <ol className={styles.activityTimeline} aria-label="Activity timeline">
+                    {activityTimeline(
+                      query.data.data.execution.runs,
+                      eventsQuery.data?.items ?? [],
+                    ).map((entry) => (
+                      <li key={entry.id} className={styles.activityTimelineItem}>
+                        <span className={styles.activityTimelineMarker} data-kind={entry.kind} />
+                        <LocalTime value={entry.occurredAt} />
+                        {entry.kind === 'run' ? (
+                          <>
+                            <span className={styles.activityTimelineKind} data-kind="run">
+                              Run
+                            </span>
+                            <Link to={`/runs/${encodeURIComponent(entry.run.runId)}`}>
+                              {entry.run.activity}
+                            </Link>
+                            <span className={styles.activityTimelineDetail}>
+                              Stage: {entry.run.stage ?? 'Not assigned'}
+                            </span>
+                            <span className={styles.activityTimelineDetail}>
+                              Runner:{' '}
+                              {entry.run.runnerName ?? entry.run.runnerModel ?? 'Unassigned'}
+                            </span>
+                            <span className={styles.activityTimelineOutcome}>
+                              Outcome: {runOutcome(entry.run)}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className={styles.activityTimelineKind} data-kind="event">
+                              Event
+                            </span>
+                            <span>{entry.event.type}</span>
+                            {entry.event.stream !== undefined && (
+                              <span className={styles.activityTimelineDetail}>
+                                Stream: {entry.event.stream.kind}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
                 ) : (
-                  <DataTable
-                    caption="Runs"
-                    rows={query.data.data.execution.runs}
-                    rowKey={(run) => run.runId}
-                    columns={runColumns}
-                  />
+                  <EmptyState>No activity yet</EmptyState>
                 )}
               </section>
             </div>
@@ -834,38 +1004,72 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
       ) : null}
     </div>
   );
-  if (!modal) return content;
+  return content;
+}
+
+function ConversationAvatar({
+  actorId,
+  sourceAdapter,
+}: {
+  readonly actorId: string;
+  readonly sourceAdapter: string | undefined;
+}) {
+  const [imageUnavailable, setImageUnavailable] = useState(false);
+  const github = sourceAdapter === 'github' && actorId.trim() !== '';
   return (
-    <div
-      className={styles.modalBackdrop}
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) navigate(-1);
-      }}
+    <span
+      className={styles.conversationAvatar}
+      aria-label={github ? `${actorId} GitHub avatar` : actorId}
     >
-      <section
-        className={styles.modal}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Work item detail"
-      >
-        <div className={styles.modalHeader}>
-          {query.data?.data.work.externalRef !== undefined && (
-            <span className={styles.modalRef}>{query.data.data.work.externalRef}</span>
-          )}
-          <button
-            className={styles.modalClose!}
-            type="button"
-            aria-label="Close work detail"
-            onClick={() => navigate(-1)}
-          >
-            Close
-          </button>
-        </div>
-        {content}
-      </section>
-    </div>
+      {github && !imageUnavailable ? (
+        <img
+          src={`https://github.com/${encodeURIComponent(actorId)}.png?size=64`}
+          alt=""
+          onError={() => setImageUnavailable(true)}
+        />
+      ) : (
+        actorId.slice(0, 2).toUpperCase()
+      )}
+    </span>
   );
+}
+
+type ActivityTimelineEntry =
+  | {
+      readonly id: string;
+      readonly kind: 'run';
+      readonly occurredAt: string;
+      readonly run: RunResponse;
+    }
+  | {
+      readonly id: string;
+      readonly kind: 'event';
+      readonly occurredAt: string;
+      readonly event: AuditEventResponse;
+    };
+
+function activityTimeline(
+  runs: readonly RunResponse[],
+  events: readonly AuditEventResponse[],
+): readonly ActivityTimelineEntry[] {
+  return [
+    ...runs.map((run) => ({
+      id: `run:${run.runId}`,
+      kind: 'run' as const,
+      occurredAt: run.finishedAt ?? run.startedAt,
+      run,
+    })),
+    ...events.map((event) => ({
+      id: `event:${event.id}`,
+      kind: 'event' as const,
+      occurredAt: event.occurredAt,
+      event,
+    })),
+  ].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+}
+
+function runOutcome(run: RunResponse): string {
+  return run.resolution?.sentinel ?? run.sentinel ?? run.status;
 }
 
 function isAmbiguousRunBlock(reason: string | undefined): boolean {
