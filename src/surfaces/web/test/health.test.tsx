@@ -14,6 +14,10 @@ describe('adapter health table', () => {
       </MemoryRouter>,
     );
 
+    expect(await screen.findByRole('heading', { name: 'System checks' })).toBeTruthy();
+    expect(screen.getByText('journal')).toBeTruthy();
+    expect(screen.getByText('1 healthy')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Adapter health' }));
     const table = await screen.findByRole('table', { name: 'Adapter health' });
     const rows = within(table).getAllByRole('row');
     expect(rows).toHaveLength(3); // header + 2 checks
@@ -28,8 +32,29 @@ describe('adapter health table', () => {
     expect(within(table).getByText('degraded')).toBeTruthy();
     expect(within(table).getByText('3 consecutive failures')).toBeTruthy();
 
-    // the existing generic checks list is untouched, outside the new table
-    expect(screen.getByText(/journal: ok/)).toBeTruthy();
+    expect(screen.queryByText(/journal: ok/)).toBeNull();
+    expect(screen.getByRole('tabpanel', { name: 'Adapter health' })).toBeTruthy();
+  });
+
+  it('switches Health sections with the keyboard and keeps refresh inside the active panel', async () => {
+    render(
+      <MemoryRouter initialEntries={['/health']}>
+        <App client={client()} />
+      </MemoryRouter>,
+    );
+    const overview = await screen.findByRole('tab', { name: 'Overview' });
+    overview.focus();
+    fireEvent.keyDown(overview, { key: 'End' });
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Maintenance recovery' }));
+    expect(
+      within(screen.getByRole('tabpanel', { name: 'Maintenance recovery' })).getByRole('button', {
+        name: 'Refresh health',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText('No maintenance lease')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Runner availability' }));
+    expect(await screen.findByText('No runners configured')).toBeTruthy();
+    expect(screen.queryByText(/journal: ok/)).toBeNull();
   });
 
   it('offers confirmed recovery only for the failed maintenance lease the operator observed', async () => {
@@ -79,6 +104,7 @@ describe('adapter health table', () => {
       </MemoryRouter>,
     );
 
+    fireEvent.click(await screen.findByRole('tab', { name: 'Maintenance recovery' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Clear failed maintenance' }));
 
     await waitFor(() => expect(calls).toHaveLength(1));

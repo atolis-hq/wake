@@ -21,7 +21,8 @@ a:hover {
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 :focus-visible {

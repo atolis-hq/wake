@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router';
+import { Navigate, Route, Routes } from 'react-router';
 import wakeLogo from '../../../../../assets/wake-logo.svg';
 import { WakeApiClient } from '../api/client.js';
 import { ApiClientContext } from '../api/context.js';
@@ -104,14 +104,9 @@ function Login({
 }
 
 function AppRoutes() {
-  const location = useLocation();
-  const background = (location.state as { readonly background?: typeof location } | null)
-    ?.background;
-  const desktop = useMediaQuery('(min-width: 48rem)');
-  const modal = background !== undefined && desktop && !isHardReload();
   return (
     <AppShell>
-      <Routes location={modal ? background : location}>
+      <Routes>
         <Route path="/" element={<Navigate to="/board" replace />} />
         <Route path="/board" element={<Board />} />
         <Route path="/work" element={<WorkList />} />
@@ -124,30 +119,6 @@ function AppRoutes() {
         <Route path="/configuration" element={<ConfigurationPage />} />
         <Route path="*" element={<Navigate to="/board" replace />} />
       </Routes>
-      {modal && (
-        <Routes>
-          <Route path="/work/:workItemKey" element={<WorkDetail modal />} />
-        </Routes>
-      )}
     </AppShell>
   );
-}
-
-function isHardReload(): boolean {
-  const entry = globalThis.performance?.getEntriesByType?.('navigation')[0] as
-    PerformanceNavigationTiming | undefined;
-  return entry?.type === 'reload';
-}
-
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => globalThis.matchMedia?.(query).matches ?? true);
-  useEffect(() => {
-    const media = globalThis.matchMedia?.(query);
-    if (media === undefined) return;
-    const update = () => setMatches(media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, [query]);
-  return matches;
 }

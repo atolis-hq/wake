@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "dev": "vite"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.3.1",
