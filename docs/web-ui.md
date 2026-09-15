@@ -33,7 +33,7 @@ not currently exposed in the UI.
 Run the local UI against an existing Wake server in PowerShell:
 
 ```powershell
-$env:WAKE_UI_API_TARGET = 'https://devbox.aftermat.dev'
+$env:WAKE_UI_API_TARGET = 'https://wake.example.com'
 npm --workspace @atolis-hq/wake-web run dev
 ```
 
