@@ -176,6 +176,9 @@
   gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
   margin-bottom: var(--space-1);
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
   color: var(--ink);
   font-size: var(--text-sm);
   line-height: 1.4;
@@ -187,6 +190,10 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.workLink:hover {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
 }
 .ref {
   font-size: var(--text-xs);
