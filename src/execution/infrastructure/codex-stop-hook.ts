@@ -3,25 +3,56 @@ import { pathToFileURL } from 'node:url';
 
 export const waitBackgroundStatus = 'WAIT_BACKGROUND';
 
+export const humanInputRequiredMarker = 'WAKE_HUMAN_INPUT_REQUIRED:';
+
 export interface CodexStopHookDecision {
   readonly decision?: 'block';
   readonly reason?: string;
 }
 
 /**
- * WAIT_BACKGROUND is a Codex-only, intermediate final response. It is not a
- * Wake outcome: the hook rejects it and gives Codex another turn to obtain a
- * terminal result before it reports DONE, BLOCKED, NEEDS_CLARIFICATION, or
- * FAILED.
+ * WAIT_BACKGROUND and an unexplained blocked result are intermediate final
+ * responses. They are not Wake outcomes: the hook rejects them and gives
+ * Codex another turn to obtain a terminal result.
  */
 export function inspectCodexTranscript(transcript: string): CodexStopHookDecision {
-  return lastAssistantMessage(transcript) === waitBackgroundStatus
-    ? {
-        decision: 'block',
-        reason:
-          'Codex reported WAIT_BACKGROUND. Do not end this turn. Poll every command still running from this turn and report a normal terminal status only after each has settled.',
-      }
-    : {};
+  const message = lastAssistantMessage(transcript);
+  if (message === undefined) return {};
+  if (message === waitBackgroundStatus)
+    return {
+      decision: 'block',
+      reason:
+        'Codex reported WAIT_BACKGROUND. Do not end this turn. Poll every command still running from this turn and report a normal terminal status only after each has settled.',
+    };
+  if (blockedWithoutHumanAction(message))
+    return {
+      decision: 'block',
+      reason:
+        'A BLOCKED or NEEDS_CLARIFICATION result requires a concrete human action. Unfinished implementation, unrun verification, or remaining tests are not human blockers. Continue working; only stop with that status after including a WAKE_HUMAN_INPUT_REQUIRED: line that names the decision or action needed.',
+    };
+  return {};
+}
+
+function blockedWithoutHumanAction(message: string): boolean {
+  const status = terminalStatus(message);
+  return (
+    (status === 'BLOCKED' || status === 'NEEDS_CLARIFICATION') &&
+    !message
+      .split(/\r?\n/)
+      .some(
+        (line) =>
+          line.trim().startsWith(humanInputRequiredMarker) &&
+          line.trim().length > humanInputRequiredMarker.length,
+      )
+  );
+}
+
+function terminalStatus(message: string): string | undefined {
+  return message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .at(-1);
 }
 
 export async function runCodexStopHook(input: unknown): Promise<CodexStopHookDecision> {
