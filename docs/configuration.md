@@ -294,8 +294,8 @@ CLI before allowing real agent execution.
 | `execution.leaseDurationMs` | positive integer; optional | Overrides the durable Run lease duration. |
 | `execution.leaseRenewalIntervalMs` | positive integer; optional | Overrides how often a local active Run renews its lease. |
 | `execution.maxAmbiguityReconciliationAttempts` | positive integer; optional | Limits recovery reconciliation attempts for an ambiguous Run. |
-| `execution.workspaceHooks.prepare` | object; optional | Runs an operator-authored shell command in every acquired branch or read-only workspace before its runner starts. |
-| `execution.workspaceHooks.prepare.command` | non-empty string; required | Raw shell command or script path to prepare or repair workspace state. |
+| `execution.workspaceHooks.prepare` | object; optional | Runs an operator-authored shell command on every acquisition of a retained branch or read-only workspace before its runner starts. The hook owns dependency caching and invalidation. |
+| `execution.workspaceHooks.prepare.command` | non-empty string; required | Raw shell command or script path to prepare or repair workspace state; it must be safe to run after Wake resets tracked files while preserving ignored files. |
 | `execution.workspaceHooks.prepare.timeoutMs` | positive integer; default `300000` | Wall-clock timeout for the prepare command. |
 
 Each `execution.agentRunners.<name>` definition has the following shape.

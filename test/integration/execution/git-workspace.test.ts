@@ -1,6 +1,8 @@
-import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runId } from '../../../src/execution/contracts/identifiers.js';
 import { GitWorkspaceProvider } from '../../../src/execution/infrastructure/workspace/git-workspace.js';
@@ -10,6 +12,8 @@ import { resId, workId } from '../../support/identities.js';
 function nodeCommand(script: string): string {
   return `"${process.execPath}" -e "${script}"`;
 }
+
+const execFileAsync = promisify(execFile);
 
 describe('GitWorkspaceProvider', () => {
   const roots: string[] = [];
@@ -60,6 +64,8 @@ describe('GitWorkspaceProvider', () => {
 
     await expect(acquisition).rejects.toBe(cancellation);
     expect(receivedSignal).toBe(controller.signal);
+    const markers = await readdir(join(root, '.wake-workspace-ownership'));
+    expect(markers.filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
   });
 
   it('clones a repository into a work-item workspace', async () => {
@@ -339,7 +345,7 @@ describe('GitWorkspaceProvider', () => {
     ).rejects.toThrow(/prepare hook.*timed out/i);
   });
 
-  it('records ownership before cloning and removes a read-only workspace when the lease releases', async () => {
+  it('records ownership before cloning and retains a read-only workspace when the lease releases', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
     roots.push(root);
     const workItemId = workId('one');
@@ -350,6 +356,7 @@ describe('GitWorkspaceProvider', () => {
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
       async (args) => {
+        if (args[0] !== 'clone') return;
         const workspacePath = args[2]!;
         const marker = JSON.parse(await readFile(markerPath, 'utf8'));
         expect(marker).toEqual({
@@ -379,7 +386,214 @@ describe('GitWorkspaceProvider', () => {
 
     await lease.release();
     await lease.release();
-    await expect(access(lease.path)).rejects.toThrow();
-    await expect(access(markerPath)).rejects.toThrow();
+    await expect(access(lease.path)).resolves.toBeUndefined();
+    await expect(access(markerPath)).resolves.toBeUndefined();
+  });
+
+  it('reuses a read-only checkout, restores its requested revision, and prepares each lease', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const commands: string[][] = [];
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        commands.push([...args]);
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+      undefined,
+      {
+        command: nodeCommand("require('node:fs').appendFileSync('.prepared', 'x')"),
+        timeoutMs: 1_000,
+      },
+    );
+    const request = {
+      signal: new AbortController().signal,
+      mode: 'read-only' as const,
+      workItemId: workId('read-only-reuse'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+        revision: 'deadbeef',
+      },
+    };
+
+    const first = await provider.acquire({ ...request, runId: runId('run-read-only-first') });
+    await first.release();
+    const second = await provider.acquire({ ...request, runId: runId('run-read-only-second') });
+
+    expect(second.path).toBe(first.path);
+    expect(commands.filter(([command]) => command === 'clone')).toHaveLength(1);
+    expect(commands.filter((command) => command.includes('fetch'))).toHaveLength(2);
+    expect(commands.filter((command) => command.includes('reset'))).toHaveLength(2);
+    await expect(readFile(join(second.path, '.prepared'), 'utf8')).resolves.toBe('xx');
+    await second.release();
+  });
+
+  it('checks out the exact resource revision and preserves ignored dependency state on reuse', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const repository = join(root, 'repository');
+    await execFileAsync('git', ['init', repository]);
+    await writeFile(join(repository, 'tracked.txt'), 'first\n');
+    await execFileAsync('git', ['-C', repository, 'add', 'tracked.txt']);
+    await execFileAsync('git', [
+      '-C',
+      repository,
+      '-c',
+      'user.name=test',
+      '-c',
+      'user.email=test@example.com',
+      'commit',
+      '-m',
+      'first',
+    ]);
+    const firstRevision = (
+      await execFileAsync('git', ['-C', repository, 'rev-parse', 'HEAD'])
+    ).stdout.trim();
+    await writeFile(join(repository, 'tracked.txt'), 'second\n');
+    await execFileAsync('git', [
+      '-C',
+      repository,
+      '-c',
+      'user.name=test',
+      '-c',
+      'user.email=test@example.com',
+      'commit',
+      '-am',
+      'second',
+    ]);
+    const secondRevision = (
+      await execFileAsync('git', ['-C', repository, 'rev-parse', 'HEAD'])
+    ).stdout.trim();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => repository });
+    const request = {
+      signal: new AbortController().signal,
+      mode: 'read-only' as const,
+      workItemId: workId('exact-revision'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+        revision: firstRevision,
+      },
+    };
+    const first = await provider.acquire({ ...request, runId: runId('run-exact-first') });
+    await expect(readFile(join(first.path, 'tracked.txt'), 'utf8')).resolves.toBe('first\n');
+    await mkdir(join(first.path, 'node_modules'), { recursive: true });
+    await writeFile(join(first.path, 'node_modules', 'cached'), 'keep');
+    await first.release();
+    const second = await provider.acquire({
+      ...request,
+      runId: runId('run-exact-second'),
+      repositoryResource: { ...request.repositoryResource, revision: secondRevision },
+    });
+    await expect(readFile(join(second.path, 'tracked.txt'), 'utf8')).resolves.toBe('second\n');
+    await expect(readFile(join(second.path, 'node_modules', 'cached'), 'utf8')).resolves.toBe(
+      'keep',
+    );
+    await second.release();
+    const { revision: _revision, ...unpinnedResource } = request.repositoryResource;
+    const unpinned = await provider.acquire({
+      ...request,
+      runId: runId('run-exact-unpinned'),
+      repositoryResource: unpinnedResource,
+    });
+    await expect(readFile(join(unpinned.path, 'tracked.txt'), 'utf8')).resolves.toBe('second\n');
+    await unpinned.release();
+    await expect(
+      provider.acquire({
+        ...request,
+        runId: runId('run-exact-unavailable'),
+        repositoryResource: { ...request.repositoryResource, revision: 'missing-revision' },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('waits for a retained workspace lease and cancels while waiting', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+    );
+    const request = {
+      mode: 'read-only' as const,
+      workItemId: workId('exclusive-read-only'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+      },
+    };
+    const first = await provider.acquire({
+      ...request,
+      runId: runId('run-exclusive-first'),
+      signal: new AbortController().signal,
+    });
+    const controller = new AbortController();
+    const waiting = provider.acquire({
+      ...request,
+      runId: runId('run-exclusive-second'),
+      signal: controller.signal,
+    });
+    controller.abort(new Error('cancelled while waiting'));
+    await expect(waiting).rejects.toThrow('cancelled while waiting');
+    await first.release();
+  });
+
+  it('serializes a competing acquisition until the existing lease releases', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    let clones = 0;
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        if (args[0] !== 'clone') return;
+        clones += 1;
+        await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+    );
+    const request = {
+      mode: 'read-only' as const,
+      workItemId: workId('serialized-read-only'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+      },
+    };
+    const first = await provider.acquire({
+      ...request,
+      runId: runId('run-serialized-first'),
+      signal: new AbortController().signal,
+    });
+    let acquired = false;
+    const second = provider
+      .acquire({
+        ...request,
+        runId: runId('run-serialized-second'),
+        signal: new AbortController().signal,
+      })
+      .then((lease) => {
+        acquired = true;
+        return lease;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(acquired).toBe(false);
+    await first.release();
+    const secondLease = await second;
+    expect(secondLease.path).toBe(first.path);
+    expect(clones).toBe(1);
+    await secondLease.release();
   });
 });
