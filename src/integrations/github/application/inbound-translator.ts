@@ -903,7 +903,7 @@ export class InboundTranslator {
     readonly workItemId: WorkItemId;
   }): Promise<ResolvedIdentity> {
     const existing = await this.work?.get(identity.workItemId);
-    return { ...identity, created: false, deleted: existing?.deleted === true };
+    return { ...identity, created: existing === null, deleted: existing?.deleted === true };
   }
 
   private async correlatedIdentity(
