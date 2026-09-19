@@ -5,7 +5,7 @@ import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/
 import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type RunExecutionEventData } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
-import { ProviderQuotaExceededFailureKind } from '../contracts/runner.js';
+import { ProviderQuotaExceededFailureKind, type RunnerMcpServer } from '../contracts/runner.js';
 import { ExecutionCancellationReason } from '../contracts/vocabulary.js';
 import type { WorkspaceProvider } from '../contracts/workspace.js';
 import { parseAgentRunnerResponse } from '../infrastructure/agent-runner-adapter.js';
@@ -19,6 +19,11 @@ export interface ExecutionDependencies {
   readonly ids: IdGenerator;
   readonly workspaces?: WorkspaceProvider;
   readonly runners?: RunnerRegistry;
+  readonly mcpServers?: (input: {
+    readonly runId: string;
+    readonly activation: ExecutionActivation;
+    readonly context: ExecutionAttemptContext;
+  }) => Promise<readonly RunnerMcpServer[]>;
   readonly transcriptRecorder?: ActivityExecutionContext['transcriptRecorder'];
   readonly logOperationalError?: ActivityExecutionContext['logOperationalError'];
   readonly reportRunnerQuota?: (input: {
@@ -88,6 +93,15 @@ export async function executeActivity(
       : { reportRunnerStarted: request.reportRunnerStarted }),
     ...workspaceContext(request.workspace),
     ...(runner === undefined ? {} : { runner }),
+    ...(runtime.dependencies.mcpServers === undefined
+      ? {}
+      : {
+          mcpServers: await runtime.dependencies.mcpServers({
+            runId: currentRunId,
+            activation,
+            context,
+          }),
+        }),
     ...(runtime.dependencies.transcriptRecorder === undefined
       ? {}
       : { transcriptRecorder: runtime.dependencies.transcriptRecorder }),
