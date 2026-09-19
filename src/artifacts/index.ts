@@ -11,3 +11,4 @@ export * from './contracts/views.js';
 export * from './domain/artifact-work-item.js';
 export * from './infrastructure/file-artifact-store.js';
 export * from './infrastructure/mcp-server.js';
+export * from './infrastructure/mcp-session-store.js';
