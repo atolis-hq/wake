@@ -130,6 +130,24 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(workspace.path)).rejects.toThrow();
   });
 
+  it('clears an empty lock left by a crash before its owner entry is written', async () => {
+    const root = await workspaceRoot();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const workspace = await ownedWorkspace(root, 'empty-lock', 'finished-run');
+    const lockPath = join(root, '.wake-workspace-ownership', 'empty-lock.lock');
+    await mkdir(lockPath);
+
+    await (provider as WorkspaceRecovery).recover([run('finished-run', RunStatus.Succeeded)], {
+      retainWorkItem: async () => false,
+    });
+
+    await expect(access(lockPath)).rejects.toThrow();
+    await (provider as WorkspaceRecovery).recover([run('finished-run', RunStatus.Succeeded)], {
+      retainWorkItem: async () => false,
+    });
+    await expect(access(workspace.path)).rejects.toThrow();
+  });
+
   it('stops before the next owned workspace when the existing dispatch pause becomes active', async () => {
     const root = await workspaceRoot();
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });

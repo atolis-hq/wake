@@ -447,7 +447,17 @@ async function acquireRecoveryLock(
   // owner as the marker we inspected. A newer acquisition has a different
   // lock owner and is never disturbed by recovery of an older marker.
   const owner = await readLockOwner(path);
-  if (owner === null) return false;
+  if (owner === null) {
+    // A crash between mkdir and owner-entry creation leaves an empty lock
+    // directory. It cannot represent an active lease and must not strand
+    // future acquisition.
+    try {
+      await rmdir(path);
+    } catch (error) {
+      if (!isNotFound(error) && !isNotEmpty(error)) throw error;
+    }
+    return false;
+  }
   if (
     runs.some(
       (run) =>
