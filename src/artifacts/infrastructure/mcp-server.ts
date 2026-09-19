@@ -15,6 +15,8 @@ export interface ArtifactMcpSession {
   readonly nextRevisionId: () => string;
   readonly commandContext: () => CommandContext;
   readonly acceptedActivation: (activationId: string) => Promise<boolean>;
+  /** Revalidates the run-bound credential for every tool request. */
+  readonly assertActive: () => Promise<void>;
 }
 
 // Tool registration remains adjacent so the advertised MCP surface is auditable in one place.
@@ -31,12 +33,18 @@ export function createArtifactMcpServer(
       inputSchema: {
         revisionId: z.string().min(1),
         encoding: z.enum(['utf8', 'base64']).default('utf8'),
+        offset: z.number().int().nonnegative().default(0),
+        length: z.number().int().positive().optional(),
       },
     },
-    async ({ revisionId, encoding }) => {
+    async ({ revisionId, encoding, offset, length }) => {
+      await session.assertActive();
       const artifact = await visibleArtifact(artifacts, session, revisionId);
       if (artifact.location === undefined) throw new Error('Artifact revision has no content');
-      const bytes = await artifacts.read(artifact.location);
+      const bytes = (await artifacts.read(artifact.location)).slice(
+        offset,
+        length === undefined ? undefined : offset + length,
+      );
       return {
         content: [
           {
@@ -53,18 +61,21 @@ export function createArtifactMcpServer(
   server.registerTool(
     'wake.artifacts.list',
     { description: 'List the current artifact manifest visible to this activation.' },
-    async () => ({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            (await artifacts.latestPublished(session.workItemId, session.acceptedActivation))
-              .filter((artifact) => session.readableProducers.has(artifact.producer))
-              .map(({ location: _location, ...artifact }) => artifact),
-          ),
-        },
-      ],
-    }),
+    async () => {
+      await session.assertActive();
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              (await visibleArtifacts(artifacts, session)).map(
+                ({ location: _location, ...artifact }) => artifact,
+              ),
+            ),
+          },
+        ],
+      };
+    },
   );
   server.registerTool(
     'wake.artifacts.patch',
@@ -78,6 +89,7 @@ export function createArtifactMcpServer(
       },
     },
     async ({ revisionId, find, replace }) => {
+      await session.assertActive();
       const artifact = await visibleArtifact(artifacts, session, revisionId);
       if (artifact.producer !== session.producer)
         throw new Error('Only the owning producer may patch an artifact');
@@ -92,15 +104,12 @@ export function createArtifactMcpServer(
       const nextRevisionId = session.nextRevisionId();
       await artifacts.stageRevision(
         {
-          workItemId: session.workItemId,
           revisionId: nextRevisionId,
-          producer: session.producer,
           path: artifactPath(artifact.path),
-          runId: session.runId,
-          activationId: session.activationId,
           bytes: new TextEncoder().encode(next),
           ...(artifact.mediaType === undefined ? {} : { mediaType: artifact.mediaType }),
         },
+        writeScope(session),
         session.commandContext(),
       );
       return { content: [{ type: 'text', text: JSON.stringify({ revisionId: nextRevisionId }) }] };
@@ -112,23 +121,22 @@ export function createArtifactMcpServer(
       description: 'Stage UTF-8 content at a path owned by this activation producer.',
       inputSchema: {
         path: z.string().min(1),
-        text: z.string(),
+        content: z.string(),
+        encoding: z.enum(['utf8', 'base64']).default('utf8'),
         mediaType: z.string().min(1).optional(),
       },
     },
-    async ({ path, text, mediaType }) => {
+    async ({ path, content, encoding, mediaType }) => {
+      await session.assertActive();
       const revisionId = session.nextRevisionId();
       await artifacts.stageRevision(
         {
-          workItemId: session.workItemId,
           revisionId,
-          producer: session.producer,
           path: artifactPath(path),
-          runId: session.runId,
-          activationId: session.activationId,
-          bytes: new TextEncoder().encode(text),
+          bytes: decodeContent(content, encoding),
           ...(mediaType === undefined ? {} : { mediaType }),
         },
+        writeScope(session),
         session.commandContext(),
       );
       return { content: [{ type: 'text', text: JSON.stringify({ revisionId }) }] };
@@ -141,16 +149,14 @@ export function createArtifactMcpServer(
       inputSchema: { path: z.string().min(1) },
     },
     async ({ path }) => {
+      await session.assertActive();
       const revisionId = session.nextRevisionId();
       await artifacts.stageTombstone(
         {
-          workItemId: session.workItemId,
           revisionId,
-          producer: session.producer,
           path: artifactPath(path),
-          runId: session.runId,
-          activationId: session.activationId,
         },
+        writeScope(session),
         session.commandContext(),
       );
       return { content: [{ type: 'text', text: JSON.stringify({ revisionId }) }] };
@@ -164,13 +170,41 @@ async function visibleArtifact(
   session: ArtifactMcpSession,
   revisionId: string,
 ) {
-  const artifact = (
-    await artifacts.latestPublished(session.workItemId, session.acceptedActivation)
-  ).find(
+  const artifact = (await visibleArtifacts(artifacts, session)).find(
     (candidate) =>
       candidate.revisionId === revisionId && session.readableProducers.has(candidate.producer),
   );
   if (artifact === undefined)
     throw new Error('Artifact revision is not visible to this activation');
   return artifact;
+}
+
+function visibleArtifacts(artifacts: ArtifactService, session: ArtifactMcpSession) {
+  return artifacts.visibleTo(
+    {
+      workItemId: session.workItemId,
+      producer: session.producer,
+      runId: session.runId,
+      activationId: session.activationId,
+      readableProducers: session.readableProducers,
+    },
+    session.acceptedActivation,
+  );
+}
+
+function writeScope(session: ArtifactMcpSession) {
+  return {
+    workItemId: session.workItemId,
+    producer: session.producer,
+    runId: session.runId,
+    activationId: session.activationId,
+  };
+}
+
+function decodeContent(content: string, encoding: 'utf8' | 'base64'): Uint8Array {
+  if (encoding === 'utf8') return new TextEncoder().encode(content);
+  const bytes = Buffer.from(content, 'base64');
+  if (bytes.toString('base64').replace(/=+$/, '') !== content.replace(/=+$/, ''))
+    throw new Error('Artifact base64 content is invalid');
+  return bytes;
 }

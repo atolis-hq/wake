@@ -12,10 +12,12 @@ import { ArtifactRepository } from './artifact-repository.js';
 export interface ArtifactService {
   stageRevision(
     command: StageArtifactRevision,
+    scope: ArtifactWriteScope,
     context: CommandContext,
   ): Promise<ArtifactWorkItemView>;
   stageTombstone(
     command: StageArtifactTombstone,
+    scope: ArtifactWriteScope,
     context: CommandContext,
   ): Promise<ArtifactWorkItemView>;
   get(workItemId: string): Promise<ArtifactWorkItemView | null>;
@@ -23,27 +25,43 @@ export interface ArtifactService {
     workItemId: string,
     acceptedActivation: (activationId: string) => Promise<boolean>,
   ): Promise<ReadonlyArray<ArtifactWorkItemView['revisions'][number]>>;
+  readAcceptedRevision(
+    workItemId: string,
+    revisionId: string,
+    acceptedActivation: (activationId: string) => Promise<boolean>,
+  ): Promise<{
+    readonly revision: ArtifactWorkItemView['revisions'][number];
+    readonly bytes: Uint8Array;
+  } | null>;
+  visibleTo(
+    scope: ArtifactReadScope,
+    acceptedActivation: (activationId: string) => Promise<boolean>,
+  ): Promise<ReadonlyArray<ArtifactWorkItemView['revisions'][number]>>;
   read(location: string): Promise<Uint8Array>;
 }
 
 export interface StageArtifactRevision {
-  readonly workItemId: WorkItemId;
   readonly revisionId: string;
-  readonly producer: string;
   readonly path: ArtifactPath | string;
-  readonly runId: string;
-  readonly activationId: string;
   readonly bytes: Uint8Array;
   readonly mediaType?: string;
 }
 
 export interface StageArtifactTombstone {
-  readonly workItemId: WorkItemId;
   readonly revisionId: string;
-  readonly producer: string;
   readonly path: ArtifactPath | string;
+}
+
+/** Trusted execution context, never supplied by an MCP tool request. */
+export interface ArtifactWriteScope {
+  readonly workItemId: WorkItemId;
+  readonly producer: string;
   readonly runId: string;
   readonly activationId: string;
+}
+
+export interface ArtifactReadScope extends ArtifactWriteScope {
+  readonly readableProducers: ReadonlySet<string>;
 }
 
 // The public service keeps the tightly coupled idempotent staging operations adjacent.
@@ -55,10 +73,10 @@ export function createArtifactService(
 ): ArtifactService {
   const repository = new ArtifactRepository(journal);
   return {
-    async stageRevision(command, context) {
+    async stageRevision(command, scope, context) {
       if (command.bytes.byteLength > config.maxWriteBytes)
         throw new Error(`Artifact write exceeds ${config.maxWriteBytes} byte limit`);
-      const id = artifactWorkItemIdForWorkItem(command.workItemId as never);
+      const id = artifactWorkItemIdForWorkItem(scope.workItemId as never);
       const loaded = await repository.load(id);
       const retained =
         loaded.view?.revisions.reduce((total, revision) => total + (revision.byteLength ?? 0), 0) ??
@@ -69,7 +87,7 @@ export function createArtifactService(
         return loaded.view;
       const path = artifactPath(String(command.path));
       const stored = await store.write({
-        workItemId: command.workItemId,
+        workItemId: scope.workItemId,
         revisionId: command.revisionId,
         path,
         bytes: command.bytes,
@@ -84,24 +102,23 @@ export function createArtifactService(
           actor: context.actor,
           source: { kind: EventSourceKind.Internal, id: 'artifact-service' },
           payload: {
-            workItemId: command.workItemId,
+            workItemId: scope.workItemId,
             revisionId: command.revisionId,
-            producer: command.producer,
+            producer: scope.producer,
             path,
-            runId: command.runId,
-            activationId: command.activationId,
+            runId: scope.runId,
+            activationId: scope.activationId,
             ...stored,
             ...(command.mediaType === undefined ? {} : { mediaType: command.mediaType }),
           },
         }),
       ]);
       const view = event === undefined ? null : (await repository.load(id)).view;
-      if (view === null)
-        throw new Error(`Artifact work item ${command.workItemId} was not created`);
+      if (view === null) throw new Error(`Artifact work item ${scope.workItemId} was not created`);
       return view;
     },
-    async stageTombstone(command, context) {
-      const id = artifactWorkItemIdForWorkItem(command.workItemId as never);
+    async stageTombstone(command, scope, context) {
+      const id = artifactWorkItemIdForWorkItem(scope.workItemId as never);
       const loaded = await repository.load(id);
       if (loaded.view?.revisions.some((revision) => revision.revisionId === command.revisionId))
         return loaded.view;
@@ -115,18 +132,17 @@ export function createArtifactService(
           actor: context.actor,
           source: { kind: EventSourceKind.Internal, id: 'artifact-service' },
           payload: {
-            workItemId: command.workItemId,
+            workItemId: scope.workItemId,
             revisionId: command.revisionId,
-            producer: command.producer,
+            producer: scope.producer,
             path: artifactPath(String(command.path)),
-            runId: command.runId,
-            activationId: command.activationId,
+            runId: scope.runId,
+            activationId: scope.activationId,
           },
         }),
       ]);
       const view = event === undefined ? null : (await repository.load(id)).view;
-      if (view === null)
-        throw new Error(`Artifact work item ${command.workItemId} was not created`);
+      if (view === null) throw new Error(`Artifact work item ${scope.workItemId} was not created`);
       return view;
     },
     async get(workItemId) {
@@ -142,6 +158,36 @@ export function createArtifactService(
       }
       for (const revision of latest.values()) if (!revision.deleted) visible.push(revision);
       return visible;
+    },
+    async visibleTo(scope, acceptedActivation) {
+      const view = await repository.load(artifactWorkItemIdForWorkItem(scope.workItemId as never));
+      const latest = new Map<string, ArtifactWorkItemView['revisions'][number]>();
+      for (const revision of view.view?.revisions ?? []) {
+        const published =
+          scope.readableProducers.has(revision.producer) &&
+          (await acceptedActivation(revision.activationId));
+        const ownStaged =
+          revision.producer === scope.producer &&
+          revision.runId === scope.runId &&
+          revision.activationId === scope.activationId;
+        if (published || ownStaged)
+          latest.set(`${revision.producer}\u0000${revision.path}`, revision);
+      }
+      return [...latest.values()].filter((revision) => !revision.deleted);
+    },
+    async readAcceptedRevision(workItemId, revisionId, acceptedActivation) {
+      const view = await repository.load(artifactWorkItemIdForWorkItem(workItemId as never));
+      const revision = (view.view?.revisions ?? []).find(
+        (candidate) => candidate.revisionId === revisionId,
+      );
+      if (
+        revision === undefined ||
+        revision.deleted ||
+        revision.location === undefined ||
+        !(await acceptedActivation(revision.activationId))
+      )
+        return null;
+      return { revision, bytes: await store.read(revision.location) };
     },
     read: (location) => store.read(location),
   };

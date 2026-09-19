@@ -16,10 +16,35 @@ import {
 import { presentRun } from '../../../src/surfaces/api/presenters/execution.js';
 import { presentResource } from '../../../src/surfaces/api/presenters/resources.js';
 import { redactConfiguration } from '../../../src/surfaces/api/presenters/system.js';
+import type { ApiApplications } from '../../../src/surfaces/api/routes/applications.js';
+import { createApiDispatcher } from '../../../src/surfaces/api/routes/index.js';
 import {} from '../../../src/work/index.js';
 import { resId, workId } from '../../support/identities.js';
 
 describe('surface API contracts', () => {
+  it('serves an authorized artifact revision as bytes rather than exposing a filesystem path', async () => {
+    const dispatcher = createApiDispatcher({
+      work: {
+        artifact: async (key, revisionId) =>
+          key === 'wk_demo' && revisionId === 'revision-1'
+            ? {
+                bytes: new Uint8Array([1, 2, 3]),
+                mediaType: 'image/png',
+                filename: 'diagram.png',
+              }
+            : undefined,
+      },
+    } as ApiApplications);
+    await expect(
+      dispatcher.dispatch('GET', '/api/v1/work-items/wk_demo/artifacts/revision-1', undefined),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: new Uint8Array([1, 2, 3]),
+      contentType: 'image/png',
+      headers: { 'content-disposition': "attachment; filename*=UTF-8''diagram.png" },
+    });
+  });
+
   it('keeps cross-domain WorkItem results nested and addresses them by WorkItemKey', () => {
     const detail: WorkDetailResponse = {
       work: {

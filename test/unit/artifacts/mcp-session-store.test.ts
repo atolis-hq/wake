@@ -13,13 +13,17 @@ afterEach(async () => {
 
 describe('FileArtifactMcpSessionStore', () => {
   it('issues an opaque, token-protected run descriptor outside the workspace', async () => {
-    const store = new FileArtifactMcpSessionStore(await directory());
+    const store = new FileArtifactMcpSessionStore(
+      await directory(),
+      () => '2026-09-19T12:00:00.000Z',
+    );
     const issued = await store.issue({
       workItemId: workId('mcp-session'),
       producer: 'workflow/refine',
       runId: 'run-1',
       activationId: 'activation-1',
       readableProducers: ['workflow/refine'],
+      expiresAt: '2026-09-19T13:00:00.000Z',
     });
 
     await expect(store.read(issued.path, issued.token)).resolves.toMatchObject({
@@ -27,6 +31,26 @@ describe('FileArtifactMcpSessionStore', () => {
       activationId: 'activation-1',
     });
     await expect(store.read(issued.path, 'wrong')).rejects.toThrow('Invalid artifact MCP session');
+    await store.revoke(issued.path);
+    await expect(store.read(issued.path, issued.token)).rejects.toThrow();
+  });
+
+  it('rejects expired credentials', async () => {
+    const store = new FileArtifactMcpSessionStore(
+      await directory(),
+      () => '2026-09-19T12:00:00.000Z',
+    );
+    const issued = await store.issue({
+      workItemId: workId('expired-mcp-session'),
+      producer: 'workflow/refine',
+      runId: 'run-1',
+      activationId: 'activation-1',
+      readableProducers: ['workflow/refine'],
+      expiresAt: '2026-09-19T11:59:59.000Z',
+    });
+    await expect(store.read(issued.path, issued.token)).rejects.toThrow(
+      'Invalid artifact MCP session',
+    );
   });
 });
 

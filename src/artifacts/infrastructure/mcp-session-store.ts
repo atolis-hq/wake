@@ -1,15 +1,19 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { WorkItemId } from '../../work/index.js';
 
 export interface ArtifactMcpSessionDescriptor {
-  readonly token: string;
   readonly workItemId: WorkItemId;
   readonly producer: string;
   readonly runId: string;
   readonly activationId: string;
   readonly readableProducers: readonly string[];
+  readonly expiresAt: string;
+}
+
+interface StoredArtifactMcpSessionDescriptor extends ArtifactMcpSessionDescriptor {
+  readonly tokenHash: string;
 }
 
 /**
@@ -18,33 +22,66 @@ export interface ArtifactMcpSessionDescriptor {
  * child process; it does not contain artifacts themselves.
  */
 export class FileArtifactMcpSessionStore {
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly now: () => string = () => new Date().toISOString(),
+  ) {}
 
   async issue(
-    input: Omit<ArtifactMcpSessionDescriptor, 'token'>,
+    input: ArtifactMcpSessionDescriptor,
   ): Promise<{ readonly path: string; readonly token: string }> {
     const token = randomBytes(32).toString('base64url');
     const id = createHash('sha256').update(token).digest('hex');
     const directory = join(this.root, 'sessions');
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const path = join(directory, `${id}.json`);
-    await writeFile(path, JSON.stringify({ ...input, token }), { encoding: 'utf8', mode: 0o600 });
+    await writeFile(
+      path,
+      JSON.stringify({
+        ...input,
+        tokenHash: digest(token),
+      } satisfies StoredArtifactMcpSessionDescriptor),
+      { encoding: 'utf8', mode: 0o600 },
+    );
     return { path, token };
   }
 
   async read(path: string, token: string): Promise<ArtifactMcpSessionDescriptor> {
     const descriptor = JSON.parse(
       await readFile(path, 'utf8'),
-    ) as Partial<ArtifactMcpSessionDescriptor>;
+    ) as Partial<StoredArtifactMcpSessionDescriptor>;
     if (
-      descriptor.token !== token ||
+      typeof descriptor.tokenHash !== 'string' ||
+      !sameDigest(descriptor.tokenHash, digest(token)) ||
       typeof descriptor.workItemId !== 'string' ||
       typeof descriptor.producer !== 'string' ||
       typeof descriptor.runId !== 'string' ||
       typeof descriptor.activationId !== 'string' ||
-      !Array.isArray(descriptor.readableProducers)
+      !Array.isArray(descriptor.readableProducers) ||
+      typeof descriptor.expiresAt !== 'string' ||
+      !Number.isFinite(Date.parse(descriptor.expiresAt)) ||
+      Date.parse(descriptor.expiresAt) <= Date.parse(this.now())
     )
       throw new Error('Invalid artifact MCP session');
-    return descriptor as ArtifactMcpSessionDescriptor;
+    const { tokenHash: _tokenHash, ...session } = descriptor;
+    return session as ArtifactMcpSessionDescriptor;
   }
+
+  async revoke(path: string): Promise<void> {
+    try {
+      await unlink(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+}
+
+function digest(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function sameDigest(left: string, right: string): boolean {
+  const leftBytes = Buffer.from(left, 'hex');
+  const rightBytes = Buffer.from(right, 'hex');
+  return leftBytes.byteLength === rightBytes.byteLength && timingSafeEqual(leftBytes, rightBytes);
 }

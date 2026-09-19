@@ -92,6 +92,8 @@ export * from './cli/main.js';
 
 export * from './cli/usage.js';
 
+export * from './mcp/stdio.js';
+
 export * from './contracts/config.js';
 
 export * from './web-host/asset-source.js';

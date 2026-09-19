@@ -139,6 +139,8 @@ export interface ActivityExecutionContext {
     readonly args?: readonly string[];
     readonly env?: Readonly<Record<string, string>>;
   }[];
+  /** Wake-owned capability inventory appended after the operator prompt. */
+  readonly mcpPrompt?: string;
   readonly runnerContext?: {
     readonly runnerName: string;
     /** CLI identity configured for the resolved runner. */

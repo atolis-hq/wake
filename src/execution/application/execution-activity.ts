@@ -19,17 +19,23 @@ export interface ExecutionDependencies {
   readonly ids: IdGenerator;
   readonly workspaces?: WorkspaceProvider;
   readonly runners?: RunnerRegistry;
-  readonly mcpServers?: (input: {
+  readonly mcp?: (input: {
     readonly runId: string;
     readonly activation: ExecutionActivation;
     readonly context: ExecutionAttemptContext;
-  }) => Promise<readonly RunnerMcpServer[]>;
+  }) => Promise<ExecutionMcpConfiguration>;
   readonly transcriptRecorder?: ActivityExecutionContext['transcriptRecorder'];
   readonly logOperationalError?: ActivityExecutionContext['logOperationalError'];
   readonly reportRunnerQuota?: (input: {
     readonly runnerName: string;
     readonly message: string;
   }) => Promise<void>;
+}
+
+export interface ExecutionMcpConfiguration {
+  readonly servers: readonly RunnerMcpServer[];
+  readonly prompt?: string;
+  release(): Promise<void>;
 }
 
 export interface ExecutionRuntime {
@@ -83,6 +89,10 @@ export async function executeActivity(
   const { activation, context, occurredAt, runner } = request;
   const controller = activityController(runtime, currentRunId);
   runtime.active.set(currentRunId, controller);
+  const mcp =
+    runner === undefined || runtime.dependencies.mcp === undefined
+      ? undefined
+      : await runtime.dependencies.mcp({ runId: currentRunId, activation, context });
   const executionContext: ActivityExecutionContext = {
     signal: controller.signal,
     occurredAt,
@@ -95,14 +105,11 @@ export async function executeActivity(
       : { reportRunnerStarted: request.reportRunnerStarted }),
     ...workspaceContext(request.workspace),
     ...(runner === undefined ? {} : { runner }),
-    ...(runtime.dependencies.mcpServers === undefined
+    ...(mcp === undefined
       ? {}
       : {
-          mcpServers: await runtime.dependencies.mcpServers({
-            runId: currentRunId,
-            activation,
-            context,
-          }),
+          mcpServers: mcp.servers,
+          ...(mcp.prompt === undefined ? {} : { mcpPrompt: mcp.prompt }),
         }),
     ...(runtime.dependencies.transcriptRecorder === undefined
       ? {}
@@ -125,19 +132,23 @@ export async function executeActivity(
     reportRunnerResult: runnerResultReporter(runtime, currentRunId, context, activation, request),
     reportRunnerTimeout: runnerTimeoutReporter(runtime, currentRunId),
   };
-  return runtime.activities.execute(
-    {
-      activationId: activation.activationId,
-      activity: activation.activity,
-      workItemId: context.workItemId,
-      workflowInstanceId: context.workflowInstanceId,
-      orchestrationGroupId: context.orchestrationGroupId,
-      causationId: activation.activationId,
-      input: activation.input,
-      resources: context.resources,
-    },
-    executionContext,
-  );
+  try {
+    return await runtime.activities.execute(
+      {
+        activationId: activation.activationId,
+        activity: activation.activity,
+        workItemId: context.workItemId,
+        workflowInstanceId: context.workflowInstanceId,
+        orchestrationGroupId: context.orchestrationGroupId,
+        causationId: activation.activationId,
+        input: activation.input,
+        resources: context.resources,
+      },
+      executionContext,
+    );
+  } finally {
+    await mcp?.release();
+  }
 }
 
 function activityController(

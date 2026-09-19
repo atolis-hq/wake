@@ -448,7 +448,10 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                   rowKey={(artifact) => artifact.revisionId}
                   columns={[
                     { label: 'Producer', render: (artifact) => artifact.producer },
-                    { label: 'Path', render: (artifact) => artifact.path },
+                    {
+                      label: 'Path',
+                      render: (artifact) => <a href={artifact.href}>{artifact.path}</a>,
+                    },
                     { label: 'Type', render: (artifact) => artifact.mediaType ?? 'binary' },
                     {
                       label: 'Bytes',

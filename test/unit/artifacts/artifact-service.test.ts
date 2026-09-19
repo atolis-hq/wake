@@ -34,15 +34,12 @@ describe('ArtifactService', () => {
     const workItemId = workId('artifact-service');
     await service.stageRevision(
       {
-        workItemId,
         revisionId: 'revision-1',
-        producer: 'workflow-1/refine',
         path: artifactPath('spec.md'),
-        runId: 'run-1',
-        activationId: 'activation-1',
         bytes: new TextEncoder().encode('hello'),
         mediaType: 'text/markdown',
       },
+      { workItemId, producer: 'workflow-1/refine', runId: 'run-1', activationId: 'activation-1' },
       context,
     );
 
@@ -67,22 +64,30 @@ describe('ArtifactService', () => {
       new FileArtifactStore(await directory()),
       { maxWriteBytes: 3, maxWorkItemBytes: 5 },
     );
-    const base = {
+    const scope = {
       workItemId: workId('artifact-limits'),
       producer: 'workflow-1/refine',
-      path: artifactPath('spec.md'),
       runId: 'run-1',
       activationId: 'activation-1',
     };
     await expect(
       service.stageRevision(
-        { ...base, revisionId: 'too-large', bytes: new Uint8Array(4) },
+        { revisionId: 'too-large', path: artifactPath('spec.md'), bytes: new Uint8Array(4) },
+        scope,
         context,
       ),
     ).rejects.toThrow('write exceeds');
-    await service.stageRevision({ ...base, revisionId: 'one', bytes: new Uint8Array(3) }, context);
+    await service.stageRevision(
+      { revisionId: 'one', path: artifactPath('spec.md'), bytes: new Uint8Array(3) },
+      scope,
+      context,
+    );
     await expect(
-      service.stageRevision({ ...base, revisionId: 'two', bytes: new Uint8Array(3) }, context),
+      service.stageRevision(
+        { revisionId: 'two', path: artifactPath('spec.md'), bytes: new Uint8Array(3) },
+        scope,
+        context,
+      ),
     ).rejects.toThrow('work item exceeds');
   });
 
@@ -93,33 +98,34 @@ describe('ArtifactService', () => {
       { maxWriteBytes: 100, maxWorkItemBytes: 200 },
     );
     const workItemId = workId('artifact-visible');
-    const command = {
+    const scope = {
       workItemId,
       producer: 'workflow-1/refine',
-      path: artifactPath('spec.md'),
       runId: 'run-1',
       activationId: 'accepted',
     };
     await service.stageRevision(
-      { ...command, revisionId: 'revision-1', bytes: new Uint8Array([1]) },
+      { revisionId: 'revision-1', path: artifactPath('spec.md'), bytes: new Uint8Array([1]) },
+      scope,
       context,
     );
     await service.stageRevision(
-      { ...command, revisionId: 'revision-2', bytes: new Uint8Array([2]) },
+      { revisionId: 'revision-2', path: artifactPath('spec.md'), bytes: new Uint8Array([2]) },
+      scope,
       { ...context, commandId: 'revision-2' },
     );
     await service.stageTombstone(
-      { ...command, revisionId: 'tombstone-1' },
+      { revisionId: 'tombstone-1', path: artifactPath('spec.md') },
+      scope,
       { ...context, commandId: 'tombstone' },
     );
     await service.stageRevision(
       {
-        ...command,
         revisionId: 'unaccepted',
         path: artifactPath('private.md'),
-        activationId: 'unaccepted',
         bytes: new Uint8Array([3]),
       },
+      { ...scope, activationId: 'unaccepted' },
       { ...context, commandId: 'unaccepted' },
     );
 

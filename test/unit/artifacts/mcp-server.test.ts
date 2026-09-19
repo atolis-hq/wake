@@ -40,9 +40,13 @@ describe('artifact MCP server', () => {
       runId: 'run-1',
       activationId: 'activation-1',
       readableProducers: new Set(['workflow/refine']),
-      nextRevisionId: () => 'revision-1',
+      nextRevisionId: (() => {
+        let count = 0;
+        return () => `revision-${++count}`;
+      })(),
       commandContext: () => context,
       acceptedActivation: async () => false,
+      assertActive: async () => undefined,
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: 'test', version: '1.0.0' });
@@ -59,12 +63,28 @@ describe('artifact MCP server', () => {
     });
     await client.callTool({
       name: 'wake.artifacts.write',
-      arguments: { path: 'spec.md', text: '# Spec' },
+      arguments: { path: 'spec.md', content: '# Spec' },
     });
+    await expect(
+      client.callTool({
+        name: 'wake.artifacts.read',
+        arguments: { revisionId: 'revision-1', encoding: 'utf8' },
+      }),
+    ).resolves.toMatchObject({ content: [expect.objectContaining({ text: '# Spec' })] });
+    await client.callTool({
+      name: 'wake.artifacts.write',
+      arguments: { path: 'diagram.bin', content: 'AAEC', encoding: 'base64' },
+    });
+    await expect(
+      client.callTool({
+        name: 'wake.artifacts.read',
+        arguments: { revisionId: 'revision-2', encoding: 'base64' },
+      }),
+    ).resolves.toMatchObject({ content: [expect.objectContaining({ text: 'AAEC' })] });
     await expect(artifacts.get(workItemId)).resolves.toMatchObject({
-      revisions: [
+      revisions: expect.arrayContaining([
         expect.objectContaining({ producer: 'workflow/refine', activationId: 'activation-1' }),
-      ],
+      ]),
     });
   });
 });

@@ -42,6 +42,7 @@ export interface WorkDetailResponse {
     readonly mediaType?: string;
     readonly byteLength?: number;
     readonly digest?: string;
+    readonly href: string;
   }[];
   readonly conversation: {
     /** Whether this authenticated surface may create control-plane entries. */

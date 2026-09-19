@@ -77,6 +77,7 @@ export function createAgentActivity(
         usageBaseline: context.usageBaseline,
         workspace: context.workspace,
         mcpServers: context.mcpServers,
+        mcpPrompt: context.mcpPrompt,
         reportRunnerTimeout: context.reportRunnerTimeout,
       });
       await capturePrompt(context, invocation.workItemId, request);
@@ -198,6 +199,7 @@ async function agentRequest(
     context.usageBaseline,
     context.workspace,
     context.mcpServers,
+    context.mcpPrompt,
     context.reportRunnerTimeout,
   );
 }
@@ -225,6 +227,7 @@ interface AgentRequestContext {
     | undefined;
   readonly workspace: ActivityExecutionContext['workspace'];
   readonly mcpServers: ActivityExecutionContext['mcpServers'];
+  readonly mcpPrompt: ActivityExecutionContext['mcpPrompt'];
   readonly reportRunnerTimeout: ActivityExecutionContext['reportRunnerTimeout'];
 }
 
@@ -354,11 +357,12 @@ function requestFrom(
     | undefined,
   workspace: ActivityExecutionContext['workspace'],
   mcpServers: ActivityExecutionContext['mcpServers'],
+  mcpPrompt: ActivityExecutionContext['mcpPrompt'],
   reportRunnerTimeout: ActivityExecutionContext['reportRunnerTimeout'],
 ) {
   return {
     runId,
-    prompt: input.prompt ?? template!.prompt,
+    prompt: appendMcpPrompt(input.prompt ?? template!.prompt, mcpPrompt),
     ...modelField(input.model ?? template?.model ?? runnerContext?.model),
     ...effortField(runnerContext?.effort),
     allowedTools: input.allowedTools ?? template?.allowedTools ?? [],
@@ -370,6 +374,10 @@ function requestFrom(
     ...(mcpServers === undefined ? {} : { mcpServers }),
     ...(reportRunnerTimeout === undefined ? {} : { onTimeout: reportRunnerTimeout }),
   };
+}
+
+function appendMcpPrompt(prompt: string, mcpPrompt: string | undefined): string {
+  return mcpPrompt === undefined ? prompt : `${prompt}\n\n${mcpPrompt}`;
 }
 
 function workspaceFields(workspace: ActivityExecutionContext['workspace']) {

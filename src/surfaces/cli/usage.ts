@@ -14,6 +14,7 @@ export const usage = [
   '  wake ui token set <key>    Replace the UI login access key',
   '  wake audit                 Show autonomous decision audit history',
   '  wake correlate             Manually correlate a resource to a work item',
+  '  wake mcp serve             Run the private run-scoped Wake MCP transport',
   '  wake run resolve           Resolve an escalated ambiguous run',
   '  wake doctor                Diagnose config/GitHub/Docker/sandbox setup problems',
   '  wake maintenance clear     Clear an abandoned failed self-update maintenance lease',

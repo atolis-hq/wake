@@ -408,6 +408,7 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
             ...optionalStringProperty(artifact, 'mediaType', itemPath),
             ...optionalNumberProperty(artifact, 'byteLength', itemPath),
             ...optionalStringProperty(artifact, 'digest', itemPath),
+            href: string(artifact.href, child(itemPath, 'href')),
           };
         });
   const conversation =

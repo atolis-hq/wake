@@ -1,9 +1,9 @@
 # surfaces
 
 ## Purpose
-CLI, API, and UI presentation over public applications and views.
+CLI, MCP transport, API, and UI presentation over public applications and views.
 ## Owns
-Command parsing, HTTP presentation, UI data, authorization, and formatting.
+Command parsing, MCP/HTTP presentation, UI data, authorization, and formatting.
 ## Does not own
 Stores, adapter clients, domain policy, or composition.
 ## Invariants

@@ -71,6 +71,26 @@ export function createSurfaceWorkApplications(
       });
     },
     detail: (key) => workDetail(root, key, now),
+    async artifact(key, revisionId) {
+      const id = decodeWorkItemId(key);
+      if (id === undefined) return undefined;
+      const accepted = new Set(
+        (await root.orchestration.listForWorkItem(id)).flatMap(
+          (workflow) => workflow.acceptedOutcomes,
+        ),
+      );
+      const artifact = await root.artifacts.readAcceptedRevision(
+        id,
+        revisionId,
+        async (activationId) => accepted.has(activationId as never),
+      );
+      if (artifact === null) return undefined;
+      return {
+        bytes: artifact.bytes,
+        mediaType: safeMediaType(artifact.revision.mediaType),
+        filename: artifact.revision.path.split('/').at(-1) ?? 'artifact',
+      };
+    },
     async transcript(key, groupId) {
       const id = decodeWorkItemId(key);
       if (id === undefined) return undefined;
@@ -324,7 +344,14 @@ async function presentArtifacts(root: CompositionRoot, id: ReturnType<typeof wor
     ...(artifact.mediaType === undefined ? {} : { mediaType: artifact.mediaType }),
     ...(artifact.byteLength === undefined ? {} : { byteLength: artifact.byteLength }),
     ...(artifact.digest === undefined ? {} : { digest: artifact.digest }),
+    href: `/api/v1/work-items/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(artifact.revisionId)}`,
   }));
+}
+
+function safeMediaType(value: string | undefined): string {
+  return value !== undefined && /^[^\r\n]+\/[^\r\n]+$/.test(value)
+    ? value
+    : 'application/octet-stream';
 }
 
 async function conversationForWorkItem(root: CompositionRoot, id: ReturnType<typeof workItemId>) {
