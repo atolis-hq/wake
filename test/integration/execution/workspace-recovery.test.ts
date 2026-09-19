@@ -148,6 +148,18 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(workspace.path)).rejects.toThrow();
   });
 
+  it('clears an orphan lock with no ownership marker after its owner is terminal', async () => {
+    const root = await workspaceRoot();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const lockPath = join(root, '.wake-workspace-ownership', 'no-marker.lock');
+    await mkdir(lockPath);
+    await writeFile(join(lockPath, 'terminal-run'), '', 'utf8');
+
+    await (provider as WorkspaceRecovery).recover([run('terminal-run', RunStatus.Succeeded)]);
+
+    await expect(access(lockPath)).rejects.toThrow();
+  });
+
   it('stops before the next owned workspace when the existing dispatch pause becomes active', async () => {
     const root = await workspaceRoot();
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });

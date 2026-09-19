@@ -160,8 +160,29 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
       reclaimedWorkItemIds.push(...(result.reclaimedWorkItemIds ?? []));
       failures.push(...result.failures);
     }
+    for (const filename of markers.filter((name) => name.endsWith('.lock'))) {
+      if (await options.isPaused?.()) break;
+      await recoverOrphanLock(join(this.markerRoot, filename), runs);
+    }
     return { reclaimed, reclaimedWorkItemIds, failures };
   }
+}
+
+async function recoverOrphanLock(path: string, runs: readonly RunView[]): Promise<void> {
+  const owner = await readLockOwner(path);
+  if (
+    owner !== null &&
+    runs.some(
+      (run) =>
+        run.runId === owner &&
+        (isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous),
+    )
+  )
+    return;
+  // Lock directories are created only below the private marker root. An
+  // unowned/terminal orphan cannot protect a live workspace and otherwise
+  // blocks every future acquisition indefinitely.
+  await rm(path, { recursive: true, force: true });
 }
 
 interface RecoveryScope {
