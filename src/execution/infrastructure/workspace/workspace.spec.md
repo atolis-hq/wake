@@ -23,10 +23,10 @@ directory itself, via an injected git command runner; it does not implement
 branch-checkout or any git operation beyond a plain clone.
 
 The real adapter also owns a narrow crash-orphan recovery capability. It
-records durable ownership before cloning, then lets the composed pre-dispatch
-recovery pass reclaim only workspaces whose journal owner is demonstrably
-safe to remove. It does not decide Run ambiguity or introduce a background
-cleanup service.
+records durable ownership before cloning, retains WorkItem-scoped checkouts
+between Runs, then lets the composed pre-dispatch recovery pass reclaim only
+workspaces whose WorkItem and journal owner are demonstrably safe to remove.
+It does not decide Run ambiguity or introduce a background cleanup service.
 
 ## Core policies, invariants, and behaviours
 
@@ -47,22 +47,24 @@ cleanup service.
 - The real adapter MUST clone the resolved locator into the resolved
   directory via its injected git runner only when that directory does not
   already contain a `.git` subdirectory; when one is already present, the
-  acquisition is idempotent — the existing clone is reused as-is, without
-  re-cloning, fetching, or pulling to refresh it.
+  acquisition reuses the existing clone without re-cloning. Read-only
+  acquisition resets tracked files before preparation, preserving ignored
+  dependency state. If the resource has a revision it fetches and checks out
+  that exact revision and fails if Git cannot do so; otherwise it resets to
+  the initial clone's existing `HEAD` without a remote refresh.
+- The real adapter MUST hold an exclusive, cancellation-aware workspace lock
+  from marker update through checkout reset, preparation, and lease release.
+  Competing Runs wait; they never share the writable checkout.
 - Before it invokes `git clone`, the real adapter MUST write a strict JSON
   ownership marker under `<workspace-root>/.wake-workspace-ownership`. The
   marker contains `runId`, `workItemId`, `repositoryResourceId`, `mode`,
   `workspaceId`, and the absolute `path`; it is the sole durable authority
   for crash-orphan reclamation. Its owner Run is already durably `starting`;
   this marker is not a substitute for a missing pre-Run record.
-- The real adapter MUST release a workspace by deleting the entire
-  directory tree, regardless of which mode (`read-only` or `branch`) it was
-  acquired under, retrying a failed deletion up to 5 times with a delay
-  between attempts before propagating an error — tolerating transient
-  file-lock contention against a freshly cloned tree.
-- A successful real-adapter release MUST also remove that workspace's
-  ownership marker. If cleanup fails, the marker remains available for a
-  later safe recovery pass.
+- Releasing a lease ends only that Run's exclusive use. Both branch and
+  read-only trees and their ownership markers remain retained while the
+  WorkItem is open, including after failed or cancelled Runs. Recovery owns
+  physical deletion once the WorkItem is closed, cancelled, or deleted.
 - Recovery MUST delete only a valid marker-owned workspace whose path is a
   strict descendant of the canonical managed root and whose Run view is
   terminal or absent. It MUST retain Starting, Started, and Ambiguous Runs, unmarked
@@ -73,8 +75,8 @@ cleanup service.
   stops when paused. A failed deletion is reported while later markers still
   receive a recovery attempt; repeating the pass is idempotent. There is no
   age-based cleanup, resident reaper, or workspace-recovery configuration.
-- A released workspace's lease MUST NOT be reused; `release()` deletes the
-  directory rather than returning it to a pool.
+- A released workspace's lease MUST NOT be reused; its directory is retained
+  for a later, separately locked acquisition rather than returned to a pool.
 - The fake adapter MUST record every request it receives and always return
   a fixed path with a lease whose `release()` performs no filesystem
   effect, so tests can assert on what was requested without touching disk.
@@ -133,9 +135,10 @@ cleanup service.
   beyond the deterministic work-item/repository-keyed path described above;
   concurrent attempts against the same work item and repository share one
   physical directory.
-- There is no refresh of an already-cloned workspace: a second acquisition
-  against an existing `.git` directory reuses whatever commit the first
-  clone left checked out, without fetching or pulling upstream changes.
+- A read-only workspace with a Resource revision is refreshed to that exact
+  revision on every acquisition; without one it remains pinned to its initial
+  clone revision. The opaque prepare hook runs on every acquisition and owns
+  dependency caching and invalidation.
 - Crash cleanup is intentionally narrow: it reclaims only valid, marker-owned
   terminal or never-started workspaces during the composed recovery pass. It
   never deletes an active/ambiguous/unknown workspace, nor uses directory

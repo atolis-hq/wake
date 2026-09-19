@@ -1,7 +1,17 @@
 /* eslint-disable max-lines */
 
 import { execFile } from 'node:child_process';
-import { access, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorkItemId } from '../../../work/index.js';
@@ -59,45 +69,58 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     const name = `${request.workItemId}-${request.mode}-${slug(locator)}`;
     const path = resolve(this.root, name);
     const markerPath = join(this.markerRoot, `${name}.json`);
+    const lockPath = join(this.markerRoot, `${name}.lock`);
     await mkdir(dirname(markerPath), { recursive: true });
-    signal.throwIfAborted();
-    await writeFile(
-      markerPath,
-      JSON.stringify({
-        runId: request.runId,
-        workItemId: request.workItemId,
-        repositoryResourceId: request.repositoryResource.resourceId,
-        mode: request.mode,
+    await acquireLock(lockPath, signal);
+    try {
+      signal.throwIfAborted();
+      await writeFile(
+        markerPath,
+        JSON.stringify({
+          runId: request.runId,
+          workItemId: request.workItemId,
+          repositoryResourceId: request.repositoryResource.resourceId,
+          mode: request.mode,
+          workspaceId: name,
+          path,
+        }),
+        { encoding: 'utf8', signal },
+      );
+      const existingWorkspace = await exists(join(path, '.git'), signal);
+      if (!existingWorkspace) {
+        await mkdir(dirname(path), { recursive: true });
+        signal.throwIfAborted();
+        await this.git(['clone', locator, path], signal);
+      }
+      const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
+      if (branch !== undefined) {
+        await this.git(
+          ['-C', path, 'switch', ...(existingWorkspace ? [] : ['--create']), branch],
+          signal,
+        );
+      } else {
+        await restoreReadOnlyWorkspace(path, request.repositoryResource.revision, this.git, signal);
+      }
+      if (this.prepareHook !== undefined) await prepareWorkspace(path, this.prepareHook, signal);
+      signal.throwIfAborted();
+      let released = false;
+      return {
         workspaceId: name,
         path,
-      }),
-      { encoding: 'utf8', signal },
-    );
-    const existingWorkspace = await exists(join(path, '.git'), signal);
-    if (!existingWorkspace) {
-      await mkdir(dirname(path), { recursive: true });
-      signal.throwIfAborted();
-      await this.git(['clone', locator, path], signal);
+        mode: request.mode,
+        ...(branch === undefined ? {} : { branch }),
+        release: async () => {
+          if (released) return;
+          released = true;
+          // Workspaces are WorkItem-scoped. Recovery reclaims the marker-owned tree
+          // only after its WorkItem is no longer retained.
+          await releaseLock(lockPath);
+        },
+      };
+    } catch (error) {
+      await releaseLock(lockPath);
+      throw error;
     }
-    const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
-    if (branch !== undefined)
-      await this.git(
-        ['-C', path, 'switch', ...(existingWorkspace ? [] : ['--create']), branch],
-        signal,
-      );
-    if (this.prepareHook !== undefined) await prepareWorkspace(path, this.prepareHook, signal);
-    signal.throwIfAborted();
-    return {
-      workspaceId: name,
-      path,
-      mode: request.mode,
-      ...(branch === undefined ? {} : { branch }),
-      release: async () => {
-        if (request.mode !== WorkspaceMode.ReadOnly) return;
-        await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-        await rm(markerPath, { force: true });
-      },
-    };
   }
 
   async recover(
@@ -198,6 +221,9 @@ async function reclaimOwnedMarker(
     )
   )
     return emptyRecovery();
+  // A terminal/absent owner cannot still hold a valid lease. Clear its stale
+  // process lock so a crash before release does not strand a retained tree.
+  await releaseLock(join(input.scope.markerRoot, `${marker.workspaceId}.lock`));
   if ((await input.options.retainWorkItem?.(marker.workItemId as never)) === true)
     return emptyRecovery();
   if (!(await canRemoveOwnedWorkspace(input.scope, marker.path))) return emptyRecovery();
@@ -327,6 +353,67 @@ async function exists(path: string, signal: AbortSignal): Promise<boolean> {
     signal.throwIfAborted();
     return false;
   }
+}
+
+async function restoreReadOnlyWorkspace(
+  path: string,
+  revision: string | undefined,
+  git: GitRunner,
+  signal: AbortSignal,
+): Promise<void> {
+  if (revision !== undefined) {
+    await git(['-C', path, 'fetch', 'origin', revision], signal);
+    await git(['-C', path, 'checkout', '--detach', revision], signal);
+    await git(['-C', path, 'reset', '--hard', revision], signal);
+    return;
+  }
+  // HEAD is the initial clone revision when no resource revision was observed.
+  await git(['-C', path, 'reset', '--hard', 'HEAD'], signal);
+}
+
+const lockRetryMs = 25;
+
+async function acquireLock(path: string, signal: AbortSignal): Promise<void> {
+  while (true) {
+    signal.throwIfAborted();
+    try {
+      const handle = await open(path, 'wx');
+      await handle.close();
+      return;
+    } catch (error) {
+      if (!isAlreadyExists(error)) throw error;
+      await waitForLock(signal);
+    }
+  }
+}
+
+async function releaseLock(path: string): Promise<void> {
+  try {
+    await unlink(path);
+  } catch (error) {
+    if (!isNotFound(error)) throw error;
+  }
+}
+
+function waitForLock(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(done, lockRetryMs);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+
+    function done() {
+      signal.removeEventListener('abort', abort);
+      resolve();
+    }
+
+    signal.addEventListener('abort', abort, { once: true });
+  });
+}
+
+function isAlreadyExists(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST';
 }
 
 function slug(value: string): string {

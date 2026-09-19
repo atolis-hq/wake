@@ -339,7 +339,7 @@ describe('GitWorkspaceProvider', () => {
     ).rejects.toThrow(/prepare hook.*timed out/i);
   });
 
-  it('records ownership before cloning and removes a read-only workspace when the lease releases', async () => {
+  it('records ownership before cloning and retains a read-only workspace when the lease releases', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
     roots.push(root);
     const workItemId = workId('one');
@@ -350,6 +350,7 @@ describe('GitWorkspaceProvider', () => {
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
       async (args) => {
+        if (args[0] !== 'clone') return;
         const workspacePath = args[2]!;
         const marker = JSON.parse(await readFile(markerPath, 'utf8'));
         expect(marker).toEqual({
@@ -379,7 +380,85 @@ describe('GitWorkspaceProvider', () => {
 
     await lease.release();
     await lease.release();
-    await expect(access(lease.path)).rejects.toThrow();
-    await expect(access(markerPath)).rejects.toThrow();
+    await expect(access(lease.path)).resolves.toBeUndefined();
+    await expect(access(markerPath)).resolves.toBeUndefined();
+  });
+
+  it('reuses a read-only checkout, restores its requested revision, and prepares each lease', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const commands: string[][] = [];
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        commands.push([...args]);
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+      undefined,
+      {
+        command: nodeCommand("require('node:fs').appendFileSync('.prepared', 'x')"),
+        timeoutMs: 1_000,
+      },
+    );
+    const request = {
+      signal: new AbortController().signal,
+      mode: 'read-only' as const,
+      workItemId: workId('read-only-reuse'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+        revision: 'deadbeef',
+      },
+    };
+
+    const first = await provider.acquire({ ...request, runId: runId('run-read-only-first') });
+    await first.release();
+    const second = await provider.acquire({ ...request, runId: runId('run-read-only-second') });
+
+    expect(second.path).toBe(first.path);
+    expect(commands.filter(([command]) => command === 'clone')).toHaveLength(1);
+    expect(commands.filter((command) => command.includes('fetch'))).toHaveLength(2);
+    expect(commands.filter((command) => command.includes('reset'))).toHaveLength(2);
+    await expect(readFile(join(second.path, '.prepared'), 'utf8')).resolves.toBe('xx');
+    await second.release();
+  });
+
+  it('waits for a retained workspace lease and cancels while waiting', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+    );
+    const request = {
+      mode: 'read-only' as const,
+      workItemId: workId('exclusive-read-only'),
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+      },
+    };
+    const first = await provider.acquire({
+      ...request,
+      runId: runId('run-exclusive-first'),
+      signal: new AbortController().signal,
+    });
+    const controller = new AbortController();
+    const waiting = provider.acquire({
+      ...request,
+      runId: runId('run-exclusive-second'),
+      signal: controller.signal,
+    });
+    controller.abort(new Error('cancelled while waiting'));
+    await expect(waiting).rejects.toThrow('cancelled while waiting');
+    await first.release();
   });
 });

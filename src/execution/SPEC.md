@@ -138,11 +138,18 @@ sequence; it does not construct envelope metadata or a processor host.
   ID, workspace mode, workspace ID, and absolute path. This bridges the
   crash window before a workspace is acquired; the Run is already durable as
   `starting` during that work.
+- Workspace leases retain their marker-owned checkout after every terminal
+  Run outcome while the WorkItem remains open. A read-only reacquisition is
+  exclusive from Git reset through preparation and execution; it restores an
+  observed Resource revision exactly, or preserves the initial clone `HEAD`
+  when no revision is available. The opaque prepare hook runs on every
+  acquisition and owns dependency caching and invalidation.
 - During the existing pre-dispatch recovery pass, a workspace adapter may
   reclaim only a valid marker-owned path below its managed workspace root
-  when its owner Run is terminal or absent. Starting, Started, and
-  ambiguous owners, unmarked directories, malformed markers, and paths that
-  are outside or resolve outside that root MUST be retained for inspection.
+  when its owner Run is terminal or absent and the WorkItem is no longer
+  retained. Starting, Started, and ambiguous owners, unmarked directories,
+  malformed markers, and paths that are outside or resolve outside that root
+  MUST be retained for inspection.
 - Workspace crash recovery is pause-aware: the existing dispatch pause stops
   the sweep between independent reclaims, so maintenance performs no
   tick-driven deletion. It has no resident reaper, age threshold, or new
