@@ -131,9 +131,9 @@ It does not decide Run ambiguity or introduce a background cleanup service.
 
 ## Decisions, exclusions, and deferred capability
 
-- There is no workspace pooling, reuse tracking, or per-attempt isolation
-  beyond the deterministic work-item/repository-keyed path described above;
-  concurrent attempts against the same work item and repository share one
+- There is no workspace pooling or per-attempt checkout isolation beyond the
+  deterministic work-item/repository-keyed path described above. Concurrent
+  attempts wait for the exclusive workspace lease; they never share the
   physical directory.
 - A read-only workspace with a Resource revision is refreshed to that exact
   revision on every acquisition; without one it remains pinned to its initial

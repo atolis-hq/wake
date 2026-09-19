@@ -494,6 +494,21 @@ describe('GitWorkspaceProvider', () => {
       'keep',
     );
     await second.release();
+    const { revision: _revision, ...unpinnedResource } = request.repositoryResource;
+    const unpinned = await provider.acquire({
+      ...request,
+      runId: runId('run-exact-unpinned'),
+      repositoryResource: unpinnedResource,
+    });
+    await expect(readFile(join(unpinned.path, 'tracked.txt'), 'utf8')).resolves.toBe('second\n');
+    await unpinned.release();
+    await expect(
+      provider.acquire({
+        ...request,
+        runId: runId('run-exact-unavailable'),
+        repositoryResource: { ...request.repositoryResource, revision: 'missing-revision' },
+      }),
+    ).rejects.toThrow();
   });
 
   it('waits for a retained workspace lease and cancels while waiting', async () => {

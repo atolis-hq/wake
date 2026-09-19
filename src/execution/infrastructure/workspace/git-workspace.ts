@@ -73,24 +73,31 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     await mkdir(dirname(markerPath), { recursive: true });
     await acquireLock(lockPath, request.runId, signal);
     try {
+      const previousMarker = await readMarker(markerPath);
+      let initialRevision = previousMarker?.initialRevision;
       signal.throwIfAborted();
-      await writeFile(
-        markerPath,
-        JSON.stringify({
-          runId: request.runId,
-          workItemId: request.workItemId,
-          repositoryResourceId: request.repositoryResource.resourceId,
-          mode: request.mode,
-          workspaceId: name,
-          path,
-        }),
-        { encoding: 'utf8', signal },
-      );
+      const writeMarker = async () =>
+        writeFile(
+          markerPath,
+          JSON.stringify({
+            runId: request.runId,
+            workItemId: request.workItemId,
+            repositoryResourceId: request.repositoryResource.resourceId,
+            mode: request.mode,
+            workspaceId: name,
+            path,
+            ...(initialRevision === undefined ? {} : { initialRevision }),
+          }),
+          { encoding: 'utf8', signal },
+        );
+      await writeMarker();
       const existingWorkspace = await exists(join(path, '.git'), signal);
       if (!existingWorkspace) {
         await mkdir(dirname(path), { recursive: true });
         signal.throwIfAborted();
         await this.git(['clone', locator, path], signal);
+        initialRevision = await initialCloneRevision(path);
+        await writeMarker();
       }
       const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
       if (branch !== undefined) {
@@ -99,7 +106,13 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
           signal,
         );
       } else {
-        await restoreReadOnlyWorkspace(path, request.repositoryResource.revision, this.git, signal);
+        await restoreReadOnlyWorkspace(
+          path,
+          request.repositoryResource.revision,
+          initialRevision,
+          this.git,
+          signal,
+        );
       }
       if (this.prepareHook !== undefined) await prepareWorkspace(path, this.prepareHook, signal);
       signal.throwIfAborted();
@@ -280,6 +293,7 @@ interface WorkspaceOwnershipMarker {
   readonly mode: string;
   readonly workspaceId: string;
   readonly path: string;
+  readonly initialRevision?: string;
 }
 
 async function readMarker(path: string): Promise<WorkspaceOwnershipMarker | null> {
@@ -301,7 +315,8 @@ function isOwnershipMarker(value: unknown): value is WorkspaceOwnershipMarker {
     typeof marker.repositoryResourceId === 'string' &&
     (marker.mode === WorkspaceMode.ReadOnly || marker.mode === WorkspaceMode.Branch) &&
     typeof marker.workspaceId === 'string' &&
-    typeof marker.path === 'string'
+    typeof marker.path === 'string' &&
+    (marker.initialRevision === undefined || typeof marker.initialRevision === 'string')
   );
 }
 
@@ -376,6 +391,7 @@ async function exists(path: string, signal: AbortSignal): Promise<boolean> {
 async function restoreReadOnlyWorkspace(
   path: string,
   revision: string | undefined,
+  initialRevision: string | undefined,
   git: GitRunner,
   signal: AbortSignal,
 ): Promise<void> {
@@ -385,8 +401,18 @@ async function restoreReadOnlyWorkspace(
     await git(['-C', path, 'reset', '--hard', revision], signal);
     return;
   }
-  // HEAD is the initial clone revision when no resource revision was observed.
-  await git(['-C', path, 'reset', '--hard', 'HEAD'], signal);
+  await git(['-C', path, 'reset', '--hard', initialRevision ?? 'HEAD'], signal);
+}
+
+async function initialCloneRevision(path: string): Promise<string | undefined> {
+  try {
+    const result = await exec('git', ['-C', path, 'rev-parse', 'HEAD']);
+    return result.stdout.trim() || undefined;
+  } catch {
+    // Test and alternate git runners may attest a checkout without a real
+    // Git object database; legacy HEAD fallback remains safe for those trees.
+    return undefined;
+  }
 }
 
 const lockRetryMs = 25;
