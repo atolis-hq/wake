@@ -106,6 +106,7 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(workspace.path)).resolves.toBeUndefined();
     await expect(access(workspace.markerPath)).resolves.toBeUndefined();
     await expect(access(lockPath)).resolves.toBeUndefined();
+    await expect(access(join(lockPath, 'newer-run'))).resolves.toBeUndefined();
   });
 
   it('clears a crash-stale terminal-owner lock before reclaiming on a later pass', async () => {
