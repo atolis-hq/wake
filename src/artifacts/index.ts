@@ -10,3 +10,4 @@ export * from './contracts/streams.js';
 export * from './contracts/views.js';
 export * from './domain/artifact-work-item.js';
 export * from './infrastructure/file-artifact-store.js';
+export * from './infrastructure/mcp-server.js';
