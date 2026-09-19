@@ -1,5 +1,6 @@
 export * from './application/artifact-projection.js';
 export * from './application/artifact-repository.js';
+export * from './application/artifact-service.js';
 export * from './contracts/config.js';
 export * from './contracts/event-factory.js';
 export * from './contracts/events.js';
