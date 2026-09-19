@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-import { createEventData, EventProcessorHost, type EventProcessor } from '@atolis-hq/eventing';
+import {
+  createEventData,
+  EventProcessorHost,
+  WrongExpectedSequenceError,
+  type EventProcessor,
+} from '@atolis-hq/eventing';
 import {
   activityName,
   ActivityOutcomeKind,
@@ -214,6 +219,80 @@ describe('InboundTranslator', () => {
     expect(
       (await journal.readStream(stream)).filter(
         (candidate) => candidate.event.eventType === GitHubEventType.AdmissionStarted,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('retries admission when admission-started loses append contention before work persists', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const source = createEventData({
+      eventId: 'github:issue:owner/repo#contention:v1',
+      eventType: GitHubEventType.WorkObserved,
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'github:owner/repo#contention',
+      causationId: 'github:issue:owner/repo#contention:v1',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      payload: { ...observation(), externalKey: 'owner/repo#contention' },
+    });
+    await journal.appendToStream(githubStream, 0, [source]);
+    const append = journal.appendToStream.bind(journal);
+    let contended = false;
+    vi.spyOn(journal, 'appendToStream').mockImplementation(
+      async (stream, expectedSequence, events) => {
+        if (
+          !contended &&
+          stream.kind === 'integration' &&
+          stream.id === BuiltInAdapterId.GitHub &&
+          events[0]?.eventType === GitHubEventType.AdmissionStarted
+        ) {
+          contended = true;
+          await append(stream, expectedSequence, [
+            createEventData({
+              eventId: 'github:concurrent-delivery',
+              eventType: GitHubEventType.DeliveryObserved,
+              occurredAt: clock.now().toISOString(),
+              correlationId: 'github:concurrent-delivery',
+              causationId: 'github:concurrent-delivery',
+              actor: { kind: 'integration', id: 'github' },
+              source: { kind: 'adapter', id: 'github' },
+              payload: { deliveryId: 'concurrent-delivery', raw: {} },
+            }),
+          ]);
+          throw new WrongExpectedSequenceError('simulated admission contention');
+        }
+        return append(stream, expectedSequence, events);
+      },
+    );
+    const translator = new InboundTranslator(journal, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
+
+    await expect(processInbound(translator, journal, checkpoints)).rejects.toThrow(
+      'simulated admission contention',
+    );
+    await processInbound(translator, journal, checkpoints);
+
+    const resource = await lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#contention',
+    });
+    expect(resource).not.toBeNull();
+    const primary = (await resources.correlations(resource!)).find(
+      (value) => value.role === ResourceCorrelationRole.Primary,
+    );
+    expect(primary).toBeDefined();
+    expect(await work.get(primary!.workItemId)).not.toBeNull();
+    expect(
+      (await journal.readStream(githubStream)).filter(
+        (event) => event.event.eventType === GitHubEventType.AdmissionStarted,
       ),
     ).toHaveLength(1);
   });
