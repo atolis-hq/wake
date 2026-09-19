@@ -37,6 +37,7 @@ describe('surface API contracts', () => {
       },
       execution: { runs: [], transcriptGroups: [] },
       activities: {},
+      artifacts: [],
       conversation: { canCreateEntries: false, entries: [] },
     };
 

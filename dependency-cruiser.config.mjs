@@ -33,6 +33,7 @@ const dependencyMap = {
   ],
   surfaces: [
     'kernel',
+    'artifacts',
     'work',
     'resources',
     'activities',

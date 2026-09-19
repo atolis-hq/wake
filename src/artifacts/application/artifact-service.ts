@@ -19,6 +19,10 @@ export interface ArtifactService {
     context: CommandContext,
   ): Promise<ArtifactWorkItemView>;
   get(workItemId: string): Promise<ArtifactWorkItemView | null>;
+  latestPublished(
+    workItemId: string,
+    acceptedActivation: (activationId: string) => Promise<boolean>,
+  ): Promise<ReadonlyArray<ArtifactWorkItemView['revisions'][number]>>;
   read(location: string): Promise<Uint8Array>;
 }
 
@@ -125,6 +129,17 @@ export function createArtifactService(
     },
     async get(workItemId) {
       return (await repository.load(artifactWorkItemIdForWorkItem(workItemId as never))).view;
+    },
+    async latestPublished(workItemId, acceptedActivation) {
+      const view = await repository.load(artifactWorkItemIdForWorkItem(workItemId as never));
+      const visible = [] as ArtifactWorkItemView['revisions'][number][];
+      const latest = new Map<string, ArtifactWorkItemView['revisions'][number]>();
+      for (const revision of view.view?.revisions ?? []) {
+        if (!(await acceptedActivation(revision.activationId))) continue;
+        latest.set(`${revision.producer}\u0000${revision.path}`, revision);
+      }
+      for (const revision of latest.values()) if (!revision.deleted) visible.push(revision);
+      return visible;
     },
     read: (location) => store.read(location),
   };

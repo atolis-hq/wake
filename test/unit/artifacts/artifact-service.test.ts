@@ -85,6 +85,48 @@ describe('ArtifactService', () => {
       service.stageRevision({ ...base, revisionId: 'two', bytes: new Uint8Array(3) }, context),
     ).rejects.toThrow('work item exceeds');
   });
+
+  it('exposes only latest accepted, non-tombstoned revisions', async () => {
+    const service = createArtifactService(
+      new InMemoryEventJournal(new FakeClock()),
+      new FileArtifactStore(await directory()),
+      { maxWriteBytes: 100, maxWorkItemBytes: 200 },
+    );
+    const workItemId = workId('artifact-visible');
+    const command = {
+      workItemId,
+      producer: 'workflow-1/refine',
+      path: artifactPath('spec.md'),
+      runId: 'run-1',
+      activationId: 'accepted',
+    };
+    await service.stageRevision(
+      { ...command, revisionId: 'revision-1', bytes: new Uint8Array([1]) },
+      context,
+    );
+    await service.stageRevision(
+      { ...command, revisionId: 'revision-2', bytes: new Uint8Array([2]) },
+      { ...context, commandId: 'revision-2' },
+    );
+    await service.stageTombstone(
+      { ...command, revisionId: 'tombstone-1' },
+      { ...context, commandId: 'tombstone' },
+    );
+    await service.stageRevision(
+      {
+        ...command,
+        revisionId: 'unaccepted',
+        path: artifactPath('private.md'),
+        activationId: 'unaccepted',
+        bytes: new Uint8Array([3]),
+      },
+      { ...context, commandId: 'unaccepted' },
+    );
+
+    await expect(
+      service.latestPublished(workItemId, async (id) => id === 'accepted'),
+    ).resolves.toEqual([]);
+  });
 });
 
 async function directory(): Promise<string> {
