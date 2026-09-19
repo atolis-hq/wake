@@ -418,7 +418,7 @@ async function restoreReadOnlyWorkspace(
 ): Promise<void> {
   if (revision !== undefined) {
     await git(['-C', path, 'fetch', 'origin', revision], signal);
-    await git(['-C', path, 'checkout', '--detach', revision], signal);
+    await git(['-C', path, 'checkout', '--detach', '--force', revision], signal);
     await git(['-C', path, 'reset', '--hard', revision], signal);
     return;
   }

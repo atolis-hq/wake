@@ -438,7 +438,8 @@ describe('GitWorkspaceProvider', () => {
     const repository = join(root, 'repository');
     await execFileAsync('git', ['init', repository]);
     await writeFile(join(repository, 'tracked.txt'), 'first\n');
-    await execFileAsync('git', ['-C', repository, 'add', 'tracked.txt']);
+    await writeFile(join(repository, '.gitignore'), 'node_modules/\n');
+    await execFileAsync('git', ['-C', repository, 'add', 'tracked.txt', '.gitignore']);
     await execFileAsync('git', [
       '-C',
       repository,
@@ -483,6 +484,7 @@ describe('GitWorkspaceProvider', () => {
     };
     const first = await provider.acquire({ ...request, runId: runId('run-exact-first') });
     await expect(readFile(join(first.path, 'tracked.txt'), 'utf8')).resolves.toBe('first\n');
+    await writeFile(join(first.path, 'tracked.txt'), 'dirty\n');
     await mkdir(join(first.path, 'node_modules'), { recursive: true });
     await writeFile(join(first.path, 'node_modules', 'cached'), 'keep');
     await first.release();
