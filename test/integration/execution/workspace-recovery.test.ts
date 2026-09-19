@@ -95,7 +95,8 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
     const workspace = await ownedWorkspace(root, 'newer-lock', 'finished-run');
     const lockPath = join(root, '.wake-workspace-ownership', 'newer-lock.lock');
-    await writeFile(lockPath, 'newer-run', 'utf8');
+    await mkdir(lockPath);
+    await writeFile(join(lockPath, 'newer-run'), '', 'utf8');
 
     await (provider as WorkspaceRecovery).recover(
       [run('finished-run', RunStatus.Succeeded), run('newer-run', RunStatus.Started)],
@@ -112,7 +113,8 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
     const workspace = await ownedWorkspace(root, 'stale-lock', 'finished-run');
     const lockPath = join(root, '.wake-workspace-ownership', 'stale-lock.lock');
-    await writeFile(lockPath, 'finished-run', 'utf8');
+    await mkdir(lockPath);
+    await writeFile(join(lockPath, 'finished-run'), '', 'utf8');
     const options = { retainWorkItem: async () => false };
 
     await (provider as WorkspaceRecovery).recover(

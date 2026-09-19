@@ -4,11 +4,11 @@ import { execFile } from 'node:child_process';
 import {
   access,
   mkdir,
-  open,
   readdir,
   readFile,
   realpath,
   rm,
+  rmdir,
   unlink,
   writeFile,
 } from 'node:fs/promises';
@@ -127,11 +127,11 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
           released = true;
           // Workspaces are WorkItem-scoped. Recovery reclaims the marker-owned tree
           // only after its WorkItem is no longer retained.
-          await releaseLock(lockPath);
+          await releaseLock(lockPath, request.runId);
         },
       };
     } catch (error) {
-      await releaseLock(lockPath);
+      await releaseLock(lockPath, request.runId);
       throw error;
     }
   }
@@ -233,7 +233,7 @@ async function reclaimOwnedMarker(
     if (current === null || current.runId !== marker.runId) return emptyRecovery();
     return await reclaimUnlockedMarker(input, markerPath, current);
   } finally {
-    await releaseLock(lockPath);
+    await releaseLock(lockPath, marker.runId);
   }
 }
 
@@ -421,9 +421,8 @@ async function acquireLock(path: string, runId: string, signal: AbortSignal): Pr
   while (true) {
     signal.throwIfAborted();
     try {
-      const handle = await open(path, 'wx');
-      await handle.writeFile(runId, 'utf8');
-      await handle.close();
+      await mkdir(path);
+      await writeFile(join(path, runId), '', 'utf8');
       return;
     } catch (error) {
       if (!isAlreadyExists(error)) throw error;
@@ -438,9 +437,8 @@ async function acquireRecoveryLock(
   runs: readonly RunView[],
 ): Promise<boolean> {
   try {
-    const handle = await open(path, 'wx');
-    await handle.writeFile(markerRunId, 'utf8');
-    await handle.close();
+    await mkdir(path);
+    await writeFile(join(path, markerRunId), '', 'utf8');
     return true;
   } catch (error) {
     if (!isAlreadyExists(error)) throw error;
@@ -461,25 +459,33 @@ async function acquireRecoveryLock(
   // An absent or terminal lock owner is a crash orphan even if it acquired
   // the lock before it could replace an older marker. Removing it makes the
   // next recovery/acquisition pass progress without disturbing an active run.
-  await releaseLock(path);
+  await releaseLock(path, owner);
   return false;
 }
 
 async function readLockOwner(path: string): Promise<string | null> {
   try {
-    return await readFile(path, 'utf8');
+    const owners = await readdir(path);
+    return owners.length === 1 ? owners[0]! : null;
   } catch (error) {
     if (isNotFound(error)) return null;
     throw error;
   }
 }
 
-async function releaseLock(path: string): Promise<void> {
+async function releaseLock(path: string, owner: string): Promise<void> {
   try {
-    await unlink(path);
+    await unlink(join(path, owner));
+    await rmdir(path);
   } catch (error) {
-    if (!isNotFound(error)) throw error;
+    if (!isNotFound(error) && !isNotEmpty(error)) throw error;
   }
+}
+
+function isNotEmpty(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOTEMPTY'
+  );
 }
 
 function waitForLock(signal: AbortSignal): Promise<void> {
