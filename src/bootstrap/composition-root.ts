@@ -6,6 +6,7 @@ import {
   type ProjectionStore,
 } from '@atolis-hq/eventing';
 import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
+import { ArtifactRepository } from '../artifacts/index.js';
 import {
   DispatchPolicy,
   createActivationScheduler,
@@ -109,6 +110,7 @@ export interface CompositionRoot {
   readonly processorState: ProcessorStateStore;
   readonly activities: ActivityRegistry;
   readonly work: ReturnType<typeof createWorkService>;
+  readonly artifacts: ArtifactRepository;
   readonly conversations: ReturnType<typeof createConversationService>;
   readonly resources: ReturnType<typeof createResourceService>;
   readonly pullRequests: ReturnType<typeof createPullRequestService>;
@@ -164,6 +166,7 @@ export async function createCompositionRoot(
     clock,
   );
   const work = createWorkService(journal);
+  const artifacts = new ArtifactRepository(journal);
   const conversations = createConversationService(journal);
   const lookup = createResourceLookup({ journal, projections });
   const resources = createResourceService(journal, lookup);
@@ -343,6 +346,7 @@ export async function createCompositionRoot(
     processorState,
     activities,
     work,
+    artifacts,
     conversations,
     resources,
     pullRequests,

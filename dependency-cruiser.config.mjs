@@ -1,5 +1,6 @@
 const modules = [
   'kernel',
+  'artifacts',
   'conversations',
   'work',
   'resources',
@@ -13,6 +14,7 @@ const modules = [
 ];
 const dependencyMap = {
   kernel: [],
+  artifacts: ['kernel', 'work'],
   conversations: ['kernel', 'work'],
   work: ['kernel'],
   resources: ['kernel', 'work'],
@@ -41,6 +43,7 @@ const dependencyMap = {
     'conversations',
   ],
   bootstrap: [
+    'artifacts',
     'kernel',
     'work',
     'resources',
