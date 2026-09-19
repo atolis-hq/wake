@@ -90,6 +90,43 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(workspace.markerPath)).resolves.toBeUndefined();
   });
 
+  it('never removes a newer acquisition lock while recovering an older marker owner', async () => {
+    const root = await workspaceRoot();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const workspace = await ownedWorkspace(root, 'newer-lock', 'finished-run');
+    const lockPath = join(root, '.wake-workspace-ownership', 'newer-lock.lock');
+    await writeFile(lockPath, 'newer-run', 'utf8');
+
+    await (provider as WorkspaceRecovery).recover([run('finished-run', RunStatus.Succeeded)], {
+      retainWorkItem: async () => false,
+    });
+
+    await expect(access(workspace.path)).resolves.toBeUndefined();
+    await expect(access(workspace.markerPath)).resolves.toBeUndefined();
+    await expect(access(lockPath)).resolves.toBeUndefined();
+  });
+
+  it('clears a crash-stale terminal-owner lock before reclaiming on a later pass', async () => {
+    const root = await workspaceRoot();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const workspace = await ownedWorkspace(root, 'stale-lock', 'finished-run');
+    const lockPath = join(root, '.wake-workspace-ownership', 'stale-lock.lock');
+    await writeFile(lockPath, 'finished-run', 'utf8');
+    const options = { retainWorkItem: async () => false };
+
+    await (provider as WorkspaceRecovery).recover(
+      [run('finished-run', RunStatus.Succeeded)],
+      options,
+    );
+    await expect(access(workspace.path)).resolves.toBeUndefined();
+    await expect(access(lockPath)).rejects.toThrow();
+    await (provider as WorkspaceRecovery).recover(
+      [run('finished-run', RunStatus.Succeeded)],
+      options,
+    );
+    await expect(access(workspace.path)).rejects.toThrow();
+  });
+
   it('stops before the next owned workspace when the existing dispatch pause becomes active', async () => {
     const root = await workspaceRoot();
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });

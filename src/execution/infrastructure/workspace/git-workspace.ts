@@ -71,7 +71,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     const markerPath = join(this.markerRoot, `${name}.json`);
     const lockPath = join(this.markerRoot, `${name}.lock`);
     await mkdir(dirname(markerPath), { recursive: true });
-    await acquireLock(lockPath, signal);
+    await acquireLock(lockPath, request.runId, signal);
     try {
       signal.throwIfAborted();
       await writeFile(
@@ -213,6 +213,27 @@ async function reclaimOwnedMarker(
     !(await isOwnedWorkspace(input.scope, markerPath, marker, input.fileSystem))
   )
     return emptyRecovery();
+  const lockPath = join(input.scope.markerRoot, `${marker.workspaceId}.lock`);
+  if (!(await acquireRecoveryLock(lockPath, marker.runId, input.runs))) return emptyRecovery();
+  try {
+    const current = await readMarker(markerPath);
+    if (current === null || current.runId !== marker.runId) return emptyRecovery();
+    return await reclaimUnlockedMarker(input, markerPath, current);
+  } finally {
+    await releaseLock(lockPath);
+  }
+}
+
+async function reclaimUnlockedMarker(
+  input: {
+    readonly scope: RecoveryScope;
+    readonly runs: readonly RunView[];
+    readonly fileSystem: WorkspaceRecoveryFileSystem;
+    readonly options: WorkspaceRecoveryOptions;
+  },
+  markerPath: string,
+  marker: WorkspaceOwnershipMarker,
+): Promise<WorkspaceRecoveryResult> {
   if (
     input.runs.some(
       (run) =>
@@ -221,9 +242,6 @@ async function reclaimOwnedMarker(
     )
   )
     return emptyRecovery();
-  // A terminal/absent owner cannot still hold a valid lease. Clear its stale
-  // process lock so a crash before release does not strand a retained tree.
-  await releaseLock(join(input.scope.markerRoot, `${marker.workspaceId}.lock`));
   if ((await input.options.retainWorkItem?.(marker.workItemId as never)) === true)
     return emptyRecovery();
   if (!(await canRemoveOwnedWorkspace(input.scope, marker.path))) return emptyRecovery();
@@ -373,17 +391,53 @@ async function restoreReadOnlyWorkspace(
 
 const lockRetryMs = 25;
 
-async function acquireLock(path: string, signal: AbortSignal): Promise<void> {
+async function acquireLock(path: string, runId: string, signal: AbortSignal): Promise<void> {
   while (true) {
     signal.throwIfAborted();
     try {
       const handle = await open(path, 'wx');
+      await handle.writeFile(runId, 'utf8');
       await handle.close();
       return;
     } catch (error) {
       if (!isAlreadyExists(error)) throw error;
       await waitForLock(signal);
     }
+  }
+}
+
+async function acquireRecoveryLock(
+  path: string,
+  markerRunId: string,
+  runs: readonly RunView[],
+): Promise<boolean> {
+  try {
+    const handle = await open(path, 'wx');
+    await handle.writeFile(markerRunId, 'utf8');
+    await handle.close();
+    return true;
+  } catch (error) {
+    if (!isAlreadyExists(error)) throw error;
+  }
+  // Only clear a crash-stale lock when it attests the same terminal/absent
+  // owner as the marker we inspected. A newer acquisition has a different
+  // lock owner and is never disturbed by recovery of an older marker.
+  const owner = await readLockOwner(path);
+  if (
+    owner !== markerRunId ||
+    runs.some((run) => isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous)
+  )
+    return false;
+  await releaseLock(path);
+  return false;
+}
+
+async function readLockOwner(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
   }
 }
 
