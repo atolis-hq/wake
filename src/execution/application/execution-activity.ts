@@ -5,7 +5,7 @@ import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/
 import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type RunExecutionEventData } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
-import { ProviderQuotaExceededFailureKind } from '../contracts/runner.js';
+import { ProviderQuotaExceededFailureKind, type RunnerMcpServer } from '../contracts/runner.js';
 import { ExecutionCancellationReason } from '../contracts/vocabulary.js';
 import type { WorkspaceProvider } from '../contracts/workspace.js';
 import { parseAgentRunnerResponse } from '../infrastructure/agent-runner-adapter.js';
@@ -19,12 +19,23 @@ export interface ExecutionDependencies {
   readonly ids: IdGenerator;
   readonly workspaces?: WorkspaceProvider;
   readonly runners?: RunnerRegistry;
+  readonly mcp?: (input: {
+    readonly runId: string;
+    readonly activation: ExecutionActivation;
+    readonly context: ExecutionAttemptContext;
+  }) => Promise<ExecutionMcpConfiguration>;
   readonly transcriptRecorder?: ActivityExecutionContext['transcriptRecorder'];
   readonly logOperationalError?: ActivityExecutionContext['logOperationalError'];
   readonly reportRunnerQuota?: (input: {
     readonly runnerName: string;
     readonly message: string;
   }) => Promise<void>;
+}
+
+export interface ExecutionMcpConfiguration {
+  readonly servers: readonly RunnerMcpServer[];
+  readonly prompt?: string;
+  release(): Promise<void>;
 }
 
 export interface ExecutionRuntime {
@@ -49,6 +60,8 @@ export interface ExecutionLifecycle {
   >;
 }
 
+// Execution context assembly intentionally keeps every run-bound capability visible at dispatch.
+// eslint-disable-next-line max-lines-per-function, complexity
 export async function executeActivity(
   runtime: ExecutionRuntime,
   currentRunId: ReturnType<typeof runId>,
@@ -76,6 +89,10 @@ export async function executeActivity(
   const { activation, context, occurredAt, runner } = request;
   const controller = activityController(runtime, currentRunId);
   runtime.active.set(currentRunId, controller);
+  const mcp =
+    runner === undefined || runtime.dependencies.mcp === undefined
+      ? undefined
+      : await runtime.dependencies.mcp({ runId: currentRunId, activation, context });
   const executionContext: ActivityExecutionContext = {
     signal: controller.signal,
     occurredAt,
@@ -88,6 +105,12 @@ export async function executeActivity(
       : { reportRunnerStarted: request.reportRunnerStarted }),
     ...workspaceContext(request.workspace),
     ...(runner === undefined ? {} : { runner }),
+    ...(mcp === undefined
+      ? {}
+      : {
+          mcpServers: mcp.servers,
+          ...(mcp.prompt === undefined ? {} : { mcpPrompt: mcp.prompt }),
+        }),
     ...(runtime.dependencies.transcriptRecorder === undefined
       ? {}
       : { transcriptRecorder: runtime.dependencies.transcriptRecorder }),
@@ -109,19 +132,23 @@ export async function executeActivity(
     reportRunnerResult: runnerResultReporter(runtime, currentRunId, context, activation, request),
     reportRunnerTimeout: runnerTimeoutReporter(runtime, currentRunId),
   };
-  return runtime.activities.execute(
-    {
-      activationId: activation.activationId,
-      activity: activation.activity,
-      workItemId: context.workItemId,
-      workflowInstanceId: context.workflowInstanceId,
-      orchestrationGroupId: context.orchestrationGroupId,
-      causationId: activation.activationId,
-      input: activation.input,
-      resources: context.resources,
-    },
-    executionContext,
-  );
+  try {
+    return await runtime.activities.execute(
+      {
+        activationId: activation.activationId,
+        activity: activation.activity,
+        workItemId: context.workItemId,
+        workflowInstanceId: context.workflowInstanceId,
+        orchestrationGroupId: context.orchestrationGroupId,
+        causationId: activation.activationId,
+        input: activation.input,
+        resources: context.resources,
+      },
+      executionContext,
+    );
+  } finally {
+    await mcp?.release();
+  }
 }
 
 function activityController(

@@ -43,6 +43,7 @@ schemaVersion: 1
 work: {}
 resources: {}
 activities: {}
+artifacts: {}
 orchestration: {}
 transcripts: {}
 execution: {}
@@ -58,6 +59,7 @@ host: {}
 | `work` | strict empty object; default `{}` | Reserved Work-module configuration. It has no supported child fields yet. |
 | `resources` | strict empty object; default `{}` | Reserved Resources-module configuration. It has no supported child fields yet. |
 | `activities` | strict empty object; default `{}` | Reserved Activities-module configuration. It has no supported child fields yet. |
+| `artifacts` | object; defaults below | Instance-wide limits for Wake-managed work-item artifact storage. |
 | `orchestration` | object; defaults below | Workflows, selection, commands, watches, and outcome routing. |
 | `transcripts` | object; defaults below | Opt-in raw agent prompt/response capture. |
 | `execution` | object; `defaultRunnerPool` required | Runner registry, runner pools, and durable Run recovery settings. |
@@ -312,9 +314,28 @@ Each `execution.agentRunners.<name>` definition has the following shape.
 | `runnerTimeouts.cancellationGraceMs` | positive integer; default `30000` | Time to wait after SIGTERM before escalating cancellation to SIGKILL. |
 | `args` | list of strings; default `[]` | Additional adapter arguments. Do not include `--output-format` or `--resume`; Wake manages those flags. |
 
-Pools are tried in order, skipping only runners currently paused as
-quota-ineligible. A missing runner named by a pool is an error; Wake does not
-silently switch to another pool.
+Pools are tried in order, skipping runners currently paused as quota-ineligible
+or unable to accept Wake's trusted per-run MCP configuration. A missing runner
+named by a pool is an error; Wake does not silently switch to another pool or
+run an artifact-capable activity without its Wake tools.
+
+## `artifacts`
+
+Artifact storage is owned by Wake, outside Git workspaces, and is not a
+workflow-step configuration surface. Every agent activation receives a
+run-scoped Wake MCP server and a metadata-only manifest of the artifacts it may
+read. The producing stage is the only writer; accepted upstream outputs are
+readable. Wake publishes staged output only when Orchestration accepts the
+producing activation's outcome.
+
+| Field | Type / default | Explanation |
+| --- | --- | --- |
+| `artifacts.maxWriteBytes` | positive integer; default `26214400` | Maximum bytes in one artifact revision (25 MiB). |
+| `artifacts.maxWorkItemBytes` | positive integer; default `262144000` | Maximum retained revision bytes for one work item (250 MiB). Must not be lower than `maxWriteBytes`. |
+
+The work-item Artifacts tab lists accepted current revisions. Each link is an
+authorized Wake download; it is not a bearer URL and no artifact index is
+written back to a provider issue or comment.
 
 ```yaml
 execution:

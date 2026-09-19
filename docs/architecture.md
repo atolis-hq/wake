@@ -66,11 +66,12 @@ location. Adapters retain control
 | `resources` | External-resource facts and their correlation to work items. |
 | `conversations` | Canonical work-item conversation facts, entry origins, and rebuildable conversation views. |
 | `activities` | Activity definitions and pull-request/review activities. |
+| `artifacts` | Durable work-item artifact revisions, access policy, and artifact-byte storage contracts. |
 | `orchestration` | Compiled workflow definitions, durable workflow instances, activations, waits, watches, and retry policy. |
 | `execution` | Runs, runner adapters, workspaces, leases, cancellation, recovery, and transcripts. |
 | `control-plane` | Bounded advancement, intake, selection, scheduling, quotas, and resident/tick hosts. |
 | `integrations` | Provider polling, inbound translation, artifact registration, and outbound delivery. |
-| `surfaces` | CLI, HTTP API, and web presentation. |
+| `surfaces` | CLI, MCP stdio transport, HTTP API, and web presentation. |
 | `bootstrap` | Root configuration, paths, concrete adapter selection, the complete processor registry, and composition. |
 
 No domain module imports a provider client, filesystem implementation, or

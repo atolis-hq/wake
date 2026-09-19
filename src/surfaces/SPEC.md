@@ -7,8 +7,8 @@ asOf: 5031f5b26b684460a94bb1b97599813cc14c5926
 ## Purpose and scope
 
 Surfaces is the presentation boundary of Wake: every way a human, an external
-tool, or the packaged web UI reaches Wake's public applications and views. It
-owns three sub-areas — an HTTP API, a CLI, and a browser-facing web client —
+tool, agent, or the packaged web UI reaches Wake's public applications and views. It
+owns four sub-areas — an HTTP API, a CLI, an MCP stdio transport, and a browser-facing web client —
 that together translate outside requests into calls against domain modules'
 already-composed public applications, and translate domain results back into
 a transport-appropriate shape. Surfaces holds no domain policy of its own:
@@ -24,6 +24,9 @@ Surfaces owns:
 - Formatting a domain result (view, command outcome, or rejection) into the
   transport's response shape — JSON resource/collection envelopes and
   RFC 7807-style problem responses over HTTP; JSON lines over the CLI.
+- Hosting an already-authorized Wake MCP server over stdio. The transport does
+  not decide a tool's scope or create its session; Bootstrap supplies the
+  server with Artifact's policy already bound to a verified run credential.
 - The web client's own request construction and response decoding, so the
   packaged UI never handles an untyped HTTP payload directly.
 - Presentation-level identity translation: encoding/decoding the public
@@ -62,8 +65,8 @@ metadata remain derived from the recorded envelope.
 
 ## Ubiquitous language
 
-- **Surface** — one of the three request-handling sub-areas: API (HTTP),
-  CLI, Web (browser client).
+- **Surface** — one of the request-handling sub-areas: API (HTTP), CLI, MCP
+  (agent stdio), or Web (browser client).
 - **Surface application** — the interface a sub-area's transport code is
   written against (`ApiApplications`, `WakeCliApplications`); Bootstrap
   supplies the concrete implementation.
@@ -152,6 +155,7 @@ metadata remain derived from the recorded envelope.
 | [API application](api/api-application.spec.md) | surface application | HTTP query/command routing, request validation, response/page shaping, presentation of domain views into API response contracts | Calls the `ApiApplications` facade Bootstrap composes; its output is handed to the HTTP transport adapter for wire delivery. |
 | [HTTP transport](api/http-transport.spec.md) | adapter | Node HTTP binding, JSON/problem+json encoding, static web asset serving and SPA fallback | Wraps the API application's dispatch result (or a static asset) as an actual HTTP response; owns nothing about what a route means. |
 | [CLI command surface](cli/cli-surface.spec.md) | surface application | Argument parsing into a typed `WakeCommand`, dispatch to the `WakeCliApplications` facade, JSON-line output, process log redaction | Calls the same kind of Bootstrap-composed facade as the API, over a process's argv/stdout instead of HTTP. |
+| MCP stdio transport | adapter | Framing the run-scoped Wake MCP server on stdin/stdout | Receives an authorized tool server from the Bootstrap-composed CLI facade; it does not interpret artifact ownership or credentials. |
 | [Web API client](web/web-api-client.spec.md) | adapter | Browser-side request construction, response decoding/validation, cache-key and refresh-interval policy | Consumes the API application's HTTP contract exactly as an external caller would; decodes every response defensively rather than trusting the wire shape. |
 
 ## Dependencies and system role
@@ -178,7 +182,7 @@ metadata remain derived from the recorded envelope.
   yet exercised: no surface currently checks caller identity or permission
   before executing a well-formed request. Every accepted command runs
   unconditionally once validation passes.
-- The CLI command parser recognizes `tick`, `start`, `stop`, `api`, `ui`, `audit`, `correlate`, `validate-state`, `init`, `doctor`, `sandbox`, `sandbox-setup`, `sandbox-entrypoint`, `self-update`, and `smoke`. `init` creates its root before Bootstrap composes it. The other operational commands route through a Bootstrap-owned operational Surface port.
+- The CLI command parser recognizes `tick`, `start`, `stop`, `api`, `ui`, `mcp serve`, `audit`, `correlate`, `validate-state`, `init`, `doctor`, `sandbox`, `sandbox-setup`, `sandbox-entrypoint`, `self-update`, and `smoke`. `mcp serve` is a private runner-injected command; `init` creates its root before Bootstrap composes it. The other operational commands route through a Bootstrap-owned operational Surface port.
 - The web client and API share no runtime code; the web client decodes every
   response field defensively (an unknown or missing field throws) rather
   than trusting that the API and web packages were deployed from the same

@@ -17,6 +17,7 @@ export const WakeOperationalCommand = defineClosedVocabulary({
 export type WakeCommand =
   | ({ readonly kind: 'tick' | 'start' | 'stop' } & { readonly wakeRoot?: string })
   | ({ readonly kind: 'api' | 'ui' } & HostOptions)
+  | ({ readonly kind: 'mcp' } & { readonly sessionPath: string; readonly wakeRoot?: string })
   | ({ readonly kind: 'ui-token'; readonly accessKey?: string } & Pick<HostOptions, 'wakeRoot'>)
   | { readonly kind: 'audit'; readonly workItemId: string }
   | { readonly kind: 'correlate'; readonly resource: string; readonly workItemId: string }
@@ -78,6 +79,7 @@ export interface WakeCliApplications {
   readonly stop: { stop(): Promise<void> };
   readonly api: { start(options?: HostOptions): Promise<void> };
   readonly ui: { start(options?: HostOptions): Promise<void> };
+  readonly mcp?: { serve(sessionPath: string, token: string): Promise<void> };
   readonly auth?: { token(accessKey?: string): Promise<string> };
   readonly audit: { read(workItemId: string): Promise<readonly AuditRecord[]> };
   readonly correlate: { correlate(resource: string, workItemId: string): Promise<unknown> };
@@ -126,6 +128,8 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
       return parseUiCommand(arguments_.slice(1));
     case 'api':
       return { kind: command, ...parseHostOptions(arguments_.slice(1)) };
+    case 'mcp':
+      return parseMcpCommand(arguments_.slice(1));
     case 'tick':
     case 'start':
     case 'stop':
@@ -142,6 +146,24 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
     default:
       throw new Error(`Unknown wake command: ${command ?? ''}`);
   }
+}
+
+function parseMcpCommand(arguments_: readonly string[]): WakeCommand {
+  if (arguments_[0] !== 'serve') throw new Error(`Unknown mcp command: ${arguments_[0] ?? ''}`);
+  let sessionPath: string | undefined;
+  let wakeRoot: string | undefined;
+  for (let index = 1; index < arguments_.length; index += 2) {
+    const flag = arguments_[index];
+    const value = requiredArgument(arguments_[index + 1], `value for ${flag ?? 'option'}`);
+    if (flag === '--session' && sessionPath === undefined) sessionPath = value;
+    else if (flag === '--wake-root' && wakeRoot === undefined) wakeRoot = value;
+    else throw new Error(`Unknown or duplicate mcp option: ${flag ?? ''}`);
+  }
+  return {
+    kind: 'mcp',
+    sessionPath: requiredArgument(sessionPath, 'mcp --session'),
+    ...(wakeRoot === undefined ? {} : { wakeRoot }),
+  };
 }
 
 function parseUiCommand(arguments_: readonly string[]): WakeCommand {
@@ -301,6 +323,9 @@ export async function runWakeCommand(
     case 'ui-token':
       output.write(await formatUiTokenOutput(auth(applications).token(command.accessKey)));
       return;
+    case 'mcp':
+      await mcp(applications).serve(command.sessionPath, process.env.WAKE_MCP_TOKEN ?? '');
+      return;
     case 'audit':
       for (const record of await applications.audit.read(command.workItemId))
         output.write(`${JSON.stringify(record)}\n`);
@@ -363,6 +388,11 @@ function runs(applications: WakeCliApplications): NonNullable<WakeCliApplication
 function auth(applications: WakeCliApplications): NonNullable<WakeCliApplications['auth']> {
   if (applications.auth === undefined) throw new Error('UI auth CLI application was not composed');
   return applications.auth;
+}
+
+function mcp(applications: WakeCliApplications): NonNullable<WakeCliApplications['mcp']> {
+  if (applications.mcp === undefined) throw new Error('MCP CLI application was not composed');
+  return applications.mcp;
 }
 
 function writeResult(output: CliOutput, value: unknown): void {

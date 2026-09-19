@@ -8,6 +8,20 @@ describe('wake surface CLI', () => {
       kind: 'audit',
       workItemId: 'work-demo',
     });
+    expect(
+      parseWakeCommand([
+        'mcp',
+        'serve',
+        '--session',
+        '/wake/.wake/artifacts/sessions/opaque.json',
+        '--wake-root',
+        '/wake',
+      ]),
+    ).toEqual({
+      kind: 'mcp',
+      sessionPath: '/wake/.wake/artifacts/sessions/opaque.json',
+      wakeRoot: '/wake',
+    });
     expect(parseWakeCommand(['validate-state', '--rebuild-projections'])).toEqual({
       kind: 'validate-state',
       rebuildProjections: true,

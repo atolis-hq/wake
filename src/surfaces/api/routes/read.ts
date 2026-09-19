@@ -141,15 +141,47 @@ async function readDetail(
   applications: ApiApplications,
   pathname: string,
 ): Promise<ApiHttpResponse | undefined> {
-  const workTranscript = /^\/api\/v1\/work-items\/([^/]+)\/transcripts\/([^/]+)$/.exec(pathname);
-  if (workTranscript?.[1] !== undefined && workTranscript[2] !== undefined)
-    return readWorkTranscript(applications, workTranscript[1], workTranscript[2]);
+  const workSubresource = await readWorkSubresource(applications, pathname);
+  if (workSubresource !== undefined) return workSubresource;
   const transcript = /^\/api\/v1\/runs\/([^/]+)\/transcript$/.exec(pathname)?.[1];
   if (transcript !== undefined) return readTranscript(applications, transcript);
   const work = /^\/api\/v1\/work-items\/([^/]+)$/.exec(pathname)?.[1];
   if (work !== undefined) return readWork(applications, work);
   const run = /^\/api\/v1\/runs\/([^/]+)$/.exec(pathname)?.[1];
   return run === undefined ? undefined : readRun(applications, run);
+}
+
+async function readWorkSubresource(applications: ApiApplications, pathname: string) {
+  const workTranscript = /^\/api\/v1\/work-items\/([^/]+)\/transcripts\/([^/]+)$/.exec(pathname);
+  if (workTranscript?.[1] !== undefined && workTranscript[2] !== undefined)
+    return readWorkTranscript(applications, workTranscript[1], workTranscript[2]);
+  const artifact = /^\/api\/v1\/work-items\/([^/]+)\/artifacts\/([^/]+)$/.exec(pathname);
+  if (artifact?.[1] !== undefined && artifact[2] !== undefined)
+    return readWorkArtifact(applications, artifact[1], artifact[2]);
+  return undefined;
+}
+
+async function readWorkArtifact(
+  applications: ApiApplications,
+  keySegment: string,
+  revisionSegment: string,
+): Promise<ApiHttpResponse> {
+  const key = decodePathSegment(keySegment);
+  const revisionId = decodePathSegment(revisionSegment);
+  if (key instanceof ApiPathError) return invalidPath(key.message);
+  if (revisionId instanceof ApiPathError) return invalidPath(revisionId.message);
+  if (applications.work.artifact === undefined) return unavailable('artifact');
+  const artifact = await applications.work.artifact(key, revisionId);
+  if (artifact === undefined) return found(undefined);
+  return {
+    status: 200,
+    body: artifact.bytes,
+    contentType: artifact.mediaType,
+    headers: {
+      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(artifact.filename)}`,
+      'content-length': String(artifact.bytes.byteLength),
+    },
+  };
 }
 
 async function readWorkTranscript(

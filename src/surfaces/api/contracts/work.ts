@@ -34,6 +34,16 @@ export interface WorkDetailResponse {
     readonly transcriptGroups: readonly TranscriptGroupResponse[];
   };
   readonly activities: { readonly pullRequest?: PullRequestResponse };
+  readonly artifacts: readonly {
+    readonly revisionId: string;
+    readonly producer: string;
+    readonly path: string;
+    readonly occurredAt: string;
+    readonly mediaType?: string;
+    readonly byteLength?: number;
+    readonly digest?: string;
+    readonly href: string;
+  }[];
   readonly conversation: {
     /** Whether this authenticated surface may create control-plane entries. */
     readonly canCreateEntries: boolean;

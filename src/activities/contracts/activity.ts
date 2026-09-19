@@ -75,6 +75,12 @@ export interface AgentRunnerPort {
         readonly cacheRead?: number;
         readonly cacheWrite?: number;
       };
+      readonly mcpServers?: readonly {
+        readonly name: string;
+        readonly command: string;
+        readonly args?: readonly string[];
+        readonly env?: Readonly<Record<string, string>>;
+      }[];
       readonly context?: {
         readonly runnerName: string;
         readonly action: string;
@@ -127,6 +133,14 @@ export interface ActivityExecutionContext {
   /** Isolated workspace leased by Execution for this invocation, when requested. */
   readonly workspace?: { readonly path: string; readonly mode: ActivityWorkspaceMode };
   readonly runner?: AgentRunnerPort;
+  readonly mcpServers?: readonly {
+    readonly name: string;
+    readonly command: string;
+    readonly args?: readonly string[];
+    readonly env?: Readonly<Record<string, string>>;
+  }[];
+  /** Wake-owned capability inventory appended after the operator prompt. */
+  readonly mcpPrompt?: string;
   readonly runnerContext?: {
     readonly runnerName: string;
     /** CLI identity configured for the resolved runner. */

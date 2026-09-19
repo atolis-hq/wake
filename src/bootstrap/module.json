@@ -2,6 +2,7 @@
   "name": "bootstrap",
   "kind": "composition",
   "dependencies": [
+    "artifacts",
     "conversations",
     "kernel",
     "eventing",

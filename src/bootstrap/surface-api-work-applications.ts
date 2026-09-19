@@ -71,6 +71,26 @@ export function createSurfaceWorkApplications(
       });
     },
     detail: (key) => workDetail(root, key, now),
+    async artifact(key, revisionId) {
+      const id = decodeWorkItemId(key);
+      if (id === undefined) return undefined;
+      const accepted = new Set(
+        (await root.orchestration.listForWorkItem(id)).flatMap(
+          (workflow) => workflow.acceptedOutcomes,
+        ),
+      );
+      const artifact = await root.artifacts.readAcceptedRevision(
+        id,
+        revisionId,
+        async (activationId) => accepted.has(activationId as never),
+      );
+      if (artifact === null) return undefined;
+      return {
+        bytes: artifact.bytes,
+        mediaType: safeMediaType(artifact.revision.mediaType),
+        filename: artifact.revision.path.split('/').at(-1) ?? 'artifact',
+      };
+    },
     async transcript(key, groupId) {
       const id = decodeWorkItemId(key);
       if (id === undefined) return undefined;
@@ -284,6 +304,7 @@ async function workDetail(
       transcriptGroups: await transcriptGroups(root.transcriptStore, id, runs),
     },
     activities: presentPullRequest(pullRequest?.value),
+    artifacts: await presentArtifacts(root, id),
     conversation: presentConversation(
       conversation,
       (root as Partial<CompositionRoot>).config?.surfaces.api.conversationMessages.enabled === true,
@@ -301,6 +322,36 @@ async function workDetail(
       now(),
     ),
   };
+}
+
+async function presentArtifacts(root: CompositionRoot, id: ReturnType<typeof workItemId>) {
+  const partial = root as Partial<CompositionRoot>;
+  if (partial.artifacts === undefined || partial.orchestration?.listAll === undefined) return [];
+  const accepted = new Set(
+    (await partial.orchestration.listAll())
+      .filter((workflow) => workflow.workItemId === id)
+      .flatMap((workflow) => workflow.acceptedOutcomes),
+  );
+  return (
+    await partial.artifacts.latestPublished(id, async (activationId) =>
+      accepted.has(activationId as never),
+    )
+  ).map((artifact) => ({
+    revisionId: artifact.revisionId,
+    producer: artifact.producer,
+    path: artifact.path,
+    occurredAt: artifact.occurredAt,
+    ...(artifact.mediaType === undefined ? {} : { mediaType: artifact.mediaType }),
+    ...(artifact.byteLength === undefined ? {} : { byteLength: artifact.byteLength }),
+    ...(artifact.digest === undefined ? {} : { digest: artifact.digest }),
+    href: `/api/v1/work-items/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(artifact.revisionId)}`,
+  }));
+}
+
+function safeMediaType(value: string | undefined): string {
+  return value !== undefined && /^[^\r\n]+\/[^\r\n]+$/.test(value)
+    ? value
+    : 'application/octet-stream';
 }
 
 async function conversationForWorkItem(root: CompositionRoot, id: ReturnType<typeof workItemId>) {
