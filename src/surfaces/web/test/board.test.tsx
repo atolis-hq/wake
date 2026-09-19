@@ -19,6 +19,7 @@ function boardClient(fetchSpy?: (url: string) => void) {
       objective: 'Alpha',
       condition: 'ready',
       frozen: true,
+      extendEligible: true,
       workflowName: 'delivery',
       stage: 'implement',
       dwellSince: asOf,
@@ -372,6 +373,22 @@ describe('board', () => {
     expect(indicator.className).toContain('chipOutline');
     expect(indicator.className).toContain('cold');
     expect(within(unfrozen).queryByText('frozen')).toBeNull();
+  });
+
+  it('shows a needs-extension badge only for an extension-eligible work item', async () => {
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+
+    const eligible = await screen.findByRole('listitem', { name: 'Alpha' });
+    const ineligible = screen.getByRole('listitem', { name: 'Beta' });
+
+    expect(within(eligible).getByTitle('A gate-budget extension is needed').textContent).toContain(
+      'Needs extension',
+    );
+    expect(within(ineligible).queryByText('Needs extension')).toBeNull();
   });
 
   it('requests only the work item collection, never a second collection to join', async () => {

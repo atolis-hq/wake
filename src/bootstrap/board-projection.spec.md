@@ -105,6 +105,7 @@ own.
 | `objective` | string | The WorkItem's current objective. |
 | `condition` | Condition | `ready` \| `active` \| `needs-input` \| `error` \| `finished`. |
 | `awaitingApproval` | boolean, optional | Present and true only while the primary instance is waiting on an approval-kind signal. |
+| `extendEligible` | boolean, optional | Present and true only while the primary instance is blocked by an exhausted Watch group budget and can be extended. |
 | `workflowName` / `stage` | string, optional | The primary instance's workflow and current stage. |
 | `dwellSince` | timestamp | When the card entered its current stage (or was created, before any stage). |
 | `runCount` | number | Total runs started under this WorkItem's workflow instances, including child instances. |
@@ -131,5 +132,5 @@ own.
   and MUST NOT be treated as a source of truth for WorkItem or workflow
   state.
 - A card's `runCount` and totals include child-instance runs; only
-  condition, stage, and `awaitingApproval` follow the primary-instance-only
+  condition, stage, `awaitingApproval`, and `extendEligible` follow the primary-instance-only
   rule.

@@ -279,6 +279,9 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
                   >
                     <span className={styles.ref}>{item.externalRef ?? item.workItemId}</span>
                     <span>{item.objective}</span>
+                    {item.extendEligible === true && (
+                      <span className={styles.extensionBadge}>Needs extension</span>
+                    )}
                   </NavLink>
                 ))}
             </details>
