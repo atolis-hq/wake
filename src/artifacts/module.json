@@ -1,0 +1,12 @@
+{
+  "name": "artifacts",
+  "kind": "domain",
+  "dependencies": ["kernel", "eventing", "work"],
+  "publicEntry": "./index.ts",
+  "namespaces": {
+    "events": ["artifact."],
+    "config": ["artifacts"],
+    "relations": [],
+    "streams": ["artifact-work-item"]
+  }
+}
