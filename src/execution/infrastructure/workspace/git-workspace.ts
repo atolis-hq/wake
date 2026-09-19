@@ -423,11 +423,18 @@ async function acquireRecoveryLock(
   // owner as the marker we inspected. A newer acquisition has a different
   // lock owner and is never disturbed by recovery of an older marker.
   const owner = await readLockOwner(path);
+  if (owner === null) return false;
   if (
-    owner !== markerRunId ||
-    runs.some((run) => isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous)
+    runs.some(
+      (run) =>
+        run.runId === owner &&
+        (isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous),
+    )
   )
     return false;
+  // An absent or terminal lock owner is a crash orphan even if it acquired
+  // the lock before it could replace an older marker. Removing it makes the
+  // next recovery/acquisition pass progress without disturbing an active run.
   await releaseLock(path);
   return false;
 }

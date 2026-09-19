@@ -97,9 +97,10 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     const lockPath = join(root, '.wake-workspace-ownership', 'newer-lock.lock');
     await writeFile(lockPath, 'newer-run', 'utf8');
 
-    await (provider as WorkspaceRecovery).recover([run('finished-run', RunStatus.Succeeded)], {
-      retainWorkItem: async () => false,
-    });
+    await (provider as WorkspaceRecovery).recover(
+      [run('finished-run', RunStatus.Succeeded), run('newer-run', RunStatus.Started)],
+      { retainWorkItem: async () => false },
+    );
 
     await expect(access(workspace.path)).resolves.toBeUndefined();
     await expect(access(workspace.markerPath)).resolves.toBeUndefined();
