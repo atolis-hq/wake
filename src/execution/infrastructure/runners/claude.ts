@@ -20,6 +20,7 @@ export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
       parseSuccessfulOutput: parseClaudeOutput,
       classifyFailure: classifyClaudeFailure,
       supportsSessionResume: true,
+      supportsEphemeralMcp: true,
     },
   );
 }
@@ -111,10 +112,28 @@ export function claudeCommandArgs(
     ...(request.allowedTools.length === 0
       ? []
       : ['--allowedTools', request.allowedTools.join(' ')]),
+    ...(request.mcpServers === undefined || request.mcpServers.length === 0
+      ? []
+      : ['--mcp-config', JSON.stringify(claudeMcpConfig(request)), '--strict-mcp-config']),
     ...passthroughArgs,
     '--',
     request.prompt,
   ];
+}
+
+function claudeMcpConfig(request: RunnerRequest) {
+  return {
+    mcpServers: Object.fromEntries(
+      (request.mcpServers ?? []).map((server) => [
+        server.name,
+        {
+          command: server.command,
+          ...(server.args === undefined ? {} : { args: server.args }),
+          ...(server.env === undefined ? {} : { env: server.env }),
+        },
+      ]),
+    ),
+  };
 }
 
 export function cliRunner(
@@ -125,6 +144,7 @@ export function cliRunner(
     readonly runnerTimeouts?: ProcessTimeouts;
     readonly defaultModel?: string;
     readonly supportsSessionResume?: boolean;
+    readonly supportsEphemeralMcp?: boolean;
     readonly parseSuccessfulOutput?: (
       stdout: string,
       request: RunnerRequest,
@@ -137,7 +157,14 @@ export function cliRunner(
 ): Runner {
   return {
     supportsSessionResume: options.supportsSessionResume === true,
+    supportsEphemeralMcp: options.supportsEphemeralMcp === true,
     async start(request, signal): Promise<RunnerExecution> {
+      if (
+        request.mcpServers !== undefined &&
+        request.mcpServers.length > 0 &&
+        !options.supportsEphemeralMcp
+      )
+        throw new Error(`${name} runner does not support ephemeral MCP configuration`);
       const process = runProcess(command, args(request), request.workspacePath, signal, {
         ...options.runnerTimeouts,
         ...(request.onTimeout === undefined ? {} : { onTimeout: request.onTimeout }),

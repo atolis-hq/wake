@@ -51,6 +51,7 @@ export function createCodexRunner(options: CodexRunnerOptions = {}): Runner {
       parseSuccessfulOutput: parseCodexOutput,
       classifyFailure: classifyCodexFailure,
       supportsSessionResume: true,
+      supportsEphemeralMcp: true,
     },
   );
   return runner;
@@ -74,10 +75,18 @@ export function codexCommandArgs(
     ...((request.effort ?? defaults.effort) === undefined
       ? []
       : ['-c', `model_reasoning_effort=${request.effort ?? defaults.effort}`]),
+    ...codexMcpConfigArgs(request),
     ...(request.resumeSessionId === undefined ? [] : ['resume', request.resumeSessionId]),
     ...passthroughArgs,
     `${request.prompt}\n\n${waitBackgroundInstruction}`,
   ];
+}
+
+function codexMcpConfigArgs(request: RunnerRequest): readonly string[] {
+  return (request.mcpServers ?? []).flatMap((server) => [
+    '-c',
+    `mcp_servers.${server.name}={command=${JSON.stringify(server.command)},args=${JSON.stringify(server.args ?? [])}${server.env === undefined ? '' : `,env=${JSON.stringify(server.env)}`}}`,
+  ]);
 }
 
 // Work around Codex's missing background-command lifecycle contract (https://github.com/openai/codex/issues/32505, https://github.com/openai/codex/issues/34866).
