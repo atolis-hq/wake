@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -64,6 +64,8 @@ describe('GitWorkspaceProvider', () => {
 
     await expect(acquisition).rejects.toBe(cancellation);
     expect(receivedSignal).toBe(controller.signal);
+    const markers = await readdir(join(root, '.wake-workspace-ownership'));
+    expect(markers.filter((entry) => entry.endsWith('.json'))).toHaveLength(1);
   });
 
   it('clones a repository into a work-item workspace', async () => {
