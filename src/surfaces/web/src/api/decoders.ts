@@ -395,6 +395,21 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
   const orchestration = object(record.orchestration, child(path, 'orchestration'));
   const execution = object(record.execution, child(path, 'execution'));
   const activities = object(record.activities, child(path, 'activities'));
+  const artifacts =
+    record.artifacts === undefined
+      ? []
+      : array(record.artifacts, child(path, 'artifacts'), (item, itemPath = '') => {
+          const artifact = object(item, itemPath);
+          return {
+            revisionId: string(artifact.revisionId, child(itemPath, 'revisionId')),
+            producer: string(artifact.producer, child(itemPath, 'producer')),
+            path: string(artifact.path, child(itemPath, 'path')),
+            occurredAt: string(artifact.occurredAt, child(itemPath, 'occurredAt')),
+            ...optionalStringProperty(artifact, 'mediaType', itemPath),
+            ...optionalNumberProperty(artifact, 'byteLength', itemPath),
+            ...optionalStringProperty(artifact, 'digest', itemPath),
+          };
+        });
   const conversation =
     record.conversation === undefined
       ? undefined
@@ -443,6 +458,7 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
               child(path, 'activities.pullRequest'),
             ),
           },
+    artifacts,
     conversation: {
       canCreateEntries: conversation?.canCreateEntries === true,
       entries:

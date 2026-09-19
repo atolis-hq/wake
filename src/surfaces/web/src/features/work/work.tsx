@@ -192,9 +192,9 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
     },
     onSuccess: refresh,
   });
-  const [tab, setTab] = useState<'overview' | 'runs' | 'conversation' | 'events' | 'transcripts'>(
-    'overview',
-  );
+  const [tab, setTab] = useState<
+    'overview' | 'runs' | 'conversation' | 'events' | 'transcripts' | 'artifacts'
+  >('overview');
   const conversationViewport = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
   const [readingHistory, setReadingHistory] = useState(false);
@@ -298,26 +298,24 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
       ) : query.data ? (
         <>
           <div className={styles.tabs} role="tablist" aria-label="Work detail sections">
-            {(['overview', 'runs', 'events', 'transcripts', 'conversation'] as const).map(
-              (section) => (
-                <button
-                  key={section}
-                  type="button"
-                  role="tab"
-                  data-tab={section}
-                  id={`work-detail-${section}-tab`}
-                  aria-controls={`work-detail-${section}-panel`}
-                  aria-selected={tab === section}
-                  tabIndex={tab === section ? 0 : -1}
-                  onKeyDown={navigateTabs}
-                  onClick={() => setTab(section)}
-                >
-                  {section === 'overview'
-                    ? 'Overview'
-                    : section[0]!.toUpperCase() + section.slice(1)}
-                </button>
-              ),
-            )}
+            {(
+              ['overview', 'runs', 'artifacts', 'events', 'transcripts', 'conversation'] as const
+            ).map((section) => (
+              <button
+                key={section}
+                type="button"
+                role="tab"
+                data-tab={section}
+                id={`work-detail-${section}-tab`}
+                aria-controls={`work-detail-${section}-panel`}
+                aria-selected={tab === section}
+                tabIndex={tab === section ? 0 : -1}
+                onKeyDown={navigateTabs}
+                onClick={() => setTab(section)}
+              >
+                {section === 'overview' ? 'Overview' : section[0]!.toUpperCase() + section.slice(1)}
+              </button>
+            ))}
           </div>
           <h1 className={styles.workTitle}>
             {query.data.data.work.externalRef && <span>{query.data.data.work.externalRef}</span>}
@@ -432,6 +430,31 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                   rows={query.data.data.execution.runs}
                   rowKey={(run) => run.runId}
                   columns={runColumns}
+                />
+              )}
+            </section>
+          ) : tab === 'artifacts' ? (
+            <section
+              id="work-detail-artifacts-panel"
+              role="tabpanel"
+              aria-labelledby="work-detail-artifacts-tab"
+            >
+              {query.data.data.artifacts.length === 0 ? (
+                <EmptyState>No published artifacts</EmptyState>
+              ) : (
+                <DataTable
+                  caption="Published artifacts"
+                  rows={query.data.data.artifacts}
+                  rowKey={(artifact) => artifact.revisionId}
+                  columns={[
+                    { label: 'Producer', render: (artifact) => artifact.producer },
+                    { label: 'Path', render: (artifact) => artifact.path },
+                    { label: 'Type', render: (artifact) => artifact.mediaType ?? 'binary' },
+                    {
+                      label: 'Bytes',
+                      render: (artifact) => artifact.byteLength?.toLocaleString() ?? '?',
+                    },
+                  ]}
                 />
               )}
             </section>
