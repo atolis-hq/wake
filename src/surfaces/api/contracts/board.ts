@@ -25,6 +25,8 @@ export interface BoardCardResponse {
   readonly condition: BoardCardCondition;
   readonly frozen?: boolean;
   readonly awaitingApproval?: boolean;
+  /** Whether the primary workflow needs a gate-budget extension to continue. */
+  readonly extendEligible?: boolean;
   readonly workflowName?: string;
   readonly stage?: string;
   /** Why the primary workflow is blocked, when it requires operator intervention. */
