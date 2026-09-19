@@ -100,7 +100,7 @@ It does not decide Run ambiguity or introduce a background cleanup service.
 | `workspaceId` | string | Identifies the acquired workspace; for the real adapter, the same as the directory name. |
 | `path` | string | The absolute directory a Run executes in. |
 | `mode` | closed vocabulary: `read-only` / `branch` | Echoed from the request. |
-| `release` | function | Releases the workspace; for the real adapter, deletes `path` entirely. |
+| `release` | function | Ends this Run's exclusive use; the real adapter retains `path` for a later WorkItem-scoped acquisition. |
 
 **Workspace ownership marker**
 
