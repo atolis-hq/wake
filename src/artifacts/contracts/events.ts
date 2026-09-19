@@ -41,6 +41,7 @@ export interface ArtifactEventPayloads {
 }
 
 export type ArtifactEvent = EventUnion<ArtifactEventPayloads, ArtifactWorkItemStreamRef>;
+
 export type ArtifactEventData = EventDataUnion<ArtifactEventPayloads>;
 
 const stream = z

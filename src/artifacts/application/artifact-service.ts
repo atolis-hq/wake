@@ -6,7 +6,7 @@ import { ArtifactEventType } from '../contracts/events.js';
 import { artifactWorkItemIdForWorkItem } from '../contracts/identifiers.js';
 import { artifactPath, type ArtifactPath } from '../contracts/paths.js';
 import type { ArtifactWorkItemView } from '../contracts/views.js';
-import { FileArtifactStore } from '../infrastructure/file-artifact-store.js';
+import type { FileArtifactStore } from '../infrastructure/file-artifact-store.js';
 import { ArtifactRepository } from './artifact-repository.js';
 
 export interface ArtifactService {
@@ -46,6 +46,8 @@ export interface StageArtifactTombstone {
   readonly activationId: string;
 }
 
+// The public service keeps the tightly coupled idempotent staging operations adjacent.
+// eslint-disable-next-line max-lines-per-function
 export function createArtifactService(
   journal: ConstructorParameters<typeof ArtifactRepository>[0],
   store: FileArtifactStore,

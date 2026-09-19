@@ -54,6 +54,8 @@ export interface ExecutionLifecycle {
   >;
 }
 
+// Execution context assembly intentionally keeps every run-bound capability visible at dispatch.
+// eslint-disable-next-line max-lines-per-function, complexity
 export async function executeActivity(
   runtime: ExecutionRuntime,
   currentRunId: ReturnType<typeof runId>,

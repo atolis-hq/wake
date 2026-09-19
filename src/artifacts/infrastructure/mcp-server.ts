@@ -17,6 +17,8 @@ export interface ArtifactMcpSession {
   readonly acceptedActivation: (activationId: string) => Promise<boolean>;
 }
 
+// Tool registration remains adjacent so the advertised MCP surface is auditable in one place.
+// eslint-disable-next-line max-lines-per-function
 export function createArtifactMcpServer(
   artifacts: ArtifactService,
   session: ArtifactMcpSession,
