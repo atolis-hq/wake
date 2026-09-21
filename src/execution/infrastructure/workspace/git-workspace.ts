@@ -170,6 +170,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
 
 async function recoverOrphanLock(path: string, runs: readonly RunView[]): Promise<void> {
   const owner = await readLockOwner(path);
+  if (owner === undefined) return;
   if (
     owner !== null &&
     runs.some(
@@ -468,6 +469,7 @@ async function acquireRecoveryLock(
   // owner as the marker we inspected. A newer acquisition has a different
   // lock owner and is never disturbed by recovery of an older marker.
   const owner = await readLockOwner(path);
+  if (owner === undefined) return false;
   if (owner === null) {
     // A crash between mkdir and owner-entry creation leaves an empty lock
     // directory. It cannot represent an active lease and must not strand
@@ -494,10 +496,11 @@ async function acquireRecoveryLock(
   return false;
 }
 
-async function readLockOwner(path: string): Promise<string | null> {
+async function readLockOwner(path: string): Promise<string | null | undefined> {
   try {
     const owners = await readdir(path);
-    return owners.length === 1 ? owners[0]! : null;
+    if (owners.length === 0) return null;
+    return owners.length === 1 ? owners[0]! : undefined;
   } catch (error) {
     if (isNotFound(error)) return null;
     throw error;

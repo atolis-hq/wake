@@ -161,6 +161,19 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(lockPath)).rejects.toThrow();
   });
 
+  it('retains an unvalidated multi-owner orphan lock', async () => {
+    const root = await workspaceRoot();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const lockPath = join(root, '.wake-workspace-ownership', 'multiple-owners.lock');
+    await mkdir(lockPath);
+    await writeFile(join(lockPath, 'one'), '', 'utf8');
+    await writeFile(join(lockPath, 'two'), '', 'utf8');
+
+    await (provider as WorkspaceRecovery).recover([]);
+
+    await expect(access(lockPath)).resolves.toBeUndefined();
+  });
+
   it('stops before the next owned workspace when the existing dispatch pause becomes active', async () => {
     const root = await workspaceRoot();
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
