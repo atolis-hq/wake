@@ -26,16 +26,17 @@ export function createArtifactMcpProvisioner(input: {
 }): NonNullable<ExecutionDependencies['mcp']> {
   return async ({ runId, activation, context }) => {
     const workflow = await input.orchestration.get(context.workflowInstanceId);
-    if (workflow === null) throw new Error(`Workflow ${context.workflowInstanceId} was not found`);
     const producer = producerFor(context.workflowInstanceId, activation.stage, activation.activity);
     const readableProducers = new Set([
       producer,
-      ...(await upstreamProducers(
-        input.orchestration,
-        workflow,
-        context.workflowInstanceId,
-        activation.stage,
-      )),
+      ...(workflow === null
+        ? []
+        : await upstreamProducers(
+            input.orchestration,
+            workflow,
+            context.workflowInstanceId,
+            activation.stage,
+          )),
     ]);
     const expiresAt = new Date(Date.parse(input.now()) + sessionLifetimeMs).toISOString();
     const descriptor: ArtifactMcpSessionDescriptor = {
