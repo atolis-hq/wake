@@ -21,12 +21,30 @@ export function createRunnerRegistry(
   decorateRunner?: (runner: Runner, name: string) => Runner,
 ): RunnerRegistry {
   const runners = Object.fromEntries(
-    Object.entries(config.agentRunners ?? {}).map(([name, runner]) => [
-      name,
-      (decorateRunner ?? identity)(createConfiguredRunner(name, runner, scenarios), name),
-    ]),
+    Object.entries(config.agentRunners ?? {}).map(([name, runner]) => {
+      const configured = createConfiguredRunner(name, runner, scenarios);
+      const decorated = (decorateRunner ?? identity)(configured, name);
+      return [name, preserveRunnerCapabilities(configured, decorated)];
+    }),
   );
   return new RunnerRegistry(config.runnerPools, runners);
+}
+
+// Test and operational decorators commonly wrap only `start`; adapter capabilities
+// describe the underlying transport and must survive that wrapper.
+function preserveRunnerCapabilities(configured: Runner, decorated: Runner): Runner {
+  const capabilities = {
+    ...(decorated.supportsSessionResume === undefined &&
+    configured.supportsSessionResume !== undefined
+      ? { supportsSessionResume: configured.supportsSessionResume }
+      : {}),
+    ...(decorated.supportsEphemeralMcp === undefined &&
+    configured.supportsEphemeralMcp !== undefined
+      ? { supportsEphemeralMcp: configured.supportsEphemeralMcp }
+      : {}),
+  };
+  if (Object.keys(capabilities).length === 0) return decorated;
+  return Object.assign(Object.create(decorated), capabilities) as Runner;
 }
 
 function identity<T>(value: T): T {

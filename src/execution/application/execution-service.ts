@@ -860,6 +860,7 @@ function resolveRunner(
   const resolved = runtime.dependencies.runners?.resolve(
     runnerPool,
     context.ineligibleRunners ?? new Set(),
+    { ephemeralMcp: runtime.dependencies.mcp !== undefined },
   );
   return describeResolvedRunner(runtime, runnerPool, resolved);
 }

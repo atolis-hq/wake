@@ -7,6 +7,11 @@ import {
 } from '@atolis-hq/eventing';
 import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
 import {
+  FileArtifactMcpSessionStore,
+  FileArtifactStore,
+  createArtifactService,
+} from '../artifacts/index.js';
+import {
   DispatchPolicy,
   createActivationScheduler,
   createActivationSchedulerSubscriber,
@@ -54,6 +59,7 @@ import {
 import { createWorkService } from '../work/index.js';
 import { createFileActivationSchedulerSerialiser } from './activation-scheduler-serialiser.js';
 import { createBuiltInActivityRegistry } from './activity-registry.js';
+import { createArtifactMcpProvisioner } from './artifact-mcp.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
@@ -109,6 +115,7 @@ export interface CompositionRoot {
   readonly processorState: ProcessorStateStore;
   readonly activities: ActivityRegistry;
   readonly work: ReturnType<typeof createWorkService>;
+  readonly artifacts: ReturnType<typeof createArtifactService>;
   readonly conversations: ReturnType<typeof createConversationService>;
   readonly resources: ReturnType<typeof createResourceService>;
   readonly pullRequests: ReturnType<typeof createPullRequestService>;
@@ -164,6 +171,14 @@ export async function createCompositionRoot(
     clock,
   );
   const work = createWorkService(journal);
+  const artifacts = createArtifactService(
+    journal,
+    new FileArtifactStore(paths.artifactsRoot),
+    config.artifacts,
+  );
+  const artifactMcpSessions = new FileArtifactMcpSessionStore(paths.artifactsRoot, () =>
+    clock.now().toISOString(),
+  );
   const conversations = createConversationService(journal);
   const lookup = createResourceLookup({ journal, projections });
   const resources = createResourceService(journal, lookup);
@@ -230,6 +245,14 @@ export async function createCompositionRoot(
     clock,
     ids,
     runners: createRunnerRegistry(config.execution, fakeScenarios, decorateRunner),
+    mcp: createArtifactMcpProvisioner({
+      artifacts,
+      orchestration,
+      sessions: artifactMcpSessions,
+      wakeRoot: paths.wakeRoot,
+      now: () => clock.now().toISOString(),
+      nextId: () => ids.next('artifact'),
+    }),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
     ...(transcriptStore !== undefined
       ? {
@@ -343,6 +366,7 @@ export async function createCompositionRoot(
     processorState,
     activities,
     work,
+    artifacts,
     conversations,
     resources,
     pullRequests,

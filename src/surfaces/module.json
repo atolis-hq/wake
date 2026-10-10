@@ -3,6 +3,7 @@
   "kind": "surface",
   "dependencies": [
     "kernel",
+    "artifacts",
     "eventing",
     "work",
     "resources",

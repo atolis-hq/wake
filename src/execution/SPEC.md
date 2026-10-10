@@ -28,6 +28,8 @@ Execution owns:
   external execution (recovery).
 - The single-flight guard that prevents two Runs from concurrently
   attempting the same Activation.
+- Provisioning and revoking run-scoped runner capabilities, including trusted
+  MCP configuration and its prompt inventory, around an Agent Activity.
 
 Execution does not own:
 
@@ -89,8 +91,9 @@ sequence; it does not construct envelope metadata or a processor host.
 - **Runner** — a pluggable adapter that carries out an Agent-kind Activity
   by invoking an external CLI, process, or remote session, and reports back
   a transport result.
-- **Runner pool** — a named, ordered list of runner names; Execution
-  resolves the first candidate not currently marked quota-ineligible.
+- **Runner pool** — a named, ordered list of runner names; Execution resolves
+  the first candidate not currently marked quota-ineligible and able to meet
+  the capability required by the invocation.
 - **Workspace** — an optional isolated working directory (`none`,
   `read-only`, or `branch`) prepared for a Run via a `WorkspaceProvider`.
 - **Transcript group** — a filesystem-only conversation for one WorkItem.
@@ -152,6 +155,10 @@ sequence; it does not construct envelope metadata or a processor host.
   settles. These are operational filesystem artifacts, never event,
   projection, or journal content; capture failures are diagnostics and never
   alter a Run outcome.
+- A run-scoped MCP capability is issued only for an Agent Activity, injected
+  into a runner that supports trusted ephemeral configuration, and revoked
+  after the Activity returns. A runner that cannot accept that configuration
+  is skipped before invocation rather than run with missing Wake tools.
 - Only when pre-dispatch workspace recovery reclaims an owned workspace for a
   closed WorkItem, transcript retention either removes its directory
   immediately when configured as zero, or writes a filesystem-only cleanup

@@ -39,6 +39,7 @@ configured workflow route.
 | Branch workspace | Prompt/tool policy only | `--sandbox danger-full-access` | `--force` |
 | Session id parsing | JSON `session_id` | JSONL `thread.started.thread_id` | JSON `session_id` |
 | Token usage parsing | JSON `usage` and cost | JSONL `turn.completed.usage` | JSON `usage` |
+| Trusted per-run Wake MCP | Yes (`--mcp-config`) | Yes (one-run `-c mcp_servers.*` override) | No; skipped for artifact-capable activity dispatch |
 
 `allowedTools` and `maxTurns` in a prompt template are therefore portable
 metadata but are enforced at the CLI boundary only by Claude. Codex and Cursor
@@ -65,6 +66,9 @@ Activation when its session policy permits resumption. A compatible session is
 from the same CLI adapter kind; a `fresh` policy never resumes one. If the
 first runner is quota-paused, Wake falls sideways to the next configured member
 of that same pool. It never silently changes to a different pool.
+Artifact-capable agent runs also require trusted ephemeral MCP injection:
+Claude and Codex receive Wake's run-bound configuration directly, while Cursor
+and generic command runners are ineligible for those runs.
 
 ## `command` and `fake`
 

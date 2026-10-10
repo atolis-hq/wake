@@ -109,6 +109,9 @@ For more detail, see [docs/vision.md](docs/vision.md) and
   `workspaces/` at the top level for
   what you edit or browse day-to-day, with durable/internal state (events,
   projections, runs, logs, sandbox auth) nested under a hidden `.wake/`.
+- **Durable handoffs.** Agent stages can publish work-item artifacts outside
+  Git workspaces. Wake passes only a scoped manifest to later agents, which
+  fetch content on demand through a run-bound MCP capability.
 - **Sandbox-oriented execution.** Wake can run from a persistent Docker sandbox
   with durable auth state and mounted Wake home data.
 - **Runner agnostic.** Claude Code, Codex, Cursor, and fake runners sit behind

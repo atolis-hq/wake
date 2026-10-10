@@ -98,6 +98,7 @@ wake-home/
     checkpoints/        # rebuildable integration progress
     locks/              # coordination state
     transcripts/        # optional raw agent I/O capture
+    artifacts/          # Wake-managed work-item artifact bytes and short-lived MCP sessions
     logs/               # operational logs
     container-home/     # persistent sandbox-home state
 ```

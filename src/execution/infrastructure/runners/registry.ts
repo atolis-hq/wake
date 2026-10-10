@@ -18,11 +18,12 @@ export class RunnerRegistry {
   resolve(
     runnerPool: string,
     ineligible: ReadonlySet<string> = new Set(),
+    requirements: { readonly ephemeralMcp?: boolean } = {},
   ): { readonly name: string; readonly runner: Runner } {
     const candidates = this.runnerPools[runnerPool];
     if (candidates === undefined)
       throw new Error(`Execution runner pool ${runnerPool} has no runner`);
-    return selectEligibleCandidate(runnerPool, candidates, this.runners, ineligible);
+    return selectEligibleCandidate(runnerPool, candidates, this.runners, ineligible, requirements);
   }
 }
 
@@ -32,11 +33,13 @@ function selectEligibleCandidate(
   candidates: readonly string[],
   runners: Readonly<Record<string, Runner>>,
   ineligible: ReadonlySet<string>,
+  requirements: { readonly ephemeralMcp?: boolean },
 ): { readonly name: string; readonly runner: Runner } {
   for (const name of candidates) {
     if (ineligible.has(name)) continue;
     const runner = runners[name];
     if (runner === undefined) throw new Error(`Runner ${name} is not registered`);
+    if (requirements.ephemeralMcp === true && runner.supportsEphemeralMcp !== true) continue;
     return { name, runner };
   }
   throw new NoEligibleRunnerError(runnerPool);

@@ -85,6 +85,17 @@ export interface ApiApplications {
       key: string,
       groupId: string,
     ): Promise<ApiResourceResult<WorkItemTranscriptResponse> | undefined>;
+    artifact?(
+      key: string,
+      revisionId: string,
+    ): Promise<
+      | {
+          readonly bytes: Uint8Array;
+          readonly mediaType: string;
+          readonly filename: string;
+        }
+      | undefined
+    >;
     freeze?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     unfreeze?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     delete?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;

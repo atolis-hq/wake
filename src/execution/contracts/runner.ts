@@ -3,6 +3,14 @@ import type { FinishedRunStatus, WorkspaceMode } from './vocabulary.js';
 
 export const ProviderQuotaExceededFailureKind = 'provider-quota-exceeded';
 
+/** A trusted MCP process configured only for this runner invocation. */
+export interface RunnerMcpServer {
+  readonly name: string;
+  readonly command: string;
+  readonly args?: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+}
+
 export interface RunnerRequest {
   readonly runId: string;
   readonly prompt: string;
@@ -25,6 +33,7 @@ export interface RunnerRequest {
     readonly cacheRead?: number;
     readonly cacheWrite?: number;
   };
+  readonly mcpServers?: readonly RunnerMcpServer[];
 }
 
 export type AgentRunOutcome = 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED' | 'NEEDS_CLARIFICATION';
@@ -98,5 +107,7 @@ export interface RunnerExecution {
 export interface Runner {
   /** Whether this adapter can continue an earlier session with its opaque session ID. */
   readonly supportsSessionResume?: boolean;
+  /** Whether this adapter can inject trusted MCP configuration per invocation. */
+  readonly supportsEphemeralMcp?: boolean;
   start(request: RunnerRequest, signal: AbortSignal): Promise<RunnerExecution>;
 }

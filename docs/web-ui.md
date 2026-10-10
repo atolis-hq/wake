@@ -15,7 +15,10 @@ On mobile, the header toggle opens a navigation drawer. Escape or the backdrop
 closes it, and selecting a page dismisses it automatically.
 
 Board cards and sidebar items open the work item in the main panel. Its tabs
-are Overview, Runs, Events, Transcripts, and Conversation. The overview places
+are Overview, Runs, Artifacts, Events, Transcripts, and Conversation. The
+Artifacts tab lists the latest accepted revision from each producing stage;
+each path is an authorized Wake download rather than a provider-hosted file.
+The overview places
 work details and actions above the full-width workflow, followed by an activity
 timeline and resource links. Narrow screens place resources immediately after the work details, then the
 workflow and activity timeline. The workflow retains its mobile card presentation.

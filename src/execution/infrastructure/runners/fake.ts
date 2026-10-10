@@ -8,6 +8,7 @@ import {
 } from './fake-scenarios.js';
 
 export class FakeExecutionRunner implements Runner {
+  readonly supportsEphemeralMcp = true;
   constructor(
     readonly name = 'fake',
     private readonly scenarios: FakeScenarioResolver = emptyFakeScenarios,

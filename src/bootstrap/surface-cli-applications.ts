@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { promisify } from 'node:util';
 import { BuiltInActivityName, agentActivityDefinition } from '../activities/index.js';
+import { FileArtifactMcpSessionStore } from '../artifacts/index.js';
 import {
   IntakeHost,
   ResidentHost,
@@ -20,6 +21,7 @@ import {
   isActiveRunStatus,
   loadPromptTemplate,
 } from '../execution/index.js';
+import { UlidIdGenerator } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
   DockerProcessError,
@@ -42,6 +44,7 @@ import {
   runSandboxSetup,
   runSelfUpdateLatestLoop,
   runTargetSmoke,
+  serveMcpOverStdio,
   verifyResidentStart,
   waitForActiveRuns,
   waitForever,
@@ -57,6 +60,7 @@ import {
   type WakeCliApplications,
 } from '../surfaces/index.js';
 import { WorkStreamKind, workItemId } from '../work/index.js';
+import { createArtifactMcpServerForSession } from './artifact-mcp.js';
 import type { CompositionRoot } from './composition-root.js';
 import { loadConfig } from './config/load-config.js';
 import { createNpmUpdatePort } from './npm-update-port.js';
@@ -84,6 +88,8 @@ export function createSurfaceCliApplications(
   api: ApiApplications,
   now: () => string,
 ): WakeCliApplications {
+  const artifactMcpSessions = new FileArtifactMcpSessionStore(root.paths.artifactsRoot, now);
+  const artifactMcpIds = new UlidIdGenerator();
   const runnerTick = new TickHost(createOneShotRunnerAdvance(root));
   const runnerResidentTick = new TickHost(createResidentRunnerAdvance(root));
   const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
@@ -164,6 +170,18 @@ export function createSurfaceCliApplications(
     },
     api: { start: (options) => startHttp(options, false) },
     ui: { start: (options) => startHttp(options, true) },
+    mcp: {
+      async serve(sessionPath, token) {
+        const server = await createArtifactMcpServerForSession(
+          root,
+          artifactMcpSessions,
+          sessionPath,
+          token,
+          { now, nextId: () => artifactMcpIds.next('artifact') },
+        );
+        await serveMcpOverStdio(server);
+      },
+    },
     auth: {
       async token(accessKey: string | undefined) {
         if (root.config.surfaces.web.auth.disabled)

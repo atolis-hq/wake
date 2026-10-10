@@ -10,6 +10,25 @@ import type { RunnerRequest } from '../../../src/execution/contracts/runner.js';
 import { workId } from '../../support/identities.js';
 
 describe('agent activity template context', () => {
+  it('appends the Wake MCP artifact manifest without replacing the operator prompt', async () => {
+    let request: RunnerRequest | undefined;
+    const activity = createAgentActivity();
+    await activity.execute(invocation({ prompt: 'Implement the change.' }), {
+      signal: new AbortController().signal,
+      occurredAt: '2026-08-12T10:00:00.000Z',
+      runId: 'run-123',
+      mcpPrompt: 'Wake artifacts: [{"path":"spec.md"}]',
+      runner: {
+        async start(value) {
+          request = value;
+          return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+        },
+      },
+      async reportExternalExecution() {},
+    });
+    expect(request?.prompt).toBe('Implement the change.\n\nWake artifacts: [{"path":"spec.md"}]');
+  });
+
   it('captures the rendered prompt before the raw runner response', async () => {
     const captured: unknown[] = [];
     const activity = createAgentActivity({

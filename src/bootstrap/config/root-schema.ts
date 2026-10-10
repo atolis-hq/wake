@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { activitiesConfigSchema, type ActivitiesConfig } from '../../activities/index.js';
+import { artifactsConfigSchema, type ArtifactsConfig } from '../../artifacts/index.js';
 import { controlPlaneConfigSchema, type ControlPlaneConfig } from '../../control-plane/index.js';
 import { executionConfigSchema, type ExecutionConfig } from '../../execution/index.js';
 import { integrationsConfigSchema, type IntegrationsConfig } from '../../integrations/index.js';
@@ -148,6 +149,10 @@ export const rootConfigSchema = z
     activities: activitiesConfigSchema.default({}),
     orchestration: orchestrationConfigSchema,
     transcripts: transcriptsConfigSchema,
+    artifacts: artifactsConfigSchema.default({
+      maxWriteBytes: 25 * 1024 * 1024,
+      maxWorkItemBytes: 250 * 1024 * 1024,
+    }),
     execution: executionConfigSchema,
     controlPlane: controlPlaneConfigSchema,
     integrations: integrationsConfigSchema,
@@ -163,6 +168,7 @@ export interface ResolvedWakeModulesConfig {
   readonly activities: ActivitiesConfig;
   readonly orchestration: z.infer<typeof orchestrationConfigSchema>;
   readonly transcripts: z.infer<typeof transcriptsConfigSchema>;
+  readonly artifacts: ArtifactsConfig;
   readonly execution: ExecutionConfig;
   readonly controlPlane: ControlPlaneConfig;
   readonly integrations: IntegrationsConfig;
