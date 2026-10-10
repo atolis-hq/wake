@@ -155,7 +155,7 @@ describe('target composition root', () => {
   it('starts a production-composed fake runner from a conversation resume through the subscriber', async () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);
-    const firstRunnerStarted = deferred<void>();
+    const firstRunnerStarted = deferred<string>();
     const resumedRunnerStarted = deferred<void>();
     const trace: string[] = [];
     let runnerStarts = 0;
@@ -171,7 +171,7 @@ describe('target composition root', () => {
           async start(request, signal) {
             runnerStarts += 1;
             trace.push(`runner:${runnerStarts}`);
-            if (runnerStarts === 1) firstRunnerStarted.resolve();
+            if (runnerStarts === 1) firstRunnerStarted.resolve(request.runId);
             if (runnerStarts === 2) resumedRunnerStarted.resolve();
             return runner.start(request, signal);
           },
@@ -195,7 +195,7 @@ describe('target composition root', () => {
         commandContext(clock, 'conversation-latency-start'),
       );
 
-      await firstRunnerStarted.promise;
+      const firstRunId = await firstRunnerStarted.promise;
       await waitForJournalEvent(
         journal,
         0,
@@ -204,6 +204,9 @@ describe('target composition root', () => {
           event.stream.id === workflow,
       );
       trace.push('blocked');
+      // Outcome acceptance precedes local attempt cleanup; resume only after
+      // the first run has released its execution resources.
+      await expect.poll(() => runtime.execution.isLocallyActive(firstRunId)).toBe(false);
       // The resident projection subscriptions normally maintain this read
       // model; this test advances them explicitly before invoking the API.
       await runtime.projectionSubscriptions.catchUpOnce();
