@@ -81,7 +81,11 @@ orchestration:
       new StdioClientTransport({
         command: process.execPath,
         args: ['--import', 'tsx', resolve('src/main.ts'), ...server.args!],
-        env: { ...process.env, ...server.env } as Record<string, string>,
+        env: {
+          ...process.env,
+          ...server.env,
+          TSX_TSCONFIG_PATH: resolve('tsconfig.source.json'),
+        } as Record<string, string>,
         stderr: 'pipe',
       }),
     );
