@@ -9,6 +9,7 @@ import { ActivityRegistry, agentActivityDefinition } from '../../../src/activiti
 import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
 import { runId } from '../../../src/execution/contracts/identifiers.js';
 import { GitWorkspaceProvider } from '../../../src/execution/infrastructure/workspace/git-workspace.js';
+import { issueObservation } from '../../../src/integrations/github/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -16,6 +17,7 @@ import {
 } from '../../../src/orchestration/index.js';
 import { BuiltInResourceKind, resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
+import { workspaceLocks } from '../../support/workspace-locks.js';
 import { defineScenario } from '../support/scenario.js';
 
 const execFileAsync = promisify(execFile);
@@ -61,9 +63,10 @@ defineScenario(
     const provider = new GitWorkspaceProvider(
       join(root, 'workspaces'),
       { cloneLocator: async () => repository },
+      workspaceLocks,
       async (arguments_, signal) => {
         if (arguments_[0] === 'clone') clones += 1;
-        await execFileAsync('git', arguments_, { signal });
+        return (await execFileAsync('git', arguments_, { signal })).stdout.trim();
       },
       undefined,
       {
@@ -120,6 +123,9 @@ defineScenario(
       'fixture',
     ]);
     const restore = redirect(source);
+    const tracePath = join(rootPath, 'git-trace');
+    const previousTrace = process.env.GIT_TRACE;
+    process.env.GIT_TRACE = tracePath;
     try {
       const activities = new ActivityRegistry();
       activities.register(agentActivityDefinition);
@@ -194,7 +200,17 @@ defineScenario(
       const resource = await root.resources.discover(
         {
           resourceId: resId('composed-readonly'),
-          kind: BuiltInResourceKind.Repository,
+          kind: BuiltInResourceKind.Issue,
+          revision: issueObservation({
+            repository: 'wake-test/composed',
+            issue: {
+              number: 1,
+              title: 'reuse',
+              body: 'review twice',
+              state: 'open',
+              updated_at: context.occurredAt,
+            },
+          }).payload.revision,
           externalKey: { adapter: 'github', key: 'wake-test/composed#1' },
           capabilities: [],
         },
@@ -222,11 +238,17 @@ defineScenario(
       }
       const runs = await root.execution.list();
       expect(runs).toHaveLength(2);
+      expect(runs.every((run) => run.status === 'succeeded')).toBe(true);
+      const trace = await readFile(tracePath, 'utf8');
+      expect(trace.match(/built-in: git clone /g)).toHaveLength(1);
+      expect(trace).not.toMatch(/built-in: git fetch /);
       expect(runs[0]!.workspace?.path).toBe(runs[1]!.workspace?.path);
       await expect(readFile(join(runs[0]!.workspace!.path, '.prepared'), 'utf8')).resolves.toBe(
         'xx',
       );
     } finally {
+      if (previousTrace === undefined) delete process.env.GIT_TRACE;
+      else process.env.GIT_TRACE = previousTrace;
       restore();
     }
   },

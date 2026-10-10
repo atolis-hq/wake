@@ -1,6 +1,17 @@
-import { access, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   runId,
@@ -9,6 +20,7 @@ import {
   type WorkspaceRecovery,
 } from '../../../src/execution/index.js';
 import { GitWorkspaceProvider } from '../../../src/execution/infrastructure/workspace/git-workspace.js';
+import { workspaceLocks } from '../../support/workspace-locks.js';
 
 const roots: string[] = [];
 
@@ -23,7 +35,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('retains an owned workspace for an open WorkItem after a terminal Run', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const terminal = await ownedWorkspace(root, 'terminal', 'terminal-run');
 
     await (provider as WorkspaceRecovery).recover([run('terminal-run', RunStatus.Succeeded)], {
@@ -36,7 +52,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('reclaims an owned workspace once its WorkItem is closed or deleted', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const closed = await ownedWorkspace(root, 'closed', 'closed-run');
     const deleted = await ownedWorkspace(root, 'deleted', 'deleted-run');
 
@@ -53,7 +73,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('retains starting, started, and ambiguous owned workspaces', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const starting = await ownedWorkspace(root, 'starting', 'starting-run');
     const started = await ownedWorkspace(root, 'started', 'started-run');
     const ambiguous = await ownedWorkspace(root, 'ambiguous', 'ambiguous-run');
@@ -74,7 +98,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('never reclaims a workspace while another Run using its path is active', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const workspace = await ownedWorkspace(root, 'shared', 'finished-run');
     const active = {
       ...run('active-run', RunStatus.Started),
@@ -92,7 +120,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('never removes a newer acquisition lock while recovering an older marker owner', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const workspace = await ownedWorkspace(root, 'newer-lock', 'finished-run');
     const lockPath = join(root, '.wake-workspace-ownership', 'newer-lock.lock');
     await mkdir(lockPath);
@@ -109,9 +141,13 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(join(lockPath, 'newer-run'))).resolves.toBeUndefined();
   });
 
-  it('clears a crash-stale terminal-owner lock before reclaiming on a later pass', async () => {
+  it('migrates a crash-stale terminal-owner directory lock and reclaims in one pass', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const workspace = await ownedWorkspace(root, 'stale-lock', 'finished-run');
     const lockPath = join(root, '.wake-workspace-ownership', 'stale-lock.lock');
     await mkdir(lockPath);
@@ -122,7 +158,7 @@ describe('GitWorkspaceProvider workspace recovery', () => {
       [run('finished-run', RunStatus.Succeeded)],
       options,
     );
-    await expect(access(workspace.path)).resolves.toBeUndefined();
+    await expect(access(workspace.path)).rejects.toThrow();
     await expect(access(lockPath)).rejects.toThrow();
     await (provider as WorkspaceRecovery).recover(
       [run('finished-run', RunStatus.Succeeded)],
@@ -133,7 +169,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('clears an empty lock left by a crash before its owner entry is written', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const workspace = await ownedWorkspace(root, 'empty-lock', 'finished-run');
     const lockPath = join(root, '.wake-workspace-ownership', 'empty-lock.lock');
     await mkdir(lockPath);
@@ -151,7 +191,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('clears an orphan lock with no ownership marker after its owner is terminal', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const lockPath = join(root, '.wake-workspace-ownership', 'no-marker.lock');
     await mkdir(lockPath);
     await writeFile(join(lockPath, 'terminal-run'), '', 'utf8');
@@ -163,7 +207,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('retains an unvalidated multi-owner orphan lock', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const lockPath = join(root, '.wake-workspace-ownership', 'multiple-owners.lock');
     await mkdir(lockPath);
     await writeFile(join(lockPath, 'one'), '', 'utf8');
@@ -174,9 +222,94 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(lockPath)).resolves.toBeUndefined();
   });
 
+  it('reclaims a workspace and process lease after its host exits without release', async () => {
+    const root = await workspaceRoot();
+    const workspace = await ownedWorkspace(root, 'dead-host', 'finished-run');
+    const lockPath = join(root, '.wake-workspace-ownership', 'dead-host.lease');
+    await promisify(execFile)(join(process.cwd(), 'node_modules/.bin/tsx'), [
+      '--tsconfig',
+      'tsconfig.source.json',
+      'test/support/workspace-lock-child.ts',
+      lockPath,
+    ]);
+    await expect(access(lockPath)).resolves.toBeUndefined();
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
+    expect((await provider.recover([], { retainWorkItem: async () => false })).reclaimed).toBe(1);
+    await expect(access(workspace.path)).rejects.toThrow();
+    expect(await readdir(join(root, '.wake-workspace-ownership'))).toEqual([]);
+  });
+
+  it('reports a lock adapter failure and still reclaims later workspaces', async () => {
+    const root = await workspaceRoot();
+    const broken = await ownedWorkspace(root, 'a-broken', 'broken-run');
+    const later = await ownedWorkspace(root, 'b-later', 'later-run');
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      {
+        tryAcquire: async (path) => {
+          if (path.endsWith('a-broken.lease')) throw new Error('lock access denied');
+          return workspaceLocks.tryAcquire(path);
+        },
+      },
+    );
+    const result = await provider.recover([]);
+    expect(result.reclaimed).toBe(1);
+    expect(result.failures).toEqual([
+      expect.objectContaining({ markerPath: broken.markerPath, message: 'lock access denied' }),
+    ]);
+    await expect(access(broken.path)).resolves.toBeUndefined();
+    await expect(access(later.path)).rejects.toThrow();
+  });
+
+  it('retains lock-owner directories resolving outside the managed root', async () => {
+    const root = await workspaceRoot();
+    const outside = await mkdtemp(join(tmpdir(), 'wake-lock-outside-'));
+    roots.push(outside);
+    const workspace = await ownedWorkspace(root, 'linked-lock', 'finished-run');
+    const owners = join(root, '.wake-workspace-ownership', 'linked-lock.lease.owners');
+    await writeFile(join(outside, 'keep'), 'external');
+    await symlink(outside, owners, process.platform === 'win32' ? 'junction' : 'dir');
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
+    const result = await provider.recover([]);
+    expect(result.reclaimed).toBe(0);
+    expect(result.failures).toEqual([
+      expect.objectContaining({ message: 'Workspace lease artifacts must not be symbolic links' }),
+    ]);
+    await expect(access(workspace.path)).resolves.toBeUndefined();
+    await expect(access(join(outside, 'keep'))).resolves.toBeUndefined();
+  });
+
+  it('reclaims an unrelated orphan while retaining an empty legacy lock during active acquisition', async () => {
+    const root = await workspaceRoot();
+    const orphan = await ownedWorkspace(root, 'orphan', 'absent-run');
+    const emptyLock = join(root, '.wake-workspace-ownership', 'acquiring.lock');
+    await mkdir(emptyLock);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
+    expect((await provider.recover([run('starting-run', RunStatus.Starting)])).reclaimed).toBe(1);
+    await expect(access(orphan.path)).rejects.toThrow();
+    await expect(access(emptyLock)).resolves.toBeUndefined();
+  });
+
   it('stops before the next owned workspace when the existing dispatch pause becomes active', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const first = await ownedWorkspace(root, 'a-first', 'first-run');
     const later = await ownedWorkspace(root, 'b-later', 'later-run');
     let checks = 0;
@@ -194,7 +327,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('retains unknown directories, malformed markers, and out-of-root marker paths', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const unknownPath = join(root, 'unknown-directory');
     await mkdir(unknownPath, { recursive: true });
     const markerRoot = join(root, '.wake-workspace-ownership');
@@ -219,6 +356,7 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'unused' },
+      workspaceLocks,
       undefined,
       {
         remove: async (path) => {
@@ -252,6 +390,7 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'unused' },
+      workspaceLocks,
       undefined,
       {
         remove: async (path: string) => rm(path, { recursive: true, force: true }),
@@ -278,7 +417,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
   it('retains the ownership marker when transcript retention fails, then retries on the next recovery', async () => {
     const root = await workspaceRoot();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'unused' },
+      workspaceLocks,
+    );
     const workspace = await ownedWorkspace(root, 'retention-retry', 'retention-run');
     let attempts = 0;
     const options = {
@@ -307,7 +450,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     );
 
     await (
-      new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' }) as WorkspaceRecovery
+      new GitWorkspaceProvider(
+        root,
+        { cloneLocator: async () => 'unused' },
+        workspaceLocks,
+      ) as WorkspaceRecovery
     ).recover([]);
 
     await expect(access(markerRoot)).resolves.toBeUndefined();
@@ -324,7 +471,11 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await writeFile(markerPath, ownershipMarker('linked-workspace', 'linked-run', path), 'utf8');
 
     await (
-      new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' }) as WorkspaceRecovery
+      new GitWorkspaceProvider(
+        root,
+        { cloneLocator: async () => 'unused' },
+        workspaceLocks,
+      ) as WorkspaceRecovery
     ).recover([]);
 
     await expect(access(path)).resolves.toBeUndefined();

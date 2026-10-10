@@ -7,6 +7,7 @@ import {
   readdir,
   readFile,
   realpath,
+  rename,
   rm,
   rmdir,
   unlink,
@@ -18,6 +19,8 @@ import type { WorkItemId } from '../../../work/index.js';
 import type { RunView } from '../../contracts/views.js';
 import { isActiveRunStatus, RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
 import type {
+  WorkspaceLock,
+  WorkspaceLockProvider,
   WorkspaceProvider,
   WorkspaceRecovery,
   WorkspaceRecoveryFailure,
@@ -33,7 +36,10 @@ export interface RepositoryCloneResolver {
   cloneLocator(resourceId: string, signal: AbortSignal): Promise<string>;
 }
 
-export type GitRunner = (arguments_: readonly string[], signal: AbortSignal) => Promise<void>;
+export type GitRunner = (
+  arguments_: readonly string[],
+  signal: AbortSignal,
+) => Promise<string | void>;
 
 export interface WorkspaceRecoveryFileSystem {
   remove(path: string): Promise<void>;
@@ -43,12 +49,14 @@ export interface WorkspaceRecoveryFileSystem {
 export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecovery {
   private readonly markerRoot: string;
   private readonly recoveryFileSystem: WorkspaceRecoveryFileSystem;
+  private readonly pendingReleases = new Map<string, WorkspaceLock>();
 
   constructor(
     private readonly root: string,
     private readonly resolver: RepositoryCloneResolver,
+    private readonly locks: WorkspaceLockProvider,
     private readonly git: GitRunner = async (arguments_, signal) => {
-      await exec('git', arguments_, { signal });
+      return (await exec('git', arguments_, { signal })).stdout.trim();
     },
     recoveryFileSystem: WorkspaceRecoveryFileSystem = {
       remove: async (path) =>
@@ -69,51 +77,15 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     const name = `${request.workItemId}-${request.mode}-${slug(locator)}`;
     const path = resolve(this.root, name);
     const markerPath = join(this.markerRoot, `${name}.json`);
-    const lockPath = join(this.markerRoot, `${name}.lock`);
+    const lockPath = join(this.markerRoot, `${name}.lease`);
     await mkdir(dirname(markerPath), { recursive: true });
-    await acquireLock(lockPath, request.runId, signal);
+    const scope = await recoveryScope(this.root, this.markerRoot);
+    if (scope === null)
+      throw new Error('Workspace ownership directory is outside the managed root');
+    await validateLeasePaths(scope, lockPath);
+    const lock = await acquireWorkspaceLock(this.locks, lockPath, signal);
     try {
-      const previousMarker = await readMarker(markerPath);
-      let initialRevision = previousMarker?.initialRevision;
-      signal.throwIfAborted();
-      const writeMarker = async () =>
-        writeFile(
-          markerPath,
-          JSON.stringify({
-            runId: request.runId,
-            workItemId: request.workItemId,
-            repositoryResourceId: request.repositoryResource.resourceId,
-            mode: request.mode,
-            workspaceId: name,
-            path,
-            ...(initialRevision === undefined ? {} : { initialRevision }),
-          }),
-          { encoding: 'utf8', signal },
-        );
-      await writeMarker();
-      const existingWorkspace = await exists(join(path, '.git'), signal);
-      if (!existingWorkspace) {
-        await mkdir(dirname(path), { recursive: true });
-        signal.throwIfAborted();
-        await this.git(['clone', locator, path], signal);
-        initialRevision = await initialCloneRevision(path);
-        await writeMarker();
-      }
-      const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
-      if (branch !== undefined) {
-        await this.git(
-          ['-C', path, 'switch', ...(existingWorkspace ? [] : ['--create']), branch],
-          signal,
-        );
-      } else {
-        await restoreReadOnlyWorkspace(
-          path,
-          request.repositoryResource.revision,
-          initialRevision,
-          this.git,
-          signal,
-        );
-      }
+      const branch = await this.prepareCheckout(request, locator, name, path, markerPath);
       if (this.prepareHook !== undefined) await prepareWorkspace(path, this.prepareHook, signal);
       signal.throwIfAborted();
       let released = false;
@@ -124,15 +96,140 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
         ...(branch === undefined ? {} : { branch }),
         release: async () => {
           if (released) return;
+          await this.releaseWorkspaceLock(lockPath, lock);
           released = true;
-          // Workspaces are WorkItem-scoped. Recovery reclaims the marker-owned tree
-          // only after its WorkItem is no longer retained.
-          await releaseLock(lockPath, request.runId);
         },
       };
     } catch (error) {
-      await releaseLock(lockPath, request.runId);
+      await this.releaseWorkspaceLock(lockPath, lock);
       throw error;
+    }
+  }
+
+  private async releaseWorkspaceLock(path: string, lock: WorkspaceLock): Promise<void> {
+    try {
+      await lock.release();
+      if (this.pendingReleases.get(path) === lock) this.pendingReleases.delete(path);
+    } catch (error) {
+      this.pendingReleases.set(path, lock);
+      throw error;
+    }
+  }
+
+  private async prepareCheckout(
+    request: WorkspaceRequest,
+    locator: string,
+    name: string,
+    path: string,
+    markerPath: string,
+  ): Promise<string | undefined> {
+    const { signal } = request;
+    const previousMarker = await readMarker(markerPath);
+    if (await exists(join(this.markerRoot, `${name}.lock`), signal))
+      throw new Error('Legacy workspace lock requires recovery before acquisition');
+    let initialRevision = previousMarker?.initialRevision;
+    let checkoutReady: boolean;
+    signal.throwIfAborted();
+    const writeMarker = () =>
+      writeOwnershipMarker(
+        markerPath,
+        {
+          runId: request.runId,
+          workItemId: request.workItemId,
+          repositoryResourceId: request.repositoryResource.resourceId,
+          mode: request.mode,
+          workspaceId: name,
+          path,
+          checkoutReady,
+          ...(initialRevision === undefined ? {} : { initialRevision }),
+        },
+        signal,
+      );
+    const existingWorkspace = await this.reuseCheckout(
+      previousMarker,
+      markerPath,
+      path,
+      request.mode,
+      signal,
+    );
+    checkoutReady = previousMarker?.checkoutReady ?? existingWorkspace;
+    if (!existingWorkspace) {
+      initialRevision = undefined;
+      checkoutReady = false;
+    }
+    await writeMarker();
+    if (!existingWorkspace) {
+      await mkdir(dirname(path), { recursive: true });
+      signal.throwIfAborted();
+      await this.git(['clone', locator, path], signal);
+    }
+    if (initialRevision === undefined)
+      initialRevision = await readCheckoutRevision(path, this.git, signal);
+    const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
+    if (branch !== undefined) {
+      await this.git(
+        ['-C', path, 'switch', ...(existingWorkspace ? [] : ['--create']), branch],
+        signal,
+      );
+    }
+    checkoutReady = true;
+    await writeMarker();
+    if (branch === undefined) {
+      await restoreReadOnlyWorkspace(
+        path,
+        request.checkoutRevision,
+        initialRevision,
+        this.git,
+        signal,
+      );
+    }
+    return branch;
+  }
+
+  private async reuseCheckout(
+    marker: WorkspaceOwnershipMarker | null,
+    markerPath: string,
+    path: string,
+    mode: WorkspaceRequest['mode'],
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (!(await exists(path, signal))) return false;
+    const scope = await recoveryScope(this.root, this.markerRoot);
+    if (
+      scope === null ||
+      marker === null ||
+      !(await isOwnedWorkspace(scope, markerPath, marker, this.recoveryFileSystem)) ||
+      !(await canRemoveOwnedWorkspace(scope, path))
+    )
+      throw new Error('Cannot acquire an unvalidated existing workspace');
+    if (marker.checkoutReady === false) {
+      await this.recoveryFileSystem.remove(path);
+      return false;
+    }
+    if (!(await exists(join(path, '.git'), signal))) {
+      if (mode === WorkspaceMode.Branch)
+        throw new Error('Cannot reuse a branch checkout without Git metadata');
+      await this.recoveryFileSystem.remove(path);
+      return false;
+    }
+    return this.validateLegacyCheckout(marker, path, mode, signal);
+  }
+
+  private async validateLegacyCheckout(
+    marker: WorkspaceOwnershipMarker,
+    path: string,
+    mode: WorkspaceRequest['mode'],
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (marker.checkoutReady !== undefined || mode !== WorkspaceMode.ReadOnly) return true;
+    try {
+      await readCheckoutRevision(path, this.git, signal);
+      return true;
+    } catch {
+      signal.throwIfAborted();
+      // Legacy read-only clones may predate the durable completion flag.
+      await this.recoveryFileSystem.remove(path);
+      return false;
     }
   }
 
@@ -142,48 +239,43 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
   ): Promise<WorkspaceRecoveryResult> {
     const scope = await recoveryScope(this.root, this.markerRoot);
     if (scope === null) return emptyRecovery();
-    const markers = await recoveryMarkerNames(this.markerRoot);
+    const releaseFailures: WorkspaceRecoveryFailure[] = [];
+    for (const [path, lock] of this.pendingReleases) {
+      if (await options.isPaused?.()) break;
+      try {
+        await this.releaseWorkspaceLock(path, lock);
+      } catch (error) {
+        releaseFailures.push({ markerPath: path, path, message: errorMessage(error) });
+      }
+    }
+    const names = await recoveryMarkerNames(this.markerRoot);
+    const workspaceIds = new Set(
+      names.flatMap((name) => {
+        const match = /^(.*)\.(?:json(?:\.pending)?|lock|lease(?:\.owners)?)$/.exec(name);
+        return match !== null && isSafeWorkspaceId(match[1]!) ? [match[1]!] : [];
+      }),
+    );
     let reclaimed = 0;
     const reclaimedWorkItemIds: WorkItemId[] = [];
-    const failures: WorkspaceRecoveryFailure[] = [];
-    for (const filename of markers) {
+    const failures: WorkspaceRecoveryFailure[] = [...releaseFailures];
+    for (const workspaceId of workspaceIds) {
       if (await options.isPaused?.()) break;
-      const result = await recoverMarker({
-        filename,
+      const result = await recoverWorkspace({
+        workspaceId,
         markerRoot: this.markerRoot,
         scope,
         runs,
         fileSystem: this.recoveryFileSystem,
         options,
+        locks: this.locks,
+        releaseLock: (path, lock) => this.releaseWorkspaceLock(path, lock),
       });
       reclaimed += result.reclaimed;
       reclaimedWorkItemIds.push(...(result.reclaimedWorkItemIds ?? []));
       failures.push(...result.failures);
     }
-    for (const filename of markers.filter((name) => name.endsWith('.lock'))) {
-      if (await options.isPaused?.()) break;
-      await recoverOrphanLock(join(this.markerRoot, filename), runs);
-    }
     return { reclaimed, reclaimedWorkItemIds, failures };
   }
-}
-
-async function recoverOrphanLock(path: string, runs: readonly RunView[]): Promise<void> {
-  const owner = await readLockOwner(path);
-  if (owner === undefined) return;
-  if (
-    owner !== null &&
-    runs.some(
-      (run) =>
-        run.runId === owner &&
-        (isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous),
-    )
-  )
-    return;
-  // Lock directories are created only below the private marker root. An
-  // unowned/terminal orphan cannot protect a live workspace and otherwise
-  // blocks every future acquisition indefinitely.
-  await rm(path, { recursive: true, force: true });
 }
 
 interface RecoveryScope {
@@ -212,19 +304,52 @@ async function recoveryMarkerNames(markerRoot: string): Promise<readonly string[
   }
 }
 
-async function recoverMarker(input: {
-  readonly filename: string;
+async function validateLeasePaths(scope: RecoveryScope, path: string): Promise<void> {
+  for (const target of [
+    path,
+    `${path}.owners`,
+    `${path.slice(0, -'.lease'.length)}.lock`,
+    `${path.slice(0, -'.lease'.length)}.json.pending`,
+  ]) {
+    const canonical = await canonicalPath(target);
+    if (canonical !== null && canonical !== join(scope.markerRoot, basename(target)))
+      throw new Error('Workspace lease artifacts must not be symbolic links');
+  }
+}
+
+async function recoverWorkspace(input: {
+  readonly workspaceId: string;
   readonly markerRoot: string;
   readonly scope: RecoveryScope;
   readonly runs: readonly RunView[];
   readonly fileSystem: WorkspaceRecoveryFileSystem;
   readonly options: WorkspaceRecoveryOptions;
+  readonly locks: WorkspaceLockProvider;
+  readonly releaseLock: (path: string, lock: WorkspaceLock) => Promise<void>;
 }): Promise<WorkspaceRecoveryResult> {
-  if (!input.filename.endsWith('.json')) return emptyRecovery();
-  const markerPath = join(input.markerRoot, input.filename);
-  const marker = await readMarker(markerPath);
+  const markerPath = join(input.markerRoot, `${input.workspaceId}.json`);
+  let marker: WorkspaceOwnershipMarker | null = null;
   try {
-    return await reclaimOwnedMarker(input, markerPath, marker);
+    const lockPath = join(input.markerRoot, `${input.workspaceId}.lease`);
+    await validateLeasePaths(input.scope, lockPath);
+    const lock = await input.locks.tryAcquire(lockPath);
+    if (!lock.acquired) return emptyRecovery();
+    try {
+      if (
+        !(await recoverLegacyLock(join(input.markerRoot, `${input.workspaceId}.lock`), input.runs))
+      )
+        return emptyRecovery();
+      await rm(`${markerPath}.pending`, { force: true });
+      marker = await readMarker(markerPath);
+      if (
+        marker === null ||
+        !(await isOwnedWorkspace(input.scope, markerPath, marker, input.fileSystem))
+      )
+        return emptyRecovery();
+      return await reclaimUnlockedMarker(input, markerPath, marker);
+    } finally {
+      await input.releaseLock(lockPath, lock);
+    }
   } catch (error) {
     return {
       reclaimed: 0,
@@ -233,30 +358,27 @@ async function recoverMarker(input: {
   }
 }
 
-async function reclaimOwnedMarker(
-  input: {
-    readonly scope: RecoveryScope;
-    readonly runs: readonly RunView[];
-    readonly fileSystem: WorkspaceRecoveryFileSystem;
-    readonly options: WorkspaceRecoveryOptions;
-  },
-  markerPath: string,
-  marker: WorkspaceOwnershipMarker | null,
-): Promise<WorkspaceRecoveryResult> {
-  if (
-    marker === null ||
-    !(await isOwnedWorkspace(input.scope, markerPath, marker, input.fileSystem))
-  )
-    return emptyRecovery();
-  const lockPath = join(input.scope.markerRoot, `${marker.workspaceId}.lock`);
-  if (!(await acquireRecoveryLock(lockPath, marker.runId, input.runs))) return emptyRecovery();
+// Migration only: new acquisitions never create directory locks.
+async function recoverLegacyLock(path: string, runs: readonly RunView[]): Promise<boolean> {
+  if ((await canonicalPath(path)) === null) return true;
+  const owner = await readLockOwner(path);
+  if (owner === undefined) return false;
+  if (owner === null && runs.some(protectsWorkspace)) return false;
+  if (owner !== null && runs.some((run) => run.runId === owner && protectsWorkspace(run)))
+    return false;
+  if (owner !== null) await unlink(join(path, owner));
   try {
-    const current = await readMarker(markerPath);
-    if (current === null || current.runId !== marker.runId) return emptyRecovery();
-    return await reclaimUnlockedMarker(input, markerPath, current);
-  } finally {
-    await releaseLock(lockPath, marker.runId);
+    await rmdir(path);
+    return true;
+  } catch (error) {
+    if (isNotFound(error)) return true;
+    if (isNotEmpty(error)) return false;
+    throw error;
   }
+}
+
+function protectsWorkspace(run: RunView): boolean {
+  return isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous;
 }
 
 async function reclaimUnlockedMarker(
@@ -283,6 +405,7 @@ async function reclaimUnlockedMarker(
   if ((await canonicalPath(marker.path)) !== null) await input.fileSystem.remove(marker.path);
   if ((await input.options.onWorkspaceReclaimed?.(marker.workItemId as WorkItemId)) === false)
     return emptyRecovery();
+  await rm(`${markerPath}.pending`, { force: true });
   await rm(markerPath, { force: true });
   return {
     reclaimed: 1,
@@ -316,6 +439,7 @@ interface WorkspaceOwnershipMarker {
   readonly workspaceId: string;
   readonly path: string;
   readonly initialRevision?: string;
+  readonly checkoutReady?: boolean;
 }
 
 async function readMarker(path: string): Promise<WorkspaceOwnershipMarker | null> {
@@ -338,7 +462,14 @@ function isOwnershipMarker(value: unknown): value is WorkspaceOwnershipMarker {
     (marker.mode === WorkspaceMode.ReadOnly || marker.mode === WorkspaceMode.Branch) &&
     typeof marker.workspaceId === 'string' &&
     typeof marker.path === 'string' &&
-    (marker.initialRevision === undefined || typeof marker.initialRevision === 'string')
+    hasValidCheckoutState(marker)
+  );
+}
+
+function hasValidCheckoutState(marker: Record<string, unknown>): boolean {
+  return (
+    (marker.initialRevision === undefined || typeof marker.initialRevision === 'string') &&
+    (marker.checkoutReady === undefined || typeof marker.checkoutReady === 'boolean')
   );
 }
 
@@ -413,87 +544,66 @@ async function exists(path: string, signal: AbortSignal): Promise<boolean> {
 async function restoreReadOnlyWorkspace(
   path: string,
   revision: string | undefined,
-  initialRevision: string | undefined,
+  initialRevision: string,
   git: GitRunner,
   signal: AbortSignal,
 ): Promise<void> {
   if (revision !== undefined) {
     await git(['-C', path, 'fetch', 'origin', revision], signal);
-    await git(['-C', path, 'checkout', '--detach', '--force', revision], signal);
-    await git(['-C', path, 'reset', '--hard', revision], signal);
+    const fetched = await readGitRevision(path, 'FETCH_HEAD^{commit}', git, signal);
+    await git(['-C', path, 'checkout', '--detach', '--force', fetched], signal);
+    await git(['-C', path, 'reset', '--hard', fetched], signal);
     return;
   }
-  await git(['-C', path, 'reset', '--hard', initialRevision ?? 'HEAD'], signal);
+  await git(['-C', path, 'reset', '--hard', initialRevision], signal);
 }
 
-async function initialCloneRevision(path: string): Promise<string | undefined> {
+async function readCheckoutRevision(
+  path: string,
+  git: GitRunner,
+  signal: AbortSignal,
+): Promise<string> {
+  return readGitRevision(path, 'HEAD^{commit}', git, signal);
+}
+
+async function readGitRevision(
+  path: string,
+  reference: string,
+  git: GitRunner,
+  signal: AbortSignal,
+): Promise<string> {
+  const revision = await git(['-C', path, 'rev-parse', '--verify', reference], signal);
+  if (typeof revision !== 'string' || revision.trim() === '')
+    throw new Error('Git runner did not attest a valid workspace HEAD');
+  return revision.trim();
+}
+
+async function writeOwnershipMarker(
+  path: string,
+  marker: WorkspaceOwnershipMarker,
+  signal: AbortSignal,
+): Promise<void> {
+  const pending = `${path}.pending`;
   try {
-    const result = await exec('git', ['-C', path, 'rev-parse', 'HEAD']);
-    return result.stdout.trim() || undefined;
-  } catch {
-    // Test and alternate git runners may attest a checkout without a real
-    // Git object database; legacy HEAD fallback remains safe for those trees.
-    return undefined;
+    await writeFile(pending, JSON.stringify(marker), { encoding: 'utf8', signal });
+    signal.throwIfAborted();
+    await rename(pending, path);
+  } finally {
+    await rm(pending, { force: true });
   }
 }
 
-const lockRetryMs = 25;
-
-async function acquireLock(path: string, runId: string, signal: AbortSignal): Promise<void> {
+async function acquireWorkspaceLock(
+  locks: WorkspaceLockProvider,
+  path: string,
+  signal: AbortSignal,
+): Promise<WorkspaceLock> {
   while (true) {
     signal.throwIfAborted();
-    try {
-      await mkdir(path);
-      await writeFile(join(path, runId), '', 'utf8');
-      return;
-    } catch (error) {
-      if (!isAlreadyExists(error)) throw error;
-      await waitForLock(signal);
-    }
+    const lock = await locks.tryAcquire(path);
+    if (lock.acquired) return lock;
+    await waitForLock(signal);
   }
-}
-
-async function acquireRecoveryLock(
-  path: string,
-  markerRunId: string,
-  runs: readonly RunView[],
-): Promise<boolean> {
-  try {
-    await mkdir(path);
-    await writeFile(join(path, markerRunId), '', 'utf8');
-    return true;
-  } catch (error) {
-    if (!isAlreadyExists(error)) throw error;
-  }
-  // Only clear a crash-stale lock when it attests the same terminal/absent
-  // owner as the marker we inspected. A newer acquisition has a different
-  // lock owner and is never disturbed by recovery of an older marker.
-  const owner = await readLockOwner(path);
-  if (owner === undefined) return false;
-  if (owner === null) {
-    // A crash between mkdir and owner-entry creation leaves an empty lock
-    // directory. It cannot represent an active lease and must not strand
-    // future acquisition.
-    try {
-      await rmdir(path);
-    } catch (error) {
-      if (!isNotFound(error) && !isNotEmpty(error)) throw error;
-    }
-    return false;
-  }
-  if (
-    runs.some(
-      (run) =>
-        run.runId === owner &&
-        (isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous),
-    )
-  )
-    return false;
-  // An absent or terminal lock owner is a crash orphan even if it acquired
-  // the lock before it could replace an older marker. Removing it makes the
-  // next recovery/acquisition pass progress without disturbing an active run.
-  await releaseLock(path, owner);
-  return false;
 }
 
 async function readLockOwner(path: string): Promise<string | null | undefined> {
@@ -507,15 +617,6 @@ async function readLockOwner(path: string): Promise<string | null | undefined> {
   }
 }
 
-async function releaseLock(path: string, owner: string): Promise<void> {
-  try {
-    await unlink(join(path, owner));
-    await rmdir(path);
-  } catch (error) {
-    if (!isNotFound(error) && !isNotEmpty(error)) throw error;
-  }
-}
-
 function isNotEmpty(error: unknown): boolean {
   return (
     typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOTEMPTY'
@@ -524,7 +625,7 @@ function isNotEmpty(error: unknown): boolean {
 
 function waitForLock(signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(done, lockRetryMs);
+    const timer = setTimeout(done, 25);
     const abort = () => {
       clearTimeout(timer);
       reject(signal.reason);
@@ -537,10 +638,6 @@ function waitForLock(signal: AbortSignal): Promise<void> {
 
     signal.addEventListener('abort', abort, { once: true });
   });
-}
-
-function isAlreadyExists(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST';
 }
 
 function slug(value: string): string {

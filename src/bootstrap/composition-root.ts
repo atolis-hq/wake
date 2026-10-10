@@ -5,6 +5,7 @@ import {
   type ProcessorStateStore,
   type ProjectionStore,
 } from '@atolis-hq/eventing';
+import { acquireFileLock } from '@atolis-hq/eventing-filesystem';
 import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
 import {
   DispatchPolicy,
@@ -203,6 +204,13 @@ export async function createCompositionRoot(
           throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
         return 'https://github.com/' + match[1] + '.git';
       },
+    },
+    {
+      tryAcquire: (path) =>
+        acquireFileLock(path, {
+          staleAfterMs: 0,
+          staleRequiresDeadProcess: true,
+        }),
     },
     undefined,
     undefined,

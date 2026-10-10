@@ -10,6 +10,8 @@ export interface WorkspaceRequest {
   readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
   readonly workItemId: WorkItemId;
   readonly repositoryResource: ResourceView;
+  /** Git checkout target, independent of the resource observation revision. */
+  readonly checkoutRevision?: string;
 }
 
 export interface WorkspaceLease {
@@ -18,7 +20,7 @@ export interface WorkspaceLease {
   /** Branch actually checked out for this lease, when the provider can attest it. */
   readonly branch?: string | undefined;
   readonly mode: WorkspaceRequest['mode'];
-  /** Ends this Run's use of the workspace; branch-workspace disposal is WorkItem-scoped recovery. */
+  /** Ends this Run's use of the workspace; workspace disposal is WorkItem-scoped recovery. */
   release(): Promise<void>;
 }
 
@@ -55,4 +57,14 @@ export interface WorkspaceRecoveryFailure {
   readonly markerPath: string;
   readonly path: string;
   readonly message: string;
+}
+
+/** Process-owned exclusion shared by acquisition and recovery. */
+export interface WorkspaceLockProvider {
+  tryAcquire(path: string): Promise<WorkspaceLock>;
+}
+
+export interface WorkspaceLock {
+  readonly acquired: boolean;
+  release(): Promise<void>;
 }

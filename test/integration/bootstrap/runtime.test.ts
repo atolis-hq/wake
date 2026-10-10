@@ -928,6 +928,58 @@ describe('target composition root', () => {
     });
   });
 
+  it.each(['closed', 'cancelled', 'deleted'] as const)(
+    'reclaims both workspace modes for %s WorkItems through scheduler maintenance',
+    async (state) => {
+      const root = await fixtureRoot();
+      const clock = { now: () => new Date('2026-08-12T10:00:00.000Z') };
+      const runtime = await createCompositionRoot(root, {
+        config: transcriptRetentionConfig(),
+        journal: new InMemoryEventJournal(clock),
+        projections: new InMemoryProjectionStore(),
+        checkpoints: new InMemoryCheckpointStore(),
+        clock,
+      });
+      const workItemId = workId('workspace-' + state);
+      await runtime.work.create(
+        { workItemId, objective: 'cleanup' },
+        commandContext(clock, 'create'),
+      );
+      const readonly = await ownedWorkspace(
+        runtime.paths.workspacesRoot,
+        'readonly',
+        workItemId,
+        'readonly-run',
+      );
+      const branch = await ownedWorkspace(
+        runtime.paths.workspacesRoot,
+        'branch',
+        workItemId,
+        'branch-run',
+        'branch',
+      );
+      await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
+      await expect(access(readonly.path)).resolves.toBeUndefined();
+      await expect(access(branch.path)).resolves.toBeUndefined();
+      if (state === 'closed')
+        await runtime.work.close(workItemId, 'complete', commandContext(clock, 'close'));
+      if (state === 'cancelled')
+        await runtime.work.cancel(workItemId, 'cancel', commandContext(clock, 'cancel'));
+      if (state === 'deleted')
+        await runtime.work.delete(workItemId, commandContext(clock, 'delete'));
+      await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
+      await expect(access(readonly.path)).rejects.toThrow();
+      await expect(access(branch.path)).rejects.toThrow();
+      expect(
+        await readdir(join(runtime.paths.workspacesRoot, '.wake-workspace-ownership')),
+      ).toEqual([]);
+      await runtime.activationSchedulerSubscriber.poke({ maxProgress: 1 });
+      expect(
+        await readdir(join(runtime.paths.workspacesRoot, '.wake-workspace-ownership')),
+      ).toEqual([]);
+    },
+  );
+
   it('marks transcripts after reclaiming a closed then deleted workspace without writing journal events', async () => {
     const root = await fixtureRoot();
     let now = new Date('2026-08-12T10:00:00.000Z');
@@ -1487,6 +1539,7 @@ async function ownedWorkspace(
   workspaceId: string,
   workItemId: string,
   runId: string,
+  mode: 'read-only' | 'branch' = 'read-only',
 ) {
   const path = join(root, workspaceId);
   const markerPath = join(root, '.wake-workspace-ownership', `${workspaceId}.json`);
@@ -1498,7 +1551,7 @@ async function ownedWorkspace(
       runId,
       workItemId,
       repositoryResourceId: 'resource-00000000000000000000000000',
-      mode: 'read-only',
+      mode,
       workspaceId,
       path,
     }),

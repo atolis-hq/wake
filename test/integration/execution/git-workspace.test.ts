@@ -3,11 +3,12 @@ import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runId } from '../../../src/execution/contracts/identifiers.js';
 import { GitWorkspaceProvider } from '../../../src/execution/infrastructure/workspace/git-workspace.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
+import { workspaceLocks } from '../../support/workspace-locks.js';
 
 function nodeCommand(script: string): string {
   return `"${process.execPath}" -e "${script}"`;
@@ -36,6 +37,7 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (_args, signal) => {
         receivedSignal = signal;
         reportCloneEntered();
@@ -75,7 +77,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         (commands as string[][]).push([...args]);
       },
     );
@@ -104,7 +108,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         commands.push([...args]);
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
@@ -143,7 +149,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         commands.push([...args]);
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
@@ -182,7 +190,9 @@ describe('GitWorkspaceProvider', () => {
       const provider = new GitWorkspaceProvider(
         root,
         { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+        workspaceLocks,
         async (args) => {
+          if (args.includes('rev-parse')) return 'a'.repeat(40);
           if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
         },
         undefined,
@@ -219,7 +229,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
     );
@@ -245,7 +257,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
       undefined,
@@ -284,7 +298,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
       undefined,
@@ -322,7 +338,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
       undefined,
@@ -355,7 +373,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         if (args[0] !== 'clone') return;
         const workspacePath = args[2]!;
         const marker = JSON.parse(await readFile(markerPath, 'utf8'));
@@ -366,6 +386,7 @@ describe('GitWorkspaceProvider', () => {
           mode: 'read-only',
           workspaceId,
           path: workspacePath,
+          checkoutReady: false,
         });
         await mkdir(join(workspacePath, '.git'), { recursive: true });
       },
@@ -397,7 +418,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         commands.push([...args]);
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
@@ -411,12 +434,13 @@ describe('GitWorkspaceProvider', () => {
       signal: new AbortController().signal,
       mode: 'read-only' as const,
       workItemId: workId('read-only-reuse'),
+      checkoutRevision: 'deadbeef',
       repositoryResource: {
         resourceId: resId('workspace-resource'),
         kind: resourceKind('issue'),
         externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
         capabilities: [],
-        revision: 'deadbeef',
+        revision: 'issue-fingerprint',
       },
     };
 
@@ -469,11 +493,16 @@ describe('GitWorkspaceProvider', () => {
     const secondRevision = (
       await execFileAsync('git', ['-C', repository, 'rev-parse', 'HEAD'])
     ).stdout.trim();
-    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => repository });
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => repository },
+      workspaceLocks,
+    );
     const request = {
       signal: new AbortController().signal,
       mode: 'read-only' as const,
       workItemId: workId('exact-revision'),
+      checkoutRevision: firstRevision,
       repositoryResource: {
         resourceId: resId('workspace-resource'),
         kind: resourceKind('issue'),
@@ -491,18 +520,17 @@ describe('GitWorkspaceProvider', () => {
     const second = await provider.acquire({
       ...request,
       runId: runId('run-exact-second'),
-      repositoryResource: { ...request.repositoryResource, revision: secondRevision },
+      checkoutRevision: secondRevision,
     });
     await expect(readFile(join(second.path, 'tracked.txt'), 'utf8')).resolves.toBe('second\n');
     await expect(readFile(join(second.path, 'node_modules', 'cached'), 'utf8')).resolves.toBe(
       'keep',
     );
     await second.release();
-    const { revision: _revision, ...unpinnedResource } = request.repositoryResource;
+    const { checkoutRevision: _revision, ...unpinnedRequest } = request;
     const unpinned = await provider.acquire({
-      ...request,
+      ...unpinnedRequest,
       runId: runId('run-exact-unpinned'),
-      repositoryResource: unpinnedResource,
     });
     await expect(readFile(join(unpinned.path, 'tracked.txt'), 'utf8')).resolves.toBe('second\n');
     await unpinned.release();
@@ -510,9 +538,257 @@ describe('GitWorkspaceProvider', () => {
       provider.acquire({
         ...request,
         runId: runId('run-exact-unavailable'),
-        repositoryResource: { ...request.repositoryResource, revision: 'missing-revision' },
+        checkoutRevision: 'missing-revision',
       }),
     ).rejects.toThrow();
+  });
+
+  it('rebuilds a marker-owned clone interrupted before checkout completion', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const repository = await createRepository(root);
+    let clones = 0;
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => repository },
+      workspaceLocks,
+      async (args, signal) => {
+        if (args[0] === 'clone' && ++clones === 1) {
+          await execFileAsync('git', ['init', args[2]!]);
+          throw new Error('interrupted clone');
+        }
+        return (await execFileAsync('git', args, { signal })).stdout.trim();
+      },
+    );
+    const request = workspaceRequest('interrupted-clone');
+    await expect(provider.acquire({ ...request, runId: runId('interrupted') })).rejects.toThrow(
+      'interrupted clone',
+    );
+    await provider.recover([], { retainWorkItem: async () => true });
+    const lease = await provider.acquire({ ...request, runId: runId('retry') });
+    expect(clones).toBe(2);
+    await expect(readFile(join(lease.path, 'tracked.txt'), 'utf8')).resolves.toBe('fixture');
+    await lease.release();
+  });
+
+  it('rebuilds an invalid read-only clone recorded by a legacy marker', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const repository = await createRepository(root);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => repository },
+      workspaceLocks,
+    );
+    const request = workspaceRequest('legacy-interrupted');
+    const first = await provider.acquire({ ...request, runId: runId('legacy-first') });
+    await first.release();
+    await rm(first.path, { recursive: true, force: true });
+    await execFileAsync('git', ['init', first.path]);
+    const markerPath = join(root, '.wake-workspace-ownership', first.workspaceId + '.json');
+    const {
+      checkoutReady: _ready,
+      initialRevision: _initial,
+      ...legacy
+    } = JSON.parse(await readFile(markerPath, 'utf8'));
+    await writeFile(markerPath, JSON.stringify(legacy));
+    const retry = await provider.acquire({ ...request, runId: runId('legacy-retry') });
+    await expect(readFile(join(retry.path, 'tracked.txt'), 'utf8')).resolves.toBe('fixture');
+    await retry.release();
+  });
+
+  it.each(['failed', 'cancelled'] as const)(
+    'reuses the valid checkout after %s preparation',
+    async (outcome) => {
+      const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+      roots.push(root);
+      const repository = await createRepository(root);
+      let clones = 0;
+      let workspacePath = '';
+      const provider = new GitWorkspaceProvider(
+        root,
+        { cloneLocator: async () => repository },
+        workspaceLocks,
+        async (args, signal) => {
+          if (args[0] === 'clone') {
+            clones += 1;
+            workspacePath = args[2]!;
+          }
+          return (await execFileAsync('git', args, { signal })).stdout.trim();
+        },
+        undefined,
+        {
+          command: nodeCommand(
+            "const fs=require('node:fs'); if (!fs.existsSync('.attempted')) { fs.writeFileSync('.attempted','yes'); " +
+              (outcome === 'failed' ? 'process.exit(7)' : 'setTimeout(() => {}, 30000)') +
+              '; }',
+          ),
+          timeoutMs: 10000,
+        },
+      );
+      const request = workspaceRequest('prepare-' + outcome);
+      const controller = new AbortController();
+      const acquisition = provider.acquire({
+        ...request,
+        signal: controller.signal,
+        runId: runId('first'),
+      });
+      // Attach the rejection assertion before deliberately failing/cancelling the hook.
+      const rejection = expect(acquisition).rejects.toThrow(
+        outcome === 'failed' ? 'exited with code 7' : 'cancel preparation',
+      );
+      if (outcome === 'cancelled') {
+        await vi.waitFor(async () =>
+          expect(await readFile(join(workspacePath, '.attempted'), 'utf8')).toBe('yes'),
+        );
+        controller.abort(new Error('cancel preparation'));
+      }
+      await rejection;
+      await expect(readFile(join(workspacePath, 'tracked.txt'), 'utf8')).resolves.toBe('fixture');
+      const markerPath = join(
+        root,
+        '.wake-workspace-ownership',
+        (await readdir(join(root, '.wake-workspace-ownership'))).find((name) =>
+          name.endsWith('.json'),
+        )!,
+      );
+      expect(JSON.parse(await readFile(markerPath, 'utf8')).checkoutReady).toBe(true);
+      await provider.recover([], { retainWorkItem: async () => true });
+      const retry = await provider.acquire({ ...request, runId: runId('second') });
+      expect(retry.path).toBe(workspacePath);
+      expect(clones).toBe(1);
+      await retry.release();
+      await provider.recover([], { retainWorkItem: async () => false });
+      await expect(access(workspacePath)).rejects.toThrow();
+      expect(await readdir(join(root, '.wake-workspace-ownership'))).toEqual([]);
+    },
+  );
+
+  it('keeps a live lease exclusive even when recovery sees no Run in its snapshot', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const repository = await createRepository(root);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => repository },
+      workspaceLocks,
+    );
+    const request = workspaceRequest('stale-snapshot');
+    const first = await provider.acquire({ ...request, runId: runId('live') });
+    const recovered = await provider.recover([], { retainWorkItem: async () => false });
+    expect(recovered.reclaimed).toBe(0);
+    await expect(access(first.path)).resolves.toBeUndefined();
+    const controller = new AbortController();
+    const second = provider.acquire({
+      ...request,
+      runId: runId('waiting'),
+      signal: controller.signal,
+    });
+    const rejection = expect(second).rejects.toThrow('still locked');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    controller.abort(new Error('still locked'));
+    await rejection;
+    await first.release();
+    const next = await provider.acquire({ ...request, runId: runId('next') });
+    await first.release(); // Late repeated releases cannot unlock a newer acquisition.
+    expect((await provider.recover([], { retainWorkItem: async () => false })).reclaimed).toBe(0);
+    await next.release();
+    expect((await provider.recover([], { retainWorkItem: async () => false })).reclaimed).toBe(1);
+  });
+
+  it('retries a transient lease release failure during post-completion recovery', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const repository = await createRepository(root);
+    let failRelease = true;
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => repository },
+      {
+        tryAcquire: async (path) => {
+          const lock = await workspaceLocks.tryAcquire(path);
+          return {
+            acquired: lock.acquired,
+            release: async () => {
+              if (failRelease) {
+                failRelease = false;
+                throw new Error('transient release failure');
+              }
+              await lock.release();
+            },
+          };
+        },
+      },
+    );
+    const lease = await provider.acquire({
+      ...workspaceRequest('release-retry'),
+      runId: runId('release'),
+    });
+    await expect(lease.release()).rejects.toThrow('transient release failure');
+    expect((await provider.recover([], { retainWorkItem: async () => false })).reclaimed).toBe(1);
+    await expect(access(lease.path)).rejects.toThrow();
+    expect(await readdir(join(root, '.wake-workspace-ownership'))).toEqual([]);
+  });
+
+  it('preserves uncommitted branch work when migrating a legacy marker and reacquiring', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const repository = await createRepository(root);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => repository },
+      workspaceLocks,
+    );
+    const request = { ...workspaceRequest('branch-state'), mode: 'branch' as const };
+    const first = await provider.acquire({ ...request, runId: runId('branch-first') });
+    await writeFile(join(first.path, 'tracked.txt'), 'uncommitted implementation');
+    await first.release();
+    const markerPath = join(root, '.wake-workspace-ownership', first.workspaceId + '.json');
+    const {
+      checkoutReady: _ready,
+      initialRevision: _initial,
+      ...legacy
+    } = JSON.parse(await readFile(markerPath, 'utf8'));
+    await writeFile(markerPath, JSON.stringify(legacy));
+    const second = await provider.acquire({ ...request, runId: runId('branch-second') });
+    expect(second.branch).toBe(request.workItemId);
+    await expect(readFile(join(second.path, 'tracked.txt'), 'utf8')).resolves.toBe(
+      'uncommitted implementation',
+    );
+    await second.release();
+    expect((await provider.recover([], { retainWorkItem: async () => false })).reclaimed).toBe(1);
+  });
+
+  it('restores a newly fetched named target rather than a stale local branch', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const repository = await createRepository(root);
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => repository },
+      workspaceLocks,
+    );
+    const request = { ...workspaceRequest('named-target'), checkoutRevision: 'HEAD' };
+    const first = await provider.acquire({ ...request, runId: runId('ref-first') });
+    await first.release();
+    await writeFile(join(repository, 'tracked.txt'), 'updated remote');
+    await execFileAsync('git', [
+      '-C',
+      repository,
+      '-c',
+      'user.name=test',
+      '-c',
+      'user.email=test@example.test',
+      'commit',
+      '-am',
+      'update',
+    ]);
+    const second = await provider.acquire({ ...request, runId: runId('ref-second') });
+    expect(second.path).toBe(first.path);
+    await expect(readFile(join(second.path, 'tracked.txt'), 'utf8')).resolves.toBe(
+      'updated remote',
+    );
+    await second.release();
   });
 
   it('waits for a retained workspace lease and cancels while waiting', async () => {
@@ -521,7 +797,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
     );
@@ -558,7 +836,9 @@ describe('GitWorkspaceProvider', () => {
     const provider = new GitWorkspaceProvider(
       root,
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      workspaceLocks,
       async (args) => {
+        if (args.includes('rev-parse')) return 'a'.repeat(40);
         if (args[0] !== 'clone') return;
         clones += 1;
         await mkdir(join(args[2]!, '.git'), { recursive: true });
@@ -599,3 +879,36 @@ describe('GitWorkspaceProvider', () => {
     await secondLease.release();
   });
 });
+
+async function createRepository(root: string): Promise<string> {
+  const repository = join(root, 'repository');
+  await execFileAsync('git', ['init', repository]);
+  await writeFile(join(repository, 'tracked.txt'), 'fixture');
+  await execFileAsync('git', ['-C', repository, 'add', '.']);
+  await execFileAsync('git', [
+    '-C',
+    repository,
+    '-c',
+    'user.name=test',
+    '-c',
+    'user.email=test@example.test',
+    'commit',
+    '-m',
+    'fixture',
+  ]);
+  return repository;
+}
+
+function workspaceRequest(name: string) {
+  return {
+    signal: new AbortController().signal,
+    mode: 'read-only' as const,
+    workItemId: workId(name),
+    repositoryResource: {
+      resourceId: resId('workspace-resource'),
+      kind: resourceKind('issue'),
+      externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+      capabilities: [],
+    },
+  };
+}

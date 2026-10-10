@@ -298,6 +298,16 @@ CLI before allowing real agent execution.
 | `execution.workspaceHooks.prepare.command` | non-empty string; required | Raw shell command or script path to prepare or repair workspace state; it must be safe to run after Wake resets tracked files while preserving ignored files. |
 | `execution.workspaceHooks.prepare.timeoutMs` | positive integer; default `300000` | Wall-clock timeout for the prepare command. |
 
+Branch and read-only workspaces remain retained while their WorkItem is open.
+Read-only acquisition restores tracked files while preserving ignored dependencies.
+The prepare hook runs each time and owns dependency validation. Git checkout
+targets come from Repository revisions or known PR head commits; issue-content
+fingerprints are never fetched as Git commits. Without a Git target, the checkout
+stays pinned to its initial clone revision. Interrupted checkout creation is
+rebuilt; failed preparation retains the completed checkout for a later attempt.
+Recovery removes validated workspaces once their WorkItem is closed, cancelled,
+or deleted and no live process lease or active/ambiguous Run protects them.
+
 Each `execution.agentRunners.<name>` definition has the following shape.
 
 | Field | Type / default | Explanation |

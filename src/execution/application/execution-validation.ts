@@ -17,14 +17,26 @@ export async function acquireWorkspace(
   if (provider === undefined) throw new Error('Workspace provider is required');
   const repositoryResource =
     resources.find((resource) => resource.kind === BuiltInResourceKind.Repository) ??
-    resources.find(
-      (resource) =>
-        resource.kind === BuiltInResourceKind.Issue ||
-        resource.kind === BuiltInResourceKind.PullRequest,
-    );
+    resources.find((resource) => resource.kind === BuiltInResourceKind.PullRequest) ??
+    resources.find((resource) => resource.kind === BuiltInResourceKind.Issue);
   if (repositoryResource === undefined) throw new Error('Repository Resource is required');
   signal.throwIfAborted();
-  return provider.acquire({ runId, signal, mode, workItemId, repositoryResource });
+  const revision = repositoryResource.revision;
+  const checkoutRevision =
+    repositoryResource.kind === BuiltInResourceKind.Repository ||
+    (repositoryResource.kind === BuiltInResourceKind.PullRequest &&
+      revision !== undefined &&
+      /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(revision))
+      ? revision
+      : undefined;
+  return provider.acquire({
+    runId,
+    signal,
+    mode,
+    workItemId,
+    repositoryResource,
+    ...(checkoutRevision === undefined ? {} : { checkoutRevision }),
+  });
 }
 
 export function validateResourceRequirements(

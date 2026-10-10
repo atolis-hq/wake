@@ -141,8 +141,9 @@ sequence; it does not construct envelope metadata or a processor host.
 - Workspace leases retain their marker-owned checkout after every terminal
   Run outcome while the WorkItem remains open. A read-only reacquisition is
   exclusive from Git reset through preparation and execution; it restores an
-  observed Resource revision exactly, or preserves the initial clone `HEAD`
-  when no revision is available. The opaque prepare hook runs on every
+  explicit Git checkout revision exactly, or preserves the recorded initial
+  clone revision when no Git target is available. Issue observation versions
+  are content fingerprints and MUST NOT be passed to Git as checkout targets. The opaque prepare hook runs on every
   acquisition and owns dependency caching and invalidation.
 - During the existing pre-dispatch recovery pass, a workspace adapter may
   reclaim only a valid marker-owned path below its managed workspace root
