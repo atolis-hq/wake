@@ -23,11 +23,26 @@ describe('FileArtifactStore', () => {
     });
 
     expect(stored).toMatchObject({
-      location: 'work-01j00000000000000000000000/revision-01j00000000000000000000000',
+      location: expect.stringContaining('work-01j00000000000000000000000/'),
       byteLength: 5,
       digest: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
     });
     expect(new TextDecoder().decode(await store.read(stored.location))).toBe('hello');
+  });
+
+  it('keeps concurrent writes to the same revision immutable and internally consistent', async () => {
+    const store = new FileArtifactStore(await directory());
+    const writes = ['first', 'second'].map((content) => ({
+      workItemId: 'work-concurrent',
+      revisionId: 'revision-same',
+      path: artifactPath('spec.md'),
+      bytes: new TextEncoder().encode(content),
+    }));
+    const results = await Promise.all(writes.map((input) => store.write(input)));
+    for (const [index, stored] of results.entries()) {
+      expect(new Uint8Array(await store.read(stored.location))).toEqual(writes[index]!.bytes);
+    }
+    expect(results[0]!.location).not.toEqual(results[1]!.location);
   });
 
   it('rejects paths that can escape an owner namespace', () => {

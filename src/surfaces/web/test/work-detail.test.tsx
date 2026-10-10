@@ -31,6 +31,7 @@ function detailClient(
   lastRunOutcome: string | undefined = 'DONE',
   canCreateConversationEntries = false,
   conversationEntries: readonly Record<string, unknown>[] = [],
+  artifacts: readonly Record<string, unknown>[] = [],
 ) {
   const work = {
     workItemKey: 'wk_a',
@@ -158,6 +159,7 @@ function detailClient(
                     checks: 'passing',
                   },
                 },
+                artifacts,
                 conversation: {
                   entries: conversationEntries,
                   canCreateEntries: canCreateConversationEntries,
@@ -243,6 +245,52 @@ describe('work detail', () => {
     expect(await screen.findByRole('heading', { name: 'Alpha' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Resources' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Activity timeline' })).toBeTruthy();
+  });
+
+  it('shows published artifact metadata and its API download link', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(
+            null,
+            undefined,
+            [],
+            undefined,
+            undefined,
+            false,
+            [],
+            [
+              {
+                revisionId: 'revision-1',
+                producer: 'workflow-1/refine',
+                path: 'plan.md',
+                occurredAt: asOf,
+                mediaType: 'text/markdown',
+                byteLength: 6,
+                href: '/api/v1/work-items/wk_a/artifacts/revision-1',
+              },
+            ],
+          )}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Artifacts' }));
+    const link = screen.getByRole('link', { name: 'plan.md' });
+    expect(link.getAttribute('href')).toBe('/api/v1/work-items/wk_a/artifacts/revision-1');
+    expect(screen.getByText('workflow-1/refine')).toBeTruthy();
+    expect(screen.getByText('text/markdown')).toBeTruthy();
+  });
+
+  it('shows an empty state when the work item has no published artifacts', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Artifacts' }));
+    expect(screen.getByText('No published artifacts')).toBeTruthy();
   });
 
   it('places overview navigation before sidebar actions and hides resource revisions', async () => {

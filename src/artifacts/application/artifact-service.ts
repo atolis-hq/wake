@@ -74,17 +74,17 @@ export function createArtifactService(
   const repository = new ArtifactRepository(journal);
   return {
     async stageRevision(command, scope, context) {
-      if (command.bytes.byteLength > config.maxWriteBytes)
-        throw new Error(`Artifact write exceeds ${config.maxWriteBytes} byte limit`);
       const id = artifactWorkItemIdForWorkItem(scope.workItemId as never);
       const loaded = await repository.load(id);
+      if (loaded.view?.revisions.some((revision) => revision.revisionId === command.revisionId))
+        return loaded.view;
+      if (command.bytes.byteLength > config.maxWriteBytes)
+        throw new Error(`Artifact write exceeds ${config.maxWriteBytes} byte limit`);
       const retained =
         loaded.view?.revisions.reduce((total, revision) => total + (revision.byteLength ?? 0), 0) ??
         0;
       if (retained + command.bytes.byteLength > config.maxWorkItemBytes)
         throw new Error(`Artifact work item exceeds ${config.maxWorkItemBytes} byte limit`);
-      if (loaded.view?.revisions.some((revision) => revision.revisionId === command.revisionId))
-        return loaded.view;
       const path = artifactPath(String(command.path));
       const stored = await store.write({
         workItemId: scope.workItemId,

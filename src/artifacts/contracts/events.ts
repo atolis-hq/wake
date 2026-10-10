@@ -8,7 +8,7 @@ import {
 import { z } from 'zod';
 import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId, type WorkItemId } from '../../work/index.js';
-import { artifactWorkItemId } from './identifiers.js';
+import { artifactWorkItemId, artifactWorkItemIdForWorkItem } from './identifiers.js';
 import { artifactPath } from './paths.js';
 import { ArtifactStreamKind, type ArtifactWorkItemStreamRef } from './streams.js';
 
@@ -86,6 +86,8 @@ export function decodeArtifactEvent(event: EventEnvelope): ArtifactEvent {
   const result = schema.safeParse(event);
   if (!result.success)
     throw new Error(`Invalid Artifact event ${event.event.eventId}: ${result.error.message}`);
+  if (result.data.stream.id !== artifactWorkItemIdForWorkItem(result.data.event.payload.workItemId))
+    throw new Error(`Artifact event ${event.event.eventId} belongs to another work item stream`);
   return result.data;
 }
 

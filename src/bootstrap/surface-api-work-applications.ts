@@ -33,6 +33,7 @@ import {
   presentRun,
   presentWorkflowInstance,
   presentWorkItem,
+  toWorkItemKey,
   type ApiApplications,
   type WorkDetailResponse,
 } from '../surfaces/index.js';
@@ -344,7 +345,7 @@ async function presentArtifacts(root: CompositionRoot, id: ReturnType<typeof wor
     ...(artifact.mediaType === undefined ? {} : { mediaType: artifact.mediaType }),
     ...(artifact.byteLength === undefined ? {} : { byteLength: artifact.byteLength }),
     ...(artifact.digest === undefined ? {} : { digest: artifact.digest }),
-    href: `/api/v1/work-items/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(artifact.revisionId)}`,
+    href: `/api/v1/work-items/${encodeURIComponent(toWorkItemKey(id))}/artifacts/${encodeURIComponent(artifact.revisionId)}`,
   }));
 }
 

@@ -1,3 +1,4 @@
+import { parse } from 'smol-toml';
 import { describe, expect, it } from 'vitest';
 import { claudeCommandArgs } from '../../../src/execution/infrastructure/runners/claude.js';
 import { codexCommandArgs } from '../../../src/execution/infrastructure/runners/codex.js';
@@ -34,8 +35,17 @@ describe('runner MCP configuration', () => {
   });
 
   it('injects Codex MCP configuration through one-run config overrides', () => {
-    expect(codexCommandArgs(request)).toContain(
-      'mcp_servers.wake={command="wake",args=["artifact-mcp","--session","session-1"],env={"WAKE_ARTIFACT_TOKEN":"secret"}}',
-    );
+    const args = codexCommandArgs(request);
+    const override = args.find((arg) => arg.startsWith('mcp_servers.'));
+    expect(override).toBeDefined();
+    expect(parse(override!)).toEqual({
+      mcp_servers: {
+        wake: {
+          command: request.mcpServers[0].command,
+          args: [...request.mcpServers[0].args],
+          env: request.mcpServers[0].env,
+        },
+      },
+    });
   });
 });

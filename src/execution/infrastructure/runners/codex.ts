@@ -85,7 +85,13 @@ export function codexCommandArgs(
 function codexMcpConfigArgs(request: RunnerRequest): readonly string[] {
   return (request.mcpServers ?? []).flatMap((server) => [
     '-c',
-    `mcp_servers.${server.name}={command=${JSON.stringify(server.command)},args=${JSON.stringify(server.args ?? [])}${server.env === undefined ? '' : `,env=${JSON.stringify(server.env)}`}}`,
+    `mcp_servers.${JSON.stringify(server.name)}={command=${JSON.stringify(server.command)},args=${JSON.stringify(server.args ?? [])}${
+      server.env === undefined
+        ? ''
+        : `,env={${Object.entries(server.env)
+            .map(([key, value]) => `${JSON.stringify(key)}=${JSON.stringify(value)}`)
+            .join(',')}}`
+    }}`,
   ]);
 }
 

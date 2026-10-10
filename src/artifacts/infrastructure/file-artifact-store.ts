@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { ArtifactPath } from '../contracts/paths.js';
 
@@ -24,16 +24,21 @@ export class FileArtifactStore {
   }): Promise<StoredArtifactBytes> {
     assertSegment(input.workItemId, 'Work item ID');
     assertSegment(input.revisionId, 'Artifact revision ID');
-    const location = join(input.workItemId, input.revisionId);
+    const digest = createHash('sha256').update(input.bytes).digest('hex');
+    const location = join(input.workItemId, `${input.revisionId}.${digest}`);
     const destination = this.absolute(location);
     await mkdir(dirname(destination), { recursive: true });
-    const temporary = `${destination}.pending`;
-    await writeFile(temporary, input.bytes);
-    await rename(temporary, destination);
+    const temporary = `${destination}.${randomUUID()}.pending`;
+    try {
+      await writeFile(temporary, input.bytes);
+      await rename(temporary, destination);
+    } finally {
+      await rm(temporary, { force: true });
+    }
     return {
       location,
       byteLength: input.bytes.byteLength,
-      digest: createHash('sha256').update(input.bytes).digest('hex'),
+      digest,
     };
   }
 

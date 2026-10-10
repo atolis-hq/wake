@@ -7,7 +7,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   FileArtifactStore,
   artifactPath,
+  artifactWorkItemIdForWorkItem,
+  artifactWorkItemStream,
   createArtifactService,
+  decodeArtifactEvent,
 } from '../../../src/artifacts/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
@@ -89,6 +92,48 @@ describe('ArtifactService', () => {
         context,
       ),
     ).rejects.toThrow('work item exceeds');
+  });
+
+  it('replays a staged revision when the retained-byte budget is full', async () => {
+    const service = createArtifactService(
+      new InMemoryEventJournal(new FakeClock()),
+      new FileArtifactStore(await directory()),
+      { maxWriteBytes: 3, maxWorkItemBytes: 3 },
+    );
+    const scope = {
+      workItemId: workId('artifact-replay'),
+      producer: 'workflow-1/refine',
+      runId: 'run-1',
+      activationId: 'activation-1',
+    };
+    const command = { revisionId: 'one', path: artifactPath('spec.md'), bytes: new Uint8Array(3) };
+    const staged = await service.stageRevision(command, scope, context);
+    await expect(service.stageRevision(command, scope, context)).resolves.toEqual(staged);
+  });
+
+  it('rejects a persisted artifact event placed in another work item stream', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createArtifactService(journal, new FileArtifactStore(await directory()), {
+      maxWriteBytes: 100,
+      maxWorkItemBytes: 200,
+    });
+    await service.stageTombstone(
+      { revisionId: 'one', path: artifactPath('spec.md') },
+      {
+        workItemId: workId('artifact-owner'),
+        producer: 'refine',
+        runId: 'run-1',
+        activationId: 'activation-1',
+      },
+      context,
+    );
+    const [event] = await journal.readAll(0);
+    expect(() =>
+      decodeArtifactEvent({
+        ...event!,
+        stream: artifactWorkItemStream(artifactWorkItemIdForWorkItem(workId('another-owner'))),
+      }),
+    ).toThrow('another work item stream');
   });
 
   it('exposes only latest accepted, non-tombstoned revisions', async () => {
