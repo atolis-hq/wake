@@ -23,6 +23,7 @@ describe('Wake operator app', () => {
                 state: 'open',
                 relatedWorkItems: [],
                 externalRef: '#21',
+                extendEligible: true,
               },
               {
                 workItemKey: 'wk_alpha',
@@ -51,6 +52,7 @@ describe('Wake operator app', () => {
     await user.selectOptions(within(sidebar).getByLabelText('Sort work items'), 'title');
     const workLinks = sidebar.querySelectorAll('[data-work-item]');
     expect(workLinks[0]?.textContent).toContain('Alpha task');
+    expect(within(sidebar).getByText('Needs extension')).toBeTruthy();
     await user.click(within(sidebar).getByRole('button', { name: 'Filter work items' }));
     await user.type(within(sidebar).getByRole('textbox', { name: 'Search work items' }), '#21');
     expect(within(sidebar).queryByRole('link', { name: /Alpha task/ })).toBeNull();
@@ -222,6 +224,7 @@ function client(
       readonly relatedWorkItems: readonly unknown[];
       readonly condition?: string;
       readonly externalRef?: string;
+      readonly extendEligible?: boolean;
     }[];
     failHealth?: boolean;
     authenticated?: boolean;
@@ -279,6 +282,7 @@ function client(
                   objective: item.objective,
                   condition: item.condition ?? 'ready',
                   externalRef: item.externalRef,
+                  extendEligible: item.extendEligible,
                   dwellSince: asOf,
                   runCount: 0,
                   totalTokens: 0,

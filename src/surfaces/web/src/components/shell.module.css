@@ -93,6 +93,11 @@
   color: var(--accent-light);
   box-shadow: inset 2px 0 var(--accent);
 }
+.extensionBadge {
+  color: var(--warning);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
 .listHeading {
   display: flex;
   align-items: center;

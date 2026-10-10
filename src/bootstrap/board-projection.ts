@@ -80,6 +80,8 @@ interface StoredCard {
   readonly condition: BoardConditionValue;
   readonly frozen?: boolean;
   readonly awaitingApproval?: boolean;
+  /** Present only while the primary workflow can accept a gate-budget extension. */
+  readonly extendEligible?: boolean;
   readonly workflowName?: string;
   readonly stage?: string;
   readonly blockReason?: string;
@@ -195,7 +197,10 @@ function projectWork(
       ...view,
       cards: {
         ...view.cards,
-        [id]: { ...withoutAwaitingApproval(current), condition: BoardCondition.Finished },
+        [id]: {
+          ...withoutExtendEligible(withoutAwaitingApproval(current)),
+          condition: BoardCondition.Finished,
+        },
       },
     };
   }
@@ -280,7 +285,7 @@ function projectWorkflowUpdate(
       cards: {
         ...view.cards,
         [workId]: {
-          ...withoutBlockReason(card),
+          ...withoutExtendEligible(withoutBlockReason(card)),
           stage: event.event.payload.stage,
           dwellSince: occurredAt,
           condition: BoardCondition.Ready,
@@ -295,15 +300,7 @@ function projectWorkflowUpdate(
   // Ready while GitHub's own label already said working.
   const status = orchestrationStatusTransitions[event.event.eventType];
   if (status === undefined) return view;
-  const withCondition = {
-    ...(event.event.eventType === OrchestrationEventType.InstanceBlocked
-      ? card
-      : withoutBlockReason(card)),
-    condition: boardConditionForStatus(status, card),
-    ...(event.event.eventType === OrchestrationEventType.InstanceBlocked
-      ? { blockReason: event.event.payload.reason }
-      : {}),
-  };
+  const withCondition = cardForWorkflowStatus(card, status, event);
   if (event.event.eventType === OrchestrationEventType.SignalWaitStarted)
     return {
       ...view,
@@ -318,6 +315,25 @@ function projectWorkflowUpdate(
   if (event.event.eventType === OrchestrationEventType.SignalAccepted)
     return { ...view, cards: { ...view.cards, [workId]: withoutAwaitingApproval(withCondition) } };
   return { ...view, cards: { ...view.cards, [workId]: withCondition } };
+}
+
+function cardForWorkflowStatus(
+  card: StoredCard,
+  status: WorkflowStatus,
+  event: WorkflowEvent,
+): StoredCard {
+  if (event.event.eventType !== OrchestrationEventType.InstanceBlocked)
+    return {
+      ...withoutExtendEligible(withoutBlockReason(card)),
+      condition: boardConditionForStatus(status, card),
+    };
+  const extensionEligible = isExtendEligibleBlock(event.event.payload.reason);
+  return {
+    ...(extensionEligible ? card : withoutExtendEligible(card)),
+    condition: boardConditionForStatus(status, card),
+    blockReason: event.event.payload.reason,
+    ...(extensionEligible ? { extendEligible: true } : {}),
+  };
 }
 
 function boardConditionForStatus(status: WorkflowStatus, card: StoredCard): BoardConditionValue {
@@ -678,6 +694,15 @@ function numeric(
 function withoutAwaitingApproval(card: StoredCard): StoredCard {
   const { awaitingApproval: _awaitingApproval, ...withoutApproval } = card;
   return withoutApproval;
+}
+
+function withoutExtendEligible(card: StoredCard): StoredCard {
+  const { extendEligible: _extendEligible, ...withoutExtension } = card;
+  return withoutExtension;
+}
+
+function isExtendEligibleBlock(reason: string): boolean {
+  return reason.startsWith('watch group budget exhausted for ');
 }
 
 function activeRunsFor(

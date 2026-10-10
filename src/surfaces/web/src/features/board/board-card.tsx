@@ -139,6 +139,11 @@ export function BoardCard({ item }: { readonly item: BoardCardResponse }) {
               awaiting approval
             </Chip>
           )}
+          {item.extendEligible === true && (
+            <Chip variant="outline" tone="warning" title="A gate-budget extension is needed">
+              Needs extension
+            </Chip>
+          )}
           {item.workflowName !== undefined && (
             <Chip variant="outline" title="Workflow driving this item">
               <WorkflowIcon />

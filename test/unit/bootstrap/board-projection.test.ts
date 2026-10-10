@@ -365,6 +365,37 @@ describe('operator board projection', () => {
     });
   });
 
+  it('marks an exhausted primary gate budget as needing extension and clears it when Extend resumes waiting', () => {
+    const item = workId('board-gate-budget-extension');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const blocked = boardProjection.project(
+      seedPrimaryBoard(item, workflowId),
+      eventEnvelope(
+        OrchestrationEventType.InstanceBlocked,
+        { reason: 'watch group budget exhausted for review' },
+        workflowInstanceStream(workflowId),
+        3,
+      ),
+    );
+
+    expect(blocked.cards[item]).toMatchObject({
+      condition: 'needs-input',
+      extendEligible: true,
+    });
+
+    const extended = boardProjection.project(
+      blocked,
+      eventEnvelope(
+        OrchestrationEventType.SignalWaitStarted,
+        { signalKind: 'watch-gate', from: [{ kind: 'watch', watch: 'review' }] },
+        workflowInstanceStream(workflowId),
+        4,
+      ),
+    );
+
+    expect(extended.cards[item]?.extendEligible).toBeUndefined();
+  });
+
   it('clears an ambiguous-run block reason when the workflow resumes', () => {
     const item = workId('board-resumed-ambiguous-run');
     const workflowId = workflowInstanceId(`primary:${item}`);
