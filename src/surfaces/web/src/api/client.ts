@@ -118,6 +118,15 @@ export class WakeApiClient {
     ) => this.get(`/work-items${query(parameters)}`, collectionDecoder(decodeWorkItem), signal),
     detail: (key: string, signal?: AbortSignal) =>
       this.get(`/work-items/${encodeURIComponent(key)}`, resourceDecoder(decodeWorkDetail), signal),
+    artifactText: async (key: string, revisionId: string, signal?: AbortSignal) => {
+      const fetchImplementation = this.fetchImplementation;
+      const response = await fetchImplementation(
+        `${this.baseUrl}/work-items/${encodeURIComponent(key)}/artifacts/${encodeURIComponent(revisionId)}`,
+        { ...(signal === undefined ? {} : { signal }) },
+      );
+      if (!response.ok) throw new Error('Unable to load this artifact. Please try again.');
+      return response.text();
+    },
     transcript: (key: string, groupId: string, signal?: AbortSignal) =>
       this.get(
         `/work-items/${encodeURIComponent(key)}/transcripts/${encodeURIComponent(groupId)}`,

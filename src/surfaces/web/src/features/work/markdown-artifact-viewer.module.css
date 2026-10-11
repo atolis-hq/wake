@@ -1,0 +1,13 @@
+.markdown {
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+.markdown pre {
+  overflow-x: auto;
+  padding: 1rem;
+}
+
+.markdown img {
+  max-width: 100%;
+}

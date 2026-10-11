@@ -34,6 +34,7 @@ import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
 import { runColumns } from '../runs/runs.js';
 import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
+import { MarkdownArtifactViewer } from './markdown-artifact-viewer.js';
 
 const resourceIcons: Record<string, typeof GitHubIcon> = {
   github: GitHubIcon,
@@ -195,6 +196,11 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
   const [tab, setTab] = useState<
     'overview' | 'runs' | 'conversation' | 'events' | 'transcripts' | 'artifacts'
   >('overview');
+  const [viewedArtifact, setViewedArtifact] = useState<{
+    revisionId: string;
+    path: string;
+    href: string;
+  } | null>(null);
   const conversationViewport = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
   const [readingHistory, setReadingHistory] = useState(false);
@@ -439,7 +445,14 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
               role="tabpanel"
               aria-labelledby="work-detail-artifacts-tab"
             >
-              {query.data.data.artifacts.length === 0 ? (
+              {viewedArtifact ? (
+                <MarkdownArtifactViewer
+                  key={`${workItemKey}:${viewedArtifact.revisionId}`}
+                  workItemKey={workItemKey}
+                  artifact={viewedArtifact}
+                  onClose={() => setViewedArtifact(null)}
+                />
+              ) : query.data.data.artifacts.length === 0 ? (
                 <EmptyState>No published artifacts</EmptyState>
               ) : (
                 <DataTable
@@ -451,6 +464,19 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                     {
                       label: 'Path',
                       render: (artifact) => <a href={artifact.href}>{artifact.path}</a>,
+                    },
+                    {
+                      label: 'View',
+                      render: (artifact) =>
+                        /\.md$/i.test(artifact.path) ? (
+                          <Button
+                            variant="secondary"
+                            onClick={() => setViewedArtifact(artifact)}
+                            aria-label={`View ${artifact.path}`}
+                          >
+                            View
+                          </Button>
+                        ) : null,
                     },
                     { label: 'Type', render: (artifact) => artifact.mediaType ?? 'binary' },
                     {

@@ -264,11 +264,18 @@ describe('work detail', () => {
               {
                 revisionId: 'revision-1',
                 producer: 'workflow-1/refine',
-                path: 'plan.md',
+                path: 'plan.MD',
                 occurredAt: asOf,
                 mediaType: 'text/markdown',
                 byteLength: 6,
                 href: '/api/v1/work-items/wk_a/artifacts/revision-1',
+              },
+              {
+                revisionId: 'revision-2',
+                producer: 'workflow-1/refine',
+                path: 'data.json',
+                occurredAt: asOf,
+                href: '/api/v1/work-items/wk_a/artifacts/revision-2',
               },
             ],
           )}
@@ -276,10 +283,17 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     await user.click(await screen.findByRole('tab', { name: 'Artifacts' }));
-    const link = screen.getByRole('link', { name: 'plan.md' });
+    const link = screen.getByRole('link', { name: 'plan.MD' });
     expect(link.getAttribute('href')).toBe('/api/v1/work-items/wk_a/artifacts/revision-1');
-    expect(screen.getByText('workflow-1/refine')).toBeTruthy();
+    expect(screen.getAllByText('workflow-1/refine')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'View data.json' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'data.json' }).getAttribute('href')).toBe(
+      '/api/v1/work-items/wk_a/artifacts/revision-2',
+    );
     expect(screen.getByText('text/markdown')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'View plan.MD' }));
+    await user.click(screen.getByRole('button', { name: 'Back to artifacts' }));
+    expect(screen.getByRole('link', { name: 'plan.MD' })).toBeTruthy();
   });
 
   it('shows an empty state when the work item has no published artifacts', async () => {
