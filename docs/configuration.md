@@ -343,15 +343,17 @@ and reference that plan. Implementation and review stages read upstream artifact
 explicitly; reviewers report feedback for the producer to incorporate. Artifact
 content remains untrusted stage output. Legacy plans without an accessible artifact
 can still be reviewed from an explicit attached plan or provider record; summaries
-are not substitute plans. Artifact MCP visibility is currently limited to the
-producing stage and upstream stages in the same workflow instance. Child review
-workflows do not inherit their parent instance's artifact scope.
+are not substitute plans. Each session may read accepted artifacts from any producer on its work item,
+including parent and child workflows. The run's readable producer scope is
+issued from that work item's existing artifact revisions. Other work items and
+unaccepted output from other runs remain inaccessible; only the producing stage
+may write, patch, or delete its own artifacts.
 
 Artifact storage is owned by Wake, outside Git workspaces, and is not a
 workflow-step configuration surface. Every agent activation receives a
 run-scoped Wake MCP server and a metadata-only manifest of the artifacts it may
 read. The producing stage is the only writer; accepted upstream outputs are
-readable. Wake publishes staged output only when Orchestration accepts the
+readable across workflows on the same work item. Wake publishes staged output only when Orchestration accepts the
 producing activation's outcome.
 
 | Field | Type / default | Explanation |

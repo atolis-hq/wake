@@ -23,7 +23,12 @@ describe('artifact MCP provisioning', () => {
       () => '2026-09-19T12:00:00.000Z',
     );
     const provision = createArtifactMcpProvisioner({
-      artifacts: { visibleTo: async () => [] } as never,
+      artifacts: {
+        get: async () => ({
+          revisions: [{ producer: 'workflow-1/refine' }, { producer: 'review-child/review' }],
+        }),
+        visibleTo: async () => [],
+      } as never,
       orchestration: orchestration() as never,
       sessions,
       wakeRoot: '/wake',
@@ -51,7 +56,11 @@ describe('artifact MCP provisioning', () => {
     if (token === undefined) throw new Error('Expected a Wake MCP token');
     await expect(sessions.read(sessionPath, token)).resolves.toMatchObject({
       producer: 'workflow-1/implement',
-      readableProducers: expect.arrayContaining(['workflow-1/refine', 'workflow-1/implement']),
+      readableProducers: expect.arrayContaining([
+        'workflow-1/refine',
+        'workflow-1/implement',
+        'review-child/review',
+      ]),
     });
     await capability.release();
     await expect(sessions.read(sessionPath, token)).rejects.toThrow();
@@ -74,25 +83,8 @@ const context: ExecutionAttemptContext = {
   resources: [],
 };
 
-function orchestration(): Pick<OrchestrationService, 'get' | 'definitionFor' | 'listForWorkItem'> {
-  return {
-    get: async () => ({ workflowName: 'default' }) as never,
-    definitionFor: async () =>
-      ({
-        stages: {
-          refine: {
-            on: {
-              done: {
-                target: { kind: 'stage', stage: 'implement' },
-                reentryTarget: { kind: 'stage', stage: 'implement' },
-              },
-            },
-          },
-          implement: { on: {} },
-        },
-      }) as never,
-    listForWorkItem: async () => [],
-  };
+function orchestration(): Pick<OrchestrationService, 'listAll'> {
+  return { listAll: async () => [] };
 }
 
 async function directory(): Promise<string> {
