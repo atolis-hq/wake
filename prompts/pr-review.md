@@ -51,3 +51,8 @@ issue comments. For legacy work without an accessible artifact, use an explicit
 existing plan from the attached context or provider record. Do not invent a
 plan from summaries. Report a blocker only if the required plan cannot be
 retrieved from either source.
+
+End your response with a status marker on its own final line, for example:
+[[STATUS: DONE]]
+Use DONE, REJECTED, BLOCKED, NEEDS_CLARIFICATION, or FAILED inside the marker
+to report the actual result. Plain-text results without a marker are invalid.

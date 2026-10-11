@@ -1280,7 +1280,12 @@ describe('target composition root', () => {
         runner: {
           async start(request) {
             prompt = request.prompt;
-            return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+            return {
+              result: Promise.resolve({
+                transport: 'succeeded' as const,
+                output: '[[STATUS: DONE]]',
+              }),
+            };
           },
         },
         async reportExternalExecution() {},

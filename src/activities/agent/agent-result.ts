@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { ActivityFailureCode, ActivityOutcomeKind } from '../contracts/vocabulary.js';
+import {
+  ActivityFailureCode,
+  ActivityOutcomeKind,
+  AgentResultStatus,
+} from '../contracts/vocabulary.js';
 
 export const reportedArtifactSchema = z
   .object({
@@ -32,21 +36,21 @@ export const agentActivityOutcomeSchema = z.union([
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Done),
-      data: structuredResult('DONE'),
+      data: structuredResult(AgentResultStatus.Done),
     })
     .strict(),
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Rejected),
-      data: structuredResult('REJECTED'),
+      data: structuredResult(AgentResultStatus.Rejected),
     })
     .strict(),
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Blocked),
       data: z.union([
-        structuredResult('BLOCKED'),
-        structuredResult('NEEDS_CLARIFICATION'),
+        structuredResult(AgentResultStatus.Blocked),
+        structuredResult(AgentResultStatus.NeedsClarification),
         blockedReason,
       ]),
     })
@@ -54,7 +58,7 @@ export const agentActivityOutcomeSchema = z.union([
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Failed),
-      data: z.union([structuredResult('FAILED'), failedReason]),
+      data: z.union([structuredResult(AgentResultStatus.Failed), failedReason]),
     })
     .strict(),
 ]);
@@ -68,7 +72,7 @@ export function isNeedsClarificationAgentOutcome(value: unknown): boolean {
     parsed.success &&
     parsed.data.kind === ActivityOutcomeKind.Blocked &&
     'status' in parsed.data.data &&
-    parsed.data.data.status === 'NEEDS_CLARIFICATION'
+    parsed.data.data.status === AgentResultStatus.NeedsClarification
   );
 }
 
@@ -93,14 +97,14 @@ export function translateAgentResult(value: unknown): AgentActivityOutcome {
     };
   const structured = value as Record<string, unknown> & { readonly status: string };
   switch (structured.status) {
-    case 'DONE':
+    case AgentResultStatus.Done:
       return terminalResult(ActivityOutcomeKind.Done, structured);
-    case 'REJECTED':
+    case AgentResultStatus.Rejected:
       return terminalResult(ActivityOutcomeKind.Rejected, structured);
-    case 'BLOCKED':
-    case 'NEEDS_CLARIFICATION':
+    case AgentResultStatus.Blocked:
+    case AgentResultStatus.NeedsClarification:
       return terminalResult(ActivityOutcomeKind.Blocked, structured);
-    case 'FAILED':
+    case AgentResultStatus.Failed:
       return terminalResult(ActivityOutcomeKind.Failed, structured);
     default:
       return {
@@ -114,13 +118,9 @@ function translateRawAgentResult(output: string): AgentActivityOutcome {
   try {
     return translateAgentResult(JSON.parse(output));
   } catch {
-    const status = output
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .at(-1);
+    const status = [...output.matchAll(/\[\[STATUS: ([^\]\r\n]*)\]\]/g)].at(-1)?.[1];
     return translateAgentResult({
-      status: status ?? output.trim(),
+      status,
       reportedArtifacts: wakeArtifacts(output),
     });
   }

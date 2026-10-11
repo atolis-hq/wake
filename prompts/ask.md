@@ -34,3 +34,8 @@ Response requirements:
 
 Wake will provide the issue data and comments below in a delimited untrusted
 data block.
+
+End your response with a status marker on its own final line, for example:
+[[STATUS: DONE]]
+Use DONE, REJECTED, BLOCKED, NEEDS_CLARIFICATION, or FAILED inside the marker
+to report the actual result. Plain-text results without a marker are invalid.
