@@ -99,3 +99,5 @@ export * from './contracts/config.js';
 export * from './web-host/asset-source.js';
 
 export * from './web-host/packaged-assets.js';
+
+export * from './api/presenters/merge-policy-block.js';

@@ -5,6 +5,7 @@ import {
   ActivityResourceRole,
   IntentAppendStatus,
 } from '../contracts/vocabulary.js';
+import { mergePolicyDetailsSchema } from './merge-policy-denial.js';
 import { PullRequestDenialCode } from './vocabulary.js';
 
 import { type EventJournal } from '@atolis-hq/eventing';
@@ -53,6 +54,9 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
       kind: z.literal(ActivityOutcomeKind.Blocked),
       data: z
         .object({
+          resourceId: z.string().optional(),
+          revision: z.string().optional(),
+          policy: mergePolicyDetailsSchema.optional(),
           reason: z.enum([
             PullRequestDenialCode.MissingResource,
             PullRequestDenialCode.AmbiguousResource,

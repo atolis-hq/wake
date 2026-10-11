@@ -72,7 +72,15 @@ it('denies when the changed-file count exceeds the configured cap', async () => 
       }),
       context(),
     ),
-  ).resolves.toEqual({ kind: 'blocked', data: { reason: 'too-many-files-changed' } });
+  ).resolves.toEqual({
+    kind: 'blocked',
+    data: {
+      reason: 'too-many-files-changed',
+      resourceId: resource.resourceId,
+      revision: 'head-a',
+      policy: { maxFilesChanged: 2, filesChanged: 3 },
+    },
+  });
   expect(await world.events('pr.merge-requested')).toHaveLength(0);
 });
 
@@ -94,7 +102,15 @@ it('denies when a changed path matches a blocked path', async () => {
       }),
       context(),
     ),
-  ).resolves.toEqual({ kind: 'blocked', data: { reason: 'blocked-path-changed' } });
+  ).resolves.toEqual({
+    kind: 'blocked',
+    data: {
+      reason: 'blocked-path-changed',
+      resourceId: resource.resourceId,
+      revision: 'head-a',
+      policy: { blockedPaths: ['secrets/keys.env'], matchedPaths: ['secrets/keys.env'] },
+    },
+  });
   expect(await world.events('pr.merge-requested')).toHaveLength(0);
 });
 
@@ -144,7 +160,14 @@ it('denies explicitly, never silently allowing, when policy is configured but no
       }),
       context(),
     ),
-  ).resolves.toEqual({ kind: 'blocked', data: { reason: 'changed-files-unavailable' } });
+  ).resolves.toEqual({
+    kind: 'blocked',
+    data: {
+      reason: 'changed-files-unavailable',
+      resourceId: resource.resourceId,
+      revision: 'head-a',
+    },
+  });
   expect(await world.events('pr.merge-requested')).toHaveLength(0);
 });
 

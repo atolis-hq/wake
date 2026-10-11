@@ -1,3 +1,5 @@
+import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
+import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 /* eslint-disable max-lines */
 import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
@@ -442,6 +444,15 @@ export class OrchestrationService {
     context?: CommandContext,
   ) {
     return this.advanceWorkflow.listWatchMatches(event, context);
+  }
+
+  recoverPolicyBlockedMerges(evidence: ResourceTransitionEvidence, context: CommandContext) {
+    return recoverPolicyBlockedMerges(
+      new OrchestrationRepository(this.journal),
+      this.startWorkflow,
+      evidence,
+      context,
+    );
   }
 
   listResourceTransitionMatches(

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mergePolicyDetailsSchema } from '../pr/merge-policy-denial.js';
 
 import { eventDataSchema, eventEnvelopeSchema } from '@atolis-hq/eventing';
 import { brandedStringSchema } from '../../kernel/index.js';
@@ -161,7 +162,14 @@ export const requestedOutcomeSchema = z
 export const deniedOutcomeSchema = z
   .object({
     kind: z.literal(ActivityOutcomeKind.Blocked),
-    data: z.object({ reason: denialCodeSchema }).strict(),
+    data: z
+      .object({
+        reason: denialCodeSchema,
+        resourceId: z.string().optional(),
+        revision: z.string().optional(),
+        policy: mergePolicyDetailsSchema.optional(),
+      })
+      .strict(),
   })
   .strict();
 

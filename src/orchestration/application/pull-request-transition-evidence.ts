@@ -3,6 +3,7 @@ import {
   ActivityResourceRole,
   decidePullRequestAuthority,
   PullRequestCheckState,
+  PullRequestDenialCode,
   PullRequestState,
   selectActivityEvent,
   selectPrimaryPullRequest,
@@ -33,11 +34,24 @@ export function createPullRequestTransitionEvidence(
       workItemId,
       transitions,
       fact,
+      mergeDenialActivationId,
     }: ResourceTransitionEvidenceInput): Promise<ResourceTransitionEvidenceResolution | null> {
       const input = await pullRequests.authorityInput(workItemId);
       const selected = selectPrimaryPullRequest(input, workItemId);
       if (selected === null) return null;
       const resourceId = selected.pullRequest.resourceId;
+
+      if (mergeDenialActivationId !== undefined) {
+        const denied = (await pullRequests.factsFor(resourceId)).some(
+          (entry) =>
+            entry.event.eventType === ActivityEventType.PrMergeDenied &&
+            entry.event.causationId === mergeDenialActivationId &&
+            (entry.event.payload.reason === PullRequestDenialCode.BlockedPathChanged ||
+              entry.event.payload.reason === PullRequestDenialCode.TooManyFilesChanged ||
+              entry.event.payload.reason === PullRequestDenialCode.ChangedFilesUnavailable),
+        );
+        if (!denied) return null;
+      }
 
       const candidates =
         fact === undefined ? await pullRequests.factsFor(resourceId) : scoped(fact, resourceId);

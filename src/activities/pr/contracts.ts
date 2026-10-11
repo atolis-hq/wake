@@ -6,6 +6,7 @@ import type {
   ActivityResourceRole,
 } from '../contracts/vocabulary.js';
 import type { ReviewActorKind, ReviewerAuthorizationEvidence } from '../review/contracts.js';
+import type { MergePolicyDetails } from './merge-policy-denial.js';
 import type {
   MergeMethod,
   PullRequestCheckState,
@@ -99,7 +100,12 @@ export type PullRequestActivityOutcome =
     }
   | {
       readonly kind: typeof ActivityOutcomeKind.Blocked;
-      readonly data: { readonly reason: PullRequestDenialCode };
+      readonly data: {
+        readonly reason: PullRequestDenialCode;
+        readonly resourceId?: string | undefined;
+        readonly revision?: string | undefined;
+        readonly policy?: MergePolicyDetails | undefined;
+      };
     }
   | {
       readonly kind: typeof ActivityOutcomeKind.Failed;
@@ -144,4 +150,5 @@ export type PullRequestAuthorityDecision =
   | {
       readonly allowed: false;
       readonly reason: PullRequestDenialCode;
+      readonly policy?: MergePolicyDetails;
     };

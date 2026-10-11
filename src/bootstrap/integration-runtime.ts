@@ -247,12 +247,20 @@ export async function composeIntegrationRuntime(
     input.orchestration,
     resourceTransitionEvidence,
   );
+  const recoverMergedWaits = () =>
+    input.orchestration.recoverPolicyBlockedMerges(resourceTransitionEvidence, {
+      commandId: input.ids.next('command'),
+      correlationId: 'merge-recovery' as never,
+      occurredAt: input.clock.now().toISOString(),
+      actor: { kind: EventActorKind.System, id: 'merge-recovery' },
+    });
   input.orchestration.setAcceptSignalOperationCoordinator(async (operation) => {
     await input.processorRuntime.catchUpThrough(
       'resource-transition signal',
       await input.journal.latestGlobalPosition(),
       [resourceTransitions.processor],
     );
+    await recoverMergedWaits();
     return operation();
   });
   const outcomes = new DeliveryOutcomeReactor(
@@ -297,6 +305,7 @@ export async function composeIntegrationRuntime(
       }),
     maintain: () =>
       observeMemory(memoryProfile, 'runner.maintenance', async () => {
+        await recoverMergedWaits();
         await watchReconciler.reconcileOnce();
         await artifacts.reconcileOnce();
         await outcomes.reconcileOnce();

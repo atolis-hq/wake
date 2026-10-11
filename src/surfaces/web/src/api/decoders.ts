@@ -238,6 +238,14 @@ export const decodeWorkflow: Decoder<WorkflowInstanceResponse> = (value, path = 
     ...optionalStringProperty(record, 'blockReason', path),
     ...optionalBooleanProperty(record, 'retryEligible', path),
     ...optionalBooleanProperty(record, 'extendEligible', path),
+    ...(record.mergePolicyBlock === undefined
+      ? {}
+      : {
+          mergePolicyBlock: decodeMergePolicyBlock(
+            record.mergePolicyBlock,
+            child(path, 'mergePolicyBlock'),
+          ),
+        }),
     ...(waiting === undefined
       ? {}
       : {
@@ -610,5 +618,49 @@ function decodePullRequest(value: unknown, path = '') {
     headRevision: string(record.headRevision, child(path, 'headRevision')),
     baseRevision: string(record.baseRevision, child(path, 'baseRevision')),
     checks: string(record.checks, child(path, 'checks')),
+  };
+}
+
+function decodeMergePolicyBlock(
+  value: unknown,
+  path: string,
+): NonNullable<WorkflowInstanceResponse['mergePolicyBlock']> {
+  const record = object(value, path);
+  const status = string(record.status, child(path, 'status'));
+  if (status !== 'awaiting-human-merge' && status !== 'recovering')
+    throw new Error(`${path}.status: invalid merge policy status`);
+  const policy =
+    record.policy === undefined ? undefined : object(record.policy, child(path, 'policy'));
+  return {
+    status,
+    explanation: string(record.explanation, child(path, 'explanation')),
+    nextAction: string(record.nextAction, child(path, 'nextAction')),
+    ...optionalStringProperty(record, 'href', path),
+    ...(policy === undefined
+      ? {}
+      : {
+          policy: {
+            ...(policy.blockedPaths === undefined
+              ? {}
+              : {
+                  blockedPaths: array(
+                    policy.blockedPaths,
+                    child(path, 'policy.blockedPaths'),
+                    string,
+                  ),
+                }),
+            ...(policy.matchedPaths === undefined
+              ? {}
+              : {
+                  matchedPaths: array(
+                    policy.matchedPaths,
+                    child(path, 'policy.matchedPaths'),
+                    string,
+                  ),
+                }),
+            ...optionalNumberProperty(policy, 'maxFilesChanged', child(path, 'policy')),
+            ...optionalNumberProperty(policy, 'filesChanged', child(path, 'policy')),
+          },
+        }),
   };
 }
