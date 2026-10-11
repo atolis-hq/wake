@@ -3,6 +3,8 @@ import type { FinishedRunStatus, WorkspaceMode } from './vocabulary.js';
 
 export const ProviderQuotaExceededFailureKind = 'provider-quota-exceeded';
 
+export const WakeMcpServerName = 'wake';
+
 /** A trusted MCP process configured only for this runner invocation. */
 export interface RunnerMcpServer {
   readonly name: string;

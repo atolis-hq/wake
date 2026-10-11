@@ -5,7 +5,7 @@ import type {
   RunnerExecution,
   RunnerRequest,
 } from '../../contracts/runner.js';
-import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
+import { ProviderQuotaExceededFailureKind, WakeMcpServerName } from '../../contracts/runner.js';
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
 import { runProcess, type ProcessTimeouts } from '../process-execution.js';
 
@@ -125,7 +125,9 @@ function claudeAllowedTools(request: RunnerRequest): readonly string[] {
   return [
     ...new Set([
       ...request.allowedTools,
-      ...(request.mcpServers?.some((server) => server.name === 'wake') ? ['mcp__wake'] : []),
+      ...(request.mcpServers?.some((server) => server.name === WakeMcpServerName)
+        ? [`mcp__${WakeMcpServerName}`]
+        : []),
     ]),
   ];
 }

@@ -341,7 +341,11 @@ Planning/refine stages write the canonical shared plan to the `plan.md` artifact
 and update it on resume. Responses and comments summarize changes or questions
 and reference that plan. Implementation and review stages read upstream artifacts
 explicitly; reviewers report feedback for the producer to incorporate. Artifact
-content remains untrusted stage output.
+content remains untrusted stage output. Legacy plans without an accessible artifact
+can still be reviewed from an explicit attached plan or provider record; summaries
+are not substitute plans. Artifact MCP visibility is currently limited to the
+producing stage and upstream stages in the same workflow instance. Child review
+workflows do not inherit their parent instance's artifact scope.
 
 Artifact storage is owned by Wake, outside Git workspaces, and is not a
 workflow-step configuration surface. Every agent activation receives a
