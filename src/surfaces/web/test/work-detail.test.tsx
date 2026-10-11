@@ -527,6 +527,54 @@ describe('work detail', () => {
     expect(screen.getByText('Message deleted')).toBeTruthy();
   });
 
+  it('renders Markdown for all conversation origins and suppresses raw HTML', async () => {
+    const user = userEvent.setup();
+    const entries = ['external', 'agent', 'control-plane'].map((origin) => ({
+      entryId: origin,
+      body:
+        '# ' +
+        origin +
+        ' heading\n\n**Bold** and *emphasis*\n\n[a link](https://example.com)\n\n- First item\n- Second item\n\n`inline code`\n\n```ts\nconst answer = 42;\n```\n\nPlain text remains readable.\n\n<img src="x" onerror="alert(1)">\n\n<script>alert(1)</script>',
+      occurredAt: asOf,
+      origin,
+      actorId: origin,
+      deleted: false,
+      representations: [],
+    }));
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, [], undefined, 'DONE', false, [
+            ...entries,
+            { ...entries[0], entryId: 'deleted', body: '# Hidden deleted body', deleted: true },
+          ])}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
+    const timeline = screen.getByRole('list', { name: 'Conversation' });
+    for (const origin of ['external', 'agent', 'control-plane']) {
+      const heading = within(timeline).getByRole('heading', {
+        name: origin + ' heading',
+        level: 1,
+      });
+      const article = heading.closest('article')!;
+      expect(within(article).getByText('Bold').tagName).toBe('STRONG');
+      expect(within(article).getByText('emphasis').tagName).toBe('EM');
+      expect(within(article).getByRole('link', { name: 'a link' }).getAttribute('href')).toBe(
+        'https://example.com',
+      );
+      expect(within(article).getAllByRole('listitem')).toHaveLength(2);
+      expect(within(article).getByText('inline code').tagName).toBe('CODE');
+      expect(within(article).getByText('const answer = 42;').parentElement?.tagName).toBe('PRE');
+      expect(within(article).getByText('Plain text remains readable.')).toBeTruthy();
+      expect(article.querySelector('img, script')).toBeNull();
+      expect(article.textContent).not.toContain('alert(1)');
+    }
+    expect(within(timeline).getByText('Message deleted')).toBeTruthy();
+    expect(within(timeline).queryByText('Hidden deleted body')).toBeNull();
+  });
+
   it('merges runs and events into a compact, non-expandable activity timeline', async () => {
     render(
       <MemoryRouter initialEntries={['/work/wk_a']}>
