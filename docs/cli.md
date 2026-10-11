@@ -47,7 +47,10 @@ installed package. `host.development.repoRoot` is required for source mode.
 dist-tag by default. Use `--version <exact-version>` to pin an npm release, or
 `--source <repo-root> [--tag <git-tag>]` for a one-off source update without
 changing `config.yaml`. `--loop` repeats either form at the selected interval
-and writes the result of every check or failure to standard error.
+and writes the result of every check or failure to standard error. Packaged
+updates compare releases with the last healthy deployment in the update ledger,
+independently of the host CLI version. Already deployed or older versions are
+skipped, including with `--force`; force permits retrying a recorded failed release.
 
 ## Operational model
 

@@ -1,7 +1,7 @@
 import { execFile as nodeExecFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { compare } from 'semver';
 import type { SourceUpdatePort } from './self-update-application.js';
-import { wakePackageVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
 
@@ -21,7 +21,8 @@ export function createNpmUpdatePort(input: {
   const registry = input.registry === undefined ? [] : [`--registry=${input.registry}`];
   return {
     isClean: async () => true,
-    currentTag: async () => wakePackageVersion,
+    // Package updates compare against the deployment ledger, not the host CLI.
+    compareTags: compare,
     async latestTag() {
       const resolved = await resolveVersion();
       if (resolved === undefined)

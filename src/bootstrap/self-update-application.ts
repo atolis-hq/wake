@@ -6,6 +6,8 @@ export interface SourceUpdatePort {
   isClean(): Promise<boolean>;
   /** The version currently running before any update starts, when available. */
   currentTag?(): Promise<string | null>;
+  /** Semantic ordering when discovery omits older versions; current state is the ledger. */
+  compareTags?(candidate: string, current: string): number;
   latestTag(): Promise<string>;
   candidateTags(): Promise<readonly string[]>;
   checkout(tag: string): Promise<void>;
@@ -66,6 +68,7 @@ export function createSelfUpdateApplication(input: {
 }) {
   return {
     async update(tag: string, force = false): Promise<boolean> {
+      if (!(await isNewerOrderedVersion(input, tag))) return false;
       if (!force && (await input.ledger.isBad(tag))) return false;
       if (!force && !(await isLaterCandidate(input, tag))) return false;
       return startUpdateAttempt(input, tag, force);
@@ -77,10 +80,7 @@ export function createSelfUpdateApplication(input: {
       const [latestCandidate] = candidates;
       if (latestCandidate === undefined) throw new Error('No update versions are available');
       const current = await currentTag(input);
-      const currentIndex = current === null ? -1 : candidates.indexOf(current);
-      // Candidates are newest-first. The current healthy tag is a hard
-      // boundary: never enter maintenance to reapply or downgrade from it.
-      const laterCandidates = currentIndex === -1 ? candidates : candidates.slice(0, currentIndex);
+      const laterCandidates = selectLaterCandidates(input.source, candidates, current);
       for (const tag of laterCandidates) {
         if (!force && (await input.ledger.isBad(tag))) {
           continue;
@@ -103,10 +103,24 @@ export function createSelfUpdateApplication(input: {
   };
 }
 
+function selectLaterCandidates(
+  source: SourceUpdatePort,
+  candidates: readonly string[],
+  current: string | null,
+): readonly string[] {
+  const compareTags = source.compareTags;
+  if (current !== null && compareTags !== undefined)
+    return candidates.filter((tag) => compareTags(tag, current) > 0);
+  const currentIndex = current === null ? -1 : candidates.indexOf(current);
+  // Newest-first source tags stop at the current healthy revision.
+  return currentIndex === -1 ? candidates : candidates.slice(0, currentIndex);
+}
+
 async function isLaterCandidate(
   input: Parameters<typeof createSelfUpdateApplication>[0],
   tag: string,
 ): Promise<boolean> {
+  if (input.source.compareTags !== undefined) return isNewerOrderedVersion(input, tag);
   const candidates = await input.source.candidateTags();
   const candidateIndex = candidates.indexOf(tag);
   if (candidateIndex === -1) return false;
@@ -117,9 +131,19 @@ async function isLaterCandidate(
   return candidateIndex < currentIndex;
 }
 
+async function isNewerOrderedVersion(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+  tag: string,
+): Promise<boolean> {
+  if (input.source.compareTags === undefined) return true;
+  const current = await currentTag(input);
+  return current === null || input.source.compareTags(tag, current) > 0;
+}
+
 async function currentTag(
   input: Parameters<typeof createSelfUpdateApplication>[0],
 ): Promise<string | null> {
+  if (input.source.compareTags !== undefined) return input.ledger.read();
   return (await input.source.currentTag?.()) ?? (await input.ledger.read());
 }
 
@@ -192,7 +216,10 @@ async function performUpdateAttempt(
   if (!isStartableMaintenanceLease(lease, tag)) return false;
   await quiesceForUpdate(input);
   await recoverPendingUpdate(input.ledger, input.source, context);
-  if (!force && (await input.ledger.read()) === tag) {
+  if (
+    !(await isNewerOrderedVersion(input, tag)) ||
+    (!force && (await input.ledger.read()) === tag)
+  ) {
     await input.quiesce?.clear(lease?.attemptId);
     return false;
   }
