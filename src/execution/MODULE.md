@@ -3,7 +3,8 @@
 ## Purpose
 Runs, dispatch, runners, workspaces, supervision, and recovery.
 ## Owns
-Run lifecycle, leases, runners, workspaces, cancellation, results, and transcripts.
+Run lifecycle, leases, runners, workspaces, cancellation, results, transcripts,
+and live run-outcome reports and summary metrics.
 ## Does not own
 Workflow transitions, provider policy, or global selection.
 ## Invariants

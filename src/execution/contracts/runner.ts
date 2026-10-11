@@ -64,7 +64,7 @@ export function agentTokenUsage(
 ): AgentTokenUsage {
   const numeric = (key: string): number => {
     const value = metadata?.[key];
-    return typeof value === 'number' ? value : 0;
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
   };
   return {
     tokens:

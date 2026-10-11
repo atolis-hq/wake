@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ReportWindowId } from '../../api/contracts/index.js';
 import { fmtDuration } from '../src/components/format.js';
 
 describe('fmtDuration', () => {
@@ -30,7 +31,7 @@ describe('fmtDuration', () => {
   });
 
   it('shows floor days at 24h and beyond', () => {
-    expect(fmtDuration(24 * 60 * 60_000)).toBe('1d');
+    expect(fmtDuration(24 * 60 * 60_000)).toBe(ReportWindowId.Day);
     expect(fmtDuration(2 * 24 * 60 * 60_000 + 5 * 60 * 60_000)).toBe('2d');
   });
 

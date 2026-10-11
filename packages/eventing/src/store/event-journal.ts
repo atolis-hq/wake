@@ -10,6 +10,8 @@ export interface EventJournal {
     events: readonly EventData[],
   ): Promise<readonly EventEnvelope[]>;
   readStream(stream: StreamRef): Promise<readonly EventEnvelope[]>;
+  /** Optional bounded, cancellable snapshot reader for adapters with a streaming source. */
+  scanAll?(signal?: AbortSignal): AsyncIterable<EventEnvelope>;
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;
   readLatest?(beforeGlobalPosition?: number, limit?: number): Promise<readonly EventEnvelope[]>;
   // Cheap enough to call on every tick: implementations must answer this

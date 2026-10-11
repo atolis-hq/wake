@@ -6,9 +6,9 @@ import type {
   JournalChangeSignal,
   StreamRef,
 } from '@atolis-hq/eventing';
-import { decodeEventEnvelope, WrongExpectedSequenceError } from '@atolis-hq/eventing';
+import { decodeEventEnvelope, WrongExpectedSequenceError, yieldScan } from '@atolis-hq/eventing';
 import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
-import { watch } from 'node:fs';
+import { createReadStream, watch } from 'node:fs';
 import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -176,6 +176,73 @@ export class FileEventJournal implements EventJournal {
       }
     }
     return (await this.scan(entries)).filter((event) => key(event.stream) === streamKey);
+  }
+
+  /** Live readers bypass the full-history cache and stop at captured segment sizes. */
+  async *scanAll(signal?: AbortSignal): AsyncIterable<EventEnvelope> {
+    signal?.throwIfAborted();
+    const entries = await this.readCurrentEntries();
+    let position = 0;
+    for (const entry of entries) {
+      let lineNumber = 0;
+      for await (const line of this.scanSegment(entry, signal)) {
+        if (position % 100 === 0) await yieldScan(signal);
+        signal?.throwIfAborted();
+        yield this.decodeScanRecord(entry.file, ++lineNumber, line, ++position);
+      }
+    }
+  }
+
+  private async *scanSegment(entry: FileStat, signal?: AbortSignal): AsyncIterable<string> {
+    if (entry.size === 0) return;
+    const source = createReadStream(join(this.root, 'events', entry.file), {
+      encoding: 'utf8',
+      end: entry.size - 1,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    let pending = '',
+      bytes = 0;
+    try {
+      for await (const chunk of source) {
+        signal?.throwIfAborted();
+        const text = String(chunk);
+        bytes += Buffer.byteLength(text);
+        pending += text;
+        let offset = 0,
+          newline = pending.indexOf('\n');
+        while (newline !== -1) {
+          yield pending.slice(offset, newline);
+          offset = newline + 1;
+          newline = pending.indexOf('\n', offset);
+        }
+        pending = pending.slice(offset);
+      }
+      signal?.throwIfAborted();
+      if (pending !== '' || bytes !== entry.size)
+        throw new Error(`Incomplete trailing line in ${entry.file}`);
+    } finally {
+      source.destroy();
+    }
+  }
+
+  private decodeScanRecord(
+    file: string,
+    lineNumber: number,
+    line: string,
+    position: number,
+  ): EventEnvelope {
+    let input: unknown;
+    try {
+      input = JSON.parse(line);
+      const event = decodeEventRecord(input);
+      validateEnvelope(event, position);
+      return event;
+    } catch (error) {
+      throw new Error(
+        `Corrupt event at ${file}:${lineNumber}${eventContext(input)}: ${(error as Error).message}`,
+        { cause: error },
+      );
+    }
   }
 
   async readAll(after: number, limit = Number.POSITIVE_INFINITY) {

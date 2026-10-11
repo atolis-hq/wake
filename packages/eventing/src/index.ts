@@ -33,3 +33,5 @@ export * from './store/event-journal.js';
 export * from './subscriptions/event-processor.js';
 
 export * from './subscriptions/journal-change-signal.js';
+
+export * from './store/scan-journal.js';

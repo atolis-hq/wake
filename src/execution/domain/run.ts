@@ -38,6 +38,16 @@ export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
   return state;
 }
 
+/** Incremental replay for bounded live readers; persisted events must already be decoded. */
+export function foldRunEvent(previous: RunView | null, event: RunExecutionEvent): RunView {
+  if (previous === null) return foldRun([event])!;
+  if (event.event.eventType === ExecutionEventType.RunPreparationStarted)
+    throw invalidRunStream(event.stream.id, 'RunPreparationStarted must be the first event');
+  const next = { ...previous };
+  applyRunEvent(next, event.event);
+  return next;
+}
+
 type RunEventData = RunExecutionEvent['event'];
 
 function creationWorkspace(event: RunEventData): Pick<RunView, 'workspace'> {

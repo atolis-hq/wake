@@ -20,6 +20,7 @@ import {
   type AuditEventResponse,
 } from '../surfaces/index.js';
 import { analyticsProjection, type AnalyticsProjectionView } from './analytics-projection.js';
+import { createAnalyticsReports } from './analytics-reports.js';
 import {
   boardConditionCounts,
   boardProjection,
@@ -281,6 +282,7 @@ async function recentEvents(
 
 function createObservabilityApplications(root: CompositionRoot, now: () => string) {
   return {
+    reports: createAnalyticsReports(root.journal, now),
     async metrics(query = { days: 7 }) {
       const collectedAt = now();
       const stored = await root.projections.read<AnalyticsProjectionView>(

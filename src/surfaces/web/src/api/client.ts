@@ -1,4 +1,4 @@
-import type { WakeProblemDetails } from '../../../api/contracts/index.js';
+import type { AnalyticsReportWindowId, WakeProblemDetails } from '../../../api/contracts/index.js';
 import type { RunResolutionStatusValue } from '../../../api/contracts/transport-values.js';
 import {
   collectionDecoder,
@@ -18,6 +18,7 @@ import {
   resourceDecoder,
   type Decoder,
 } from './decoders.js';
+import { decodeReport, decodeReportCatalogue, decodeSummary } from './report-decoders.js';
 import {
   decodeCommands,
   decodeConfiguration,
@@ -244,6 +245,20 @@ export class WakeApiClient {
   };
 
   readonly observability = {
+    reports: (signal?: AbortSignal) =>
+      this.get('/observability/reports', resourceDecoder(decodeReportCatalogue), signal),
+    report: (window: AnalyticsReportWindowId, report: string, signal?: AbortSignal) =>
+      this.get(
+        '/observability/reports' + query({ window, report }),
+        resourceDecoder(decodeReport),
+        signal,
+      ),
+    summary: (window: AnalyticsReportWindowId, signal?: AbortSignal) =>
+      this.get(
+        '/observability/summary' + query({ window }),
+        resourceDecoder(decodeSummary),
+        signal,
+      ),
     metrics: (days = 7, signal?: AbortSignal) =>
       this.get(
         `/observability/metrics${query({ days: String(days) })}`,

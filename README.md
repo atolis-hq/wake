@@ -150,6 +150,10 @@ enter it in the UI. Successful logins persist for two years across browser and
 Wake-container restarts. Use `wake ui token set <key>` to replace the durable
 access key; replacement signs out existing sessions.
 
+Analytics provides live reports with selectable windows, run outcome buckets,
+and summary metrics alongside today's system activity counters. See
+[Analytics API](docs/analytics-api.md) and [web UI](docs/web-ui.md) for definitions.
+
 ## Supported Agent CLIs
 
 Wake wraps existing coding-agent CLIs rather than replacing them. Runner

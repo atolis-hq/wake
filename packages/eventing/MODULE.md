@@ -9,7 +9,8 @@ processor runtime, and in-memory adapters.
 
 Event data and envelopes, event identifiers and metadata, journal change
 signalling, checkpoint/projection/processor-state ports, processor vocabulary,
-hosting, replay, health, and memory implementations.
+hosting, replay, health, bounded cancellable journal snapshot scans, and memory
+implementations.
 
 ## Does not own
 

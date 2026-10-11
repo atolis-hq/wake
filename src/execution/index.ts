@@ -65,3 +65,5 @@ export * from './infrastructure/transcript-store.js';
 export * from './infrastructure/workspace/fake-workspace.js';
 
 export * from './infrastructure/workspace/git-workspace.js';
+
+export * from './application/run-reports.js';

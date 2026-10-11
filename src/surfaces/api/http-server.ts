@@ -24,7 +24,12 @@ export interface ApiHttpResponse {
 
 /** A transport-only dispatcher supplied by Bootstrap composition. */
 export interface ApiDispatcher {
-  dispatch(method: string, pathname: string, body: unknown): Promise<ApiHttpResponse | undefined>;
+  dispatch(
+    method: string,
+    pathname: string,
+    body: unknown,
+    signal?: AbortSignal,
+  ): Promise<ApiHttpResponse | undefined>;
 }
 
 export interface SurfaceHttpServerOptions {
@@ -139,11 +144,29 @@ export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): Fast
           return reply.code(401).send({ status: 401, title: 'Unauthorized' });
       });
       protectedApi.all('/*', async (request, reply) => {
-        const result = await options.dispatcher.dispatch(
-          request.method,
-          request.raw.url ?? request.url,
-          request.body,
-        );
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        const close = () => {
+          if (!reply.raw.writableFinished) abort();
+        };
+        request.raw.once('aborted', abort);
+        reply.raw.once('close', close);
+        let result: ApiHttpResponse | undefined;
+        try {
+          result = await options.dispatcher.dispatch(
+            request.method,
+            request.raw.url ?? request.url,
+            request.body,
+            controller.signal,
+          );
+        } catch (error) {
+          if (controller.signal.aborted) return reply;
+          throw error;
+        } finally {
+          request.raw.off('aborted', abort);
+          reply.raw.off('close', close);
+        }
+        if (controller.signal.aborted) return reply;
         if (result === undefined)
           return sendFastifyJson(
             reply,
