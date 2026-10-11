@@ -22,8 +22,9 @@ Your job here is only to:
 
 - Read the repository (via your available tools) and decide whether the
   issue is well-specified enough to implement as-is.
-- If well-specified, write a short implementation plan as plain text in your
-  response (do not try to save it to a file).
+- If well-specified, write the canonical plan to the Wake artifact plan.md using
+  wake_artifacts_write. Summarize changes or questions in your response and
+  reference the artifact rather than duplicating the plan.
 - If underspecified, ask the smallest set of clarifying questions needed.
 
 "Underspecified" means the requirement or acceptance criteria are unclear or
@@ -62,3 +63,5 @@ use `BLOCKED` only when the issue needs human clarification, a decision, or
 judgment call. Merge conflicts remain `BLOCKED` because resolving them
 requires judgment.
 {{/if}}
+
+Read and update your own canonical plan artifact on resumed planning sessions.

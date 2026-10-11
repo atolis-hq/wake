@@ -5,7 +5,7 @@ import type {
   RunnerExecution,
   RunnerRequest,
 } from '../../contracts/runner.js';
-import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
+import { ProviderQuotaExceededFailureKind, WakeMcpServerName } from '../../contracts/runner.js';
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
 import { runProcess, type ProcessTimeouts } from '../process-execution.js';
 
@@ -111,13 +111,24 @@ export function claudeCommandArgs(
     ...(request.maxTurns === undefined ? [] : ['--max-turns', String(request.maxTurns)]),
     ...(request.allowedTools.length === 0
       ? []
-      : ['--allowedTools', request.allowedTools.join(' ')]),
+      : ['--allowedTools', claudeAllowedTools(request).join(' ')]),
     ...(request.mcpServers === undefined || request.mcpServers.length === 0
       ? []
       : ['--mcp-config', JSON.stringify(claudeMcpConfig(request)), '--strict-mcp-config']),
     ...passthroughArgs,
     '--',
     request.prompt,
+  ];
+}
+
+function claudeAllowedTools(request: RunnerRequest): readonly string[] {
+  return [
+    ...new Set([
+      ...request.allowedTools,
+      ...(request.mcpServers?.some((server) => server.name === WakeMcpServerName)
+        ? [`mcp__${WakeMcpServerName}`]
+        : []),
+    ]),
   ];
 }
 
