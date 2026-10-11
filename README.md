@@ -111,7 +111,9 @@ For more detail, see [docs/vision.md](docs/vision.md) and
   projections, runs, logs, sandbox auth) nested under a hidden `.wake/`.
 - **Durable handoffs.** Agent stages can publish work-item artifacts outside
   Git workspaces. Wake passes only a scoped manifest to later agents, which
-  fetch content on demand through a run-bound MCP capability.
+  fetch content on demand through a run-bound MCP capability. The web work
+  item Artifacts tab offers inline viewing for `.md` files (case insensitive),
+  with raw HTML disabled, a download link, and Back to artifacts navigation.
 - **Sandbox-oriented execution.** Wake can run from a persistent Docker sandbox
   with durable auth state and mounted Wake home data.
 - **Runner agnostic.** Claude Code, Codex, Cursor, and fake runners sit behind
