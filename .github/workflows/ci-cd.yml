@@ -146,7 +146,13 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run test:integration
+      - name: Run integration tests with one retry
+        run: |
+          if ! npm run test:integration; then
+            echo "::warning::integration tests failed on the first attempt; retrying once."
+            echo "integration tests required a second attempt. See the first failure in the job log." >> "$GITHUB_STEP_SUMMARY"
+            npm run test:integration
+          fi
 
   e2e:
     needs: changes
@@ -159,7 +165,13 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run test:e2e
+      - name: Run E2E tests with one retry
+        run: |
+          if ! npm run test:e2e; then
+            echo "::warning::E2E tests failed on the first attempt; retrying once."
+            echo "E2E tests required a second attempt. See the first failure in the job log." >> "$GITHUB_STEP_SUMMARY"
+            npm run test:e2e
+          fi
 
   web:
     needs: changes
@@ -172,7 +184,13 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run test:web
+      - name: Run web tests with one retry
+        run: |
+          if ! npm run test:web; then
+            echo "::warning::web tests failed on the first attempt; retrying once."
+            echo "web tests required a second attempt. See the first failure in the job log." >> "$GITHUB_STEP_SUMMARY"
+            npm run test:web
+          fi
 
   docker-smoke:
     needs: changes

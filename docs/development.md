@@ -26,7 +26,10 @@ TypeScript build, and the filesystem-free unit suite. Run selected integration
 or E2E scenarios when a change touches those boundaries. `npm run verify:ci`
 adds architecture, integration, non-live E2E, unused-code, and web tests. GitHub
 Actions runs those CI lanes separately for faster, attributable feedback, then
-runs the Docker smoke job. `npm run check:specs` reports module specifications
+runs the Docker smoke job. In GitHub Actions, integration, non-live E2E, and
+web test commands retry once after a failure. The first failure remains in the
+job log, and a warning and job summary record the retry. A second failure fails
+the job. Local test commands run once. `npm run check:specs` reports module specifications
 whose `asOf` checkpoint needs a source-grounded refresh.
 
 `npm run tick`, `npm run start`, `npm run ui`, and `npm run smoke` invoke the
