@@ -21,3 +21,9 @@ describe('agentTokenUsage', () => {
     });
   });
 });
+
+it('retains available usage when another metadata field is non-finite', () => {
+  expect(
+    agentTokenUsage({ inputTokens: 12, outputTokens: NaN, cacheReadTokens: 4, costUsd: Infinity }),
+  ).toEqual({ tokens: 16, costUsd: 0 });
+});

@@ -55,3 +55,5 @@ export * from './domain/interpreter.js';
 export * from './domain/workflow-instance.js';
 
 export * from './domain/workflow-selector.js';
+
+export * from './application/work-completion-summary.js';

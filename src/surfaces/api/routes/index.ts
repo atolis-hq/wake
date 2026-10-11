@@ -17,10 +17,10 @@ export type {
 
 export function createApiDispatcher(applications: ApiApplications): ApiDispatcher {
   return {
-    async dispatch(method, target, body) {
+    async dispatch(method, target, body, signal) {
       const url = new URL(target, 'http://wake.local');
       if (!url.pathname.startsWith('/api/')) return undefined;
-      const response = await dispatchRead(applications, method, url);
+      const response = await dispatchRead(applications, method, url, signal);
       if (response !== undefined) return response;
       if (method === 'POST') return dispatchCommand(applications, url, body);
       return problem(404, 'Not Found', `No route for ${url.pathname}`);

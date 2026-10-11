@@ -61,3 +61,23 @@ transcript content wrap within the available width.
 Conversation shows each participant's identity and source in a thread layout.
 The history scrollbar stays at the panel edge while messages and the composer
 remain centred. Work details are hidden on Conversation and Transcripts.
+
+## Analytics
+
+Analytics has **Reports** and **System activity** tabs. System activity retains
+today's event, work-item and run counters from the existing analytics projection.
+Reports offers 1d, 3d, 5d and 7d windows, a report selector, and summary tiles.
+The initial report is run outcomes over time, with stacked outcome buckets,
+overall status totals, and an expandable bucket table.
+
+Tiles and the selected report load independently, each with loading, error and
+retry states. Changing the window or report cancels obsolete requests. Empty
+counts and usage totals are zero; medians without qualifying data show
+**No data**. Costs are in USD and durations are shown in seconds.
+
+The 1d and 3d windows are rolling periods with hourly and 6-hour UTC buckets,
+including partial boundary buckets. The 5d and 7d windows use preceding complete
+UTC days. Runs belong to their start-time cohort and show their latest known
+outcome. Work items done count first primary workflow completion in the window;
+end-to-end duration starts at work creation. See [Analytics API](analytics-api.md)
+for metric definitions, usage handling, response shapes, and report registration.

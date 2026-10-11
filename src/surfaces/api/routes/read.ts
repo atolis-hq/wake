@@ -1,3 +1,4 @@
+import { ReportWindowId } from '../../../kernel/index.js';
 import type { ApiHttpResponse } from '../http-server.js';
 import type { ApiApplications, CollectionQuery } from './applications.js';
 import { collection, parseCollectionQuery } from './pagination.js';
@@ -26,8 +27,14 @@ export async function dispatchRead(
   applications: ApiApplications,
   method: string,
   url: URL,
+  signal?: AbortSignal,
 ): Promise<ApiHttpResponse | undefined> {
   if (method !== 'GET' && method !== 'HEAD') return undefined;
+  if (
+    url.pathname === '/api/v1/observability/reports' ||
+    url.pathname === '/api/v1/observability/summary'
+  )
+    return readReports(applications, url, signal);
   const resource = await readSingleton(applications, url);
   if (resource !== undefined) return resource;
   const page = await readCollection(applications, url);
@@ -217,4 +224,29 @@ async function readRun(applications: ApiApplications, segment: string) {
   return runId instanceof ApiPathError
     ? invalidPath(runId.message)
     : found(await applications.execution.get?.(runId));
+}
+
+async function readReports(
+  applications: ApiApplications,
+  url: URL,
+  signal?: AbortSignal,
+): Promise<ApiHttpResponse> {
+  const reports = applications.observability.reports;
+  if (reports === undefined) return unavailable('reports');
+  const summary = url.pathname.endsWith('/summary');
+  const allowed = new Set(summary ? ['window'] : ['window', 'report']);
+  for (const key of url.searchParams.keys()) {
+    if (!allowed.has(key) || url.searchParams.getAll(key).length !== 1)
+      return invalidQuery(`Unknown or repeated query parameter: ${key}`, key);
+  }
+  if (!summary && url.search === '')
+    return ok({ data: reports.catalogue(), meta: { asOf: applications.now() } });
+  const raw = url.searchParams.get('window');
+  const window = Object.values(ReportWindowId).find((id) => id === raw);
+  if (window === undefined) return invalidQuery('window must be 1d, 3d, 5d or 7d', 'window');
+  if (summary) return ok(await reports.summary(window, signal));
+  const report = url.searchParams.get('report');
+  if (report === null || !reports.catalogue().some(({ id }) => id === report))
+    return invalidQuery('Unknown report identifier', 'report');
+  return ok(await reports.report(report, window, signal));
 }

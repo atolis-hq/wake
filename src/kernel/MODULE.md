@@ -4,7 +4,7 @@
 Stable universal primitives and non-eventing ports.
 ## Owns
 Generic brands and entity references, relations, matching, schema helpers, and
-clock/ID ports.
+clock/ID ports, and portable live-report query/window contracts.
 ## Does not own
 Event contracts or processing, domain policy, filesystem adapters, workflows,
 execution, or providers.

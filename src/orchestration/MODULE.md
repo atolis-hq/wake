@@ -7,7 +7,8 @@ Configured workflow interpretation and durable instances.
 ## Owns
 
 Definitions, compilation, instances, activations, waits, child workflows,
-watches, outcomes, retry policy, and orchestration-owned processor handlers.
+watches, outcomes, retry policy, orchestration-owned processor handlers, and
+live work-completion metrics derived from primary workflow facts.
 
 ## Does not own
 

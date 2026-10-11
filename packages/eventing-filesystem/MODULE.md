@@ -9,7 +9,8 @@ ports.
 
 Flat JSONL journal persistence and codec, checkpoints, rebuildable projection
 storage, processor-owned state storage, atomic writes, storage-name validation,
-file locks, and processor-run serialisation.
+file locks, processor-run serialisation, and streaming snapshot scans that stop
+at captured segment sizes and yield between batches.
 
 ## Does not own
 

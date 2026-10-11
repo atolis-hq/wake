@@ -1,0 +1,38 @@
+.controls,
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-block: 1rem;
+}
+.controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.legend i {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 2px;
+}
+.chart {
+  width: 100%;
+  max-height: 24rem;
+}
+.chart text {
+  fill: currentColor;
+  font-size: 12px;
+}
+.table {
+  overflow-x: auto;
+}
+.table th,
+.table td {
+  padding: 0.5rem;
+  text-align: right;
+}

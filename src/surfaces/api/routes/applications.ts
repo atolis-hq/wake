@@ -1,4 +1,5 @@
 import type { RunStatus } from '../../../execution/index.js';
+import type { ReportDescriptor, ReportWindowId, TimeSeriesReport } from '../../../kernel/index.js';
 import type {
   ApiCommandResult,
   AuditEventResponse,
@@ -24,6 +25,7 @@ import type {
   WorkItemResponse,
   WorkItemTranscriptResponse,
 } from '../contracts/index.js';
+import type { AnalyticsSummaryResponse } from '../contracts/observability.js';
 
 export interface CollectionQuery {
   readonly cursor?: { readonly position: number };
@@ -128,6 +130,18 @@ export interface ApiApplications {
     list(query: CollectionQuery): Promise<ApiCollectionPage<AuditEventResponse>>;
   };
   readonly observability: {
+    readonly reports?: {
+      catalogue(): readonly ReportDescriptor[];
+      report(
+        id: string,
+        window: ReportWindowId,
+        signal?: AbortSignal,
+      ): Promise<ApiResourceResult<TimeSeriesReport>>;
+      summary(
+        window: ReportWindowId,
+        signal?: AbortSignal,
+      ): Promise<ApiResourceResult<AnalyticsSummaryResponse>>;
+    };
     metrics(query?: { readonly days: number }): Promise<ApiResourceResult<MetricsResponse>>;
   };
   readonly system: ApiSystemApplications;
