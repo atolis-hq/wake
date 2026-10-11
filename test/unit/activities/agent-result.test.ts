@@ -25,6 +25,58 @@ describe('agent results', () => {
   ] as const)('maps %s', (status, kind) =>
     expect(translateAgentResult({ status })).toEqual({ kind, data: { status } }),
   );
+  it.each([
+    ['DONE', ActivityOutcomeKind.Done],
+    ['REJECTED', ActivityOutcomeKind.Rejected],
+    ['BLOCKED', ActivityOutcomeKind.Blocked],
+    ['NEEDS_CLARIFICATION', ActivityOutcomeKind.Blocked],
+    ['FAILED', ActivityOutcomeKind.Failed],
+  ])('recognizes a %s marker mid-output with trailing prose', (status, kind) => {
+    expect(translateAgentResult('Before [[STATUS: ' + status + ']] after')).toEqual({
+      kind,
+      data: { status },
+    });
+  });
+
+  it('uses the last marker', () => {
+    expect(translateAgentResult('[[STATUS: DONE]]\n[[STATUS: NEEDS_CLARIFICATION]]')).toEqual({
+      kind: ActivityOutcomeKind.Blocked,
+      data: { status: 'NEEDS_CLARIFICATION' },
+    });
+  });
+
+  it.each([
+    '[[STATUS: UNKNOWN]]',
+    '[[STATUS: DONE]]\n[[STATUS: UNKNOWN]]\nDONE',
+    'No artifact was written because these behavior decisions are unresolved. NEEDS_CLARIFICATION',
+    'DONE',
+    'REJECTED',
+    'BLOCKED',
+    'NEEDS_CLARIFICATION',
+    'FAILED',
+    'ordinary prose',
+    '',
+  ])('rejects invalid plain-text output: %s', (output) => {
+    expect(translateAgentResult(output)).toEqual({
+      kind: ActivityOutcomeKind.Failed,
+      data: { reason: ActivityFailureCode.InvalidAgentResult },
+    });
+  });
+
+  it('preserves JSON precedence and result data', () => {
+    const result = { status: 'REJECTED', displayBody: 'Example [[STATUS: DONE]]', detail: 42 };
+    expect(translateAgentResult(JSON.stringify(result))).toEqual({
+      kind: ActivityOutcomeKind.Rejected,
+      data: result,
+    });
+    expect(
+      translateAgentResult(JSON.stringify({ status: 'UNKNOWN', displayBody: '[[STATUS: DONE]]' })),
+    ).toEqual({
+      kind: ActivityOutcomeKind.Failed,
+      data: { reason: ActivityFailureCode.InvalidAgentResult },
+    });
+  });
+
   it('preserves only well-formed reported artifact claims on every terminal result', () =>
     expect(
       translateAgentResult({
@@ -52,7 +104,7 @@ describe('agent results', () => {
 { "artifacts": [{ "kind": "pr", "url": "https://github.com/atolis-hq/wake/pull/536" }] }
 \`\`\`
 
-DONE`),
+[[STATUS: DONE]]`),
     ).toEqual({
       kind: 'done',
       data: {
@@ -201,7 +253,12 @@ describe('agent template input', () => {
         runner: {
           async start(request) {
             requests.push(request);
-            return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+            return {
+              result: Promise.resolve({
+                transport: 'succeeded' as const,
+                output: '[[STATUS: DONE]]',
+              }),
+            };
           },
         },
         async reportExternalExecution() {},
@@ -268,7 +325,12 @@ Structured ticket context (JSON):
         runner: {
           async start(request) {
             requests.push(request);
-            return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+            return {
+              result: Promise.resolve({
+                transport: 'succeeded' as const,
+                output: '[[STATUS: DONE]]',
+              }),
+            };
           },
         },
         async reportExternalExecution() {},

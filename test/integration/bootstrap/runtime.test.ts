@@ -76,6 +76,50 @@ afterEach(async () => {
 });
 
 describe('target composition root', () => {
+  it.each([
+    ['DONE', 'done'],
+    ['REJECTED', 'rejected'],
+    ['NEEDS_CLARIFICATION', 'blocked'],
+    ['UNKNOWN', 'failed'],
+  ])('records a %s marker consistently in the composed execution path', async (status, kind) => {
+    const root = await fixtureRoot();
+    const runtime = await createCompositionRoot(root, {
+      config: parseRootConfig({
+        schemaVersion: 1,
+        execution: {
+          agentRunners: { fake: { kind: 'fake' } },
+          runnerPools: { standard: ['fake'] },
+          defaultRunnerPool: 'standard',
+        },
+        orchestration: { workflows: {} },
+      }),
+      journal: new InMemoryEventJournal({ now: () => new Date('2026-08-29T00:00:00.000Z') }),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      decorateRunner() {
+        return {
+          async start() {
+            return {
+              result: Promise.resolve({
+                transport: 'succeeded' as const,
+                output: 'Report.\n[[STATUS: ' + status + ']]',
+                runner: 'fake',
+              }),
+              async cancel() {},
+            };
+          },
+        };
+      },
+    });
+    await executeComposedAgent(runtime);
+    const [run] = await runtime.execution.list();
+    expect(run?.outcome?.kind).toBe(kind);
+    expect(run?.agent).toMatchObject({
+      outcome: status === 'UNKNOWN' ? 'FAILED' : status,
+      displayBody: 'Report.',
+    });
+  });
+
   it('always composes the activation scheduler as a durable subscriber', async () => {
     const runtime = await createCompositionRoot('C:/wake-home', {
       config: parseRootConfig({
@@ -1280,7 +1324,12 @@ describe('target composition root', () => {
         runner: {
           async start(request) {
             prompt = request.prompt;
-            return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+            return {
+              result: Promise.resolve({
+                transport: 'succeeded' as const,
+                output: '[[STATUS: DONE]]',
+              }),
+            };
           },
         },
         async reportExternalExecution() {},

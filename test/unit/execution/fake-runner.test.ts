@@ -10,7 +10,7 @@ it('downgrades a claimed done result when the Codex adapter cannot verify comple
   expect(
     parseAgentRunnerResponse({
       transport: RunStatus.Succeeded,
-      output: 'DONE',
+      output: '[[STATUS: DONE]]',
       runner: 'codex',
       unverifiedCompletionReason: 'unverified: could not confirm background command completion',
     }),
@@ -20,31 +20,7 @@ it('downgrades a claimed done result when the Codex adapter cannot verify comple
   });
 });
 
-it('parses a legacy wake-result envelope into a typed response without retaining protocol output', () => {
-  expect(
-    parseAgentRunnerResponse({
-      transport: RunStatus.Succeeded,
-      output: 'Implemented the change.\n\n```wake-result\n{"status":"DONE"}\n```\n',
-      runner: 'codex',
-      model: 'gpt-5',
-      sessionId: 'session-1',
-      tokenUsage: { input: 10, output: 20, costUsd: 0.03 },
-    }),
-  ).toEqual({
-    outcome: 'DONE',
-    displayBody: 'Implemented the change.',
-    metadata: {
-      runner: 'codex',
-      model: 'gpt-5',
-      sessionId: 'session-1',
-      inputTokens: 10,
-      outputTokens: 20,
-      costUsd: 0.03,
-    },
-  });
-});
-
-it('retains a prose PR link and its artifact fence while removing the terminal sentinel', () => {
+it('retains a prose PR link and its artifact fence while removing status markers', () => {
   const response = parseAgentRunnerResponse({
     transport: RunStatus.Succeeded,
     output: `Opened https://github.com/atolis-hq/wake/pull/537.
@@ -53,7 +29,7 @@ it('retains a prose PR link and its artifact fence while removing the terminal s
 { "artifacts": [{ "kind": "pr", "url": "https://github.com/atolis-hq/wake/pull/537" }] }
 \`\`\`
 
-DONE`,
+[[STATUS: DONE]]`,
     runner: 'codex',
   });
 
@@ -61,7 +37,7 @@ DONE`,
   const [prose, artifactFence] = response.displayBody.split('```wake-artifacts');
   expect(prose).toContain('Opened https://github.com/atolis-hq/wake/pull/537.');
   expect(artifactFence).toContain('https://github.com/atolis-hq/wake/pull/537');
-  expect(response.displayBody).not.toMatch(/\nDONE$/);
+  expect(response.displayBody).not.toContain('[[STATUS:');
 });
 
 it('completes a fake execution with the deterministic DONE sentinel', async () => {
@@ -172,10 +148,13 @@ it.each([
     output: '{"status":"NEEDS_CLARIFICATION","displayBody":"Which sentinel should I use?"}',
   },
   {
-    name: 'wake-result fence',
-    output: 'Which sentinel should I use?\n\n```wake-result\n{"status":"NEEDS_CLARIFICATION"}\n```',
+    name: 'mid-output marker',
+    output: '[[STATUS: NEEDS_CLARIFICATION]] Which sentinel should I use?',
   },
-  { name: 'trailing sentinel', output: 'Which sentinel should I use?\n\nNEEDS_CLARIFICATION' },
+  {
+    name: 'trailing marker',
+    output: 'Which sentinel should I use?\n\n[[STATUS: NEEDS_CLARIFICATION]]',
+  },
 ])('parses NEEDS_CLARIFICATION from a $name', ({ output }) => {
   expect(
     parseAgentRunnerResponse({ transport: RunStatus.Succeeded, output, runner: 'fake' }),
@@ -187,10 +166,62 @@ it.each([
 
 it.each([
   { name: 'empty output', output: '', outcome: 'FAILED' },
-  { name: 'malformed result envelope', output: '{"status":', outcome: 'BLOCKED' },
-  { name: 'unknown result status', output: '{"status":"PENDING"}', outcome: 'BLOCKED' },
+  { name: 'malformed result envelope', output: '{"status":', outcome: 'FAILED' },
+  { name: 'unknown result status', output: '{"status":"PENDING"}', outcome: 'FAILED' },
 ])('classifies $name without accepting it as a result envelope', ({ output, outcome }) => {
   expect(
     parseAgentRunnerResponse({ transport: RunStatus.Succeeded, output, runner: 'fake' }),
   ).toMatchObject({ outcome, displayBody: output });
+});
+
+it.each([
+  ['Before [[STATUS: DONE]] after', 'DONE', 'Before  after'],
+  ['Completed.\n[[STATUS: DONE]]\n[[STATUS: REJECTED]]', 'REJECTED', 'Completed.'],
+  ['[[STATUS: DONE]]\n[[STATUS: UNKNOWN]]', 'FAILED', ''],
+  ['DONE', 'FAILED', 'DONE'],
+  ['**DONE**', 'FAILED', '**DONE**'],
+  ['Unresolved. NEEDS_CLARIFICATION', 'FAILED', 'Unresolved. NEEDS_CLARIFICATION'],
+  [
+    'Completed.\n\n```wake-result\n{"status":"DONE"}\n```',
+    'FAILED',
+    'Completed.\n\n```wake-result\n{"status":"DONE"}\n```',
+  ],
+])('uses the shared marker contract for %s', (output, outcome, displayBody) => {
+  expect(
+    parseAgentRunnerResponse({ transport: RunStatus.Succeeded, output, runner: 'codex' }),
+  ).toMatchObject({ outcome, displayBody });
+});
+
+it('preserves JSON precedence over a marker inside displayBody', () => {
+  expect(
+    parseAgentRunnerResponse({
+      transport: RunStatus.Succeeded,
+      output: JSON.stringify({ status: 'REJECTED', displayBody: 'Example [[STATUS: DONE]]' }),
+      runner: 'codex',
+    }),
+  ).toMatchObject({ outcome: 'REJECTED', displayBody: 'Example [[STATUS: DONE]]' });
+});
+
+it('preserves structured JSON display text and runner diagnostics', () => {
+  expect(
+    parseAgentRunnerResponse({
+      transport: RunStatus.Succeeded,
+      output: JSON.stringify({ status: 'DONE', displayBody: 'Implemented the change.' }),
+      runner: 'codex',
+      model: 'gpt-5',
+      sessionId: 'session-1',
+      tokenUsage: { input: 10, output: 20, costUsd: 0.03 },
+    }),
+  ).toEqual({
+    outcome: 'DONE',
+    displayBody: 'Implemented the change.',
+    metadata: {
+      runner: 'codex',
+      model: 'gpt-5',
+      sessionId: 'session-1',
+      inputTokens: 10,
+      outputTokens: 20,
+      costUsd: 0.03,
+    },
+  });
 });

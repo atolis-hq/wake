@@ -89,3 +89,13 @@ export const BuiltInActivityName = {
   PullRequestMerge: activityName('pr.merge'),
   IssueComplete: activityName('issue.complete'),
 } as const;
+
+export const AgentResultStatus = {
+  Done: 'DONE',
+  Rejected: 'REJECTED',
+  Blocked: 'BLOCKED',
+  NeedsClarification: 'NEEDS_CLARIFICATION',
+  Failed: 'FAILED',
+} as const;
+
+export type AgentResultStatus = ValueOf<typeof AgentResultStatus>;

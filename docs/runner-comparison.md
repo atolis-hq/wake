@@ -25,6 +25,24 @@ The Activity normalizes `NEEDS_CLARIFICATION` to the existing `blocked` outcome,
 retaining its distinct raw sentinel for display; Orchestration then applies the
 configured workflow route.
 
+Plain-text results require a marker such as `[[STATUS: DONE]]`. Markers are
+recognized anywhere in output, including before trailing prose. The last marker
+is authoritative: an unrecognized status yields `invalid-agent-result` without
+fallback. Supported statuses are `DONE`, `REJECTED`, `BLOCKED`,
+`NEEDS_CLARIFICATION`, and `FAILED`. Missing markers, legacy bare statuses
+on the final line, and status tokens appended to prose are invalid.
+
+Structured JSON results (for example `{"status":"DONE","displayBody":"Finished"}`)
+are parsed first and preserve their existing validation and result data. Markers
+inside JSON do not override its status. Persisted outcomes remain compatible.
+
+Execution uses the same status translation for recorded run outcomes and
+publication. Plain-text display text removes status markers while retaining
+prose and artifact fences. Fenced `wake-result` blocks alone do not satisfy
+the plain-text marker contract. When upgrading, update configured custom prompts
+to request the marker alongside the parser update; shipped templates and newly
+initialized roots already include it.
+
 ## CLI capability matrix
 
 | Capability | Claude (`claude-cli`) | Codex (`codex-cli`) | Cursor (`cursor-cli`) |

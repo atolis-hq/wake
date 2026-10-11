@@ -12,14 +12,17 @@ afterEach(async () => {
 it('E2E-LIVE-010 publishes to a commentable non-PR issue Resource', async () => {
   const world = await ProcessWorld.create();
   worlds.push(world);
-  await world.tick();
+  await world.runTicksUntilIdle();
 
   const [resource] = await world.readProjection<ResourceView>('resources');
-  expect(resource?.value.capabilities).toEqual([BuiltInResourceCapability.Commentable]);
+  expect(resource?.value.capabilities).toEqual([
+    BuiltInResourceCapability.Commentable,
+    BuiltInResourceCapability.Completable,
+  ]);
   expect(resource?.value.capabilities).not.toContain(BuiltInResourceCapability.Revisioned);
   expect(
     (await world.events()).filter(
-      (event) => event.event.eventType === DeliveryIntentEventType.StatusPublishRequested,
+      (event) => event.event.eventType === DeliveryIntentEventType.AgentRunPublishRequested,
     ),
   ).toHaveLength(1);
 });

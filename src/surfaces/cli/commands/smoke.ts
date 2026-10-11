@@ -15,7 +15,8 @@ export async function runTargetSmoke(
   const execution = await selected.runner.start(
     {
       runId: `smoke-${Date.now()}`,
-      prompt: 'Wake target smoke check. Return DONE.',
+      prompt:
+        'Wake target smoke check. End with the status marker [[STATUS: DONE]] on its own final line.',
       allowedTools: [],
     },
     signal,

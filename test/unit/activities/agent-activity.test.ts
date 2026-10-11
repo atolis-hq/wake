@@ -21,7 +21,12 @@ describe('agent activity template context', () => {
       runner: {
         async start(value) {
           request = value;
-          return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+          return {
+            result: Promise.resolve({
+              transport: 'succeeded' as const,
+              output: '[[STATUS: DONE]]',
+            }),
+          };
         },
       },
       async reportExternalExecution() {},
@@ -114,7 +119,12 @@ describe('agent activity template context', () => {
       },
       runner: {
         async start() {
-          return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+          return {
+            result: Promise.resolve({
+              transport: 'succeeded' as const,
+              output: '[[STATUS: DONE]]',
+            }),
+          };
         },
       },
       async reportExternalExecution() {},
@@ -125,7 +135,7 @@ describe('agent activity template context', () => {
 
     expect(outcome).toEqual({ kind: 'done', data: { status: 'DONE' } });
     expect(reported).toEqual([
-      expect.objectContaining({ output: 'DONE', runner: 'unknown-runner' }),
+      expect.objectContaining({ output: '[[STATUS: DONE]]', runner: 'unknown-runner' }),
     ]);
     expect(logged).toHaveLength(2);
   });
@@ -554,7 +564,12 @@ describe('agent activity template context', () => {
         runner: {
           async start(request) {
             requests.push(request);
-            return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+            return {
+              result: Promise.resolve({
+                transport: 'succeeded' as const,
+                output: '[[STATUS: DONE]]',
+              }),
+            };
           },
         },
         async reportExternalExecution() {},
@@ -566,7 +581,7 @@ describe('agent activity template context', () => {
     ]);
   });
 
-  it('treats a final standalone DONE line as a successful agent outcome', async () => {
+  it('treats a final DONE marker as a successful agent outcome', async () => {
     const activity = createAgentActivity();
 
     const outcome = await activity.execute(
@@ -588,7 +603,7 @@ describe('agent activity template context', () => {
             return {
               result: Promise.resolve({
                 transport: 'succeeded' as const,
-                output: 'Implementation plan:\n1. Create the file.\n\nDONE',
+                output: 'Implementation plan:\n1. Create the file.\n\n[[STATUS: DONE]]',
               }),
             };
           },
@@ -611,7 +626,7 @@ describe('agent activity template context', () => {
           return {
             result: Promise.resolve({
               transport: 'succeeded' as const,
-              output: 'DONE',
+              output: '[[STATUS: DONE]]',
               unverifiedCompletionReason:
                 'unverified: could not confirm background command completion',
             }),
@@ -646,7 +661,9 @@ async function execute(
     runner: {
       async start(request) {
         recordRequest?.(request);
-        return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+        return {
+          result: Promise.resolve({ transport: 'succeeded' as const, output: '[[STATUS: DONE]]' }),
+        };
       },
     },
     async reportExternalExecution() {},

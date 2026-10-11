@@ -65,3 +65,8 @@ requires judgment.
 {{/if}}
 
 Read and update your own canonical plan artifact on resumed planning sessions.
+
+End your response with a status marker on its own final line, for example:
+[[STATUS: DONE]]
+Use DONE, REJECTED, BLOCKED, NEEDS_CLARIFICATION, or FAILED inside the marker
+to report the actual result. Plain-text results without a marker are invalid.

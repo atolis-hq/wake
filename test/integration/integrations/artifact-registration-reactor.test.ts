@@ -157,7 +157,7 @@ describe('ArtifactRegistrationReactor', () => {
 { "artifacts": [{ "kind": "pr", "url": "https://github.com/atolis-hq/wake/pull/537" }] }
 \`\`\`
 
-DONE`;
+[[STATUS: DONE]]`;
     const outcome = await createAgentActivity().execute(
       {
         activationId: activation,

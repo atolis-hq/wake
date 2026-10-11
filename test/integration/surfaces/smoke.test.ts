@@ -33,5 +33,6 @@ it('starts the configured target Runner and reports its actual transport outcome
     new AbortController().signal,
   );
   expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({ prompt: expect.stringContaining('[[STATUS: DONE]]') });
   expect(result).toMatchObject({ ok: true, runner: 'fake', transport: 'succeeded' });
 });

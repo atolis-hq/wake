@@ -11,21 +11,16 @@ before that result is recorded onto a Run.
 ## Ubiquitous language
 
 See the module specification for Agent run response and Transport status.
-This component additionally defines the three raw-output conventions it
-recognizes, in priority order: a **bare envelope** (the runner's entire
-output is one JSON object with a `status` field), a **wake-result fence** (a
-Markdown code fence whose opening line or first line is literally
-`wake-result`, containing a JSON object with a `status` field), and a
-**sentinel line** (the output's last non-empty, non-fence line is itself one
-of the five outcome words, optionally wrapped in Markdown bold).
+This component recognizes a structured JSON result or a plain-text status
+marker such as `[[STATUS: DONE]]`. The Activity owns status translation;
+Execution uses that shared contract to build its display response.
 
 ## Responsibilities and boundaries
 
 This component owns turning one `AgentRunnerResult` into one
 `AgentRunResponse`. It does not decide an Activity's own outcome — the
-agent Activity handler parses the same raw output independently, for its
-own `ActivityOutcome` recorded via `RunSucceeded`, and the two parses are
-not guaranteed to agree since the underlying rules are not identical. It
+agent Activity handler translates the same raw output using the shared
+status contract for its `ActivityOutcome` recorded via `RunSucceeded`. It
 does not read or write any event itself; the Execution service calls it and
 appends the result.
 
@@ -36,28 +31,21 @@ appends the result.
   the failure's own `message` when present, falling back to whatever the
   output-parsing rules below would have produced, and finally to a fixed
   "Runner failed without a response." message when both are empty.
-- When the transport is `succeeded`, the output MUST be parsed by trying
-  each convention in order and using the first that matches:
-  1. **Bare envelope** — the entire trimmed output parses as JSON with a
-     `status` field naming one of `DONE`/`REJECTED`/`BLOCKED`/`NEEDS_CLARIFICATION`/`FAILED`.
-     When that envelope supplies a non-blank string `displayBody`, it MUST
-     be retained verbatim. Otherwise `displayBody` MUST be a fixed,
-     outcome-specific sentence (there is no other text to show once the
-     whole output was the envelope).
-  2. **Wake-result fence** — the *last* fenced code block in the output
-     whose fence is tagged `wake-result` contains, after stripping a
-     trailing bare sentinel-word line, JSON with a recognized `status`.
-     `displayBody` MUST be the output preceding that fence, trimmed,
-     falling back to the same fixed sentence when that prefix is empty. A
-     fence present but not parseable as a recognized envelope MUST fall
-     through to the next rule rather than fail.
-  3. **Sentinel line** — the last non-empty, non-fence-marker line of the
-     output, with a wrapping `**`/`__` Markdown bold stripped, is itself
-     one of the five outcome words. `displayBody` MUST be the output with
-     that one matched line removed, trimmed.
-  4. **No convention matched** — the outcome MUST be `FAILED` when the
-     trimmed output is empty, otherwise `BLOCKED`; `displayBody` MUST be
-     the raw trimmed output.
+- When transport is `succeeded`, Execution MUST use Activity's shared result
+  translation. Structured JSON is parsed first; its recognized status and
+  non-blank string `displayBody` are preserved. Otherwise a fixed
+  outcome-specific display sentence is used for recognized JSON results.
+- Plain text MUST contain a `[[STATUS: <STATUS>]]` marker. The last marker
+  anywhere in output is authoritative, including when followed by prose.
+  Recognized statuses are `DONE`, `REJECTED`, `BLOCKED`,
+  `NEEDS_CLARIFICATION`, and `FAILED`. Display text MUST retain prose and
+  artifact fences while removing status markers and trimming surrounding space.
+- Missing markers, unknown last markers, legacy bare or bold status lines,
+  and status tokens appended to prose MUST produce `FAILED`, matching the
+  Activity's `invalid-agent-result` outcome. A fenced `wake-result` JSON
+  block alone is plain text without a marker and MUST NOT supply a status.
+- An unverified completion on successful transport MUST still produce
+  `BLOCKED` with the supplied completion reason as display text.
 - `metadata` MUST always include the reporting runner's own `runner` name,
   and MUST additionally include `model` and `sessionId` when the raw result
   reported them, and `inputTokens`/`outputTokens`/`cacheReadTokens`/
@@ -91,11 +79,9 @@ own; it is a pure function from one `AgentRunnerResult` to one
 
 ## Decisions, exclusions, and deferred capability
 
-- This component's parse and the agent Activity handler's own parse of the
-  same raw output are two independent implementations of similar but not
-  identical rules; a raw output that one accepts and the other rejects (or
-  interprets differently) is not reconciled — `RunView.agent.outcome` and
-  `RunView.outcome` can disagree for the same Run.
+- Execution owns display text and metadata; Activities own status translation.
+  Both use the same marker and structured JSON rules, so publication and
+  workflow routing agree for ordinary successful transport results.
 - Recovery's `execution.run-recovered` fact never carries a parsed `agent`
   value: `RecoveredRunResult.result` records the raw `AgentRunnerResult` from
   the external-execution inspector unparsed, so a recovered Run's `agent`
