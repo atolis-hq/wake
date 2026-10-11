@@ -81,3 +81,13 @@ UTC days. Runs belong to their start-time cohort and show their latest known
 outcome. Work items done count first primary workflow completion in the window;
 end-to-end duration starts at work creation. See [Analytics API](analytics-api.md)
 for metric definitions, usage handling, response shapes, and report registration.
+
+Policy-blocked merge waits show **Waiting for human merge** in work details,
+with the applicable protected paths and matching changed paths, or the configured
+file-count limit and observed count. The correlated PR link and next action
+explain that manual merge resolves the wait; approval or comments do not override
+merge policy. Older outcomes use the pinned workflow restriction when available.
+After the PR merges, the status becomes **PR merged; recovery pending**, with
+advancement guidance. The usual workflow/work state shows completion afterward.
+The work-detail API exposes this explanation as `orchestration.primary.mergePolicyBlock`;
+only applicable merge restrictions are included.

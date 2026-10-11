@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
+import { readMergePolicyDenial } from './merge-policy-denial.js';
 import { MergeMethod } from './vocabulary.js';
 
 import type { EventJournal } from '@atolis-hq/eventing';
@@ -34,7 +35,7 @@ import {
 } from './intent.js';
 import { decidePullRequestAuthority } from './policy.js';
 
-const inputSchema: z.ZodType<PullRequestMergeInput> = z
+export const pullRequestMergeInputSchema: z.ZodType<PullRequestMergeInput> = z
   .object({
     target: pullRequestTargetSchema,
     method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),
@@ -65,7 +66,7 @@ export function createPullRequestMergeActivity(
 > {
   return {
     name: BuiltInActivityName.PullRequestMerge,
-    inputSchema,
+    inputSchema: pullRequestMergeInputSchema,
     outcomeSchema: pullRequestOutcomeSchema,
     outcomeKinds: [
       ActivityOutcomeKind.Waiting,
@@ -133,13 +134,30 @@ async function executeMerge(
   });
   if (!decision.allowed) {
     const factStream = resourceStream(resource.resourceId);
+    const audit = selectedDenialAudit(authority, resource.resourceId);
+    const policyDenial = readMergePolicyDenial({
+      kind: ActivityOutcomeKind.Blocked,
+      data: { reason: decision.reason },
+    });
     const denial = mergeDenied(decision.reason, command, {
       ...selectedDenialAudit(authority, resource.resourceId),
       method: invocation.input.method,
     });
     return claimAndCompleteDecision(journal, appender, invocation.activationId, MergeMethod.Merge, {
       decisionKind: 'denied',
-      outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: decision.reason } },
+      outcome: {
+        kind: ActivityOutcomeKind.Blocked,
+        data: {
+          reason: decision.reason,
+          ...(policyDenial === null
+            ? {}
+            : {
+                resourceId: resource.resourceId,
+                ...(audit.revision === null ? {} : { revision: audit.revision }),
+              }),
+          ...(decision.policy === undefined ? {} : { policy: decision.policy }),
+        },
+      },
       fact: denial,
       factStream,
     });

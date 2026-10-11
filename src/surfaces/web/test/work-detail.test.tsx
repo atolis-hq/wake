@@ -1275,3 +1275,48 @@ describe('work detail', () => {
     expect(screen.getByRole('cell', { name: 'implement' })).toBeTruthy();
   });
 });
+
+it.each(['awaiting-human-merge', 'recovering'] as const)(
+  'shows actionable merge policy guidance while %s',
+  async (status) => {
+    const nextAction =
+      status === 'recovering'
+        ? 'The PR has merged. Recovery will continue on advancement.'
+        : 'Review and merge the correlated PR manually. Approval does not override this policy.';
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient({
+            workflowInstanceId: 'workflow-1',
+            workItemKey: 'wk_a',
+            workflowName: 'main',
+            orchestrationGroupId: 'group-1',
+            status: 'waiting',
+            currentStage: 'merge',
+            mergePolicyBlock: {
+              status,
+              explanation: 'Automatic merge stopped because this PR changes a protected path.',
+              nextAction,
+              href: 'https://github.com/atolis-hq/wake/pull/877',
+              policy: {
+                blockedPaths: ['src/kernel/index.ts'],
+                matchedPaths: ['src/kernel/index.ts'],
+              },
+            },
+          })}
+        />
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText(
+        status === 'recovering' ? 'PR merged; recovery pending' : 'Waiting for human merge',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(nextAction)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'View correlated PR' }).getAttribute('href')).toBe(
+      'https://github.com/atolis-hq/wake/pull/877',
+    );
+    expect(screen.getAllByText('src/kernel/index.ts')).toHaveLength(2);
+    cleanup();
+  },
+);

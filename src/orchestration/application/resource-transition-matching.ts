@@ -76,10 +76,15 @@ export async function acceptResourceTransition(
   id: WorkflowInstanceId,
   target: TransitionTarget,
   evidenceId: string,
-  context: CommandContext,
+  context: CommandContext & { readonly expectedSequence?: number },
 ): Promise<WorkflowInstanceView | null> {
   const loaded = await repository.load(id);
   if (loaded.view === null || loaded.view.waitingFor === undefined) return loaded.view;
+  if (
+    context.expectedSequence !== undefined &&
+    (loaded.sequence !== context.expectedSequence || loaded.view.status !== WorkflowStatus.Waiting)
+  )
+    return loaded.view;
   const definition = await workflows.definitionForOperation(loaded.view, loaded.sequence, context);
   if (definition === null) return loaded.view;
   const decision = decideSignal(

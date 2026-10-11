@@ -43,3 +43,5 @@ export * from './review/authorization.js';
 export * from './review/contracts.js';
 
 export * from './review/signals.js';
+
+export * from './pr/merge-policy-denial.js';

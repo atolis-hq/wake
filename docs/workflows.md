@@ -493,3 +493,33 @@ human may satisfy that gate as an override.
 
 The exact machine-validated schema is in
 `src/orchestration/contracts/config.ts`.
+
+### Recovery after a policy-blocked manual merge
+
+A primary workflow waiting on the merge stage's `blocked: { then: await-human }`
+route can recover automatically when its correlated primary PR is manually
+merged. Normal tick/resident advancement checks durable PR history, including
+facts recorded before the wait or before a restart. It requires a protected-path,
+file-count, or unavailable-changed-files denial from that exact merge activation
+on the same PR. Unrelated PRs and human waits do not release the workflow.
+
+The destination is the single merged-PR transition on the merge stage's `done`
+route in the workflow's pinned definition. Configure it to route to the completion
+stage, as in the native auto-merge example above. No new declaration on `blocked`
+is required; already-persisted eligible waits recover without another approval,
+comment, or projection edit. Missing definitions, ambiguous PR correlations, or
+missing/ambiguous merged-PR destinations fail closed.
+
+Approving the PR or commenting does not override automatic merge restrictions;
+it can only retry the same policy check. Review the correlated PR and merge it
+manually when appropriate. Work details explain the applicable restriction,
+matched protected paths when available, the PR link, and the next action. Once
+merged, the details show recovery pending while advancement resumes completion.
+
+After deploying this behavior, run normal `wake tick` advancement (or let the
+resident loop run) against the affected Wake home. For the incident work item
+`work-01m4n8r1vr4tzehgv6afeeh1be`, verify its primary workflow leaves the merge
+wait, requests `complete-issue`, and completes, and confirm issue #868 closes.
+Check the journal for the accepted merged-PR evidence and a single issue-completion
+intent; do not edit projection files. This requires deployment access to that
+Wake home and provider polling/delivery credentials.

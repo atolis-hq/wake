@@ -350,6 +350,61 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                     <dt>Stage</dt>
                     <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
                   </div>
+                  {primaryWorkflow?.mergePolicyBlock && (
+                    <>
+                      <div>
+                        <dt>Merge status</dt>
+                        <dd>
+                          {primaryWorkflow.mergePolicyBlock.status === 'recovering'
+                            ? 'PR merged; recovery pending'
+                            : 'Waiting for human merge'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Merge policy</dt>
+                        <dd>{primaryWorkflow.mergePolicyBlock.explanation}</dd>
+                      </div>
+                      {primaryWorkflow.mergePolicyBlock.policy?.blockedPaths && (
+                        <div>
+                          <dt>Protected paths</dt>
+                          <dd>{primaryWorkflow.mergePolicyBlock.policy.blockedPaths.join(', ')}</dd>
+                        </div>
+                      )}
+                      {primaryWorkflow.mergePolicyBlock.policy?.matchedPaths && (
+                        <div>
+                          <dt>Matching changed paths</dt>
+                          <dd>{primaryWorkflow.mergePolicyBlock.policy.matchedPaths.join(', ')}</dd>
+                        </div>
+                      )}
+                      {primaryWorkflow.mergePolicyBlock.policy?.maxFilesChanged !== undefined && (
+                        <div>
+                          <dt>File-count limit</dt>
+                          <dd>
+                            {primaryWorkflow.mergePolicyBlock.policy.maxFilesChanged} (changed:{' '}
+                            {primaryWorkflow.mergePolicyBlock.policy.filesChanged ?? 'unknown'})
+                          </dd>
+                        </div>
+                      )}
+                      {primaryWorkflow.mergePolicyBlock.href && (
+                        <div>
+                          <dt>Pull request</dt>
+                          <dd>
+                            <a
+                              href={primaryWorkflow.mergePolicyBlock.href}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              View correlated PR
+                            </a>
+                          </dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt>Next action</dt>
+                        <dd>{primaryWorkflow.mergePolicyBlock.nextAction}</dd>
+                      </div>
+                    </>
+                  )}
                   {needsAmbiguityResolution && (
                     <>
                       <div>

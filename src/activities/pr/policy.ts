@@ -186,9 +186,18 @@ function changedFilesAuthority(
     : undefined;
   if (changedFiles === undefined) return denied(PullRequestDenialCode.ChangedFilesUnavailable);
   if (policy.maxFilesChanged !== undefined && changedFiles.length > policy.maxFilesChanged)
-    return denied(PullRequestDenialCode.TooManyFilesChanged);
-  return policy.blockedPaths.some((blocked) => changedFiles.includes(blocked))
-    ? denied(PullRequestDenialCode.BlockedPathChanged)
+    return {
+      allowed: false,
+      reason: PullRequestDenialCode.TooManyFilesChanged,
+      policy: { maxFilesChanged: policy.maxFilesChanged, filesChanged: changedFiles.length },
+    };
+  const matchedPaths = policy.blockedPaths.filter((blocked) => changedFiles.includes(blocked));
+  return matchedPaths.length > 0
+    ? {
+        allowed: false,
+        reason: PullRequestDenialCode.BlockedPathChanged,
+        policy: { blockedPaths: [...policy.blockedPaths], matchedPaths },
+      }
     : null;
 }
 

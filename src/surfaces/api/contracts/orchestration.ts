@@ -10,5 +10,19 @@ export interface WorkflowInstanceResponse {
   readonly blockReason?: string;
   readonly retryEligible?: boolean;
   readonly extendEligible?: boolean;
+  readonly mergePolicyBlock?: MergePolicyBlockResponse;
   readonly waitingFor?: { readonly signalKind: string };
+}
+
+export interface MergePolicyBlockResponse {
+  readonly status: 'awaiting-human-merge' | 'recovering';
+  readonly explanation: string;
+  readonly nextAction: string;
+  readonly href?: string;
+  readonly policy?: {
+    readonly blockedPaths?: readonly string[] | undefined;
+    readonly matchedPaths?: readonly string[] | undefined;
+    readonly maxFilesChanged?: number | undefined;
+    readonly filesChanged?: number | undefined;
+  };
 }

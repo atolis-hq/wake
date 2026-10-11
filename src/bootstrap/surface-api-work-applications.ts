@@ -40,6 +40,7 @@ import {
 import { workItemId, WorkStatus, type WorkItemView } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
+import { presentPrimaryWorkflow } from './surface-api-merge-policy.js';
 import { projectionMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { enrichRun } from './surface-api-run-context.js';
@@ -294,7 +295,7 @@ async function workDetail(
     work: presentDetailWork(work, externalRef, runs),
     resources: resources.map(presentResource(root.resolveResourceLink)),
     orchestration: {
-      primary: primary === null ? null : presentWorkflowInstance(primary),
+      primary: await presentPrimaryWorkflow(root, primary),
       children: workflows
         .filter((value) => value.parentWorkflowInstanceId !== undefined)
         .map(presentWorkflowInstance),

@@ -8,6 +8,8 @@ export interface ResourceTransitionEvidenceInput {
   readonly workItemId: WorkItemId;
   readonly transitions: readonly CompiledResourceTransition[];
   readonly fact?: ResourceTransitionFact;
+  /** Requires a policy denial on the selected PR from this exact activation. */
+  readonly mergeDenialActivationId?: string;
 }
 
 export interface ResourceTransitionEvidenceResolution {
