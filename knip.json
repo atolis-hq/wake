@@ -6,7 +6,8 @@
       "entry": [
         "src/*/index.ts",
         "test/**/*.test.ts",
-        "test/integration/surfaces/fixtures/wait-forever-fixture.ts"
+        "test/integration/surfaces/fixtures/wait-forever-fixture.ts",
+        "test/support/workspace-lock-child.ts"
       ],
       "project": ["src/**/*.ts", "!src/surfaces/web/**", "test/**/*.ts"]
     },
