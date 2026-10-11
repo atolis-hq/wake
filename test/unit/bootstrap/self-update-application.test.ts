@@ -19,6 +19,22 @@ function ledger(lastHealthyTag: string | null, calls: string[] = []) {
 }
 
 describe('self-update application: update operations', () => {
+  it('keeps the source checkout version ahead of a stale deployment ledger', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: {
+        ...source(calls),
+        currentTag: async () => 'v2',
+        candidateTags: async () => ['v2', 'v1'],
+      },
+      quiesce: quiesce(calls, [[]]),
+    });
+    await expect(application.updateLatest()).resolves.toEqual({ tag: 'v2', updated: false });
+    await expect(application.update('v2')).resolves.toBe(false);
+    expect(calls).toEqual([]);
+  });
+
   it('checks out immediately when the quiesce port observes no active Runs', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
