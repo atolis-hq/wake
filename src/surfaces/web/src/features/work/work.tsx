@@ -2,6 +2,7 @@ import { faHourglassHalf, faPaperPlane } from '@fortawesome/free-solid-svg-icons
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import Markdown from 'react-markdown';
 import { Link, useNavigate, useParams } from 'react-router';
 import type {
   AuditEventResponse,
@@ -555,7 +556,9 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                             {entry.deleted ? (
                               <em>Message deleted</em>
                             ) : (
-                              <div className={styles.conversationBody}>{entry.body}</div>
+                              <div className={styles.conversationBody}>
+                                <Markdown skipHtml>{entry.body}</Markdown>
+                              </div>
                             )}
                             {entry.representations.length > 0 && (
                               <footer className={styles.conversationRepresentations}>

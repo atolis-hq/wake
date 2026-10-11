@@ -438,11 +438,23 @@
 }
 .conversationBody {
   margin: 0;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   line-height: 1.75;
+}
+.conversationBody > :first-child {
+  margin-top: 0;
+}
+.conversationBody > :last-child {
+  margin-bottom: 0;
+}
+.conversationBody pre {
+  overflow-x: auto;
+  white-space: pre;
+}
+.conversationBody img {
+  max-width: 100%;
 }
 .conversationRepresentations {
   display: flex;
