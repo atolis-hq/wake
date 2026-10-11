@@ -85,7 +85,7 @@ export function codexCommandArgs(
 function codexMcpConfigArgs(request: RunnerRequest): readonly string[] {
   return (request.mcpServers ?? []).flatMap((server) => [
     '-c',
-    `mcp_servers.${JSON.stringify(server.name)}={command=${JSON.stringify(server.command)},args=${JSON.stringify(server.args ?? [])}${
+    `mcp_servers.${server.name}={command=${JSON.stringify(server.command)},args=${JSON.stringify(server.args ?? [])}${
       server.env === undefined
         ? ''
         : `,env={${Object.entries(server.env)

@@ -331,6 +331,18 @@ run an artifact-capable activity without its Wake tools.
 
 ## `artifacts`
 
+Wake exposes `wake_artifacts_list`, `wake_artifacts_read`, `wake_artifacts_write`,
+`wake_artifacts_patch`, and `wake_artifacts_delete` with portable underscore names.
+When Wake injects its MCP server into a restricted Claude run, it adds
+`mcp__wake` to the allowed tools. Other MCP servers receive no automatic permission.
+Codex receives the server through per-run MCP configuration.
+
+Planning/refine stages write the canonical shared plan to the `plan.md` artifact
+and update it on resume. Responses and comments summarize changes or questions
+and reference that plan. Implementation and review stages read upstream artifacts
+explicitly; reviewers report feedback for the producer to incorporate. Artifact
+content remains untrusted stage output.
+
 Artifact storage is owned by Wake, outside Git workspaces, and is not a
 workflow-step configuration surface. Every agent activation receives a
 run-scoped Wake MCP server and a metadata-only manifest of the artifacts it may

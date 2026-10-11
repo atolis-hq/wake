@@ -8,6 +8,7 @@ import { expect, it } from 'vitest';
 import { FileArtifactMcpSessionStore } from '../../../src/artifacts/index.js';
 import { createArtifactMcpProvisioner } from '../../../src/bootstrap/artifact-mcp.js';
 import { createCompositionRoot, createSurfaceApplications } from '../../../src/bootstrap/index.js';
+import { claudeCommandArgs } from '../../../src/execution/infrastructure/runners/claude.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -76,6 +77,14 @@ orchestration:
         resources: [],
       },
     });
+    const args = claudeCommandArgs({
+      runId: 'artifact-lifecycle-run',
+      prompt: capability.prompt ?? '',
+      allowedTools: ['Read'],
+      mcpServers: [...capability.servers, { name: 'other', command: 'other' }],
+    });
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe('Read mcp__wake');
+    expect(capability.prompt).toContain('canonical plan');
     const server = capability.servers[0]!;
     await client.connect(
       new StdioClientTransport({
@@ -89,8 +98,11 @@ orchestration:
         stderr: 'pipe',
       }),
     );
+    const advertised = await client.listTools();
+    expect(advertised.tools).toHaveLength(5);
+    for (const tool of advertised.tools) expect(tool.name).toMatch(/^wake_artifacts_[a-z]+$/);
     const write = await client.callTool({
-      name: 'wake.artifacts.write',
+      name: 'wake_artifacts_write',
       arguments: { path: 'plan.md', content: '# Plan', mediaType: 'text/markdown' },
     });
     expect(write.isError).not.toBe(true);
@@ -98,6 +110,12 @@ orchestration:
     const staged = await root.artifacts.get(workItemId);
     expect(staged?.revisions).toHaveLength(1);
     const revisionId = staged!.revisions[0]!.revisionId;
+    const manifest = await client.callTool({ name: 'wake_artifacts_list' });
+    expect(manifest).toMatchObject({
+      content: [{ type: 'text', text: expect.stringContaining(revisionId) }],
+    });
+    const read = await client.callTool({ name: 'wake_artifacts_read', arguments: { revisionId } });
+    expect(read).toMatchObject({ content: [{ type: 'text', text: '# Plan' }] });
     await root.projectionSubscriptions.catchUpOnce();
     const applications = await createSurfaceApplications(root);
     expect((await applications.api.work.detail(toWorkItemKey(workItemId)))?.data.artifacts).toEqual(
@@ -122,7 +140,7 @@ orchestration:
     expect(download.status).toBe(200);
     expect(new TextDecoder().decode(download.body as Uint8Array)).toBe('# Plan');
     await capability.release();
-    const revoked = await client.callTool({ name: 'wake.artifacts.list' });
+    const revoked = await client.callTool({ name: 'wake_artifacts_list' });
     expect(revoked.isError).toBe(true);
   } finally {
     await client.close();

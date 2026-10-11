@@ -27,7 +27,7 @@ export function createArtifactMcpServer(
 ): McpServer {
   const server = new McpServer({ name: 'wake', version: '0.1.0' });
   server.registerTool(
-    'wake.artifacts.read',
+    'wake_artifacts_read',
     {
       description: 'Read a visible artifact revision as UTF-8 text or base64 bytes.',
       inputSchema: {
@@ -59,7 +59,7 @@ export function createArtifactMcpServer(
     },
   );
   server.registerTool(
-    'wake.artifacts.list',
+    'wake_artifacts_list',
     { description: 'List the current artifact manifest visible to this activation.' },
     async () => {
       await session.assertActive();
@@ -78,7 +78,7 @@ export function createArtifactMcpServer(
     },
   );
   server.registerTool(
-    'wake.artifacts.patch',
+    'wake_artifacts_patch',
     {
       description:
         'Atomically replace one exact UTF-8 text fragment in an artifact owned by this producer.',
@@ -116,7 +116,7 @@ export function createArtifactMcpServer(
     },
   );
   server.registerTool(
-    'wake.artifacts.write',
+    'wake_artifacts_write',
     {
       description: 'Stage UTF-8 content at a path owned by this activation producer.',
       inputSchema: {
@@ -143,7 +143,7 @@ export function createArtifactMcpServer(
     },
   );
   server.registerTool(
-    'wake.artifacts.delete',
+    'wake_artifacts_delete',
     {
       description: 'Stage deletion of an artifact path owned by this activation producer.',
       inputSchema: { path: z.string().min(1) },

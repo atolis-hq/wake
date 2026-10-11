@@ -54,30 +54,30 @@ describe('artifact MCP server', () => {
 
     await expect(client.listTools()).resolves.toMatchObject({
       tools: expect.arrayContaining([
-        expect.objectContaining({ name: 'wake.artifacts.list' }),
-        expect.objectContaining({ name: 'wake.artifacts.read' }),
-        expect.objectContaining({ name: 'wake.artifacts.write' }),
-        expect.objectContaining({ name: 'wake.artifacts.patch' }),
-        expect.objectContaining({ name: 'wake.artifacts.delete' }),
+        expect.objectContaining({ name: 'wake_artifacts_list' }),
+        expect.objectContaining({ name: 'wake_artifacts_read' }),
+        expect.objectContaining({ name: 'wake_artifacts_write' }),
+        expect.objectContaining({ name: 'wake_artifacts_patch' }),
+        expect.objectContaining({ name: 'wake_artifacts_delete' }),
       ]),
     });
     await client.callTool({
-      name: 'wake.artifacts.write',
+      name: 'wake_artifacts_write',
       arguments: { path: 'spec.md', content: '# Spec' },
     });
     await expect(
       client.callTool({
-        name: 'wake.artifacts.read',
+        name: 'wake_artifacts_read',
         arguments: { revisionId: 'revision-1', encoding: 'utf8' },
       }),
     ).resolves.toMatchObject({ content: [expect.objectContaining({ text: '# Spec' })] });
     await client.callTool({
-      name: 'wake.artifacts.write',
+      name: 'wake_artifacts_write',
       arguments: { path: 'diagram.bin', content: 'AAEC', encoding: 'base64' },
     });
     await expect(
       client.callTool({
-        name: 'wake.artifacts.read',
+        name: 'wake_artifacts_read',
         arguments: { revisionId: 'revision-2', encoding: 'base64' },
       }),
     ).resolves.toMatchObject({ content: [expect.objectContaining({ text: 'AAEC' })] });

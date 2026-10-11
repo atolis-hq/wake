@@ -34,10 +34,23 @@ describe('runner MCP configuration', () => {
     expect(args).toContain('--strict-mcp-config');
   });
 
+  it('allows only injected Wake tools alongside restricted Claude tools', () => {
+    const args = claudeCommandArgs({ ...request, allowedTools: ['Read', 'mcp__wake'] });
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe('Read mcp__wake');
+    const other = claudeCommandArgs({
+      ...request,
+      allowedTools: ['Read'],
+      mcpServers: [{ name: 'other', command: 'other' }],
+    });
+    expect(other[other.indexOf('--allowedTools') + 1]).toBe('Read');
+    expect(claudeCommandArgs(request)).not.toContain('--allowedTools');
+  });
+
   it('injects Codex MCP configuration through one-run config overrides', () => {
     const args = codexCommandArgs(request);
     const override = args.find((arg) => arg.startsWith('mcp_servers.'));
-    expect(override).toBeDefined();
+    // Codex splits override paths literally; quoted keys become quoted server names.
+    expect(override).toMatch(/^mcp_servers\.wake=/);
     expect(parse(override!)).toEqual({
       mcp_servers: {
         wake: {
