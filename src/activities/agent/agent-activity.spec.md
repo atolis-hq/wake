@@ -67,8 +67,10 @@ supplies.
   `ambiguous`, the outcome MUST be `failed` with reason `runner-failed`,
   carrying the runner's own failure message when one was reported.
 - When transport succeeded, the runner's output MUST be parsed as JSON; if
-  parsing fails, the whole trimmed output text is treated as the sentinel's
-  `status`.
+  parsing fails, the last `[[STATUS: <STATUS>]]` marker anywhere in the output supplies the
+  `status`. Plain text without a marker, including legacy bare status lines,
+  MUST fail as `invalid-agent-result`. An unrecognized last marker MUST fail
+  without falling back to earlier markers.
 - A parsed result without a string `status` field, or with a `status`
   outside `DONE`/`REJECTED`/`BLOCKED`/`NEEDS_CLARIFICATION`/`FAILED`, MUST translate to a `failed`
   outcome with reason `invalid-agent-result`.

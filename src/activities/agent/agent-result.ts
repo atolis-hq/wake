@@ -118,7 +118,7 @@ function translateRawAgentResult(output: string): AgentActivityOutcome {
   try {
     return translateAgentResult(JSON.parse(output));
   } catch {
-    const status = [...output.matchAll(/\[\[STATUS: ([^\]\r\n]*)\]\]/g)].at(-1)?.[1];
+    const status = parseAgentStatusMarker(output)?.status;
     return translateAgentResult({
       status,
       reportedArtifacts: wakeArtifacts(output),
@@ -183,4 +183,13 @@ function terminalResult(
       ...(artifacts.length === 0 ? {} : { reportedArtifacts: artifacts }),
     },
   } as AgentActivityOutcome;
+}
+
+export function parseAgentStatusMarker(
+  output: string,
+): { readonly status: string; readonly displayBody: string } | undefined {
+  const markers = /\[\[STATUS: ([^\]\r\n]*)\]\]/g;
+  const last = [...output.matchAll(markers)].at(-1);
+  if (last === undefined) return undefined;
+  return { status: last[1]!, displayBody: output.replace(markers, '').trim() };
 }

@@ -1,5 +1,7 @@
 import { expect, it, vi } from 'vitest';
+import { parseAgentRunnerResponse } from '../../src/execution/infrastructure/agent-runner-adapter.js';
 import { AgentRunPublicationReactor } from '../../src/integrations/application/agent-run-publication-reactor.js';
+import { formatAgentRunComment } from '../../src/integrations/github/application/agent-run-comment.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
 const workflowStream = { kind: 'workflow-instance', id: 'workflow-1' } as const;
@@ -249,6 +251,7 @@ it('falls back to the primary correlation when the requested kind is absent', as
 
 async function publishWatchChildOutcome(input: {
   readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+  readonly output?: string;
   readonly parentWatchId?: string;
   readonly hasParent?: boolean;
   readonly childWaitingSignal?: string;
@@ -270,7 +273,14 @@ async function publishWatchChildOutcome(input: {
           activationId: 'activation-1',
           startedAt: '2026-08-08T00:00:00.000Z',
           finishedAt: '2026-08-08T00:01:00.000Z',
-          agent: { outcome: input.outcome, displayBody: 'Child completed.', metadata: {} },
+          agent:
+            input.output === undefined
+              ? { outcome: input.outcome, displayBody: 'Child completed.', metadata: {} }
+              : parseAgentRunnerResponse({
+                  transport: 'succeeded',
+                  output: input.output,
+                  runner: 'codex',
+                }),
         },
       }),
     },
@@ -370,3 +380,22 @@ async function publishWithReplyTarget(
   if (target === 'none') return undefined;
   return (appended[0] as Array<{ payload: { resourceId: string } }>)[0]!;
 }
+
+it.each(['DONE', 'REJECTED'] as const)(
+  'publishes a %s marker as a watch verdict and comment',
+  async (outcome) => {
+    const published = await publishWatchChildOutcome({
+      outcome,
+      output: 'Review complete.\n[[STATUS: ' + outcome + ']]',
+    });
+    expect(published.payload.report).toMatchObject({
+      outcome,
+      displayBody: 'Review complete.',
+      watchGateVerdict: { runId: 'run-1' },
+    });
+    const comment = formatAgentRunComment(published.payload.report as never);
+    expect(comment).toContain(outcome === 'DONE' ? 'Done' : 'Changes Requested');
+    expect(comment).not.toContain('[[STATUS:');
+    expect(comment).not.toContain('Reply on this thread to continue');
+  },
+);
