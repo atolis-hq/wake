@@ -632,12 +632,6 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                           192,
                         )}px`;
                       }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey) {
-                          event.preventDefault();
-                          sendMessage();
-                        }
-                      }}
                       placeholder="Add context, answer a question, or direct the current work."
                       rows={1}
                     />

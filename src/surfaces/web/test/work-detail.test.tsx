@@ -534,7 +534,7 @@ describe('work detail', () => {
     );
   });
 
-  it('records an operator message from the dedicated Conversation tab', async () => {
+  it('inserts newlines in Conversation and sends only by button activation', async () => {
     const user = userEvent.setup();
     const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
     render(
@@ -548,8 +548,19 @@ describe('work detail', () => {
     expect(screen.getByRole('tabpanel', { name: 'Conversation' }).id).toBe(
       'work-detail-conversation-panel',
     );
-    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Please continue.');
+    const input = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
+    const send = screen.getByRole('button', { name: 'Send message' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    await user.type(input, '   ');
+    expect(send.disabled).toBe(true);
+    await user.type(input, 'Please continue.');
     await user.keyboard('{Enter}');
+    expect(input.value).toBe('   Please continue.\n');
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+    expect(input.value).toBe('   Please continue.\n\n');
+    expect(requests.filter(({ url }) => url.endsWith('/commands/message'))).toHaveLength(0);
+    await user.type(input, 'With more context.   ');
+    await user.click(send);
 
     await waitFor(() =>
       expect(requests.filter(({ url }) => url.endsWith('/commands/message'))).toHaveLength(1),
@@ -557,7 +568,9 @@ describe('work detail', () => {
     expect(await screen.findByText('Queued for Wake')).toBeTruthy();
     const message = requests.find(({ url }) => url.endsWith('/commands/message'));
     expect(message?.init?.method).toBe('POST');
-    expect(JSON.parse(String(message?.init?.body))).toMatchObject({ body: 'Please continue.' });
+    expect(JSON.parse(String(message?.init?.body))).toMatchObject({
+      body: 'Please continue.\n\nWith more context.',
+    });
     expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe(
       '',
     );
