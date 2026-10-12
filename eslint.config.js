@@ -25,6 +25,7 @@ export default tseslint.config(
       '.wake/**',
       '.claude/worktrees/**',
       '.worktrees/**',
+      'marketing/**',
     ],
   },
   {
