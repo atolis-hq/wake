@@ -1,26 +1,25 @@
 import { CronExpressionParser } from 'cron-parser';
-import type { ScheduleConfig } from '../contracts/config.js';
 
-export interface ScheduleSlot {
+export interface CronTriggerSlot {
   readonly identity: string;
   readonly at: string;
 }
 
-export class SchedulePolicy {
+export class CronTriggerPolicy {
   elapsedSlots(
-    config: ScheduleConfig,
+    config: { readonly id: string; readonly cron: string },
     now: string,
     checkpoint: string | null,
-  ): readonly ScheduleSlot[] {
+  ): readonly CronTriggerSlot[] {
     const end = minute(new Date(now));
     const start =
       checkpoint === null ? end : minute(new Date(new Date(checkpoint).getTime() + 60_000));
     if (start > end) return [];
     const fields = config.cron.trim().split(/\s+/);
     if (fields.length !== 5)
-      throw new Error(`Schedule ${config.id} must use a five-field cron expression`);
+      throw new Error(`Trigger ${config.id} must use a five-field cron expression`);
     if (fields.some(hasUnsupportedSyntax))
-      throw new Error(`Schedule ${config.id} uses unsupported cron syntax`);
+      throw new Error(`Trigger ${config.id} uses unsupported cron syntax`);
     const expression = CronExpressionParser.parse(config.cron, {
       currentDate: new Date(start - 1),
       endDate: new Date(end),
@@ -28,19 +27,19 @@ export class SchedulePolicy {
     });
     const dayOfMonth = fieldExpression(fields, 2, 4);
     const dayOfWeek = fieldExpression(fields, 4, 2);
-    const slots: ScheduleSlot[] = [];
+    const slots: CronTriggerSlot[] = [];
     while (expression.hasNext()) {
       const date = expression.next().toDate();
       if (!matchesDays(date, dayOfMonth, dayOfWeek)) continue;
       const at = date.toISOString();
-      slots.push({ identity: `schedule:${config.id}:${at}`, at });
+      slots.push({ identity: `trigger:${config.id}:cron:${at}`, at });
     }
     return slots;
   }
 }
 
 function minute(value: Date): number {
-  if (Number.isNaN(value.getTime())) throw new Error('Schedule timestamps must be valid dates');
+  if (Number.isNaN(value.getTime())) throw new Error('Trigger timestamps must be valid dates');
   return Math.floor(value.getTime() / 60_000) * 60_000;
 }
 

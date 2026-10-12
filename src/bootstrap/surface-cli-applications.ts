@@ -100,7 +100,7 @@ export function createSurfaceCliApplications(
     );
   };
   // Intake owns provider polling, so only its resident loop backs off
-  // exponentially when idle. The runner loop owns schedules, reconciliation,
+  // exponentially when idle. The runner loop owns triggers, reconciliation,
   // and delivery; it stays on a fast cadence when there is no local work.
   // The independent durable subscriber owns activation scheduling. Delivery
   // can still hit an external API, so consecutive errors back off

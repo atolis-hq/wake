@@ -106,9 +106,9 @@ export function faultInjectingCheckpoints(
 }
 
 export function faultInjectingScheduleCheckpoints(
-  checkpoints: ScheduleCheckpointStore,
+  checkpoints: TriggerCheckpointStore,
   faults: FaultInjector,
-): ScheduleCheckpointStore {
+): TriggerCheckpointStore {
   return {
     load: checkpoints.load.bind(checkpoints),
     async save(scheduleId, slot) {
@@ -143,5 +143,5 @@ export function faultInjectingDeliveryAdapter(
   };
 }
 import type { CheckpointStore, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
-import type { ScheduleCheckpointStore } from '../../../src/control-plane/index.js';
+import type { TriggerCheckpointStore } from '../../../src/control-plane/index.js';
 import type { ExternalDeliveryAdapter } from '../../../src/integrations/index.js';

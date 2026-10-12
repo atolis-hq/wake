@@ -568,7 +568,7 @@ describe('target composition root', () => {
       journal: new InMemoryEventJournal(clock),
       projections: new InMemoryProjectionStore(),
       checkpoints: new InMemoryCheckpointStore(),
-      scheduleCheckpoints: {
+      triggerCheckpoints: {
         async load() {
           return '2026-08-10T00:00:00.000Z';
         },
@@ -592,7 +592,7 @@ describe('target composition root', () => {
       journal: new InMemoryEventJournal(clock),
       projections: new InMemoryProjectionStore(),
       checkpoints: new InMemoryCheckpointStore(),
-      scheduleCheckpoints: {
+      triggerCheckpoints: {
         async load() {
           return checkpoint;
         },
@@ -618,7 +618,7 @@ describe('target composition root', () => {
       journal: new InMemoryEventJournal(clock),
       projections: new InMemoryProjectionStore(),
       checkpoints: new InMemoryCheckpointStore(),
-      scheduleCheckpoints: {
+      triggerCheckpoints: {
         async load() {
           return '2026-08-10T00:00:00.000Z';
         },
@@ -1444,9 +1444,7 @@ function scheduledRootConfig() {
       },
     },
     controlPlane: {
-      schedules: [
-        { id: 'hourly', workflow: 'scheduled', cron: '* * * * *', objective: 'Scheduled work' },
-      ],
+      triggers: [{ id: 'hourly', workflow: 'scheduled', on: { cron: '* * * * *' } }],
     },
     integrations: {},
     surfaces: {},

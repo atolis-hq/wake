@@ -23,7 +23,7 @@ import {
   type ActivationSchedulerSubscriber,
   type IntakePipeline,
   type RunnerPipeline,
-  type ScheduleCheckpointStore,
+  type TriggerCheckpointStore,
 } from '../control-plane/index.js';
 import { createConversationService } from '../conversations/index.js';
 import {
@@ -70,8 +70,8 @@ import { composePersistence } from './persistence-composition.js';
 import type { RuntimeProjectionSubscriptions } from './projection-runtime.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 import { createRunnerRegistry } from './runner-registry.js';
-import { FileScheduleCheckpointStore } from './schedule-checkpoint-store.js';
 import { createTranscriptRetention } from './transcript-retention.js';
+import { FileTriggerCheckpointStore } from './trigger-checkpoint-store.js';
 import {
   createUpdateMaintenanceLease,
   type UpdateMaintenanceLease,
@@ -95,7 +95,7 @@ export interface CompositionRootOptions {
   readonly decorateProjections?: (projections: ProjectionStore) => ProjectionStore;
   readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
   readonly subscriptionRunSerialiser?: ProcessorRunSerialiser;
-  readonly scheduleCheckpoints?: ScheduleCheckpointStore;
+  readonly triggerCheckpoints?: TriggerCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
     provider: ProviderInstance,
@@ -249,10 +249,11 @@ export async function createCompositionRoot(
         ? profileDecorator
         : (runner: Runner, name: string) =>
             profileDecorator(options.decorateRunner!(runner, name), name);
+  const runners = createRunnerRegistry(config.execution, fakeScenarios, decorateRunner);
   const execution = createExecutionService(journal, activities, config.execution, {
     clock,
     ids,
-    runners: createRunnerRegistry(config.execution, fakeScenarios, decorateRunner),
+    runners,
     mcp: createArtifactMcpProvisioner({
       artifacts,
       orchestration,
@@ -352,8 +353,10 @@ export async function createCompositionRoot(
     wakeRoot,
     subscriptionRunSerialiser,
     processorRuntime,
-    scheduleCheckpoints:
-      options.scheduleCheckpoints ?? new FileScheduleCheckpointStore(paths.dataRoot),
+    activities,
+    runners,
+    triggerCheckpoints:
+      options.triggerCheckpoints ?? new FileTriggerCheckpointStore(paths.dataRoot),
     ...(options.decorateDeliveryAdapter === undefined
       ? {}
       : { decorateDeliveryAdapter: options.decorateDeliveryAdapter }),

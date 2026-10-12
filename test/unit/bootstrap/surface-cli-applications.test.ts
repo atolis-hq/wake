@@ -92,7 +92,7 @@ it('pokes subscriber scheduling after schedule/reactor facts and before a failin
     }),
   };
   const runnerPipeline = createRunnerPipeline({
-    runSchedules: async () => {
+    runTriggers: async () => {
       trace.push('run-schedules');
     },
     maintain: async () => {
@@ -371,7 +371,7 @@ it('aborts an in-flight resident delivery when the lifecycle stops', async () =>
     deliveryStarted = resolve;
   });
   const runnerPipeline = createRunnerPipeline({
-    runSchedules: async () => undefined,
+    runTriggers: async () => undefined,
     maintain: async () => undefined,
     deliver: async (signal) => {
       deliveryStarted();

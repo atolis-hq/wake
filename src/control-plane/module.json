@@ -13,6 +13,7 @@
   "publicEntry": "./index.ts",
   "namespaces": {
     "events": [
+      "control-plane.trigger-invocation-started",
       "control-plane.dispatch-paused",
       "control-plane.dispatch-resumed",
       "control-plane.runner-paused",

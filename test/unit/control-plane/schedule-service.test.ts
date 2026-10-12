@@ -1,12 +1,12 @@
 import { correlationId, type CommandContext } from '@atolis-hq/eventing';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
-import { ScheduleService, type ScheduleConfig } from '../../../src/control-plane/index.js';
+import { TriggerService, type TriggerConfig } from '../../../src/control-plane/index.js';
 
-const config: ScheduleConfig = {
+const config: TriggerConfig = {
   id: 'hourly',
   workflow: 'review',
-  cron: '* * * * *',
-  objective: 'Review the repository',
+  on: { cron: '* * * * *' },
 };
 
 it('creates one normal WorkItem and workflow for each accepted elapsed slot', async () => {
@@ -19,7 +19,9 @@ it('creates one normal WorkItem and workflow for each accepted elapsed slot', as
     occurredAt: '2026-07-31T12:01:30.000Z',
     actor: { kind: 'system', id: 'test' },
   };
-  const service = new ScheduleService({
+  const service = new TriggerService({
+    journal: new InMemoryEventJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') }),
+    capacityAvailable: async () => true,
     checkpoint: {
       async load() {
         return checkpoint;

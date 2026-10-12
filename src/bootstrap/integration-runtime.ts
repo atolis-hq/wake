@@ -9,22 +9,32 @@ import {
 } from '@atolis-hq/eventing';
 import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import { join } from 'node:path';
-import type { createPullRequestService } from '../activities/index.js';
+import {
+  ActivityExecutionKind,
+  activityName,
+  type ActivityRegistry,
+  type createPullRequestService,
+} from '../activities/index.js';
 import {
   ControlStreamKind,
-  ScheduleService,
+  TriggerService,
+  createDurableRunnerIneligibility,
   createIntakePipeline,
   createRunnerPipeline,
+  createTriggerReactor,
   createWorkCancellationPolicy,
   type IntakePipeline,
   type RunnerPipeline,
-  type ScheduleCheckpointStore,
+  type TriggerCheckpointStore,
   type createControlPlaneService,
 } from '../control-plane/index.js';
 import type { createConversationService } from '../conversations/index.js';
 import {
+  NoEligibleRunnerError,
   RunRepository,
   createRuntimeMemoryProfile,
+  isActiveRunStatus,
+  type RunnerRegistry,
   type RuntimeMemoryProfile,
   type createExecutionService,
 } from '../execution/index.js';
@@ -65,6 +75,7 @@ import {
   type createResourceService,
 } from '../resources/index.js';
 import type { createWorkService } from '../work/index.js';
+import { decodeCanonicalEvent } from './canonical-events.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import type { EventProcessorRuntime } from './event-processor-runtime.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
@@ -86,6 +97,8 @@ export interface IntegrationRuntime {
 }
 
 export interface IntegrationRuntimeInput {
+  readonly activities: ActivityRegistry;
+  readonly runners: RunnerRegistry;
   readonly config: ResolvedWakeModulesConfig;
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
@@ -105,7 +118,7 @@ export interface IntegrationRuntimeInput {
   readonly wakeRoot: string;
   readonly subscriptionRunSerialiser: ProcessorRunSerialiser;
   readonly processorRuntime: EventProcessorRuntime;
-  readonly scheduleCheckpoints: ScheduleCheckpointStore;
+  readonly triggerCheckpoints: TriggerCheckpointStore;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
     provider: ProviderInstance,
@@ -193,13 +206,52 @@ export async function composeIntegrationRuntime(
     },
     now: () => input.clock.now().toISOString(),
   });
-  const schedules = new ScheduleService({
-    checkpoint: input.scheduleCheckpoints,
+  const runnerIneligibility = createDurableRunnerIneligibility(input.journal, () =>
+    input.clock.now().toISOString(),
+  );
+  const triggers = new TriggerService({
+    journal: input.journal,
+    capacityAvailable: async (trigger) => {
+      if (await input.isPaused()) return false;
+      const active = (await input.execution.list()).filter((run) => isActiveRunStatus(run.status));
+      if (active.length >= input.config.controlPlane.maxConcurrentRuns) return false;
+      const workflow = input.config.orchestration.workflows[trigger.workflow]!;
+      const stage = workflow.stages[workflow.entry ?? Object.keys(workflow.stages)[0]!]!;
+      const pool = stage.execution?.runnerPool ?? input.config.execution.defaultRunnerPool;
+      if (input.config.execution.runnerPools[pool] === undefined) return false;
+      if (
+        input.activities.describe(activityName(stage.activity)).executionKind !==
+        ActivityExecutionKind.Agent
+      )
+        return true;
+      try {
+        input.runners.resolve(pool, await runnerIneligibility(), { ephemeralMcp: true });
+        return true;
+      } catch (error) {
+        if (error instanceof NoEligibleRunnerError) return false;
+        throw error;
+      }
+    },
+    checkpoint: input.triggerCheckpoints,
     ids: input.ids,
     work: input.work,
     orchestration: input.orchestration,
     now: () => input.clock.now().toISOString(),
   });
+  const triggerReactors = input.config.controlPlane.triggers.map((config) =>
+    createTriggerReactor(triggers, config, decodeCanonicalEvent),
+  );
+  // Registration starts at the current journal boundary; historical facts are not sources.
+  for (const reactor of triggerReactors) {
+    if ((await input.processorState.read(reactor.consumer, 'registration')) !== null) continue;
+    const position = await input.journal.latestGlobalPosition();
+    await input.checkpoints.save(reactor.consumer, position);
+    await input.processorState.write({
+      consumer: reactor.consumer,
+      key: 'registration',
+      value: { position },
+    });
+  }
   const artifacts = new ArtifactRegistrationReactor({
     journal: input.journal,
     resources: input.resources,
@@ -293,12 +345,12 @@ export async function composeIntegrationRuntime(
   });
   const runnerPipeline = createRunnerPipeline({
     isPaused: input.isPaused,
-    runSchedules: () =>
-      observeMemory(memoryProfile, 'runner.schedules', async () => {
-        for (const schedule of input.config.controlPlane.schedules)
-          await schedules.run(schedule, {
+    runTriggers: () =>
+      observeMemory(memoryProfile, 'runner.triggers', async () => {
+        for (const trigger of input.config.controlPlane.triggers)
+          await triggers.run(trigger, {
             commandId: input.ids.next('command'),
-            correlationId: 'schedule-tick' as never,
+            correlationId: 'trigger-tick' as never,
             occurredAt: input.clock.now().toISOString(),
             actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
           });
@@ -333,6 +385,7 @@ export async function composeIntegrationRuntime(
     projectionSubscriptions,
     processors: [
       ...projectionSubscriptions.processors,
+      ...triggerReactors,
       watch.processor,
       resourceTransitions.processor,
       artifacts.processor,

@@ -526,9 +526,7 @@ async function composed(
     },
     controlPlane: options.schedule
       ? {
-          schedules: [
-            { id: 'hourly', workflow: 'scheduled', cron: '* * * * *', objective: 'scheduled' },
-          ],
+          triggers: [{ id: 'hourly', workflow: 'scheduled', on: { cron: '* * * * *' } }],
         }
       : {},
     integrations: options.delivery ? { fake: { enabled: true, provider: 'fake' } } : {},
@@ -546,7 +544,7 @@ async function composed(
     decorateCheckpoints: (base) => faultInjectingCheckpoints(base, faults),
     decorateRunner: (runner: Runner) => spyRunner(runner, runnerRequests),
     fakeDeliveryProvider: deliveryProvider,
-    scheduleCheckpoints: faultInjectingScheduleCheckpoints(
+    triggerCheckpoints: faultInjectingScheduleCheckpoints(
       {
         async load() {
           return '2026-08-10T00:00:00.000Z';

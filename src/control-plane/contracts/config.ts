@@ -1,25 +1,60 @@
-export interface ScheduleConfig {
+import { z } from 'zod';
+import { CronTriggerPolicy } from '../domain/cron-trigger-policy.js';
+
+export interface TriggerConfig {
   readonly id: string;
   readonly workflow: string;
-  readonly cron: string;
-  readonly objective: string;
+  readonly on: { readonly events?: readonly string[]; readonly cron?: string };
+  readonly when?: { readonly capacityAvailable: true };
 }
 
 export interface ControlPlaneConfig {
   readonly maxDispatches: number;
   readonly maxConcurrentRuns: number;
-  readonly schedules: readonly ScheduleConfig[];
+  readonly triggers: readonly TriggerConfig[];
   readonly resident?: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number };
 }
 
-import { z } from 'zod';
-
-const scheduleSchema = z
+const triggerSchema = z
   .object({
-    id: z.string().trim().min(1),
+    id: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((id) => !/[\\/]/.test(id), 'Trigger id must not contain path separators'),
     workflow: z.string().trim().min(1),
-    cron: z.string().trim().min(1),
-    objective: z.string().trim().min(1),
+    on: z
+      .object({
+        events: z.array(z.string().trim().min(1)).min(1).optional(),
+        cron: z
+          .string()
+          .trim()
+          .min(1)
+          .superRefine((cron, context) => {
+            try {
+              new CronTriggerPolicy().elapsedSlots(
+                { id: 'validation', cron },
+                '2026-01-01T00:00:00.000Z',
+                null,
+              );
+            } catch (error) {
+              context.addIssue({
+                code: 'custom',
+                message: error instanceof Error ? error.message : 'Invalid cron',
+              });
+            }
+          })
+          .optional(),
+      })
+      .strict()
+      .refine(
+        (on) => on.events !== undefined || on.cron !== undefined,
+        'At least one trigger source is required',
+      ),
+    when: z
+      .object({ capacityAvailable: z.literal(true) })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -27,7 +62,7 @@ export const controlPlaneConfigSchema = z
   .object({
     maxDispatches: z.number().int().positive().default(1),
     maxConcurrentRuns: z.number().int().positive().default(1),
-    schedules: z.array(scheduleSchema).default([]),
+    triggers: z.array(triggerSchema).default([]),
     resident: z
       .object({
         // Backoff for the resident loop's own retry cadence when idle or
@@ -43,6 +78,6 @@ export const controlPlaneConfigSchema = z
   .default({
     maxDispatches: 1,
     maxConcurrentRuns: 1,
-    schedules: [],
+    triggers: [],
     resident: { pollBackoffMs: 1000 },
   });
