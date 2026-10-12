@@ -40,13 +40,13 @@ An ordinary run follows this sequence:
 5. Normal GitHub observations and intake correlate the assignment with one WorkItem, applying current admission limits. Assignment requests work; it does not reserve capacity or guarantee immediate admission/dispatch. The assessment artifact identifies the selected issue, rationale and observed provider result.
 6. The run records assessment context for the next evaluation and finishes. A relevant change during the run causes a later coalesced evaluation if still useful.
 
-No suitable work is a successful no-op. A later explicit cron/event occurrence may reconsider it after cooldown; the no-op itself does not request another evaluation. Errors follow bounded workflow retry policy. Reconciliation must not reset an exhausted retry budget indefinitely.
+No suitable work is a successful no-op. A later explicit cron/event occurrence may reconsider it; the no-op itself does not request another evaluation. Errors follow bounded workflow retry policy. Reconciliation must not reset an exhausted retry budget indefinitely.
 
 ## 4. General trigger mechanism
 
 ### 4.1 Configuration contract
 
-The proposed strict `controlPlane.triggers` list replaces scheduled-task definitions with trigger-to-workflow entries. Reuse the existing watch vocabulary where useful, but place event and time sources together under `on`. A target remains a named workflow plus an objective; this does not introduce a separate action engine.
+The proposed strict `controlPlane.triggers` list replaces scheduled-task definitions with trigger-to-workflow entries. Reuse the existing watch vocabulary where useful, but place event and time sources together under `on`. The target is a named workflow; its configured activity prompt defines what the invocation should do. There is no trigger-level task text or minimum interval in the initial schema. Wake supplies a deterministic WorkItem display description derived from the trigger ID and workflow name to satisfy existing WorkItem creation contracts; that description is metadata, not another instruction source.
 
 ```yaml
 controlPlane:
@@ -61,23 +61,20 @@ controlPlane:
       when:
         capacityAvailable: true
       workflow: delivery-oversight
-      objective: Inspect GitHub and assign suitable work.
       contextScope: oversight-main
-      minIntervalMs: 300000
 ```
 
 The event names above already exist. The surrounding trigger schema is proposed, not current configuration. They are wake-up hints: a Run ending does not prove that delivery capacity is still available. Cron is the explicit fallback for already-idle systems or backlog outside Wake's intake filters; broad backlog reads happen in the agent.
 
 | Field                    | Proposed contract                                                                                            |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `id`                     | Required unique trigger identity; owns checkpoints/cooldown and default coordination key                     |
+| `id`                     | Required unique trigger identity; owns checkpoints and default coordination key                              |
 | `on.events`              | Optional non-empty list of known canonical event types; validate against registered public vocabularies      |
 | `on.cron`                | Optional five-field UTC cron expression; preserve current expression semantics                               |
 | `on`                     | Required; at least one source must be present. Events and cron are alternative sources, not an AND condition |
 | `when.capacityAvailable` | Optional true-only typed execution-headroom gate; all configured gates must hold                             |
-| `workflow` / `objective` | Required named workflow and new invocation WorkItem objective, as with current schedules                     |
-| `contextScope`           | Optional reference to a configured Artifact context scope; a reference alone grants no access                |
-| `minIntervalMs`          | Optional non-negative cooldown between workflow starts; default 0; oversight example sets five minutes       |
+| `workflow`               | Required named workflow; configured activity prompts define the task                                         |
+| `contextScope`           | Optional explicit shared-context name; omitted preserves the invocation WorkItem's existing artifact scope   |
 
 For this first release, `capacityAvailable` means execution headroom under the configured `maxConcurrentRuns`, with normal pause/runner eligibility checks. It is a typed policy gate, not a generic metric. Recheck it before starting; it does not reserve capacity or prove that another delivery should be admitted. The agent considers active work and chooses whether to assign anything. Delivery WIP is a distinct future policy (existing backlog issue #148), not a prerequisite for the trigger engine. Normal dispatch enforces execution capacity for all Runs, including oversight itself. Trusted trigger provenance distinguishes oversight invocation WorkItems from deliveries if root-delivery accounting is later added. Additional gates can be introduced as typed policy contracts when needed.
 
@@ -85,17 +82,17 @@ Events-only, cron-only and combined entries are supported. Missing/empty `on` is
 
 Interval scheduling is a future source format; it does not alter the source/gate/target separation. If added, it can sit alongside `events` under `on`, with at most one time source per entry. Arbitrary metric expressions, JavaScript conditions and payload-query languages are out of scope.
 
-### 4.2 Eligibility, cooldown and recovery
+### 4.2 Eligibility, coalescing and recovery
 
 A false `when` skips that occurrence and advances its consumed checkpoint. It does not wait for capacity and fire later. The next explicit occurrence can try again. Deferred-on-ineligibility behavior is not in the first release.
 
-Requests received during cooldown or an active invocation are coalesced into at most one pending request per coordination key. Wake may start that recorded request after cooldown/the active invocation ends, but must recheck `when`. Cooldown expiry without a pending explicit request does nothing. Measure cooldown from the recorded workflow start; skip does not consume cooldown, and no-op completion does not bypass it. A long active run still prevents overlap even if its cooldown elapsed.
+Requests received during an active invocation are coalesced into at most one pending request per coordination key. Wake may start that recorded request after the active invocation ends, but must recheck `when`. Completion without a pending explicit request does nothing. There is no cooldown or time-based rate limiter in the first release: cron controls scheduled frequency, while single-flight prevents overlap. Event requests can start sequentially; use cron for the initial oversight deployment if event volume would cause unnecessary agent runs.
 
 Persist source identities (event ID or cron slot), consumed checkpoint, last start, pending request and active invocation. Replaying events, restarting hosts, or issuing simultaneous tick/resident advancement must not duplicate a start. Remove `controlPlane.schedules`; reject that old schema and update the init scaffold/current reference docs. No compatibility aliases, schedule-state migration or dual paths are required. For new triggers, start event consumption at registration rather than replaying the entire journal. After registration, checkpoint recovery may catch up unseen events/cron slots using bounded coalescing; a previously recorded request is not silently lost.
 
 The first implementation uses existing shared-home serialization/claims. Use the trigger ID as the default coordination key and the context-scope identity when a scope is bound, so two triggers targeting the same oversight memory cannot overlap. Separate triggers targeting the same workflow without shared context remain independent. Define claims durably, not with process-local flags. Distributed multi-server coordination/fencing beyond the existing shared-home topology is deferred.
 
-Exclude events produced by that oversight scope's own invocations from its evaluation requests. This avoids a completion-trigger loop; a cooldown alone would merely slow it down. Keep retries within existing workflow budgets. Surface exhausted failures and pause the trigger until an explicit operator resume; a cron occurrence must not silently reset an exhausted invocation's retries.
+Exclude events produced by that oversight scope's own invocations from its evaluation requests. This avoids a completion-trigger loop. Keep retries within existing workflow budgets. Surface exhausted failures and pause the trigger until an explicit operator resume; a cron occurrence must not silently reset an exhausted invocation's retries.
 
 Oversight uses normal execution limits and never reserves all delivery slots while deliberating. Configured runner pools can separate its execution from implementation work; the first release does not promise preemption or additional global capacity.
 
@@ -103,7 +100,7 @@ Oversight uses normal execution limits and never reserves all delivery slots whi
 
 Each occurrence that starts creates an independent top-level WorkItem and ordinary workflow instance. A trigger is a recurring control-plane definition, not a synthetic parent WorkItem. Invocation facts record trigger ID, source identities, invocation WorkItem/workflow, context scope and start/result references. A triggered invocation may itself delegate real children later; that does not make successive occurrences siblings under a synthetic work parent.
 
-Add a **Triggers** page to the main Wake navigation. List configured trigger ID, effective enabled/paused/running status, target workflow, next cron occurrence where applicable, last invocation and skip/failure reason. The detail page shows configuration, pending request/cooldown, linked invocation history and the bound context scope. WorkItem pages link back to their originating trigger. A cron-only trigger has a next time; an events-only trigger does not invent one.
+Add a **Triggers** page to the main Wake navigation. List configured trigger ID, effective enabled/paused/running status, target workflow, next cron occurrence where applicable, last invocation and skip/failure reason. The detail page shows configuration, pending request, linked invocation history and the bound context scope. WorkItem pages link back to their originating trigger. A cron-only trigger has a next time; an events-only trigger does not invent one.
 
 Pause/resume are available on the list row and detail page through typed Control Plane commands/API. Pause durably prevents new starts and clears any unstarted coalesced request. While paused, consume/skip incoming occurrences without accumulating catch-up work. Resume permits subsequent explicit occurrences; it does not immediately start a run, replay paused occurrences, or reset invocation retry counters. Existing active invocations continue; cancel/freeze stays an explicit existing WorkItem action. Recheck pause immediately before registering a start and serialize that decision with pause application. Keep command receipts/recovery inspectable.
 
@@ -115,7 +112,7 @@ Config remains authoritative for definitions; durable pause state controls opera
 
 A context scope is an Artifact-owned collection of authorized artifact references, not a second byte store, conversation store or an indefinitely open WorkItem. Artifacts retain existing WorkItem identity, producer-owned writes, revision provenance and accepted-output publication. A scope adds read access and named current references across separate WorkItems.
 
-Triggered WorkItems bind to a configured stable scope such as `oversight-main`. Delegation can create a delivery scope and enroll related WorkItems through the trusted delegation command. The same sharing contracts cover both cases:
+Without an explicit `contextScope`, preserve today's WorkItem-local artifact scope, including sharing across workflows on that WorkItem. Each recurring invocation is a new WorkItem and does not automatically inherit memory from previous invocations. An explicit `contextScope`, such as `oversight-main`, enables recurring memory or intentional sharing between configured triggers. Parent/child WorkItems retain their own default scopes; trusted delegation grants selected cross-WorkItem reads without merging ownership or automatically creating a root-delivery scope. Internally distinguish WorkItem-derived identities from named context identities to avoid collisions. No Artifact configuration registry is required. The same sharing contracts cover both cases:
 
 | Consumer                  | Default shared references                                                    |
 | ------------------------- | ---------------------------------------------------------------------------- |
@@ -129,7 +126,7 @@ Children cannot edit parent or sibling artifacts. A parent can read accepted chi
 
 ### 6.2 Current memory and publication
 
-Each invocation reads the scope's current accepted memory, then writes a successor `memory.md` under its own producer. An accepted outcome from the configured publishing stage advances the scope's `memory` reference to that revision. An absent file, failed activation or unaccepted draft leaves the previous reference unchanged. Keep provenance/history; replacing a current pointer never deletes the old producer's artifact. Published references must remain retained while reachable by scopes or recorded delivery evidence.
+Each invocation reads the scope's current accepted memory, then writes a successor `memory.md` under its own producer. Use that conventional path rather than adding configured publisher bindings: a successfully completed invocation with exactly one accepted producer's `memory.md` advances the scope's `memory` reference to its latest accepted revision. If the file is absent, the invocation fails, or multiple producers supply ambiguous memory output, retain the previous reference and expose the reason. Unaccepted drafts never become current memory. The prompt tells the designated stage to maintain this artifact; no Artifact workflow/stage registry is needed. Keep provenance/history; replacing a current pointer never deletes the old producer's artifact. Published references must remain retained while reachable by scopes or recorded delivery evidence.
 
 Use exact revisions for assignments and review evidence. For recurring memory, resolve the current reference when provisioning each Run's manifest. This does not freeze the editable prompt. Expected prior-reference checks prevent two competing publishers from silently overwriting current memory; single-flight coordination is the ordinary prevention mechanism. Advancing a scope reference follows accepted-outcome facts and reconciles idempotently after a crash, without assuming an atomic append across module streams.
 
@@ -137,22 +134,9 @@ The context manifest contains metadata/references, not every historical transcri
 
 ### 6.3 Configuration and encapsulation
 
-The following proposed Artifact-owned scope definition is illustrative of the strict contract to implement; it does not exist at the baseline:
+Scope selection defaults to the WorkItem; an explicit `contextScope` overrides the sharing context. Do not introduce `artifacts.contextScopes`, workflow allowlists or binding configuration. Omitting the field means no implicit sharing between separate recurring WorkItems, even if they came from the same trigger. Setting it on oversight enables memory across its invocations. Setting the same explicit name on two operator-configured triggers intentionally permits sharing and uses that common scope as their single-flight key. For delegated work, trusted assignment/result references determine which artifacts each role can read; default WorkItem scoping remains intact. A shared context is not an unrestricted read grant for every child.
 
-```yaml
-artifacts:
-  contextScopes:
-    oversight-main:
-      workflows:
-        - delivery-oversight
-      bindings:
-        memory:
-          workflow: delivery-oversight
-          stage: assess
-          path: memory.md
-```
-
-`workflows` declares permitted workflow definitions for triggered membership. `bindings` declares which named workflow/stage may publish a producer-owned artifact as a current scope reference; the example requires that stage actually to exist. A trigger's `contextScope` is only a reference: Bootstrap validates the target workflow against the Artifact-owned scope contract. A workflow name by itself does not enroll arbitrary WorkItems. Membership capabilities are issued using trusted trigger/delegation provenance; a tool argument cannot self-enroll a Run. Writes continue through existing artifact tools, not a new shared-write tool.
+A workflow name alone does not enroll arbitrary WorkItems. Membership capabilities are issued using trusted trigger/delegation facts; a tool argument cannot choose a different scope or self-enroll a Run. Arbitrary activities not started through those paths retain current WorkItem-local access. Scope names are validated as identifiers; authorized trigger creation may create a new scope without a separate registration step. Writes continue through existing artifact tools, not a new shared-write tool.
 
 Artifacts owns access decisions, memberships, current references, retention and MCP semantics. It consumes generic trusted producer/acceptance evidence through public ports; it does not import workflow internals or infer parenthood. Orchestration supplies accepted-outcome/delegation facts; Control Plane supplies trusted trigger binding; Bootstrap composes and validates the graph. Keep references to concrete scope identifiers out of generic workflow-transition interpretation. Surfaces read owning projections and invoke public commands.
 
@@ -194,7 +178,7 @@ These IDs describe proposed coverage, not scenarios already implemented or regis
 | ----- | -------------------------------------------------------------------------------------------- |
 | DO-01 | Cron/event sources independently request one ordinary invocation when eligible               |
 | DO-02 | Duplicate observations, concurrent shared-home hosts and restart do not duplicate starts     |
-| DO-03 | Requests during active/cooldown periods coalesce to one pending explicit request             |
+| DO-03 | Requests during active invocation periods coalesce to one pending explicit request           |
 | DO-04 | No-op succeeds; only a later explicit source can request another evaluation                  |
 | DO-05 | Current capacity/pause gates are rechecked before starting; false eligibility skips          |
 | DO-06 | Actual dispatch still enforces execution limits after an earlier trigger check               |
@@ -229,7 +213,7 @@ Five GitHub delivery issues implement this scope. Keep intended outcomes separat
 
 **Outcome:** users can configure independent workflow starts from explicit cron/events through one strict trigger schema.
 
-Replace schedules with triggers, preserve five-field UTC cron semantics, validate canonical events and named workflow/objective, support the closed capacity gate shape and trigger-level cooldown fields, and wire the minimal production start path. No `on` means invalid config; no implicit startup. Remove old schema/paths, update init scaffold and current config/workflow reference docs. Context scope field has an Artifact-owned reference contract; full sharing lands in O4. Prove cron-only/event-only/combined invocation creation and origin identity with composed fakes.
+Replace schedules with triggers, preserve five-field UTC cron semantics, validate canonical events and named workflow, support the closed capacity gate shape, and wire the minimal production start path. The workflow's activity prompt defines the task; generate WorkItem display metadata without requiring trigger-level instructions. Reject removed trigger fields rather than accepting ignored options. No `on` means invalid config; no implicit startup. Remove old schema/paths, update init scaffold and current config/workflow reference docs. Preserve WorkItem-local artifact scoping; optional explicit shared context lands in O4. Prove cron-only/event-only/combined invocation creation and origin identity with composed fakes.
 
 **Unlocks:** reusable sources and a concrete foundation for other recurring jobs. **Depends on:** none of this batch.
 
@@ -237,7 +221,7 @@ Replace schedules with triggers, preserve five-field UTC cron semantics, validat
 
 **Outcome:** triggers start work safely under live capacity, overlap, pause and restart conditions.
 
-Implement durable requests/checkpoints, current capacity validation, cooldown/coalescing, single-flight claim, typed pause/resume commands and invocation history projections. Suppress self-triggering loops; pause on exhausted failures. Prove duplicate input, competing hosts, crash windows and skip/cooldown semantics. Preserve existing dispatch limits and use public contracts rather than a new scheduler.
+Implement durable requests/checkpoints, current capacity validation, active-run coalescing, single-flight claim, typed pause/resume commands and invocation history projections. Suppress self-triggering loops; pause on exhausted failures. Prove duplicate input, competing hosts, crash windows and skip/coalescing semantics. Preserve existing dispatch limits and use public contracts rather than a new scheduler. Do not add a minimum interval or cooldown.
 
 **Unlocks:** unattended reliable recurring execution and the API facts needed by UI. **Depends on:** O1. Covers the current intent of existing #406 without its historical schema/defaults.
 
@@ -245,7 +229,7 @@ Implement durable requests/checkpoints, current capacity validation, cooldown/co
 
 **Outcome:** operators can find, inspect and pause/resume recurring jobs from a dedicated Triggers page.
 
-Add list/detail navigation, status, next cron time, cooldown/pending state, invocation history, origin links and pause/resume actions. Expose clear skipped/failed reasons and active WorkItem links. Pausing leaves active work running; cancellation stays an existing WorkItem action. Include focused API/web coverage for command races/errors and navigation.
+Add list/detail navigation, status, next cron time, pending state, invocation history, origin links and pause/resume actions. Expose clear skipped/failed reasons and active WorkItem links. Pausing leaves active work running; cancellation stays an existing WorkItem action. Include focused API/web coverage for command races/errors and navigation.
 
 **Unlocks:** operational control and explainability. **Depends on:** O2.
 
@@ -253,7 +237,7 @@ Add list/detail navigation, status, next cron time, cooldown/pending state, invo
 
 **Outcome:** distinct WorkItems can share selected accepted artifacts across recurring invocations and future delegated delivery.
 
-Implement Artifact-owned named scopes, trusted memberships, exact-revision read references, accepted memory bindings and producer-only writes. Validate permitted workflow/stage bindings in composition. Prove fresh-session handoff, denial of unrelated/draft reads, stale pointer updates, accepted-publication recovery and reference retention. Provide the generic trusted-parent/child sharing contract without building the delegated workflow engine.
+Preserve default WorkItem-local scopes and add optional explicit named context for intentional sharing, exact-revision read references, a conventional accepted `memory.md` pointer and producer-only writes. There is no Artifact scope registry/ACL/binding configuration or implicit trigger/root-delivery scope. Prove default WorkItem isolation, explicit fresh-session handoff/named sharing, denial of unrelated/draft reads, stale pointer updates, ambiguous memory output, accepted-publication recovery and reference retention. Provide the generic trusted-parent/child reference-sharing contract without building the delegated workflow engine.
 
 **Unlocks:** cross-invocation memory and reusable parent/child artifact handoff. **Depends on:** none of this batch; integration uses O1/O2 when available. Actual child enrollment later uses validated delegation.
 
@@ -267,7 +251,7 @@ Configure the ordinary workflow/editable prompt, GitHub read/assignment capabili
 
 ## 11. Deferred scope and behavioral tradeoffs
 
-Defer interval scheduling, distributed multi-server fencing beyond existing shared-home coordination, arbitrary expression/ACL languages, prompt pinning/versioning, autonomous goal rewriting, forced agent interruption and a general strategic planning service. Hard provider-dependency ingestion/enforcement remains existing #499; queue WIP remains #148. Child workflows remain the companion spec's scope. Do not add compatibility machinery for schedules.
+Defer minimum-interval/cooldown rate limiting, interval scheduling, distributed multi-server fencing beyond existing shared-home coordination, arbitrary expression/ACL languages, prompt pinning/versioning, autonomous goal rewriting, forced agent interruption and a general strategic planning service. Hard provider-dependency ingestion/enforcement remains existing #499; queue WIP remains #148. Child workflows remain the companion spec's scope. Do not add compatibility machinery for schedules.
 
 Agent triage permits judgment where GitHub data is incomplete, but is not a substitute for later deterministic dependency enforcement. Assess completion, useful selection, interruptions, active-work age and spend; occupied slots alone are not success. Native issue closure is evidence, not universal proof that prerequisite code is available. Keep typed execution gates and inspectable assessment provenance.
 
