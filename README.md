@@ -40,7 +40,7 @@ conversation forward wherever the work is already happening.
   <a href="https://github.com/atolis-hq/wake/raw/main/docs/media/wake-promo.mp4">
     <img src="https://raw.githubusercontent.com/atolis-hq/wake/refs/heads/main/docs/media/wake-promo-preview.gif" alt="Wake in 35 seconds: open a GitHub issue, Wake routes it into a workflow, agents implement and review it, a human is asked only when needed, runners fail over on usage limits, and the board shows it all live." width="720" />
   </a>
-  <p><sub><a href="https://github.com/atolis-hq/wake/raw/main/docs/media/wake-promo.mp4">Watch the full video with sound (MP4)</a></sub></p>
+  <p><sub><a href="https://github.com/atolis-hq/wake/raw/main/docs/media/wake-promo.mp4">Download the full video with sound (MP4, 7.7 MB)</a></sub></p>
 </div>
 
 
