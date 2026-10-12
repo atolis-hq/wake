@@ -5,6 +5,7 @@ import {
   EventProcessorCategory,
   EventProcessorReplayPolicy,
   EventSourceKind,
+  WrongExpectedSequenceError,
   type CommandContext,
   type EventEnvelope,
   type EventJournal,
@@ -19,7 +20,12 @@ import {
 import { workItemId, type CreateWorkItem } from '../../work/index.js';
 import type { TriggerConfig } from '../contracts/config.js';
 import { createControlPlaneEventData } from '../contracts/event-factory.js';
-import { ControlEventType, TriggerSourceKind, type TriggerSource } from '../contracts/events.js';
+import {
+  ControlEventType,
+  selectControlEvent,
+  TriggerSourceKind,
+  type TriggerSource,
+} from '../contracts/events.js';
 import { controlPlaneStream, ControlStreamKind } from '../contracts/streams.js';
 import { CronTriggerPolicy } from '../domain/cron-trigger-policy.js';
 
@@ -71,11 +77,6 @@ export class TriggerService {
     source: TriggerSource,
     context: CommandContext,
   ): Promise<boolean> {
-    if (
-      config.when?.capacityAvailable === true &&
-      !(await this.dependencies.capacityAvailable(config))
-    )
-      return false;
     const identity = `trigger:${config.id}:${source.kind}:${source.kind === TriggerSourceKind.Cron ? source.slot : source.eventId}`;
     const workflow = workflowInstanceId(`workflow-${encodeURIComponent(identity)}`);
     const invocationContext = {
@@ -84,43 +85,76 @@ export class TriggerService {
       correlationId: correlationId(identity),
     };
     const existing = await this.dependencies.orchestration.get(workflow);
-    if (existing !== null) return true;
-    const item = workItemId(this.dependencies.ids.next('work'));
-    await this.dependencies.work.create(
-      { workItemId: item, objective: `Trigger ${config.id}: workflow ${config.workflow}` },
-      invocationContext,
-    );
-    await this.dependencies.orchestration.start(
-      {
-        workflowInstanceId: workflow,
-        workItemId: item,
-        workflowName: workflowName(config.workflow),
-        orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
-      },
-      invocationContext,
-    );
-    const stream = controlPlaneStream();
-    const events = await this.dependencies.journal.readStream(stream);
-    await this.dependencies.journal.appendToStream(stream, events.length, [
-      createControlPlaneEventData({
-        eventId: this.dependencies.ids.next('event'),
-        eventType: ControlEventType.TriggerInvocationStarted,
-        occurredAt: this.dependencies.now(),
-        correlationId: invocationContext.correlationId,
-        causationId:
-          source.kind === TriggerSourceKind.Event ? source.eventId : invocationContext.commandId,
-        actor: context.actor,
-        source: { kind: EventSourceKind.Internal, id: config.id },
-        payload: {
-          triggerId: config.id,
-          source,
-          workItemId: item,
+    if (
+      existing === null &&
+      config.when?.capacityAvailable === true &&
+      !(await this.dependencies.capacityAvailable(config))
+    )
+      return false;
+    const item = existing?.workItemId ?? workItemId(this.dependencies.ids.next('work'));
+    if (existing === null) {
+      await this.dependencies.work.create(
+        { workItemId: item, objective: `Trigger ${config.id}: workflow ${config.workflow}` },
+        invocationContext,
+      );
+      await this.dependencies.orchestration.start(
+        {
           workflowInstanceId: workflow,
-          workflowName: config.workflow,
+          workItemId: item,
+          workflowName: workflowName(config.workflow),
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
         },
-      }),
-    ]);
+        invocationContext,
+      );
+    }
+    await this.recordInvocation(config, source, invocationContext, item, workflow);
     return true;
+  }
+
+  private async recordInvocation(
+    config: TriggerConfig,
+    source: TriggerSource,
+    context: CommandContext,
+    item: ReturnType<typeof workItemId>,
+    workflow: ReturnType<typeof workflowInstanceId>,
+  ): Promise<void> {
+    const stream = controlPlaneStream();
+    const draft = createControlPlaneEventData({
+      eventId: `${workflow}:${ControlEventType.TriggerInvocationStarted}`,
+      eventType: ControlEventType.TriggerInvocationStarted,
+      occurredAt: this.dependencies.now(),
+      correlationId: context.correlationId,
+      causationId: source.kind === TriggerSourceKind.Event ? source.eventId : context.commandId,
+      actor: context.actor,
+      source: { kind: EventSourceKind.Internal, id: config.id },
+      payload: {
+        triggerId: config.id,
+        source,
+        workItemId: item,
+        workflowInstanceId: workflow,
+        workflowName: config.workflow,
+      },
+    });
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const events = await this.dependencies.journal.readStream(stream);
+      if (
+        events.some((envelope) => {
+          const event = selectControlEvent(envelope);
+          return (
+            event?.event.eventType === ControlEventType.TriggerInvocationStarted &&
+            event.event.payload.workflowInstanceId === workflow
+          );
+        })
+      )
+        return;
+      try {
+        await this.dependencies.journal.appendToStream(stream, events.length, [draft]);
+        return;
+      } catch (error) {
+        // Other triggers and runner controls share this stream. Re-read on contention.
+        if (!(error instanceof WrongExpectedSequenceError) || attempt === 7) throw error;
+      }
+    }
   }
 }
 

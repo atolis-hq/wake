@@ -1,4 +1,4 @@
-import { EventActorKind, correlationId } from '@atolis-hq/eventing';
+import { EventActorKind, WrongExpectedSequenceError, correlationId } from '@atolis-hq/eventing';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -12,6 +12,7 @@ import type { CompositionRootOptions } from '../../../src/bootstrap/index.js';
 import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
 import {
   ControlEventType,
+  ControlStreamKind,
   TriggerSourceKind,
   selectControlEvent,
   type TriggerConfig,
@@ -36,6 +37,7 @@ async function fixture(
   gated = false,
   journal = new InMemoryEventJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') }),
   options: CompositionRootOptions = {},
+  triggerIds: readonly string[] = ['oversight'],
 ) {
   const home = await mkdtemp(join(tmpdir(), 'wake-triggers-'));
   homes.push(home);
@@ -61,14 +63,12 @@ async function fixture(
       },
     },
     controlPlane: {
-      triggers: [
-        {
-          id: 'oversight',
-          workflow: 'inspect',
-          on,
-          ...(gated ? { when: { capacityAvailable: true } } : {}),
-        },
-      ],
+      triggers: triggerIds.map((id) => ({
+        id,
+        workflow: 'inspect',
+        on,
+        ...(gated ? { when: { capacityAvailable: true } } : {}),
+      })),
     },
   });
   const root = await createCompositionRoot(home, {
@@ -183,6 +183,96 @@ describe('composed workflow triggers', () => {
     await consume();
     expect(await invocations(journal)).toHaveLength(1);
   });
+  it.each(['two-events', 'cron-and-event'] as const)(
+    'retains one provenance record per concurrent invocation (%s)',
+    async (mode) => {
+      const ready = deferred();
+      let arrivals = 0;
+      let conflicts = 0;
+      let startedWorkflows = 0;
+      const options: CompositionRootOptions = {
+        decorateJournal(journal) {
+          return {
+            ...journal,
+            changeSignal: journal.changeSignal,
+            async readStream(stream) {
+              const events = await journal.readStream(stream);
+              if (
+                stream.kind === ControlStreamKind.Global &&
+                startedWorkflows > 0 &&
+                arrivals < 2
+              ) {
+                arrivals += 1;
+                // Hold two snapshots at the same sequence before either writer can append.
+                if (arrivals === 2) ready.resolve();
+                await ready.promise;
+              }
+              return events;
+            },
+            readAll: journal.readAll.bind(journal),
+            latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
+            waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
+            async appendToStream(stream, sequence, drafts) {
+              try {
+                const appended = await journal.appendToStream(stream, sequence, drafts);
+                startedWorkflows += drafts.filter(
+                  (draft) => draft.eventType === OrchestrationEventType.InstanceStarted,
+                ).length;
+                return appended;
+              } catch (error) {
+                if (error instanceof WrongExpectedSequenceError) conflicts += 1;
+                throw error;
+              }
+            },
+          };
+        },
+      };
+      const on = {
+        events: [WorkEventType.ObjectiveRevised],
+        ...(mode === 'cron-and-event' ? { cron: '* * * * *' } : {}),
+      };
+      const { root, journal, consume, context } = await fixture(
+        on,
+        false,
+        undefined,
+        options,
+        mode === 'two-events' ? ['first', 'second'] : ['oversight'],
+      );
+      const item = workItemId('work-00000000000000000000000001');
+      await root.work.create({ workItemId: item, objective: 'source' }, context);
+      await root.work.revise(
+        { workItemId: item, objective: 'changed' },
+        { ...context, commandId: 'revise' },
+      );
+      await Promise.all([
+        consume(),
+        ...(mode === 'cron-and-event' ? [root.runnerPipeline.run({ maxProgress: 1 })] : []),
+      ]);
+      expect(conflicts).toBe(1);
+      const origins = await invocations(journal);
+      expect(origins).toHaveLength(2);
+      expect(new Set(origins.map((origin) => origin.workflowInstanceId)).size).toBe(2);
+      expect(new Set(origins.map((origin) => origin.workItemId)).size).toBe(2);
+      expect(
+        origins
+          .map((origin) => (mode === 'two-events' ? origin.triggerId : origin.source.kind))
+          .sort(),
+      ).toEqual(
+        mode === 'two-events'
+          ? ['first', 'second']
+          : [TriggerSourceKind.Cron, TriggerSourceKind.Event],
+      );
+      for (const origin of origins) {
+        expect(
+          await root.orchestration.get(workflowInstanceId(origin.workflowInstanceId)),
+        ).toMatchObject({ workItemId: origin.workItemId });
+        expect(await root.work.get(workItemId(origin.workItemId))).not.toBeNull();
+      }
+      await consume();
+      expect(await invocations(journal)).toHaveLength(2);
+    },
+  );
+
   it('does not replay historical source events when registering a trigger', async () => {
     const first = await fixture({ events: [WorkEventType.ObjectiveRevised] });
     const item = workItemId('work-00000000000000000000000001');
