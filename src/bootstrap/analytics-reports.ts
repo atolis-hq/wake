@@ -1,11 +1,18 @@
 import type { EventJournal } from '@atolis-hq/eventing';
-import { createRunOutcomesReport, queryRunAnalytics } from '../execution/index.js';
+import {
+  createRunBreakdownReport,
+  createRunOutcomesReport,
+  queryRunAnalytics,
+} from '../execution/index.js';
 import { reportWindow, type ReportDefinition, type ReportWindowId } from '../kernel/index.js';
 import { queryWorkCompletionSummary } from '../orchestration/index.js';
 import { sampledMeta } from './surface-api-metadata.js';
 
 export function createAnalyticsReports(journal: EventJournal, now: () => string) {
-  const definitions: readonly ReportDefinition[] = [createRunOutcomesReport(journal)];
+  const definitions: readonly ReportDefinition[] = [
+    createRunOutcomesReport(journal),
+    createRunBreakdownReport(journal),
+  ];
   return {
     catalogue: () => definitions.map(({ id, title }) => ({ id, title })),
     async report(id: string, windowId: ReportWindowId, signal?: AbortSignal) {

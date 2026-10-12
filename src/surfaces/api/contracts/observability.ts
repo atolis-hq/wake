@@ -15,7 +15,9 @@ export interface MetricsResponse {
 export { ReportWindowId } from '../../../kernel/index.js';
 
 export type {
+  AnalyticsReport,
   ReportWindowId as AnalyticsReportWindowId,
+  BreakdownReport,
   ReportDescriptor,
   ReportWindow,
   TimeSeriesReport,

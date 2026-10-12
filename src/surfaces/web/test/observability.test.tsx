@@ -172,3 +172,76 @@ it('keeps today’s system counters available on a keyboard-accessible tab', asy
   expect(urls).toContain('/api/v1/observability/metrics?days=1');
   expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'System activity' }));
 });
+
+it('shows whole-window counts and shares and switches all four dimensions', async () => {
+  const breakdown = {
+    report: { id: 'run-breakdowns-by-dimension', title: 'Run breakdowns by dimension' },
+    window,
+    total: 4,
+    dimensions: ['Action', 'Stage', 'Runner', 'Model'].map((title) => ({
+      id: title.toLowerCase(),
+      title,
+      rows: [
+        { value: `${title} value`, count: 3, share: 0.75 },
+        { value: 'unknown', count: 1, share: 0.25 },
+      ],
+    })),
+  };
+  mount(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/reports')) return json([breakdown.report]);
+    return json(url.includes('/summary?') ? { ...summary, runs: 4 } : breakdown);
+  });
+  const table = await screen.findByRole('table', { name: 'Run breakdowns by dimension' });
+  expect(within(table).getByText('75%')).toBeTruthy();
+  expect(within(table).getByText('25%')).toBeTruthy();
+  expect(within(table).getByText('unknown')).toBeTruthy();
+  for (const title of ['Action', 'Stage', 'Runner', 'Model']) {
+    fireEvent.change(screen.getByLabelText('Dimension'), {
+      target: { value: title.toLowerCase() },
+    });
+    expect(within(table).getByText(`${title} value`)).toBeTruthy();
+  }
+});
+
+it('loads, retries and displays an empty breakdown without non-finite shares', async () => {
+  const descriptor = { id: 'run-breakdowns-by-dimension', title: 'Run breakdowns by dimension' };
+  let finish!: (response: Response) => void;
+  let calls = 0;
+  mount(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/reports')) return json([descriptor]);
+    if (url.includes('/summary?')) return json(summary);
+    if (++calls === 1)
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    return json({
+      report: descriptor,
+      window,
+      total: 0,
+      dimensions: ['Action', 'Stage', 'Runner', 'Model'].map((title) => ({
+        id: title.toLowerCase(),
+        title,
+        rows: [],
+      })),
+    });
+  });
+  expect(await screen.findByText('Loading report…')).toBeTruthy();
+  await act(async () =>
+    finish(
+      new Response(
+        JSON.stringify({ type: 'about:blank', title: 'Report unavailable', status: 500 }),
+        { status: 500 },
+      ),
+    ),
+  );
+  expect(await screen.findByText('Report unavailable')).toBeTruthy();
+  fireEvent.click(
+    within(screen.getByRole('region', { name: 'Selected report' })).getByRole('button', {
+      name: 'Retry',
+    }),
+  );
+  expect(await screen.findByText('No runs in this window')).toBeTruthy();
+  expect(screen.queryByText(/NaN|Infinity/)).toBeNull();
+});

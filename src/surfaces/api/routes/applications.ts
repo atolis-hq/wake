@@ -1,5 +1,5 @@
 import type { RunStatus } from '../../../execution/index.js';
-import type { ReportDescriptor, ReportWindowId, TimeSeriesReport } from '../../../kernel/index.js';
+import type { AnalyticsReport, ReportDescriptor, ReportWindowId } from '../../../kernel/index.js';
 import type {
   ApiCommandResult,
   AuditEventResponse,
@@ -136,7 +136,7 @@ export interface ApiApplications {
         id: string,
         window: ReportWindowId,
         signal?: AbortSignal,
-      ): Promise<ApiResourceResult<TimeSeriesReport>>;
+      ): Promise<ApiResourceResult<AnalyticsReport>>;
       summary(
         window: ReportWindowId,
         signal?: AbortSignal,

@@ -3,6 +3,7 @@ import { useState, type KeyboardEvent } from 'react';
 import {
   ReportWindowId,
   type AnalyticsSummaryResponse,
+  type BreakdownReport,
   type TimeSeriesReport,
 } from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
@@ -171,6 +172,8 @@ function Reports() {
               <LoadingState label="Loading report" />
             ) : report.error ? (
               <ErrorState error={report.error} retry={() => void report.refetch()} />
+            ) : 'dimensions' in report.data.data ? (
+              <BreakdownTable data={report.data.data} />
             ) : (
               <OutcomeChart data={report.data.data} />
             )}
@@ -297,6 +300,53 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
           </table>
         </div>
       </details>
+    </>
+  );
+}
+
+function BreakdownTable({ data }: { readonly data: BreakdownReport }) {
+  const [selected, setSelected] = useState<string>();
+  const dimension = data.dimensions.find(({ id }) => id === selected) ?? data.dimensions[0];
+  return (
+    <>
+      <h2>{data.report.title}</h2>
+      <p>
+        {data.window.from} to {data.window.to} (UTC)
+      </p>
+      <label>
+        Dimension{' '}
+        <select value={dimension?.id ?? ''} onChange={(event) => setSelected(event.target.value)}>
+          {data.dimensions.map(({ id, title }) => (
+            <option key={id} value={id}>
+              {title}
+            </option>
+          ))}
+        </select>
+      </label>
+      {data.total === 0 ? (
+        <EmptyState>No runs in this window</EmptyState>
+      ) : (
+        <div className={reportStyles.table}>
+          <table aria-label="Run breakdowns by dimension">
+            <thead>
+              <tr>
+                <th>{dimension?.title}</th>
+                <th>Run count</th>
+                <th>Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dimension?.rows.map(({ value, count, share }) => (
+                <tr key={value}>
+                  <th scope="row">{value}</th>
+                  <td>{count.toLocaleString()}</td>
+                  <td>{(share * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }

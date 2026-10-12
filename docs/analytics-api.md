@@ -55,4 +55,15 @@ scans read bounded batches and yield to other API and control-plane work.
 Reports implement the shared `ReportDefinition` contract in their data-owning
 module and are registered in Bootstrap's `analytics-reports.ts`. A report
 registration supplies its descriptor and live query; the web view renders its
-returned series and buckets.
+returned series and buckets or dimension rows.
+
+`run-breakdowns-by-dimension` returns `report`, `window`, `total`, and
+`dimensions`. Each dimension has an `id`, `title`, and `rows` containing
+`value`, `count`, and `share` (a fraction of `total`). The four dimensions are
+`run-action` (run activity), `run-stage`, `run-runner` (runner name), and `run-model` (runner
+model). Counts aggregate the entire selected window using the same start
+cohort and latest Run facts as the summary Runs tile. Missing values appear as
+`unknown`; recorded values remain distinct. Rows sort by descending count,
+then alphabetically by value. Empty windows return zero total and empty rows.
+The Reports tab offers a dimension selector and displays count and percentage
+share, with asynchronous loading, retry on failure, and an empty state.

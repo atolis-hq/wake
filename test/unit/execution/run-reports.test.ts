@@ -179,3 +179,93 @@ it('keeps cancelled and ambiguous runs in other while execution failures count a
   expect(result.report.totals).toMatchObject({ other: 2, failed: 1 });
   expect(result.summary.medianRunDurationMs).toBe(1_800_000);
 });
+
+it('groups all four dimensions across the window with deterministic counts and shares', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  for (const [index, startedAt] of [
+    query.window.from,
+    '2026-08-01T12:00:00.000Z',
+    '2026-08-01T11:00:00.000Z',
+    now,
+    '2026-07-31T12:29:59.999Z',
+  ].entries()) {
+    const stream = runStream(runId(`breakdown-${index}`));
+    await journal.appendToStream(stream, 0, [
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: `activation-${index}`,
+          activity: index === 0 ? 'zeta' : 'alpha',
+          workflowInstanceId: 'workflow-1',
+          orchestrationGroupId: 'group-1',
+          attempt: 1,
+          startedAt,
+          ...(index === 0
+            ? {}
+            : { stage: 'implement', runner: { name: 'codex', model: 'model-a' } }),
+        },
+        stream,
+      ).event,
+    ]);
+  }
+  const { breakdown, summary } = await queryRunAnalytics(journal, query);
+  expect(breakdown.total).toBe(summary.runs);
+  expect(breakdown.total).toBe(3);
+  expect(breakdown.dimensions.map(({ id }) => id)).toEqual([
+    'run-action',
+    'run-stage',
+    'run-runner',
+    'run-model',
+  ]);
+  expect(breakdown.dimensions[0]?.rows).toEqual([
+    { value: 'alpha', count: 2, share: 2 / 3 },
+    { value: 'zeta', count: 1, share: 1 / 3 },
+  ]);
+  for (const dimension of breakdown.dimensions) {
+    expect(dimension.rows.reduce((sum, row) => sum + row.count, 0)).toBe(summary.runs);
+  }
+  for (const dimension of breakdown.dimensions.slice(1)) {
+    expect(dimension.rows[1]).toEqual({ value: 'unknown', count: 1, share: 1 / 3 });
+  }
+});
+
+it('returns empty breakdown rows and respects cancellation', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  const { breakdown } = await queryRunAnalytics(journal, query);
+  expect(breakdown.total).toBe(0);
+  expect(breakdown.dimensions.every(({ rows }) => rows.length === 0)).toBe(true);
+  const controller = new AbortController();
+  controller.abort();
+  await expect(
+    queryRunAnalytics(journal, { ...query, signal: controller.signal }),
+  ).rejects.toThrow();
+});
+
+it('orders ties alphabetically and preserves distinct recorded and unknown values', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  for (const [index, stage] of ['zeta', 'alpha', 'Alpha', 'unknown', undefined].entries()) {
+    const stream = runStream(runId(`tie-${index}`));
+    await journal.appendToStream(stream, 0, [
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: `tie-${index}`,
+          activity: 'agent',
+          workflowInstanceId: 'workflow-1',
+          orchestrationGroupId: 'group-1',
+          attempt: 1,
+          startedAt: query.window.from,
+          ...(stage === undefined ? {} : { stage }),
+        },
+        stream,
+      ).event,
+    ]);
+  }
+  const { breakdown } = await queryRunAnalytics(journal, query);
+  expect(breakdown.dimensions[1]?.rows).toEqual([
+    { value: 'unknown', count: 2, share: 0.4 },
+    { value: 'Alpha', count: 1, share: 0.2 },
+    { value: 'alpha', count: 1, share: 0.2 },
+    { value: 'zeta', count: 1, share: 0.2 },
+  ]);
+});
