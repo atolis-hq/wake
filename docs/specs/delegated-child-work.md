@@ -15,6 +15,8 @@ The execution pattern is durable orchestration with agent-driven delegation: age
 
 The initial delivery should prove one parent, two independent children, a deterministic join, and restart recovery in one repository. Extend that slice to six subtasks across two repositories, optional stacks, integrated QA and correction. Prompt/process refinement and existing canonical artifacts support this behavior; this spec does not prescribe a new mandatory interview stage.
 
+The companion [delivery oversight spec](delivery-oversight.md) proposes a narrow earlier increment for choosing work against available capacity and an optional delivery focus. Oversight selects across deliveries; this spec coordinates execution within a delivery. Its trigger, memory and admission policy do not require child workflows. Once hierarchy exists, children share their root delivery's portfolio accounting and preference while retaining their own workflow and dependency readiness.
+
 ## 2. Product principles
 
 1. A WorkItem represents desired work; a workflow governs its process; a Run/session executes an attempt. Their completion states are distinct.
