@@ -28,7 +28,10 @@ it('composes the registered report and independent summary, validates identifier
   const { dispatcher } = fixture();
   expect(
     await dispatcher.dispatch('GET', '/api/v1/observability/reports', undefined),
-  ).toMatchObject({ status: 200, body: { data: [{ id: 'run-outcomes-over-time' }] } });
+  ).toMatchObject({
+    status: 200,
+    body: { data: [{ id: 'run-outcomes-over-time' }, { id: 'run-breakdowns-by-dimension' }] },
+  });
   expect(
     await dispatcher.dispatch(
       'GET',
@@ -127,3 +130,27 @@ it('serves another HTTP request during a cold filesystem scan and stops when the
     await rm(home, { recursive: true, force: true });
   }
 }, 20_000);
+
+it('serves the registered live breakdown through the API', async () => {
+  const { dispatcher } = fixture();
+  expect(
+    await dispatcher.dispatch(
+      'GET',
+      '/api/v1/observability/reports?window=1d&report=run-breakdowns-by-dimension',
+      undefined,
+    ),
+  ).toMatchObject({
+    status: 200,
+    body: {
+      data: {
+        total: 0,
+        dimensions: [
+          { id: 'run-action', rows: [] },
+          { id: 'run-stage', rows: [] },
+          { id: 'run-runner', rows: [] },
+          { id: 'run-model', rows: [] },
+        ],
+      },
+    },
+  });
+});

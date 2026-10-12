@@ -38,8 +38,23 @@ export interface TimeSeriesReport {
   }[];
 }
 
+export interface BreakdownReport {
+  readonly report: ReportDescriptor;
+  readonly window: ReportWindow;
+  readonly total: number;
+  readonly dimensions: readonly (ReportDescriptor & {
+    readonly rows: readonly {
+      readonly value: string;
+      readonly count: number;
+      readonly share: number;
+    }[];
+  })[];
+}
+
+export type AnalyticsReport = TimeSeriesReport | BreakdownReport;
+
 export interface ReportDefinition extends ReportDescriptor {
-  query(query: ReportQuery): Promise<TimeSeriesReport>;
+  query(query: ReportQuery): Promise<AnalyticsReport>;
 }
 
 export function reportWindow(id: ReportWindowId, now: string): ReportWindow {

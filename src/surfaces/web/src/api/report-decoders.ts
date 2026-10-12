@@ -1,9 +1,9 @@
 import {
   ReportWindowId,
+  type AnalyticsReport,
   type AnalyticsSummaryResponse,
   type ReportDescriptor,
   type ReportWindow,
-  type TimeSeriesReport,
 } from '../../../api/contracts/index.js';
 import {
   array,
@@ -44,8 +44,28 @@ function decodeValues(value: unknown, path: string) {
   );
 }
 
-export const decodeReport: Decoder<TimeSeriesReport> = (value, path = '') => {
+export const decodeReport: Decoder<AnalyticsReport> = (value, path = '') => {
   const record = object(value, path);
+  if ('dimensions' in record)
+    return {
+      report: decodeReportDescriptor(record.report, child(path, 'report')),
+      window: decodeWindow(record.window, child(path, 'window')),
+      total: number(record.total, child(path, 'total')),
+      dimensions: array(record.dimensions, child(path, 'dimensions'), (value, path = '') => {
+        const dimension = object(value, path);
+        return {
+          ...decodeReportDescriptor(value, path),
+          rows: array(dimension.rows, child(path, 'rows'), (value, path = '') => {
+            const row = object(value, path);
+            return {
+              value: string(row.value, child(path, 'value')),
+              count: number(row.count, child(path, 'count')),
+              share: number(row.share, child(path, 'share')),
+            };
+          }),
+        };
+      }),
+    };
   return {
     report: decodeReportDescriptor(record.report, child(path, 'report')),
     window: decodeWindow(record.window, child(path, 'window')),
