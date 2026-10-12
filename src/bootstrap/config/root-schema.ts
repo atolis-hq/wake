@@ -11,6 +11,7 @@ import {
 import { resourcesConfigSchema, type ResourcesConfig } from '../../resources/index.js';
 import { surfacesConfigSchema, type SurfacesConfig } from '../../surfaces/index.js';
 import { workConfigSchema, type WorkConfig } from '../../work/index.js';
+import { canonicalEventTypes } from '../canonical-events.js';
 
 const orchestrationConfigSchema = z
   .object({
@@ -159,7 +160,34 @@ export const rootConfigSchema = z
     surfaces: surfacesConfigSchema,
     host: hostConfigSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const ids = new Set<string>();
+    for (const [index, trigger] of value.controlPlane.triggers.entries()) {
+      const path = ['controlPlane', 'triggers', index];
+      if (ids.has(trigger.id))
+        context.addIssue({
+          code: 'custom',
+          path: [...path, 'id'],
+          message: 'Trigger ids must be unique',
+        });
+      ids.add(trigger.id);
+      if (value.orchestration.workflows[trigger.workflow] === undefined)
+        context.addIssue({
+          code: 'custom',
+          path: [...path, 'workflow'],
+          message: 'Trigger workflow is not configured',
+        });
+      for (const [eventIndex, event] of (trigger.on.events ?? []).entries()) {
+        if (!canonicalEventTypes.has(event))
+          context.addIssue({
+            code: 'custom',
+            path: [...path, 'on', 'events', eventIndex],
+            message: 'Unknown canonical event',
+          });
+      }
+    }
+  });
 
 export interface ResolvedWakeModulesConfig {
   readonly schemaVersion: 1;

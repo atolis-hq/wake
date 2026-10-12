@@ -5,7 +5,7 @@ describe('RunnerPipeline', () => {
   it('runs schedules and maintenance without accepting a scheduler stage', async () => {
     const maintain = vi.fn(async () => undefined);
     const pipeline = createRunnerPipeline({
-      runSchedules: async () => undefined,
+      runTriggers: async () => undefined,
       maintain,
       deliver: async () => undefined,
     });
@@ -16,18 +16,18 @@ describe('RunnerPipeline', () => {
   });
 
   it('runs no operational stages while paused', async () => {
-    const runSchedules = vi.fn(async () => undefined);
+    const runTriggers = vi.fn(async () => undefined);
     const maintain = vi.fn(async () => undefined);
     const deliver = vi.fn(async () => undefined);
     const pipeline = createRunnerPipeline({
       isPaused: async () => true,
-      runSchedules,
+      runTriggers,
       maintain,
       deliver,
     });
 
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
-    expect(runSchedules).not.toHaveBeenCalled();
+    expect(runTriggers).not.toHaveBeenCalled();
     expect(maintain).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
   });
@@ -41,14 +41,14 @@ describe('RunnerPipeline', () => {
     const firstScheduleMayFinish = new Promise<void>((resolve) => {
       allowFirstSchedule = resolve;
     });
-    const runSchedules = vi.fn(async () => {
-      if (runSchedules.mock.calls.length === 1) {
+    const runTriggers = vi.fn(async () => {
+      if (runTriggers.mock.calls.length === 1) {
         releaseFirstSchedule?.();
         await firstScheduleMayFinish;
       }
     });
     const pipeline = createRunnerPipeline({
-      runSchedules,
+      runTriggers,
       maintain: async () => undefined,
       deliver: async () => undefined,
     });
@@ -58,7 +58,7 @@ describe('RunnerPipeline', () => {
     const second = pipeline.run({ maxProgress: 1 });
 
     await new Promise((resolve) => setImmediate(resolve));
-    expect(runSchedules).toHaveBeenCalledOnce();
+    expect(runTriggers).toHaveBeenCalledOnce();
 
     allowFirstSchedule?.();
     await Promise.all([first, second]);
@@ -70,7 +70,7 @@ describe('RunnerPipeline', () => {
     let deliveries = 0;
     const pipeline = createRunnerPipeline({
       isPaused: async () => paused,
-      runSchedules: async () => {
+      runTriggers: async () => {
         paused = true;
       },
       maintain: async () => {
@@ -87,7 +87,7 @@ describe('RunnerPipeline', () => {
 
   it('propagates a later stage failure', async () => {
     const pipeline = createRunnerPipeline({
-      runSchedules: async () => undefined,
+      runTriggers: async () => undefined,
       maintain: async () => {
         throw new Error('label delivery denied');
       },
@@ -100,7 +100,7 @@ describe('RunnerPipeline', () => {
   it('never reports scheduler progress after producing schedule and maintenance facts', async () => {
     const stages: string[] = [];
     const pipeline = createRunnerPipeline({
-      runSchedules: async () => {
+      runTriggers: async () => {
         stages.push('schedules');
       },
       maintain: async () => {
@@ -118,7 +118,7 @@ describe('RunnerPipeline', () => {
   it('runs delivery after maintenance without invoking processor stages', async () => {
     const stages: string[] = [];
     const pipeline = createRunnerPipeline({
-      runSchedules: async () => undefined,
+      runTriggers: async () => undefined,
       maintain: async () => {
         stages.push('maintain');
       },

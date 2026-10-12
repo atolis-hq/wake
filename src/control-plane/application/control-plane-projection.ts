@@ -61,6 +61,8 @@ export const controlPlaneProjection: ProjectionDefinition<ControlPlaneView> = {
     const event = selectControlEvent(envelope);
     if (event === null) return previous;
     switch (event.event.eventType) {
+      case ControlEventType.TriggerInvocationStarted:
+        return previous;
       case ControlEventType.DispatchPaused:
         return {
           ...previous,

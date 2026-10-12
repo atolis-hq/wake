@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { ControlStreamKind, type ControlStreamRef } from './streams.js';
 
 export const ControlEventType = {
+  TriggerInvocationStarted: 'control-plane.trigger-invocation-started',
   DispatchPaused: 'control-plane.dispatch-paused',
   DispatchResumed: 'control-plane.dispatch-resumed',
   RunnerPaused: 'control-plane.runner-paused',
@@ -19,7 +20,33 @@ export const RunnerPauseCause = { Manual: 'manual', Quota: 'quota' } as const;
 
 export const ControlEventNamespace = 'control-plane.' as const;
 
+export const TriggerSourceKind = { Event: 'event', Cron: 'cron' } as const;
+const triggerSourceSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal(TriggerSourceKind.Event),
+      eventId: z.string().min(1),
+      eventType: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal(TriggerSourceKind.Cron),
+      slot: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+]);
+
+export type TriggerSource = z.infer<typeof triggerSourceSchema>;
+
 export interface ControlEventPayloads {
+  readonly [ControlEventType.TriggerInvocationStarted]: {
+    readonly triggerId: string;
+    readonly source: TriggerSource;
+    readonly workItemId: string;
+    readonly workflowInstanceId: string;
+    readonly workflowName: string;
+  };
   readonly [ControlEventType.DispatchPaused]: {
     readonly resumeAt: string;
     readonly reason: string;
@@ -45,6 +72,21 @@ const streamSchema = z
   .object({ kind: z.literal(ControlStreamKind.Global), id: z.literal('global') })
   .strict();
 const eventSchema: z.ZodType<ControlEvent> = z.union([
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerInvocationStarted),
+      payload: z
+        .object({
+          triggerId: z.string().min(1),
+          source: triggerSourceSchema,
+          workItemId: z.string().min(1),
+          workflowInstanceId: z.string().min(1),
+          workflowName: z.string().min(1),
+        })
+        .strict(),
+    }),
+    stream: streamSchema,
+  }),
   eventEnvelopeSchema.extend({
     event: eventDataSchema.extend({
       eventType: z.literal(ControlEventType.DispatchPaused),

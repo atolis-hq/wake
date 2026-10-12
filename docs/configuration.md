@@ -128,11 +128,13 @@ controlPlane:
   resident:
     pollBackoffMs: 1000
     maxPollBackoffMs: 16000
-  schedules:
+  triggers:
     - id: daily-maintenance
+      on:
+        cron: "0 2 * * *"
+      when:
+        capacityAvailable: true
       workflow: default
-      cron: "0 2 * * *"
-      objective: "Perform the configured daily maintenance review."
 
 orchestration:
   default: default
@@ -390,7 +392,7 @@ execution:
 | --- | --- | --- |
 | `controlPlane.maxDispatches` | positive integer; default `1` | Per-call burst cap: the maximum number of new Runs a single `advanceOnce` call will start, independent of and bounded by `maxConcurrentRuns`. `advanceOnce` fills open capacity within one call up to this cap rather than dispatching a single Run per call. |
 | `controlPlane.maxConcurrentRuns` | positive integer; default `1` | Maximum Runs that may be `started` system-wide. `advanceOnce` stops dispatching, and additional advancement calls return `no-work`, until capacity is available. |
-| `controlPlane.schedules` | list; default `[]` | Scheduled workflow starts. Each entry is described below. |
+| `controlPlane.triggers` | list; default `[]` | Independent workflow invocations. Each entry is described below. |
 | `controlPlane.resident.pollBackoffMs` | positive integer; default `1000` | Exponential backoff base for intake's idle-or-erroring poll cadence and the runner's error-retry cadence — courtesy toward a rate-limited external API. Unrelated to journal consumption, which waits on a change signal instead of polling. |
 | `controlPlane.resident.maxPollBackoffMs` | positive integer; optional | Ceiling for that exponential backoff (default: `pollBackoffMs * 16`). |
 
@@ -398,17 +400,41 @@ Activation scheduling is always performed by the durable scheduler
 subscription. It reconsiders every durable fact, reconciles on startup and a
 bounded fallback, and shares the global scheduler lock with one-shot ticks.
 
-Each `controlPlane.schedules[]` entry requires `id`, `workflow`, `cron`, and
-`objective`, all non-empty strings. `id` identifies the schedule,
-`workflow` names a configured workflow, `cron` is its schedule expression, and
-`objective` becomes the new scheduled work item's objective.
+Each `controlPlane.triggers[]` entry requires a unique non-empty `id`, a
+configured `workflow`, and a non-empty `on` source object. `on.events` is
+an optional non-empty list of canonical event names (for example,
+`execution.run-succeeded`); unknown names are rejected. `on.cron` is an
+optional five-field UTC cron expression. When both are configured, either
+source independently requests a workflow invocation. Event consumption begins
+at registration; historical events do not cause startup invocations.
 
-Schedule expressions use five whitespace-separated cron fields: minute, hour,
+The optional gate is exactly `when: { capacityAvailable: true }`. It checks
+current execution headroom under `maxConcurrentRuns`, runtime pause, and
+runner eligibility in the workflow entry stage's pool. A false gate consumes
+and skips the occurrence. It neither queues a request nor reserves capacity;
+normal execution dispatch still enforces limits. Becoming eligible alone never
+starts an invocation.
+
+Every start creates an ordinary top-level WorkItem with display description
+`Trigger <id>: workflow <workflow>` and a named workflow instance. Activity
+prompts define the task. Control Plane records the trigger, event ID/type or
+cron slot, WorkItem, workflow instance and workflow name in a durable
+`control-plane.trigger-invocation-started` event. Artifact context remains
+WorkItem-local, so separate invocations do not share artifacts automatically.
+
+Legacy `controlPlane.schedules` and trigger-level `objective`,
+`minIntervalMs`, `contextScope`, and unknown fields are rejected.
+Shared context, durable overlap/coalescing and recovery policies are follow-on
+slices; this surface supplies explicit sources and the composed start path.
+
+Cron expressions use five whitespace-separated fields: minute, hour,
 day-of-month, month, and day-of-week. They are evaluated in UTC. Wake supports
-lists, ranges, steps, and the `JAN`-`DEC` and `SUN`-`SAT` aliases. Expressions
-with a seconds field, `?`, `H`, `L`, or `#` syntax and per-schedule time-zone
-configuration are not supported. When both day-of-month and day-of-week are
-restricted, both must match.
+lists, ranges, steps, and the `JAN`-`DEC` and `SUN`-`SAT` aliases.
+Expressions with a seconds field, `?`, `H`, `L`, or `#` syntax and
+per-trigger time-zone configuration are not supported. When both day-of-month
+and day-of-week are restricted, both must match. Cron retains elapsed-slot
+checkpoint behavior, including a matching current-minute occurrence on first
+evaluation; there is no implicit startup source.
 
 ## `orchestration`
 

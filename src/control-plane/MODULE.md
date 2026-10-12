@@ -29,7 +29,7 @@ watermarks remain explicit one-shot or periodic lanes.
 
 ## Configuration
 
-Owns `controlPlane` dispatch limits, schedules, and resident-loop backoff.
+Owns `controlPlane` dispatch limits, triggers, and resident-loop backoff.
 
 ## Relations and events
 

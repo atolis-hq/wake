@@ -20,7 +20,7 @@ Only Bootstrap knows the complete application graph. It constructs the one
 Eventing host, registers every resident projection, reactor, coordinator, and
 translator exactly once, and composes the Eventing filesystem adapters. The
 activation scheduler and projections use the same processor runtime while
-startup, fallback reconciliation, schedules, polling, delivery, and surface
+startup, fallback reconciliation, triggers, polling, delivery, and surface
 diagnostics remain explicit lanes.
 
 ## Public contracts

@@ -523,3 +523,15 @@ wait, requests `complete-issue`, and completes, and confirm issue #868 closes.
 Check the journal for the accepted merged-PR evidence and a single issue-completion
 intent; do not edit projection files. This requires deployment access to that
 Wake home and provider polling/delivery credentials.
+
+## Independent workflow triggers
+
+Use `controlPlane.triggers` to invoke a named workflow independently from
+a canonical event and/or five-field UTC cron occurrence. Each invocation has
+its own top-level WorkItem and WorkItem-local artifacts. The workflow's
+activity prompts define its task; Wake derives display metadata from the
+trigger ID and workflow name. Unlike parent-scoped watches, these triggers
+do not create synthetic parent WorkItems. An optional
+`when.capacityAvailable: true` gate skips occurrences without current
+execution headroom or an eligible runner. See [configuration](configuration.md#controlplane)
+for the strict schema and cron behavior.

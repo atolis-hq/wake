@@ -57,9 +57,9 @@ const dependencyMap = {
     'conversations',
   ],
 };
-// composition-root is the sole production composition point; since the
+// Bootstrap runtime and canonical-event composition register providers; since the
 // integrations barrel must not re-export provider namespaces (provider-locality),
-// it alone may reach a provider's own index.ts directly.
+// these designated files may reach a provider's own index.ts directly.
 const internalBoundaryRules = modules.map((module) => ({
   name: `no-${module}-internals`,
   severity: 'error',
@@ -68,18 +68,18 @@ const internalBoundaryRules = modules.map((module) => ({
       module === 'bootstrap'
         ? [`^src/${module}/`, '^src/main\\.ts$']
         : module === 'integrations'
-          ? [`^src/${module}/`, '^src/bootstrap/composition-root\\.ts$']
+          ? [`^src/${module}/`, '^src/bootstrap/(?:composition-root|canonical-events)\\.ts$']
           : `^src/${module}/`,
   },
   to: { path: `^src/${module}/(?!index\\.ts$)` },
 }));
-// The exemption above lets composition-root reach a provider barrel; it must not
+// The exemptions above allow provider barrels; they must not
 // become a licence to reach a provider's internals.
 const compositionRootBarrelRule = {
   name: 'composition-root-provider-barrels-only',
   severity: 'error',
   comment: 'Bootstrap may import a provider barrel, never a module inside one.',
-  from: { path: '^src/bootstrap/composition-root\\.ts$' },
+  from: { path: '^src/bootstrap/(?:composition-root|canonical-events)\\.ts$' },
   to: { path: '^src/integrations/(?!index\\.ts$)(?![^/]+/index\\.ts$)' },
 };
 const mainBootstrapEntrypointRule = {

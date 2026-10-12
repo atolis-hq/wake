@@ -62,10 +62,13 @@ function isWithinProviderNamespace(path, provider) {
 }
 
 // Bootstrap is the only production composition location and must be free to
-// name the concrete providers it registers.
+// name the concrete providers and canonical vocabularies it registers.
 function isCompositionRootPath(path) {
   const segments = path.split('/');
-  return segments.at(-2) === 'bootstrap' && segments.at(-1) === 'composition-root.ts';
+  return (
+    segments.at(-2) === 'bootstrap' &&
+    ['composition-root.ts', 'canonical-events.ts'].includes(segments.at(-1))
+  );
 }
 
 function pathScopeDiagnostics(detail, providers) {

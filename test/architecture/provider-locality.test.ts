@@ -162,9 +162,11 @@ describe('provider-locality path scope', () => {
     expect(diagnostics).toEqual([]);
   });
 
-  it('is exempt from path scope only for bootstrap/composition-root.ts', async () => {
+  it('permits provider and canonical vocabulary composition only in the designated Bootstrap files', async () => {
     const diagnostics = await check({
       'src/integrations/github/index.ts': 'export const marker = true;',
+      'src/bootstrap/canonical-events.ts':
+        'import { GitHubEventType } from "../integrations/github/index.js"; export const events = Object.values(GitHubEventType);',
       'src/bootstrap/composition-root.ts':
         "import { gitHubProviderDefinition } from '../integrations/github/index.js';",
     });
