@@ -74,7 +74,7 @@ The event names above already exist. The surrounding trigger schema is proposed,
 | `on`                     | Required; at least one source must be present. Events and cron are alternative sources, not an AND condition |
 | `when.capacityAvailable` | Optional true-only typed execution-headroom gate; all configured gates must hold                             |
 | `workflow`               | Required named workflow; configured activity prompts define the task                                         |
-| `contextScope`           | Optional explicit shared-context name; omitted preserves the invocation WorkItem's existing artifact scope   |
+| `contextScope`           | Optional additional shared-reference layer; WorkItem-local artifacts remain available whether set or omitted |
 
 For this first release, `capacityAvailable` means execution headroom under the configured `maxConcurrentRuns`, with normal pause/runner eligibility checks. It is a typed policy gate, not a generic metric. Recheck it before starting; it does not reserve capacity or prove that another delivery should be admitted. The agent considers active work and chooses whether to assign anything. Delivery WIP is a distinct future policy (existing backlog issue #148), not a prerequisite for the trigger engine. Normal dispatch enforces execution capacity for all Runs, including oversight itself. Trusted trigger provenance distinguishes oversight invocation WorkItems from deliveries if root-delivery accounting is later added. Additional gates can be introduced as typed policy contracts when needed.
 
@@ -112,7 +112,7 @@ Config remains authoritative for definitions; durable pause state controls opera
 
 A context scope is an Artifact-owned collection of authorized artifact references, not a second byte store, conversation store or an indefinitely open WorkItem. Artifacts retain existing WorkItem identity, producer-owned writes, revision provenance and accepted-output publication. A scope adds read access and named current references across separate WorkItems.
 
-Without an explicit `contextScope`, preserve today's WorkItem-local artifact scope, including sharing across workflows on that WorkItem. Each recurring invocation is a new WorkItem and does not automatically inherit memory from previous invocations. An explicit `contextScope`, such as `oversight-main`, enables recurring memory or intentional sharing between configured triggers. Parent/child WorkItems retain their own default scopes; trusted delegation grants selected cross-WorkItem reads without merging ownership or automatically creating a root-delivery scope. Internally distinguish WorkItem-derived identities from named context identities to avoid collisions. No Artifact configuration registry is required. The same sharing contracts cover both cases:
+Always preserve today's WorkItem-local artifact scope, including sharing across workflows on that WorkItem. Each recurring invocation is a new WorkItem and does not automatically inherit memory from previous invocations. An explicit `contextScope`, such as `oversight-main`, adds a shared-reference layer alongside local artifacts for recurring memory or intentional sharing between configured triggers. It never replaces the local namespace or moves artifact bytes/ownership. Parent/child WorkItems retain their own local scopes; trusted delegation grants selected cross-WorkItem reads without merging ownership or automatically creating a root-delivery scope. Internally distinguish local ownership from named sharing identities to avoid collisions. No Artifact configuration registry is required. The same sharing contracts cover both cases:
 
 | Consumer                  | Default shared references                                                    |
 | ------------------------- | ---------------------------------------------------------------------------- |
@@ -130,11 +130,13 @@ Each invocation reads the scope's current accepted memory, then writes a success
 
 Use exact revisions for assignments and review evidence. For recurring memory, resolve the current reference when provisioning each Run's manifest. This does not freeze the editable prompt. Expected prior-reference checks prevent two competing publishers from silently overwriting current memory; single-flight coordination is the ordinary prevention mechanism. Advancing a scope reference follows accepted-outcome facts and reconciles idempotently after a crash, without assuming an atomic append across module streams.
 
-The context manifest contains metadata/references, not every historical transcript. Later runs can explicitly read authorized supporting artifacts. A no-op may publish useful updated assessment memory if its outcome is accepted. Keep trigger checkpoints/claims as operational state, not prose inside memory.
+The Run manifest exposes both existing local artifacts and authorized shared references, with original WorkItem/producer/revision provenance distinguishing them. Shared membership does not automatically export every accepted artifact of that WorkItem. Only selected accepted references, including the defined `memory.md` publication rule, enter the shared view; investigation notes and other local output remain local unless explicitly shared. A local artifact and shared reference with the same path remain distinct; reads use qualified revision/provenance rather than a shared path shadowing local content. All write/patch/delete operations still target the Run's own WorkItem and producer.
+
+The manifest contains metadata/references, not every historical transcript. Later runs can explicitly read authorized supporting artifacts. A no-op may publish useful updated assessment memory if its outcome is accepted. Keep trigger checkpoints/claims as operational state, not prose inside memory.
 
 ### 6.3 Configuration and encapsulation
 
-Scope selection defaults to the WorkItem; an explicit `contextScope` overrides the sharing context. Do not introduce `artifacts.contextScopes`, workflow allowlists or binding configuration. Omitting the field means no implicit sharing between separate recurring WorkItems, even if they came from the same trigger. Setting it on oversight enables memory across its invocations. Setting the same explicit name on two operator-configured triggers intentionally permits sharing and uses that common scope as their single-flight key. For delegated work, trusted assignment/result references determine which artifacts each role can read; default WorkItem scoping remains intact. A shared context is not an unrestricted read grant for every child.
+Local scope is always the WorkItem; an explicit `contextScope` adds shared context. Do not introduce `artifacts.contextScopes`, workflow allowlists or binding configuration. Omitting the field means no implicit sharing between separate recurring WorkItems, even if they came from the same trigger. Setting it on oversight enables selected accepted memory/context across its invocations while keeping each invocation's local artifacts. Setting the same explicit name on two operator-configured triggers intentionally permits sharing and uses that common scope as their single-flight key. For delegated work, trusted assignment/result references determine which artifacts each role can read; local WorkItem scoping remains intact. A shared context is not an unrestricted read grant for every child.
 
 A workflow name alone does not enroll arbitrary WorkItems. Membership capabilities are issued using trusted trigger/delegation facts; a tool argument cannot choose a different scope or self-enroll a Run. Arbitrary activities not started through those paths retain current WorkItem-local access. Scope names are validated as identifiers; authorized trigger creation may create a new scope without a separate registration step. Writes continue through existing artifact tools, not a new shared-write tool.
 
@@ -174,26 +176,27 @@ Control Plane owns trigger definitions/requests, eligibility and pause; Work own
 
 These IDs describe proposed coverage, not scenarios already implemented or registered in Wake's catalogue.
 
-| ID    | Behavior to prove                                                                            |
-| ----- | -------------------------------------------------------------------------------------------- |
-| DO-01 | Cron/event sources independently request one ordinary invocation when eligible               |
-| DO-02 | Duplicate observations, concurrent shared-home hosts and restart do not duplicate starts     |
-| DO-03 | Requests during active invocation periods coalesce to one pending explicit request           |
-| DO-04 | No-op succeeds; only a later explicit source can request another evaluation                  |
-| DO-05 | Current capacity/pause gates are rechecked before starting; false eligibility skips          |
-| DO-06 | Actual dispatch still enforces execution limits after an earlier trigger check               |
-| DO-07 | No implicit startup/condition-only execution; missing `on` and legacy schedules are rejected |
-| DO-08 | A fresh invocation reads accepted memory from an explicitly authorized context scope         |
-| DO-09 | Wrong-scope reads, self-enrollment and cross-producer writes are denied                      |
-| DO-10 | Interrupted GitHub assignment recovers by observing provider state without duplicate intake  |
-| DO-11 | Paused triggers skip sources/clear pending work; active invocations continue                 |
-| DO-12 | Oversight's own completion events do not request another oversight run                       |
-| DO-13 | Invocation history and WorkItem origin links remain inspectable after restart/removal        |
-| DO-14 | Parents read accepted child artifacts; children/siblings get only declared context           |
-| DO-15 | Failed/draft output does not advance memory; accepted publication reconciles once            |
-| DO-16 | Exhausted failures pause the trigger rather than silently regenerating retries               |
-| DO-17 | Agent triage reads available GitHub dependency evidence and does not assign known blockers   |
-| DO-18 | Referenced artifacts remain retained and stale current-memory updates are rejected           |
+| ID    | Behavior to prove                                                                                                                                    |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DO-01 | Cron/event sources independently request one ordinary invocation when eligible                                                                       |
+| DO-02 | Duplicate observations, concurrent shared-home hosts and restart do not duplicate starts                                                             |
+| DO-03 | Requests during active invocation periods coalesce to one pending explicit request                                                                   |
+| DO-04 | No-op succeeds; only a later explicit source can request another evaluation                                                                          |
+| DO-05 | Current capacity/pause gates are rechecked before starting; false eligibility skips                                                                  |
+| DO-06 | Actual dispatch still enforces execution limits after an earlier trigger check                                                                       |
+| DO-07 | No implicit startup/condition-only execution; missing `on` and legacy schedules are rejected                                                         |
+| DO-08 | A fresh invocation reads accepted memory from an explicitly authorized context scope                                                                 |
+| DO-09 | Wrong-scope reads, self-enrollment and cross-producer writes are denied                                                                              |
+| DO-10 | Interrupted GitHub assignment recovers by observing provider state without duplicate intake                                                          |
+| DO-11 | Paused triggers skip sources/clear pending work; active invocations continue                                                                         |
+| DO-12 | Oversight's own completion events do not request another oversight run                                                                               |
+| DO-13 | Invocation history and WorkItem origin links remain inspectable after restart/removal                                                                |
+| DO-14 | Parents read accepted child artifacts; children/siblings get only declared context                                                                   |
+| DO-15 | Failed/draft output does not advance memory; accepted publication reconciles once                                                                    |
+| DO-16 | Exhausted failures pause the trigger rather than silently regenerating retries                                                                       |
+| DO-17 | Agent triage reads available GitHub dependency evidence and does not assign known blockers                                                           |
+| DO-18 | Referenced artifacts remain retained and stale current-memory updates are rejected                                                                   |
+| DO-19 | A WorkItem keeps local artifacts while reading/exporting selected shared references; same-path references remain distinct and do not redirect writes |
 
 Use permanent fake adapters/composed flows for cron, events, claims, artifacts and provider recovery. Each slice owns meaningful focused tests; UI/API work includes relevant surface coverage. No live model tokens are needed to prove orchestration correctness. A later bounded agent trial evaluates selection quality and cost.
 
@@ -237,7 +240,7 @@ Add list/detail navigation, status, next cron time, pending state, invocation hi
 
 **Outcome:** distinct WorkItems can share selected accepted artifacts across recurring invocations and future delegated delivery.
 
-Preserve default WorkItem-local scopes and add optional explicit named context for intentional sharing, exact-revision read references, a conventional accepted `memory.md` pointer and producer-only writes. There is no Artifact scope registry/ACL/binding configuration or implicit trigger/root-delivery scope. Prove default WorkItem isolation, explicit fresh-session handoff/named sharing, denial of unrelated/draft reads, stale pointer updates, ambiguous memory output, accepted-publication recovery and reference retention. Provide the generic trusted-parent/child reference-sharing contract without building the delegated workflow engine.
+Always preserve WorkItem-local scopes and add optional explicit named context as an additional authorized reference view, with exact revisions, a conventional accepted `memory.md` pointer and producer-only writes. There is no Artifact scope registry/ACL/binding configuration or implicit trigger/root-delivery scope. Prove local-plus-shared manifests, selected exports/private local output, same-path disambiguation, default WorkItem isolation, explicit fresh-session handoff/named sharing, denial of unrelated/draft reads, stale pointer updates, ambiguous memory output, accepted-publication recovery and reference retention. Provide the generic trusted-parent/child reference-sharing contract without building the delegated workflow engine.
 
 **Unlocks:** cross-invocation memory and reusable parent/child artifact handoff. **Depends on:** none of this batch; integration uses O1/O2 when available. Actual child enrollment later uses validated delegation.
 
