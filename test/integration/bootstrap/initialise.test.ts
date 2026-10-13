@@ -122,7 +122,12 @@ describe('target initialise root', () => {
           expect(refinement).toContain('Batch known independent human questions');
           expect(refinement).toContain('Exclude\n  unverified candidates for that invocation');
           expect(refinement).toContain('canonical plan.md artifact');
-          expect(refinement).not.toContain('once every choice');
+          expect(refinement).toContain('A plan is well-specified once every choice');
+          expect(refinement).toContain('correct outcomes, edge cases');
+          expect(refinement).toContain('compatibility decisions');
+          expect(refinement.indexOf('Resolve questions from evidence')).toBeLessThan(
+            refinement.indexOf('End your response with a status marker'),
+          );
         }
       }
       if (name === 'implement') {

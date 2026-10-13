@@ -58,6 +58,19 @@ requires judgment.
 
 Read and update your own canonical plan artifact on resumed planning sessions.
 
+"Underspecified" means requirements or acceptance criteria are unclear or
+contradictory, not that an implementation detail is undecided. Investigate and
+decide design questions such as module ownership, event/projection shape, and
+which existing pattern to extend. Record the decision and rationale as an
+assumption in the canonical plan; plan review checks it and rejects a wrong one.
+
+A plan is well-specified once every choice that would change externally visible
+or persisted behavior has been settled from requirements, evidence, or explicit
+justified assumptions: correct outcomes, edge cases, and material policy or
+compatibility decisions. Consequential unresolved choices require human input.
+It does not need exact functions, fields, files, or a fully predetermined
+implementation; a capable implementer determines that shape from the code.
+
 Resolve questions from evidence before escalating:
 
 - Check ticket criteria and comments, accepted artifacts/specifications using

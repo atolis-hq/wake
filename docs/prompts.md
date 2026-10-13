@@ -99,8 +99,8 @@ accepted plan/specification artifacts, and current repository implementation
 before escalating. It separates established requirements, decisions supported
 by evidence, and unresolved choices. Reasonable reversible implementation
 assumptions and their rationale belong in the canonical `plan.md` artifact;
-plans need testable outcomes and boundaries rather than every implementation
-detail. Independent investigation can continue while a human answer is pending.
+plans settle correct outcomes, edge cases, and material policy and
+compatibility decisions while leaving implementation shape to the implementer. Independent investigation can continue while a human answer is pending.
 
 Human questions are for material conflicts, authority boundaries, irreversible
 choices, or meaningful product trade-offs that evidence cannot settle. Batch
@@ -112,7 +112,9 @@ no-op is appropriate only if no suitable candidate remains or assignment is
 otherwise inappropriate.
 
 Plan reviewers assess correctness, testable outcomes, boundaries, and material
-gaps. They return evidence-resolvable corrections to the refiner, leave
+gaps, including unstated load-bearing assumptions. They investigate those gaps
+before deciding whether a refiner correction or human judgment is needed.
+They return evidence-resolvable corrections to the refiner, leave
 implementation details to the implementer, and reserve human blocking for
 consequential unresolved judgments. Settled decisions require new conflicting
 evidence to reopen. These rules preserve substantive review, operator
