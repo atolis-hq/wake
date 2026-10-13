@@ -73,7 +73,7 @@ async function fixture() {
     triggerId: 'review',
     invocationId,
   });
-  return { artifacts, contexts, accepted: isAccepted, stage, trigger };
+  return { artifacts, contexts, journal, path, accepted: isAccepted, stage, trigger };
 }
 
 const ctx = (id: string) => ({ ...context, commandId: id });
@@ -209,6 +209,56 @@ describe('ArtifactContextService', () => {
     ).resolves.toMatchObject({ reason: ArtifactMemoryPublicationReason.Advanced });
   });
 
+  it('reconciles publication after restart and retains exact references after replacement and deletion', async () => {
+    const { artifacts, contexts, journal, path, stage, trigger, accepted } = await fixture();
+    await contexts.enroll(scope, first, trigger('i1'), ctx('enroll'));
+    const memory = await stage(first, 'memory.md');
+    const input = {
+      contextScope: scope,
+      workItemId: first,
+      publicationId: 'i1',
+      successful: true,
+      exports: [],
+      expectedMemory: null,
+    };
+    // Acceptance precedes publication; recovery must work without a context receipt.
+    const restartedArtifacts = createArtifactService(journal, new FileArtifactStore(path), {
+      maxWriteBytes: 100,
+      maxWorkItemBytes: 1000,
+    });
+    const restarted = new ArtifactContextService(journal, restartedArtifacts);
+    const receipt = await restarted.publish(input, accepted, ctx('publish'));
+    await stage(first, 'memory.md');
+    await artifacts.stageTombstone(
+      { revisionId: 'deleted-memory', path: 'memory.md' },
+      { workItemId: first, producer: 'workflow/run', runId: 'delete', activationId: 'delete' },
+      ctx('delete'),
+    );
+    const afterDeletion = async (id: string) => id === 'delete' || accepted(id);
+    expect(await artifacts.latestPublished(first, afterDeletion)).toEqual([]);
+    const recovered = new ArtifactContextService(journal, restartedArtifacts);
+    await expect(recovered.publish(input, afterDeletion, ctx('replay'))).resolves.toEqual(receipt);
+    await recovered.enroll(scope, second, trigger('i2'), ctx('fresh'));
+    const references = await recovered.references(scope, second);
+    expect(references).toEqual([memory]);
+    const manifest = await restartedArtifacts.visibleTo(
+      {
+        workItemId: second,
+        producer: 'fresh/run',
+        runId: 'fresh',
+        activationId: 'fresh',
+        readableProducers: new Set(),
+        sharedReferences: references,
+        currentMemory: (await recovered.get(scope)).memory,
+      },
+      afterDeletion,
+    );
+    expect(manifest).toEqual([expect.objectContaining({ ...memory, currentMemory: true })]);
+    expect(new TextDecoder().decode(await restartedArtifacts.read(manifest[0]!.location!))).toBe(
+      memory.revisionId,
+    );
+  });
+
   it('denies publishing foreign, unaccepted or non-enrolled revisions', async () => {
     const { contexts, stage, trigger, accepted } = await fixture();
     await contexts.enroll(scope, first, trigger('i1'), ctx('e1'));
@@ -291,6 +341,20 @@ describe('ArtifactContextService', () => {
     const { artifacts, stage, accepted } = await fixture();
     const shared = await stage(first, 'memory.md');
     const unrelated = await stage(workId('unrelated'), 'memory.md');
+    await artifacts.stageRevision(
+      {
+        revisionId: shared.revisionId,
+        path: 'memory.md',
+        bytes: new TextEncoder().encode('local'),
+      },
+      {
+        workItemId: second,
+        producer: 'workflow/run',
+        runId: 'run-x',
+        activationId: 'activation-x',
+      },
+      ctx('collision'),
+    );
     const server = createArtifactMcpServer(artifacts, {
       workItemId: second,
       producer: 'workflow/run',
@@ -311,9 +375,21 @@ describe('ArtifactContextService', () => {
     await expect(
       client.callTool({
         name: 'wake_artifacts_read',
-        arguments: { revisionId: shared.revisionId },
+        arguments: { revisionId: shared.revisionId, workItemId: first },
       }),
     ).resolves.toMatchObject({ content: [expect.objectContaining({ text: shared.revisionId })] });
+    await expect(
+      client.callTool({
+        name: 'wake_artifacts_read',
+        arguments: { revisionId: shared.revisionId },
+      }),
+    ).resolves.toMatchObject({ isError: true });
+    await expect(
+      client.callTool({
+        name: 'wake_artifacts_read',
+        arguments: { revisionId: shared.revisionId, workItemId: second },
+      }),
+    ).resolves.toMatchObject({ content: [expect.objectContaining({ text: 'local' })] });
     const listed = await client.callTool({ name: 'wake_artifacts_list', arguments: {} });
     expect(JSON.stringify(listed)).toContain('currentMemory');
     await expect(
@@ -333,7 +409,7 @@ describe('ArtifactContextService', () => {
       name: 'wake_artifacts_write',
       arguments: { path: 'memory.md', content: 'mine' },
     });
-    expect((await artifacts.get(second))?.revisions).toHaveLength(1);
+    expect((await artifacts.get(second))?.revisions).toHaveLength(2);
     expect((await artifacts.get(first))?.revisions).toHaveLength(1);
   });
 });

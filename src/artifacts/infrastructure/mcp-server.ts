@@ -35,14 +35,15 @@ export function createArtifactMcpServer(
       description: 'Read a visible artifact revision as UTF-8 text or base64 bytes.',
       inputSchema: {
         revisionId: z.string().min(1),
+        workItemId: z.string().min(1).optional(),
         encoding: z.enum(['utf8', 'base64']).default('utf8'),
         offset: z.number().int().nonnegative().default(0),
         length: z.number().int().positive().optional(),
       },
     },
-    async ({ revisionId, encoding, offset, length }) => {
+    async ({ revisionId, workItemId, encoding, offset, length }) => {
       await session.assertActive();
-      const artifact = await visibleArtifact(artifacts, session, revisionId);
+      const artifact = await visibleArtifact(artifacts, session, revisionId, workItemId);
       if (artifact.location === undefined) throw new Error('Artifact revision has no content');
       const bytes = (await artifacts.read(artifact.location)).slice(
         offset,
@@ -172,10 +173,15 @@ async function visibleArtifact(
   artifacts: ArtifactService,
   session: ArtifactMcpSession,
   revisionId: string,
+  workItemId?: string,
 ) {
-  const artifact = (await visibleArtifacts(artifacts, session)).find(
-    (candidate) => candidate.revisionId === revisionId,
+  const matches = (await visibleArtifacts(artifacts, session)).filter(
+    (candidate) =>
+      candidate.revisionId === revisionId &&
+      (workItemId === undefined || candidate.workItemId === workItemId),
   );
+  if (matches.length > 1) throw new Error('Artifact revision is ambiguous; specify workItemId');
+  const artifact = matches[0];
   if (artifact === undefined)
     throw new Error('Artifact revision is not visible to this activation');
   return artifact;

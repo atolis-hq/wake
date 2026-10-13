@@ -387,6 +387,13 @@ execution:
       timeoutMs: 300000
 ```
 
+
+Shared artifact manifest entries retain their original `workItemId` and revision ID.
+Pass both `revisionId` and optional `workItemId` to `wake_artifacts_read` when
+revision IDs collide across local and shared namespaces; an unqualified ambiguous
+read is rejected. Referenced immutable bytes remain available after later replacement
+or tombstoning of the producer path.
+
 ## `controlPlane`
 
 | Field | Type / default | Explanation |
