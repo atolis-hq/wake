@@ -4,8 +4,8 @@ Workflows are Wake's deterministic control-plane policy. They live under
 `orchestration.workflows` (normally in `config.workflows.yaml`), are compiled
 before use, and are persisted as durable WorkflowInstances. An agent executes
 an Activity; Orchestration alone decides what that result means and what runs
-next. Prompt text cannot select a runner, advance a stage, or change provider
-state.
+next. Prompt text cannot select a runner, advance a stage, or grant provider
+authority. A configured Activity may receive specific provider capabilities.
 
 Use this page with [Configuration](configuration.md) and
 [Agent prompt templates](prompts.md) to author a complete configuration.
@@ -51,7 +51,7 @@ Each stage says what to run and how to run it.
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `activity` | Yes | A registered Activity name. The built-in `agent` Activity invokes a local agent runner; PR activities provide deterministic review/merge operations. |
-| `with` | No | Activity input, validated against the selected Activity before the workflow compiles. For `agent`, provide exactly one of `template` or `prompt`, with optional `model` and `allowedTools` overrides. |
+| `with` | No | Activity input, validated against the selected Activity before the workflow compiles. For `agent`, provide exactly one of `template` or `prompt`, with optional `model` and `allowedTools` overrides, or scoped `deliveryOversight` input. |
 | `execution.workspace` | No | `none`, `read-only`, or `branch`. It controls whether Execution acquires a workspace for this Activation. |
 | `execution.runnerPool` | No | Ordered runner candidates from `execution.runnerPools`. If omitted, Execution uses `defaultRunnerPool`. |
 | `requiresApproval` | No | Completion policy for ordinary `done` outcomes. The important default is explained below. |
@@ -547,3 +547,30 @@ Blocked invocations retain their coordination slot through operator retry or
 clarification; only completion or supersession releases it. Pending reasons
 are bounded to 64 representative source identities. Invocation history is
 stored separately from current scope state.
+
+## Triggered delivery oversight
+
+The [delivery oversight example](../examples/delivery-oversight/config.workflows.yaml)
+uses an ordinary `agent` stage with the editable `triage-assign` prompt and
+operator-supplied `deliveryOversight` input. Merge its workflow and
+[trigger/integration configuration](../examples/delivery-oversight/config.yaml)
+into the Wake home, copy the prompt, configure an authenticated MCP-capable
+runner in `standard`, and set intake's required assignee to the identity used
+by `gh`. Keep the ordinary delivery workflow as the default; oversight is
+started by its explicit named trigger, not by intake selection.
+
+Event/UTC cron sources request evaluation; the current capacity gate, normal
+runner/pause eligibility, single-flight execution, and active-run coalescing
+apply. Trigger inputs contain neither task objectives nor minimum intervals.
+The gate checks execution headroom without reserving a slot. Own invocation
+completion events are suppressed. Cron supplies a fallback for idle systems;
+cron-only configuration is useful when completion events would cause excessive
+assessment frequency. Exhausted retries pause the trigger.
+
+The assess stage is the sole `memory.md` producer. A successful assessment
+assigns at most one useful verified-ready issue or records a reasoned no-op.
+Assignment requests delivery via normal GitHub polling/intake; it does not
+create a delivery WorkItem directly or guarantee dispatch. See
+[Delivery oversight prompt inputs and authority](prompts.md#delivery-oversight)
+for recovery, dependency evidence, active delivery judgment, and local/shared
+artifact behavior.

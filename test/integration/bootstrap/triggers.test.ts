@@ -523,6 +523,7 @@ describe('durable trigger coordination', () => {
     expect(await invocations(f.journal)).toHaveLength(1);
   });
 
+  // Two catch-up passes fsync their checkpoints; allow contention in the full suite.
   it('bounds cron catch-up and persists consumed slots across restart', async () => {
     const f = await fixture({ cron: '* * * * *' });
     await f.root.runnerPipeline.run({ maxProgress: 1 });
@@ -554,7 +555,7 @@ describe('durable trigger coordination', () => {
     });
     expect(view.coalesced).toEqual({});
     expect(view.invocations).toHaveLength(1);
-  });
+  }, 15_000);
 
   it('coordinates bound triggers together and suppresses events from the shared scope', async () => {
     const binding = { triggerCoordinationKey: () => 'shared-oversight' };

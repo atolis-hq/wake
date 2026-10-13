@@ -10,6 +10,7 @@ import {
   type Runner,
   type RunnerRequest,
 } from '../../src/execution/index.js';
+import type { OversightGh } from '../../src/integrations/index.js';
 
 interface ToolOperation {
   readonly name: string;
@@ -21,11 +22,21 @@ export class ArtifactMcpRunner implements Runner {
   readonly name = 'fake';
   readonly supportsEphemeralMcp = true;
   root: CompositionRoot | undefined;
+  gh?: OversightGh;
   readonly scripts: { operations: readonly ToolOperation[]; outcome?: AgentRunOutcome }[] = [];
-  readonly sessions: { prompt: string; manifest: string; results: unknown[] }[] = [];
+  readonly sessions: {
+    prompt: string;
+    manifest: string;
+    results: unknown[];
+    allowedTools: readonly string[];
+  }[] = [];
 
   async start(request: RunnerRequest) {
     return { result: this.execute(request), async cancel() {} };
+  }
+
+  private commandOptions() {
+    return this.gh === undefined ? {} : { gh: this.gh };
   }
 
   private async execute(request: RunnerRequest) {
@@ -41,7 +52,11 @@ export class ArtifactMcpRunner implements Runner {
       new FileArtifactMcpSessionStore(root.paths.artifactsRoot),
       path,
       token,
-      { now: () => new Date().toISOString(), nextId: () => `${request.runId}-artifact-${++count}` },
+      {
+        now: () => new Date().toISOString(),
+        nextId: () => `${request.runId}-artifact-${++count}`,
+        ...this.commandOptions(),
+      },
     );
     const client = new Client({ name: 'artifact-fake', version: '1' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -51,6 +66,7 @@ export class ArtifactMcpRunner implements Runner {
       const listed = await client.callTool({ name: 'wake_artifacts_list' });
       const record = {
         prompt: request.prompt,
+        allowedTools: request.allowedTools,
         manifest: JSON.stringify(listed),
         results: [] as unknown[],
       };

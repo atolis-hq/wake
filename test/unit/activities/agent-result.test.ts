@@ -215,6 +215,7 @@ describe('agent template input', () => {
         expect(name).toBe('implement');
         expect(context).toEqual({
           workItemId: 'work-00000000000000000000000001',
+          deliveryOversightJson: 'null',
           isStart: true,
           isResume: false,
           issueTitle: '',

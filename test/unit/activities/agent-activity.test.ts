@@ -333,6 +333,7 @@ describe('agent activity template context', () => {
     expect(rendered).toEqual([
       {
         workItemId: 'work-00000000000000000000000001',
+        deliveryOversightJson: 'null',
         isStart: true,
         isResume: false,
         issueTitle: injectedTitle,
@@ -370,6 +371,7 @@ describe('agent activity template context', () => {
     expect(rendered).toEqual([
       {
         workItemId: 'work-00000000000000000000000001',
+        deliveryOversightJson: 'null',
         isStart: true,
         isResume: false,
         issueTitle: '',
