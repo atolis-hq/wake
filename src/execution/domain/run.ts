@@ -176,7 +176,18 @@ function applyTerminalEvent(
     return;
   }
   if (event.eventType === ExecutionEventType.RunCancelled) {
-    Object.assign(state, { status: RunStatus.Cancelled, finishedAt: event.payload.finishedAt });
+    const reason = state.cancellation?.reason;
+    const message =
+      reason === undefined ? 'Runner was cancelled' : `Runner was cancelled: ${reason}`;
+    Object.assign(state, {
+      status: RunStatus.Cancelled,
+      finishedAt: event.payload.finishedAt,
+      failure: {
+        kind: ExecutionFailureCode.Unexpected,
+        message,
+        ...(reason === undefined ? {} : { details: { sourceKind: reason } }),
+      },
+    });
     return;
   }
   Object.assign(state, {

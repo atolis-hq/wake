@@ -25,6 +25,17 @@ The Activity normalizes `NEEDS_CLARIFICATION` to the existing `blocked` outcome,
 retaining its distinct raw sentinel for display; Orchestration then applies the
 configured workflow route.
 
+Claude idle supervision observes streamed assistant, tool-result, and partial
+provider events. Progress is discarded after observation; only the final result
+is decoded for response text, session identity, and usage. Retained final
+output is bounded to 1 MiB. Oversized progress records are discarded through the
+next newline with bounded memory, without terminating the run. Lease renewals and host timers do not count as activity.
+A silent Claude process still reaches the idle deadline; progress does not extend
+the hard deadline or prevent explicit cancellation. Cancelled Run diagnostics
+retain the cancellation reason even if a runner result arrives later. Late results
+remain journal evidence and do not replace terminal history. Attempt failures use
+the configured workflow recovery policy and do not cancel the WorkItem.
+
 Plain-text results require a marker such as `[[STATUS: DONE]]`. Markers are
 recognized anywhere in output, including before trailing prose. The last marker
 is authoritative: an unrecognized status yields `invalid-agent-result` without
@@ -47,7 +58,7 @@ initialized roots already include it.
 
 | Capability | Claude (`claude-cli`) | Codex (`codex-cli`) | Cursor (`cursor-cli`) |
 | --- | --- | --- | --- |
-| Structured output | `--output-format json` | `exec --json` JSONL | `--output-format json` |
+| Structured output | `--output-format stream-json --verbose --include-partial-messages` | `exec --json` JSONL | `--output-format json` |
 | Resume | `--resume <session>` | `exec ... resume <session>` | `--resume=<session>` |
 | Model | `--model` | `--model` | `--model` |
 | Effort | `--effort` | `-c model_reasoning_effort=<value>` | No adapter flag |

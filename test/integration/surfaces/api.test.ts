@@ -20,8 +20,32 @@ import type { ApiApplications } from '../../../src/surfaces/api/routes/applicati
 import { createApiDispatcher } from '../../../src/surfaces/api/routes/index.js';
 import {} from '../../../src/work/index.js';
 import { resId, workId } from '../../support/identities.js';
+import { executionFixture } from '../../unit/execution/support.js';
 
 describe('surface API contracts', () => {
+  it('presents an operator-cancelled run as CANCELLED while retaining its diagnostic', async () => {
+    const fixture = executionFixture();
+    const pending = fixture.start();
+    const started = await fixture.started();
+    await fixture.service.requestCancellation(started.runId, 'operator');
+    await fixture.service.confirmCancellation(started.runId);
+    fixture.complete({ kind: 'done' });
+    await pending;
+    const cancelled = await fixture.finished(RunStatus.Cancelled);
+    expect(cancelled.agent).toBeUndefined();
+    expect(cancelled.failure?.message).toBe('Runner was cancelled: operator');
+    expect(presentRun(cancelled)).toMatchObject({
+      status: RunStatus.Cancelled,
+      sentinel: 'CANCELLED',
+      active: false,
+    });
+    expect(
+      presentRun({
+        ...cancelled,
+        agent: { outcome: 'DONE', displayBody: 'Earlier result', metadata: {} },
+      }),
+    ).toMatchObject({ sentinel: 'CANCELLED' });
+  });
   it('serves an authorized artifact revision as bytes rather than exposing a filesystem path', async () => {
     const dispatcher = createApiDispatcher({
       work: {

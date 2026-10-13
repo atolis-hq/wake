@@ -139,6 +139,106 @@ it('E2E-AGENT-PUBLICATION-002 publishes a transport failure after it is resolved
   ]);
 });
 
+it.each(['idle-timeout', 'timeout'] as const)(
+  'publishes the durable %s cause once when a late result follows cancellation',
+  async (reason) => {
+    const world = new TestWorld();
+    world.registerActivity({
+      name: activityName('agent'),
+      inputSchema: z.object({}).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: 'deterministic',
+      handler: {
+        async execute() {
+          return { kind: 'done' } as const;
+        },
+      },
+    });
+    world.configureWorkflow('default', {
+      stages: { implement: { activity: 'agent', with: {}, on: { done: { then: 'done' } } } },
+    });
+    const work = await world.createWork({ objective: 'publish a resolved transport failure' });
+    const resource = await world.discoverResource({
+      resourceId: resId('2'),
+      kind: resourceKind('issue'),
+      externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'owner/repo#8' },
+      capabilities: [],
+    });
+    await world.resources.correlate(resource.resourceId, work.workItemId, 'primary', {
+      commandId: 'correlate-resource',
+      correlationId: correlationId('publication-failure'),
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'operator', id: 'owner' },
+    });
+    const workflow = await world.startWorkflow({
+      workItemId: work.workItemId,
+      workflowName: workflowName('default'),
+    });
+    const activation = workflow.pendingActivation!.activationId;
+    const run = runId('run-publication-failure');
+    await appendFailedAgentRun(world, run, workflow.workflowInstanceId, activation, reason);
+    const terminal = (await new RunRepository(world.journal).load(run)).view!;
+    expect(terminal.status).toBe('cancelled');
+    const publications = new AgentRunPublicationReactor({
+      journal: world.journal,
+      runs: new RunRepository(world.journal),
+      resources: world.resources,
+      orchestration: world.orchestration,
+    });
+
+    await world.process(publications.processor);
+    expect(projectDeliveries(await world.journal.readAll(0))).toEqual([]);
+
+    await world.resolveExecutionFailure(workflow.workflowInstanceId, {
+      activationId: activation,
+      runId: run,
+      reason: `Runner was cancelled: ${reason}`,
+    });
+    await world.process(publications.processor);
+    const repository = new RunRepository(world.journal);
+    const loaded = await repository.load(run);
+    const now = world.clock.now().toISOString();
+    await world.journal.appendToStream(runStream(run), loaded.sequence, [
+      createEventData({
+        eventId: `${run}:late-result`,
+        eventType: ExecutionEventType.RunRunnerResultReported,
+        occurredAt: now,
+        correlationId: 'publication-failure',
+        causationId: 'publication-failure',
+        actor: { kind: 'system', id: 'test' },
+        source: { kind: 'internal', id: 'test' },
+        payload: {
+          transport: 'succeeded',
+          agent: { outcome: 'DONE', displayBody: 'Late success', metadata: {} },
+        },
+      }),
+    ] as never);
+    await world.process(publications.processor);
+    await world.checkpoints.reset('reactor:agent-run-publication');
+    await world.process(publications.processor);
+    expect((await repository.load(run)).view).toEqual(terminal);
+    await expect(world.viewWork(work.workItemId)).resolves.toMatchObject({
+      state: 'open',
+      frozen: false,
+    });
+
+    await expect(world.viewWorkflow(workflow.workflowInstanceId)).resolves.toMatchObject({
+      status: 'blocked',
+      blockReason: `Runner was cancelled: ${reason}`,
+    });
+    expect(projectDeliveries(await world.journal.readAll(0))).toHaveLength(1);
+    expect(projectDeliveries(await world.journal.readAll(0))).toMatchObject([
+      {
+        payload: {
+          report: { runId: run, outcome: 'FAILED', displayBody: `Runner was cancelled: ${reason}` },
+        },
+      },
+    ]);
+  },
+);
+
 async function appendTerminalAgentRun(
   world: TestWorld,
   id: ReturnType<typeof runId>,
@@ -196,6 +296,7 @@ async function appendFailedAgentRun(
   id: ReturnType<typeof runId>,
   workflowInstanceId: string,
   activationId: string,
+  cancellationReason?: 'idle-timeout' | 'timeout',
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
@@ -217,22 +318,57 @@ async function appendFailedAgentRun(
         startedAt: now,
       },
     }),
-    createEventData({
-      eventId: `${id}:failed`,
-      eventType: ExecutionEventType.RunFailed,
-      occurredAt: now,
-      correlationId: 'publication-failure',
-      causationId: 'publication-failure',
-      actor: { kind: 'system', id: 'test' },
-      source: { kind: 'internal', id: 'test' },
-      payload: {
-        failure: {
-          kind: 'unexpected-execution-failure',
-          message: 'runner exited 1',
-          details: { sourceKind: 'Error' },
-        },
-        finishedAt: now,
-      },
-    }),
+    ...(cancellationReason === undefined
+      ? [
+          createEventData({
+            eventId: `${id}:failed`,
+            eventType: ExecutionEventType.RunFailed,
+            occurredAt: now,
+            correlationId: 'publication-failure',
+            causationId: 'publication-failure',
+            actor: { kind: 'system', id: 'test' },
+            source: { kind: 'internal', id: 'test' },
+            payload: {
+              failure: {
+                kind: 'unexpected-execution-failure',
+                message: 'runner exited 1',
+                details: { sourceKind: 'Error' },
+              },
+              finishedAt: now,
+            },
+          }),
+        ]
+      : [
+          createEventData({
+            eventId: `${id}:cancel-request`,
+            eventType: ExecutionEventType.RunCancellationRequested,
+            occurredAt: now,
+            correlationId: 'publication-failure',
+            causationId: 'publication-failure',
+            actor: { kind: 'system', id: 'test' },
+            source: { kind: 'internal', id: 'test' },
+            payload: { reason: cancellationReason, requestedAt: now },
+          }),
+          createEventData({
+            eventId: `${id}:cancel-confirm`,
+            eventType: ExecutionEventType.RunCancellationConfirmed,
+            occurredAt: now,
+            correlationId: 'publication-failure',
+            causationId: 'publication-failure',
+            actor: { kind: 'system', id: 'test' },
+            source: { kind: 'internal', id: 'test' },
+            payload: { confirmedAt: now },
+          }),
+          createEventData({
+            eventId: `${id}:cancelled`,
+            eventType: ExecutionEventType.RunCancelled,
+            occurredAt: now,
+            correlationId: 'publication-failure',
+            causationId: 'publication-failure',
+            actor: { kind: 'system', id: 'test' },
+            source: { kind: 'internal', id: 'test' },
+            payload: { finishedAt: now },
+          }),
+        ]),
   ] as never);
 }

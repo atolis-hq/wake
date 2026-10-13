@@ -906,7 +906,12 @@ describe('advanceOnce', () => {
                 runId: 'run-00000000000000000000000001',
                 status,
                 activationId: activation.activationId,
-                ...(status === 'cancelled' ? {} : { failure: { message: 'runner exited 1' } }),
+                failure: {
+                  message:
+                    status === 'cancelled'
+                      ? 'Runner was cancelled: idle-timeout'
+                      : 'runner exited 1',
+                },
               },
             ] as never,
         },
@@ -917,10 +922,21 @@ describe('advanceOnce', () => {
 
       await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
         kind: 'blocked',
-        reason: status === 'cancelled' ? 'execution failed' : 'runner exited 1',
+        reason: status === 'cancelled' ? 'Runner was cancelled: idle-timeout' : 'runner exited 1',
       });
       expect(attempts).toBe(0);
-      expect(resolutions).toHaveLength(1);
+      expect(resolutions).toEqual([
+        [
+          workflow.workflowInstanceId,
+          {
+            activationId: activation.activationId,
+            runId: 'run-00000000000000000000000001',
+            reason:
+              status === 'cancelled' ? 'Runner was cancelled: idle-timeout' : 'runner exited 1',
+          },
+          expect.anything(),
+        ],
+      ]);
     },
   );
 

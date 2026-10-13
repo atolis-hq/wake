@@ -2,6 +2,7 @@ import { ActivityOutcomeKind } from '../../../activities/index.js';
 import {
   agentTokenUsage,
   isActiveRunStatus,
+  RunStatus,
   type AgentRunResponse,
   type RunView,
 } from '../../../execution/index.js';
@@ -20,10 +21,12 @@ const outcomeSentinels: Readonly<Record<ActivityOutcomeKind, string>> = {
 export function presentRun(value: RunView): RunResponse {
   const usage = agentTokenUsage(value.agent?.metadata);
   const sentinel =
-    value.agent?.outcome ??
-    (value.outcome?.kind !== undefined && isActivityOutcomeKind(value.outcome.kind)
-      ? outcomeSentinels[value.outcome.kind]
-      : value.status.toUpperCase());
+    value.status === RunStatus.Cancelled
+      ? 'CANCELLED'
+      : (value.agent?.outcome ??
+        (value.outcome?.kind !== undefined && isActivityOutcomeKind(value.outcome.kind)
+          ? outcomeSentinels[value.outcome.kind]
+          : value.status.toUpperCase()));
   return {
     runId: value.runId,
     activationId: value.activationId,
