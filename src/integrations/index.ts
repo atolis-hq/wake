@@ -61,3 +61,5 @@ export * from './fake/external-sink.js';
 export * from './fake/external-source.js';
 
 export * from './fake/provider.js';
+
+export * from './github/infrastructure/oversight-mcp.js';

@@ -1,0 +1,27 @@
+# Merge these sections into your Wake home, configuring an authenticated runner.
+# Copy prompts/triage-assign.md from the repository into the home's prompts/.
+controlPlane:
+  triggers:
+    - id: delivery-oversight
+      workflow: delivery-oversight
+      contextScope: delivery-main
+      on:
+        cron: '*/15 * * * *'
+        events:
+          - execution.run-succeeded
+          - execution.run-failed
+          - execution.run-cancelled
+      when:
+        capacityAvailable: true
+integrations:
+  github:
+    provider: github
+    enabled: true
+    repositories:
+      - { owner: atolis-hq, repo: wake }
+    intake:
+      - where:
+          kind: issue
+          state: [open]
+          requiredAssignees: [atolis-hq-agent]
+        matchMode: all

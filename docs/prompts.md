@@ -12,6 +12,7 @@ following context values:
 | Value | Contents | Trust boundary |
 | --- | --- | --- |
 | `{{workItemId}}` | Wake's durable WorkItem identity. | Trusted Wake identity. |
+| `{{deliveryOversightJson}}` | Configured delivery oversight repositories and optional focus as JSON; `null` when absent. | Trusted operator Activity input. |
 | `{{issueTitle}}` | Current correlated ticket title. | Untrusted external text. |
 | `{{issueBody}}` | Current correlated ticket body. | Untrusted external text. |
 | `{{comments}}` | Comment list, where each entry has `author`, `occurredAt`, `body`, and optional review-comment `location` (`path`, `line`, `side`). | Untrusted external text and metadata. |
@@ -131,3 +132,45 @@ existing operator-owned copies need the equivalent guidance applied there.
 Prompt/template checks verify rendering, scaffold wiring, and content. They
 do not establish improved model behavior; no live model verification or spend
 is required for these checks.
+
+## Delivery oversight
+
+The editable [triage-assign prompt](../prompts/triage-assign.md) takes trusted
+`with.deliveryOversight` input: a non-empty `repositories` list of `owner/repo`
+names and optional `focus` text. Its template receives
+`{{deliveryOversightJson}}` alongside the ordinary identity/context fields.
+Ticket text cannot supply this capability. The invocation receives
+`wake_github_read` and `wake_github_assign` on its run-bound Wake MCP server;
+these execute fixed `gh` commands without a shell. Reads are restricted to
+configured repositories; assignment is restricted to the authenticated GitHub
+identity and one durable target per workflow invocation. No lifecycle, label,
+merge, or arbitrary GitHub API mutation is exposed. Use a runner supporting
+Wake's ephemeral MCP capability and authenticate `gh` as the intended Wake
+identity. Broad Bash/gh permissions are unnecessary.
+
+Read operations cover repository metadata, open backlog, `assigned-issues`, open PRs, individual
+issues/PRs (including linked closing PRs), native `blocked-by` relationships, and `compare` (base...commit).
+List reads are bounded to 100 entries; inspect specific prerequisite numbers
+when evidence is missing. Provider output remains untrusted evidence. The
+prompt keeps readiness separate from priority: explicit prerequisites must be
+verified, implementation work must be merged or available on the intended
+base, and issue closure alone is insufficient. Unverified prerequisites make
+a candidate ineligible for this invocation; assessment continues with other
+candidates. Active deliveries or supplied focus can justify a successful no-op.
+This does not enforce dependencies for other intake paths.
+
+Before mutation the assignment tool stores the selected repository/issue in
+processor recovery state. With no candidate argument it returns that target;
+retries inspect current provider assignment and never switch targets. A lost
+response after successful assignment is recovered by observing GitHub, not by
+assuming the prior command failed. Normal polling and correlation create the
+delivery WorkItem, including when artifact publication was interrupted.
+
+The `assess` stage writes local `assessment.md` and the accepted successor
+`memory.md` through Wake artifact tools. Only designated `memory.md` and
+explicit `share: true` exports enter the configured shared context. Local
+output remains readable with `contextScope` set; original WorkItem, producer,
+and revision ownership is retained. Prior memory remains current for failed,
+unaccepted, absent, ambiguous, or stale publication. A fresh invocation reads
+memory and selected references explicitly, and records consumed references and
+focus in its assessment. Shared reads do not authorize shared edits.

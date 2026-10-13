@@ -10,6 +10,7 @@ import {
   ActivityRunnerTransportStatus,
 } from '../contracts/vocabulary.js';
 import { translateAgentResult, type AgentActivityOutcome } from './agent-result.js';
+import type { DeliveryOversightInput } from './delivery-oversight-input.js';
 
 export interface AgentContextReader {
   forWorkItem(
@@ -62,6 +63,7 @@ export function createAgentActivity(
     template?: string;
     model?: string;
     allowedTools?: readonly string[];
+    deliveryOversight?: DeliveryOversightInput;
   },
   AgentActivityOutcome
 > {
@@ -176,6 +178,7 @@ async function agentRequest(
     template?: string;
     model?: string;
     allowedTools?: readonly string[];
+    deliveryOversight?: DeliveryOversightInput;
   }>,
   templates: AgentTemplateRenderer | undefined,
   contextReader: AgentContextReader | undefined,
@@ -188,7 +191,7 @@ async function agentRequest(
     templates,
     contextReader,
     context.resumeSessionId !== undefined,
-    context.resumeStartedAt,
+    { observedSince: context.resumeStartedAt, deliveryOversight: input.deliveryOversight },
   );
   return requestFrom(
     input,
@@ -237,15 +240,23 @@ async function resolveTemplate(
   templates: AgentTemplateRenderer | undefined,
   contextReader: AgentContextReader | undefined,
   isResume: boolean,
-  observedSince: string | undefined,
+  options: {
+    readonly observedSince: string | undefined;
+    readonly deliveryOversight: DeliveryOversightInput | undefined;
+  },
 ) {
   if (name === undefined) return undefined;
-  const untrustedContext = await buildUntrustedContext(workItemId, contextReader, observedSince);
+  const untrustedContext = await buildUntrustedContext(
+    workItemId,
+    contextReader,
+    options.observedSince,
+  );
   const template = await templates?.render(name, {
     workItemId,
     isStart: !isResume,
     isResume,
     ...untrustedContext,
+    deliveryOversightJson: JSON.stringify(options.deliveryOversight ?? null),
   });
   if (template === undefined)
     throw new Error('Agent Activity template rendering is not configured');
@@ -256,6 +267,7 @@ async function resolveTemplate(
 }
 
 interface AgentTemplateContext extends Readonly<Record<string, unknown>> {
+  readonly deliveryOversightJson: string;
   readonly workItemId: string;
   readonly isStart: boolean;
   readonly isResume: boolean;
