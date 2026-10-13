@@ -7,7 +7,12 @@ import type {
 } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind, WakeMcpServerName } from '../../contracts/runner.js';
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
-import { runProcess, type ProcessTimeouts } from '../process-execution.js';
+import {
+  runProcess,
+  type ProcessStdoutDecoder,
+  type ProcessTimeouts,
+} from '../process-execution.js';
+import { createClaudeStreamDecoder } from './claude-stream.js';
 
 export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
   return cliRunner(
@@ -18,6 +23,7 @@ export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
       ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseClaudeOutput,
+      createStdoutDecoder: createClaudeStreamDecoder,
       classifyFailure: classifyClaudeFailure,
       supportsSessionResume: true,
       supportsEphemeralMcp: true,
@@ -104,7 +110,9 @@ export function claudeCommandArgs(
   return [
     '-p',
     '--output-format',
-    'json',
+    'stream-json',
+    '--verbose',
+    '--include-partial-messages',
     ...(request.resumeSessionId === undefined ? [] : ['--resume', request.resumeSessionId]),
     ...(model === undefined ? [] : ['--model', model]),
     ...(effort === undefined ? [] : ['--effort', effort]),
@@ -153,6 +161,7 @@ export function cliRunner(
   args: (request: RunnerRequest) => string[],
   options: {
     readonly runnerTimeouts?: ProcessTimeouts;
+    readonly createStdoutDecoder?: () => ProcessStdoutDecoder;
     readonly defaultModel?: string;
     readonly supportsSessionResume?: boolean;
     readonly supportsEphemeralMcp?: boolean;
@@ -178,6 +187,9 @@ export function cliRunner(
         throw new Error(`${name} runner does not support ephemeral MCP configuration`);
       const process = runProcess(command, args(request), request.workspacePath, signal, {
         ...options.runnerTimeouts,
+        ...(options.createStdoutDecoder === undefined
+          ? {}
+          : { stdoutDecoder: options.createStdoutDecoder() }),
         ...(request.onTimeout === undefined ? {} : { onTimeout: request.onTimeout }),
       });
       return {

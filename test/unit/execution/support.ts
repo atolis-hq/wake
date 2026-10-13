@@ -39,9 +39,16 @@ export function executionFixture(timeoutKind?: 'idle' | 'hard') {
         context.signal.addEventListener('abort', () => {
           cancelled = true;
         });
-        return new Promise((done) => {
+        const outcome = await new Promise<{ kind: 'done' }>((done) => {
           resolve = done;
         });
+        if (timeoutKind !== undefined)
+          await context.reportRunnerResult?.({
+            transport: 'succeeded',
+            output: 'Late completion [[STATUS: DONE]]',
+            runner: 'fake',
+          });
+        return outcome;
       },
     },
   });

@@ -321,7 +321,7 @@ Each `execution.agentRunners.<name>` definition has the following shape.
 | `model` | non-empty string; optional | Runner's configured model metadata/default. A prompt or Activity may request a different model. |
 | `effort` | non-empty string; optional | Runner-specific reasoning-effort setting. |
 | `runnerTimeouts` | object; defaults below | Bounds and graceful-cancellation timing for one runner invocation. |
-| `runnerTimeouts.idleMs` | positive integer; default `600000` | Maximum time without stdout or stderr activity. |
+| `runnerTimeouts.idleMs` | positive integer; default `600000` | Maximum time without runner output activity. Claude counts streamed provider/tool events; other process runners count stdout/stderr. |
 | `runnerTimeouts.hardMs` | positive integer; default `7200000` | Absolute maximum invocation duration, regardless of output. |
 | `runnerTimeouts.cancellationGraceMs` | positive integer; default `30000` | Time to wait after SIGTERM before escalating cancellation to SIGKILL. |
 | `args` | list of strings; default `[]` | Additional adapter arguments. Do not include `--output-format` or `--resume`; Wake manages those flags. |

@@ -215,7 +215,9 @@ describe('cliRunner', () => {
       expected: [
         '-p',
         '--output-format',
-        'json',
+        'stream-json',
+        '--verbose',
+        '--include-partial-messages',
         '--resume',
         'prior-session',
         '--model',
@@ -489,7 +491,9 @@ describe('cliRunner', () => {
     expect(claudeCommandArgs(request)).toEqual([
       '-p',
       '--output-format',
-      'json',
+      'stream-json',
+      '--verbose',
+      '--include-partial-messages',
       '--model',
       'test-model',
       '--max-turns',
@@ -508,7 +512,15 @@ describe('cliRunner', () => {
       allowedTools: [],
     };
 
-    expect(claudeCommandArgs(request)).toEqual(['-p', '--output-format', 'json', '--', 'ship']);
+    expect(claudeCommandArgs(request)).toEqual([
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--',
+      'ship',
+    ]);
   });
 
   it('uses configured runner model and effort when an agent request does not override them', () => {

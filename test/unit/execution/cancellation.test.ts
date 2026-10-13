@@ -35,6 +35,27 @@ describe('Run cancellation', () => {
 
     fixture.complete({ kind: 'done' });
     await pending;
+    const terminal = await fixture.finished(RunStatus.Cancelled);
+    expect(terminal).toMatchObject({
+      failure: { message: `Runner was cancelled: ${reason}`, details: { sourceKind: reason } },
+      agent: { outcome: 'FAILED', displayBody: `Runner was cancelled: ${reason}` },
+    });
+    const events = await fixture.events();
+    expect(
+      events.filter(
+        (event) => event.event.eventType === ExecutionEventType.RunRunnerResultReported,
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter((event) => event.event.eventType === ExecutionEventType.RunCancelled),
+    ).toHaveLength(1);
+    expect(
+      events.some(
+        (event) =>
+          event.event.eventType === ExecutionEventType.RunSucceeded ||
+          event.event.eventType === ExecutionEventType.RunFailed,
+      ),
+    ).toBe(false);
   });
 
   it('records cancellation request before signalling the runner', async () => {

@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 
 // Agent CLIs can emit arbitrarily large machine-readable transcripts. Capture
 // raw bytes ourselves so overflow never enters a third-party string buffer.
-const maximumCapturedProcessOutputBytes = 1024 * 1024;
+export const maximumCapturedProcessOutputBytes = 1024 * 1024;
 
 export interface ProcessTimeouts {
   readonly idleMs?: number;
@@ -10,7 +10,13 @@ export interface ProcessTimeouts {
   readonly cancellationGraceMs?: number;
 }
 
+export interface ProcessStdoutDecoder {
+  push(chunk: Buffer): { readonly output: Buffer; readonly activity: boolean };
+  finish(): Buffer;
+}
+
 export interface ProcessExecutionOptions extends ProcessTimeouts {
+  readonly stdoutDecoder?: ProcessStdoutDecoder;
   readonly onTimeout?: (kind: 'idle' | 'hard') => void | Promise<void>;
 }
 
@@ -99,8 +105,7 @@ function captureProcessOutput(
       void terminate();
     };
     const capture = (destination: Buffer[]) => (chunk: Buffer) => {
-      if (settled) return;
-      resetIdleTimeout();
+      if (settled || chunk.length === 0) return;
       const remaining = maximumCapturedProcessOutputBytes - capturedBytes;
       if (remaining <= 0 || chunk.length > remaining) {
         if (remaining > 0) destination.push(chunk.subarray(0, remaining));
@@ -113,8 +118,28 @@ function captureProcessOutput(
       combinedOutput.push(chunk);
       capturedBytes += chunk.length;
     };
-    child.stdout?.on('data', capture(stdout));
-    child.stderr?.on('data', capture(stderr));
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (settled) return;
+      try {
+        const decoded = options?.stdoutDecoder?.push(chunk);
+        if (decoded === undefined || decoded.activity) resetIdleTimeout();
+        capture(stdout)(decoded?.output ?? chunk);
+      } catch {
+        terminateForOverflow();
+      }
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      resetIdleTimeout();
+      capture(stderr)(chunk);
+    });
+    child.stdout?.once('end', () => {
+      if (settled || options?.stdoutDecoder === undefined) return;
+      try {
+        capture(stdout)(options.stdoutDecoder.finish());
+      } catch {
+        terminateForOverflow();
+      }
+    });
     resetIdleTimeout();
     if (options?.hardMs !== undefined)
       hardTimeout = setTimeout(() => void terminateForTimeout('hard'), options.hardMs);

@@ -1,4 +1,5 @@
 import { EventActorKind } from '@atolis-hq/eventing';
+import { AgentResultStatus } from '../../activities/index.js';
 import { ExecutionEventType, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
 import { ExecutionFailureCode, isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
@@ -176,7 +177,26 @@ function applyTerminalEvent(
     return;
   }
   if (event.eventType === ExecutionEventType.RunCancelled) {
-    Object.assign(state, { status: RunStatus.Cancelled, finishedAt: event.payload.finishedAt });
+    const reason = state.cancellation?.reason;
+    const message =
+      reason === undefined ? 'Runner was cancelled' : `Runner was cancelled: ${reason}`;
+    Object.assign(state, {
+      status: RunStatus.Cancelled,
+      finishedAt: event.payload.finishedAt,
+      failure: {
+        kind: ExecutionFailureCode.Unexpected,
+        message,
+        ...(reason === undefined ? {} : { details: { sourceKind: reason } }),
+      },
+      agent: {
+        outcome: AgentResultStatus.Failed,
+        displayBody: message,
+        metadata: {
+          ...(state.agent?.metadata ?? {}),
+          ...(reason === undefined ? {} : { cancellationReason: reason }),
+        },
+      },
+    });
     return;
   }
   Object.assign(state, {
