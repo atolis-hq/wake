@@ -4,9 +4,9 @@
   "dependencies": ["kernel", "eventing", "work"],
   "publicEntry": "./index.ts",
   "namespaces": {
-    "events": ["artifact."],
+    "events": ["artifact.", "artifact-context."],
     "config": ["artifacts"],
     "relations": [],
-    "streams": ["artifact-work-item"]
+    "streams": ["artifact-work-item", "artifact-context"]
   }
 }

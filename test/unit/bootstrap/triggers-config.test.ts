@@ -41,13 +41,20 @@ describe('workflow trigger configuration', () => {
     { ...trigger, id: '' },
     { ...trigger, objective: 'task' },
     { ...trigger, minIntervalMs: 1000 },
-    { ...trigger, contextScope: 'shared' },
+    { ...trigger, contextScope: '' },
+    { ...trigger, contextScope: 'has space' },
     { ...trigger, when: { capacityAvailable: false } },
     { ...trigger, when: { capacityAvailable: 'true' } },
     { ...trigger, when: { arbitrary: true } },
     { ...trigger, on: { intervalMs: 1000 } },
   ])('rejects unsupported or malformed definitions (%j)', (value) => {
     expect(() => parse(value)).toThrow();
+  });
+
+  it('accepts an explicit named context scope', () => {
+    expect(
+      parse({ ...trigger, contextScope: 'recurring.review' }).controlPlane.triggers[0],
+    ).toMatchObject({ contextScope: 'recurring.review' });
   });
 
   it('rejects schedules and duplicate trigger identities', () => {

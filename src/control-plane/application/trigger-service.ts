@@ -134,7 +134,9 @@ export class TriggerService {
   }
 
   private key(config: TriggerConfig): string {
-    return this.dependencies.coordinationKey?.(config) ?? config.id;
+    return config.contextScope === undefined
+      ? (this.dependencies.coordinationKey?.(config) ?? config.id)
+      : `context:${config.contextScope}`;
   }
 
   private commandKey(triggerId: string): string {

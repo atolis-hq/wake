@@ -4,6 +4,7 @@ import type { FileArtifactMcpSessionStore } from '../artifacts/index.js';
 import {
   createArtifactMcpServer,
   type ArtifactMcpSessionDescriptor,
+  type ArtifactRevisionReference,
   type ArtifactService,
 } from '../artifacts/index.js';
 import { WakeMcpServerName, type ExecutionDependencies } from '../execution/index.js';
@@ -19,6 +20,10 @@ export function createArtifactMcpProvisioner(input: {
   readonly wakeRoot: string;
   readonly now: () => string;
   readonly nextId: () => string;
+  readonly sharedContext?: (workItemId: string) => Promise<{
+    readonly sharedReferences?: readonly ArtifactRevisionReference[];
+    readonly currentMemory?: ArtifactRevisionReference | null;
+  }>;
 }): NonNullable<ExecutionDependencies['mcp']> {
   return async ({ runId, activation, context }) => {
     const producer = producerFor(context.workflowInstanceId, activation.stage, activation.activity);
@@ -35,6 +40,7 @@ export function createArtifactMcpProvisioner(input: {
       activationId: activation.activationId,
       readableProducers: [...readableProducers],
       expiresAt,
+      ...(await input.sharedContext?.(context.workItemId)),
     };
     const issued = await input.sessions.issue(descriptor);
     try {
@@ -101,19 +107,18 @@ function commandContext(
 }
 
 function acceptedActivation(orchestration: OrchestrationService, workItemId: string) {
-  let accepted: Promise<ReadonlySet<string>> | undefined;
-  return async (activationId: string) => {
-    accepted ??= orchestration
-      .listAll()
-      .then(
-        (workflows) =>
-          new Set(
-            workflows
-              .filter((workflow) => workflow.workItemId === workItemId)
-              .flatMap((workflow) => workflow.acceptedOutcomes),
-          ),
-      );
-    return (await accepted).has(activationId);
+  let accepted:
+    | Promise<
+        readonly { readonly workItemId: string; readonly acceptedOutcomes: readonly string[] }[]
+      >
+    | undefined;
+  return async (activationId: string, sourceWorkItemId = workItemId) => {
+    accepted ??= orchestration.listAll();
+    return (await accepted).some(
+      (workflow) =>
+        workflow.workItemId === sourceWorkItemId &&
+        workflow.acceptedOutcomes.includes(activationId),
+    );
   };
 }
 

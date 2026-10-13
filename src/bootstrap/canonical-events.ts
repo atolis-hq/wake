@@ -1,6 +1,11 @@
 import type { EventEnvelope } from '@atolis-hq/eventing';
 import { ActivityEventType, selectActivityEvent } from '../activities/index.js';
-import { ArtifactEventType, selectArtifactEvent } from '../artifacts/index.js';
+import {
+  ArtifactContextEventType,
+  ArtifactEventType,
+  selectArtifactContextEvent,
+  selectArtifactEvent,
+} from '../artifacts/index.js';
 import { ControlEventType, selectControlEvent } from '../control-plane/index.js';
 import { ConversationEventType, selectConversationEvent } from '../conversations/index.js';
 import { ExecutionEventType, selectExecutionEvent } from '../execution/index.js';
@@ -21,6 +26,7 @@ import { WorkEventType, selectWorkEvent } from '../work/index.js';
 const registrations = [
   { types: Object.values(ActivityEventType), decode: selectActivityEvent },
   { types: Object.values(ArtifactEventType), decode: selectArtifactEvent },
+  { types: Object.values(ArtifactContextEventType), decode: selectArtifactContextEvent },
   { types: Object.values(ControlEventType), decode: selectControlEvent },
   { types: Object.values(ConversationEventType), decode: selectConversationEvent },
   { types: Object.values(ExecutionEventType), decode: selectExecutionEvent },

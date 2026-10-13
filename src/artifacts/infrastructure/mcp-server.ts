@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WorkItemId } from '../../work/index.js';
 import type { ArtifactService } from '../application/artifact-service.js';
+import type { ArtifactRevisionReference } from '../contracts/context.js';
 import { artifactPath } from '../contracts/paths.js';
 
 /** A capability token is resolved into this server-side scope by Execution. */
@@ -12,9 +13,11 @@ export interface ArtifactMcpSession {
   readonly runId: string;
   readonly activationId: string;
   readonly readableProducers: ReadonlySet<string>;
+  readonly sharedReferences?: readonly ArtifactRevisionReference[];
+  readonly currentMemory?: ArtifactRevisionReference | null;
   readonly nextRevisionId: () => string;
   readonly commandContext: () => CommandContext;
-  readonly acceptedActivation: (activationId: string) => Promise<boolean>;
+  readonly acceptedActivation: (activationId: string, workItemId?: string) => Promise<boolean>;
   /** Revalidates the run-bound credential for every tool request. */
   readonly assertActive: () => Promise<void>;
 }
@@ -91,7 +94,7 @@ export function createArtifactMcpServer(
     async ({ revisionId, find, replace }) => {
       await session.assertActive();
       const artifact = await visibleArtifact(artifacts, session, revisionId);
-      if (artifact.producer !== session.producer)
+      if (artifact.producer !== session.producer || artifact.workItemId !== session.workItemId)
         throw new Error('Only the owning producer may patch an artifact');
       if (artifact.location === undefined) throw new Error('Artifact revision has no content');
       const source = new TextDecoder('utf-8', { fatal: true }).decode(
@@ -171,8 +174,7 @@ async function visibleArtifact(
   revisionId: string,
 ) {
   const artifact = (await visibleArtifacts(artifacts, session)).find(
-    (candidate) =>
-      candidate.revisionId === revisionId && session.readableProducers.has(candidate.producer),
+    (candidate) => candidate.revisionId === revisionId,
   );
   if (artifact === undefined)
     throw new Error('Artifact revision is not visible to this activation');
@@ -187,6 +189,10 @@ function visibleArtifacts(artifacts: ArtifactService, session: ArtifactMcpSessio
       runId: session.runId,
       activationId: session.activationId,
       readableProducers: session.readableProducers,
+      ...(session.sharedReferences === undefined
+        ? {}
+        : { sharedReferences: session.sharedReferences }),
+      ...(session.currentMemory === undefined ? {} : { currentMemory: session.currentMemory }),
     },
     session.acceptedActivation,
   );
