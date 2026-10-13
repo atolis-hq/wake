@@ -15,7 +15,7 @@ describe('RunnerPipeline', () => {
     expect(maintain).toHaveBeenCalledOnce();
   });
 
-  it('runs no operational stages while paused', async () => {
+  it('consumes trigger occurrences while paused without maintenance or delivery', async () => {
     const runTriggers = vi.fn(async () => undefined);
     const maintain = vi.fn(async () => undefined);
     const deliver = vi.fn(async () => undefined);
@@ -27,7 +27,7 @@ describe('RunnerPipeline', () => {
     });
 
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
-    expect(runTriggers).not.toHaveBeenCalled();
+    expect(runTriggers).toHaveBeenCalledOnce();
     expect(maintain).not.toHaveBeenCalled();
     expect(deliver).not.toHaveBeenCalled();
   });

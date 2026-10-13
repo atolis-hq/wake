@@ -14,6 +14,11 @@
   "namespaces": {
     "events": [
       "control-plane.trigger-invocation-started",
+      "control-plane.trigger-invocation-finished",
+      "control-plane.trigger-paused",
+      "control-plane.trigger-request-recorded",
+      "control-plane.trigger-invocation-claimed",
+      "control-plane.trigger-resumed",
       "control-plane.dispatch-paused",
       "control-plane.dispatch-resumed",
       "control-plane.runner-paused",
@@ -21,6 +26,6 @@
     ],
     "config": ["controlPlane"],
     "relations": [],
-    "streams": ["control-plane"]
+    "streams": ["control-plane", "control-plane-trigger", "control-plane-trigger-invocation"]
   }
 }

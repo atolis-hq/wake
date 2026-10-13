@@ -7,6 +7,16 @@ export type ControlPlaneEventDataInput = {
 
 export function createControlPlaneEventData(input: ControlPlaneEventDataInput): ControlEventData {
   switch (input.eventType) {
+    case ControlEventType.TriggerRequestRecorded:
+      return createEventData(input);
+    case ControlEventType.TriggerInvocationClaimed:
+      return createEventData(input);
+    case ControlEventType.TriggerPaused:
+      return createEventData(input);
+    case ControlEventType.TriggerResumed:
+      return createEventData(input);
+    case ControlEventType.TriggerInvocationFinished:
+      return createEventData(input);
     case ControlEventType.TriggerInvocationStarted:
       return createEventData(input);
     case ControlEventType.DispatchPaused:

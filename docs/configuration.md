@@ -405,15 +405,20 @@ configured `workflow`, and a non-empty `on` source object. `on.events` is
 an optional non-empty list of canonical event names (for example,
 `execution.run-succeeded`); unknown names are rejected. `on.cron` is an
 optional five-field UTC cron expression. When both are configured, either
-source independently requests a workflow invocation. Event consumption begins
+source requests a workflow invocation. Single-flight coordination prevents
+overlap; requests during an active invocation coalesce into one pending request.
+Event consumption begins
 at registration; historical events do not cause startup invocations.
 
 The optional gate is exactly `when: { capacityAvailable: true }`. It checks
 current execution headroom under `maxConcurrentRuns`, runtime pause, and
 runner eligibility in the workflow entry stage's pool. A false gate consumes
-and skips the occurrence. It neither queues a request nor reserves capacity;
-normal execution dispatch still enforces limits. Becoming eligible alone never
-starts an invocation.
+and skips the occurrence when no invocation is active. Coalesced requests are
+checked again after the active invocation ends; an ineligible pending request
+is consumed rather than deferred. Trigger checks never reserve capacity;
+normal execution dispatch still enforces limits and quotas. Becoming eligible
+alone never starts an invocation. Dispatch pause prevents all new trigger starts
+and consumes explicit occurrences, including cron slots.
 
 Every start creates an ordinary top-level WorkItem with display description
 `Trigger <id>: workflow <workflow>` and a named workflow instance. Activity
@@ -422,10 +427,38 @@ cron slot, WorkItem, workflow instance and workflow name in a durable
 `control-plane.trigger-invocation-started` event. Artifact context remains
 WorkItem-local, so separate invocations do not share artifacts automatically.
 
+Requests, invocation claims, source identities, starts, results, and trigger
+pause/resume facts are durable. Cron watermarks live in processor state. Hosts
+sharing a Wake home serialize trigger starts and operator pause/resume commands;
+recovery uses the claimed WorkItem and workflow IDs to complete an interrupted
+start. Cron catch-up consumes at most 64 occurrences per trigger per pass and
+coalesces them into one request. There is no cooldown or minimum interval.
+Skipped occurrences advance durable source cursors without adding request facts.
+Pending requests retain at most 64 representative source identities; additional
+occurrences coalesce into that same request and advance their cursors. Operational
+projections are stored per coordination scope, while each invocation has its own
+history document and stream. Normal coordination reads new journal batches
+incrementally rather than repeatedly folding historical requests and invocations.
+
+The public Control Plane trigger service exposes pause/resume commands and a
+rebuildable invocation-history projection. Pausing clears unstarted pending
+work and skips new occurrences; active invocations continue.
+Blocked invocations still hold their single-flight slot: operator retry or
+clarification can resume the same workflow. Only completion or supersession
+releases the slot. Pausing a trigger clears the shared scope's pending request,
+including reasons coalesced through sibling triggers.
+Pause survives restart and removal/re-add of the same ID. Resume enables future explicit
+sources without replaying skipped occurrences or resetting workflow retries.
+Events from the trigger's own invocation WorkItems/workflows/Runs are suppressed.
+An invocation that blocks or exhausts automatic failure retries pauses its
+trigger until an operator resumes it. Removing a definition prevents future
+starts while preserving history and independent management of existing work.
+
 Legacy `controlPlane.schedules` and trigger-level `objective`,
 `minIntervalMs`, `contextScope`, and unknown fields are rejected.
-Shared context, durable overlap/coalescing and recovery policies are follow-on
-slices; this surface supplies explicit sources and the composed start path.
+Shared artifact context remains a follow-on slice. Trusted composition bindings
+may supply a shared coordination key; otherwise each trigger ID coordinates
+its own invocations.
 
 Cron expressions use five whitespace-separated fields: minute, hour,
 day-of-month, month, and day-of-week. They are evaluated in UTC. Wake supports

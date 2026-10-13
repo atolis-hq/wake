@@ -1,5 +1,6 @@
 import {
   EventActorKind,
+  correlationId,
   type CheckpointStore,
   type EventJournal,
   type EventProcessor,
@@ -9,6 +10,7 @@ import {
 } from '@atolis-hq/eventing';
 import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import { join } from 'node:path';
+import { z } from 'zod';
 import {
   ActivityExecutionKind,
   activityName,
@@ -16,6 +18,7 @@ import {
   type createPullRequestService,
 } from '../activities/index.js';
 import {
+  ControlEventType,
   ControlStreamKind,
   TriggerService,
   createDurableRunnerIneligibility,
@@ -23,17 +26,26 @@ import {
   createRunnerPipeline,
   createTriggerReactor,
   createWorkCancellationPolicy,
+  selectControlEvent,
+  triggerInvocationProjection,
+  triggerInvocationStream,
   type IntakePipeline,
   type RunnerPipeline,
   type TriggerCheckpointStore,
+  type TriggerConfig,
+  type TriggerInvocationView,
   type createControlPlaneService,
 } from '../control-plane/index.js';
 import type { createConversationService } from '../conversations/index.js';
 import {
+  ExecutionStreamKind,
   NoEligibleRunnerError,
   RunRepository,
   createRuntimeMemoryProfile,
+  decodeActivationExecutionEvent,
   isActiveRunStatus,
+  isRunStream,
+  runId,
   type RunnerRegistry,
   type RuntimeMemoryProfile,
   type createExecutionService,
@@ -64,7 +76,9 @@ import {
   createResourceTransitionReactor,
   createWatchReactor,
   createWatchReconciler,
+  isWorkflowInstanceStream,
   selectWorkflow,
+  workflowInstanceId,
   workflowName,
   type createOrchestrationService,
 } from '../orchestration/index.js';
@@ -74,7 +88,7 @@ import {
   type createResourceLookup,
   type createResourceService,
 } from '../resources/index.js';
-import type { createWorkService } from '../work/index.js';
+import { isWorkItemStream, type createWorkService } from '../work/index.js';
 import { decodeCanonicalEvent } from './canonical-events.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import type { EventProcessorRuntime } from './event-processor-runtime.js';
@@ -86,6 +100,7 @@ import {
 import { createCapabilityResourceTransitionEvidence } from './resource-transition-evidence.js';
 
 export interface IntegrationRuntime {
+  readonly triggers: TriggerService;
   readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
   readonly processors: readonly EventProcessor[];
   readonly providers: readonly ProviderInstance[];
@@ -119,6 +134,7 @@ export interface IntegrationRuntimeInput {
   readonly subscriptionRunSerialiser: ProcessorRunSerialiser;
   readonly processorRuntime: EventProcessorRuntime;
   readonly triggerCheckpoints: TriggerCheckpointStore;
+  readonly triggerCoordinationKey?: (config: TriggerConfig) => string;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
     provider: ProviderInstance,
@@ -209,7 +225,50 @@ export async function composeIntegrationRuntime(
   const runnerIneligibility = createDurableRunnerIneligibility(input.journal, () =>
     input.clock.now().toISOString(),
   );
+  const triggerRuns = new RunRepository(input.journal);
   const triggers = new TriggerService({
+    state: input.processorState,
+    history: async () => {
+      await projectionSubscriptions.catchUp(triggerInvocationProjection);
+      return (
+        await input.projections.list<TriggerInvocationView | null>(triggerInvocationProjection.name)
+      ).flatMap(({ value }) => (value === null ? [] : [value]));
+    },
+    invocationScope: async (item) => {
+      const claim = (await input.journal.readStream(triggerInvocationStream(item)))
+        .map(selectControlEvent)
+        .find((event) => event?.event.eventType === ControlEventType.TriggerInvocationClaimed);
+      return claim?.event.eventType === ControlEventType.TriggerInvocationClaimed
+        ? claim.event.payload.coordinationKey
+        : null;
+    },
+    ...(input.triggerCoordinationKey === undefined
+      ? {}
+      : { coordinationKey: input.triggerCoordinationKey }),
+    serialise: input.subscriptionRunSerialiser,
+    configurations: () => input.config.controlPlane.triggers,
+    isDispatchPaused: input.isPaused,
+    sourceWorkItem: async (event) => {
+      if (isWorkItemStream(event.stream)) return event.stream.id;
+      let workflowId: string | undefined;
+      if (isWorkflowInstanceStream(event.stream)) workflowId = event.stream.id;
+      if (isRunStream(event.stream))
+        workflowId = (await triggerRuns.load(runId(event.stream.id))).view?.workflowInstanceId;
+      if (event.stream.kind === ExecutionStreamKind.Activation)
+        workflowId = (
+          await triggerRuns.load(runId(decodeActivationExecutionEvent(event).event.payload.runId))
+        ).view?.workflowInstanceId;
+      if (workflowId === undefined) return null;
+      const seen = new Set<string>();
+      while (!seen.has(workflowId)) {
+        seen.add(workflowId);
+        const instance = await input.orchestration.get(workflowInstanceId(workflowId));
+        if (instance === null) return null;
+        if (instance.parentWorkflowInstanceId === undefined) return instance.workItemId;
+        workflowId = instance.parentWorkflowInstanceId;
+      }
+      throw new Error('Cyclic workflow provenance');
+    },
     journal: input.journal,
     capacityAvailable: async (trigger) => {
       if (await input.isPaused()) return false;
@@ -242,15 +301,29 @@ export async function composeIntegrationRuntime(
     createTriggerReactor(triggers, config, decodeCanonicalEvent),
   );
   // Registration starts at the current journal boundary; historical facts are not sources.
+  const registrationSchema = z.object({ position: z.number().int().nonnegative() }).strict();
   for (const reactor of triggerReactors) {
-    if ((await input.processorState.read(reactor.consumer, 'registration')) !== null) continue;
-    const position = await input.journal.latestGlobalPosition();
-    await input.checkpoints.save(reactor.consumer, position);
-    await input.processorState.write({
-      consumer: reactor.consumer,
-      key: 'registration',
-      value: { position },
-    });
+    await input.subscriptionRunSerialiser(
+      reactor.consumer,
+      new AbortController().signal,
+      async () => {
+        const stored = await input.processorState.read(reactor.consumer, 'registration');
+        const position =
+          stored === null
+            ? await input.journal.latestGlobalPosition()
+            : registrationSchema.parse(stored.value).position;
+        if (stored === null)
+          await input.processorState.write({
+            consumer: reactor.consumer,
+            key: 'registration',
+            value: { position },
+          });
+        // The registration boundary is written first so an interrupted checkpoint save
+        // can recover that boundary without skipping sources observed in the meantime.
+        if ((await input.checkpoints.load(reactor.consumer)) < position)
+          await input.checkpoints.save(reactor.consumer, position);
+      },
+    );
   }
   const artifacts = new ArtifactRegistrationReactor({
     journal: input.journal,
@@ -347,10 +420,16 @@ export async function composeIntegrationRuntime(
     isPaused: input.isPaused,
     runTriggers: () =>
       observeMemory(memoryProfile, 'runner.triggers', async () => {
+        await triggers.reconcile({
+          commandId: input.ids.next('command'),
+          correlationId: correlationId('trigger-recovery'),
+          occurredAt: input.clock.now().toISOString(),
+          actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
+        });
         for (const trigger of input.config.controlPlane.triggers)
           await triggers.run(trigger, {
             commandId: input.ids.next('command'),
-            correlationId: 'trigger-tick' as never,
+            correlationId: correlationId('trigger-tick'),
             occurredAt: input.clock.now().toISOString(),
             actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
           });
@@ -382,6 +461,7 @@ export async function composeIntegrationRuntime(
     input.wakeRoot,
   );
   return {
+    triggers,
     projectionSubscriptions,
     processors: [
       ...projectionSubscriptions.processors,

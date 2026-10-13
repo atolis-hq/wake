@@ -1,194 +1,318 @@
 import {
-  correlationId,
-  defineEventProcessor,
-  EventActorKind,
-  EventProcessorCategory,
-  EventProcessorReplayPolicy,
-  EventSourceKind,
-  WrongExpectedSequenceError,
   type CommandContext,
   type EventEnvelope,
   type EventJournal,
+  type ProcessorRunSerialiser,
+  type ProcessorStateStore,
 } from '@atolis-hq/eventing';
 import type { IdGenerator } from '../../kernel/index.js';
-import {
-  orchestrationGroupId,
-  workflowInstanceId,
-  workflowName,
-  type StartWorkflowInstance,
-} from '../../orchestration/index.js';
-import { workItemId, type CreateWorkItem } from '../../work/index.js';
 import type { TriggerConfig } from '../contracts/config.js';
-import { createControlPlaneEventData } from '../contracts/event-factory.js';
 import {
   ControlEventType,
-  selectControlEvent,
+  TriggerRequestDisposition,
   TriggerSourceKind,
   type TriggerSource,
 } from '../contracts/events.js';
-import { controlPlaneStream, ControlStreamKind } from '../contracts/streams.js';
 import { CronTriggerPolicy } from '../domain/cron-trigger-policy.js';
+import { appendTriggerFact, sourceIdentity, type TriggerFactInput } from './trigger-facts.js';
+import {
+  maximumTriggerSources,
+  type TriggerInvocationView,
+  type TriggerView,
+} from './trigger-projection.js';
+import { recoverTriggerInvocation } from './trigger-recovery.js';
+import { hasActiveInvocation, isOwnScopeSource } from './trigger-rules.js';
+import { TriggerSourceCursor, type TriggerCheckpointStore } from './trigger-source-cursor.js';
+import { TriggerStateReader } from './trigger-state-reader.js';
+import type { TriggerWorkflowPorts } from './trigger-workflow.js';
 
-export interface TriggerCheckpointStore {
-  load(triggerId: string): Promise<string | null>;
-  save(triggerId: string, slot: string): Promise<void>;
-}
+export type { TriggerCheckpointStore } from './trigger-source-cursor.js';
 
-export interface TriggerServiceDependencies {
+export const triggerCriticalSectionConsumer = 'control-plane:trigger-coordination';
+
+export interface TriggerServiceDependencies extends TriggerWorkflowPorts {
   readonly checkpoint: TriggerCheckpointStore;
   readonly journal: EventJournal;
+  readonly state: ProcessorStateStore;
+  readonly history: () => Promise<readonly TriggerInvocationView[]>;
+  readonly invocationScope: (workItemId: string) => Promise<string | null>;
+  readonly serialise: ProcessorRunSerialiser;
   readonly ids: IdGenerator;
-  readonly work: { create(command: CreateWorkItem, context: CommandContext): Promise<unknown> };
-  readonly orchestration: {
-    start(command: StartWorkflowInstance, context: CommandContext): Promise<unknown>;
-    get(
-      id: ReturnType<typeof workflowInstanceId>,
-    ): Promise<{ readonly workItemId: ReturnType<typeof workItemId> } | null>;
-  };
+  readonly configurations: () => readonly TriggerConfig[];
+  readonly coordinationKey?: (config: TriggerConfig) => string;
+  readonly sourceWorkItem: (event: EventEnvelope) => Promise<string | null>;
+  readonly isDispatchPaused: () => Promise<boolean>;
   readonly capacityAvailable: (config: TriggerConfig) => Promise<boolean>;
   readonly now: () => string;
 }
 
+/** Requests and claims are journal facts; the cron cursor is processor recovery state. */
 export class TriggerService {
   private readonly policy = new CronTriggerPolicy();
+  private readonly reader: TriggerStateReader;
+  private readonly sourceCursor: TriggerSourceCursor;
 
-  constructor(private readonly dependencies: TriggerServiceDependencies) {}
+  constructor(private readonly dependencies: TriggerServiceDependencies) {
+    this.reader = new TriggerStateReader(dependencies.journal);
+    this.sourceCursor = new TriggerSourceCursor(dependencies);
+  }
+
+  async get(): Promise<TriggerView> {
+    return this.serialise(async () => ({
+      ...(await this.view()),
+      invocations: await this.dependencies.history(),
+    }));
+  }
+
+  async reconcile(context: CommandContext): Promise<void> {
+    await this.serialise(async () => {
+      await this.recover(context);
+      await this.advanceCoalesced(context);
+    });
+  }
+
+  async pause(triggerId: string, reason: string, context: CommandContext): Promise<void> {
+    await this.serialise(async () => {
+      await this.view();
+      await this.emit(
+        {
+          eventType: ControlEventType.TriggerPaused,
+          payload: { triggerId, reason, coordinationKey: this.commandKey(triggerId) },
+        },
+        context,
+        `trigger:pause:${triggerId}:${context.commandId}`,
+      );
+    });
+  }
+
+  async resume(triggerId: string, context: CommandContext): Promise<void> {
+    await this.serialise(async () => {
+      await this.view();
+      await this.emit(
+        {
+          eventType: ControlEventType.TriggerResumed,
+          payload: { triggerId, coordinationKey: this.commandKey(triggerId) },
+        },
+        context,
+        `trigger:resume:${triggerId}:${context.commandId}`,
+      );
+    });
+  }
 
   async run(config: TriggerConfig, context: CommandContext): Promise<readonly string[]> {
-    if (config.on.cron === undefined) return [];
-    const checkpoint = await this.dependencies.checkpoint.load(config.id);
-    const slots = this.policy.elapsedSlots(
-      { id: config.id, cron: config.on.cron },
-      this.dependencies.now(),
-      checkpoint,
-    );
-    const accepted: string[] = [];
-    for (const slot of slots) {
-      if (await this.start(config, { kind: TriggerSourceKind.Cron, slot: slot.at }, context))
-        accepted.push(slot.identity);
-      // A failed gate consumes the occurrence; becoming eligible is not a source.
-      await this.dependencies.checkpoint.save(config.id, slot.at);
-    }
-    return accepted;
+    return this.serialise(async () => {
+      const accepted: string[] = [];
+      // Recovery finishes committed claims, even when their definition was removed or paused.
+      await this.recover(context);
+      if (config.on.cron !== undefined) {
+        const checkpoint = await this.dependencies.checkpoint.load(config.id);
+        for (const slot of this.policy.elapsedSlots(
+          { id: config.id, cron: config.on.cron },
+          this.dependencies.now(),
+          checkpoint,
+          64,
+        )) {
+          if (await this.request(config, { kind: TriggerSourceKind.Cron, slot: slot.at }, context))
+            accepted.push(slot.identity);
+          await this.dependencies.checkpoint.save(config.id, slot.at);
+        }
+      }
+      await this.advanceCoalesced(context);
+      return accepted;
+    });
   }
 
   async start(
     config: TriggerConfig,
     source: TriggerSource,
     context: CommandContext,
+    event?: EventEnvelope,
   ): Promise<boolean> {
-    const identity = `trigger:${config.id}:${source.kind}:${source.kind === TriggerSourceKind.Cron ? source.slot : source.eventId}`;
-    const workflow = workflowInstanceId(`workflow-${encodeURIComponent(identity)}`);
-    const invocationContext = {
-      ...context,
-      commandId: `${context.commandId}:${identity}`,
-      correlationId: correlationId(identity),
-    };
-    const existing = await this.dependencies.orchestration.get(workflow);
-    if (
-      existing === null &&
-      config.when?.capacityAvailable === true &&
-      !(await this.dependencies.capacityAvailable(config))
-    )
-      return false;
-    const item = existing?.workItemId ?? workItemId(this.dependencies.ids.next('work'));
-    if (existing === null) {
-      await this.dependencies.work.create(
-        { workItemId: item, objective: `Trigger ${config.id}: workflow ${config.workflow}` },
-        invocationContext,
-      );
-      await this.dependencies.orchestration.start(
-        {
-          workflowInstanceId: workflow,
-          workItemId: item,
-          workflowName: workflowName(config.workflow),
-          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
-        },
-        invocationContext,
-      );
-    }
-    await this.recordInvocation(config, source, invocationContext, item, workflow);
-    return true;
+    return this.serialise(async () => {
+      await this.recover(context);
+      const accepted = await this.request(config, source, context, event);
+      if (source.kind === TriggerSourceKind.Cron) {
+        const previous = await this.dependencies.checkpoint.load(config.id);
+        if (previous === null || Date.parse(source.slot) > Date.parse(previous))
+          await this.dependencies.checkpoint.save(config.id, source.slot);
+      }
+      await this.advanceCoalesced(context);
+      return accepted;
+    });
   }
 
-  private async recordInvocation(
+  private serialise<T>(operation: () => Promise<T>): Promise<T> {
+    return this.dependencies.serialise(
+      triggerCriticalSectionConsumer,
+      new AbortController().signal,
+      operation,
+    );
+  }
+
+  private key(config: TriggerConfig): string {
+    return this.dependencies.coordinationKey?.(config) ?? config.id;
+  }
+
+  private commandKey(triggerId: string): string {
+    const config = this.configured(triggerId);
+    return config === undefined
+      ? (this.reader.current.requests.find((request) => request.triggerId === triggerId)
+          ?.coordinationKey ?? triggerId)
+      : this.key(config);
+  }
+
+  private view(): Promise<TriggerView> {
+    return this.reader.get();
+  }
+
+  private configured(id: string): TriggerConfig | undefined {
+    return this.dependencies.configurations().find((config) => config.id === id);
+  }
+
+  private async emit(
+    input: TriggerFactInput,
+    context: CommandContext,
+    eventId: string,
+  ): Promise<void> {
+    await this.view();
+    await appendTriggerFact(
+      this.dependencies.journal,
+      this.dependencies.now(),
+      input,
+      context,
+      eventId,
+      input.eventType === ControlEventType.TriggerRequestRecorded
+        ? this.reader.sequence(input.payload.coordinationKey)
+        : undefined,
+    );
+  }
+
+  private async request(
     config: TriggerConfig,
     source: TriggerSource,
     context: CommandContext,
-    item: ReturnType<typeof workItemId>,
-    workflow: ReturnType<typeof workflowInstanceId>,
-  ): Promise<void> {
-    const stream = controlPlaneStream();
-    const draft = createControlPlaneEventData({
-      eventId: `${workflow}:${ControlEventType.TriggerInvocationStarted}`,
-      eventType: ControlEventType.TriggerInvocationStarted,
-      occurredAt: this.dependencies.now(),
-      correlationId: context.correlationId,
-      causationId: source.kind === TriggerSourceKind.Event ? source.eventId : context.commandId,
-      actor: context.actor,
-      source: { kind: EventSourceKind.Internal, id: config.id },
-      payload: {
-        triggerId: config.id,
-        source,
-        workItemId: item,
-        workflowInstanceId: workflow,
-        workflowName: config.workflow,
+    event?: EventEnvelope,
+  ): Promise<boolean> {
+    const view = await this.view();
+    if (await this.sourceCursor.isConsumed(config.id, source, event)) return false;
+    const duplicate = view.requests.some(
+      (request) =>
+        request.triggerId === config.id &&
+        sourceIdentity(request.source) === sourceIdentity(source),
+    );
+    const coordinationKey = this.key(config);
+    // The reactor checkpoint consumes suppressed sources. Emitting another trigger request
+    // here could itself become a source when subscribed to Control Plane events.
+    if (duplicate || (await this.suppressed(view, config, coordinationKey, event))) {
+      await this.sourceCursor.consume(config.id, source, event);
+      return false;
+    }
+    const eligible =
+      view.pauses[config.id] === undefined &&
+      this.configured(config.id) !== undefined &&
+      !(await this.dependencies.isDispatchPaused()) &&
+      (hasActiveInvocation(view, coordinationKey) || (await this.eligible(config)));
+    if (eligible && (view.coalesced[coordinationKey]?.sources.length ?? 0) < maximumTriggerSources)
+      await this.emit(
+        {
+          eventType: ControlEventType.TriggerRequestRecorded,
+          payload: {
+            triggerId: config.id,
+            coordinationKey,
+            source,
+            disposition: TriggerRequestDisposition.Coalesced,
+          },
+        },
+        context,
+        `trigger:request:${config.id}:${sourceIdentity(source)}`,
+      );
+    await this.sourceCursor.consume(config.id, source, event);
+    return eligible;
+  }
+
+  private suppressed(
+    view: TriggerView,
+    config: TriggerConfig,
+    coordinationKey: string,
+    event?: EventEnvelope,
+  ): Promise<boolean> {
+    return isOwnScopeSource(view, { triggerId: config.id, coordinationKey }, event, {
+      keyOf: (id) => {
+        const other = this.configured(id);
+        return other === undefined ? undefined : this.key(other);
       },
+      sourceWorkItem: this.dependencies.sourceWorkItem,
+      invocationScope: this.dependencies.invocationScope,
     });
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const events = await this.dependencies.journal.readStream(stream);
+  }
+
+  private async eligible(config: TriggerConfig): Promise<boolean> {
+    return (
+      !(await this.dependencies.isDispatchPaused()) &&
+      (config.when?.capacityAvailable !== true ||
+        (await this.dependencies.capacityAvailable(config)))
+    );
+  }
+
+  private async advanceCoalesced(context: CommandContext): Promise<void> {
+    const view = await this.view();
+    for (const request of Object.values(view.coalesced)) {
+      if (hasActiveInvocation(view, request.coordinationKey)) continue;
+      const config = this.configured(request.triggerId);
+      const identity = `trigger:${request.triggerId}:${sourceIdentity(request.source)}`;
       if (
-        events.some((envelope) => {
-          const event = selectControlEvent(envelope);
-          return (
-            event?.event.eventType === ControlEventType.TriggerInvocationStarted &&
-            event.event.payload.workflowInstanceId === workflow
-          );
-        })
-      )
-        return;
-      try {
-        await this.dependencies.journal.appendToStream(stream, events.length, [draft]);
-        return;
-      } catch (error) {
-        // Other triggers and runner controls share this stream. Re-read on contention.
-        if (!(error instanceof WrongExpectedSequenceError) || attempt === 7) throw error;
+        config === undefined ||
+        view.pauses[request.triggerId] !== undefined ||
+        !(await this.eligible(config))
+      ) {
+        // This recorded request was reconsidered and consumed; later eligibility is not a source.
+        await this.emit(
+          {
+            eventType: ControlEventType.TriggerRequestRecorded,
+            payload: {
+              triggerId: request.triggerId,
+              coordinationKey: request.coordinationKey,
+              source: request.source,
+              disposition: TriggerRequestDisposition.Skipped,
+            },
+          },
+          context,
+          `trigger:consume:${request.triggerId}:${sourceIdentity(request.source)}`,
+        );
+        continue;
       }
+      await this.emit(
+        {
+          eventType: ControlEventType.TriggerInvocationClaimed,
+          payload: {
+            triggerId: config.id,
+            coordinationKey: request.coordinationKey,
+            source: request.source,
+            sources: request.sources,
+            workItemId: this.dependencies.ids.next('work'),
+            workflowInstanceId: `workflow-${encodeURIComponent(identity)}`,
+            workflowName: config.workflow,
+          },
+        },
+        context,
+        `${identity}:claim`,
+      );
+      await this.recover(context);
     }
   }
-}
 
-export function createTriggerReactor(
-  service: TriggerService,
-  config: TriggerConfig,
-  decode: (event: EventEnvelope) => void,
-) {
-  return defineEventProcessor({
-    consumer: `reactor:control-plane.trigger:${config.id}`,
-    name: 'workflow-triggers',
-    owner: ControlStreamKind.Global,
-    category: EventProcessorCategory.Reactor,
-    replayPolicy: EventProcessorReplayPolicy.Idempotent,
-    select(event) {
-      if (!config.on.events?.includes(event.event.eventType)) return null;
-      decode(event);
-      return event;
-    },
-    async handle(event) {
-      await service.start(
-        config,
-        {
-          kind: TriggerSourceKind.Event,
-          eventId: event.event.eventId,
-          eventType: event.event.eventType,
-        },
-        {
-          commandId: `trigger:${config.id}:${event.event.eventId}`,
-          correlationId: correlationId(`trigger:${config.id}:${event.event.eventId}`),
-          occurredAt: event.event.occurredAt,
-          actor: { kind: EventActorKind.System, id: config.id },
-        },
-      );
-    },
-  });
+  private async recover(context: CommandContext): Promise<void> {
+    for (const invocation of (await this.view()).invocations) {
+      if (invocation.result === undefined)
+        await recoverTriggerInvocation(
+          {
+            work: this.dependencies.work,
+            orchestration: this.dependencies.orchestration,
+            emit: (input, command, id) => this.emit(input, command, id),
+          },
+          invocation,
+          context,
+        );
+    }
+  }
 }

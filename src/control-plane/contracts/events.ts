@@ -6,9 +6,20 @@ import {
   type EventUnion,
 } from '@atolis-hq/eventing';
 import { z } from 'zod';
-import { ControlStreamKind, type ControlStreamRef } from './streams.js';
+import { WorkflowStatus } from '../../orchestration/index.js';
+import {
+  ControlStreamKind,
+  type GlobalControlStreamRef,
+  type TriggerControlStreamRef,
+  type TriggerInvocationStreamRef,
+} from './streams.js';
 
 export const ControlEventType = {
+  TriggerRequestRecorded: 'control-plane.trigger-request-recorded',
+  TriggerInvocationClaimed: 'control-plane.trigger-invocation-claimed',
+  TriggerPaused: 'control-plane.trigger-paused',
+  TriggerResumed: 'control-plane.trigger-resumed',
+  TriggerInvocationFinished: 'control-plane.trigger-invocation-finished',
   TriggerInvocationStarted: 'control-plane.trigger-invocation-started',
   DispatchPaused: 'control-plane.dispatch-paused',
   DispatchResumed: 'control-plane.dispatch-resumed',
@@ -20,8 +31,11 @@ export const RunnerPauseCause = { Manual: 'manual', Quota: 'quota' } as const;
 
 export const ControlEventNamespace = 'control-plane.' as const;
 
+export const TriggerRequestDisposition = { Coalesced: 'coalesced', Skipped: 'skipped' } as const;
+
 export const TriggerSourceKind = { Event: 'event', Cron: 'cron' } as const;
-const triggerSourceSchema = z.discriminatedUnion('kind', [
+
+export const triggerSourceSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal(TriggerSourceKind.Event),
@@ -40,8 +54,43 @@ const triggerSourceSchema = z.discriminatedUnion('kind', [
 export type TriggerSource = z.infer<typeof triggerSourceSchema>;
 
 export interface ControlEventPayloads {
+  readonly [ControlEventType.TriggerRequestRecorded]: {
+    readonly triggerId: string;
+    readonly coordinationKey: string;
+    readonly source: TriggerSource;
+    readonly disposition: (typeof TriggerRequestDisposition)[keyof typeof TriggerRequestDisposition];
+  };
+  readonly [ControlEventType.TriggerInvocationClaimed]: {
+    readonly triggerId: string;
+    readonly coordinationKey: string;
+    readonly source: TriggerSource;
+    readonly sources: readonly TriggerSource[];
+    readonly workItemId: string;
+    readonly workflowInstanceId: string;
+    readonly workflowName: string;
+  };
+  readonly [ControlEventType.TriggerPaused]: {
+    readonly triggerId: string;
+    readonly reason: string;
+    readonly coordinationKey: string;
+    readonly workflowInstanceId?: string | undefined;
+    readonly outcomeCount?: number | undefined;
+  };
+  readonly [ControlEventType.TriggerResumed]: {
+    readonly triggerId: string;
+    readonly coordinationKey: string;
+  };
+  readonly [ControlEventType.TriggerInvocationFinished]: {
+    readonly triggerId: string;
+    readonly workflowInstanceId: string;
+    readonly workItemId: string;
+    readonly coordinationKey: string;
+    readonly status: typeof WorkflowStatus.Completed | typeof WorkflowStatus.Superseded;
+    readonly reason?: string | undefined;
+  };
   readonly [ControlEventType.TriggerInvocationStarted]: {
     readonly triggerId: string;
+    readonly coordinationKey: string;
     readonly source: TriggerSource;
     readonly workItemId: string;
     readonly workflowInstanceId: string;
@@ -64,20 +113,121 @@ export interface ControlEventPayloads {
   };
 }
 
-export type ControlEvent = EventUnion<ControlEventPayloads, ControlStreamRef>;
+type InvocationEventType =
+  | typeof ControlEventType.TriggerInvocationClaimed
+  | typeof ControlEventType.TriggerInvocationStarted
+  | typeof ControlEventType.TriggerInvocationFinished;
+
+type TriggerEventType =
+  | typeof ControlEventType.TriggerRequestRecorded
+  | typeof ControlEventType.TriggerPaused
+  | typeof ControlEventType.TriggerResumed;
+
+export type ControlEvent =
+  | EventUnion<Pick<ControlEventPayloads, InvocationEventType>, TriggerInvocationStreamRef>
+  | EventUnion<Pick<ControlEventPayloads, TriggerEventType>, TriggerControlStreamRef>
+  | EventUnion<
+      Omit<ControlEventPayloads, InvocationEventType | TriggerEventType>,
+      GlobalControlStreamRef
+    >;
 
 export type ControlEventData = EventDataUnion<ControlEventPayloads>;
 
 const streamSchema = z
   .object({ kind: z.literal(ControlStreamKind.Global), id: z.literal('global') })
   .strict();
+const triggerStreamSchema = z
+  .object({ kind: z.literal(ControlStreamKind.Trigger), id: z.string().min(1) })
+  .strict();
+const invocationStreamSchema = z
+  .object({ kind: z.literal(ControlStreamKind.TriggerInvocation), id: z.string().min(1) })
+  .strict();
 const eventSchema: z.ZodType<ControlEvent> = z.union([
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerRequestRecorded),
+      payload: z
+        .object({
+          triggerId: z.string().min(1),
+          coordinationKey: z.string().min(1),
+          source: triggerSourceSchema,
+          disposition: z.enum(TriggerRequestDisposition),
+        })
+        .strict(),
+    }),
+    stream: triggerStreamSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerInvocationClaimed),
+      payload: z
+        .object({
+          triggerId: z.string().min(1),
+          coordinationKey: z.string().min(1),
+          source: triggerSourceSchema,
+          sources: z.array(triggerSourceSchema).min(1),
+          workItemId: z.string().min(1),
+          workflowInstanceId: z.string().min(1),
+          workflowName: z.string().min(1),
+        })
+        .strict(),
+    }),
+    stream: invocationStreamSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerPaused),
+      payload: z
+        .object({
+          triggerId: z.string().min(1),
+          coordinationKey: z.string().min(1),
+          reason: z.string().min(1),
+          workflowInstanceId: z.string().min(1).optional(),
+          outcomeCount: z.number().int().nonnegative().optional(),
+        })
+        .strict()
+        .refine(
+          (value) =>
+            (value.workflowInstanceId === undefined) === (value.outcomeCount === undefined),
+          {
+            message: 'Failure pause requires both workflow identity and outcome count',
+          },
+        ),
+    }),
+    stream: triggerStreamSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerResumed),
+      payload: z
+        .object({ triggerId: z.string().min(1), coordinationKey: z.string().min(1) })
+        .strict(),
+    }),
+    stream: triggerStreamSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerInvocationFinished),
+      payload: z
+        .object({
+          triggerId: z.string().min(1),
+          workflowInstanceId: z.string().min(1),
+          workItemId: z.string().min(1),
+          coordinationKey: z.string().min(1),
+          status: z.enum([WorkflowStatus.Completed, WorkflowStatus.Superseded]),
+          reason: z.string().optional(),
+        })
+        .strict(),
+    }),
+    stream: invocationStreamSchema,
+  }),
   eventEnvelopeSchema.extend({
     event: eventDataSchema.extend({
       eventType: z.literal(ControlEventType.TriggerInvocationStarted),
       payload: z
         .object({
           triggerId: z.string().min(1),
+          coordinationKey: z.string().min(1),
           source: triggerSourceSchema,
           workItemId: z.string().min(1),
           workflowInstanceId: z.string().min(1),
@@ -85,7 +235,7 @@ const eventSchema: z.ZodType<ControlEvent> = z.union([
         })
         .strict(),
     }),
-    stream: streamSchema,
+    stream: invocationStreamSchema,
   }),
   eventEnvelopeSchema.extend({
     event: eventDataSchema.extend({
@@ -144,7 +294,23 @@ export function decodeControlEvent(event: EventEnvelope): ControlEvent {
     throw new Error(`Invalid Control Plane event ${event.event.eventId}: ${result.error.message}`, {
       cause: result.error,
     });
-  return result.data;
+  const decoded = result.data;
+  if (
+    'workItemId' in decoded.event.payload &&
+    decoded.stream.id !== decoded.event.payload.workItemId
+  )
+    throw new Error(
+      `Invalid Control Plane event ${event.event.eventId}: invocation stream identity mismatch`,
+    );
+  if (
+    decoded.stream.kind === ControlStreamKind.Trigger &&
+    'coordinationKey' in decoded.event.payload &&
+    decoded.stream.id !== decoded.event.payload.coordinationKey
+  )
+    throw new Error(
+      `Invalid Control Plane event ${event.event.eventId}: coordination stream identity mismatch`,
+    );
+  return decoded;
 }
 
 export function selectControlEvent(event: EventEnvelope): ControlEvent | null {

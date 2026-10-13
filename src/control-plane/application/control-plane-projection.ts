@@ -1,6 +1,8 @@
 import type { EventEnvelope, EventJournal, ProjectionDefinition } from '@atolis-hq/eventing';
 import { ControlEventType, selectControlEvent, type ControlEvent } from '../contracts/events.js';
 import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
+import { triggerInvocationProjection } from './trigger-invocation-projection.js';
+import { triggerProjection } from './trigger-projection.js';
 
 export interface ControlPlaneView {
   readonly dispatchPausedUntil: string | null;
@@ -54,13 +56,19 @@ export function createDurableRunnerIneligibility(
 export const controlPlaneProjection: ProjectionDefinition<ControlPlaneView> = {
   name: ControlStreamKind.Global,
   select(event: EventEnvelope) {
-    return selectControlEvent(event) === null ? null : { key: 'global' };
+    const control = selectControlEvent(event);
+    return control?.stream.kind === ControlStreamKind.Global ? { key: 'global' } : null;
   },
   initial: () => ({ dispatchPausedUntil: null, runnerPauses: {} }),
   project(previous, envelope) {
     const event = selectControlEvent(envelope);
     if (event === null) return previous;
     switch (event.event.eventType) {
+      case ControlEventType.TriggerRequestRecorded:
+      case ControlEventType.TriggerInvocationClaimed:
+      case ControlEventType.TriggerPaused:
+      case ControlEventType.TriggerResumed:
+      case ControlEventType.TriggerInvocationFinished:
       case ControlEventType.TriggerInvocationStarted:
         return previous;
       case ControlEventType.DispatchPaused:
@@ -94,4 +102,6 @@ function withoutDispatchPause(previous: ControlPlaneView): ControlPlaneView {
 
 export const controlPlaneProjectionDefinitions: readonly ProjectionDefinition[] = [
   controlPlaneProjection,
+  triggerProjection,
+  triggerInvocationProjection,
 ];
