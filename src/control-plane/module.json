@@ -2,6 +2,7 @@
   "name": "control-plane",
   "kind": "application",
   "dependencies": [
+    "artifacts",
     "kernel",
     "eventing",
     "work",

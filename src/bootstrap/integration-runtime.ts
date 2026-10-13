@@ -134,6 +134,7 @@ export interface IntegrationRuntimeInput {
   readonly subscriptionRunSerialiser: ProcessorRunSerialiser;
   readonly processorRuntime: EventProcessorRuntime;
   readonly triggerCheckpoints: TriggerCheckpointStore;
+  readonly reconcileArtifactContext?: () => Promise<void>;
   readonly triggerCoordinationKey?: (config: TriggerConfig) => string;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
@@ -420,6 +421,7 @@ export async function composeIntegrationRuntime(
     isPaused: input.isPaused,
     runTriggers: () =>
       observeMemory(memoryProfile, 'runner.triggers', async () => {
+        await input.reconcileArtifactContext?.();
         await triggers.reconcile({
           commandId: input.ids.next('command'),
           correlationId: correlationId('trigger-recovery'),

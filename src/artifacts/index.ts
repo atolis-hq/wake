@@ -25,3 +25,11 @@ export * from './infrastructure/file-artifact-store.js';
 export * from './infrastructure/mcp-server.js';
 
 export * from './infrastructure/mcp-session-store.js';
+
+export * from './application/artifact-context-service.js';
+
+export * from './contracts/context-event-factory.js';
+
+export * from './contracts/context-events.js';
+
+export * from './contracts/context.js';

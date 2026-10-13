@@ -1,7 +1,10 @@
 import type { EntityRef } from '../../kernel/index.js';
 import type { ArtifactWorkItemId } from './identifiers.js';
 
-export const ArtifactStreamKind = { WorkItem: 'artifact-work-item' } as const;
+export const ArtifactStreamKind = {
+  WorkItem: 'artifact-work-item',
+  Context: 'artifact-context',
+} as const;
 
 export type ArtifactWorkItemStreamRef = EntityRef<
   typeof ArtifactStreamKind.WorkItem,
@@ -10,4 +13,10 @@ export type ArtifactWorkItemStreamRef = EntityRef<
 
 export function artifactWorkItemStream(id: ArtifactWorkItemId): ArtifactWorkItemStreamRef {
   return { kind: ArtifactStreamKind.WorkItem, id };
+}
+
+export type ArtifactContextStreamRef = EntityRef<typeof ArtifactStreamKind.Context>;
+
+export function artifactContextStream(contextScope: string): ArtifactContextStreamRef {
+  return { kind: ArtifactStreamKind.Context, id: contextScope };
 }

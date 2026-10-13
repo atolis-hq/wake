@@ -1,6 +1,10 @@
 import { EventSourceKind, type CommandContext } from '@atolis-hq/eventing';
 import type { WorkItemId } from '../../work/index.js';
 import type { ArtifactsConfig } from '../contracts/config.js';
+import {
+  artifactSharedContextNameSchema,
+  type ArtifactRevisionReference,
+} from '../contracts/context.js';
 import { createArtifactEventData } from '../contracts/event-factory.js';
 import { ArtifactEventType } from '../contracts/events.js';
 import { artifactWorkItemIdForWorkItem } from '../contracts/identifiers.js';
@@ -23,7 +27,7 @@ export interface ArtifactService {
   get(workItemId: string): Promise<ArtifactWorkItemView | null>;
   latestPublished(
     workItemId: string,
-    acceptedActivation: (activationId: string) => Promise<boolean>,
+    acceptedActivation: (activationId: string, workItemId?: string) => Promise<boolean>,
   ): Promise<ReadonlyArray<ArtifactWorkItemView['revisions'][number]>>;
   readAcceptedRevision(
     workItemId: string,
@@ -35,16 +39,23 @@ export interface ArtifactService {
   } | null>;
   visibleTo(
     scope: ArtifactReadScope,
-    acceptedActivation: (activationId: string) => Promise<boolean>,
-  ): Promise<ReadonlyArray<ArtifactWorkItemView['revisions'][number]>>;
+    acceptedActivation: (activationId: string, workItemId?: string) => Promise<boolean>,
+  ): Promise<ReadonlyArray<ArtifactVisibleRevision>>;
   read(location: string): Promise<Uint8Array>;
 }
+
+export type ArtifactVisibleRevision = ArtifactWorkItemView['revisions'][number] & {
+  readonly workItemId: WorkItemId;
+  readonly access: 'local' | 'shared';
+  readonly currentMemory?: true;
+};
 
 export interface StageArtifactRevision {
   readonly revisionId: string;
   readonly path: ArtifactPath | string;
   readonly bytes: Uint8Array;
   readonly mediaType?: string;
+  readonly share?: boolean;
 }
 
 export interface StageArtifactTombstone {
@@ -58,10 +69,13 @@ export interface ArtifactWriteScope {
   readonly producer: string;
   readonly runId: string;
   readonly activationId: string;
+  readonly contextScope?: string;
 }
 
 export interface ArtifactReadScope extends ArtifactWriteScope {
   readonly readableProducers: ReadonlySet<string>;
+  readonly sharedReferences?: readonly ArtifactRevisionReference[];
+  readonly currentMemory?: ArtifactRevisionReference | null;
 }
 
 // The public service keeps the tightly coupled idempotent staging operations adjacent.
@@ -72,6 +86,48 @@ export function createArtifactService(
   config: ArtifactsConfig,
 ): ArtifactService {
   const repository = new ArtifactRepository(journal);
+
+  // A shared reference resolves only to a live revision whose owner's activation was accepted.
+  async function sharedRevision(
+    reference: ArtifactRevisionReference,
+    currentMemory: ArtifactRevisionReference | null | undefined,
+    acceptedActivation: (activationId: string, workItemId?: string) => Promise<boolean>,
+  ): Promise<ArtifactVisibleRevision | null> {
+    const owner = await repository.load(artifactWorkItemIdForWorkItem(reference.workItemId));
+    const revision = owner.view?.revisions.find(
+      (candidate) => candidate.revisionId === reference.revisionId,
+    );
+    if (
+      revision === undefined ||
+      revision.deleted ||
+      !(await acceptedActivation(revision.activationId, reference.workItemId))
+    )
+      return null;
+    return {
+      ...revision,
+      workItemId: reference.workItemId,
+      access: 'shared',
+      ...(currentMemory !== null &&
+      currentMemory !== undefined &&
+      sameRevision(currentMemory, reference)
+        ? { currentMemory: true as const }
+        : {}),
+    };
+  }
+
+  async function appendShared(
+    local: ArtifactVisibleRevision[],
+    scope: ArtifactReadScope,
+    acceptedActivation: (activationId: string, workItemId?: string) => Promise<boolean>,
+  ): Promise<ArtifactVisibleRevision[]> {
+    for (const reference of scope.sharedReferences ?? []) {
+      const shared = await sharedRevision(reference, scope.currentMemory, acceptedActivation);
+      if (shared !== null && !local.some((candidate) => sameRevision(candidate, reference)))
+        local.push(shared);
+    }
+    return local;
+  }
+
   return {
     async stageRevision(command, scope, context) {
       const id = artifactWorkItemIdForWorkItem(scope.workItemId as never);
@@ -85,6 +141,7 @@ export function createArtifactService(
         0;
       if (retained + command.bytes.byteLength > config.maxWorkItemBytes)
         throw new Error(`Artifact work item exceeds ${config.maxWorkItemBytes} byte limit`);
+      const selectedExport = contextExport(command.share, scope.contextScope);
       const path = artifactPath(String(command.path));
       const stored = await store.write({
         workItemId: scope.workItemId,
@@ -109,6 +166,7 @@ export function createArtifactService(
             runId: scope.runId,
             activationId: scope.activationId,
             ...stored,
+            ...selectedExport,
             ...(command.mediaType === undefined ? {} : { mediaType: command.mediaType }),
           },
         }),
@@ -173,7 +231,10 @@ export function createArtifactService(
         if (published || ownStaged)
           latest.set(`${revision.producer}\u0000${revision.path}`, revision);
       }
-      return [...latest.values()].filter((revision) => !revision.deleted);
+      const local: ArtifactVisibleRevision[] = [...latest.values()]
+        .filter((revision) => !revision.deleted)
+        .map((revision) => ({ ...revision, workItemId: scope.workItemId, access: 'local' }));
+      return appendShared(local, scope, acceptedActivation);
     },
     async readAcceptedRevision(workItemId, revisionId, acceptedActivation) {
       const view = await repository.load(artifactWorkItemIdForWorkItem(workItemId as never));
@@ -191,4 +252,17 @@ export function createArtifactService(
     },
     read: (location) => store.read(location),
   };
+}
+
+function sameRevision(
+  left: { readonly workItemId: string; readonly revisionId: string },
+  right: { readonly workItemId: string; readonly revisionId: string },
+): boolean {
+  return left.workItemId === right.workItemId && left.revisionId === right.revisionId;
+}
+
+function contextExport(share: boolean | undefined, contextScope: string | undefined) {
+  if (share !== true) return {};
+  if (contextScope === undefined) throw new Error('This run has no trusted shared context');
+  return { contextExport: artifactSharedContextNameSchema.parse(contextScope) };
 }

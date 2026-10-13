@@ -1,7 +1,13 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { z } from 'zod';
 import type { WorkItemId } from '../../work/index.js';
+import {
+  artifactRevisionReferenceSchema,
+  artifactSharedContextNameSchema,
+  type ArtifactRevisionReference,
+} from '../contracts/context.js';
 
 export interface ArtifactMcpSessionDescriptor {
   readonly workItemId: WorkItemId;
@@ -10,6 +16,9 @@ export interface ArtifactMcpSessionDescriptor {
   readonly activationId: string;
   readonly readableProducers: readonly string[];
   readonly expiresAt: string;
+  readonly sharedReferences?: readonly ArtifactRevisionReference[];
+  readonly currentMemory?: ArtifactRevisionReference | null;
+  readonly contextScope?: string;
 }
 
 interface StoredArtifactMcpSessionDescriptor extends ArtifactMcpSessionDescriptor {
@@ -59,6 +68,7 @@ export class FileArtifactMcpSessionStore {
       typeof descriptor.activationId !== 'string' ||
       !Array.isArray(descriptor.readableProducers) ||
       typeof descriptor.expiresAt !== 'string' ||
+      !validSharedContext(descriptor) ||
       !Number.isFinite(Date.parse(descriptor.expiresAt)) ||
       Date.parse(descriptor.expiresAt) <= Date.parse(this.now())
     )
@@ -74,6 +84,20 @@ export class FileArtifactMcpSessionStore {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
   }
+}
+
+const sharedContextSchema = z.object({
+  contextScope: artifactSharedContextNameSchema.optional(),
+  sharedReferences: z.array(artifactRevisionReferenceSchema).optional(),
+  currentMemory: artifactRevisionReferenceSchema.nullable().optional(),
+});
+
+function validSharedContext(descriptor: Partial<ArtifactMcpSessionDescriptor>): boolean {
+  return sharedContextSchema.safeParse({
+    contextScope: descriptor.contextScope,
+    sharedReferences: descriptor.sharedReferences,
+    currentMemory: descriptor.currentMemory,
+  }).success;
 }
 
 function digest(value: string): string {

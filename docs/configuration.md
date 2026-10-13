@@ -347,8 +347,9 @@ content remains untrusted stage output. Legacy plans without an accessible artif
 can still be reviewed from an explicit attached plan or provider record; summaries
 are not substitute plans. Each session may read accepted artifacts from any producer on its work item,
 including parent and child workflows. The run's readable producer scope is
-issued from that work item's existing artifact revisions. Other work items and
-unaccepted output from other runs remain inaccessible; only the producing stage
+issued from that work item's existing artifact revisions. Other work items
+(except accepted revisions explicitly shared through a trusted trigger
+`contextScope` or delegation grant, read-only) and unaccepted output from other runs remain inaccessible; only the producing stage
 may write, patch, or delete its own artifacts.
 
 Artifact storage is owned by Wake, outside Git workspaces, and is not a
@@ -385,6 +386,13 @@ execution:
       command: "npm ls --depth=0 > /dev/null 2>&1 || (rm -rf node_modules && npm ci)"
       timeoutMs: 300000
 ```
+
+
+Shared artifact manifest entries retain their original `workItemId` and revision ID.
+Pass both `revisionId` and optional `workItemId` to `wake_artifacts_read` when
+revision IDs collide across local and shared namespaces; an unqualified ambiguous
+read is rejected. Referenced immutable bytes remain available after later replacement
+or tombstoning of the producer path.
 
 ## `controlPlane`
 
@@ -424,8 +432,9 @@ Every start creates an ordinary top-level WorkItem with display description
 `Trigger <id>: workflow <workflow>` and a named workflow instance. Activity
 prompts define the task. Control Plane records the trigger, event ID/type or
 cron slot, WorkItem, workflow instance and workflow name in a durable
-`control-plane.trigger-invocation-started` event. Artifact context remains
-WorkItem-local, so separate invocations do not share artifacts automatically.
+`control-plane.trigger-invocation-started` event. Artifacts remain
+WorkItem-local unless the trigger sets an explicit `contextScope` (see below),
+so separate invocations do not share artifacts automatically.
 
 Requests, invocation claims, source identities, starts, results, and trigger
 pause/resume facts are durable. Cron watermarks live in processor state. Hosts
@@ -464,10 +473,46 @@ trigger until an operator resumes it. Removing a definition prevents future
 starts while preserving history and independent management of existing work.
 
 Legacy `controlPlane.schedules` and trigger-level `objective`,
-`minIntervalMs`, `contextScope`, and unknown fields are rejected.
-Shared artifact context remains a follow-on slice. Trusted composition bindings
-may supply a shared coordination key; otherwise each trigger ID coordinates
-its own invocations.
+`minIntervalMs`, and unknown fields are rejected.
+
+An operator may set `contextScope` on a trigger (letters, digits, `.`, `_`, `:`,
+`-`; at most 128 characters). Triggers naming the same scope share read context
+and a single-flight coordination key (`context:<name>`); without it, each
+trigger ID coordinates its own invocations and artifacts stay isolated. There is
+no `artifacts.contextScopes` registry. Membership is issued only from a durable
+invocation claim whose coordination key matches the operator binding; an agent
+cannot name or join a scope.
+
+Shared context is additive and read-only. Each invocation keeps its own
+WorkItem artifact namespace and producer-owned writes, and its manifest also
+lists authorized shared references with their original WorkItem, producer, and
+revision (`access: shared`). Same-path local and shared artifacts remain distinct
+and are read by revision ID. Only selected accepted exports populate the scope.
+A producer selects an export per revision with `share: true` on
+`wake_artifacts_write`. The run credential supplies the configured scope;
+a tool argument cannot select a destination or enroll a run. Selecting an export
+without a trusted shared-context credential fails. The selection is staged in
+Artifact metadata and published only when the claimed invocation completes
+successfully with accepted output. Unmarked revisions stay local; conventional
+`memory.md` is selected automatically for successful memory publication.
+The `delegation:` prefix is reserved for delegation-grant streams.
+When an invocation completes successfully and exactly one producer has an
+accepted `memory.md`, the scope's current memory advances to that producer's
+latest accepted revision (flagged `currentMemory` in later manifests); missing,
+failed, draft, or ambiguous output leaves it unchanged. Updates carry the expected
+prior pointer. A stale update leaves memory unchanged and records a durable
+`stale-memory-pointer` publication outcome; replay returns the same outcome.
+Only the workflow named in the durable trigger claim is reconciled. Publication
+errors are isolated per invocation, retried on later passes, and logged without
+blocking unrelated trigger admission. A resident host skips reconciled workflows
+and caches immutable claim bindings; a restart rebuilds these from durable facts.
+Publication is recorded in a single
+context-stream event keyed by the workflow instance and reconciled idempotently
+on each trigger pass, so crashes between streams are repaired rather than
+assumed atomic. Revisions referenced by a scope remain retained. Parent/child
+sharing contracts (`ArtifactContextService.registerChild`) grant a child only
+selected parent references and let the parent read accepted child artifacts;
+siblings receive only explicitly supplied references.
 
 Cron expressions use five whitespace-separated fields: minute, hour,
 day-of-month, month, and day-of-week. They are evaluated in UTC. Wake supports

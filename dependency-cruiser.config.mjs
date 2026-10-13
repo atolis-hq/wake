@@ -21,7 +21,15 @@ const dependencyMap = {
   activities: ['kernel', 'work', 'resources'],
   orchestration: ['kernel', 'work', 'activities', 'execution', 'conversations'],
   execution: ['kernel', 'work', 'resources', 'activities'],
-  'control-plane': ['kernel', 'work', 'resources', 'activities', 'orchestration', 'execution'],
+  'control-plane': [
+    'artifacts',
+    'kernel',
+    'work',
+    'resources',
+    'activities',
+    'orchestration',
+    'execution',
+  ],
   integrations: [
     'kernel',
     'work',

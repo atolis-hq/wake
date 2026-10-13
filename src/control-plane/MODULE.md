@@ -30,6 +30,8 @@ watermarks remain explicit one-shot or periodic lanes.
 ## Configuration
 
 Owns `controlPlane` dispatch limits, triggers, and resident-loop backoff.
+Named trigger context scopes use Artifact's public scope-name validation;
+Control Plane exports their single-flight coordination-key encoding.
 
 ## Relations and events
 

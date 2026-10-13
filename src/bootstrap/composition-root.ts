@@ -8,6 +8,7 @@ import {
 import { acquireFileLock } from '@atolis-hq/eventing-filesystem';
 import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
 import {
+  ArtifactContextService,
   FileArtifactMcpSessionStore,
   FileArtifactStore,
   createArtifactService,
@@ -63,6 +64,7 @@ import { createWorkService } from '../work/index.js';
 import { createFileActivationSchedulerSerialiser } from './activation-scheduler-serialiser.js';
 import { createBuiltInActivityRegistry } from './activity-registry.js';
 import { createArtifactMcpProvisioner } from './artifact-mcp.js';
+import { createArtifactTriggerContext } from './artifact-trigger-context.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
@@ -182,6 +184,7 @@ export async function createCompositionRoot(
     new FileArtifactStore(paths.artifactsRoot),
     config.artifacts,
   );
+  const artifactContexts = new ArtifactContextService(journal, artifacts);
   const artifactMcpSessions = new FileArtifactMcpSessionStore(paths.artifactsRoot, () =>
     clock.now().toISOString(),
   );
@@ -255,6 +258,14 @@ export async function createCompositionRoot(
         : (runner: Runner, name: string) =>
             profileDecorator(options.decorateRunner!(runner, name), name);
   const runners = createRunnerRegistry(config.execution, fakeScenarios, decorateRunner);
+  const artifactTriggerContext = createArtifactTriggerContext({
+    journal,
+    contexts: artifactContexts,
+    artifacts,
+    orchestration,
+    triggers: config.controlPlane.triggers,
+    now: () => clock.now().toISOString(),
+  });
   const execution = createExecutionService(journal, activities, config.execution, {
     clock,
     ids,
@@ -266,6 +277,7 @@ export async function createCompositionRoot(
       wakeRoot: paths.wakeRoot,
       now: () => clock.now().toISOString(),
       nextId: () => ids.next('artifact'),
+      sharedContext: artifactTriggerContext.provision,
     }),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
     ...(transcriptStore !== undefined
@@ -360,6 +372,7 @@ export async function createCompositionRoot(
     processorRuntime,
     activities,
     runners,
+    reconcileArtifactContext: artifactTriggerContext.reconcile,
     triggerCheckpoints:
       options.triggerCheckpoints ?? new ProcessorTriggerCheckpointStore(processorState),
     ...(options.triggerCoordinationKey === undefined

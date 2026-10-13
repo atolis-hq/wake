@@ -1,5 +1,6 @@
 import type { CommandContext, EventEnvelope } from '@atolis-hq/eventing';
 import type { TriggerConfig } from '../contracts/config.js';
+import { artifactContextCoordinationKey } from '../contracts/config.js';
 import {
   ControlEventType,
   TriggerRequestDisposition,
@@ -134,7 +135,9 @@ export class TriggerService {
   }
 
   private key(config: TriggerConfig): string {
-    return this.dependencies.coordinationKey?.(config) ?? config.id;
+    return config.contextScope === undefined
+      ? (this.dependencies.coordinationKey?.(config) ?? config.id)
+      : artifactContextCoordinationKey(config.contextScope);
   }
 
   private commandKey(triggerId: string): string {

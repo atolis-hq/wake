@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WorkItemId } from '../../work/index.js';
 import type { ArtifactService } from '../application/artifact-service.js';
+import type { ArtifactRevisionReference } from '../contracts/context.js';
 import { artifactPath } from '../contracts/paths.js';
 
 /** A capability token is resolved into this server-side scope by Execution. */
@@ -12,9 +13,12 @@ export interface ArtifactMcpSession {
   readonly runId: string;
   readonly activationId: string;
   readonly readableProducers: ReadonlySet<string>;
+  readonly sharedReferences?: readonly ArtifactRevisionReference[];
+  readonly currentMemory?: ArtifactRevisionReference | null;
+  readonly contextScope?: string;
   readonly nextRevisionId: () => string;
   readonly commandContext: () => CommandContext;
-  readonly acceptedActivation: (activationId: string) => Promise<boolean>;
+  readonly acceptedActivation: (activationId: string, workItemId?: string) => Promise<boolean>;
   /** Revalidates the run-bound credential for every tool request. */
   readonly assertActive: () => Promise<void>;
 }
@@ -32,14 +36,15 @@ export function createArtifactMcpServer(
       description: 'Read a visible artifact revision as UTF-8 text or base64 bytes.',
       inputSchema: {
         revisionId: z.string().min(1),
+        workItemId: z.string().min(1).optional(),
         encoding: z.enum(['utf8', 'base64']).default('utf8'),
         offset: z.number().int().nonnegative().default(0),
         length: z.number().int().positive().optional(),
       },
     },
-    async ({ revisionId, encoding, offset, length }) => {
+    async ({ revisionId, workItemId, encoding, offset, length }) => {
       await session.assertActive();
-      const artifact = await visibleArtifact(artifacts, session, revisionId);
+      const artifact = await visibleArtifact(artifacts, session, revisionId, workItemId);
       if (artifact.location === undefined) throw new Error('Artifact revision has no content');
       const bytes = (await artifacts.read(artifact.location)).slice(
         offset,
@@ -91,7 +96,7 @@ export function createArtifactMcpServer(
     async ({ revisionId, find, replace }) => {
       await session.assertActive();
       const artifact = await visibleArtifact(artifacts, session, revisionId);
-      if (artifact.producer !== session.producer)
+      if (artifact.producer !== session.producer || artifact.workItemId !== session.workItemId)
         throw new Error('Only the owning producer may patch an artifact');
       if (artifact.location === undefined) throw new Error('Artifact revision has no content');
       const source = new TextDecoder('utf-8', { fatal: true }).decode(
@@ -124,9 +129,15 @@ export function createArtifactMcpServer(
         content: z.string(),
         encoding: z.enum(['utf8', 'base64']).default('utf8'),
         mediaType: z.string().min(1).optional(),
+        share: z
+          .boolean()
+          .optional()
+          .describe(
+            "Select this revision for export to the run's trusted context after successful acceptance.",
+          ),
       },
     },
-    async ({ path, content, encoding, mediaType }) => {
+    async ({ path, content, encoding, mediaType, share }) => {
       await session.assertActive();
       const revisionId = session.nextRevisionId();
       await artifacts.stageRevision(
@@ -134,6 +145,7 @@ export function createArtifactMcpServer(
           revisionId,
           path: artifactPath(path),
           bytes: decodeContent(content, encoding),
+          ...(share === undefined ? {} : { share }),
           ...(mediaType === undefined ? {} : { mediaType }),
         },
         writeScope(session),
@@ -169,11 +181,15 @@ async function visibleArtifact(
   artifacts: ArtifactService,
   session: ArtifactMcpSession,
   revisionId: string,
+  workItemId?: string,
 ) {
-  const artifact = (await visibleArtifacts(artifacts, session)).find(
+  const matches = (await visibleArtifacts(artifacts, session)).filter(
     (candidate) =>
-      candidate.revisionId === revisionId && session.readableProducers.has(candidate.producer),
+      candidate.revisionId === revisionId &&
+      (workItemId === undefined || candidate.workItemId === workItemId),
   );
+  if (matches.length > 1) throw new Error('Artifact revision is ambiguous; specify workItemId');
+  const artifact = matches[0];
   if (artifact === undefined)
     throw new Error('Artifact revision is not visible to this activation');
   return artifact;
@@ -187,6 +203,10 @@ function visibleArtifacts(artifacts: ArtifactService, session: ArtifactMcpSessio
       runId: session.runId,
       activationId: session.activationId,
       readableProducers: session.readableProducers,
+      ...(session.sharedReferences === undefined
+        ? {}
+        : { sharedReferences: session.sharedReferences }),
+      ...(session.currentMemory === undefined ? {} : { currentMemory: session.currentMemory }),
     },
     session.acceptedActivation,
   );
@@ -198,6 +218,7 @@ function writeScope(session: ArtifactMcpSession) {
     producer: session.producer,
     runId: session.runId,
     activationId: session.activationId,
+    ...(session.contextScope === undefined ? {} : { contextScope: session.contextScope }),
   };
 }
 
