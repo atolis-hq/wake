@@ -48,6 +48,23 @@ describe.sequential('production Claude progress supervision', () => {
     });
   });
 
+  it('preserves plain stdout quota diagnostics on failure', async () => {
+    const execution = await runner().start(request('plain-error'), new AbortController().signal);
+    await expect(execution.result).resolves.toMatchObject({
+      transport: RunStatus.Failed,
+      failure: { kind: 'provider-quota-exceeded', message: 'Provider rate limit exceeded' },
+    });
+  });
+
+  it('completes after an oversized tool-input progress record', async () => {
+    const execution = await runner().start(request('oversized'), new AbortController().signal);
+    await expect(execution.result).resolves.toMatchObject({
+      transport: RunStatus.Succeeded,
+      sessionId: 'resumed-session',
+      output: 'Finished café. [[STATUS: DONE]]',
+    });
+  });
+
   it('decodes buffered final-only JSON without a newline', async () => {
     const execution = await runner().start(request('buffered'), new AbortController().signal);
     await expect(execution.result).resolves.toMatchObject({

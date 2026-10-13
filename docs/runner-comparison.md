@@ -27,8 +27,9 @@ configured workflow route.
 
 Claude idle supervision observes streamed assistant, tool-result, and partial
 provider events. Progress is discarded after observation; only the final result
-is decoded for response text, session identity, and usage. Each event and retained
-output is bounded to 1 MiB. Lease renewals and host timers do not count as activity.
+is decoded for response text, session identity, and usage. Retained final
+output is bounded to 1 MiB. Oversized progress records are discarded through the
+next newline with bounded memory, without terminating the run. Lease renewals and host timers do not count as activity.
 A silent Claude process still reaches the idle deadline; progress does not extend
 the hard deadline or prevent explicit cancellation. Cancelled Run diagnostics
 retain the cancellation reason even if a runner result arrives later. Late results

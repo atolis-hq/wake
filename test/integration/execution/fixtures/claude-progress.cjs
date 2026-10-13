@@ -17,7 +17,21 @@ const final = () =>
       total_cost_usd: 0.02,
     }),
   );
-if (mode === 'buffered') {
+if (mode === 'plain-error') {
+  process.stdout.write('Provider rate limit exceeded\n', () => process.exit(1));
+} else if (mode === 'oversized') {
+  process.stdout.write(
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'Write', input: { content: 'x'.repeat(2 * 1024 * 1024) } },
+        ],
+      },
+    }) + '\n',
+    final,
+  );
+} else if (mode === 'buffered') {
   setTimeout(final, 80);
 } else if (mode === 'silent') {
   setInterval(() => {}, 1000);

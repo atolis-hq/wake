@@ -38,8 +38,8 @@ describe('Run cancellation', () => {
     const terminal = await fixture.finished(RunStatus.Cancelled);
     expect(terminal).toMatchObject({
       failure: { message: `Runner was cancelled: ${reason}`, details: { sourceKind: reason } },
-      agent: { outcome: 'FAILED', displayBody: `Runner was cancelled: ${reason}` },
     });
+    expect(terminal.agent).toBeUndefined();
     const events = await fixture.events();
     expect(
       events.filter(

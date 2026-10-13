@@ -1,5 +1,4 @@
 import { EventActorKind } from '@atolis-hq/eventing';
-import { AgentResultStatus } from '../../activities/index.js';
 import { ExecutionEventType, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
 import { ExecutionFailureCode, isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
@@ -187,14 +186,6 @@ function applyTerminalEvent(
         kind: ExecutionFailureCode.Unexpected,
         message,
         ...(reason === undefined ? {} : { details: { sourceKind: reason } }),
-      },
-      agent: {
-        outcome: AgentResultStatus.Failed,
-        displayBody: message,
-        metadata: {
-          ...(state.agent?.metadata ?? {}),
-          ...(reason === undefined ? {} : { cancellationReason: reason }),
-        },
       },
     });
     return;
