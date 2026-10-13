@@ -8,7 +8,7 @@ System-level bounded coordination through the activation scheduler and its
 ## Owns
 
 Signals, eligibility, selection, budgets, dispatch coordination, schedule
-policy, and host-facing pipeline contracts.
+policy, durable trigger requests/claims/pause/history, and host-facing pipeline contracts.
 
 ## Does not own
 
@@ -40,6 +40,10 @@ Owns `control-plane.` events and defines no domain relation semantics.
 Selection, caps, pauses, retries, and scheduler serialisation remain explicit
 and bounded. Processor failure is surfaced through Eventing health; startup
 and fallback reconciliation retain their own diagnostics.
+Trigger claims and pause/resume commands share a durable home lock; recovery
+completes committed claims with stable invocation identities. Cron watermarks
+belong to processor state, while request and invocation facts remain
+authoritative in the journal.
 
 ## Extension rules
 

@@ -535,3 +535,11 @@ do not create synthetic parent WorkItems. An optional
 `when.capacityAvailable: true` gate skips occurrences without current
 execution headroom or an eligible runner. See [configuration](configuration.md#controlplane)
 for the strict schema and cron behavior.
+
+Trigger requests received during an invocation coalesce into one pending
+request. Once the active workflow ends, current eligibility is checked again.
+Pause clears pending requests and skips future sources while allowing active
+work to continue; resume does not reset workflow retry counters. Exhausted
+automatic failures pause the originating trigger, and events from its own
+invocations cannot recursively request another invocation. Starts and results
+remain inspectable after the trigger definition is removed.

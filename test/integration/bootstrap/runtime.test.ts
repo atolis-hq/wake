@@ -633,11 +633,12 @@ describe('target composition root', () => {
     await expect(runtime.runnerPipeline.run({ maxProgress: 1 })).resolves.toEqual({
       kind: 'paused',
     });
-    expect(saves).toEqual([]);
+    // A paused occurrence is consumed rather than deferred until maintenance clears.
+    expect(saves).toEqual(['2026-08-10T00:01:00.000Z']);
 
     await runtime.maintenance.clear();
     await runtime.runnerPipeline.run({ maxProgress: 1 });
-    expect(saves).toEqual(['2026-08-10T00:01:00.000Z']);
+    expect(saves).toEqual(['2026-08-10T00:01:00.000Z', '2026-08-10T00:01:00.000Z']);
   });
 
   it('does not poll or translate provider intake during maintenance, then resumes intake after the lease clears', async () => {

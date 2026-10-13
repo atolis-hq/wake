@@ -1,6 +1,7 @@
 import type { EventEnvelope, EventJournal, ProjectionDefinition } from '@atolis-hq/eventing';
 import { ControlEventType, selectControlEvent, type ControlEvent } from '../contracts/events.js';
 import { ControlStreamKind, controlPlaneStream } from '../contracts/streams.js';
+import { triggerProjection } from './trigger-projection.js';
 
 export interface ControlPlaneView {
   readonly dispatchPausedUntil: string | null;
@@ -61,6 +62,11 @@ export const controlPlaneProjection: ProjectionDefinition<ControlPlaneView> = {
     const event = selectControlEvent(envelope);
     if (event === null) return previous;
     switch (event.event.eventType) {
+      case ControlEventType.TriggerRequestRecorded:
+      case ControlEventType.TriggerInvocationClaimed:
+      case ControlEventType.TriggerPaused:
+      case ControlEventType.TriggerResumed:
+      case ControlEventType.TriggerInvocationFinished:
       case ControlEventType.TriggerInvocationStarted:
         return previous;
       case ControlEventType.DispatchPaused:
@@ -94,4 +100,5 @@ function withoutDispatchPause(previous: ControlPlaneView): ControlPlaneView {
 
 export const controlPlaneProjectionDefinitions: readonly ProjectionDefinition[] = [
   controlPlaneProjection,
+  triggerProjection,
 ];

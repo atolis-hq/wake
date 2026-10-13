@@ -24,6 +24,8 @@ import {
   type IntakePipeline,
   type RunnerPipeline,
   type TriggerCheckpointStore,
+  type TriggerConfig,
+  type TriggerService,
 } from '../control-plane/index.js';
 import { createConversationService } from '../conversations/index.js';
 import {
@@ -71,7 +73,7 @@ import type { RuntimeProjectionSubscriptions } from './projection-runtime.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import { createTranscriptRetention } from './transcript-retention.js';
-import { FileTriggerCheckpointStore } from './trigger-checkpoint-store.js';
+import { ProcessorTriggerCheckpointStore } from './trigger-checkpoint-store.js';
 import {
   createUpdateMaintenanceLease,
   type UpdateMaintenanceLease,
@@ -96,6 +98,8 @@ export interface CompositionRootOptions {
   readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
   readonly subscriptionRunSerialiser?: ProcessorRunSerialiser;
   readonly triggerCheckpoints?: TriggerCheckpointStore;
+  /** Trusted context binding supplies a shared scope identity; absent bindings use the trigger ID. */
+  readonly triggerCoordinationKey?: (config: TriggerConfig) => string;
   readonly decorateDeliveryAdapter?: (
     adapter: ExternalDeliveryAdapter,
     provider: ProviderInstance,
@@ -106,6 +110,7 @@ export interface CompositionRootOptions {
 }
 
 export interface CompositionRoot {
+  readonly triggers: TriggerService;
   readonly config: ResolvedWakeModulesConfig;
   readonly fakeScenarios: FakeScenarioResolver;
   readonly paths: WakePaths;
@@ -356,7 +361,10 @@ export async function createCompositionRoot(
     activities,
     runners,
     triggerCheckpoints:
-      options.triggerCheckpoints ?? new FileTriggerCheckpointStore(paths.dataRoot),
+      options.triggerCheckpoints ?? new ProcessorTriggerCheckpointStore(processorState),
+    ...(options.triggerCoordinationKey === undefined
+      ? {}
+      : { triggerCoordinationKey: options.triggerCoordinationKey }),
     ...(options.decorateDeliveryAdapter === undefined
       ? {}
       : { decorateDeliveryAdapter: options.decorateDeliveryAdapter }),

@@ -10,6 +10,7 @@ export class CronTriggerPolicy {
     config: { readonly id: string; readonly cron: string },
     now: string,
     checkpoint: string | null,
+    maximumSlots = Number.POSITIVE_INFINITY,
   ): readonly CronTriggerSlot[] {
     const end = minute(new Date(now));
     const start =
@@ -33,6 +34,7 @@ export class CronTriggerPolicy {
       if (!matchesDays(date, dayOfMonth, dayOfWeek)) continue;
       const at = date.toISOString();
       slots.push({ identity: `trigger:${config.id}:cron:${at}`, at });
+      if (slots.length >= maximumSlots) break;
     }
     return slots;
   }

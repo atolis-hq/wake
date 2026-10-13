@@ -6,9 +6,15 @@ import {
   type EventUnion,
 } from '@atolis-hq/eventing';
 import { z } from 'zod';
+import { WorkflowStatus } from '../../orchestration/index.js';
 import { ControlStreamKind, type ControlStreamRef } from './streams.js';
 
 export const ControlEventType = {
+  TriggerRequestRecorded: 'control-plane.trigger-request-recorded',
+  TriggerInvocationClaimed: 'control-plane.trigger-invocation-claimed',
+  TriggerPaused: 'control-plane.trigger-paused',
+  TriggerResumed: 'control-plane.trigger-resumed',
+  TriggerInvocationFinished: 'control-plane.trigger-invocation-finished',
   TriggerInvocationStarted: 'control-plane.trigger-invocation-started',
   DispatchPaused: 'control-plane.dispatch-paused',
   DispatchResumed: 'control-plane.dispatch-resumed',
@@ -20,8 +26,11 @@ export const RunnerPauseCause = { Manual: 'manual', Quota: 'quota' } as const;
 
 export const ControlEventNamespace = 'control-plane.' as const;
 
+export const TriggerRequestDisposition = { Coalesced: 'coalesced', Skipped: 'skipped' } as const;
+
 export const TriggerSourceKind = { Event: 'event', Cron: 'cron' } as const;
-const triggerSourceSchema = z.discriminatedUnion('kind', [
+
+export const triggerSourceSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal(TriggerSourceKind.Event),
@@ -40,6 +49,35 @@ const triggerSourceSchema = z.discriminatedUnion('kind', [
 export type TriggerSource = z.infer<typeof triggerSourceSchema>;
 
 export interface ControlEventPayloads {
+  readonly [ControlEventType.TriggerRequestRecorded]: {
+    readonly triggerId: string;
+    readonly coordinationKey: string;
+    readonly source: TriggerSource;
+    readonly disposition: (typeof TriggerRequestDisposition)[keyof typeof TriggerRequestDisposition];
+  };
+  readonly [ControlEventType.TriggerInvocationClaimed]: {
+    readonly triggerId: string;
+    readonly coordinationKey: string;
+    readonly source: TriggerSource;
+    readonly sources: readonly TriggerSource[];
+    readonly workItemId: string;
+    readonly workflowInstanceId: string;
+    readonly workflowName: string;
+  };
+  readonly [ControlEventType.TriggerPaused]: {
+    readonly triggerId: string;
+    readonly reason: string;
+  };
+  readonly [ControlEventType.TriggerResumed]: { readonly triggerId: string };
+  readonly [ControlEventType.TriggerInvocationFinished]: {
+    readonly triggerId: string;
+    readonly workflowInstanceId: string;
+    readonly status:
+      | typeof WorkflowStatus.Completed
+      | typeof WorkflowStatus.Blocked
+      | typeof WorkflowStatus.Superseded;
+    readonly reason?: string | undefined;
+  };
   readonly [ControlEventType.TriggerInvocationStarted]: {
     readonly triggerId: string;
     readonly source: TriggerSource;
@@ -72,6 +110,69 @@ const streamSchema = z
   .object({ kind: z.literal(ControlStreamKind.Global), id: z.literal('global') })
   .strict();
 const eventSchema: z.ZodType<ControlEvent> = z.union([
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerRequestRecorded),
+      payload: z
+        .object({
+          triggerId: z.string().min(1),
+          coordinationKey: z.string().min(1),
+          source: triggerSourceSchema,
+          disposition: z.enum(TriggerRequestDisposition),
+        })
+        .strict(),
+    }),
+    stream: streamSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerInvocationClaimed),
+      payload: z
+        .object({
+          triggerId: z.string().min(1),
+          coordinationKey: z.string().min(1),
+          source: triggerSourceSchema,
+          sources: z.array(triggerSourceSchema).min(1),
+          workItemId: z.string().min(1),
+          workflowInstanceId: z.string().min(1),
+          workflowName: z.string().min(1),
+        })
+        .strict(),
+    }),
+    stream: streamSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerPaused),
+      payload: z.object({ triggerId: z.string().min(1), reason: z.string().min(1) }).strict(),
+    }),
+    stream: streamSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerResumed),
+      payload: z.object({ triggerId: z.string().min(1) }).strict(),
+    }),
+    stream: streamSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    event: eventDataSchema.extend({
+      eventType: z.literal(ControlEventType.TriggerInvocationFinished),
+      payload: z
+        .object({
+          triggerId: z.string().min(1),
+          workflowInstanceId: z.string().min(1),
+          status: z.enum([
+            WorkflowStatus.Completed,
+            WorkflowStatus.Blocked,
+            WorkflowStatus.Superseded,
+          ]),
+          reason: z.string().optional(),
+        })
+        .strict(),
+    }),
+    stream: streamSchema,
+  }),
   eventEnvelopeSchema.extend({
     event: eventDataSchema.extend({
       eventType: z.literal(ControlEventType.TriggerInvocationStarted),

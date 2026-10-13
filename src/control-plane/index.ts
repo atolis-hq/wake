@@ -12,6 +12,8 @@ export * from './application/control-plane-service.js';
 
 export * from './application/runner-control-service.js';
 
+export * from './application/trigger-reactor.js';
+
 export * from './application/trigger-service.js';
 
 export * from './application/intake-pipeline.js';
@@ -45,3 +47,5 @@ export * from './infrastructure/intake-host.js';
 export * from './infrastructure/resident-host.js';
 
 export * from './infrastructure/tick-host.js';
+
+export * from './application/trigger-projection.js';

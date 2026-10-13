@@ -1,4 +1,4 @@
-import { EventActorKind, WrongExpectedSequenceError, correlationId } from '@atolis-hq/eventing';
+import { EventActorKind, correlationId } from '@atolis-hq/eventing';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -8,11 +8,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ActivityOutcomeKind, RetrySafety } from '../../../src/activities/index.js';
 import type { CompositionRootOptions } from '../../../src/bootstrap/index.js';
 import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
 import {
   ControlEventType,
-  ControlStreamKind,
   TriggerSourceKind,
   selectControlEvent,
   type TriggerConfig,
@@ -26,6 +26,7 @@ import {
   workflowName,
 } from '../../../src/orchestration/index.js';
 import { WorkEventType, selectWorkEvent, workItemId } from '../../../src/work/index.js';
+import { FaultInjectingJournal } from '../../support/fault-injecting-journal.js';
 
 const homes: string[] = [];
 afterEach(async () => {
@@ -42,35 +43,38 @@ async function fixture(
   const home = await mkdtemp(join(tmpdir(), 'wake-triggers-'));
   homes.push(home);
   const clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };
-  const config = parseRootConfig({
-    execution: {
-      agentRunners: { fake: { kind: 'fake' } },
-      runnerPools: { standard: ['fake'] },
-      defaultRunnerPool: 'standard',
-    },
-    orchestration: {
-      default: 'inspect',
-      workflows: {
-        inspect: {
-          stages: {
-            start: {
-              activity: 'agent',
-              with: { prompt: 'Inspect configured task' },
-              on: { done: { then: 'done' } },
+  const config =
+    options.config ??
+    parseRootConfig({
+      execution: {
+        agentRunners: { fake: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
+      },
+      orchestration: {
+        default: 'inspect',
+        workflows: {
+          inspect: {
+            stages: {
+              start: {
+                activity: 'agent',
+                requiresApproval: false,
+                with: { prompt: 'Inspect configured task' },
+                on: { done: { then: 'done' } },
+              },
             },
           },
         },
       },
-    },
-    controlPlane: {
-      triggers: triggerIds.map((id) => ({
-        id,
-        workflow: 'inspect',
-        on,
-        ...(gated ? { when: { capacityAvailable: true } } : {}),
-      })),
-    },
-  });
+      controlPlane: {
+        triggers: triggerIds.map((id) => ({
+          id,
+          workflow: 'inspect',
+          on,
+          ...(gated ? { when: { capacityAvailable: true } } : {}),
+        })),
+      },
+    });
   const root = await createCompositionRoot(home, {
     ...options,
     config,
@@ -83,6 +87,9 @@ async function fixture(
     processor.consumer.startsWith('reactor:control-plane.trigger:'),
   );
   return {
+    clock,
+    config,
+    home,
     root,
     journal,
     consume: () => root.processorRuntime.catchUp('trigger sources', processors),
@@ -125,7 +132,7 @@ describe('composed workflow triggers', () => {
       await consume();
     }
     const origins = await invocations(journal);
-    expect(origins).toHaveLength(on.cron && on.events ? 2 : 1);
+    expect(origins).toHaveLength(1);
     expect(new Set(origins.map((origin) => origin.workItemId)).size).toBe(origins.length);
     for (const origin of origins) {
       expect(origin).toMatchObject({ triggerId: 'oversight', workflowName: 'inspect' });
@@ -184,49 +191,8 @@ describe('composed workflow triggers', () => {
     expect(await invocations(journal)).toHaveLength(1);
   });
   it.each(['two-events', 'cron-and-event'] as const)(
-    'retains one provenance record per concurrent invocation (%s)',
+    'coordinates concurrent sources (%s)',
     async (mode) => {
-      const ready = deferred();
-      let arrivals = 0;
-      let conflicts = 0;
-      let startedWorkflows = 0;
-      const options: CompositionRootOptions = {
-        decorateJournal(journal) {
-          return {
-            ...journal,
-            changeSignal: journal.changeSignal,
-            async readStream(stream) {
-              const events = await journal.readStream(stream);
-              if (
-                stream.kind === ControlStreamKind.Global &&
-                startedWorkflows > 0 &&
-                arrivals < 2
-              ) {
-                arrivals += 1;
-                // Hold two snapshots at the same sequence before either writer can append.
-                if (arrivals === 2) ready.resolve();
-                await ready.promise;
-              }
-              return events;
-            },
-            readAll: journal.readAll.bind(journal),
-            latestGlobalPosition: journal.latestGlobalPosition.bind(journal),
-            waitForEventsAfter: journal.waitForEventsAfter.bind(journal),
-            async appendToStream(stream, sequence, drafts) {
-              try {
-                const appended = await journal.appendToStream(stream, sequence, drafts);
-                startedWorkflows += drafts.filter(
-                  (draft) => draft.eventType === OrchestrationEventType.InstanceStarted,
-                ).length;
-                return appended;
-              } catch (error) {
-                if (error instanceof WrongExpectedSequenceError) conflicts += 1;
-                throw error;
-              }
-            },
-          };
-        },
-      };
       const on = {
         events: [WorkEventType.ObjectiveRevised],
         ...(mode === 'cron-and-event' ? { cron: '* * * * *' } : {}),
@@ -235,7 +201,7 @@ describe('composed workflow triggers', () => {
         on,
         false,
         undefined,
-        options,
+        {},
         mode === 'two-events' ? ['first', 'second'] : ['oversight'],
       );
       const item = workItemId('work-00000000000000000000000001');
@@ -244,32 +210,15 @@ describe('composed workflow triggers', () => {
         { workItemId: item, objective: 'changed' },
         { ...context, commandId: 'revise' },
       );
-      await Promise.all([
-        consume(),
-        ...(mode === 'cron-and-event' ? [root.runnerPipeline.run({ maxProgress: 1 })] : []),
-      ]);
-      expect(conflicts).toBe(1);
+      await Promise.all([consume(), root.runnerPipeline.run({ maxProgress: 1 })]);
       const origins = await invocations(journal);
-      expect(origins).toHaveLength(2);
-      expect(new Set(origins.map((origin) => origin.workflowInstanceId)).size).toBe(2);
-      expect(new Set(origins.map((origin) => origin.workItemId)).size).toBe(2);
-      expect(
-        origins
-          .map((origin) => (mode === 'two-events' ? origin.triggerId : origin.source.kind))
-          .sort(),
-      ).toEqual(
-        mode === 'two-events'
-          ? ['first', 'second']
-          : [TriggerSourceKind.Cron, TriggerSourceKind.Event],
+      expect(origins).toHaveLength(mode === 'two-events' ? 2 : 1);
+      expect(new Set(origins.map((origin) => origin.workItemId)).size).toBe(origins.length);
+      expect(Object.values((await root.triggers.get()).coalesced)).toHaveLength(
+        mode === 'two-events' ? 0 : 1,
       );
-      for (const origin of origins) {
-        expect(
-          await root.orchestration.get(workflowInstanceId(origin.workflowInstanceId)),
-        ).toMatchObject({ workItemId: origin.workItemId });
-        expect(await root.work.get(workItemId(origin.workItemId))).not.toBeNull();
-      }
       await consume();
-      expect(await invocations(journal)).toHaveLength(2);
+      expect(await invocations(journal)).toHaveLength(origins.length);
     },
   );
 
@@ -356,3 +305,378 @@ function deferred() {
   });
   return { promise, resolve };
 }
+
+type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+async function source(f: Fixture, id: string) {
+  const item = workItemId('work-00000000000000000000000001');
+  await f.root.work.create(
+    { workItemId: item, objective: 'external' },
+    { ...f.context, commandId: 'external-create' },
+  );
+  await f.root.work.revise({ workItemId: item, objective: id }, { ...f.context, commandId: id });
+  const event = (await f.journal.readAll(0)).find(
+    (envelope) =>
+      envelope.event.causationId === id &&
+      envelope.event.eventType === WorkEventType.ObjectiveRevised,
+  );
+  if (event === undefined) throw new Error('Source event missing');
+  return event;
+}
+
+async function restart(f: Fixture, options: CompositionRootOptions = {}) {
+  return createCompositionRoot(f.home, {
+    config: f.config,
+    journal: f.journal,
+    clock: f.clock,
+    ...options,
+  });
+}
+
+async function accept(
+  f: Fixture,
+  workflowId: string,
+  kind:
+    typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Failed = ActivityOutcomeKind.Done,
+) {
+  const workflow = await f.root.orchestration.get(workflowInstanceId(workflowId));
+  if (workflow?.pendingActivation === undefined) throw new Error('Invocation activation missing');
+  return f.root.orchestration.acceptOutcome(
+    {
+      workflowInstanceId: workflow.workflowInstanceId,
+      activationId: workflow.pendingActivation.activationId,
+      outcome:
+        kind === ActivityOutcomeKind.Failed
+          ? { kind, data: { retrySafety: RetrySafety.SafeToRetry } }
+          : { kind },
+    },
+    { ...f.context, commandId: `outcome:${workflow.pendingActivation.activationId}` },
+  );
+}
+
+describe('durable trigger coordination', () => {
+  it('bounds cron catch-up and persists consumed slots across restart', async () => {
+    const f = await fixture({ cron: '* * * * *' });
+    await f.root.runnerPipeline.run({ maxProgress: 1 });
+    vi.spyOn(f.clock, 'now').mockReturnValue(new Date('2026-08-11T00:01:30.000Z'));
+    await f.root.triggers.pause('oversight', 'skip catch-up', {
+      ...f.context,
+      commandId: 'pause-catch-up',
+    });
+    await f.root.runnerPipeline.run({ maxProgress: 1 });
+    let view = await f.root.triggers.get();
+    expect(view.requests).toHaveLength(65);
+    expect(view.requests.at(-1)?.source).toEqual({
+      kind: TriggerSourceKind.Cron,
+      slot: '2026-08-10T01:05:00.000Z',
+    });
+    const recovered = await restart(f);
+    await recovered.runnerPipeline.run({ maxProgress: 1 });
+    view = await recovered.triggers.get();
+    expect(view.requests).toHaveLength(129);
+    expect(view.requests.at(-1)?.source).toEqual({
+      kind: TriggerSourceKind.Cron,
+      slot: '2026-08-10T02:09:00.000Z',
+    });
+    expect(view.coalesced).toEqual({});
+    expect(view.invocations).toHaveLength(1);
+  });
+
+  it('coordinates bound triggers together and suppresses events from the shared scope', async () => {
+    const binding = { triggerCoordinationKey: () => 'shared-oversight' };
+    const f = await fixture(
+      { events: [WorkEventType.ObjectiveRevised, OrchestrationEventType.InstanceCompleted] },
+      false,
+      undefined,
+      binding,
+      ['oversight', 'secondary'],
+    );
+    await source(f, 'shared-source');
+    await f.consume();
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect(Object.keys((await f.root.triggers.get()).coalesced)).toEqual(['shared-oversight']);
+    const first = (await invocations(f.journal))[0]!;
+    await accept(f, first.workflowInstanceId);
+    await f.consume();
+    expect(await invocations(f.journal)).toHaveLength(2);
+    const recovered = await restart(f, binding);
+    const view = await recovered.triggers.get();
+    expect(view.invocations.map((invocation) => invocation.claim.coordinationKey)).toEqual([
+      'shared-oversight',
+      'shared-oversight',
+    ]);
+    expect(view.coalesced).toEqual({});
+    await accept(f, view.invocations[1]!.claim.workflowInstanceId);
+    await f.consume();
+    await recovered.runnerPipeline.run({ maxProgress: 1 });
+    expect(await invocations(f.journal)).toHaveLength(2);
+  });
+
+  it('coalesces repeated active sources, preserves all reasons, and starts once after completion and restart', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    await source(f, 'first');
+    await f.consume();
+    const first = (await invocations(f.journal))[0]!;
+    await source(f, 'second');
+    await source(f, 'third');
+    await f.consume();
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect(Object.values((await f.root.triggers.get()).coalesced)[0]?.sources).toHaveLength(2);
+    await accept(f, first.workflowInstanceId);
+    const recovered = await restart(f);
+    await recovered.runnerPipeline.run({ maxProgress: 1 });
+    await recovered.runnerPipeline.run({ maxProgress: 1 });
+    const view = await recovered.triggers.get();
+    expect(view.invocations).toHaveLength(2);
+    expect(view.invocations[0]?.result?.status).toBe('completed');
+    expect(view.invocations[1]?.claim.sources).toHaveLength(2);
+    expect(view.coalesced).toEqual({});
+  });
+
+  it('consumes a coalesced request when capacity becomes ineligible before eventual start', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, true);
+    await source(f, 'first');
+    await f.consume();
+    const first = (await invocations(f.journal))[0]!;
+    await source(f, 'pending');
+    await f.consume();
+    await f.root.runnerControls.pause('fake', 'pause');
+    await accept(f, first.workflowInstanceId);
+    await f.root.runnerPipeline.run({ maxProgress: 1 });
+    expect((await f.root.triggers.get()).coalesced).toEqual({});
+    await f.root.runnerControls.unpause('fake', 'resume');
+    await f.root.runnerPipeline.run({ maxProgress: 1 });
+    expect(await invocations(f.journal)).toHaveLength(1);
+    await source(f, 'future');
+    await f.consume();
+    expect(await invocations(f.journal)).toHaveLength(2);
+  });
+
+  it('keeps pause durable across restart and remove/re-add, clearing pending without stopping active work', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    await source(f, 'first');
+    await f.consume();
+    const first = (await invocations(f.journal))[0]!;
+    await source(f, 'pending');
+    await f.consume();
+    await f.root.triggers.pause('oversight', 'operator pause', {
+      ...f.context,
+      commandId: 'pause',
+    });
+    expect((await f.root.triggers.get()).coalesced).toEqual({});
+    await source(f, 'paused');
+    await f.consume();
+    const removedConfig = parseRootConfig({
+      ...f.config,
+      controlPlane: { ...f.config.controlPlane, triggers: [] },
+    });
+    const removed = await restart(f, { config: removedConfig });
+    await removed.runnerPipeline.run({ maxProgress: 1 });
+    expect((await removed.triggers.get()).invocations).toHaveLength(1);
+    expect(
+      await removed.orchestration.get(workflowInstanceId(first.workflowInstanceId)),
+    ).not.toBeNull();
+    await accept(f, first.workflowInstanceId);
+    const restored = await restart(f);
+    await restored.runnerPipeline.run({ maxProgress: 1 });
+    expect((await restored.triggers.get()).pauses).toEqual({ oversight: 'operator pause' });
+    await restored.triggers.resume('oversight', { ...f.context, commandId: 'resume' });
+    await restored.runnerPipeline.run({ maxProgress: 1 });
+    expect(await invocations(f.journal)).toHaveLength(1);
+    const event = await source(f, 'future');
+    await restored.triggers.start(
+      f.config.controlPlane.triggers[0]!,
+      {
+        kind: TriggerSourceKind.Event,
+        eventId: event.event.eventId,
+        eventType: event.event.eventType,
+      },
+      f.context,
+      event,
+    );
+    expect(await invocations(f.journal)).toHaveLength(2);
+  });
+
+  it('serializes duplicate sources from competing composed hosts sharing a home', async () => {
+    const journal = new FaultInjectingJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') });
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, false, journal);
+    const second = await restart(f);
+    const event = await source(f, 'duplicate');
+    const config = f.config.controlPlane.triggers[0]!;
+    const reason = {
+      kind: TriggerSourceKind.Event,
+      eventId: event.event.eventId,
+      eventType: event.event.eventType,
+    } as const;
+    const reached = deferred(),
+      release = deferred();
+    journal.beforeAppend = {
+      eventType: ControlEventType.TriggerInvocationClaimed,
+      reached: () => reached.resolve(),
+      release: release.promise,
+    };
+    const firstStart = f.root.triggers.start(config, reason, f.context, event);
+    await reached.promise;
+    const secondStart = second.triggers.start(config, reason, f.context, event);
+    release.resolve();
+    await Promise.all([firstStart, secondStart]);
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect((await second.triggers.get()).requests).toHaveLength(1);
+    expect(
+      (await f.journal.readAll(0))
+        .map(selectWorkEvent)
+        .filter((envelope) => envelope?.event.eventType === WorkEventType.ItemCreated),
+    ).toHaveLength(2);
+  });
+
+  it.each([
+    [ControlEventType.TriggerRequestRecorded, 'after'],
+    [ControlEventType.TriggerInvocationClaimed, 'before'],
+    [ControlEventType.TriggerInvocationClaimed, 'after'],
+    [WorkEventType.ItemCreated, 'before'],
+    [WorkEventType.ItemCreated, 'after'],
+    [OrchestrationEventType.InstanceStarted, 'before'],
+    [OrchestrationEventType.InstanceStarted, 'after'],
+    [ControlEventType.TriggerInvocationStarted, 'before'],
+    [ControlEventType.TriggerInvocationStarted, 'after'],
+  ] as const)(
+    'recovers the %s/%s crash window without duplicate WorkItems or fresh capacity admission',
+    async (eventType, window) => {
+      const journal = new FaultInjectingJournal({
+        now: () => new Date('2026-08-10T00:01:30.000Z'),
+      });
+      const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, true, journal);
+      const event = await source(f, 'crash');
+      const config = f.config.controlPlane.triggers[0]!;
+      const reason = {
+        kind: TriggerSourceKind.Event,
+        eventId: event.event.eventId,
+        eventType: event.event.eventType,
+      } as const;
+      if (window === 'before') journal.failBefore = eventType;
+      else journal.failAfter = eventType;
+      // Owning services may recover ambiguous appends in the same call.
+      await f.root.triggers
+        .start(config, reason, f.context, event)
+        .catch((error) => expect(String(error)).toContain('Injected storage failure'));
+      const claimed = (await f.root.triggers.get()).invocations.length > 0;
+      if (claimed) await f.root.runnerControls.pause('fake', 'pause-after-claim');
+      const recovered = await restart(f);
+      await recovered.runnerPipeline.run({ maxProgress: 1 });
+      await recovered.runnerPipeline.run({ maxProgress: 1 });
+      await recovered.triggers.start(config, reason, f.context, event);
+      expect(await invocations(journal)).toHaveLength(1);
+      const created = (await journal.readAll(0))
+        .map(selectWorkEvent)
+        .filter((envelope) => envelope?.event.eventType === WorkEventType.ItemCreated);
+      expect(created).toHaveLength(2);
+      expect((await recovered.triggers.get()).coalesced).toEqual({});
+    },
+  );
+
+  it('orders pause and start under the same shared-home lock', async () => {
+    const journal = new FaultInjectingJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') });
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, false, journal);
+    const competing = await restart(f);
+    const event = await source(f, 'race');
+    const reached = deferred(),
+      release = deferred();
+    journal.beforeAppend = {
+      eventType: ControlEventType.TriggerInvocationClaimed,
+      reached: () => reached.resolve(),
+      release: release.promise,
+    };
+    const start = f.root.triggers.start(
+      f.config.controlPlane.triggers[0]!,
+      {
+        kind: TriggerSourceKind.Event,
+        eventId: event.event.eventId,
+        eventType: event.event.eventType,
+      },
+      f.context,
+      event,
+    );
+    await reached.promise;
+    const pause = competing.triggers.pause('oversight', 'race pause', {
+      ...f.context,
+      commandId: 'race-pause',
+    });
+    release.resolve();
+    await Promise.all([start, pause]);
+    expect(await invocations(journal)).toHaveLength(1);
+    expect((await competing.triggers.get()).pauses.oversight).toBe('race pause');
+    await source(f, 'after-pause');
+    await f.consume();
+    expect(await invocations(journal)).toHaveLength(1);
+  });
+
+  it('suppresses completion events from its own invocation while allowing unrelated completion sources', async () => {
+    const f = await fixture({ events: [OrchestrationEventType.InstanceCompleted] });
+    const item = workItemId('work-00000000000000000000000002');
+    await f.root.work.create({ workItemId: item, objective: 'independent' }, f.context);
+    await f.root.orchestration.start(
+      {
+        workflowInstanceId: workflowInstanceId('workflow-independent'),
+        workItemId: item,
+        workflowName: workflowName('inspect'),
+        orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+      },
+      f.context,
+    );
+    await accept(f, 'workflow-independent');
+    await f.consume();
+    const first = (await invocations(f.journal))[0]!;
+    await accept(f, first.workflowInstanceId);
+    await f.consume();
+    await f.root.runnerPipeline.run({ maxProgress: 1 });
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect((await f.root.triggers.get()).coalesced).toEqual({});
+  });
+
+  it('pauses on exhausted workflow failures and does not reset retry counters on resume', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    const config = parseRootConfig({
+      ...f.config,
+      orchestration: {
+        ...f.config.orchestration,
+        workflows: {
+          inspect: {
+            stages: {
+              start: {
+                activity: 'agent',
+                requiresApproval: false,
+                with: { prompt: 'Inspect' },
+                on: { done: { then: 'done' }, failed: { retry: { max: 1 }, then: 'await-human' } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const root = await restart(f, { config });
+    const failing = { ...f, root, config };
+    const event = await source(failing, 'failure');
+    await root.triggers.start(
+      config.controlPlane.triggers[0]!,
+      {
+        kind: TriggerSourceKind.Event,
+        eventId: event.event.eventId,
+        eventType: event.event.eventType,
+      },
+      f.context,
+      event,
+    );
+    const first = (await invocations(f.journal))[0]!;
+    let workflow = await accept(failing, first.workflowInstanceId, ActivityOutcomeKind.Failed);
+    expect(workflow.retryCounts).toEqual({ 'start:failed': 1 });
+    workflow = await accept(failing, first.workflowInstanceId, ActivityOutcomeKind.Failed);
+    await root.runnerPipeline.run({ maxProgress: 1 });
+    expect((await root.triggers.get()).pauses.oversight).toBeDefined();
+    await root.triggers.resume('oversight', { ...f.context, commandId: 'failure-resume' });
+    await root.runnerPipeline.run({ maxProgress: 1 });
+    expect((await root.orchestration.get(workflow.workflowInstanceId))?.retryCounts).toEqual({
+      'start:failed': 1,
+    });
+    expect(await invocations(f.journal)).toHaveLength(1);
+  });
+});

@@ -34,7 +34,6 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
     signal: AbortSignal,
     beforeDelivery: (() => Promise<void>) | undefined,
   ): Promise<RunnerPipelineResult> => {
-    if (await isPaused()) return { kind: 'paused' };
     await stages.runTriggers();
     if (await isPaused()) return { kind: 'paused' };
     await stages.maintain?.();
