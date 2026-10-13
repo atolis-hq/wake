@@ -18,13 +18,19 @@ import {
 import {
   ControlEventType,
   selectControlEvent,
+  TriggerSkipReason,
   TriggerSourceKind,
 } from '../../../src/control-plane/index.js';
+import { isActiveRunStatus, RunStatus } from '../../../src/execution/index.js';
 import { GitHubAdapter } from '../../../src/integrations/github/contracts/vocabulary.js';
 import { issueObservation } from '../../../src/integrations/github/infrastructure/issue-source.js';
 import { integrationStream } from '../../../src/integrations/index.js';
-import { workflowInstanceId } from '../../../src/orchestration/index.js';
-import { selectWorkEvent, WorkEventType } from '../../../src/work/index.js';
+import {
+  orchestrationGroupId,
+  workflowInstanceId,
+  workflowName,
+} from '../../../src/orchestration/index.js';
+import { selectWorkEvent, WorkEventType, workItemId } from '../../../src/work/index.js';
 import { ArtifactMcpRunner } from '../../support/artifact-mcp-runner.js';
 import { OversightGitHub } from '../../support/oversight-github.js';
 
@@ -40,7 +46,15 @@ const context = () => ({
 });
 let occurrence = 0;
 
-async function fixture() {
+async function fixture(holdDelivery = false) {
+  let releaseDelivery!: () => void;
+  let deliveryStarted!: () => void;
+  const deliveryStarting = new Promise<void>((resolve) => {
+    deliveryStarted = resolve;
+  });
+  const deliveryCompletion = new Promise<void>((resolve) => {
+    releaseDelivery = resolve;
+  });
   const home = await mkdtemp(join(tmpdir(), 'wake-oversight-'));
   homes.push(home);
   await mkdir(join(home, 'prompts'));
@@ -88,7 +102,7 @@ async function fixture() {
           id: 'oversight',
           workflow: 'delivery-oversight',
           contextScope: 'delivery-main',
-          on: { cron: '* * * * *' },
+          on: holdDelivery ? { events: [WorkEventType.ObjectiveRevised] } : { cron: '* * * * *' },
           when: { capacityAvailable: true },
         },
       ],
@@ -100,12 +114,40 @@ async function fixture() {
       journal,
       projections: new InMemoryProjectionStore(),
       checkpoints: new InMemoryCheckpointStore(),
-      decorateRunner: () => runner,
+      decorateRunner: () => ({
+        name: runner.name,
+        supportsEphemeralMcp: true,
+        async start(request) {
+          if (holdDelivery && request.prompt.startsWith('Implement delivery')) {
+            deliveryStarted();
+            return {
+              result: deliveryCompletion.then(() => ({
+                transport: RunStatus.Succeeded,
+                runner: 'fake',
+                output: '[[STATUS: DONE]]',
+              })),
+              async cancel() {
+                releaseDelivery();
+              },
+            };
+          }
+          return runner.start(request);
+        },
+      }),
     });
     runner.root = root;
     return root;
   };
-  return { root: await restart(), restart, runner, github, journal, config };
+  return {
+    root: await restart(),
+    restart,
+    runner,
+    github,
+    journal,
+    config,
+    releaseDelivery,
+    deliveryStarting,
+  };
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -296,7 +338,7 @@ describe('configured delivery oversight', () => {
     expect(f.runner.sessions[1]!.results[1]).toMatchObject({ isError: true });
     expect(f.github.edits).toBe(1);
   });
-  it('records a successful no-op when explicit prerequisites remain unverified, without assigning blocked work', async () => {
+  it('records a successful no-op for a native blocker without assigning blocked work', async () => {
     const f = await fixture();
     f.github.evidence.set(
       'api --method GET repos/atolis-hq/wake/issues/1/dependencies/blocked_by --paginate',
@@ -319,6 +361,154 @@ describe('configured delivery oversight', () => {
     expect(
       (await f.root.artifacts.get(workflow.workItemId))!.revisions.map((revision) => revision.path),
     ).toEqual(['assessment.md', 'memory.md']);
+  });
+
+  it('gates the configured oversight flow on current run capacity and starts only on a new eligible occurrence', async () => {
+    const f = await fixture(true);
+    const consume = () =>
+      f.root.processorRuntime.catchUp(
+        'oversight sources',
+        f.root.processorRuntime.processors.filter((processor) =>
+          processor.consumer.startsWith('reactor:control-plane.trigger:'),
+        ),
+      );
+    const starts = async () =>
+      (await f.journal.readAll(0))
+        .map(selectControlEvent)
+        .flatMap((event) =>
+          event?.event.eventType === ControlEventType.TriggerInvocationStarted
+            ? [event.event.payload]
+            : [],
+        );
+    await consume();
+    const item = workItemId('work-00000000000000000000000002');
+    await f.root.work.create({ workItemId: item, objective: 'Active delivery' }, context());
+    const delivery = await f.root.orchestration.start(
+      {
+        workflowInstanceId: workflowInstanceId('workflow-capacity-delivery'),
+        workItemId: item,
+        workflowName: workflowName('delivery'),
+        orchestrationGroupId: orchestrationGroupId('primary-capacity-delivery'),
+      },
+      context(),
+    );
+    const active = async () =>
+      (await f.root.execution.list()).filter((run) => isActiveRunStatus(run.status));
+    try {
+      await f.root.execution.attempt(delivery.pendingActivation!, {
+        workItemId: item,
+        workflowInstanceId: delivery.workflowInstanceId,
+        orchestrationGroupId: delivery.orchestrationGroupId,
+        resources: [],
+      });
+      await f.deliveryStarting;
+      await vi.waitFor(async () => expect(await active()).toHaveLength(1));
+      await f.root.work.revise(
+        { workItemId: item, objective: 'Occurrence while full' },
+        { ...context(), commandId: 'capacity-full' },
+      );
+      await consume();
+      expect(await starts()).toEqual([]);
+      expect((await f.root.triggers.get()).diagnostics).toEqual([
+        expect.objectContaining({
+          triggerId: 'oversight',
+          reason: TriggerSkipReason.Capacity,
+          source: expect.objectContaining({ kind: TriggerSourceKind.Event }),
+        }),
+      ]);
+      expect(f.runner.sessions).toHaveLength(0);
+      expect(f.github.calls).toHaveLength(0);
+    } finally {
+      f.releaseDelivery();
+      await vi.waitFor(async () => expect(await active()).toHaveLength(0));
+    }
+    await consume();
+    expect(await starts()).toEqual([]);
+    await f.root.work.revise(
+      { workItemId: item, objective: 'New occurrence with headroom' },
+      { ...context(), commandId: 'capacity-free' },
+    );
+    await consume();
+    const invocations = await starts();
+    expect(invocations).toHaveLength(1);
+    const oversight = (await f.root.orchestration.get(
+      workflowInstanceId(invocations[0]!.workflowInstanceId),
+    ))!;
+    expect(oversight.workflowName).toBe('delivery-oversight');
+    expect(oversight.workItemId).not.toBe(item);
+    f.runner.scripts.push({
+      operations: [
+        assign(),
+        write(
+          'assessment.md',
+          'No-op: capacity is available, but focus favors finishing active delivery.',
+        ),
+        write('memory.md', 'Finish active delivery before new assignment.'),
+      ],
+    });
+    const completed = await execute(f.root, oversight);
+    expect(completed.lastOutcome?.kind).toBe('done');
+    expect(f.runner.sessions).toHaveLength(1);
+    expect(f.github.edits).toBe(0);
+  });
+
+  it('records a no-op when the only candidate has an unverified issue-body implementation prerequisite', async () => {
+    const f = await fixture();
+    f.github.evidence.set(
+      'api --method GET repos/atolis-hq/wake/issues/1/dependencies/blocked_by --paginate',
+      [],
+    );
+    f.github.evidence.set(
+      'issue view 1 --repo atolis-hq/wake --json number,title,body,state,assignees,closedAt,closedByPullRequestsReferences,comments,url',
+      { number: 1, body: 'Requires implementation #10 on main before assignment.', state: 'OPEN' },
+    );
+    f.github.evidence.set(
+      'issue view 10 --repo atolis-hq/wake --json number,title,body,state,assignees,closedAt,closedByPullRequestsReferences,comments,url',
+      {
+        number: 10,
+        state: 'CLOSED',
+        body: 'Implementation is tracked in PR #11.',
+        closedByPullRequestsReferences: [],
+      },
+    );
+    f.github.evidence.set(
+      'pr view 11 --repo atolis-hq/wake --json number,title,body,state,mergedAt,mergeCommit,baseRefName,closingIssuesReferences,url',
+      {
+        number: 11,
+        state: 'CLOSED',
+        mergedAt: null,
+        mergeCommit: null,
+        baseRefName: 'main',
+        closingIssuesReferences: [{ number: 10 }],
+      },
+    );
+    const workflow = await start(f);
+    f.runner.scripts.push({
+      operations: [
+        read('blocked-by', 1),
+        read('issue', 1),
+        read('issue', 10),
+        read('pull-request', 11),
+        write(
+          'assessment.md',
+          'No-op: sole candidate #1 requires implementation #10 on main. Issue closure is insufficient; merged/base availability is unverified. Candidate is ineligible; revisit uncertainty next invocation.',
+        ),
+        write('memory.md', 'Revisit #1 after verifying #10 implementation on main; no assignment.'),
+      ],
+    });
+    const completed = await execute(f.root, workflow);
+    expect(completed.lastOutcome?.kind).toBe('done');
+    expect(f.github.edits).toBe(0);
+    expect(f.runner.sessions[0]!.results[0]).toMatchObject({ content: [{ text: '[]' }] });
+    expect(f.runner.sessions[0]!.results[1]).toMatchObject({
+      content: [{ text: expect.stringContaining('Requires implementation #10') }],
+    });
+    const assessment = (await f.root.artifacts.get(workflow.workItemId))!.revisions.find(
+      (revision) => revision.path === 'assessment.md',
+    )!;
+    expect(new TextDecoder().decode(await f.root.artifacts.read(assessment.location!))).toContain(
+      'merged/base availability is unverified',
+    );
   });
 
   it('validates the shipped trigger/integration example with its ordinary workflow', async () => {
