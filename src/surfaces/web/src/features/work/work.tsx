@@ -121,15 +121,21 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
     },
   });
   const [messageBody, setMessageBody] = useState('');
+  const [continuing, setContinuing] = useState(false);
   const [awaitingAgentReply, setAwaitingAgentReply] = useState(false);
   const agentReplyCountAtSend = useRef(0);
   const messageTextarea = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (continuing) messageTextarea.current?.focus();
+  }, [continuing]);
   const message = useMutation({
     mutationFn: (body: string) =>
       client.work.message(
         workItemKey,
         body,
         `web:conversation-message:${globalThis.crypto.randomUUID()}`,
+        undefined,
+        continuing,
       ),
     onSuccess: async () => {
       agentReplyCountAtSend.current = conversationEntries.filter(
@@ -139,13 +145,14 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
       followLatest.current = true;
       setReadingHistory(false);
       setMessageBody('');
+      setContinuing(false);
       if (messageTextarea.current) messageTextarea.current.style.height = '';
       await refresh();
     },
   });
   const sendMessage = () => {
     const body = messageBody.trim();
-    if (body !== '' && !message.isPending) message.mutate(body);
+    if (body !== '' && !message.isPending) message.mutate(continuing ? `/changes\n${body}` : body);
   };
   const query = useQuery({
     queryKey: queryKeys.work.detail(workItemKey),
@@ -437,6 +444,18 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                 </dl>
               </Panel>
               <div className={styles.actionBar}>
+                {query.data.data.conversation.canContinue === true && (
+                  <Button
+                    type="button"
+                    disabled={message.isPending}
+                    onClick={() => {
+                      setContinuing(true);
+                      setTab('conversation');
+                    }}
+                  >
+                    Continue with instructions
+                  </Button>
+                )}
                 {query.data.data.orchestration.primary?.retryEligible === true && (
                   <Button
                     type="button"
@@ -710,10 +729,13 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                       sendMessage();
                     }}
                   >
+                    {continuing && (
+                      <p>Supply the instructions needed to continue this blocked stage.</p>
+                    )}
                     <textarea
                       ref={messageTextarea}
                       id="work-conversation-message"
-                      aria-label="Message"
+                      aria-label={continuing ? 'Continuation instructions' : 'Message'}
                       value={messageBody}
                       disabled={message.isPending}
                       onChange={(event) => {
@@ -731,11 +753,16 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                       <Button
                         type="submit"
                         className={styles.conversationSend}
-                        aria-label="Send message"
+                        aria-label={continuing ? 'Continue' : 'Send message'}
                         disabled={message.isPending || messageBody.trim() === ''}
                       >
                         <FontAwesomeIcon icon={faPaperPlane} aria-hidden="true" />
                       </Button>
+                      {continuing && (
+                        <Button type="button" onClick={() => setContinuing(false)}>
+                          Cancel continuation
+                        </Button>
+                      )}
                       <MutationFeedback
                         pending={message.isPending}
                         {...(message.error === null ? {} : { message: message.error?.message })}

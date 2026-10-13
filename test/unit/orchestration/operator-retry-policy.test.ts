@@ -26,8 +26,10 @@ import {
   requestChangesResume,
   requestFreshOperatorRetry,
   requestOperatorRetry,
+  selectChangesResumeTargets,
   selectOperatorRetryTarget,
   startInstance,
+  WatchGateVerdictSignal,
   workflowInstanceStream,
   type WorkflowOrchestrationEvent,
   type WorkflowOrchestrationEventData,
@@ -367,6 +369,66 @@ describe('operator retry policy', () => {
     };
 
     expect(isChangesResumeEligible(waitingForApproval)).toBe(false);
+  });
+
+  it('keeps failed waits and watch authority outside changes continuation', () => {
+    const { state } = blockedAgentFixture();
+    expect(
+      isChangesResumeEligible({
+        ...state,
+        status: WorkflowStatus.Waiting,
+        lastOutcome: { kind: ActivityOutcomeKind.Failed },
+        waitingFor: { signalKind: 'failed' as never },
+      }),
+    ).toBe(false);
+    expect(
+      isChangesResumeEligible({
+        ...state,
+        status: WorkflowStatus.Waiting,
+        waitingFor: {
+          signalKind: 'gate' as never,
+          from: [{ kind: 'watch', watch: 'review' as never }],
+        },
+      }),
+    ).toBe(false);
+    expect(isChangesResumeEligible({ ...state, status: WorkflowStatus.Superseded })).toBe(false);
+  });
+
+  it('continues only blocked children currently watched by a waiting parent', () => {
+    const { state } = blockedAgentFixture();
+    const primary = {
+      ...state,
+      status: WorkflowStatus.Waiting,
+      waitingFor: {
+        signalKind: WatchGateVerdictSignal,
+        from: [{ kind: 'watch' as const, watch: 'review' as never }],
+      },
+    };
+    const child = {
+      ...state,
+      workflowInstanceId: workflowInstanceId('child-resume'),
+      parentWorkflowInstanceId: primary.workflowInstanceId,
+      watchId: 'review',
+    };
+    const unrelated = {
+      ...child,
+      workflowInstanceId: workflowInstanceId('other-resume'),
+      watchId: 'other',
+    };
+    expect(selectChangesResumeTargets([primary, child, unrelated])).toEqual([child]);
+    expect(
+      selectChangesResumeTargets([{ ...primary, status: WorkflowStatus.Completed }, child]),
+    ).toEqual([]);
+    expect(
+      selectChangesResumeTargets([
+        {
+          ...primary,
+          status: WorkflowStatus.Blocked,
+          blockReason: 'watch group budget exhausted for review',
+        },
+        child,
+      ]),
+    ).toEqual([]);
   });
 
   it('rejects an empty operator retry command id', () => {

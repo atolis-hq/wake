@@ -472,6 +472,7 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
     artifacts,
     conversation: {
       canCreateEntries: conversation?.canCreateEntries === true,
+      canContinue: conversation?.canContinue === true,
       entries:
         conversation === undefined
           ? []

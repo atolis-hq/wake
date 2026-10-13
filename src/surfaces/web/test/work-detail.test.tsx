@@ -32,6 +32,7 @@ function detailClient(
   canCreateConversationEntries = false,
   conversationEntries: readonly Record<string, unknown>[] = [],
   artifacts: readonly Record<string, unknown>[] = [],
+  canContinue = false,
 ) {
   const work = {
     workItemKey: 'wk_a',
@@ -163,6 +164,7 @@ function detailClient(
                 conversation: {
                   entries: conversationEntries,
                   canCreateEntries: canCreateConversationEntries,
+                  canContinue,
                 },
               },
               meta: { asOf },
@@ -1318,5 +1320,111 @@ it.each(['awaiting-human-merge', 'recovering'] as const)(
     );
     expect(screen.getAllByText('src/kernel/index.ts')).toHaveLength(2);
     cleanup();
+  },
+);
+
+it('continues typed eligible work with instructions through the conversation command', async () => {
+  const user = userEvent.setup();
+  const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
+  render(
+    <MemoryRouter initialEntries={['/work/wk_a']}>
+      <App
+        client={detailClient(
+          null,
+          undefined,
+          requests,
+          { groups: [], entries: [] },
+          'BLOCKED',
+          true,
+          [],
+          [],
+          true,
+        )}
+      />
+    </MemoryRouter>,
+  );
+  await user.click(await screen.findByRole('button', { name: 'Continue with instructions' }));
+  expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  await user.type(
+    await screen.findByRole('textbox', { name: 'Continuation instructions' }),
+    'Use the minimal diagnostic extension.',
+  );
+  await user.click(screen.getByRole('button', { name: /^Continue$/ }));
+  await waitFor(() =>
+    expect(requests.filter(({ url }) => url.endsWith('/commands/message'))).toHaveLength(1),
+  );
+  expect(
+    JSON.parse(String(requests.find(({ url }) => url.endsWith('/commands/message'))?.init?.body)),
+  ).toMatchObject({ body: '/changes\nUse the minimal diagnostic extension.', continuation: true });
+});
+
+it('shows continuation rejection and preserves instructions', async () => {
+  const user = userEvent.setup();
+  const failure = new Response(
+    JSON.stringify({
+      type: 'about:blank',
+      title: 'Conflict',
+      status: 409,
+      detail: 'Work item must be open, unfrozen, and not deleted.',
+    }),
+    { status: 409, headers: { 'content-type': 'application/problem+json' } },
+  );
+  render(
+    <MemoryRouter initialEntries={['/work/wk_a']}>
+      <App
+        client={detailClient(
+          null,
+          failure,
+          [],
+          { groups: [], entries: [] },
+          'BLOCKED',
+          true,
+          [],
+          [],
+          true,
+        )}
+      />
+    </MemoryRouter>,
+  );
+  await user.click(await screen.findByRole('button', { name: 'Continue with instructions' }));
+  const textbox = await screen.findByRole('textbox', { name: 'Continuation instructions' });
+  await user.type(textbox, 'Continue the minimal extension.');
+  await user.click(screen.getByRole('button', { name: /^Continue$/ }));
+  expect(
+    await screen.findByText('Work item must be open, unfrozen, and not deleted.'),
+  ).toBeTruthy();
+  expect((textbox as HTMLTextAreaElement).value).toBe('Continue the minimal extension.');
+});
+
+afterEach(cleanup);
+
+it.each(['/approved', '/accepted', '/changes Please revise.'])(
+  'keeps ordinary operator %s distinct from explicit continuation',
+  async (body) => {
+    const user = userEvent.setup();
+    const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(
+            null,
+            undefined,
+            requests,
+            { groups: [], entries: [] },
+            'DONE',
+            true,
+          )}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Conversation' }));
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), body);
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() =>
+      expect(requests.filter(({ url }) => url.endsWith('/commands/message'))).toHaveLength(1),
+    );
+    expect(
+      JSON.parse(String(requests.find(({ url }) => url.endsWith('/commands/message'))?.init?.body)),
+    ).toMatchObject({ body, continuation: false });
   },
 );

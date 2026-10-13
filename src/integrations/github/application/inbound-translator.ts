@@ -61,11 +61,13 @@ import type {
 } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
+import { isHumanNonWakeReply } from './inbound-comment-syntax.js';
 import { commandContext } from './inbound-context.js';
 import { applyReviewSignal } from './inbound-review-signals.js';
 import { applyWatchGateVerdictSignal } from './inbound-watch-gate-signals.js';
 import { gitHubIntakeFacts, gitHubIntakeRules } from './intake-policy.js';
 import { observePullRequest } from './pull-request-translation.js';
+import { isWorkControlAuthorized } from './work-control-authorization.js';
 
 type TranslatableEvent =
   | GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved>
@@ -396,7 +398,9 @@ export class InboundTranslator {
           resourceId: resource.resourceId,
           threadId: resource.externalKey.key,
           messageId: externalId,
-          authorized: isAuthorizedConversationActor(event),
+          authorized: isAuthorizedWorkControlActor(event),
+          reviewAuthorized: isAuthorizedConversationActor(event),
+          canClarify: isHumanNonWakeReply(event.event.payload.actor.kind, event.event.payload.body),
           capabilities: this.conversationCapabilities,
           ...(event.event.payload.reviewKind !== 'issue' ||
           event.event.payload.location === undefined
@@ -1017,4 +1021,15 @@ function isGitHubAdapterEventType<Type extends GitHubAdapterEvent['event']['even
   eventType: Type,
 ): event is GitHubAdapterEventOf<Type> {
   return event.event.eventType === eventType;
+}
+
+function isAuthorizedWorkControlActor(
+  event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
+): boolean {
+  return isWorkControlAuthorized({
+    actorKind: event.event.payload.actor.kind,
+    authorization: event.event.payload.authorization ?? {
+      source: ReviewerAuthorizationSource.None,
+    },
+  });
 }

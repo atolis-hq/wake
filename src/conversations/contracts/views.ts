@@ -17,8 +17,12 @@ export type ConversationEntryOrigin =
       readonly resourceId: string;
       readonly threadId: string;
       readonly messageId: string;
-      /** Authority established by the receiving surface before the entry is recorded. */
+      /** Work-control authority established by the receiving surface. Legacy entries used review authority. */
       readonly authorized?: boolean | undefined;
+      /** Independent-review authority, separate from work control. */
+      readonly reviewAuthorized?: boolean | undefined;
+      /** Whether this participant may answer a clarification without control authority. */
+      readonly canClarify?: boolean | undefined;
       /** Commands available to this entry's receiving surface. */
       readonly capabilities?: readonly string[] | undefined;
       readonly location?:

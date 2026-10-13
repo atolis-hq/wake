@@ -196,99 +196,121 @@ describe('target composition root', () => {
     }
   });
 
-  it('starts a production-composed fake runner from a conversation resume through the subscriber', async () => {
-    const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
-    const journal = new InMemoryEventJournal(clock);
-    const firstRunnerStarted = deferred<string>();
-    const resumedRunnerStarted = deferred<void>();
-    const trace: string[] = [];
-    let runnerStarts = 0;
-    const root = await fixtureRoot();
-    const runtime = await createCompositionRoot(root, {
-      config: subscriberConversationRootConfig(),
-      journal,
-      projections: new InMemoryProjectionStore(),
-      checkpoints: new InMemoryCheckpointStore(),
-      clock,
-      decorateRunner(runner) {
-        return {
-          async start(request, signal) {
-            runnerStarts += 1;
-            trace.push(`runner:${runnerStarts}`);
-            if (runnerStarts === 1) firstRunnerStarted.resolve(request.runId);
-            if (runnerStarts === 2) resumedRunnerStarted.resolve();
-            return runner.start(request, signal);
-          },
-        };
-      },
-    });
-    const run = startProcessorRuntime(runtime);
-    const item = await runtime.work.create(
-      { workItemId: workId('conversation-latency'), objective: 'resume blocked agent work' },
-      commandContext(clock, 'conversation-latency-work'),
-    );
-    const workflow = workflowInstanceId('workflow-conversation-latency');
-    try {
-      await runtime.orchestration.start(
-        {
-          workflowInstanceId: workflow,
-          workItemId: item.workItemId,
-          workflowName: workflowName('conversation-latency'),
-          orchestrationGroupId: orchestrationGroupId('group-conversation-latency'),
-        },
-        commandContext(clock, 'conversation-latency-start'),
-      );
-
-      const firstRunId = await firstRunnerStarted.promise;
-      await waitForJournalEvent(
+  it.each(['plain reply', 'changes command'] as const)(
+    'starts a production-composed fake runner from %s continuation through the subscriber',
+    async (mode) => {
+      const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
+      const journal = new InMemoryEventJournal(clock);
+      const firstRunnerStarted = deferred<string>();
+      const resumedRunnerStarted = deferred<void>();
+      const trace: string[] = [];
+      let runnerStarts = 0;
+      const root = await fixtureRoot();
+      const runtime = await createCompositionRoot(root, {
+        config: subscriberConversationRootConfig(),
         journal,
-        0,
-        (event) =>
-          event.event.eventType === OrchestrationEventType.InstanceBlocked &&
-          event.stream.id === workflow,
-      );
-      trace.push('blocked');
-      // Outcome acceptance precedes local attempt cleanup; resume only after
-      // the first run has released its execution resources.
-      await expect.poll(() => runtime.execution.isLocallyActive(firstRunId)).toBe(false);
-      // The resident projection subscriptions normally maintain this read
-      // model; this test advances them explicitly before invoking the API.
-      await runtime.projectionSubscriptions.catchUpOnce();
-
-      const message = (
-        await createSurfaceApplications(runtime, { now: () => clock.now().toISOString() })
-      ).api.work.message;
-      if (message === undefined)
-        throw new Error('Expected enabled conversation message application');
-      await message(toWorkItemKey(item.workItemId), {
-        idempotencyKey: 'conversation-latency-message',
-        body: 'Please continue using this correction.',
+        projections: new InMemoryProjectionStore(),
+        checkpoints: new InMemoryCheckpointStore(),
+        clock,
+        decorateRunner(runner) {
+          return {
+            async start(request, signal) {
+              runnerStarts += 1;
+              trace.push(`runner:${runnerStarts}`);
+              if (runnerStarts === 1) firstRunnerStarted.resolve(request.runId);
+              if (runnerStarts === 2) resumedRunnerStarted.resolve();
+              return runner.start(request, signal);
+            },
+          };
+        },
       });
-      trace.push('message-recorded');
-
-      const facts = await journal.readStream(workflowInstanceStream(workflow));
-      expect(facts.map((event) => event.event.eventType)).toContain(
-        OrchestrationEventType.OperatorRetryRequested,
+      const run = startProcessorRuntime(runtime);
+      const item = await runtime.work.create(
+        { workItemId: workId('conversation-latency'), objective: 'resume blocked agent work' },
+        commandContext(clock, 'conversation-latency-work'),
       );
-      expect(
-        facts.filter((event) => event.event.eventType === OrchestrationEventType.ActivityRequested),
-      ).toHaveLength(2);
-      trace.push('retry-and-activity-durable');
+      const workflow = workflowInstanceId('workflow-conversation-latency');
+      try {
+        await runtime.orchestration.start(
+          {
+            workflowInstanceId: workflow,
+            workItemId: item.workItemId,
+            workflowName: workflowName('conversation-latency'),
+            orchestrationGroupId: orchestrationGroupId('group-conversation-latency'),
+          },
+          commandContext(clock, 'conversation-latency-start'),
+        );
 
-      await resumedRunnerStarted.promise;
-      expect(runnerStarts).toBe(2);
-      expect(trace).toEqual([
-        'runner:1',
-        'blocked',
-        'message-recorded',
-        'retry-and-activity-durable',
-        'runner:2',
-      ]);
-    } finally {
-      run.abort();
-      await run.done;
-    }
-  });
+        const firstRunId = await firstRunnerStarted.promise;
+        await waitForJournalEvent(
+          journal,
+          0,
+          (event) =>
+            event.event.eventType === OrchestrationEventType.InstanceBlocked &&
+            event.stream.id === workflow,
+        );
+        trace.push('blocked');
+        // Outcome acceptance precedes local attempt cleanup; resume only after
+        // the first run has released its execution resources.
+        await expect.poll(() => runtime.execution.isLocallyActive(firstRunId)).toBe(false);
+        // The resident projection subscriptions normally maintain this read
+        // model; this test advances them explicitly before invoking the API.
+        await runtime.projectionSubscriptions.catchUpOnce();
+
+        const applications = (
+          await createSurfaceApplications(runtime, { now: () => clock.now().toISOString() })
+        ).api.work;
+        expect(
+          (await applications.detail(toWorkItemKey(item.workItemId)))?.data.conversation
+            .canContinue,
+        ).toBe(true);
+        const message = applications.message;
+        if (message === undefined)
+          throw new Error('Expected enabled conversation message application');
+        expect(
+          await message(toWorkItemKey(item.workItemId), {
+            idempotencyKey: 'conversation-latency-wrong-retry',
+            body: '/retry',
+          }),
+        ).toMatchObject({ conflict: true, detail: expect.stringContaining('/changes') });
+        expect(
+          await message(toWorkItemKey(item.workItemId), {
+            idempotencyKey: 'conversation-latency-message',
+            continuation: mode === 'changes command',
+            body:
+              mode === 'changes command'
+                ? '/changes\nPlease continue using this correction.'
+                : 'Please continue using this correction.',
+          }),
+        ).toMatchObject({ status: 'accepted' });
+        trace.push('message-recorded');
+
+        const facts = await journal.readStream(workflowInstanceStream(workflow));
+        expect(facts.map((event) => event.event.eventType)).toContain(
+          OrchestrationEventType.OperatorRetryRequested,
+        );
+        expect(
+          facts.filter(
+            (event) => event.event.eventType === OrchestrationEventType.ActivityRequested,
+          ),
+        ).toHaveLength(2);
+        trace.push('retry-and-activity-durable');
+
+        await resumedRunnerStarted.promise;
+        expect(runnerStarts).toBe(2);
+        expect(trace).toEqual([
+          'runner:1',
+          'blocked',
+          'message-recorded',
+          'retry-and-activity-durable',
+          'runner:2',
+        ]);
+      } finally {
+        run.abort();
+        await run.done;
+      }
+    },
+  );
 
   it('reconsiders released capacity through the subscriber and starts the pending activation once', async () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };

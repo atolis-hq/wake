@@ -37,6 +37,7 @@ import {
   type createControlPlaneService,
 } from '../control-plane/index.js';
 import type { createConversationService } from '../conversations/index.js';
+import { ConversationOriginKind, workItemIdForConversation } from '../conversations/index.js';
 import {
   ExecutionStreamKind,
   NoEligibleRunnerError,
@@ -60,6 +61,7 @@ import {
   ProviderRegistry,
   deliveryProjectionDefinitions,
   fakeProviderDefinition,
+  publishConversationCommandFeedback,
   type DeliveryIntentView,
   type DurableFakeDeliveryProvider,
   type ExternalDeliveryAdapter,
@@ -397,7 +399,20 @@ export async function composeIntegrationRuntime(
     input.conversations,
     input.subscriptionRunSerialiser,
   );
-  const conversationCommands = createConversationCommandReactor(input.orchestration);
+  const conversationCommands = createConversationCommandReactor(input.orchestration, {
+    conversations: input.conversations,
+    publish: async (event, body, context) => {
+      if (event.entry.origin.kind !== ConversationOriginKind.External) return;
+      await publishConversationCommandFeedback({
+        journal: input.journal,
+        orchestration: input.orchestration,
+        workItemId: workItemIdForConversation(event.conversationId),
+        resourceId: event.entry.origin.resourceId,
+        body,
+        context,
+      });
+    },
+  });
   // Only poll hits a rate-limited external API, so only this half of the
   // Tick needs a backing-off host; see bootstrap/surface-cli-applications.ts.
   // Inbound translation reads durable provider facts through its own services,

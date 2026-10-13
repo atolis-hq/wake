@@ -27,14 +27,13 @@ import {
   type OrchestrationService,
   type WorkflowInstanceId,
 } from '../../../orchestration/index.js';
-import { IntegrationStreamKind } from '../../contracts/streams.js';
 import {
   DeliveryEventType,
   selectDeliveryEvent,
   type DeliveryEventPayloads,
 } from '../contracts/events.js';
-import type { DeliveryIntentView } from '../contracts/views.js';
-import { DeliveryIntentKind, DeliveryResultKind } from '../contracts/vocabulary.js';
+import { DeliveryResultKind } from '../contracts/vocabulary.js';
+import { conversationDeliveryIntent, isPublicationOnlyDelivery } from './delivery-intent-lookup.js';
 
 const deliveryResultSignalKind = 'delivery-result';
 
@@ -178,6 +177,8 @@ export class DeliveryOutcomeReactor {
       // Optional conversation provenance must not block delivery reconciliation.
       console.error(`Conversation provenance recording failed for ${delivery.eventId}`, error);
     }
+    if (await isPublicationOnlyDelivery(this.projections, delivery.payload.intentEventId))
+      return true;
     const command = {
       workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),
       activationId: activationId(delivery.payload.activationId),
@@ -310,18 +311,4 @@ function isConfirmedDelivery(delivery: PendingDeliveryOutcome): boolean {
 
 function confirmedExternalId(delivery: PendingDeliveryOutcome): string | undefined {
   return delivery.eventType === DeliveryEventType.Failed ? undefined : delivery.payload.externalId;
-}
-
-async function conversationDeliveryIntent(projections: ProjectionStore, intentEventId: string) {
-  const intent = (await projections.list<DeliveryIntentView>(IntegrationStreamKind.Delivery)).find(
-    (candidate) => candidate.value.intentEventId === intentEventId,
-  )?.value;
-  if (
-    intent?.payload.kind !== DeliveryIntentKind.AgentRunPublish ||
-    !('conversationId' in intent.payload) ||
-    intent.payload.conversationId === undefined ||
-    intent.payload.conversationEntryId === undefined
-  )
-    return undefined;
-  return intent;
 }

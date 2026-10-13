@@ -73,7 +73,7 @@ describe('formatAgentRunComment', () => {
     expect(comment.split('\n')).toContain('**Outcome:** \u{1F7E0} Needs clarification');
     expect(comment).not.toContain('**Outcome:** \u{1F7E0} Blocked');
     expect(comment).toContain('Run blocked - needs input.');
-    expect(comment).toContain('_Reply on this thread to continue.');
+    expect(comment).toContain('_Reply with the requested clarification.');
     expect(comment).toContain('cd "/workspace"\ncodex resume session-42');
     expect(comment).toContain('"watchGateVerdict"');
     expect(comment).toContain('"runId": "run-42"');

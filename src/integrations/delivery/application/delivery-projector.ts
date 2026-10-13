@@ -154,7 +154,13 @@ function integrationIntentView(
       resourceId: integrationIntent.event.payload.resourceId,
       payload: status
         ? { kind: DeliveryIntentKind.StatusPublish, body: integrationIntent.event.payload.body }
-        : { kind: DeliveryIntentKind.ReplyPublish, body: integrationIntent.event.payload.body },
+        : {
+            kind: DeliveryIntentKind.ReplyPublish,
+            body: integrationIntent.event.payload.body,
+            ...(integrationIntent.event.payload.publicationOnly === true
+              ? { publicationOnly: true as const }
+              : {}),
+          },
       state: DeliveryState.Pending,
       attempts: 0,
       occurrenceOrdinal: 0,

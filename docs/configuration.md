@@ -642,7 +642,8 @@ required `target` of `primary`, `issue`, `pull-request`, or `none`; `none` suppr
 Wake records every conversation entry before interpreting its first trimmed line as a command.
 Workflow `commands` are therefore surface-neutral: a configured command is available on every
 conversation surface and still enforces its `allowedActors` policy. It takes precedence over a
-built-in command with the same spelling. Arguments after the command are accepted for syntax
+built-in command with the same spelling, except for an explicit Continue request to the owning
+recovery command. Arguments after the command are accepted for syntax
 compatibility but are not passed to the Activity.
 
 Built-ins are `/approved`, `/accepted`, `/changes`, `/retry`, `/restart`, and `/extend`. Their
@@ -665,8 +666,27 @@ provider default and accepts `review-surface`, `chat-surface`, and/or `operator-
 adapter-instance configuration: two instances of the same provider may use different capability
 sets. Granting `review-surface` or `operator-surface` enables command classes but does not itself
 authorize an actor; the adapter must still verify its actor evidence before Wake applies a command.
-GitHub obtains collaborator permission evidence for every syntactically valid slash command and
-rejects a resource author approving their own issue or pull request.
+GitHub obtains collaborator permission evidence for syntactically valid slash commands.
+Human actors with repository write, maintain, or admin permission may control work on an issue
+they authored. Independent review remains separate: authors cannot approve their own issue or
+pull request, even through configured reviewer authority. Work control does not approve or merge
+implementation or satisfy revision-bound review evidence.
+
+The authenticated control-plane operator retains human workflow-review authority: /approved and
+/accepted approve a matching human wait, while ordinary /changes follows its rejection route.
+The Continue action sends /changes with an explicit `continuation: true` message field; this requests
+agent-stage reentry rather than a review decision. Revision-bound waits and watch authorities remain
+enforced, and operator workflow decisions do not create provider PR approval or merge evidence.
+Plain comments can answer clarification or resume eligible blocked outcomes; they do not re-run a
+successful stage waiting for review.
+
+Use /changes followed by instructions to continue an eligible blocked agent stage. /retry and
+/restart remain failed-stage recovery (restart requests a fresh session); /extend explicitly
+extends an exhausted watch-group budget. Continuation does not revive deleted, closed, or frozen
+work, bypass watch authority, or reset retry/review budgets. Rejected and inapplicable commands
+produce actionable conversation feedback. Verified work-control or review actors also receive a
+durable reply to the originating resource when a primary workflow activation exists. Untrusted
+command actors cannot cause public bot replies.
 A command unavailable to its surface, or issued by an unauthorized actor, remains a durable,
 immutable conversation entry and has no workflow effect.
 `match.stage` and `match.outcome` are independently optional facets, each accepting one value or a

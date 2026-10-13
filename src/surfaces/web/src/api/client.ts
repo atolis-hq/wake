@@ -31,7 +31,7 @@ import { decodeTrigger, decodeTriggers } from './trigger-decoders.js';
 
 export class ApiProblem extends Error {
   constructor(readonly problem: WakeProblemDetails) {
-    super(problem.title);
+    super(problem.detail ?? problem.title);
     this.name = 'ApiProblem';
   }
 }
@@ -148,13 +148,23 @@ export class WakeApiClient {
         resourceDecoder(decodeWorkTranscript),
         signal,
       ),
-    message: (key: string, body: string, idempotencyKey: string, signal?: AbortSignal) =>
+    message: (
+      key: string,
+      body: string,
+      idempotencyKey: string,
+      signal?: AbortSignal,
+      continuation?: boolean,
+    ) =>
       this.request(
         `/work-items/${encodeURIComponent(key)}/commands/message`,
         resourceDecoder(decodeAcceptedCommand),
         {
           method: 'POST',
-          body: JSON.stringify({ idempotencyKey, body }),
+          body: JSON.stringify({
+            idempotencyKey,
+            body,
+            ...(continuation === undefined ? {} : { continuation }),
+          }),
           headers: { 'content-type': 'application/json' },
           ...(signal === undefined ? {} : { signal }),
         },
