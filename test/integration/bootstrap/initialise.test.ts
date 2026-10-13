@@ -112,6 +112,24 @@ describe('target initialise root', () => {
       });
       expect(rendered).toContain('work-01test0000000000000000');
       expect(rendered).toMatch(/DONE, BLOCKED, NEEDS_CLARIFICATION, or FAILED/);
+      if (name === 'refine') {
+        for (const isResume of [false, true]) {
+          const refinement = renderPromptTemplate(template, {
+            workItemId: 'work-01test0000000000000000',
+            isResume,
+          });
+          expect(refinement).toContain('wake_artifacts_list and wake_artifacts_read');
+          expect(refinement).toContain('Batch known independent human questions');
+          expect(refinement).toContain('Exclude\n  unverified candidates for that invocation');
+          expect(refinement).toContain('canonical plan.md artifact');
+          expect(refinement).toContain('A plan is well-specified once every choice');
+          expect(refinement).toContain('correct outcomes, edge cases');
+          expect(refinement).toContain('compatibility decisions');
+          expect(refinement.indexOf('Resolve questions from evidence')).toBeLessThan(
+            refinement.indexOf('End your response with a status marker'),
+          );
+        }
+      }
       if (name === 'implement') {
         expect(rendered).toContain('Include every pull request URL in the normal prose response.');
         expect(rendered).toContain('Then repeat each URL in this exact artifact fence');
