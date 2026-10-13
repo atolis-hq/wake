@@ -44,6 +44,13 @@ Trigger claims and pause/resume commands share a durable home lock; recovery
 completes committed claims with stable invocation identities. Cron watermarks
 belong to processor state, while request and invocation facts remain
 authoritative in the journal.
+Operational projections are keyed by coordination scope and retain only the
+active claim, last starts/requests, pause state, and at most 64 pending source
+reasons. Invocation history has a separate document and stream per WorkItem.
+Skipped occurrences advance processor cursors without journal request facts.
+Resident coordination folds new journal batches incrementally; history is read
+only on explicit inspection. Blocked workflows retain their single-flight slot
+because operator retry or clarification can reactivate them.
 
 ## Extension rules
 

@@ -4,9 +4,9 @@ import { expect, it } from 'vitest';
 import {
   ControlEventType,
   TriggerSourceKind,
-  controlPlaneStream,
   createControlPlaneEventData,
   decodeControlEvent,
+  triggerControlStream,
   triggerProjection,
 } from '../../../src/control-plane/index.js';
 
@@ -19,7 +19,7 @@ it('validates trigger lifecycle events before rebuilding pause and request facts
     actor: { kind: EventActorKind.System, id: 'test' },
     source: { kind: EventSourceKind.Internal, id: 'trigger' },
   };
-  const events = await journal.appendToStream(controlPlaneStream(), 0, [
+  const events = await journal.appendToStream(triggerControlStream('test'), 0, [
     createControlPlaneEventData({
       ...metadata,
       eventId: 'request',
@@ -35,13 +35,13 @@ it('validates trigger lifecycle events before rebuilding pause and request facts
       ...metadata,
       eventId: 'pause',
       eventType: ControlEventType.TriggerPaused,
-      payload: { triggerId: 'test', reason: 'operator pause' },
+      payload: { triggerId: 'test', coordinationKey: 'test', reason: 'operator pause' },
     }),
     createControlPlaneEventData({
       ...metadata,
       eventId: 'resume',
       eventType: ControlEventType.TriggerResumed,
-      payload: { triggerId: 'test' },
+      payload: { triggerId: 'test', coordinationKey: 'test' },
     }),
   ]);
   const paused = events

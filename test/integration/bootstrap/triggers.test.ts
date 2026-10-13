@@ -8,14 +8,23 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ActivityOutcomeKind, RetrySafety } from '../../../src/activities/index.js';
+import {
+  ActivityOutcomeKind,
+  AgentResultStatus,
+  RetrySafety,
+} from '../../../src/activities/index.js';
 import type { CompositionRootOptions } from '../../../src/bootstrap/index.js';
 import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
 import {
   ControlEventType,
+  ControlStreamKind,
   TriggerSourceKind,
+  maximumTriggerSources,
   selectControlEvent,
+  triggerInvocationProjection,
+  triggerProjectionName,
   type TriggerConfig,
+  type TriggerView,
 } from '../../../src/control-plane/index.js';
 import { isActiveRunStatus } from '../../../src/execution/index.js';
 import {
@@ -355,6 +364,149 @@ async function accept(
 }
 
 describe('durable trigger coordination', () => {
+  it('retains single-flight when a blocked invocation resumes after clarification', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    await source(f, 'initial');
+    await f.consume();
+    const first = (await invocations(f.journal))[0]!;
+    const workflow = await f.root.orchestration.get(workflowInstanceId(first.workflowInstanceId));
+    if (workflow?.pendingActivation === undefined) throw new Error('Missing invocation activation');
+    await f.root.orchestration.acceptOutcome(
+      {
+        workflowInstanceId: workflow.workflowInstanceId,
+        activationId: workflow.pendingActivation.activationId,
+        outcome: {
+          kind: ActivityOutcomeKind.Blocked,
+          data: { status: AgentResultStatus.NeedsClarification },
+        },
+      },
+      { ...f.context, commandId: 'clarification-needed' },
+    );
+    await f.root.triggers.reconcile(f.context);
+    await f.root.orchestration.resumeNeedsClarificationStage(workflow.workflowInstanceId, {
+      ...f.context,
+      commandId: 'clarification-reply',
+    });
+    await f.root.triggers.resume('oversight', { ...f.context, commandId: 'resume-clarified' });
+    await source(f, 'while-clarifying');
+    await f.consume();
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect((await f.root.triggers.get()).invocations[0]?.result).toBeUndefined();
+    await accept(f, first.workflowInstanceId);
+    await f.root.triggers.reconcile(f.context);
+    expect(await invocations(f.journal)).toHaveLength(2);
+  });
+
+  it('retains single-flight across blocked invocation retries and pauses again on another failure', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    await source(f, 'initial');
+    await f.consume();
+    const first = (await invocations(f.journal))[0]!;
+    const blocked = await accept(f, first.workflowInstanceId, ActivityOutcomeKind.Failed);
+    expect(blocked.status).toBe('blocked');
+    await f.root.triggers.reconcile(f.context);
+    const reads = vi.spyOn(f.journal, 'readStream');
+    await f.root.triggers.reconcile(f.context);
+    await f.root.triggers.reconcile(f.context);
+    expect(
+      reads.mock.calls.filter(([stream]) => stream.kind === ControlStreamKind.Trigger),
+    ).toEqual([]);
+    reads.mockRestore();
+    expect((await f.root.triggers.get()).invocations[0]?.result).toBeUndefined();
+    const recovered = await restart(f);
+    await recovered.orchestration.retryBlockedFailedStage(blocked.workflowInstanceId, {
+      ...f.context,
+      commandId: 'operator-retry',
+    });
+    await recovered.triggers.resume('oversight', { ...f.context, commandId: 'resume-retried' });
+    const retried = { ...f, root: recovered };
+    const event = await source(retried, 'while-retrying');
+    await recovered.triggers.start(
+      f.config.controlPlane.triggers[0]!,
+      {
+        kind: TriggerSourceKind.Event,
+        eventId: event.event.eventId,
+        eventType: event.event.eventType,
+      },
+      f.context,
+      event,
+    );
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect(Object.values((await recovered.triggers.get()).coalesced)).toHaveLength(1);
+    await accept(retried, first.workflowInstanceId, ActivityOutcomeKind.Failed);
+    await recovered.triggers.reconcile(f.context);
+    let view = await recovered.triggers.get();
+    expect(view.pauses.oversight).toBeDefined();
+    expect(view.coalesced).toEqual({});
+    expect(view.invocations[0]?.result).toBeUndefined();
+    await recovered.orchestration.retryBlockedFailedStage(blocked.workflowInstanceId, {
+      ...f.context,
+      commandId: 'operator-retry-again',
+    });
+    await accept(retried, first.workflowInstanceId);
+    await recovered.triggers.reconcile(f.context);
+    view = await recovered.triggers.get();
+    expect(view.invocations[0]?.result?.status).toBe('completed');
+    expect(await invocations(f.journal)).toHaveLength(1);
+  });
+
+  it('bounds pending reasons and operational projections and does not replay history on idle reconciliation', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    await source(f, 'initial');
+    await f.consume();
+    for (let index = 0; index < maximumTriggerSources + 4; index += 1) {
+      await source(f, `pending-${index}`);
+      await f.consume();
+    }
+    await f.root.projectionSubscriptions.catchUpOnce();
+    const state = await f.root.projections.read<TriggerView>(triggerProjectionName, 'oversight');
+    expect(state?.value.requests).toHaveLength(1);
+    expect(state?.value.invocations).toHaveLength(1);
+    expect(state?.value.coalesced.oversight?.sources).toHaveLength(maximumTriggerSources);
+    const recorded = (await f.journal.readAll(0)).filter(
+      (event) => event.event.eventType === ControlEventType.TriggerRequestRecorded,
+    );
+    expect(recorded).toHaveLength(maximumTriggerSources + 1);
+    expect(recorded.every((event) => event.stream.kind === ControlStreamKind.Trigger)).toBe(true);
+    const first = (await invocations(f.journal))[0]!;
+    await accept(f, first.workflowInstanceId);
+    await f.root.triggers.reconcile(f.context);
+    await f.root.projectionSubscriptions.catchUpOnce();
+    expect(await f.root.projections.list(triggerInvocationProjection.name)).toHaveLength(2);
+    expect(
+      (await f.root.projections.read<TriggerView>(triggerProjectionName, 'oversight'))?.value
+        .invocations,
+    ).toHaveLength(1);
+    await f.root.triggers.reconcile(f.context);
+    const read = vi.spyOn(f.journal, 'readAll');
+    await f.root.triggers.reconcile(f.context);
+    await f.root.triggers.reconcile(f.context);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('clears a shared pending request even when a sibling supplied the last reason', async () => {
+    const f = await fixture(
+      { events: [WorkEventType.ObjectiveRevised] },
+      false,
+      undefined,
+      { triggerCoordinationKey: () => 'shared' },
+      ['oversight', 'secondary'],
+    );
+    await source(f, 'initial');
+    await f.consume();
+    await source(f, 'mixed-reasons');
+    await f.consume();
+    expect((await f.root.triggers.get()).coalesced.shared?.triggerId).toBe('secondary');
+    await f.root.triggers.pause('oversight', 'clear shared pending', {
+      ...f.context,
+      commandId: 'pause-shared',
+    });
+    expect((await f.root.triggers.get()).coalesced).toEqual({});
+    await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
+    await f.root.triggers.reconcile(f.context);
+    expect(await invocations(f.journal)).toHaveLength(1);
+  });
+
   it('bounds cron catch-up and persists consumed slots across restart', async () => {
     const f = await fixture({ cron: '* * * * *' });
     await f.root.runnerPipeline.run({ maxProgress: 1 });
@@ -363,19 +515,25 @@ describe('durable trigger coordination', () => {
       ...f.context,
       commandId: 'pause-catch-up',
     });
+    const pausedPosition = await f.journal.latestGlobalPosition();
     await f.root.runnerPipeline.run({ maxProgress: 1 });
     let view = await f.root.triggers.get();
-    expect(view.requests).toHaveLength(65);
-    expect(view.requests.at(-1)?.source).toEqual({
-      kind: TriggerSourceKind.Cron,
+    expect(view.requests).toHaveLength(1);
+    expect(await f.journal.latestGlobalPosition()).toBe(pausedPosition);
+    expect(
+      (await f.root.processorState.read('reactor:control-plane.trigger:oversight', 'cron'))?.value,
+    ).toEqual({
       slot: '2026-08-10T01:05:00.000Z',
     });
     const recovered = await restart(f);
     await recovered.runnerPipeline.run({ maxProgress: 1 });
     view = await recovered.triggers.get();
-    expect(view.requests).toHaveLength(129);
-    expect(view.requests.at(-1)?.source).toEqual({
-      kind: TriggerSourceKind.Cron,
+    expect(view.requests).toHaveLength(1);
+    expect(await f.journal.latestGlobalPosition()).toBe(pausedPosition);
+    expect(
+      (await recovered.processorState.read('reactor:control-plane.trigger:oversight', 'cron'))
+        ?.value,
+    ).toEqual({
       slot: '2026-08-10T02:09:00.000Z',
     });
     expect(view.coalesced).toEqual({});

@@ -26,6 +26,6 @@
     ],
     "config": ["controlPlane"],
     "relations": [],
-    "streams": ["control-plane"]
+    "streams": ["control-plane", "control-plane-trigger", "control-plane-trigger-invocation"]
   }
 }

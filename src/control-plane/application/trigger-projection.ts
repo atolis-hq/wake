@@ -9,8 +9,21 @@ import {
 
 export const triggerProjectionName = 'control-plane-triggers';
 
+export const maximumTriggerSources = 64;
+
+export interface TriggerInvocationView {
+  readonly claim: ControlEventPayloads[typeof ControlEventType.TriggerInvocationClaimed];
+  readonly claimedAt: string;
+  readonly startedAt?: string;
+  readonly result?: ControlEventPayloads[typeof ControlEventType.TriggerInvocationFinished];
+  readonly finishedAt?: string;
+  readonly failureOutcomeCount?: number;
+}
+
 export interface TriggerView {
+  readonly lastStarts: Readonly<Record<string, string>>;
   readonly pauses: Readonly<Record<string, string>>;
+  /** Latest recorded request per trigger, rather than an occurrence history. */
   readonly requests: readonly ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded][];
   readonly coalesced: Readonly<
     Record<
@@ -20,21 +33,19 @@ export interface TriggerView {
       }
     >
   >;
-  readonly invocations: readonly {
-    readonly claim: ControlEventPayloads[typeof ControlEventType.TriggerInvocationClaimed];
-    readonly claimedAt: string;
-    readonly startedAt?: string;
-    readonly result?: ControlEventPayloads[typeof ControlEventType.TriggerInvocationFinished];
-    readonly finishedAt?: string;
-  }[];
+  /** Operational projections contain only active claims; explicit service inspection includes history. */
+  readonly invocations: readonly TriggerInvocationView[];
 }
 
 export const triggerProjection: ProjectionDefinition<TriggerView> = {
   name: triggerProjectionName,
   select(envelope) {
-    return selectControlEvent(envelope) === null ? null : { key: 'global' };
+    const event = selectControlEvent(envelope);
+    return event !== null && 'coordinationKey' in event.event.payload
+      ? { key: event.event.payload.coordinationKey }
+      : null;
   },
-  initial: () => ({ pauses: {}, requests: [], coalesced: {}, invocations: [] }),
+  initial: () => ({ lastStarts: {}, pauses: {}, requests: [], coalesced: {}, invocations: [] }),
   project(previous, envelope: EventEnvelope) {
     const event = selectControlEvent(envelope);
     if (event === null) return previous;
@@ -43,7 +54,10 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
         const request = event.event.payload;
         return {
           ...previous,
-          requests: [...previous.requests, request],
+          requests: [
+            ...previous.requests.filter((last) => last.triggerId !== request.triggerId),
+            request,
+          ],
           coalesced:
             request.disposition === TriggerRequestDisposition.Coalesced
               ? {
@@ -53,7 +67,7 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
                     sources: [
                       ...(previous.coalesced[request.coordinationKey]?.sources ?? []),
                       request.source,
-                    ],
+                    ].slice(0, maximumTriggerSources),
                   },
                 }
               : withoutCoalesced(previous.coalesced, request),
@@ -72,6 +86,7 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
         const payload = event.event.payload;
         return {
           ...previous,
+          lastStarts: { ...previous.lastStarts, [payload.triggerId]: event.event.occurredAt },
           invocations: previous.invocations.map((invocation) =>
             invocation.claim.workflowInstanceId === payload.workflowInstanceId
               ? { ...invocation, startedAt: event.event.occurredAt }
@@ -83,10 +98,8 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
         const payload = event.event.payload;
         return {
           ...previous,
-          invocations: previous.invocations.map((invocation) =>
-            invocation.claim.workflowInstanceId === payload.workflowInstanceId
-              ? { ...invocation, result: payload, finishedAt: event.event.occurredAt }
-              : invocation,
+          invocations: previous.invocations.filter(
+            (invocation) => invocation.claim.workflowInstanceId !== payload.workflowInstanceId,
           ),
         };
       }
@@ -95,10 +108,9 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
         return {
           ...previous,
           pauses: { ...previous.pauses, [payload.triggerId]: payload.reason },
+          invocations: pausedInvocations(previous, payload),
           coalesced: Object.fromEntries(
-            Object.entries(previous.coalesced).filter(
-              ([, request]) => request.triggerId !== payload.triggerId,
-            ),
+            Object.entries(previous.coalesced).filter(([key]) => key !== payload.coordinationKey),
           ),
         };
       }
@@ -125,4 +137,16 @@ function withoutCoalesced(
     return coalesced;
   const { [key]: _, ...rest } = coalesced;
   return rest;
+}
+
+function pausedInvocations(
+  previous: TriggerView,
+  payload: ControlEventPayloads[typeof ControlEventType.TriggerPaused],
+): readonly TriggerInvocationView[] {
+  return previous.invocations.map((invocation) =>
+    payload.workflowInstanceId === invocation.claim.workflowInstanceId &&
+    payload.outcomeCount !== undefined
+      ? { ...invocation, failureOutcomeCount: payload.outcomeCount }
+      : invocation,
+  );
 }

@@ -26,6 +26,7 @@ export async function isOwnScopeSource(
   resolve: {
     readonly keyOf: (triggerId: string) => string | undefined;
     readonly sourceWorkItem: (event: EventEnvelope) => Promise<string | null>;
+    readonly invocationScope: (workItemId: string) => Promise<string | null>;
   },
 ): Promise<boolean> {
   if (event === undefined) return false;
@@ -34,6 +35,8 @@ export async function isOwnScopeSource(
     const id = control.event.payload.triggerId;
     if (
       id === scope.triggerId ||
+      ('coordinationKey' in control.event.payload &&
+        control.event.payload.coordinationKey === scope.coordinationKey) ||
       resolve.keyOf(id) === scope.coordinationKey ||
       view.invocations.some(
         (invocation) =>
@@ -45,12 +48,7 @@ export async function isOwnScopeSource(
   }
   const sourceItem = await resolve.sourceWorkItem(event);
   return (
-    sourceItem !== null &&
-    view.invocations.some(
-      (invocation) =>
-        invocation.claim.coordinationKey === scope.coordinationKey &&
-        invocation.claim.workItemId === sourceItem,
-    )
+    sourceItem !== null && (await resolve.invocationScope(sourceItem)) === scope.coordinationKey
   );
 }
 
@@ -67,11 +65,7 @@ export function exhaustedFailures(instance: WorkflowInstanceView): boolean {
 }
 
 export function finishedStatus(instance: WorkflowInstanceView): FinishedStatus | undefined {
-  if (
-    instance.status === WorkflowStatus.Completed ||
-    instance.status === WorkflowStatus.Blocked ||
-    instance.status === WorkflowStatus.Superseded
-  )
+  if (instance.status === WorkflowStatus.Completed || instance.status === WorkflowStatus.Superseded)
     return instance.status;
   return undefined;
 }

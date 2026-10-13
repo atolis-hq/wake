@@ -543,3 +543,7 @@ work to continue; resume does not reset workflow retry counters. Exhausted
 automatic failures pause the originating trigger, and events from its own
 invocations cannot recursively request another invocation. Starts and results
 remain inspectable after the trigger definition is removed.
+Blocked invocations retain their coordination slot through operator retry or
+clarification; only completion or supersession releases it. Pending reasons
+are bounded to 64 representative source identities. Invocation history is
+stored separately from current scope state.

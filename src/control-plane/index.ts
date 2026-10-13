@@ -48,4 +48,6 @@ export * from './infrastructure/resident-host.js';
 
 export * from './infrastructure/tick-host.js';
 
+export * from './application/trigger-invocation-projection.js';
+
 export * from './application/trigger-projection.js';

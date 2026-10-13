@@ -1,5 +1,6 @@
 import {
   EventActorKind,
+  correlationId,
   type CheckpointStore,
   type EventJournal,
   type EventProcessor,
@@ -17,6 +18,7 @@ import {
   type createPullRequestService,
 } from '../activities/index.js';
 import {
+  ControlEventType,
   ControlStreamKind,
   TriggerService,
   createDurableRunnerIneligibility,
@@ -24,10 +26,14 @@ import {
   createRunnerPipeline,
   createTriggerReactor,
   createWorkCancellationPolicy,
+  selectControlEvent,
+  triggerInvocationProjection,
+  triggerInvocationStream,
   type IntakePipeline,
   type RunnerPipeline,
   type TriggerCheckpointStore,
   type TriggerConfig,
+  type TriggerInvocationView,
   type createControlPlaneService,
 } from '../control-plane/index.js';
 import type { createConversationService } from '../conversations/index.js';
@@ -36,8 +42,10 @@ import {
   NoEligibleRunnerError,
   RunRepository,
   createRuntimeMemoryProfile,
+  decodeActivationExecutionEvent,
   isActiveRunStatus,
   isRunStream,
+  runId,
   type RunnerRegistry,
   type RuntimeMemoryProfile,
   type createExecutionService,
@@ -217,7 +225,23 @@ export async function composeIntegrationRuntime(
   const runnerIneligibility = createDurableRunnerIneligibility(input.journal, () =>
     input.clock.now().toISOString(),
   );
+  const triggerRuns = new RunRepository(input.journal);
   const triggers = new TriggerService({
+    state: input.processorState,
+    history: async () => {
+      await projectionSubscriptions.catchUp(triggerInvocationProjection);
+      return (
+        await input.projections.list<TriggerInvocationView | null>(triggerInvocationProjection.name)
+      ).flatMap(({ value }) => (value === null ? [] : [value]));
+    },
+    invocationScope: async (item) => {
+      const claim = (await input.journal.readStream(triggerInvocationStream(item)))
+        .map(selectControlEvent)
+        .find((event) => event?.event.eventType === ControlEventType.TriggerInvocationClaimed);
+      return claim?.event.eventType === ControlEventType.TriggerInvocationClaimed
+        ? claim.event.payload.coordinationKey
+        : null;
+    },
     ...(input.triggerCoordinationKey === undefined
       ? {}
       : { coordinationKey: input.triggerCoordinationKey }),
@@ -229,13 +253,11 @@ export async function composeIntegrationRuntime(
       let workflowId: string | undefined;
       if (isWorkflowInstanceStream(event.stream)) workflowId = event.stream.id;
       if (isRunStream(event.stream))
-        workflowId = (await input.execution.list()).find(
-          (run) => run.runId === event.stream.id,
-        )?.workflowInstanceId;
+        workflowId = (await triggerRuns.load(runId(event.stream.id))).view?.workflowInstanceId;
       if (event.stream.kind === ExecutionStreamKind.Activation)
-        workflowId = (await input.execution.list()).find(
-          (run) => run.activationId === event.stream.id,
-        )?.workflowInstanceId;
+        workflowId = (
+          await triggerRuns.load(runId(decodeActivationExecutionEvent(event).event.payload.runId))
+        ).view?.workflowInstanceId;
       if (workflowId === undefined) return null;
       const seen = new Set<string>();
       while (!seen.has(workflowId)) {
@@ -400,14 +422,14 @@ export async function composeIntegrationRuntime(
       observeMemory(memoryProfile, 'runner.triggers', async () => {
         await triggers.reconcile({
           commandId: input.ids.next('command'),
-          correlationId: 'trigger-recovery' as never,
+          correlationId: correlationId('trigger-recovery'),
           occurredAt: input.clock.now().toISOString(),
           actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
         });
         for (const trigger of input.config.controlPlane.triggers)
           await triggers.run(trigger, {
             commandId: input.ids.next('command'),
-            correlationId: 'trigger-tick' as never,
+            correlationId: correlationId('trigger-tick'),
             occurredAt: input.clock.now().toISOString(),
             actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
           });

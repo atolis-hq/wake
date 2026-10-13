@@ -433,11 +433,21 @@ sharing a Wake home serialize trigger starts and operator pause/resume commands;
 recovery uses the claimed WorkItem and workflow IDs to complete an interrupted
 start. Cron catch-up consumes at most 64 occurrences per trigger per pass and
 coalesces them into one request. There is no cooldown or minimum interval.
+Skipped occurrences advance durable source cursors without adding request facts.
+Pending requests retain at most 64 representative source identities; additional
+occurrences coalesce into that same request and advance their cursors. Operational
+projections are stored per coordination scope, while each invocation has its own
+history document and stream. Normal coordination reads new journal batches
+incrementally rather than repeatedly folding historical requests and invocations.
 
 The public Control Plane trigger service exposes pause/resume commands and a
 rebuildable invocation-history projection. Pausing clears unstarted pending
-work and skips new occurrences; active invocations continue. Pause survives
-restart and removal/re-add of the same ID. Resume enables future explicit
+work and skips new occurrences; active invocations continue.
+Blocked invocations still hold their single-flight slot: operator retry or
+clarification can resume the same workflow. Only completion or supersession
+releases the slot. Pausing a trigger clears the shared scope's pending request,
+including reasons coalesced through sibling triggers.
+Pause survives restart and removal/re-add of the same ID. Resume enables future explicit
 sources without replaying skipped occurrences or resetting workflow retries.
 Events from the trigger's own invocation WorkItems/workflows/Runs are suppressed.
 An invocation that blocks or exhausts automatic failure retries pauses its
