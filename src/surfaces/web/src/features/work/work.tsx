@@ -328,6 +328,14 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
             {query.data.data.work.externalRef && <span>{query.data.data.work.externalRef}</span>}
             {query.data.data.work.objective}
           </h1>
+          {query.data.data.triggerOrigin && (
+            <p>
+              Trigger origin:{' '}
+              <Link to={'/triggers/' + encodeURIComponent(query.data.data.triggerOrigin)}>
+                {query.data.data.triggerOrigin}
+              </Link>
+            </p>
+          )}
           {tab !== 'conversation' && tab !== 'transcripts' && (
             <div className={styles.workSummary}>
               <Panel>

@@ -7,6 +7,18 @@ import { WakeApiClient } from '../src/api/client.js';
 import { App } from '../src/app/app.js';
 
 describe('Wake operator app', () => {
+  it('opens Triggers from the primary navigation', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client({})} />
+      </MemoryRouter>,
+    );
+    const navigation = await screen.findByRole('navigation', { name: 'Primary' });
+    await user.click(within(navigation).getByRole('link', { name: 'Triggers' }));
+    expect(await screen.findByRole('heading', { name: 'Triggers' })).toBeTruthy();
+    expect(await screen.findByText('No triggers configured or recorded')).toBeTruthy();
+  });
   afterEach(cleanup);
   it('filters and sorts sidebar items and selects work in the main panel', async () => {
     const user = userEvent.setup();
@@ -269,9 +281,11 @@ function client(
               activities: {},
               conversation: { entries: [] },
             }
-          : url.endsWith('/runners')
-            ? undefined
-            : undefined;
+          : url.endsWith('/triggers')
+            ? []
+            : url.endsWith('/runners')
+              ? undefined
+              : undefined;
     const body =
       url.endsWith('/board') || url.endsWith('/runners')
         ? {

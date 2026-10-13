@@ -22,6 +22,8 @@ export * from './application/runner-pipeline.js';
 
 export * from './application/work-cancellation-policy.js';
 
+export * from './contracts/trigger-diagnostics.js';
+
 export * from './contracts/commands.js';
 
 export * from './contracts/config.js';

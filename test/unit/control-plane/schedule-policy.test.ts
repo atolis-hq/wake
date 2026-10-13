@@ -8,6 +8,15 @@ const config: { id: string; workflow: string; cron: string } = {
 };
 
 describe('CronTriggerPolicy', () => {
+  it('inspects the next future UTC occurrence with the same day intersection as scheduling', () => {
+    const policy = new CronTriggerPolicy();
+    expect(policy.nextOccurrence('*/15 * * * *', '2026-07-31T12:15:00.000Z')).toBe(
+      '2026-07-31T12:30:00.000Z',
+    );
+    expect(policy.nextOccurrence('0 0 1 * MON', '2026-05-01T00:00:00.000Z')).toBe(
+      '2026-06-01T00:00:00.000Z',
+    );
+  });
   it('uses one stable identity for each elapsed schedule slot', () => {
     const policy = new CronTriggerPolicy();
 

@@ -42,6 +42,15 @@ export async function dispatchCommand(
   if (maintenance !== undefined) return maintenance;
   const request = commandRequest(body);
   if (isHttpResponse(request)) return request;
+  const trigger = /^\/api\/v1\/triggers\/([^/]+)\/commands\/(pause|resume)$/.exec(url.pathname);
+  if (trigger !== null) {
+    const id = decodePathSegment(trigger[1]!);
+    if (id instanceof ApiPathError) return invalidPath(id.message);
+    if (applications.triggers === undefined) return unavailable('triggers');
+    const operation =
+      trigger[2] === 'pause' ? applications.triggers.pause : applications.triggers.resume;
+    return accepted(await operation(id, request), applications.now(), 200);
+  }
   const control = await dispatchControlCommand(applications, url.pathname, request);
   if (control !== undefined) return control;
   const runner = await dispatchRunnerCommand(applications, url.pathname, request);

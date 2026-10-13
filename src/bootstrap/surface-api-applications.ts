@@ -36,6 +36,7 @@ import {
 import { createExecutionApplications } from './surface-api-execution-applications.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
+import { createTriggerApplications } from './surface-api-trigger-applications.js';
 import { createSurfaceWorkApplications } from './surface-api-work-applications.js';
 import { createWorkflowDiagramApplications } from './surface-api-workflow-diagrams.js';
 import { UpdateMaintenancePhase, type UpdateMaintenanceState } from './update-maintenance-lease.js';
@@ -50,6 +51,7 @@ export function createSurfaceApiApplications(
     board: createBoardApplications(root, now),
     status: createStatusApplications(root, now),
     controlPlane: createControlPlaneApplications(root, now),
+    triggers: createTriggerApplications(root, now),
     work: createSurfaceWorkApplications(root, now),
     resources: createResourceApplications(root, now),
     orchestration: createOrchestrationApplications(root, now),

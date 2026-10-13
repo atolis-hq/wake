@@ -18,6 +18,7 @@ import type {
   RunResponse,
   RunTranscriptResponse,
   StatusResponse,
+  TriggerResponse,
   WebhookSetupResponse,
   WorkDetailResponse,
   WorkflowDiagramsResponse,
@@ -79,6 +80,12 @@ export interface ApiApplications {
     pauseDispatch?(command: ApiCommandRequest): Promise<ApiCommandResult>;
     resumeDispatch?(command: ApiCommandRequest): Promise<ApiCommandResult>;
     clearMaintenance?(command: ApiClearMaintenanceRequest): Promise<ApiCommandResult>;
+  };
+  readonly triggers?: {
+    list(): Promise<ApiResourceResult<readonly TriggerResponse[]>>;
+    detail(id: string): Promise<ApiResourceResult<TriggerResponse> | undefined>;
+    pause(id: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
+    resume(id: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
   };
   readonly work: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<WorkItemResponse>>;

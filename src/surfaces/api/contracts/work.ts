@@ -22,6 +22,7 @@ export interface WorkItemResponse {
 }
 
 export interface WorkDetailResponse {
+  readonly triggerOrigin?: string;
   readonly work: WorkItemResponse;
   readonly resources: readonly ResourceItemResponse[];
   readonly orchestration: {

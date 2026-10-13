@@ -6,6 +6,17 @@ export interface CronTriggerSlot {
 }
 
 export class CronTriggerPolicy {
+  nextOccurrence(cron: string, now: string): string {
+    const fields = cron.trim().split(/\s+/);
+    const expression = CronExpressionParser.parse(cron, { currentDate: now, tz: 'UTC' });
+    const dayOfMonth = fieldExpression(fields, 2, 4);
+    const dayOfWeek = fieldExpression(fields, 4, 2);
+    while (true) {
+      const date = expression.next().toDate();
+      if (matchesDays(date, dayOfMonth, dayOfWeek)) return date.toISOString();
+    }
+  }
+
   elapsedSlots(
     config: { readonly id: string; readonly cron: string },
     now: string,

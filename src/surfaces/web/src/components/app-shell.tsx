@@ -201,6 +201,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
               ['Board', '/board', faColumns],
               ['Work items', '/work', faListCheck],
               ['Runs', '/runs', faPlay],
+              ['Triggers', '/triggers', faClockRotateLeft],
             ] as const
           ).map(([label, path, icon]) => (
             <NavLink end key={path} to={path}>

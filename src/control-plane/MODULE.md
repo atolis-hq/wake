@@ -48,6 +48,9 @@ Operational projections are keyed by coordination scope and retain only the
 active claim, last starts/requests, pause state, and at most 64 pending source
 reasons. Invocation history has a separate document and stream per WorkItem.
 Skipped occurrences advance processor cursors without journal request facts.
+Their latest actual skip diagnostics are bounded processor-owned operational
+state (256 recent trigger identities), exposed through service inspection with
+source/time provenance; they are not projections or occurrence history.
 Resident coordination folds new journal batches incrementally; history is read
 only on explicit inspection. Blocked workflows retain their single-flight slot
 because operator retry or clarification can reactivate them.

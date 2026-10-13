@@ -1,4 +1,9 @@
 import type { ActivityOutcomeKind } from '../../../activities/index.js';
+import type {
+  TriggerRequestDisposition,
+  TriggerSkipReason,
+  TriggerSourceKind,
+} from '../../../control-plane/index.js';
 import type { RunStatus } from '../../../execution/index.js';
 import { defineClosedVocabulary } from '../../../kernel/index.js';
 import type { ApiCommandStatus } from './control-plane.js';
@@ -79,4 +84,33 @@ const transcriptGroupKinds = Object.keys(transcriptGroupKindShape);
 export const TranscriptGroupKindValue = {
   Session: transcriptGroupKinds[0]!,
   Run: transcriptGroupKinds[1]!,
+} as const;
+
+// Trigger transport vocabulary avoids importing the server implementation into the browser.
+export const TriggerSourceKindValue: typeof TriggerSourceKind = {
+  Event: 'event',
+  Cron: 'cron',
+} as const;
+
+export const TriggerRequestDispositionValue: typeof TriggerRequestDisposition = {
+  Coalesced: 'coalesced',
+  Skipped: 'skipped',
+} as const;
+
+export const TriggerSkipReasonValue: typeof TriggerSkipReason = {
+  OwnScope: 'own-scope',
+  Paused: 'paused',
+  Removed: 'removed',
+  DispatchPaused: 'dispatch-paused',
+  Capacity: 'capacity-unavailable',
+  PendingLimit: 'pending-source-limit',
+} as const;
+const triggerFinishedStatusShape = { completed: true, superseded: true };
+const triggerFinishedStatuses = Object.keys(
+  triggerFinishedStatusShape,
+) as (keyof typeof triggerFinishedStatusShape)[];
+
+export const TriggerFinishedStatusValue = {
+  Completed: triggerFinishedStatuses[0]!,
+  Superseded: triggerFinishedStatuses[1]!,
 } as const;

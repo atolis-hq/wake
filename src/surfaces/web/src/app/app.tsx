@@ -11,6 +11,7 @@ import { EventsPage } from '../features/events/events.js';
 import { HealthPage } from '../features/health/health.js';
 import { ObservabilityPage } from '../features/observability/observability.js';
 import { RunDetail, RunsList } from '../features/runs/runs.js';
+import { TriggerDetail, TriggersList } from '../features/triggers/triggers.js';
 import { WorkDetail, WorkList } from '../features/work/work.js';
 
 export function App({ client = new WakeApiClient() }: { readonly client?: WakeApiClient }) {
@@ -111,6 +112,8 @@ function AppRoutes() {
         <Route path="/board" element={<Board />} />
         <Route path="/work" element={<WorkList />} />
         <Route path="/work/:workItemKey" element={<WorkDetail />} />
+        <Route path="/triggers" element={<TriggersList />} />
+        <Route path="/triggers/:triggerId" element={<TriggerDetail />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/runs" element={<RunsList />} />
         <Route path="/runs/:runId" element={<RunDetail />} />

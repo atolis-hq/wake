@@ -27,6 +27,7 @@ import {
   decodeProblem,
   decodeWebhookSetup,
 } from './system-decoders.js';
+import { decodeTrigger, decodeTriggers } from './trigger-decoders.js';
 
 export class ApiProblem extends Error {
   constructor(readonly problem: WakeProblemDetails) {
@@ -60,6 +61,19 @@ export class WakeApiClient {
       });
       return response.ok;
     },
+  };
+
+  readonly triggers = {
+    list: (signal?: AbortSignal) => this.get('/triggers', resourceDecoder(decodeTriggers), signal),
+    detail: (id: string, signal?: AbortSignal) =>
+      this.get('/triggers/' + encodeURIComponent(id), resourceDecoder(decodeTrigger), signal),
+    command: (id: string, name: 'pause' | 'resume', idempotencyKey: string, signal?: AbortSignal) =>
+      this.command(
+        '/triggers/' + encodeURIComponent(id) + '/commands/' + name,
+        idempotencyKey,
+        decodeAcceptedCommand,
+        signal,
+      ),
   };
 
   readonly board = {

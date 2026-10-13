@@ -1,5 +1,6 @@
 import { correlationId, EventActorKind } from '@atolis-hq/eventing';
 import { pullRequestProjection, type PullRequestView } from '../activities/index.js';
+import { triggerInvocationProjection, type TriggerInvocationView } from '../control-plane/index.js';
 import {
   conversationIdForWorkItem,
   ConversationOriginKind,
@@ -292,6 +293,7 @@ async function workDetail(
   // the production root always composes Conversations.
   const conversation = await conversationForWorkItem(root, id);
   const data: WorkDetailResponse = {
+    ...(await triggerOriginForWork(root, id)),
     work: presentDetailWork(work, externalRef, runs),
     resources: resources.map(presentResource(root.resolveResourceLink)),
     orchestration: {
@@ -477,6 +479,7 @@ async function contributingProjections(
 ) {
   const records = await Promise.all([
     root.projections.read('work', id),
+    root.projections.read(triggerInvocationProjection.name, id),
     ...resources.map((value) => root.projections.read('resources', value.resourceId)),
     ...workflows.map((value) =>
       root.projections.read(orchestrationProjection.name, value.workflowInstanceId),
@@ -515,4 +518,13 @@ function retryIneligible(detail: string) {
 
 function extendIneligible(detail: string) {
   return { conflict: true as const, code: 'extend-ineligible', detail };
+}
+
+async function triggerOriginForWork(root: CompositionRoot, id: string) {
+  await root.projectionSubscriptions?.catchUp(triggerInvocationProjection);
+  const origin = await root.projections.read<TriggerInvocationView | null>(
+    triggerInvocationProjection.name,
+    id,
+  );
+  return origin?.value == null ? {} : { triggerOrigin: origin.value.claim.triggerId };
 }

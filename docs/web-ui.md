@@ -3,7 +3,7 @@
 The default page is Board. A single header contains the Wake brand, version,
 and dispatch controls. Paused models appear in the dispatch dropdown.
 
-The sidebar contains Board, Work items, and Runs, followed by work items grouped
+The sidebar contains Board, Work items, Runs, and Triggers, followed by work items grouped
 by status. Finished starts collapsed; the other groups start expanded. Search
 matches resource IDs and titles, and sorting supports recent activity or title.
 The selected work item is highlighted. Events, Analytics, Config, and Health
@@ -22,6 +22,30 @@ The overview places
 work details and actions above the full-width workflow, followed by an activity
 timeline and resource links. Narrow screens place resources immediately after the work details, then the
 workflow and activity timeline. The workflow retains its mobile card presentation.
+
+## Triggers
+
+Triggers lists configured definitions and retained operational/history identities,
+with effective status, workflow, next cron occurrence in UTC, latest invocation,
+and pause/failure and skip reasons. Events-only triggers have no next scheduled
+time. Detail shows the current definition, pending sources, latest actual skipped
+source/time/reason, and invocation history linked to independent WorkItems.
+WorkItem detail links back to its trigger origin. Removed definitions retain
+recorded history; they do not start future invocations.
+
+Pause and resume are available on both views. They use the owning Control Plane
+commands and never rewrite configuration. Pause clears unstarted pending work;
+active invocations continue. Cancel/freeze remains on WorkItem pages. Resume
+allows future explicit sources without starting work or resetting retries.
+Unavailable definitions and permission/command errors are shown explicitly.
+Shared context links are not exposed until the owning context capability exists.
+
+Authenticated API routes are `GET /api/v1/triggers`,
+`GET /api/v1/triggers/:triggerId`, and
+`POST /api/v1/triggers/:triggerId/commands/pause` or `resume`.
+Commands accept only `{ "idempotencyKey": "..." }` and use the same durable
+start/pause lock as the engine. Unknown identities return missing/conflict
+responses; removed identities with retained history remain inspectable.
 
 ## Styling
 
