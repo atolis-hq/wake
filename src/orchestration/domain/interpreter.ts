@@ -51,6 +51,7 @@ export {
   requestChangesResume,
   requestFreshOperatorRetry,
   requestOperatorRetry,
+  selectChangesResumeTargets,
   selectOperatorRetryTarget,
 } from './operator-retry-policy.js';
 

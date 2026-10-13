@@ -1,3 +1,4 @@
+import type { CommandContext } from '@atolis-hq/eventing';
 import {
   EventActorKind,
   EventProcessorCategory,
@@ -6,6 +7,7 @@ import {
   defineEventProcessor,
   type EventProcessor,
 } from '@atolis-hq/eventing';
+import type { ConversationService } from '../../conversations/index.js';
 import {
   ConversationEventType,
   ConversationOriginKind,
@@ -13,7 +15,7 @@ import {
   workItemIdForConversation,
   type ConversationEventPayloads,
 } from '../../conversations/index.js';
-import type { SurfaceCapability } from './conversation-command.js';
+import type { ConversationCommandResult, SurfaceCapability } from './conversation-command.js';
 import { conversationCommand } from './conversation-command.js';
 import type { OrchestrationService } from './orchestration-service.js';
 
@@ -25,10 +27,20 @@ type ConversationCommandMessage = {
   readonly entry: ConversationEventPayloads[typeof ConversationEventType.EntryRecorded];
 };
 
+interface ConversationCommandFeedback {
+  readonly conversations: ConversationService;
+  readonly publish: (
+    event: ConversationCommandMessage,
+    result: ConversationCommandResult,
+    context: CommandContext,
+  ) => Promise<void>;
+}
+
 /** Applies human commands only after their external message is canonical conversation history. */
-export function createConversationCommandReactor(orchestration: OrchestrationService): {
-  readonly processor: EventProcessor;
-} {
+export function createConversationCommandReactor(
+  orchestration: OrchestrationService,
+  feedback?: ConversationCommandFeedback,
+): { readonly processor: EventProcessor } {
   return {
     processor: defineEventProcessor<ConversationCommandMessage>({
       consumer: 'reactor:orchestration.conversation-command',
@@ -57,14 +69,36 @@ export function createConversationCommandReactor(orchestration: OrchestrationSer
           actorId: entry.origin.actorId,
           capabilities: (entry.origin.capabilities ?? []) as readonly SurfaceCapability[],
           authorized: entry.origin.authorized === true,
+          // Legacy entries authorized commands only after enforcing review independence.
+          reviewAuthorized: entry.origin.reviewAuthorized ?? entry.origin.authorized === true,
         };
-        await orchestration.applyConversationCommand(workItemId, input, {
+        const context: CommandContext = {
           commandId: `${event.eventId}:conversation-command`,
           correlationId: correlationId(event.correlationId),
           occurredAt: event.occurredAt,
           actor: { kind: EventActorKind.Integration, id: entry.origin.adapter },
-        });
-        if (conversationCommand(entry.body) !== null) return;
+        };
+        if (conversationCommand(entry.body) !== null) {
+          const result = await orchestration.applyConversationCommandWithFeedback(
+            workItemId,
+            input,
+            context,
+          );
+          if (feedback !== undefined) {
+            await feedback.conversations.record(
+              {
+                conversationId: event.conversationId,
+                entryId: context.commandId + ':feedback',
+                body: result.applied ? 'Command applied.' : result.reason,
+                origin: { kind: ConversationOriginKind.ControlPlane, actorId: 'wake' },
+              },
+              context,
+            );
+            await feedback.publish(event, result, context);
+          }
+          return;
+        }
+        if (entry.origin.canClarify === false) return;
         for (const workflow of await orchestration.listAll()) {
           if (workflow.workItemId !== workItemId) continue;
           const resume = input.authorized

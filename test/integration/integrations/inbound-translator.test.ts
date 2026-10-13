@@ -34,7 +34,11 @@ import {
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
-import { adapterId } from '../../../src/integrations/index.js';
+import {
+  adapterId,
+  DeliveryIntentEventType,
+  publishConversationCommandFeedback,
+} from '../../../src/integrations/index.js';
 import {
   ConversationSurfaceCapability,
   createConversationCommandReactor,
@@ -724,7 +728,7 @@ describe('InboundTranslator', () => {
 
   it('requires provider authorization and treats /accepted as approval on an issue wait', async () => {
     const fixture = await waitingIssueWorkflow();
-    const apply = vi.spyOn(fixture.world.orchestration, 'applyConversationCommand');
+    const apply = vi.spyOn(fixture.world.orchestration, 'applyConversationCommandWithFeedback');
     const conversations = createConversationService(fixture.world.journal);
     const translator = new InboundTranslator(
       fixture.world.journal,
@@ -766,7 +770,7 @@ describe('InboundTranslator', () => {
       expect.objectContaining({ authorized: true }),
       expect.anything(),
     );
-    await expect(apply.mock.results.at(-1)?.value).resolves.toBe(true);
+    await expect(apply.mock.results.at(-1)?.value).resolves.toEqual({ applied: true });
     expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
       'completed',
     );
@@ -785,10 +789,16 @@ describe('InboundTranslator', () => {
         conversationCapabilities: [ConversationSurfaceCapability.Review],
       },
     );
-    const event = issueCommandEvent(fixture.world, '/changes please revise', 5, {
-      source: ReviewerAuthorizationSource.ProviderPermission,
-      permission: ProviderPermission.Write,
-    });
+    const event = issueCommandEvent(
+      fixture.world,
+      '/changes please revise',
+      5,
+      {
+        source: ReviewerAuthorizationSource.ProviderPermission,
+        permission: ProviderPermission.Write,
+      },
+      'maintainer',
+    );
     await fixture.world.journal.appendToStream(githubStream, 0, [event]);
 
     await processInbound(translator, fixture.world.journal, fixture.world.checkpoints);
@@ -800,6 +810,237 @@ describe('InboundTranslator', () => {
     expect((await fixture.world.viewWorkflow(fixture.workflow.workflowInstanceId))?.status).toBe(
       'active',
     );
+  });
+
+  it('gives an issue-author maintainer actionable retry feedback without approving blocked work', async () => {
+    const { world, workflow } = await blockedIssueWorkflow();
+    const context = {
+      commandId: 'author-retry',
+      correlationId: 'author-recovery' as never,
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'operator' as const, id: 'maintainer' },
+    };
+    const input = {
+      body: '/retry',
+      actorId: 'maintainer',
+      authorized: true,
+      reviewAuthorized: false,
+      capabilities: [ConversationSurfaceCapability.Operator],
+    };
+    expect(
+      await world.orchestration.applyConversationCommandWithFeedback(
+        workflow.workItemId,
+        input,
+        context,
+      ),
+    ).toMatchObject({ applied: false, reason: expect.stringContaining('/changes') });
+    expect(
+      await world.orchestration.applyConversationCommandWithFeedback(
+        workflow.workItemId,
+        { ...input, body: '/approved' },
+        context,
+      ),
+    ).toMatchObject({ applied: false, reason: expect.stringContaining('Independent-review') });
+    const resumeContext = { ...context, commandId: 'author-changes' };
+    expect(
+      await world.orchestration.applyConversationCommandWithFeedback(
+        workflow.workItemId,
+        { ...input, body: '/changes minimal diagnostic extension is authorized' },
+        resumeContext,
+      ),
+    ).toEqual({ applied: true });
+    expect(
+      await world.orchestration.applyConversationCommandWithFeedback(
+        workflow.workItemId,
+        { ...input, body: '/changes minimal diagnostic extension is authorized' },
+        resumeContext,
+      ),
+    ).toEqual({ applied: true });
+    const updated = await world.orchestration.get(workflow.workflowInstanceId);
+    expect(updated).toMatchObject({
+      status: 'active',
+      acceptedSignalIds: [],
+      retryCounts: workflow.retryCounts,
+      pendingActivation: { ordinal: 2 },
+    });
+  });
+
+  it.each(['frozen', 'cancelled', 'deleted'] as const)(
+    'does not continue %s work through a command or plain-reply recovery',
+    async (state) => {
+      const { world, workflow } = await blockedIssueWorkflow();
+      const context = {
+        commandId: 'work-stop-' + state,
+        correlationId: 'stopped-work' as never,
+        occurredAt: world.clock.now().toISOString(),
+        actor: { kind: 'operator' as const, id: 'maintainer' },
+      };
+      if (state === 'frozen') await world.work.freeze(workflow.workItemId, context);
+      if (state === 'cancelled') await world.work.cancel(workflow.workItemId, 'stop', context);
+      if (state === 'deleted') await world.work.delete(workflow.workItemId, context);
+      expect(
+        await world.orchestration.applyConversationCommandWithFeedback(
+          workflow.workItemId,
+          {
+            body: '/changes authorized instructions',
+            actorId: 'maintainer',
+            authorized: true,
+            reviewAuthorized: false,
+            capabilities: [ConversationSurfaceCapability.Operator],
+          },
+          { ...context, commandId: 'stopped-command' },
+        ),
+      ).toMatchObject({ applied: false });
+      const before = await world.orchestration.get(workflow.workflowInstanceId);
+      await world.orchestration.resumeBlockedStageForChanges(workflow.workflowInstanceId, {
+        ...context,
+        commandId: 'stopped-reply',
+      });
+      expect(await world.orchestration.get(workflow.workflowInstanceId)).toEqual(before);
+    },
+  );
+
+  it('records and publishes actionable command feedback once through durable delivery', async () => {
+    const { world, workflow } = await blockedIssueWorkflow();
+    const conversations = createConversationService(world.journal);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      conversations,
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(
+        world,
+        '/retry',
+        8,
+        {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Maintain,
+        },
+        'maintainer',
+      ),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    const reactor = createConversationCommandReactor(world.orchestration, {
+      conversations,
+      publish: async (event, result, context) => {
+        if (event.entry.origin.kind !== 'external') throw new Error('Expected external command');
+        const input = {
+          journal: world.journal,
+          orchestration: world.orchestration,
+          workItemId: workflow.workItemId,
+          resourceId: event.entry.origin.resourceId,
+          result,
+          context,
+        };
+        await publishConversationCommandFeedback(input);
+        await publishConversationCommandFeedback(input);
+      },
+    });
+    await processInbound(reactor, world.journal, world.checkpoints);
+    const conversation = await conversations.forWorkItem(workflow.workItemId);
+    expect(conversation?.entries.at(-1)?.body).toContain('/changes');
+    const intents = await world.events(DeliveryIntentEventType.ReplyPublishRequested);
+    expect(intents).toHaveLength(1);
+    expect(intents[0]?.event.payload).toMatchObject({
+      body: expect.stringContaining('Command not applied: No retry-eligible failed stage'),
+    });
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('blocked');
+  });
+
+  it.each([true, false])(
+    'keeps failed-stage retry separate from continuation (review authority=%s)',
+    async (reviewAuthorized) => {
+      const { world, workflow } = await blockedIssueWorkflow(ActivityOutcomeKind.Failed);
+      const context = {
+        commandId: 'failed-changes',
+        correlationId: 'failed-recovery' as never,
+        occurredAt: world.clock.now().toISOString(),
+        actor: { kind: 'operator' as const, id: 'maintainer' },
+      };
+      const input = {
+        body: '/changes please continue',
+        actorId: 'maintainer',
+        authorized: true,
+        reviewAuthorized,
+        capabilities: [ConversationSurfaceCapability.Operator],
+      };
+      expect(
+        await world.orchestration.applyConversationCommandWithFeedback(
+          workflow.workItemId,
+          input,
+          context,
+        ),
+      ).toMatchObject({ applied: false, reason: expect.stringContaining('/retry') });
+      expect(
+        await world.orchestration.applyConversationCommandWithFeedback(
+          workflow.workItemId,
+          { ...input, body: '/retry' },
+          { ...context, commandId: 'failed-retry' },
+        ),
+      ).toEqual({ applied: true });
+      expect(await world.orchestration.get(workflow.workflowInstanceId)).toMatchObject({
+        status: 'active',
+        pendingActivation: { ordinal: 2 },
+        acceptedSignalIds: [],
+      });
+    },
+  );
+
+  it.each([true, false])(
+    'separates review rejection evidence from work-control continuation at an agent wait (review authority=%s)',
+    async (reviewAuthorized) => {
+      const { world, workflow } = await waitingIssueWorkflow();
+      const context = {
+        commandId: 'waiting-changes',
+        correlationId: 'waiting-recovery' as never,
+        occurredAt: world.clock.now().toISOString(),
+        actor: { kind: 'operator' as const, id: 'maintainer' },
+      };
+      expect(
+        await world.orchestration.applyConversationCommandWithFeedback(
+          workflow.workItemId,
+          {
+            body: '/changes please revise',
+            actorId: 'maintainer',
+            authorized: true,
+            reviewAuthorized,
+            capabilities: [ConversationSurfaceCapability.Review],
+          },
+          context,
+        ),
+      ).toEqual({ applied: true });
+      expect(await world.orchestration.get(workflow.workflowInstanceId)).toMatchObject({
+        status: 'active',
+        acceptedSignalIds: reviewAuthorized ? [context.commandId] : [],
+        pendingActivation: { ordinal: 2 },
+      });
+    },
+  );
+
+  it('does not infer independent-review authority from a new work-control command input', async () => {
+    const { world, workflow } = await waitingIssueWorkflow();
+    expect(
+      await world.orchestration.applyConversationCommandWithFeedback(
+        workflow.workItemId,
+        {
+          body: '/approved',
+          actorId: 'maintainer',
+          authorized: true,
+          capabilities: [ConversationSurfaceCapability.Operator],
+        },
+        {
+          commandId: 'control-is-not-review',
+          correlationId: 'control-is-not-review' as never,
+          occurredAt: world.clock.now().toISOString(),
+          actor: { kind: 'operator', id: 'maintainer' },
+        },
+      ),
+    ).toMatchObject({
+      applied: false,
+      reason: expect.stringContaining('Independent-review authority'),
+    });
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('waiting');
   });
 
   it('records an unverified delivery marker as external feedback rather than agent publication', async () => {
@@ -1272,15 +1513,29 @@ async function waitingWatchGate() {
   return { world, parent, run };
 }
 
-async function blockedIssueWorkflow() {
+async function blockedIssueWorkflow(
+  outcome:
+    | typeof ActivityOutcomeKind.Blocked
+    | typeof ActivityOutcomeKind.Failed = ActivityOutcomeKind.Blocked,
+) {
   const world = new TestWorld();
   world.registerActivity({
     name: activityName('agent'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z
-      .object({ kind: z.enum([ActivityOutcomeKind.Done, ActivityOutcomeKind.Blocked]) })
+      .object({
+        kind: z.enum([
+          ActivityOutcomeKind.Done,
+          ActivityOutcomeKind.Blocked,
+          ActivityOutcomeKind.Failed,
+        ]),
+      })
       .strict(),
-    outcomeKinds: [ActivityOutcomeKind.Done, ActivityOutcomeKind.Blocked],
+    outcomeKinds: [
+      ActivityOutcomeKind.Done,
+      ActivityOutcomeKind.Blocked,
+      ActivityOutcomeKind.Failed,
+    ],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -1312,7 +1567,7 @@ async function blockedIssueWorkflow() {
     workflowName: workflowName('blocked-issue-reply'),
   });
   await world.acceptOutcome(workflow.workflowInstanceId, workflow.pendingActivation!.activationId, {
-    kind: ActivityOutcomeKind.Blocked,
+    kind: outcome,
   });
   return { world, workflow };
 }

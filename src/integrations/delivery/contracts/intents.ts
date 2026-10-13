@@ -58,7 +58,9 @@ interface AgentRunPublishRequestedPayload {
 
 export interface DeliveryIntentEventPayloads {
   readonly [DeliveryIntentEventType.StatusPublishRequested]: PublishRequestedPayload;
-  readonly [DeliveryIntentEventType.ReplyPublishRequested]: PublishRequestedPayload;
+  readonly [DeliveryIntentEventType.ReplyPublishRequested]: PublishRequestedPayload & {
+    readonly publicationOnly?: true | undefined;
+  };
   readonly [DeliveryIntentEventType.AgentRunPublishRequested]: AgentRunPublishRequestedPayload;
 }
 
@@ -120,7 +122,7 @@ const intentEventSchema: z.ZodType<DeliveryIntentEvent> = z
     eventEnvelopeSchema.extend({
       event: eventDataSchema.extend({
         eventType: z.literal(DeliveryIntentEventType.ReplyPublishRequested),
-        payload: publishSchema,
+        payload: publishSchema.extend({ publicationOnly: z.literal(true).optional() }),
       }),
       stream: resourceStreamSchema,
     }),

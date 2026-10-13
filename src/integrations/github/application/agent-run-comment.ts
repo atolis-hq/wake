@@ -29,11 +29,17 @@ export function formatAgentRunComment(value: AgentRunComment): string {
   ];
   if (value.awaitingApproval === true)
     sections.push(
-      '_To approve this work, reply with /approved. To request changes, reply with /changes followed by your feedback. To ask a question without requesting changes, reply with /ask followed by your question._',
+      '_An authorized independent reviewer can reply with /approved or /changes followed by feedback. Approval of your own work is not permitted. To ask a question, reply with /ask followed by your question._',
     );
   if (value.outcome === 'BLOCKED' || value.outcome === 'NEEDS_CLARIFICATION')
     sections.push(
-      '_Reply on this thread to continue. To request changes instead, reply with /changes followed by your feedback._',
+      value.outcome === 'NEEDS_CLARIFICATION'
+        ? '_Reply with the requested clarification. A maintainer with repository write, maintain, or admin permission can also use /changes followed by instructions to continue eligible blocked work._'
+        : '_A maintainer with repository write, maintain, or admin permission can continue eligible blocked work with /changes followed by instructions, including on an issue they authored. The authenticated UI also offers Continue with instructions. /retry is for eligible failed stages._',
+    );
+  if (value.outcome === 'FAILED')
+    sections.push(
+      '_An authorized maintainer can use /retry for an eligible failed stage, or /restart for a fresh session. These commands do not continue a blocked outcome._',
     );
   const session = sessionSection(value);
   if (session !== undefined) sections.push(session);
@@ -85,13 +91,7 @@ function sessionSection(value: AgentRunComment): string | undefined {
     value.workspacePath === undefined
       ? `codex resume ${value.sessionId}`
       : `cd "${value.workspacePath}"\ncodex resume ${value.sessionId}`;
-  return [
-    '---',
-    '_Next steps: reply on this thread to continue, or resume this exact Wake session locally:_',
-    '```',
-    resume,
-    '```',
-  ].join('\n');
+  return ['---', '_To inspect this exact Wake session locally:_', '```', resume, '```'].join('\n');
 }
 
 function outcome(value: AgentRunComment['outcome']) {

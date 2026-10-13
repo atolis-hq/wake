@@ -3,7 +3,12 @@ import type { ResourceTransitionEvidence } from './resource-transition-evidence.
 /* eslint-disable max-lines */
 import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
-import { WorkStatus, type WorkItemId, type WorkService } from '../../work/index.js';
+import {
+  WorkStatus,
+  type WorkItemId,
+  type WorkItemView,
+  type WorkService,
+} from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
@@ -22,15 +27,20 @@ import {
 } from '../contracts/identifiers.js';
 import { childOrchestrationGroupStream, workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { ApprovalAuthorityKind } from '../contracts/vocabulary.js';
-import { isGroupBudgetExtensionEligible } from '../domain/operator-retry-policy.js';
+import { ApprovalAuthorityKind, ConversationBuiltInCommand } from '../contracts/vocabulary.js';
+import {
+  isGroupBudgetExtensionEligible,
+  isNeedsClarificationResumeEligible,
+  selectChangesResumeTargets,
+} from '../domain/operator-retry-policy.js';
 import { AcceptActivityOutcome } from './accept-activity-outcome.js';
 import { AcceptSignal } from './accept-signal.js';
 import { AdvanceWorkflow } from './advance-workflow.js';
 import {
   applyBuiltInConversationCommand,
   conversationCommand,
-  type SurfaceCapability,
+  type ConversationCommandInput,
+  type ConversationCommandResult,
 } from './conversation-command.js';
 import { CoordinationClaims } from './coordination-claims.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
@@ -152,26 +162,37 @@ export class OrchestrationService {
 
   async applyConversationCommand(
     workItemId: WorkItemId,
-    input: {
-      readonly body: string;
-      readonly actorId: string;
-      readonly capabilities: readonly SurfaceCapability[];
-      /** The adapter authenticated and authorized the actor for command control. */
-      readonly authorized: boolean;
-    },
+    input: ConversationCommandInput,
     context: CommandContext,
   ): Promise<boolean> {
+    return (await this.applyConversationCommandWithFeedback(workItemId, input, context)).applied;
+  }
+
+  async applyConversationCommandWithFeedback(
+    workItemId: WorkItemId,
+    input: ConversationCommandInput,
+    context: CommandContext,
+  ): Promise<ConversationCommandResult> {
     const command = conversationCommand(input.body);
-    if (command === null) return false;
-    if (!input.authorized) return false;
+    if (command === null) return { applied: false, reason: 'Message contains no command.' };
+    const reviewAuthorized = input.reviewAuthorized === true;
+    if (!input.authorized && !reviewAuthorized)
+      return {
+        applied: false,
+        reason:
+          'Verified repository write, maintain, or admin permission is required for work control; independent-review authority is required for approval.',
+      };
     const work = await this.work.get(workItemId);
-    if (work === null || work.deleted || work.frozen || work.state !== WorkStatus.Open)
-      return false;
+    if (!isWorkControllable(work))
+      return { applied: false, reason: 'Work item must be open, unfrozen, and not deleted.' };
     // A command is causally adjacent to its conversation entry; projections may lag
     // the journal, so command application must read the authoritative workflow state.
     const workflows = (await this.advanceWorkflow.listAll()).filter(
       (workflow) => workflow.workItemId === workItemId,
     );
+    if (conversationCommandAlreadyApplied(workflows, context.commandId)) return { applied: true };
+    if (!input.authorized && !isReviewConversationCommand(command))
+      return { applied: false, reason: 'Verified repository work-control authority is required.' };
     // Configured commands deliberately win over built-ins, even when their spelling collides.
     let supplemental = false;
     for (const workflow of workflows) {
@@ -184,14 +205,16 @@ export class OrchestrationService {
         context,
       );
     }
-    if (supplemental) return true;
+    if (supplemental) return { applied: true };
     return applyBuiltInConversationCommand({
       command,
       capabilities: input.capabilities,
+      reviewAuthorized,
+      workAuthorized: input.authorized,
       workflows,
       context,
-      acceptSignal: (id, outcome) =>
-        this.acceptSignal(
+      acceptSignal: async (id, outcome) => {
+        const updated = await this.acceptSignal(
           id,
           {
             kind: (workflows.find((workflow) => workflow.workflowInstanceId === id)?.waitingFor
@@ -203,12 +226,18 @@ export class OrchestrationService {
             authority: { kind: ApprovalAuthorityKind.Human },
           },
           context,
-        ),
+        );
+        return updated.acceptedSignalIds.includes(context.commandId);
+      },
       retry: (id) => this.retryBlockedFailedStage(id, context),
       restart: (id) => this.restartBlockedFailedStage(id, context),
       extend: (id) =>
         this.extendBlockedGroupBudget(id, { kind: ApprovalAuthorityKind.Human }, context),
-      resumeChanges: (id) => this.resumeBlockedStageForChanges(id, context),
+      resumeChanges: async (id) => {
+        if (!input.authorized) return false;
+        const updated = await this.resumeBlockedStageForChanges(id, context);
+        return updated?.operatorRetryCommandIds.includes(context.commandId) === true;
+      },
     });
   }
 
@@ -267,16 +296,36 @@ export class OrchestrationService {
     );
   }
 
-  resumeBlockedStageForChanges(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
+  async resumeBlockedStageForChanges(
+    workflowInstanceId: WorkflowInstanceId,
+    context: CommandContext,
+  ) {
+    const current = await this.advanceWorkflow.get(workflowInstanceId);
+    if (current === null) return null;
+    const work = await this.work.get(current.workItemId);
+    if (work === null || work.deleted || work.frozen || work.state !== WorkStatus.Open)
+      return current;
+    if (
+      !current.operatorRetryCommandIds.includes(context.commandId) &&
+      !selectChangesResumeTargets(
+        (await this.advanceWorkflow.listAll()).filter(
+          (workflow) => workflow.workItemId === current.workItemId,
+        ),
+      ).some((workflow) => workflow.workflowInstanceId === workflowInstanceId)
+    )
+      return current;
     return this.transitionWatchChildren(context, () =>
       this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context),
     );
   }
 
-  resumeNeedsClarificationStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
-    return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.resumeNeedsClarificationStage(workflowInstanceId, context),
-    );
+  async resumeNeedsClarificationStage(
+    workflowInstanceId: WorkflowInstanceId,
+    context: CommandContext,
+  ) {
+    const current = await this.advanceWorkflow.get(workflowInstanceId);
+    if (current === null || !isNeedsClarificationResumeEligible(current)) return current;
+    return this.resumeBlockedStageForChanges(workflowInstanceId, context);
   }
 
   async extendBlockedGroupBudget(
@@ -504,3 +553,26 @@ export const createOrchestrationService = (
   definitions: Readonly<Record<string, CompiledWorkflow>>,
   projections?: ProjectionStore,
 ) => new OrchestrationService(journal, work, definitions, projections);
+
+function isWorkControllable(work: WorkItemView | null): boolean {
+  return work !== null && !work.deleted && !work.frozen && work.state === WorkStatus.Open;
+}
+
+function conversationCommandAlreadyApplied(
+  workflows: readonly WorkflowInstanceView[],
+  commandId: string,
+): boolean {
+  return workflows.some(
+    (workflow) =>
+      workflow.operatorRetryCommandIds.includes(commandId) ||
+      workflow.acceptedSignalIds.includes(commandId),
+  );
+}
+
+function isReviewConversationCommand(command: string): boolean {
+  return (
+    command === ConversationBuiltInCommand.Approved ||
+    command === ConversationBuiltInCommand.Accepted ||
+    command === ConversationBuiltInCommand.Changes
+  );
+}

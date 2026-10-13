@@ -87,13 +87,45 @@ export function selectOperatorRetryTarget(
   );
 }
 
+export function selectChangesResumeTargets(
+  workflows: readonly WorkflowInstanceView[],
+): readonly WorkflowInstanceView[] {
+  const primary = workflows.find((workflow) => workflow.parentWorkflowInstanceId === undefined);
+  if (primary === undefined) return [];
+  if (isChangesResumeEligible(primary)) return [primary];
+  if (
+    primary.status !== WorkflowStatus.Waiting ||
+    primary.waitingFor?.signalKind !== WatchGateVerdictSignal
+  )
+    return [];
+  const watches = new Set(
+    (primary.waitingFor.from ?? []).flatMap((authority) =>
+      authority.kind === ApprovalAuthorityKind.Watch ? [authority.watch] : [],
+    ),
+  );
+  return workflows.filter(
+    (workflow) =>
+      workflow.parentWorkflowInstanceId === primary.workflowInstanceId &&
+      workflow.workItemId === primary.workItemId &&
+      workflow.orchestrationGroupId === primary.orchestrationGroupId &&
+      workflow.watchId !== undefined &&
+      watches.has(watchId(workflow.watchId)) &&
+      isChangesResumeEligible(workflow),
+  );
+}
+
 export function isChangesResumeEligible(view: WorkflowInstanceView): boolean {
   if (!isCompletedAgentStage(view)) return false;
   return (
     (view.status === WorkflowStatus.Blocked &&
       view.blockReason === 'unconfigured outcome blocked' &&
       view.lastOutcome?.kind === ActivityOutcomeKind.Blocked) ||
-    (view.status === WorkflowStatus.Waiting && view.waitingFor !== undefined)
+    (view.status === WorkflowStatus.Waiting &&
+      view.waitingFor !== undefined &&
+      view.lastOutcome?.kind !== ActivityOutcomeKind.Failed &&
+      !(view.waitingFor.from ?? []).some(
+        (authority) => authority.kind === ApprovalAuthorityKind.Watch,
+      ))
   );
 }
 

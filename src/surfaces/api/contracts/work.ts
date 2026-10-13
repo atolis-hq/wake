@@ -48,6 +48,8 @@ export interface WorkDetailResponse {
   readonly conversation: {
     /** Whether this authenticated surface may create control-plane entries. */
     readonly canCreateEntries: boolean;
+    /** Owning orchestration policy permits continuation with instructions. */
+    readonly canContinue?: boolean;
     readonly entries: readonly {
       readonly entryId: string;
       readonly body: string;

@@ -23,6 +23,14 @@ work details and actions above the full-width workflow, followed by an activity
 timeline and resource links. Narrow screens place resources immediately after the work details, then the
 workflow and activity timeline. The workflow retains its mobile card presentation.
 
+Eligible blocked agent work exposes **Continue with instructions**. The authenticated API supplies
+`conversation.canContinue` from orchestration policy and WorkItem availability. The action opens
+the Conversation composer, requires instructions, and sends `/changes` with those instructions
+through `POST /api/v1/work-items/:workItemKey/commands/message`. Messaging must be enabled.
+Failed-stage **Retry** remains a separate action. A rejected command returns a conflict with its
+reason; the composer keeps the instructions for correction. Continuation grants no independent
+review, approval, or merge authority. Frozen, deleted, and closed work cannot continue.
+
 ## Triggers
 
 Triggers lists configured definitions and retained operational/history identities,

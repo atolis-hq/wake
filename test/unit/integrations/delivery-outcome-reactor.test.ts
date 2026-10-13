@@ -20,7 +20,12 @@ import { expect, it } from 'vitest';
 import { projectionStorageAddress } from '../../../packages/eventing-filesystem/src/storage-name.js';
 import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
+import { deliveryProjection } from '../../../src/integrations/delivery/application/delivery-projector.js';
+import { createDeliveryIntentEventData } from '../../../src/integrations/delivery/contracts/event-factory.js';
 import { DeliveryEventType } from '../../../src/integrations/delivery/contracts/events.js';
+import { DeliveryIntentEventType } from '../../../src/integrations/delivery/contracts/intents.js';
+import { resourceStream } from '../../../src/resources/index.js';
+import { resId } from '../../support/identities.js';
 
 const clock = { now: () => new Date('2026-08-09T00:00:00.000Z') };
 const unitSerialiseRun = createInMemoryProcessorRunSerialiser();
@@ -747,3 +752,62 @@ function deferred<Value>() {
   });
   return { promise, resolve, reject };
 }
+
+it.each(['confirmed', 'failed', 'reconciled'] as const)(
+  'keeps %s command feedback out of activity outcome recovery',
+  async (result) => {
+    const journal = new InMemoryEventJournal(clock);
+    const resourceId = resId('command-feedback');
+    await journal.appendToStream(resourceStream(resourceId), 0, [
+      createDeliveryIntentEventData({
+        eventId: 'intent-1',
+        eventType: DeliveryIntentEventType.ReplyPublishRequested,
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'delivery-outcome-test',
+        causationId: 'command-1',
+        actor: { kind: 'system', id: 'command-feedback' },
+        source: { kind: 'internal', id: 'command-feedback' },
+        payload: {
+          workflowInstanceId: 'primary:work-1',
+          activationId: 'primary:work-1:activity:1',
+          resourceId,
+          body: 'Use /changes with instructions.',
+          publicationOnly: true,
+        },
+      }),
+    ]);
+    const intent = (await journal.readAll(0))[0]!;
+    const view = deliveryProjection.project(null, intent);
+    expect(view?.payload).toMatchObject({ publicationOnly: true });
+    const projections = new InMemoryProjectionStore();
+    await projections.write({
+      namespace: deliveryProjection.name,
+      key: 'intent-1',
+      lastGlobalPosition: intent.globalPosition,
+      value: view,
+    });
+    const states = new InMemoryProcessorStateStore();
+    const reactor = createReactor(
+      journal,
+      {
+        async get() {
+          throw new Error('Feedback must not inspect or resolve an activity');
+        },
+        async acceptOutcome() {
+          throw new Error('Feedback must not accept an activity outcome');
+        },
+      },
+      projections,
+      states,
+    );
+    const fact =
+      result === 'confirmed'
+        ? confirmedEvent({})
+        : result === 'failed'
+          ? failedEvent()
+          : reconciledConfirmedEvent();
+    await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [fact]);
+    await reactor.react((await journal.readAll(0)).at(-1)!);
+    expect(await states.read('reactor:delivery-outcomes', 'pending-confirmations')).toBeNull();
+  },
+);

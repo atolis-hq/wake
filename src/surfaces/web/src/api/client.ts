@@ -31,7 +31,7 @@ import { decodeTrigger, decodeTriggers } from './trigger-decoders.js';
 
 export class ApiProblem extends Error {
   constructor(readonly problem: WakeProblemDetails) {
-    super(problem.title);
+    super(problem.detail ?? problem.title);
     this.name = 'ApiProblem';
   }
 }

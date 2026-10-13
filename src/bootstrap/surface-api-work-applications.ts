@@ -13,11 +13,13 @@ import {
 } from '../execution/index.js';
 import {
   ApprovalAuthorityKind,
+  conversationCommand,
   ConversationSurfaceCapability,
   GroupBudgetExtensionIneligibleError,
   isGroupBudgetExtensionEligible,
   OperatorRetryIneligibleError,
   orchestrationProjection,
+  selectChangesResumeTargets,
   selectOperatorRetryTarget,
   workflowsByWorkItemProjection,
   type WorkflowInstanceView,
@@ -141,6 +143,7 @@ export function createSurfaceWorkApplications(
       const work = await root.work.get(id);
       if (work === null) return retryIneligible('Work item was not found');
       if (work.deleted === true) return retryIneligible('Work item is deleted');
+      if (work.frozen) return retryIneligible('Work item is frozen');
       if (work.state !== WorkStatus.Open) return retryIneligible('Work item is not open');
       const workflows = (await root.orchestration.listAll()).filter(
         (workflow) => workflow.workItemId === id,
@@ -166,6 +169,7 @@ export function createSurfaceWorkApplications(
       const work = await root.work.get(id);
       if (work === null) return extendIneligible('Work item was not found');
       if (work.deleted === true) return extendIneligible('Work item is deleted');
+      if (work.frozen) return extendIneligible('Work item is frozen');
       if (work.state !== WorkStatus.Open) return extendIneligible('Work item is not open');
       const primary = (await root.orchestration.listForWorkItem(id)).find(
         (workflow) => workflow.parentWorkflowInstanceId === undefined,
@@ -205,6 +209,26 @@ export function createSurfaceWorkApplications(
               },
               context,
             );
+            if (conversationCommand(command.body) !== null) {
+              const result = await root.orchestration.applyConversationCommandWithFeedback(
+                id,
+                {
+                  body: command.body,
+                  actorId: context.actor.id,
+                  capabilities: [ConversationSurfaceCapability.Operator],
+                  authorized: true,
+                  reviewAuthorized: false,
+                },
+                context,
+              );
+              if (!result.applied)
+                return {
+                  conflict: true,
+                  code: 'conversation-command-inapplicable',
+                  detail: result.reason,
+                };
+              return accepted(command.idempotencyKey, now());
+            }
             const dispatch = (root.orchestration as Partial<typeof root.orchestration>)
               .applyConversationCommand;
             const applied =
@@ -309,10 +333,14 @@ async function workDetail(
     },
     activities: presentPullRequest(pullRequest?.value),
     artifacts: await presentArtifacts(root, id),
-    conversation: presentConversation(
-      conversation,
-      (root as Partial<CompositionRoot>).config?.surfaces.api.conversationMessages.enabled === true,
-    ),
+    conversation: {
+      ...presentConversation(
+        conversation,
+        (root as Partial<CompositionRoot>).config?.surfaces.api.conversationMessages.enabled ===
+          true,
+      ),
+      canContinue: canContinueWork(work, workflows, conversationMessagesAllowed(root)),
+    },
   };
   const [projections, correlationFacts] = await Promise.all([
     contributingProjections(root, id, resources, workflows, runs),
@@ -527,4 +555,24 @@ async function triggerOriginForWork(root: CompositionRoot, id: string) {
     id,
   );
   return origin?.value == null ? {} : { triggerOrigin: origin.value.claim.triggerId };
+}
+
+function conversationMessagesAllowed(root: CompositionRoot): boolean {
+  return (
+    (root as Partial<CompositionRoot>).config?.surfaces.api.conversationMessages.enabled === true
+  );
+}
+
+function canContinueWork(
+  work: WorkItemView,
+  workflows: readonly WorkflowInstanceView[],
+  enabled: boolean,
+): boolean {
+  return (
+    enabled &&
+    work.state === WorkStatus.Open &&
+    !work.frozen &&
+    !work.deleted &&
+    selectChangesResumeTargets(workflows).length > 0
+  );
 }

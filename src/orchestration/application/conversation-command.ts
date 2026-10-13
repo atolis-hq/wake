@@ -9,6 +9,7 @@ import {
 import {
   isGroupBudgetExtensionEligible,
   isOperatorRetryEligible,
+  selectChangesResumeTargets,
   selectOperatorRetryTarget,
 } from '../domain/operator-retry-policy.js';
 
@@ -18,66 +19,120 @@ export type SurfaceCapability = ConversationSurfaceCapability;
 
 export type ConversationCommandSurface = { readonly capabilities: readonly SurfaceCapability[] };
 
+export interface ConversationCommandInput {
+  readonly body: string;
+  readonly actorId: string;
+  readonly capabilities: readonly SurfaceCapability[];
+  /** Verified work-control authority. */
+  readonly authorized: boolean;
+  /** Independent-review authority must be supplied explicitly. */
+  readonly reviewAuthorized?: boolean;
+}
+
+export type ConversationCommandResult =
+  { readonly applied: true } | { readonly applied: false; readonly reason: string };
+
 export function conversationCommand(body: string): string | null {
   const line = body.trim().split('\n', 1)[0]?.trim().toLowerCase() ?? '';
   return /^\/[a-z][a-z0-9-]*(?:\s.*)?$/.test(line) ? line.split(/\s/, 1)[0]! : null;
 }
 
-// The command matrix is intentionally explicit so future built-ins cannot silently inherit power.
-// eslint-disable-next-line complexity
-export async function applyBuiltInConversationCommand(input: {
+interface BuiltInConversationCommandInput {
   readonly command: string;
   readonly capabilities: readonly SurfaceCapability[];
+  readonly reviewAuthorized: boolean;
   readonly workflows: readonly WorkflowInstanceView[];
   readonly context: CommandContext;
   readonly acceptSignal: (
     id: WorkflowInstanceId,
     outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected,
-  ) => Promise<unknown>;
+  ) => Promise<boolean>;
   readonly retry: (id: WorkflowInstanceId) => Promise<unknown>;
   readonly restart: (id: WorkflowInstanceId) => Promise<unknown>;
   readonly extend: (id: WorkflowInstanceId) => Promise<unknown>;
-  readonly resumeChanges: (id: WorkflowInstanceId) => Promise<unknown>;
-}): Promise<boolean> {
+  readonly resumeChanges: (id: WorkflowInstanceId) => Promise<boolean>;
+  readonly workAuthorized: boolean;
+}
+
+// The command matrix is explicit so new built-ins cannot silently inherit power.
+// eslint-disable-next-line complexity
+export async function applyBuiltInConversationCommand(
+  input: BuiltInConversationCommandInput,
+): Promise<ConversationCommandResult> {
+  const denied = (reason: string): ConversationCommandResult => ({ applied: false, reason });
   if (!BuiltInConversationCommands.includes(input.command as ConversationBuiltInCommand))
-    return false;
+    return denied(
+      'Unknown command. Use /changes with instructions to continue eligible blocked work, or /retry for a failed stage.',
+    );
   if (
     !input.capabilities.includes(ConversationSurfaceCapability.Review) &&
     !input.capabilities.includes(ConversationSurfaceCapability.Operator)
   )
-    return false;
+    return denied('This conversation surface does not permit work-control or review commands.');
+  if (input.command === ConversationBuiltInCommand.Changes) {
+    let applied = false;
+    const continuationTargets = new Set(selectChangesResumeTargets(input.workflows));
+    for (const workflow of input.workflows) {
+      if (isOperatorRetryEligible(workflow) || isGroupBudgetExtensionEligible(workflow)) continue;
+      const reviewed =
+        input.reviewAuthorized && workflow.waitingFor !== undefined
+          ? await input.acceptSignal(workflow.workflowInstanceId, ActivityOutcomeKind.Rejected)
+          : false;
+      if (reviewed) applied = true;
+      else if (input.workAuthorized && continuationTargets.has(workflow))
+        applied = (await input.resumeChanges(workflow.workflowInstanceId)) || applied;
+    }
+    return applied
+      ? { applied: true }
+      : denied(
+          'No eligible blocked agent stage or authorized review wait. Use /retry for an eligible failed stage; watch gates require their configured authority.',
+        );
+  }
   if (
     input.command === ConversationBuiltInCommand.Approved ||
-    input.command === ConversationBuiltInCommand.Accepted ||
-    input.command === ConversationBuiltInCommand.Changes
+    input.command === ConversationBuiltInCommand.Accepted
   ) {
-    const outcome =
-      input.command === ConversationBuiltInCommand.Changes
-        ? ActivityOutcomeKind.Rejected
-        : ActivityOutcomeKind.Done;
-    for (const workflow of input.workflows) {
+    if (!input.reviewAuthorized)
+      return denied(
+        'Independent-review authority is required. An author cannot approve their own work; clarification uses /changes with instructions.',
+      );
+    let applied = false;
+    for (const workflow of input.workflows)
       if (workflow.waitingFor !== undefined)
-        await input.acceptSignal(workflow.workflowInstanceId, outcome);
-      else if (input.command === ConversationBuiltInCommand.Changes)
-        await input.resumeChanges(workflow.workflowInstanceId);
-    }
-    return true;
+        applied =
+          (await input.acceptSignal(workflow.workflowInstanceId, ActivityOutcomeKind.Done)) ||
+          applied;
+    return applied
+      ? { applied: true }
+      : denied(
+          'No wait accepted this review decision. Check the configured authority and current revision.',
+        );
   }
   if (input.command === ConversationBuiltInCommand.Retry) {
     const target = selectOperatorRetryTarget(input.workflows);
-    if (target !== undefined) await input.retry(target.workflowInstanceId);
-    return true;
+    if (target === undefined)
+      return denied(
+        'No retry-eligible failed stage. To continue eligible blocked agent work, use /changes followed by instructions.',
+      );
+    await input.retry(target.workflowInstanceId);
+    return { applied: true };
   }
   const primary = input.workflows.find(
     (workflow) => workflow.parentWorkflowInstanceId === undefined,
   );
-  if (primary === undefined) return true;
-  if (input.command === ConversationBuiltInCommand.Restart && isOperatorRetryEligible(primary))
+  if (primary === undefined) return denied('Work item has no primary workflow.');
+  if (input.command === ConversationBuiltInCommand.Restart && isOperatorRetryEligible(primary)) {
     await input.restart(primary.workflowInstanceId);
+    return { applied: true };
+  }
   if (
     input.command === ConversationBuiltInCommand.Extend &&
     isGroupBudgetExtensionEligible(primary)
-  )
+  ) {
     await input.extend(primary.workflowInstanceId);
-  return true;
+    return { applied: true };
+  }
+  return denied(
+    'Command is inapplicable: restart requires a failed stage; extend requires an exhausted watch-group budget.',
+  );
 }

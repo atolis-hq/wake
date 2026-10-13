@@ -417,3 +417,124 @@ function workflowProjectionView(workflowInstanceId: string, workItemId: ReturnTy
     childCompletionRecorded: false,
   } as unknown as WorkflowInstanceView;
 }
+
+it('returns command rejection feedback without falling back to plain-message resume', async () => {
+  const applications = createSurfaceWorkApplications(
+    {
+      config: { surfaces: { api: { conversationMessages: { enabled: true } } } },
+      work: { get: async () => ({ deleted: false, state: 'open' }) },
+      conversations: { createForWorkItem: async () => ({}), record: async () => ({}) },
+      orchestration: {
+        applyConversationCommandWithFeedback: async (_id: unknown, input: unknown) => {
+          expect(input).toMatchObject({
+            authorized: true,
+            reviewAuthorized: false,
+            body: '/retry',
+          });
+          return {
+            applied: false,
+            reason: 'Use /changes with instructions to continue blocked work.',
+          };
+        },
+        resumeBlockedStageForChanges: async () => {
+          throw new Error('Must not fall back after a rejected command');
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-10-13T00:00:00.000Z',
+  );
+  expect(
+    await applications.message!(toWorkItemKey(id), {
+      body: '/retry',
+      idempotencyKey: 'rejected-retry',
+    }),
+  ).toEqual({
+    conflict: true,
+    code: 'conversation-command-inapplicable',
+    detail: 'Use /changes with instructions to continue blocked work.',
+  });
+});
+
+it('dispatches continuation instructions through the owning command', async () => {
+  const applications = createSurfaceWorkApplications(
+    {
+      config: { surfaces: { api: { conversationMessages: { enabled: true } } } },
+      work: { get: async () => ({ deleted: false, state: 'open' }) },
+      conversations: {
+        createForWorkItem: async () => ({}),
+        record: async (_input: unknown) =>
+          expect(_input).toMatchObject({ body: '/changes\nMinimal extension authorized.' }),
+      },
+      orchestration: {
+        applyConversationCommandWithFeedback: async (_id: unknown, input: unknown) => {
+          expect(input).toMatchObject({
+            body: '/changes\nMinimal extension authorized.',
+            authorized: true,
+            reviewAuthorized: false,
+          });
+          return { applied: true };
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-10-13T00:00:00.000Z',
+  );
+  expect(
+    await applications.message!(toWorkItemKey(id), {
+      body: '/changes\nMinimal extension authorized.',
+      idempotencyKey: 'continue-1',
+    }),
+  ).toMatchObject({ status: 'accepted' });
+});
+
+it.each([
+  ['blocked', false, true],
+  ['blocked', true, false],
+  ['failed', false, false],
+] as const)(
+  'exposes typed continuation eligibility for %s work (frozen=%s)',
+  async (outcome, frozen, canContinue) => {
+    const workflowId = 'workflow-continue-detail';
+    const workflow = {
+      ...workflowProjectionView(workflowId, id),
+      status: 'blocked',
+      blockReason: `unconfigured outcome ${outcome}`,
+      lastOutcome: { kind: outcome },
+      pendingActivation: {
+        activationId: 'activation-continue',
+        activity: 'agent',
+        status: 'completed',
+      },
+      acceptedOutcomes: ['activation-continue'],
+    };
+    const applications = createSurfaceWorkApplications(
+      {
+        config: { surfaces: { api: { conversationMessages: { enabled: true } } } },
+        work: {
+          get: async () => ({
+            workItemId: id,
+            objective: 'Continue detail',
+            state: 'open',
+            frozen,
+            relatedWorkItems: [],
+          }),
+        },
+        resources: { get: async () => null },
+        projections: {
+          read: async (name: string) => {
+            if (name === 'work-correlations' || name === 'runs-by-workflow-instance')
+              return { value: [], lastGlobalPosition: 0 };
+            if (name === 'workflows-by-work-item')
+              return { value: [workflowId], lastGlobalPosition: 0 };
+            if (name === 'orchestration') return { value: workflow, lastGlobalPosition: 0 };
+            return null;
+          },
+        },
+        journal: { readAll: async () => [] },
+      } as unknown as CompositionRoot,
+      () => '2026-10-13T00:00:00.000Z',
+    );
+    expect((await applications.detail(toWorkItemKey(id)))?.data.conversation.canContinue).toBe(
+      canContinue,
+    );
+  },
+);

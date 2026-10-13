@@ -29,7 +29,11 @@ export interface DeliveryIntentView {
       }
     | { readonly kind: typeof DeliveryIntentKind.IssueComplete }
     | { readonly kind: typeof DeliveryIntentKind.StatusPublish; readonly body: string }
-    | { readonly kind: typeof DeliveryIntentKind.ReplyPublish; readonly body: string }
+    | {
+        readonly kind: typeof DeliveryIntentKind.ReplyPublish;
+        readonly body: string;
+        readonly publicationOnly?: true;
+      }
     | {
         readonly kind: typeof DeliveryIntentKind.AgentRunPublish;
         readonly report: AgentRunPublicationReport;

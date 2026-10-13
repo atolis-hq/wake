@@ -665,8 +665,18 @@ provider default and accepts `review-surface`, `chat-surface`, and/or `operator-
 adapter-instance configuration: two instances of the same provider may use different capability
 sets. Granting `review-surface` or `operator-surface` enables command classes but does not itself
 authorize an actor; the adapter must still verify its actor evidence before Wake applies a command.
-GitHub obtains collaborator permission evidence for every syntactically valid slash command and
-rejects a resource author approving their own issue or pull request.
+GitHub obtains collaborator permission evidence for syntactically valid slash commands.
+Human actors with repository write, maintain, or admin permission may control work on an issue
+they authored. Independent review remains separate: authors cannot approve their own issue or
+pull request, even through configured reviewer authority. Work control does not approve or merge
+implementation or satisfy revision-bound review evidence.
+
+Use /changes followed by instructions to continue an eligible blocked agent stage. /retry and
+/restart remain failed-stage recovery (restart requests a fresh session); /extend explicitly
+extends an exhausted watch-group budget. Continuation does not revive deleted, closed, or frozen
+work, bypass watch authority, or reset retry/review budgets. Rejected and inapplicable commands
+produce actionable conversation feedback and a durable reply to the originating resource when
+a primary workflow activation exists.
 A command unavailable to its surface, or issued by an unauthorized actor, remains a durable,
 immutable conversation entry and has no workflow effect.
 `match.stage` and `match.outcome` are independently optional facets, each accepting one value or a
