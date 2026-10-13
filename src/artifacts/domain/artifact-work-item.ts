@@ -46,6 +46,7 @@ export function applyArtifactEvent(
         location: revision.location,
         digest: revision.digest,
         byteLength: revision.byteLength,
+        ...(revision.contextExport === undefined ? {} : { contextExport: revision.contextExport }),
         ...(revision.mediaType === undefined ? {} : { mediaType: revision.mediaType }),
       },
     ],

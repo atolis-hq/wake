@@ -8,6 +8,7 @@ import {
 import { z } from 'zod';
 import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId, type WorkItemId } from '../../work/index.js';
+import { artifactSharedContextNameSchema } from './context.js';
 import { artifactWorkItemId, artifactWorkItemIdForWorkItem } from './identifiers.js';
 import { artifactPath } from './paths.js';
 import { ArtifactStreamKind, type ArtifactWorkItemStreamRef } from './streams.js';
@@ -29,6 +30,7 @@ export interface ArtifactEventPayloads {
     readonly digest: string;
     readonly byteLength: number;
     readonly mediaType?: string | undefined;
+    readonly contextExport?: string | undefined;
   };
   readonly [ArtifactEventType.TombstoneStaged]: {
     readonly workItemId: WorkItemId;
@@ -69,6 +71,7 @@ const schema = z.union([
         digest: z.string().regex(/^[a-f0-9]{64}$/),
         byteLength: z.number().int().nonnegative(),
         mediaType: z.string().min(1).optional(),
+        contextExport: artifactSharedContextNameSchema.optional(),
       }),
     }),
     stream,

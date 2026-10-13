@@ -261,6 +261,7 @@ export async function createCompositionRoot(
   const artifactTriggerContext = createArtifactTriggerContext({
     journal,
     contexts: artifactContexts,
+    artifacts,
     orchestration,
     triggers: config.controlPlane.triggers,
     now: () => clock.now().toISOString(),

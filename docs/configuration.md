@@ -488,11 +488,25 @@ WorkItem artifact namespace and producer-owned writes, and its manifest also
 lists authorized shared references with their original WorkItem, producer, and
 revision (`access: shared`). Same-path local and shared artifacts remain distinct
 and are read by revision ID. Only selected accepted exports populate the scope.
+A producer selects an export per revision with `share: true` on
+`wake_artifacts_write`. The run credential supplies the configured scope;
+a tool argument cannot select a destination or enroll a run. Selecting an export
+without a trusted shared-context credential fails. The selection is staged in
+Artifact metadata and published only when the claimed invocation completes
+successfully with accepted output. Unmarked revisions stay local; conventional
+`memory.md` is selected automatically for successful memory publication.
+The `delegation:` prefix is reserved for delegation-grant streams.
 When an invocation completes successfully and exactly one producer has an
 accepted `memory.md`, the scope's current memory advances to that producer's
 latest accepted revision (flagged `currentMemory` in later manifests); missing,
 failed, draft, or ambiguous output leaves it unchanged. Updates carry the expected
-prior pointer and a stale pointer fails. Publication is recorded in a single
+prior pointer. A stale update leaves memory unchanged and records a durable
+`stale-memory-pointer` publication outcome; replay returns the same outcome.
+Only the workflow named in the durable trigger claim is reconciled. Publication
+errors are isolated per invocation, retried on later passes, and logged without
+blocking unrelated trigger admission. A resident host skips reconciled workflows
+and caches immutable claim bindings; a restart rebuilds these from durable facts.
+Publication is recorded in a single
 context-stream event keyed by the workflow instance and reconciled idempotently
 on each trigger pass, so crashes between streams are repaired rather than
 assumed atomic. Revisions referenced by a scope remain retained. Parent/child

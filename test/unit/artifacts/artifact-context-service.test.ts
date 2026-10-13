@@ -201,11 +201,12 @@ describe('ArtifactContextService', () => {
       published,
     );
     await stage(second, 'memory.md');
-    await expect(contexts.publish(input(second, 'i2', null), accepted, ctx('p2'))).rejects.toThrow(
-      'Stale artifact memory pointer',
-    );
     await expect(
-      contexts.publish(input(second, 'i2', one), accepted, ctx('p2')),
+      contexts.publish(input(second, 'i2', null), accepted, ctx('p2')),
+    ).resolves.toMatchObject({ reason: ArtifactMemoryPublicationReason.Conflict, memory: null });
+    expect((await contexts.get(scope)).memory).toEqual(one);
+    await expect(
+      contexts.publish(input(second, 'i2-retry', one), accepted, ctx('p2-retry')),
     ).resolves.toMatchObject({ reason: ArtifactMemoryPublicationReason.Advanced });
   });
 

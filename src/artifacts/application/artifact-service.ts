@@ -1,7 +1,10 @@
 import { EventSourceKind, type CommandContext } from '@atolis-hq/eventing';
 import type { WorkItemId } from '../../work/index.js';
 import type { ArtifactsConfig } from '../contracts/config.js';
-import type { ArtifactRevisionReference } from '../contracts/context.js';
+import {
+  artifactSharedContextNameSchema,
+  type ArtifactRevisionReference,
+} from '../contracts/context.js';
 import { createArtifactEventData } from '../contracts/event-factory.js';
 import { ArtifactEventType } from '../contracts/events.js';
 import { artifactWorkItemIdForWorkItem } from '../contracts/identifiers.js';
@@ -52,6 +55,7 @@ export interface StageArtifactRevision {
   readonly path: ArtifactPath | string;
   readonly bytes: Uint8Array;
   readonly mediaType?: string;
+  readonly share?: boolean;
 }
 
 export interface StageArtifactTombstone {
@@ -65,6 +69,7 @@ export interface ArtifactWriteScope {
   readonly producer: string;
   readonly runId: string;
   readonly activationId: string;
+  readonly contextScope?: string;
 }
 
 export interface ArtifactReadScope extends ArtifactWriteScope {
@@ -136,6 +141,7 @@ export function createArtifactService(
         0;
       if (retained + command.bytes.byteLength > config.maxWorkItemBytes)
         throw new Error(`Artifact work item exceeds ${config.maxWorkItemBytes} byte limit`);
+      const selectedExport = contextExport(command.share, scope.contextScope);
       const path = artifactPath(String(command.path));
       const stored = await store.write({
         workItemId: scope.workItemId,
@@ -160,6 +166,7 @@ export function createArtifactService(
             runId: scope.runId,
             activationId: scope.activationId,
             ...stored,
+            ...selectedExport,
             ...(command.mediaType === undefined ? {} : { mediaType: command.mediaType }),
           },
         }),
@@ -252,4 +259,10 @@ function sameRevision(
   right: { readonly workItemId: string; readonly revisionId: string },
 ): boolean {
   return left.workItemId === right.workItemId && left.revisionId === right.revisionId;
+}
+
+function contextExport(share: boolean | undefined, contextScope: string | undefined) {
+  if (share !== true) return {};
+  if (contextScope === undefined) throw new Error('This run has no trusted shared context');
+  return { contextExport: artifactSharedContextNameSchema.parse(contextScope) };
 }

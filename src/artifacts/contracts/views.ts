@@ -13,6 +13,7 @@ export interface ArtifactRevisionView {
   readonly digest?: string;
   readonly byteLength?: number;
   readonly mediaType?: string;
+  readonly contextExport?: string;
 }
 
 export interface ArtifactWorkItemView {

@@ -15,6 +15,7 @@ export interface ArtifactMcpSession {
   readonly readableProducers: ReadonlySet<string>;
   readonly sharedReferences?: readonly ArtifactRevisionReference[];
   readonly currentMemory?: ArtifactRevisionReference | null;
+  readonly contextScope?: string;
   readonly nextRevisionId: () => string;
   readonly commandContext: () => CommandContext;
   readonly acceptedActivation: (activationId: string, workItemId?: string) => Promise<boolean>;
@@ -128,9 +129,15 @@ export function createArtifactMcpServer(
         content: z.string(),
         encoding: z.enum(['utf8', 'base64']).default('utf8'),
         mediaType: z.string().min(1).optional(),
+        share: z
+          .boolean()
+          .optional()
+          .describe(
+            "Select this revision for export to the run's trusted context after successful acceptance.",
+          ),
       },
     },
-    async ({ path, content, encoding, mediaType }) => {
+    async ({ path, content, encoding, mediaType, share }) => {
       await session.assertActive();
       const revisionId = session.nextRevisionId();
       await artifacts.stageRevision(
@@ -138,6 +145,7 @@ export function createArtifactMcpServer(
           revisionId,
           path: artifactPath(path),
           bytes: decodeContent(content, encoding),
+          ...(share === undefined ? {} : { share }),
           ...(mediaType === undefined ? {} : { mediaType }),
         },
         writeScope(session),
@@ -210,6 +218,7 @@ function writeScope(session: ArtifactMcpSession) {
     producer: session.producer,
     runId: session.runId,
     activationId: session.activationId,
+    ...(session.contextScope === undefined ? {} : { contextScope: session.contextScope }),
   };
 }
 

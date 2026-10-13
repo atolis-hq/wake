@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { artifactSharedContextNameSchema } from '../../artifacts/index.js';
 import { CronTriggerPolicy } from '../domain/cron-trigger-policy.js';
 
 export interface TriggerConfig {
@@ -24,10 +25,7 @@ const triggerSchema = z
       .min(1)
       .refine((id) => !/[\\/]/.test(id), 'Trigger id must not contain path separators'),
     workflow: z.string().trim().min(1),
-    contextScope: z
-      .string()
-      .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/)
-      .optional(),
+    contextScope: artifactSharedContextNameSchema.optional(),
     on: z
       .object({
         events: z.array(z.string().trim().min(1)).min(1).optional(),
@@ -86,3 +84,7 @@ export const controlPlaneConfigSchema = z
     triggers: [],
     resident: { pollBackoffMs: 1000 },
   });
+
+export function artifactContextCoordinationKey(contextScope: string): string {
+  return `context:${contextScope}`;
+}

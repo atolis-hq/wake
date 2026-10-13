@@ -12,6 +12,7 @@ import {
 import {
   artifactContextNameSchema,
   ArtifactMemoryPublicationReason,
+  artifactSharedContextNameSchema,
   type ArtifactContextProvenance,
   type ArtifactContextPublication,
   type ArtifactContextView,
@@ -40,6 +41,7 @@ export class ArtifactContextService {
     provenance: ArtifactContextProvenance,
     context: CommandContext,
   ): Promise<void> {
+    artifactSharedContextNameSchema.parse(contextScope);
     const events = await this.events(contextScope);
     const view = foldContext(contextScope, events);
     const member = view.members.find((candidate) => candidate.workItemId === workItemId);
@@ -82,6 +84,7 @@ export class ArtifactContextService {
     accepted: ArtifactAcceptance,
     context: CommandContext,
   ): Promise<ArtifactContextPublication> {
+    artifactSharedContextNameSchema.parse(input.contextScope);
     const events = await this.events(input.contextScope);
     const view = foldContext(input.contextScope, events);
     const receipt = view.publications.find(
@@ -102,13 +105,15 @@ export class ArtifactContextService {
     const memories = (
       await this.artifacts.latestPublished(input.workItemId, (id) => accepted(id, input.workItemId))
     ).filter((revision) => revision.path === 'memory.md');
-    const reason = memoryReason(input.successful, memories.length);
-    const memory =
+    let reason = memoryReason(input.successful, memories.length);
+    let memory =
       reason === ArtifactMemoryPublicationReason.Advanced
         ? { workItemId: input.workItemId, revisionId: memories[0]!.revisionId }
         : null;
-    if (memory !== null && !sameReference(view.memory, input.expectedMemory))
-      throw new Error('Stale artifact memory pointer');
+    if (memory !== null && !sameReference(view.memory, input.expectedMemory)) {
+      reason = ArtifactMemoryPublicationReason.Conflict;
+      memory = null;
+    }
     const publication: ArtifactContextPublication = {
       publicationId: input.publicationId,
       workItemId: input.workItemId,

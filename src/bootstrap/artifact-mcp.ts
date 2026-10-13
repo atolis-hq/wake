@@ -23,6 +23,7 @@ export function createArtifactMcpProvisioner(input: {
   readonly sharedContext?: (workItemId: string) => Promise<{
     readonly sharedReferences?: readonly ArtifactRevisionReference[];
     readonly currentMemory?: ArtifactRevisionReference | null;
+    readonly contextScope?: string;
   }>;
 }): NonNullable<ExecutionDependencies['mcp']> {
   return async ({ runId, activation, context }) => {

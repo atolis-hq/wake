@@ -4,6 +4,11 @@ import { workItemId } from '../../work/index.js';
 
 export const artifactContextNameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/);
 
+export const artifactSharedContextNameSchema = artifactContextNameSchema.refine(
+  (name) => !name.startsWith('delegation:'),
+  'The delegation: prefix is reserved for trusted delegation grants',
+);
+
 export const artifactRevisionReferenceSchema = z
   .object({
     workItemId: brandedStringSchema(workItemId),
@@ -39,6 +44,7 @@ export type ArtifactContextProvenance = z.infer<typeof artifactContextProvenance
 
 export const ArtifactMemoryPublicationReason = {
   Advanced: 'advanced',
+  Conflict: 'stale-memory-pointer',
   Failed: 'invocation-unsuccessful',
   Missing: 'missing',
   Ambiguous: 'multiple-memory-producers',
