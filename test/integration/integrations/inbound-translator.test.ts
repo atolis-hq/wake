@@ -923,14 +923,14 @@ describe('InboundTranslator', () => {
     await processInbound(translator, world.journal, world.checkpoints);
     const reactor = createConversationCommandReactor(world.orchestration, {
       conversations,
-      publish: async (event, result, context) => {
+      publish: async (event, body, context) => {
         if (event.entry.origin.kind !== 'external') throw new Error('Expected external command');
         const input = {
           journal: world.journal,
           orchestration: world.orchestration,
           workItemId: workflow.workItemId,
           resourceId: event.entry.origin.resourceId,
-          result,
+          body,
           context,
         };
         await publishConversationCommandFeedback(input);
@@ -1041,6 +1041,109 @@ describe('InboundTranslator', () => {
       reason: expect.stringContaining('Independent-review authority'),
     });
     expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('waiting');
+  });
+
+  it('reuses a rejected command receipt when publication retries after the workflow changes', async () => {
+    const { world, workflow } = await blockedIssueWorkflow();
+    const conversations = createConversationService(world.journal);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      conversations,
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(
+        world,
+        '/retry',
+        9,
+        {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Maintain,
+        },
+        'maintainer',
+      ),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    let attempts = 0;
+    const reactor = createConversationCommandReactor(world.orchestration, {
+      conversations,
+      publish: async (event, body, context) => {
+        if (++attempts === 1) throw new Error('feedback publication unavailable');
+        if (event.entry.origin.kind !== 'external') throw new Error('Expected external command');
+        await publishConversationCommandFeedback({
+          journal: world.journal,
+          orchestration: world.orchestration,
+          workItemId: workflow.workItemId,
+          resourceId: event.entry.origin.resourceId,
+          body,
+          context,
+        });
+      },
+    });
+    await expect(processInbound(reactor, world.journal, world.checkpoints)).rejects.toThrow(
+      'feedback publication unavailable',
+    );
+    const context = {
+      commandId: 'separate-recovery',
+      correlationId: 'separate-recovery' as never,
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'operator' as const, id: 'maintainer' },
+    };
+    const resumed = await world.orchestration.resumeBlockedStageForChanges(
+      workflow.workflowInstanceId,
+      context,
+    );
+    await world.acceptOutcome(
+      workflow.workflowInstanceId,
+      resumed!.pendingActivation!.activationId,
+      { kind: ActivityOutcomeKind.Failed },
+    );
+    const beforeReplay = await world.orchestration.get(workflow.workflowInstanceId);
+    await processInbound(reactor, world.journal, world.checkpoints);
+    expect(await world.orchestration.get(workflow.workflowInstanceId)).toEqual(beforeReplay);
+    expect(attempts).toBe(2);
+    const replies = await world.events(DeliveryIntentEventType.ReplyPublishRequested);
+    expect(replies).toHaveLength(1);
+    expect(replies[0]?.event.payload).toMatchObject({
+      body: expect.stringContaining('Command not applied: No retry-eligible failed stage'),
+    });
+  });
+
+  it('preserves a successful continuation receipt after work is frozen without reactivating it', async () => {
+    const { world, workflow } = await blockedIssueWorkflow();
+    const context = {
+      commandId: 'continued-before-freeze',
+      correlationId: 'continued-before-freeze' as never,
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'operator' as const, id: 'maintainer' },
+    };
+    const input = {
+      body: '/changes authorized instructions',
+      actorId: 'maintainer',
+      authorized: true,
+      reviewAuthorized: false,
+      capabilities: [ConversationSurfaceCapability.Operator],
+    };
+    expect(
+      await world.orchestration.applyConversationCommandWithFeedback(
+        workflow.workItemId,
+        input,
+        context,
+      ),
+    ).toEqual({ applied: true });
+    await world.work.freeze(workflow.workItemId, {
+      ...context,
+      commandId: 'freeze-after-continue',
+    });
+    const beforeReplay = await world.orchestration.get(workflow.workflowInstanceId);
+    expect(
+      await world.orchestration.applyConversationCommandWithFeedback(
+        workflow.workItemId,
+        input,
+        context,
+      ),
+    ).toEqual({ applied: true });
+    expect(await world.orchestration.get(workflow.workflowInstanceId)).toEqual(beforeReplay);
   });
 
   it('records an unverified delivery marker as external feedback rather than agent publication', async () => {

@@ -401,14 +401,14 @@ export async function composeIntegrationRuntime(
   );
   const conversationCommands = createConversationCommandReactor(input.orchestration, {
     conversations: input.conversations,
-    publish: async (event, result, context) => {
+    publish: async (event, body, context) => {
       if (event.entry.origin.kind !== ConversationOriginKind.External) return;
       await publishConversationCommandFeedback({
         journal: input.journal,
         orchestration: input.orchestration,
         workItemId: workItemIdForConversation(event.conversationId),
         resourceId: event.entry.origin.resourceId,
-        result,
+        body,
         context,
       });
     },

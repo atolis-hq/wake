@@ -15,7 +15,7 @@ import {
   workItemIdForConversation,
   type ConversationEventPayloads,
 } from '../../conversations/index.js';
-import type { ConversationCommandResult, SurfaceCapability } from './conversation-command.js';
+import type { ConversationCommandInput, SurfaceCapability } from './conversation-command.js';
 import { conversationCommand } from './conversation-command.js';
 import type { OrchestrationService } from './orchestration-service.js';
 
@@ -31,7 +31,7 @@ interface ConversationCommandFeedback {
   readonly conversations: ConversationService;
   readonly publish: (
     event: ConversationCommandMessage,
-    result: ConversationCommandResult,
+    body: string,
     context: CommandContext,
   ) => Promise<void>;
 }
@@ -79,23 +79,7 @@ export function createConversationCommandReactor(
           actor: { kind: EventActorKind.Integration, id: entry.origin.adapter },
         };
         if (conversationCommand(entry.body) !== null) {
-          const result = await orchestration.applyConversationCommandWithFeedback(
-            workItemId,
-            input,
-            context,
-          );
-          if (feedback !== undefined) {
-            await feedback.conversations.record(
-              {
-                conversationId: event.conversationId,
-                entryId: context.commandId + ':feedback',
-                body: result.applied ? 'Command applied.' : result.reason,
-                origin: { kind: ConversationOriginKind.ControlPlane, actorId: 'wake' },
-              },
-              context,
-            );
-            await feedback.publish(event, result, context);
-          }
+          await applyExternalCommand(orchestration, feedback, event, input, context);
           return;
         }
         if (entry.origin.canClarify === false) return;
@@ -114,4 +98,39 @@ export function createConversationCommandReactor(
       },
     }),
   };
+}
+
+async function applyExternalCommand(
+  orchestration: OrchestrationService,
+  feedback: ConversationCommandFeedback | undefined,
+  event: ConversationCommandMessage,
+  input: ConversationCommandInput,
+  context: CommandContext,
+): Promise<void> {
+  const entryId = context.commandId + ':feedback';
+  const prior = (await feedback?.conversations.get(event.conversationId))?.entries.find(
+    (entry) => entry.entryId === entryId,
+  );
+  // A recorded receipt fixes the result even if publication retries after the workflow changes.
+  if (prior !== undefined && feedback !== undefined) {
+    await feedback.publish(event, prior.body, context);
+    return;
+  }
+  const result = await orchestration.applyConversationCommandWithFeedback(
+    workItemIdForConversation(event.conversationId),
+    input,
+    context,
+  );
+  if (feedback === undefined) return;
+  const body = result.applied ? 'Command applied.' : 'Command not applied: ' + result.reason;
+  await feedback.conversations.record(
+    {
+      conversationId: event.conversationId,
+      entryId,
+      body,
+      origin: { kind: ConversationOriginKind.ControlPlane, actorId: 'wake' },
+    },
+    context,
+  );
+  await feedback.publish(event, body, context);
 }

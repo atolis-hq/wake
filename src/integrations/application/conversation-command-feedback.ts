@@ -4,7 +4,7 @@ import {
   type CommandContext,
   type EventJournal,
 } from '@atolis-hq/eventing';
-import type { ConversationCommandResult, OrchestrationService } from '../../orchestration/index.js';
+import type { OrchestrationService } from '../../orchestration/index.js';
 import { resourceId, resourceStream } from '../../resources/index.js';
 import { createDeliveryIntentEventData } from '../delivery/contracts/event-factory.js';
 import { DeliveryIntentEventType } from '../delivery/contracts/intents.js';
@@ -15,7 +15,7 @@ export async function publishConversationCommandFeedback(input: {
   readonly orchestration: OrchestrationService;
   readonly workItemId: Parameters<OrchestrationService['listForWorkItem']>[0];
   readonly resourceId: string;
-  readonly result: ConversationCommandResult;
+  readonly body: string;
   readonly context: CommandContext;
 }): Promise<void> {
   const primary = (await input.orchestration.listAll())
@@ -41,9 +41,7 @@ export async function publishConversationCommandFeedback(input: {
         publicationOnly: true,
         workflowInstanceId: primary.workflowInstanceId,
         activationId: primary.pendingActivation.activationId,
-        body: input.result.applied
-          ? 'Command applied.'
-          : `Command not applied: ${input.result.reason}`,
+        body: input.body,
       },
     }),
   ]);

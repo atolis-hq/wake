@@ -182,15 +182,15 @@ export class OrchestrationService {
         reason:
           'Verified repository write, maintain, or admin permission is required for work control; independent-review authority is required for approval.',
       };
-    const work = await this.work.get(workItemId);
-    if (!isWorkControllable(work))
-      return { applied: false, reason: 'Work item must be open, unfrozen, and not deleted.' };
     // A command is causally adjacent to its conversation entry; projections may lag
     // the journal, so command application must read the authoritative workflow state.
     const workflows = (await this.advanceWorkflow.listAll()).filter(
       (workflow) => workflow.workItemId === workItemId,
     );
     if (conversationCommandAlreadyApplied(workflows, context.commandId)) return { applied: true };
+    const work = await this.work.get(workItemId);
+    if (!isWorkControllable(work))
+      return { applied: false, reason: 'Work item must be open, unfrozen, and not deleted.' };
     if (!input.authorized && !isReviewConversationCommand(command))
       return { applied: false, reason: 'Verified repository work-control authority is required.' };
     // Configured commands deliberately win over built-ins, even when their spelling collides.
