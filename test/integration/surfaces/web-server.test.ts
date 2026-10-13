@@ -43,6 +43,39 @@ describe('browser history routing', () => {
 });
 
 describe('HTTP Surface hardening', () => {
+  it('protects trigger inspection and pause/resume behind the operator session', async () => {
+    const seen = vi.fn().mockResolvedValue({ status: 200, body: {} });
+    const server = surfaceServer({ dispatch: seen });
+    try {
+      for (const url of ['/api/v1/triggers', '/api/v1/triggers/oversight']) {
+        expect((await server.inject(url)).statusCode).toBe(401);
+      }
+      for (const name of ['pause', 'resume']) {
+        expect(
+          (
+            await server.inject({
+              method: 'POST',
+              url: '/api/v1/triggers/oversight/commands/' + name,
+              payload: { idempotencyKey: 'key' },
+            })
+          ).statusCode,
+        ).toBe(401);
+      }
+      expect(seen).not.toHaveBeenCalled();
+      expect(
+        (
+          await server.inject({
+            method: 'GET',
+            url: '/api/v1/triggers',
+            headers: { cookie: await login(server) },
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(seen).toHaveBeenCalledOnce();
+    } finally {
+      await server.close();
+    }
+  });
   it('accepts raw GitHub webhook deliveries outside the UI session boundary', async () => {
     const receiver = vi.fn().mockResolvedValue(202);
     const server = createSurfaceHttpServer({

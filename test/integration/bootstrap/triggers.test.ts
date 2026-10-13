@@ -14,13 +14,20 @@ import {
   RetrySafety,
 } from '../../../src/activities/index.js';
 import type { CompositionRootOptions } from '../../../src/bootstrap/index.js';
-import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
+import {
+  createCompositionRoot,
+  createSurfaceApplications,
+  parseRootConfig,
+} from '../../../src/bootstrap/index.js';
 import {
   ControlEventType,
   ControlStreamKind,
+  TriggerSkipReason,
   TriggerSourceKind,
+  maximumTriggerDiagnostics,
   maximumTriggerSources,
   selectControlEvent,
+  triggerCriticalSectionConsumer,
   triggerInvocationProjection,
   triggerProjectionName,
   type TriggerConfig,
@@ -34,6 +41,7 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
+import { createApiDispatcher, toWorkItemKey } from '../../../src/surfaces/index.js';
 import { WorkEventType, selectWorkEvent, workItemId } from '../../../src/work/index.js';
 import { FaultInjectingJournal } from '../../support/fault-injecting-journal.js';
 
@@ -187,6 +195,14 @@ describe('composed workflow triggers', () => {
       { ...context, commandId: 'revise' },
     );
     await consume();
+    expect((await root.triggers.get()).diagnostics).toEqual([
+      expect.objectContaining({
+        triggerId: 'oversight',
+        reason: TriggerSkipReason.Capacity,
+        occurredAt: '2026-08-10T00:01:30.000Z',
+        source: expect.objectContaining({ kind: TriggerSourceKind.Event }),
+      }),
+    ]);
     expect(await invocations(journal)).toEqual([]);
     await root.runnerControls.unpause('fake', 'resume');
     await consume();
@@ -610,6 +626,97 @@ describe('durable trigger coordination', () => {
     expect(await invocations(f.journal)).toHaveLength(2);
   });
 
+  it('bounds latest diagnostics independently of invocation history and keeps them across restart', async () => {
+    const f = await fixture({ cron: '* * * * *' });
+    await f.root.processorState.write({
+      consumer: triggerCriticalSectionConsumer,
+      key: 'skip-diagnostics',
+      value: Array.from({ length: maximumTriggerDiagnostics }, (_, index) => ({
+        triggerId: 'removed-' + index,
+        source: { kind: TriggerSourceKind.Cron, slot: '2026-08-10T00:00:00.000Z' },
+        reason: TriggerSkipReason.Removed,
+        occurredAt: '2026-08-10T00:00:00.000Z',
+      })),
+    });
+    await f.root.triggers.start(
+      { id: 'removed-259', workflow: 'inspect', on: { cron: '* * * * *' } },
+      { kind: TriggerSourceKind.Cron, slot: '2026-08-10T00:01:00.000Z' },
+      f.context,
+    );
+    const diagnostics = (await f.root.triggers.get()).diagnostics!;
+    expect(diagnostics).toHaveLength(256);
+    expect(diagnostics[0]!.triggerId).toBe('removed-1');
+    expect(diagnostics.at(-1)).toMatchObject({
+      triggerId: 'removed-259',
+      reason: TriggerSkipReason.Removed,
+    });
+    expect((await (await restart(f)).triggers.get()).diagnostics).toEqual(diagnostics);
+    expect(await invocations(f.journal)).toHaveLength(0);
+    expect(await f.journal.latestGlobalPosition()).toBe(0);
+  });
+
+  it('exposes real diagnostics, controls, invocation links and removed history through the API', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    const dispatch = createApiDispatcher((await createSurfaceApplications(f.root)).api);
+    const read = await dispatch.dispatch('GET', '/api/v1/triggers', undefined);
+    expect(read).toMatchObject({
+      status: 200,
+      body: { data: [{ triggerId: 'oversight', status: 'enabled', nextOccurrence: null }] },
+    });
+    expect(await dispatch.dispatch('GET', '/api/v1/triggers/missing', undefined)).toMatchObject({
+      status: 404,
+    });
+    expect(
+      await dispatch.dispatch('POST', '/api/v1/triggers/oversight/commands/pause', {
+        idempotencyKey: 'web-pause',
+      }),
+    ).toMatchObject({ status: 200 });
+    await source(f, 'paused-api');
+    await f.consume();
+    expect(await dispatch.dispatch('GET', '/api/v1/triggers/oversight', undefined)).toMatchObject({
+      status: 200,
+      body: { data: { status: 'paused', latestSkip: { reason: TriggerSkipReason.Paused } } },
+    });
+    expect(await invocations(f.journal)).toHaveLength(0);
+    expect(
+      await dispatch.dispatch('POST', '/api/v1/triggers/oversight/commands/resume', {
+        idempotencyKey: 'web-resume',
+      }),
+    ).toMatchObject({ status: 200 });
+    expect(await invocations(f.journal)).toHaveLength(0);
+    await source(f, 'after-api-resume');
+    await f.consume();
+    const invocation = (await invocations(f.journal))[0]!;
+    const key = toWorkItemKey(invocation.workItemId);
+    expect(await dispatch.dispatch('GET', '/api/v1/triggers/oversight', undefined)).toMatchObject({
+      body: { data: { invocations: [{ workItemKey: key }] } },
+    });
+    expect(await dispatch.dispatch('GET', '/api/v1/work-items/' + key, undefined)).toMatchObject({
+      body: { data: { triggerOrigin: 'oversight' } },
+    });
+    const removed = await restart(f, {
+      config: parseRootConfig({
+        ...f.config,
+        controlPlane: { ...f.config.controlPlane, triggers: [] },
+      }),
+    });
+    expect(
+      await createApiDispatcher((await createSurfaceApplications(removed)).api).dispatch(
+        'GET',
+        '/api/v1/triggers/oversight',
+        undefined,
+      ),
+    ).toMatchObject({
+      body: { data: { status: 'removed', definition: null, invocations: [{ workItemKey: key }] } },
+    });
+    expect(
+      await dispatch.dispatch('POST', '/api/v1/triggers/oversight/commands/pause', {
+        idempotencyKey: 'bad',
+        extra: true,
+      }),
+    ).toMatchObject({ status: 422 });
+  });
+
   it('keeps pause durable across restart and remove/re-add, clearing pending without stopping active work', async () => {
     const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
     await source(f, 'first');
@@ -755,14 +862,14 @@ describe('durable trigger coordination', () => {
       event,
     );
     await reached.promise;
-    const pause = competing.triggers.pause('oversight', 'race pause', {
-      ...f.context,
-      commandId: 'race-pause',
+    const api = createApiDispatcher((await createSurfaceApplications(competing)).api);
+    const pause = api.dispatch('POST', '/api/v1/triggers/oversight/commands/pause', {
+      idempotencyKey: 'race-pause',
     });
     release.resolve();
     await Promise.all([start, pause]);
     expect(await invocations(journal)).toHaveLength(1);
-    expect((await competing.triggers.get()).pauses.oversight).toBe('race pause');
+    expect((await competing.triggers.get()).pauses.oversight).toBe('Operator pause');
     await source(f, 'after-pause');
     await f.consume();
     expect(await invocations(journal)).toHaveLength(1);

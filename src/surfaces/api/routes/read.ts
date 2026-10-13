@@ -35,11 +35,20 @@ export async function dispatchRead(
     url.pathname === '/api/v1/observability/summary'
   )
     return readReports(applications, url, signal);
+  if (url.pathname === '/api/v1/triggers') return noQuery(url, () => readTriggers(applications));
   const resource = await readSingleton(applications, url);
   if (resource !== undefined) return resource;
   const page = await readCollection(applications, url);
   if (page !== undefined) return page;
   if (url.search !== '') return invalidQuery('This resource does not accept query parameters');
+  const trigger = /^\/api\/v1\/triggers\/([^/]+)$/.exec(url.pathname);
+  if (trigger !== null) {
+    const id = decodePathSegment(trigger[1]!);
+    if (id instanceof ApiPathError) return invalidPath(id.message);
+    return applications.triggers === undefined
+      ? unavailable('triggers')
+      : found(await applications.triggers.detail(id));
+  }
   return readDetail(applications, url.pathname);
 }
 
@@ -249,4 +258,10 @@ async function readReports(
   if (report === null || !reports.catalogue().some(({ id }) => id === report))
     return invalidQuery('Unknown report identifier', 'report');
   return ok(await reports.report(report, window, signal));
+}
+
+async function readTriggers(applications: ApiApplications): Promise<ApiHttpResponse> {
+  return applications.triggers === undefined
+    ? unavailable('triggers')
+    : ok(await applications.triggers.list());
 }

@@ -1,0 +1,62 @@
+import { z } from 'zod';
+import { TriggerStatus, type TriggerResponse } from '../../../api/contracts/index.js';
+import {
+  triggerDefinitionSchema,
+  TriggerRequestDisposition,
+  triggerSkipDiagnosticSchema,
+  triggerSourceSchema,
+  WorkflowStatus,
+} from './trigger-transport.js';
+
+const request = z.object({
+  triggerId: z.string(),
+  coordinationKey: z.string(),
+  source: triggerSourceSchema,
+  disposition: z.enum(TriggerRequestDisposition),
+  sources: z.array(triggerSourceSchema),
+});
+const invocation = z.object({
+  claim: z.object({
+    triggerId: z.string(),
+    coordinationKey: z.string(),
+    source: triggerSourceSchema,
+    sources: z.array(triggerSourceSchema),
+    workItemId: z.string(),
+    workflowInstanceId: z.string(),
+    workflowName: z.string(),
+  }),
+  claimedAt: z.string(),
+  startedAt: z.string().optional(),
+  finishedAt: z.string().optional(),
+  failureOutcomeCount: z.number().optional(),
+  result: z
+    .object({
+      triggerId: z.string(),
+      coordinationKey: z.string(),
+      workItemId: z.string(),
+      workflowInstanceId: z.string(),
+      status: z.enum([WorkflowStatus.Completed, WorkflowStatus.Superseded]),
+      reason: z.string().optional(),
+    })
+    .optional(),
+  workItemKey: z.string(),
+});
+const schema = z.object({
+  triggerId: z.string(),
+  status: z.enum(TriggerStatus),
+  definition: triggerDefinitionSchema.nullable(),
+  paused: z.boolean(),
+  pauseReason: z.string().nullable(),
+  nextOccurrence: z.string().nullable(),
+  pending: z.array(request),
+  latestSkip: triggerSkipDiagnosticSchema.nullable(),
+  invocations: z.array(invocation),
+});
+
+export function decodeTrigger(value: unknown): TriggerResponse {
+  return schema.parse(value);
+}
+
+export function decodeTriggers(value: unknown): readonly TriggerResponse[] {
+  return z.array(schema).parse(value);
+}

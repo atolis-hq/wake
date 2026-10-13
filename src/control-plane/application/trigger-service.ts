@@ -1,11 +1,4 @@
-import {
-  type CommandContext,
-  type EventEnvelope,
-  type EventJournal,
-  type ProcessorRunSerialiser,
-  type ProcessorStateStore,
-} from '@atolis-hq/eventing';
-import type { IdGenerator } from '../../kernel/index.js';
+import type { CommandContext, EventEnvelope } from '@atolis-hq/eventing';
 import type { TriggerConfig } from '../contracts/config.js';
 import {
   ControlEventType,
@@ -13,54 +6,45 @@ import {
   TriggerSourceKind,
   type TriggerSource,
 } from '../contracts/events.js';
+import { TriggerSkipReason, type TriggerSkipDiagnostic } from '../contracts/trigger-diagnostics.js';
 import { CronTriggerPolicy } from '../domain/cron-trigger-policy.js';
+import { TriggerDiagnostics } from './trigger-diagnostics.js';
 import { appendTriggerFact, sourceIdentity, type TriggerFactInput } from './trigger-facts.js';
-import {
-  maximumTriggerSources,
-  type TriggerInvocationView,
-  type TriggerView,
-} from './trigger-projection.js';
+import { maximumTriggerSources, type TriggerView } from './trigger-projection.js';
 import { recoverTriggerInvocation } from './trigger-recovery.js';
 import { hasActiveInvocation, isOwnScopeSource } from './trigger-rules.js';
-import { TriggerSourceCursor, type TriggerCheckpointStore } from './trigger-source-cursor.js';
+import type { TriggerServiceDependencies } from './trigger-service-ports.js';
+import { TriggerSourceCursor } from './trigger-source-cursor.js';
 import { TriggerStateReader } from './trigger-state-reader.js';
-import type { TriggerWorkflowPorts } from './trigger-workflow.js';
+
+export type { TriggerServiceDependencies } from './trigger-service-ports.js';
 
 export type { TriggerCheckpointStore } from './trigger-source-cursor.js';
 
-export const triggerCriticalSectionConsumer = 'control-plane:trigger-coordination';
+export type TriggerInspectionView = TriggerView & {
+  readonly diagnostics: readonly TriggerSkipDiagnostic[];
+};
 
-export interface TriggerServiceDependencies extends TriggerWorkflowPorts {
-  readonly checkpoint: TriggerCheckpointStore;
-  readonly journal: EventJournal;
-  readonly state: ProcessorStateStore;
-  readonly history: () => Promise<readonly TriggerInvocationView[]>;
-  readonly invocationScope: (workItemId: string) => Promise<string | null>;
-  readonly serialise: ProcessorRunSerialiser;
-  readonly ids: IdGenerator;
-  readonly configurations: () => readonly TriggerConfig[];
-  readonly coordinationKey?: (config: TriggerConfig) => string;
-  readonly sourceWorkItem: (event: EventEnvelope) => Promise<string | null>;
-  readonly isDispatchPaused: () => Promise<boolean>;
-  readonly capacityAvailable: (config: TriggerConfig) => Promise<boolean>;
-  readonly now: () => string;
-}
+export const triggerCriticalSectionConsumer = 'control-plane:trigger-coordination';
 
 /** Requests and claims are journal facts; the cron cursor is processor recovery state. */
 export class TriggerService {
   private readonly policy = new CronTriggerPolicy();
   private readonly reader: TriggerStateReader;
   private readonly sourceCursor: TriggerSourceCursor;
+  private readonly diagnostics: TriggerDiagnostics;
 
   constructor(private readonly dependencies: TriggerServiceDependencies) {
+    this.diagnostics = new TriggerDiagnostics(dependencies, triggerCriticalSectionConsumer);
     this.reader = new TriggerStateReader(dependencies.journal);
     this.sourceCursor = new TriggerSourceCursor(dependencies);
   }
 
-  async get(): Promise<TriggerView> {
+  async get(): Promise<TriggerInspectionView> {
     return this.serialise(async () => ({
       ...(await this.view()),
       invocations: await this.dependencies.history(),
+      diagnostics: await this.diagnostics.get(),
     }));
   }
 
@@ -203,15 +187,26 @@ export class TriggerService {
     const coordinationKey = this.key(config);
     // The reactor checkpoint consumes suppressed sources. Emitting another trigger request
     // here could itself become a source when subscribed to Control Plane events.
-    if (duplicate || (await this.suppressed(view, config, coordinationKey, event))) {
+    if (duplicate) {
       await this.sourceCursor.consume(config.id, source, event);
       return false;
     }
-    const eligible =
-      view.pauses[config.id] === undefined &&
-      this.configured(config.id) !== undefined &&
-      !(await this.dependencies.isDispatchPaused()) &&
-      (hasActiveInvocation(view, coordinationKey) || (await this.eligible(config)));
+    if (await this.suppressed(view, config, coordinationKey, event)) {
+      await this.diagnostics.record(config.id, source, TriggerSkipReason.OwnScope);
+      await this.sourceCursor.consume(config.id, source, event);
+      return false;
+    }
+    const reason = await this.diagnostics.ineligibleReason(
+      view,
+      config.id,
+      config,
+      this.configured(config.id) !== undefined,
+      hasActiveInvocation(view, coordinationKey),
+    );
+    const eligible = reason === undefined;
+    if (reason !== undefined) await this.diagnostics.record(config.id, source, reason);
+    else if ((view.coalesced[coordinationKey]?.sources.length ?? 0) >= maximumTriggerSources)
+      await this.diagnostics.record(config.id, source, TriggerSkipReason.PendingLimit);
     if (eligible && (view.coalesced[coordinationKey]?.sources.length ?? 0) < maximumTriggerSources)
       await this.emit(
         {
@@ -246,25 +241,24 @@ export class TriggerService {
     });
   }
 
-  private async eligible(config: TriggerConfig): Promise<boolean> {
-    return (
-      !(await this.dependencies.isDispatchPaused()) &&
-      (config.when?.capacityAvailable !== true ||
-        (await this.dependencies.capacityAvailable(config)))
-    );
-  }
-
   private async advanceCoalesced(context: CommandContext): Promise<void> {
     const view = await this.view();
     for (const request of Object.values(view.coalesced)) {
       if (hasActiveInvocation(view, request.coordinationKey)) continue;
       const config = this.configured(request.triggerId);
       const identity = `trigger:${request.triggerId}:${sourceIdentity(request.source)}`;
-      if (
-        config === undefined ||
-        view.pauses[request.triggerId] !== undefined ||
-        !(await this.eligible(config))
-      ) {
+      const reason = await this.diagnostics.ineligibleReason(
+        view,
+        request.triggerId,
+        config,
+        config !== undefined,
+      );
+      if (reason !== undefined || config === undefined) {
+        await this.diagnostics.record(
+          request.triggerId,
+          request.source,
+          reason ?? TriggerSkipReason.Removed,
+        );
         // This recorded request was reconsidered and consumed; later eligibility is not a source.
         await this.emit(
           {

@@ -434,6 +434,15 @@ recovery uses the claimed WorkItem and workflow IDs to complete an interrupted
 start. Cron catch-up consumes at most 64 occurrences per trigger per pass and
 coalesces them into one request. There is no cooldown or minimum interval.
 Skipped occurrences advance durable source cursors without adding request facts.
+Control Plane retains the latest actual skip diagnostic per trigger in processor
+state, bounded to 256 recent trigger identities. Each diagnostic includes the
+trigger ID, canonical source identity, observation time, and typed reason
+(own-scope suppression, trigger pause, removed definition, dispatch pause,
+capacity unavailable, or the pending-source limit). This is operational
+explainability, not an occurrence audit log or a rebuildable projection. It does
+not change admission or scheduling and does not emit events that could trigger
+other jobs. Diagnostics survive restarts but are lost if processor state is
+reset; eviction only removes old diagnostics, never invocation history.
 Pending requests retain at most 64 representative source identities; additional
 occurrences coalesce into that same request and advance their cursors. Operational
 projections are stored per coordination scope, while each invocation has its own

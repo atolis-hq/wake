@@ -425,6 +425,7 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
       ? undefined
       : object(record.conversation, child(path, conversationTransportField));
   return {
+    ...optionalStringProperty(record, 'triggerOrigin', path),
     work: decodeWorkItem(record.work, child(path, 'work')),
     resources: array(record.resources, child(path, 'resources'), decodeResourceItem),
     orchestration: {
