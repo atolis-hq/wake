@@ -276,6 +276,7 @@ describe('target composition root', () => {
         expect(
           await message(toWorkItemKey(item.workItemId), {
             idempotencyKey: 'conversation-latency-message',
+            continuation: mode === 'changes command',
             body:
               mode === 'changes command'
                 ? '/changes\nPlease continue using this correction.'

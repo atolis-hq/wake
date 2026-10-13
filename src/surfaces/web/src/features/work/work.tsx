@@ -134,6 +134,8 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
         workItemKey,
         body,
         `web:conversation-message:${globalThis.crypto.randomUUID()}`,
+        undefined,
+        continuing,
       ),
     onSuccess: async () => {
       agentReplyCountAtSend.current = conversationEntries.filter(

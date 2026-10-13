@@ -129,6 +129,10 @@ export function isChangesResumeEligible(view: WorkflowInstanceView): boolean {
   );
 }
 
+export function isPlainReplyResumeEligible(view: WorkflowInstanceView): boolean {
+  return isChangesResumeEligible(view) && view.lastOutcome?.kind === ActivityOutcomeKind.Blocked;
+}
+
 /** A clarification reply may be supplied by any conversation participant. */
 export function isNeedsClarificationResumeEligible(view: WorkflowInstanceView): boolean {
   return isChangesResumeEligible(view) && isNeedsClarificationAgentOutcome(view.lastOutcome);

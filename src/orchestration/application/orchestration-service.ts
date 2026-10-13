@@ -31,6 +31,7 @@ import { ApprovalAuthorityKind, ConversationBuiltInCommand } from '../contracts/
 import {
   isGroupBudgetExtensionEligible,
   isNeedsClarificationResumeEligible,
+  isPlainReplyResumeEligible,
   selectChangesResumeTargets,
 } from '../domain/operator-retry-policy.js';
 import { AcceptActivityOutcome } from './accept-activity-outcome.js';
@@ -38,6 +39,7 @@ import { AcceptSignal } from './accept-signal.js';
 import { AdvanceWorkflow } from './advance-workflow.js';
 import {
   applyBuiltInConversationCommand,
+  continuationCommandRejection,
   conversationCommand,
   type ConversationCommandInput,
   type ConversationCommandResult,
@@ -175,6 +177,8 @@ export class OrchestrationService {
   ): Promise<ConversationCommandResult> {
     const command = conversationCommand(input.body);
     if (command === null) return { applied: false, reason: 'Message contains no command.' };
+    const continuationRejection = continuationCommandRejection(input, command);
+    if (continuationRejection !== null) return { applied: false, reason: continuationRejection };
     const reviewAuthorized = input.reviewAuthorized === true;
     if (!input.authorized && !reviewAuthorized)
       return {
@@ -193,24 +197,18 @@ export class OrchestrationService {
       return { applied: false, reason: 'Work item must be open, unfrozen, and not deleted.' };
     if (!input.authorized && !isReviewConversationCommand(command))
       return { applied: false, reason: 'Verified repository work-control authority is required.' };
-    // Configured commands deliberately win over built-ins, even when their spelling collides.
-    let supplemental = false;
-    for (const workflow of workflows) {
-      const definition = await this.definitions.resolve(workflow);
-      if (definition.commands[command as keyof typeof definition.commands] === undefined) continue;
-      supplemental = true;
-      await this.requestSupplementalActivity(
-        workflow.workflowInstanceId,
-        { command: commandName(command) },
-        context,
-      );
-    }
-    if (supplemental) return { applied: true };
+    // Explicit continuation invokes the owning recovery command; ordinary commands keep configured precedence.
+    if (
+      !input.continuation &&
+      (await this.applyConfiguredConversationCommands(command, workflows, context))
+    )
+      return { applied: true };
     return applyBuiltInConversationCommand({
       command,
       capabilities: input.capabilities,
       reviewAuthorized,
       workAuthorized: input.authorized,
+      continuation: input.continuation === true,
       workflows,
       context,
       acceptSignal: async (id, outcome) => {
@@ -239,6 +237,25 @@ export class OrchestrationService {
         return updated?.operatorRetryCommandIds.includes(context.commandId) === true;
       },
     });
+  }
+
+  private async applyConfiguredConversationCommands(
+    command: string,
+    workflows: readonly WorkflowInstanceView[],
+    context: CommandContext,
+  ): Promise<boolean> {
+    let supplemental = false;
+    for (const workflow of workflows) {
+      const definition = await this.definitions.resolve(workflow);
+      if (definition.commands[command as keyof typeof definition.commands] === undefined) continue;
+      supplemental = true;
+      await this.requestSupplementalActivity(
+        workflow.workflowInstanceId,
+        { command: commandName(command) },
+        context,
+      );
+    }
+    return supplemental;
   }
 
   markActivationStarted(
@@ -317,6 +334,15 @@ export class OrchestrationService {
     return this.transitionWatchChildren(context, () =>
       this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context),
     );
+  }
+
+  async resumeBlockedStageForReply(
+    workflowInstanceId: WorkflowInstanceId,
+    context: CommandContext,
+  ) {
+    const current = await this.advanceWorkflow.get(workflowInstanceId);
+    if (current === null || !isPlainReplyResumeEligible(current)) return current;
+    return this.resumeBlockedStageForChanges(workflowInstanceId, context);
   }
 
   async resumeNeedsClarificationStage(

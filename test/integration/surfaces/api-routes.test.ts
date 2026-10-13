@@ -614,7 +614,11 @@ function applications(
       extend(key: string, command: { readonly idempotencyKey: string }): Promise<ApiCommandResult>;
       message(
         key: string,
-        command: { readonly idempotencyKey: string; readonly body: string },
+        command: {
+          readonly idempotencyKey: string;
+          readonly body: string;
+          readonly continuation?: boolean;
+        },
       ): Promise<ApiCommandResult>;
     }>;
     readonly execution?: Partial<{
@@ -696,3 +700,35 @@ function commandResult(idempotencyKey: string): AcceptedCommandResponse {
     status: 'accepted',
   };
 }
+
+it('preserves the explicit continuation intent in the typed message request', async () => {
+  const calls: unknown[] = [];
+  const dispatcher = createApiDispatcher(
+    applications({
+      work: {
+        message: async (_key, command) => {
+          calls.push(command);
+          return commandResult('continue-1');
+        },
+      },
+    }),
+  );
+  const response = await dispatcher.dispatch(
+    'POST',
+    '/api/v1/work-items/wk_demo/commands/message',
+    { idempotencyKey: 'continue-1', body: '/changes Required instructions.', continuation: true },
+  );
+  expect(response).toMatchObject({ status: 202 });
+  expect(calls).toEqual([
+    { idempotencyKey: 'continue-1', body: '/changes Required instructions.', continuation: true },
+  ]);
+});
+
+it('rejects a malformed continuation intent at the HTTP boundary', async () => {
+  const response = await createApiDispatcher(applications()).dispatch(
+    'POST',
+    '/api/v1/work-items/wk_demo/commands/message',
+    { idempotencyKey: 'continue-1', body: '/changes Instructions.', continuation: 'true' },
+  );
+  expect(response).toMatchObject({ status: 422 });
+});

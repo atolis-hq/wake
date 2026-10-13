@@ -209,7 +209,7 @@ export function createSurfaceWorkApplications(
               },
               context,
             );
-            if (conversationCommand(command.body) !== null) {
+            if (conversationCommand(command.body) !== null || command.continuation === true) {
               const result = await root.orchestration.applyConversationCommandWithFeedback(
                 id,
                 {
@@ -217,7 +217,8 @@ export function createSurfaceWorkApplications(
                   actorId: context.actor.id,
                   capabilities: [ConversationSurfaceCapability.Operator],
                   authorized: true,
-                  reviewAuthorized: false,
+                  reviewAuthorized: true,
+                  continuation: command.continuation === true,
                 },
                 context,
               );
@@ -261,7 +262,7 @@ async function resumeAgentStages(
   const workflows = await root.orchestration.listForWorkItem(itemId);
   for (const workflow of workflows)
     try {
-      await root.orchestration.resumeBlockedStageForChanges(workflow.workflowInstanceId, context);
+      await root.orchestration.resumeBlockedStageForReply(workflow.workflowInstanceId, context);
     } catch (error) {
       console.error(
         `Conversation message resume failed for workflow ${workflow.workflowInstanceId}`,

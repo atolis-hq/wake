@@ -26,7 +26,10 @@ workflow and activity timeline. The workflow retains its mobile card presentatio
 Eligible blocked agent work exposes **Continue with instructions**. The authenticated API supplies
 `conversation.canContinue` from orchestration policy and WorkItem availability. The action opens
 the Conversation composer, requires instructions, and sends `/changes` with those instructions
-through `POST /api/v1/work-items/:workItemKey/commands/message`. Messaging must be enabled.
+through `POST /api/v1/work-items/:workItemKey/commands/message` with `continuation: true`. Messaging must be enabled.
+The ordinary authenticated operator composer retains `/approved` and `/accepted` for human workflow
+waits; ordinary `/changes` follows the wait's rejection route. Explicit Continue reenters the eligible
+agent stage without accepting a review signal. Plain comments leave successful review waits intact.
 Failed-stage **Retry** remains a separate action. A rejected command returns a conflict with its
 reason; the composer keeps the instructions for correction. Continuation grants no independent
 review, approval, or merge authority. Frozen, deleted, and closed work cannot continue.

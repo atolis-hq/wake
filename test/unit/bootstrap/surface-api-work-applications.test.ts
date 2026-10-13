@@ -115,7 +115,7 @@ it('continues resuming sibling workflows when one conversation-message resume fa
           { workflowInstanceId: 'first-workflow' },
           { workflowInstanceId: 'second-workflow' },
         ],
-        resumeBlockedStageForChanges: async (workflowInstanceId: string) => {
+        resumeBlockedStageForReply: async (workflowInstanceId: string) => {
           if (workflowInstanceId === 'first-workflow') throw new Error('first resume failed');
           resumed.push(workflowInstanceId);
         },
@@ -428,7 +428,7 @@ it('returns command rejection feedback without falling back to plain-message res
         applyConversationCommandWithFeedback: async (_id: unknown, input: unknown) => {
           expect(input).toMatchObject({
             authorized: true,
-            reviewAuthorized: false,
+            reviewAuthorized: true,
             body: '/retry',
           });
           return {
@@ -470,7 +470,8 @@ it('dispatches continuation instructions through the owning command', async () =
           expect(input).toMatchObject({
             body: '/changes\nMinimal extension authorized.',
             authorized: true,
-            reviewAuthorized: false,
+            reviewAuthorized: true,
+            continuation: true,
           });
           return { applied: true };
         },
@@ -481,6 +482,7 @@ it('dispatches continuation instructions through the owning command', async () =
   expect(
     await applications.message!(toWorkItemKey(id), {
       body: '/changes\nMinimal extension authorized.',
+      continuation: true,
       idempotencyKey: 'continue-1',
     }),
   ).toMatchObject({ status: 'accepted' });

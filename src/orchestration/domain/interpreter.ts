@@ -48,6 +48,7 @@ export {
   isGroupBudgetExtensionEligible,
   isNeedsClarificationResumeEligible,
   isOperatorRetryEligible,
+  isPlainReplyResumeEligible,
   requestChangesResume,
   requestFreshOperatorRetry,
   requestOperatorRetry,

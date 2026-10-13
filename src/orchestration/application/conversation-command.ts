@@ -27,6 +27,8 @@ export interface ConversationCommandInput {
   readonly authorized: boolean;
   /** Independent-review authority must be supplied explicitly. */
   readonly reviewAuthorized?: boolean;
+  /** Explicit continuation reenters the agent stage without a review decision. */
+  readonly continuation?: boolean;
 }
 
 export type ConversationCommandResult =
@@ -52,6 +54,7 @@ interface BuiltInConversationCommandInput {
   readonly extend: (id: WorkflowInstanceId) => Promise<unknown>;
   readonly resumeChanges: (id: WorkflowInstanceId) => Promise<boolean>;
   readonly workAuthorized: boolean;
+  readonly continuation: boolean;
 }
 
 // The command matrix is explicit so new built-ins cannot silently inherit power.
@@ -75,18 +78,14 @@ export async function applyBuiltInConversationCommand(
     for (const workflow of input.workflows) {
       if (isOperatorRetryEligible(workflow) || isGroupBudgetExtensionEligible(workflow)) continue;
       const reviewed =
-        input.reviewAuthorized && workflow.waitingFor !== undefined
+        !input.continuation && input.reviewAuthorized && workflow.waitingFor !== undefined
           ? await input.acceptSignal(workflow.workflowInstanceId, ActivityOutcomeKind.Rejected)
           : false;
       if (reviewed) applied = true;
       else if (input.workAuthorized && continuationTargets.has(workflow))
         applied = (await input.resumeChanges(workflow.workflowInstanceId)) || applied;
     }
-    return applied
-      ? { applied: true }
-      : denied(
-          'No eligible blocked agent stage or authorized review wait. Use /retry for an eligible failed stage; watch gates require their configured authority.',
-        );
+    return applied ? { applied: true } : denied(changesDeniedReason(input.workAuthorized));
   }
   if (
     input.command === ConversationBuiltInCommand.Approved ||
@@ -135,4 +134,23 @@ export async function applyBuiltInConversationCommand(
   return denied(
     'Command is inapplicable: restart requires a failed stage; extend requires an exhausted watch-group budget.',
   );
+}
+
+function changesDeniedReason(workAuthorized: boolean): string {
+  return workAuthorized
+    ? 'No eligible blocked agent stage or authorized review wait. Use /retry for an eligible failed stage; watch gates require their configured authority.'
+    : 'No review wait accepted this decision. Continuing blocked work requires verified repository write, maintain, or admin permission; watch gates retain their configured authority.';
+}
+
+export function continuationCommandRejection(
+  input: ConversationCommandInput,
+  command: string,
+): string | null {
+  if (!input.continuation) return null;
+  if (command !== ConversationBuiltInCommand.Changes)
+    return 'Continuation must use /changes followed by instructions.';
+  if (!input.authorized) return 'Continuation requires verified work-control authority.';
+  if (input.body.trim().slice(command.length).trim() === '')
+    return 'Supply instructions after /changes to continue the blocked stage.';
+  return null;
 }

@@ -1146,6 +1146,96 @@ describe('InboundTranslator', () => {
     expect(await world.orchestration.get(workflow.workflowInstanceId)).toEqual(beforeReplay);
   });
 
+  it("does not re-run an author maintainer's successful review wait from a casual plain comment", async () => {
+    const { world, workflow } = await waitingIssueWorkflow();
+    const before = await world.orchestration.get(workflow.workflowInstanceId);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      conversations: createConversationService(world.journal),
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(
+        world,
+        'Thanks for the update.',
+        10,
+        {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Maintain,
+        },
+        'maintainer',
+      ),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    await processConversationCommands(world);
+    expect(await world.orchestration.get(workflow.workflowInstanceId)).toEqual(before);
+  });
+
+  it('records an untrusted command denial without publishing a public bot reply', async () => {
+    const { world, workflow } = await blockedIssueWorkflow();
+    const conversations = createConversationService(world.journal);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      conversations,
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(world, '/changes Please continue.', 11, {
+        source: ReviewerAuthorizationSource.None,
+      }),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    const publish = vi.fn(async () => {});
+    await processInbound(
+      createConversationCommandReactor(world.orchestration, { conversations, publish }),
+      world.journal,
+      world.checkpoints,
+    );
+    expect(publish).not.toHaveBeenCalled();
+    expect((await conversations.forWorkItem(workflow.workItemId))?.entries.at(-1)?.body).toContain(
+      'Verified repository write',
+    );
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('blocked');
+  });
+
+  it('explains missing work-control authority to a review-only actor requesting continuation', async () => {
+    const { world, workflow } = await blockedIssueWorkflow();
+    const context = {
+      commandId: 'review-only-changes',
+      correlationId: 'review-only-changes' as never,
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'operator' as const, id: 'configured-reviewer' },
+    };
+    const input = {
+      body: '/changes Continue with these instructions.',
+      actorId: 'configured-reviewer',
+      authorized: false,
+      reviewAuthorized: true,
+      capabilities: [ConversationSurfaceCapability.Review],
+    };
+    expect(
+      await world.orchestration.applyConversationCommandWithFeedback(
+        workflow.workItemId,
+        input,
+        context,
+      ),
+    ).toMatchObject({
+      applied: false,
+      reason: expect.stringContaining('Continuing blocked work requires verified repository'),
+    });
+    expect(
+      await world.orchestration.applyConversationCommandWithFeedback(
+        workflow.workItemId,
+        { ...input, continuation: true },
+        context,
+      ),
+    ).toMatchObject({
+      applied: false,
+      reason: 'Continuation requires verified work-control authority.',
+    });
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('blocked');
+  });
+
   it('records an unverified delivery marker as external feedback rather than agent publication', async () => {
     const fixture = await blockedIssueWorkflow();
     const conversations = createConversationService(fixture.world.journal);

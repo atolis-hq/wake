@@ -86,7 +86,7 @@ export function createConversationCommandReactor(
         for (const workflow of await orchestration.listAll()) {
           if (workflow.workItemId !== workItemId) continue;
           const resume = input.authorized
-            ? orchestration.resumeBlockedStageForChanges.bind(orchestration)
+            ? orchestration.resumeBlockedStageForReply.bind(orchestration)
             : orchestration.resumeNeedsClarificationStage.bind(orchestration);
           await resume(workflow.workflowInstanceId, {
             commandId: `${event.eventId}:conversation-reply`,
@@ -108,12 +108,13 @@ async function applyExternalCommand(
   context: CommandContext,
 ): Promise<void> {
   const entryId = context.commandId + ':feedback';
+  const canPublish = input.authorized || input.reviewAuthorized === true;
   const prior = (await feedback?.conversations.get(event.conversationId))?.entries.find(
     (entry) => entry.entryId === entryId,
   );
   // A recorded receipt fixes the result even if publication retries after the workflow changes.
   if (prior !== undefined && feedback !== undefined) {
-    await feedback.publish(event, prior.body, context);
+    if (canPublish) await feedback.publish(event, prior.body, context);
     return;
   }
   const result = await orchestration.applyConversationCommandWithFeedback(
@@ -132,5 +133,5 @@ async function applyExternalCommand(
     },
     context,
   );
-  await feedback.publish(event, body, context);
+  if (canPublish) await feedback.publish(event, body, context);
 }

@@ -106,14 +106,24 @@ async function dispatchWorkCommand(
 
 function conversationMessageRequest(body: unknown): ConversationMessageRequest | ApiHttpResponse {
   if (!isObject(body)) return invalidRequest('', 'A JSON object is required');
-  if (Object.keys(body).some((key) => key !== 'idempotencyKey' && key !== 'body'))
+  if (
+    Object.keys(body).some(
+      (key) => key !== 'idempotencyKey' && key !== 'body' && key !== 'continuation',
+    )
+  )
     return invalidRequest('', 'The command body contains unknown fields');
   const command = commandRequest({ idempotencyKey: body.idempotencyKey });
   if (isHttpResponse(command)) return command;
   if (typeof body.body !== 'string' || body.body.trim() === '')
     return invalidRequest('body', 'Must be a non-empty string');
   if (body.body.length > 20_000) return invalidRequest('body', 'Must be at most 20000 characters');
-  return { ...command, body: body.body };
+  if (body.continuation !== undefined && typeof body.continuation !== 'boolean')
+    return invalidRequest('continuation', 'Must be a boolean');
+  return {
+    ...command,
+    body: body.body,
+    ...(body.continuation === undefined ? {} : { continuation: body.continuation }),
+  };
 }
 
 async function dispatchControlCommand(
