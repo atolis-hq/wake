@@ -274,6 +274,9 @@ function sameRevision(
 
 function contextExport(share: boolean | undefined, contextScope: string | undefined) {
   if (share !== true) return {};
-  if (contextScope === undefined) throw new Error('This run has no trusted shared context');
+  if (contextScope === undefined)
+    throw new Error(
+      'This run has no trusted shared context, so share is not available. Write the artifact again without share: it stays readable by later stages of this WorkItem.',
+    );
   return { contextExport: artifactSharedContextNameSchema.parse(contextScope) };
 }
