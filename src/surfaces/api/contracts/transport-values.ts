@@ -7,6 +7,7 @@ import type {
 } from '../../../control-plane/index.js';
 import type { RunStatus } from '../../../execution/index.js';
 import { defineClosedVocabulary } from '../../../kernel/index.js';
+import type { WorkflowStatus } from '../../../orchestration/index.js';
 import type { ApiCommandStatus } from './control-plane.js';
 import type { TriggerCommandName } from './triggers.js';
 
@@ -135,3 +136,11 @@ export const TriggerCommandNameValue: typeof TriggerCommandName = {
   Resume: triggerCommands[1]!,
   Run: triggerCommands[2]!,
 };
+
+export const WorkflowStatusValue: typeof WorkflowStatus = defineClosedVocabulary({
+  Active: 'active',
+  Waiting: 'waiting',
+  Completed: 'completed',
+  Blocked: 'blocked',
+  Superseded: 'superseded',
+} as const);

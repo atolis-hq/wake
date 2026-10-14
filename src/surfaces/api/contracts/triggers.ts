@@ -5,6 +5,7 @@ import type {
   TriggerView,
 } from '../../../control-plane/index.js';
 import type { ValueOf } from '../../../kernel/index.js';
+import type { WorkflowStatus } from '../../../orchestration/index.js';
 
 const triggerStatusShape = { enabled: true, paused: true, running: true, removed: true };
 const triggerStatuses = Object.keys(triggerStatusShape) as (keyof typeof triggerStatusShape)[];
@@ -26,13 +27,24 @@ export interface TriggerResponse {
     readonly author: string;
     readonly occurredAt: string;
   } | null;
+  readonly activeInvocation: {
+    readonly activeWorkItemId: string;
+    readonly workItemKey: string;
+    readonly triggerId: string;
+    readonly workflowInstanceId: string;
+    readonly workflowStatus: WorkflowStatus | null;
+    readonly blockReason: string | null;
+    readonly retryEligible: boolean;
+  } | null;
   readonly triggerId: string;
   readonly status: TriggerStatus;
   readonly definition: TriggerConfig | null;
   readonly paused: boolean;
   readonly pauseReason: string | null;
   readonly nextOccurrence: string | null;
-  readonly pending: readonly TriggerView['coalesced'][string][];
+  readonly pending: readonly (TriggerView['coalesced'][string] & {
+    readonly activeWorkItemId: string | null;
+  })[];
   readonly latestSkip: TriggerSkipDiagnostic | null;
   readonly invocations: readonly (TriggerInvocationView & { readonly workItemKey: string })[];
 }
