@@ -395,6 +395,7 @@ function eligibleWorkflow(): WorkflowInstanceView {
     pendingActivation: { activationId: 'activation-1', status: 'completed', supplemental: false },
     lastOutcome: { kind: 'failed' },
     acceptedOutcomes: ['activation-1'],
+    operatorRetryCommandIds: [],
   } as unknown as WorkflowInstanceView;
 }
 

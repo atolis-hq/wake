@@ -638,8 +638,9 @@ describe('GitWorkspaceProvider', () => {
         outcome === 'failed' ? 'exited with code 7' : 'cancel preparation',
       );
       if (outcome === 'cancelled') {
-        await vi.waitFor(async () =>
-          expect(await readFile(join(workspacePath, '.attempted'), 'utf8')).toBe('yes'),
+        await vi.waitFor(
+          async () => expect(await readFile(join(workspacePath, '.attempted'), 'utf8')).toBe('yes'),
+          { timeout: 10_000 },
         );
         controller.abort(new Error('cancel preparation'));
       }

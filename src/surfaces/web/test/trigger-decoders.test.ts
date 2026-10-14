@@ -10,6 +10,7 @@ const automatic = {
   eventType: WorkEventType.ObjectiveRevised,
 } as const;
 const trigger: TriggerResponse = {
+  activeInvocation: null,
   triggerId: 'oversight',
   status: TriggerStatus.Paused,
   definition: null,
@@ -23,6 +24,7 @@ const trigger: TriggerResponse = {
       source: manual,
       sources: [manual, automatic],
       disposition: 'coalesced',
+      activeWorkItemId: 'work-active',
       manualOutcome: { disposition: 'coalesced', activeWorkItemId: 'work-active' },
     },
   ],

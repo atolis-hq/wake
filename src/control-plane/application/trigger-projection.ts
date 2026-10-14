@@ -159,7 +159,9 @@ function withoutCoalesced(
       ...coalesced,
       [key]: {
         ...pending,
-        ...(removedHead && head !== undefined ? head : {}),
+        ...(removedHead && head !== undefined
+          ? { ...head, manualOutcome: head.manualOutcome }
+          : {}),
         manualRequests: retained,
         sources: pending.sources.filter(
           (source) => source.kind !== TriggerSourceKind.Manual || source.commandId !== commandId,

@@ -45,6 +45,7 @@ orchestration:
 # Independent workflow invocations need an explicit event and/or UTC cron source.
 # Activity prompts define their tasks. No triggers are enabled by default.
 controlPlane:
+  maxOpenWorkItems: null # Unlimited; set a positive integer to finish open work first.
   triggers: []
 
 # External providers Wake correlates inbound work with. Empty until you

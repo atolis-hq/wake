@@ -124,10 +124,73 @@ it('E2E-EXEC-RECOVER-002 escalates unknown recovery and accepts an operator reso
   expect((await world.viewRuns())[0]).toMatchObject({ status: 'ambiguous', escalated: true });
   expect(await world.viewWorkflow(workflow.workflowInstanceId)).toMatchObject({
     status: 'blocked',
-    blockReason: 'run-ambiguous-after-3-attempts',
+    blockReason: `execution-recovery-ambiguous: run ${run.runId}: runner unavailable`,
   });
 
   await world.resolveRun(run.runId, { kind: 'succeeded', outcome: { kind: 'done' } });
   await expect(world.advance(work.workItemId)).resolves.toMatchObject({ kind: 'progressed' });
   expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('completed');
+});
+
+it('retries a confirmed interrupted attempt once through workflow policy after repeated restarts', async () => {
+  const world = new TestWorld();
+  let starts = 0;
+  world.registerActivity({
+    name: activityName('interrupted-run'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.enum(['done', 'failed']) }).strict(),
+    outcomeKinds: ['done', 'failed'],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute(_invocation, context) {
+        starts++;
+        if (starts > 1) return { kind: 'done' as const };
+        await context.reportExternalExecution({
+          kind: 'process',
+          id: 'gone-process',
+          startedAt: context.occurredAt,
+        });
+        return new Promise(() => {});
+      },
+    },
+  });
+  world.configureWorkflow('interrupted', {
+    stages: {
+      run: {
+        activity: 'interrupted-run',
+        with: {},
+        execution: { workspace: 'none' },
+        on: { done: { then: 'done' }, failed: { retry: { max: 1 }, then: 'await-human' } },
+        requiresApproval: false,
+      },
+    },
+  });
+  const work = await world.createWork({ objective: 'retry an interrupted process' });
+  const workflow = await world.startWorkflow({
+    workItemId: work.workItemId,
+    workflowName: workflowName('interrupted'),
+  });
+  void world.advance(work.workItemId);
+  await activeRun(world);
+  world.clock.advance(60_001);
+  world.restartExecution({
+    async inspect() {
+      return { kind: 'absent' as const };
+    },
+  });
+  await world.advance(work.workItemId);
+  world.restartExecution({
+    async inspect() {
+      return { kind: 'absent' as const };
+    },
+  });
+  await world.advance(work.workItemId);
+  const runs = await world.viewRuns();
+  expect(runs.map((run) => run.status)).toEqual(['failed', 'succeeded']);
+  expect(starts).toBe(2);
+  expect(await world.viewWorkflow(workflow.workflowInstanceId)).toMatchObject({
+    status: 'completed',
+    retryCounts: { 'run:failed': 1 },
+  });
 });

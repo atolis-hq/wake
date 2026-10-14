@@ -1,7 +1,13 @@
+import { applyProjectionEvent, createEventData } from '@atolis-hq/eventing';
+import { FileProjectionStore } from '@atolis-hq/eventing-filesystem';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ActivityEventType, MergeMethod, activationId } from '../../../src/activities/index.js';
 import {
   deliveryProjection,
+  deliveryProjectionKey,
   projectDeliveries,
 } from '../../../src/integrations/delivery/application/delivery-projector.js';
 import {
@@ -17,6 +23,44 @@ import { eventEnvelope } from '../../support/event-envelope.js';
 import { resId } from '../../support/identities.js';
 
 describe('delivery projector', () => {
+  it('stores intents whose event ids contain path separators in the filesystem projection store', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-delivery-projection-'));
+    try {
+      const store = new FileProjectionStore(root);
+      const base = eventEnvelope(
+        ActivityEventType.PrMergeRequested,
+        {
+          idempotencyKey: 'merge-intent',
+          activationId: activationId('activation-merge'),
+          workflowInstanceId: 'workflow-merge',
+          resourceId: resId('1'),
+          revision: 'head-a',
+          method: MergeMethod.Squash,
+          requireChecks: true,
+          autoMerge: true,
+        },
+        resourceStream(resId('1')),
+        1,
+      );
+      const eventId = 'github:issue-comment:atolis-hq/wake#919:1:feedback-delivery';
+      const event = { ...base, event: createEventData({ ...base.event, eventId }) };
+      const selected = deliveryProjection.select(event);
+
+      expect(selected?.key).toBe(deliveryProjectionKey(eventId));
+      expect(selected?.key).not.toMatch(/[\\/]/u);
+      await applyProjectionEvent(deliveryProjection, store, selected!.key, event);
+      await expect(store.read(deliveryProjection.name, selected!.key)).resolves.toMatchObject({
+        value: { intentEventId: eventId },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps existing keys that contain no path separators unchanged', () => {
+    expect(deliveryProjectionKey('agent-run:run-1:attempt')).toBe('agent-run:run-1:attempt');
+  });
+
   it('projects an issue completion request as a durable delivery intent', () => {
     const [view] = projectDeliveries([
       eventEnvelope(

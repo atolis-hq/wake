@@ -46,7 +46,7 @@ recorded history; they do not start future invocations.
 
 Pause and resume are available on both views. They use the owning Control Plane
 commands and never rewrite configuration. Pause clears unstarted pending work;
-active invocations continue. Cancel/freeze remains on WorkItem pages. Resume
+active invocations continue. Freezing remains on WorkItem pages. Resume
 allows future explicit sources without starting work or resetting retries.
 Unavailable definitions and permission/command errors are shown explicitly.
 Shared context links are not exposed until the owning context capability exists.
@@ -150,3 +150,21 @@ It returns HTTP 200 with the ordinary command response and a `triggerOutcome`:
 outcome, including skips, even if eligibility has changed. If a pause clears an
 unclaimed queued request, its durable result becomes `skipped` with reason `paused`. Removed definitions
 return a command conflict. There are no per-run parameters or gate overrides.
+
+The list and detail show the active single-flight slot holder, linked WorkItem,
+workflow status, and block reason. Shared-scope triggers show the same holder;
+pending requests name the WorkItem they are waiting on, including sibling requests.
+**Retry invocation** appears only when the existing Work retry policy allows it.
+It calls `POST /api/v1/work-items/:workItemKey/commands/retry` with an
+`idempotencyKey`, retaining operator attribution and durable command identity.
+Repeating that identity does not retry the workflow again, including after restart.
+Retry resumes the same invocation and keeps its slot until completion or supersession.
+Queued work is then reconsidered under the existing pause, quota and capacity rules.
+Retry does not resume a paused trigger. Operator cancellation/supersession remains
+follow-up work until a public Work cancellation command is available.
+
+Trigger API responses include nullable `activeInvocation` with
+`activeWorkItemId`, `workItemKey`, `triggerId`, `workflowInstanceId`,
+nullable `workflowStatus` and `blockReason`, and `retryEligible`.
+Each `pending` entry includes nullable `activeWorkItemId`. Status is null
+when a claimed workflow awaits recovery; no holder is represented by null.

@@ -17,6 +17,7 @@ import {
   sourceIdentity,
   type TriggerFactInput,
 } from './trigger-facts.js';
+import { inspectTriggers } from './trigger-inspection.js';
 import { requestManualTrigger } from './trigger-manual-request.js';
 import { advancePendingTriggers } from './trigger-pending.js';
 import { maximumTriggerSources, type TriggerView } from './trigger-projection.js';
@@ -32,6 +33,7 @@ export type { TriggerCheckpointStore } from './trigger-source-cursor.js';
 
 export type TriggerInspectionView = TriggerView & {
   readonly diagnostics: readonly TriggerSkipDiagnostic[];
+  readonly coordinationKeys: Readonly<Record<string, string>>;
 };
 
 export const triggerCriticalSectionConsumer = 'control-plane:trigger-coordination';
@@ -50,11 +52,16 @@ export class TriggerService {
   }
 
   async get(): Promise<TriggerInspectionView> {
-    return this.serialise(async () => ({
-      ...(await this.reader.get()),
-      invocations: await this.dependencies.history(),
-      diagnostics: await this.diagnostics.get(),
-    }));
+    return this.serialise(async () => {
+      const view = await this.reader.get();
+      return inspectTriggers(
+        view,
+        await this.dependencies.history(),
+        await this.diagnostics.get(),
+        this.dependencies.configurations(),
+        (id) => this.commandKey(id),
+      );
+    });
   }
 
   async reconcile(context: CommandContext): Promise<void> {

@@ -200,7 +200,7 @@ it('continues definitely running execution under a renewed recovery lease', asyn
   expect(fixture.executions).toBe(1);
 });
 
-it('reconciles definitely absent execution as failed', async () => {
+it('reconciles definitely absent execution once across repeated restarts', async () => {
   const fixture = executionFixture();
   const run = await fixture.activeRunWithExternalExecution();
   fixture.expireLease();
@@ -217,8 +217,14 @@ it('reconciles definitely absent execution as failed', async () => {
 
   await expect(recovery.recover(run.runId, 'resident-b')).resolves.toMatchObject({
     status: 'failed',
-    failure: { kind: 'unexpected-execution-failure' },
+    failure: { kind: 'interrupted-execution' },
   });
+  await recovery.recover(run.runId, 'resident-c');
+  expect(
+    (await fixture.events()).filter(
+      (event) => event.event.eventType === ExecutionEventType.RunFailed,
+    ),
+  ).toHaveLength(1);
 });
 
 it('fails an unclaimed Run with no external execution instead of refusing recovery', async () => {
@@ -348,7 +354,7 @@ it('blocks the owning workflow when ambiguity reaches the configured bound', asy
     fixture.activities,
     { maxAmbiguityReconciliationAttempts: 1 },
     {
-      async block(workflowInstanceId, reason) {
+      async blockAwaitingActivation(workflowInstanceId, _activationId, reason) {
         blocked.push({ workflowInstanceId, reason });
       },
     },
@@ -356,7 +362,10 @@ it('blocks the owning workflow when ambiguity reaches the configured bound', asy
 
   await recovery.recover(run.runId, 'resident-b');
   expect(blocked).toEqual([
-    { workflowInstanceId: run.workflowInstanceId, reason: 'run-ambiguous-after-1-attempts' },
+    {
+      workflowInstanceId: run.workflowInstanceId,
+      reason: `execution-recovery-ambiguous: run ${run.runId}: runner unavailable`,
+    },
   ]);
 });
 
@@ -509,3 +518,37 @@ async function appendStartingRun(
   ]);
   return currentRunId;
 }
+
+it('repairs a restart between terminal ambiguity and its workflow block', async () => {
+  const fixture = executionFixture();
+  const run = await fixture.activeRunWithExternalExecution();
+  fixture.expireLease();
+  const commands: string[] = [];
+  let attempts = 0;
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        return { kind: 'unknown' as const, reason: 'runner unavailable' };
+      },
+    },
+    fixture.activities,
+    { maxAmbiguityReconciliationAttempts: 1 },
+    {
+      async blockAwaitingActivation(_workflow, _activation, _reason, context) {
+        commands.push(context.commandId);
+        if (attempts++ === 0) throw new Error('host stopped before workflow append');
+      },
+    },
+  );
+  await expect(recovery.recover(run.runId, 'resident-a')).rejects.toThrow('host stopped');
+  await recovery.recoverActive('resident-b');
+  expect(commands).toHaveLength(2);
+  expect(commands[1]).toBe(commands[0]);
+  expect(
+    (await fixture.events()).filter(
+      (event) => event.event.eventType === ExecutionEventType.RunAmbiguous,
+    ),
+  ).toHaveLength(1);
+});

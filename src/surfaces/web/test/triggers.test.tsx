@@ -12,6 +12,7 @@ afterEach(cleanup);
 function entry(overrides: Partial<TriggerResponse> = {}): TriggerResponse {
   return {
     triggerId: 'oversight',
+    activeInvocation: null,
     status: TriggerStatus.Enabled,
     definition: {
       id: 'oversight',
@@ -472,4 +473,60 @@ it('retries a failed manual command with the original idempotency key', async ()
   expect((await screen.findByRole('status')).textContent).toBe('started');
   expect(keys).toHaveLength(2);
   expect(keys[1]).toBe(keys[0]);
+});
+
+it('shows the blocked holder and queued attribution and retries through the Work command', async () => {
+  const trigger = entry({
+    activeInvocation: {
+      activeWorkItemId: 'blocked-work',
+      workItemKey: 'wk_YmxvY2tlZC13b3Jr',
+      triggerId: 'sibling',
+      workflowInstanceId: 'workflow',
+      workflowStatus: 'blocked',
+      blockReason: 'unconfigured outcome failed',
+      retryEligible: true,
+    },
+    pending: [
+      {
+        triggerId: 'oversight',
+        coordinationKey: 'shared',
+        source: { kind: 'manual', commandId: 'queued', operator: 'web' },
+        sources: [{ kind: 'manual', commandId: 'queued', operator: 'web' }],
+        disposition: 'coalesced',
+        activeWorkItemId: 'blocked-work',
+      },
+    ],
+  });
+  const posts: { url: string; body: unknown }[] = [];
+  mount(
+    '/triggers/oversight',
+    vi.fn(async (input, init) => {
+      if (init?.method === 'POST') {
+        posts.push({ url: String(input), body: JSON.parse(String(init.body)) });
+        return json(
+          {
+            data: {
+              commandId: 'work:retry',
+              idempotencyKey: 'retry',
+              acceptedAt: asOf,
+              status: 'accepted',
+            },
+            meta: { asOf },
+          },
+          202,
+        );
+      }
+      return json({ data: trigger, meta: { asOf } });
+    }),
+  );
+  expect(await screen.findByText('Block reason: unconfigured outcome failed')).toBeTruthy();
+  expect(screen.getByText('oversight: Waiting on blocked-work')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry invocation' }));
+  expect(await screen.findByText(/Retry accepted/)).toBeTruthy();
+  expect(posts).toEqual([
+    {
+      url: expect.stringContaining('/work-items/wk_YmxvY2tlZC13b3Jr/commands/retry'),
+      body: { idempotencyKey: expect.any(String) },
+    },
+  ]);
 });

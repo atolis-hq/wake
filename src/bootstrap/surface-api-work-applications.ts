@@ -142,14 +142,22 @@ export function createSurfaceWorkApplications(
       if (id === undefined) return retryIneligible('Work item was not found');
       const work = await root.work.get(id);
       if (work === null) return retryIneligible('Work item was not found');
-      if (work.deleted === true) return retryIneligible('Work item is deleted');
-      if (work.frozen) return retryIneligible('Work item is frozen');
-      if (work.state !== WorkStatus.Open) return retryIneligible('Work item is not open');
       const workflows = (await root.orchestration.listAll()).filter(
         (workflow) => workflow.workItemId === id,
       );
       if (!workflows.some((workflow) => workflow.parentWorkflowInstanceId === undefined))
         return retryIneligible('Work item has no primary workflow');
+      if (
+        workflows.some((workflow) =>
+          workflow.operatorRetryCommandIds.includes(
+            commandContext(command.idempotencyKey, now).commandId,
+          ),
+        )
+      )
+        return accepted(command.idempotencyKey, now());
+      if (work.deleted === true) return retryIneligible('Work item is deleted');
+      if (work.frozen) return retryIneligible('Work item is frozen');
+      if (work.state !== WorkStatus.Open) return retryIneligible('Work item is not open');
       const target = selectOperatorRetryTarget(workflows);
       if (target === undefined) return retryIneligible('Workflow is not retry eligible');
       try {

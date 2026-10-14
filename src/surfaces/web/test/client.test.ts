@@ -89,8 +89,8 @@ describe('typed Wake API client', () => {
         orchestrationGroupId: 'group-1',
         status: WorkflowStatus.Blocked,
         currentStage: 'implement',
-        blockReason: 'run-ambiguous-after-3-attempts',
+        blockReason: 'execution-recovery-ambiguous: runner inspection unavailable',
       }),
-    ).toMatchObject({ blockReason: 'run-ambiguous-after-3-attempts' });
+    ).toMatchObject({ blockReason: 'execution-recovery-ambiguous: runner inspection unavailable' });
   });
 });

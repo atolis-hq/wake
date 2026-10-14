@@ -24,6 +24,7 @@ export function isActiveRunStatus(
 
 export const ExecutionFailureCode = defineClosedVocabulary({
   Unexpected: 'unexpected-execution-failure',
+  Interrupted: 'interrupted-execution',
 } as const);
 
 export type ExecutionFailureCode = ValueOf<typeof ExecutionFailureCode>;
@@ -77,3 +78,29 @@ export const TranscriptGroupKind = {
 } as const;
 
 export type TranscriptGroupKind = ValueOf<typeof TranscriptGroupKind>;
+
+export const RunnerKind = {
+  ClaudeCli: 'claude-cli',
+  CodexCli: 'codex-cli',
+  CursorCli: 'cursor-cli',
+  Command: 'command',
+  Fake: 'fake',
+} as const;
+
+export type RunnerKind = ValueOf<typeof RunnerKind>;
+
+export const RecoveryBlockReasonPrefix = 'execution-recovery-ambiguous:';
+
+export function isRecoveryBlockReason(reason: string | undefined): boolean {
+  return reason?.startsWith(RecoveryBlockReasonPrefix) === true;
+}
+
+// Journals written before the recovery prefix hold this reason permanently.
+const legacyAmbiguityBlockReason = /^run-ambiguous-after-\d+-attempts$/;
+
+export function isAmbiguityResolutionBlockReason(reason: string | undefined): boolean {
+  return (
+    isRecoveryBlockReason(reason) ||
+    (reason !== undefined && legacyAmbiguityBlockReason.test(reason))
+  );
+}
