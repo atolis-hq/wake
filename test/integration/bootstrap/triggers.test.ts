@@ -1,4 +1,9 @@
-import { EventActorKind, correlationId } from '@atolis-hq/eventing';
+import {
+  EventActorKind,
+  EventSourceKind,
+  correlationId,
+  createEventData,
+} from '@atolis-hq/eventing';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -11,7 +16,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ActivityOutcomeKind,
   AgentResultStatus,
+  ExternalExecutionKind,
   RetrySafety,
+  activityName,
 } from '../../../src/activities/index.js';
 import type { CompositionRootOptions } from '../../../src/bootstrap/index.js';
 import {
@@ -33,7 +40,14 @@ import {
   type TriggerConfig,
   type TriggerView,
 } from '../../../src/control-plane/index.js';
-import { isActiveRunStatus } from '../../../src/execution/index.js';
+import {
+  ExecutionEventType,
+  RecoveryBlockReasonPrefix,
+  RunRepository,
+  isActiveRunStatus,
+  runId,
+  runStream,
+} from '../../../src/execution/index.js';
 import {
   OrchestrationEventType,
   orchestrationGroupId,
@@ -897,6 +911,79 @@ describe('durable trigger coordination', () => {
     await f.root.runnerPipeline.run({ maxProgress: 1 });
     expect(await invocations(f.journal)).toHaveLength(1);
     expect((await f.root.triggers.get()).coalesced).toEqual({});
+  });
+
+  it('retains the blocked slot without pausing for restart ambiguity across repeated recovery', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    const event = await source(f, 'restart-ambiguity');
+    await f.root.triggers.start(
+      f.config.controlPlane.triggers[0]!,
+      {
+        kind: TriggerSourceKind.Event,
+        eventId: event.event.eventId,
+        eventType: event.event.eventType,
+      },
+      f.context,
+      event,
+    );
+    const invocation = (await invocations(f.journal))[0]!;
+    const workflowId = workflowInstanceId(invocation.workflowInstanceId);
+    const workflow = await f.root.orchestration.get(workflowId);
+    const run = runId('restart-run');
+    const startedAt = f.clock.now().toISOString();
+    const draft = (
+      eventType: (typeof ExecutionEventType)[keyof typeof ExecutionEventType],
+      payload: unknown,
+    ) =>
+      createEventData({
+        eventId: `${run}:${eventType}`,
+        eventType,
+        occurredAt: startedAt,
+        correlationId: run,
+        causationId: run,
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        stream: runStream(run),
+        payload,
+      } as never);
+    // A run left behind by a previous container: expired lease, uninspectable process identity.
+    await new RunRepository(f.journal).append(run, 0, [
+      draft(ExecutionEventType.RunStarted, {
+        activationId: workflow!.pendingActivation!.activationId,
+        activity: activityName('agent'),
+        workflowInstanceId: workflowId,
+        orchestrationGroupId: workflow!.orchestrationGroupId,
+        attempt: 1,
+        startedAt,
+      }),
+      draft(ExecutionEventType.RunLeaseClaimed, {
+        owner: 'previous-container',
+        acquiredAt: startedAt,
+        expiresAt: startedAt,
+      }),
+      draft(ExecutionEventType.RunExternalExecutionReported, {
+        kind: ExternalExecutionKind.Process,
+        id: 'identity-from-previous-container',
+        startedAt,
+      }),
+    ] as never);
+    const config = parseRootConfig({
+      ...f.config,
+      execution: { ...f.config.execution, maxAmbiguityReconciliationAttempts: 1 },
+    });
+    let reason: string | undefined;
+    for (let i = 0; i < 3; i++) {
+      const root = await restart(f, { config });
+      await root.recovery.recoverActive(`resident-${i}`);
+      await root.runnerPipeline.run({ maxProgress: 1 });
+      expect((await root.triggers.get()).pauses.oversight).toBeUndefined();
+      const blocked = await root.orchestration.get(workflowId);
+      expect(blocked?.status).toBe('blocked');
+      expect(blocked?.blockReason).toContain(RecoveryBlockReasonPrefix);
+      reason ??= blocked?.blockReason;
+      expect(blocked?.blockReason).toBe(reason);
+      expect(await invocations(f.journal)).toHaveLength(1);
+    }
   });
 
   it('pauses on exhausted workflow failures and does not reset retry counters on resume', async () => {

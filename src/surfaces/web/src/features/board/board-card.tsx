@@ -3,6 +3,7 @@ import {
   BoardActiveRunPhaseValue,
   type BoardCardResponse,
 } from '../../../../api/contracts/index.js';
+import { isAmbiguityResolutionBlockReasonValue } from '../../../../api/contracts/transport-values.js';
 import { Chip } from '../../components/chip.js';
 import { fmtCost, fmtDuration } from '../../components/format.js';
 import { OutcomeChip } from '../../components/outcome-chip.js';
@@ -191,5 +192,5 @@ export function BoardCard({ item }: { readonly item: BoardCardResponse }) {
 }
 
 function isAmbiguousRunBlock(reason: string | undefined): boolean {
-  return reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason);
+  return isAmbiguityResolutionBlockReasonValue(reason);
 }

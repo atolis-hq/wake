@@ -1,5 +1,6 @@
 import type { EventEnvelope } from '@atolis-hq/eventing';
 import { ActivityOutcomeKind } from '../../activities/index.js';
+import { isRecoveryBlockReason } from '../../execution/index.js';
 import { WorkflowStatus, type WorkflowInstanceView } from '../../orchestration/index.js';
 import {
   selectControlEvent,
@@ -54,6 +55,7 @@ export async function isOwnScopeSource(
 
 /** Blocking or a failed outcome with no retry wait left ends automatic workflow progress. */
 export function exhaustedFailures(instance: WorkflowInstanceView): boolean {
+  if (isRecoveryBlockReason(instance.blockReason)) return false;
   const failed = instance.lastOutcome?.kind === ActivityOutcomeKind.Failed;
   return (
     instance.status === WorkflowStatus.Blocked ||

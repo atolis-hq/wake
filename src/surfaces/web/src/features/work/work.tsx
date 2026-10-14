@@ -11,6 +11,7 @@ import type {
 } from '../../../../api/contracts/index.js';
 import {
   ActivityOutcomeKindValue,
+  isAmbiguityResolutionBlockReasonValue,
   RunResolutionStatusValue,
 } from '../../../../api/contracts/transport-values.js';
 import { useApiClient } from '../../api/context.js';
@@ -1212,7 +1213,7 @@ function runOutcome(run: RunResponse): string {
 }
 
 function isAmbiguousRunBlock(reason: string | undefined): boolean {
-  return reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason);
+  return isAmbiguityResolutionBlockReasonValue(reason);
 }
 
 function parseActivityOutcome(value: string): { readonly kind: string } | undefined {

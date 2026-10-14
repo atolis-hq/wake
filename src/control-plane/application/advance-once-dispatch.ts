@@ -245,6 +245,7 @@ export async function runDispatchLoop(
             activationId: selected.activation.activationId,
             runId: run.runId,
             reason: run.failure?.message ?? 'execution failed',
+            ...(run.failure === undefined ? {} : { failureKind: run.failure.kind }),
           },
           ctx.commandContext(run.runId),
         );

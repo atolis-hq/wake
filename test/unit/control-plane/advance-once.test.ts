@@ -1052,7 +1052,7 @@ describe('advanceOnce', () => {
       workItemId: 'work-ambiguous',
       orchestrationGroupId: 'group-ambiguous',
       status: 'blocked',
-      blockReason: 'run-ambiguous-after-3-attempts',
+      blockReason: 'execution-recovery-ambiguous: runner inspection unavailable',
       acceptedOutcomes: [],
       pendingActivation: { activationId: 'activation-ambiguous' },
     } as unknown as WorkflowInstanceView;

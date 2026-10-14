@@ -14,7 +14,7 @@ describe('presentWorkflowInstance', () => {
       workflowName: 'default',
       orchestrationGroupId: 'group-1',
       status: 'blocked',
-      blockReason: 'run-ambiguous-after-3-attempts',
+      blockReason: 'execution-recovery-ambiguous: runner inspection unavailable',
       currentStage: 'implement',
       repeatCounts: {},
       retryCounts: {},
@@ -30,7 +30,7 @@ describe('presentWorkflowInstance', () => {
     expect(presentWorkflowInstance(view)).toMatchObject({
       workItemKey: toWorkItemKey(id),
       status: 'blocked',
-      blockReason: 'run-ambiguous-after-3-attempts',
+      blockReason: 'execution-recovery-ambiguous: runner inspection unavailable',
     });
   });
 

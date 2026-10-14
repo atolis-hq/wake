@@ -311,7 +311,7 @@ const runEventSchema: z.ZodType<RunExecutionEvent> = eventEnvelopeSchema.extend(
         .object({
           failure: z
             .object({
-              kind: z.enum([ExecutionFailureCode.Unexpected]),
+              kind: z.enum([ExecutionFailureCode.Unexpected, ExecutionFailureCode.Interrupted]),
               message: z.string(),
               details: z
                 .object({
