@@ -89,7 +89,6 @@ it.each(['DONE', 'BLOCKED', 'FAILED'] as const)(
       outcome,
       displayBody: 'Provider merge policy requires a human.',
       metadata: {},
-      awaitingApproval: true,
       awaitingMerge: true,
     });
     expect(comment).toContain('Awaiting merge');
@@ -98,3 +97,18 @@ it.each(['DONE', 'BLOCKED', 'FAILED'] as const)(
       expect(comment).not.toContain(command);
   },
 );
+
+it('keeps only /approved for an approval wait at the merge stage', () => {
+  const comment = formatAgentRunComment({
+    idempotencyKey: 'merge-approval',
+    outcome: 'DONE',
+    displayBody: 'Ready to merge.',
+    metadata: {},
+    awaitingApproval: true,
+    mergeStageApproval: true,
+  });
+  expect(comment).toContain('Awaiting approval');
+  expect(comment).toContain('/approved');
+  expect(comment).not.toContain('Resolve and merge it in the provider');
+  expect(comment).toContain('/changes and /ask are not accepted');
+});

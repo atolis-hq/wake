@@ -17,8 +17,18 @@ export interface AgentRunComment {
   readonly workspacePath?: string | undefined;
   readonly awaitingApproval?: boolean | undefined;
   readonly awaitingMerge?: boolean | undefined;
+  readonly mergeStageApproval?: boolean | undefined;
   readonly watchGateVerdict?: { readonly runId: string } | undefined;
   readonly publicUiUrl?: string | undefined;
+}
+
+/** Names only the commands the current wait accepts. */
+function waitHintFor(value: AgentRunComment): string | undefined {
+  if (value.awaitingMerge === true) return `_${MergeWaitGuidance}_`;
+  if (value.awaitingApproval !== true) return undefined;
+  if (value.mergeStageApproval === true)
+    return '_An authorized independent reviewer can reply with /approved to continue. Approval of your own work is not permitted. /changes and /ask are not accepted at the merge stage._';
+  return '_An authorized independent reviewer can reply with /approved or /changes followed by feedback. Approval of your own work is not permitted. To ask a question, reply with /ask followed by your question._';
 }
 
 export function formatAgentRunComment(value: AgentRunComment): string {
@@ -30,11 +40,8 @@ export function formatAgentRunComment(value: AgentRunComment): string {
     `**Outcome:** ${commentOutcome(value)}`,
     value.displayBody.trim() || fallback(value.outcome),
   ];
-  if (value.awaitingMerge === true) sections.push(`_${MergeWaitGuidance}_`);
-  if (value.awaitingApproval === true && value.awaitingMerge !== true)
-    sections.push(
-      '_An authorized independent reviewer can reply with /approved or /changes followed by feedback. Approval of your own work is not permitted. To ask a question, reply with /ask followed by your question._',
-    );
+  const waitHint = waitHintFor(value);
+  if (waitHint !== undefined) sections.push(waitHint);
   if (hasContinuationHint(value))
     sections.push(
       value.outcome === 'NEEDS_CLARIFICATION'

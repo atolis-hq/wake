@@ -35,6 +35,7 @@ export function projectTerminalAgentRunReport(input: {
   readonly stage?: string;
   readonly awaitingApproval?: boolean;
   readonly awaitingMerge?: boolean;
+  readonly mergeStageApproval?: boolean;
   readonly watchGateVerdict?: { readonly runId: string };
 }): AgentRunPublicationReport | null {
   if (input.run.finishedAt === undefined) return null;
@@ -52,6 +53,7 @@ export function projectTerminalAgentRunReport(input: {
     metadata: agent?.metadata ?? {},
     ...(input.awaitingApproval === true ? { awaitingApproval: true } : {}),
     ...(input.awaitingMerge === true ? { awaitingMerge: true } : {}),
+    ...(input.mergeStageApproval === true ? { mergeStageApproval: true } : {}),
     ...(input.watchGateVerdict === undefined ? {} : { watchGateVerdict: input.watchGateVerdict }),
   };
 }

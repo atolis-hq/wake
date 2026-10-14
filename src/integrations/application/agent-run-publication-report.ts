@@ -1,7 +1,9 @@
 import { BuiltInActivityName } from '../../activities/index.js';
 import {
   ApprovalAuthorityKind,
+  ApprovedSignal,
   isApprovalAwaitingSignalKind,
+  ResourceTransitionSignal,
   WatchGateVerdictSignal,
   WorkflowStatus,
   type WorkflowInstanceView,
@@ -24,6 +26,7 @@ export function agentRunReportInput(
     ...(stage === undefined ? {} : { stage }),
     ...(isWaiting ? { awaitingApproval: true } : {}),
     ...(isMergeWait ? { awaitingMerge: true } : {}),
+    ...(isMergeStageApproval(workflow) ? { mergeStageApproval: true } : {}),
     ...(watchGateVerdict === undefined ? {} : { watchGateVerdict }),
   };
 }
@@ -38,6 +41,15 @@ export function isMergePublicationWait(
     workflow.parentWorkflowInstanceId === undefined &&
     workflow.waitingFor !== undefined &&
     workflow.waitingFor.intentEventId === undefined &&
+    workflow.waitingFor.signalKind === ResourceTransitionSignal &&
+    workflow.pendingActivation?.activity === BuiltInActivityName.PullRequestMerge
+  );
+}
+
+/** An approved wait at the merge stage accepts /approved only. */
+function isMergeStageApproval(workflow: WorkflowInstanceView): boolean {
+  return (
+    workflow.waitingFor?.signalKind === ApprovedSignal &&
     workflow.pendingActivation?.activity === BuiltInActivityName.PullRequestMerge
   );
 }
