@@ -85,7 +85,9 @@ host:
 `;
 }
 
-const workflowsYaml = `# One workflow named "default": agent-run reports publish their own terminal comments.
+const workflowsYaml = `# Agent with.vars accepts static string prompt variables as {{vars.name}}.
+# Variables grant no tool authority; tools require explicit stage allowedTools.
+# One workflow named "default": agent-run reports publish their own terminal comments.
 workflows:
   default:
     entry: refine

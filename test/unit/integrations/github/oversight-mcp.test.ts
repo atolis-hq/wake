@@ -3,7 +3,12 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { registerDeliveryOversightTools } from '../../../../src/integrations/index.js';
+import {
+  allowsOversightTools,
+  integrationsConfigSchema,
+  oversightRepositories,
+  registerDeliveryOversightTools,
+} from '../../../../src/integrations/index.js';
 import { OversightGitHub } from '../../../support/oversight-github.js';
 
 const sessions: { close(): Promise<void> }[] = [];
@@ -17,7 +22,11 @@ async function fixture() {
   let queue: Promise<unknown> = Promise.resolve();
   let active = true;
   registerDeliveryOversightTools(server, {
-    repositories: ['owner/repo'],
+    repositories: oversightRepositories(
+      integrationsConfigSchema.parse({
+        github: { enabled: true, repositories: [{ owner: 'owner', repo: 'repo' }] },
+      }),
+    ),
     invocationId: 'invocation-1',
     state: new InMemoryProcessorStateStore(),
     gh: github.gh,
@@ -103,5 +112,42 @@ describe('scoped oversight GitHub authority', () => {
       }),
     ).toMatchObject({ isError: true });
     expect(f.github.edits).toBe(0);
+  });
+});
+
+describe('oversight capability configuration', () => {
+  it('requires both explicitly allowed tools', () => {
+    expect(allowsOversightTools(undefined)).toBe(false);
+    expect(allowsOversightTools(['mcp__wake'])).toBe(false);
+    expect(allowsOversightTools(['mcp__wake__wake_github_read'])).toBe(false);
+    expect(allowsOversightTools(['mcp__wake__wake_github_assign'])).toBe(false);
+    expect(
+      allowsOversightTools(['mcp__wake__wake_github_read', 'mcp__wake__wake_github_assign']),
+    ).toBe(true);
+  });
+  it('derives exact scope from enabled GitHub integration configuration', () => {
+    expect(
+      oversightRepositories(
+        integrationsConfigSchema.parse({
+          github: {
+            provider: 'github',
+            enabled: true,
+            repositories: [
+              { owner: 'one', repo: 'first' },
+              { owner: 'two', repo: 'second' },
+            ],
+          },
+        }),
+      ),
+    ).toEqual(['one/first', 'two/second']);
+  });
+  it.each([
+    undefined,
+    {},
+    { github: { enabled: false, repositories: [{ owner: 'owner', repo: 'repo' }] } },
+  ])('fails explicitly when integration is absent or disabled', (integrations) => {
+    expect(() => oversightRepositories(integrations)).toThrow(
+      'require enabled integrations.github',
+    );
   });
 });

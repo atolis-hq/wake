@@ -10,7 +10,6 @@ import {
   ActivityRunnerTransportStatus,
 } from '../contracts/vocabulary.js';
 import { translateAgentResult, type AgentActivityOutcome } from './agent-result.js';
-import type { DeliveryOversightInput } from './delivery-oversight-input.js';
 
 export interface AgentContextReader {
   forWorkItem(
@@ -63,7 +62,7 @@ export function createAgentActivity(
     template?: string;
     model?: string;
     allowedTools?: readonly string[];
-    deliveryOversight?: DeliveryOversightInput;
+    vars?: Readonly<Record<string, string>>;
   },
   AgentActivityOutcome
 > {
@@ -178,7 +177,7 @@ async function agentRequest(
     template?: string;
     model?: string;
     allowedTools?: readonly string[];
-    deliveryOversight?: DeliveryOversightInput;
+    vars?: Readonly<Record<string, string>>;
   }>,
   templates: AgentTemplateRenderer | undefined,
   contextReader: AgentContextReader | undefined,
@@ -191,7 +190,7 @@ async function agentRequest(
     templates,
     contextReader,
     context.resumeSessionId !== undefined,
-    { observedSince: context.resumeStartedAt, deliveryOversight: input.deliveryOversight },
+    { observedSince: context.resumeStartedAt, vars: input.vars },
   );
   return requestFrom(
     input,
@@ -242,7 +241,7 @@ async function resolveTemplate(
   isResume: boolean,
   options: {
     readonly observedSince: string | undefined;
-    readonly deliveryOversight: DeliveryOversightInput | undefined;
+    readonly vars: Readonly<Record<string, string>> | undefined;
   },
 ) {
   if (name === undefined) return undefined;
@@ -256,7 +255,7 @@ async function resolveTemplate(
     isStart: !isResume,
     isResume,
     ...untrustedContext,
-    deliveryOversightJson: JSON.stringify(options.deliveryOversight ?? null),
+    vars: options.vars ?? {},
   });
   if (template === undefined)
     throw new Error('Agent Activity template rendering is not configured');
@@ -267,7 +266,7 @@ async function resolveTemplate(
 }
 
 interface AgentTemplateContext extends Readonly<Record<string, unknown>> {
-  readonly deliveryOversightJson: string;
+  readonly vars: Readonly<Record<string, string>>;
   readonly workItemId: string;
   readonly isStart: boolean;
   readonly isResume: boolean;

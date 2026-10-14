@@ -12,13 +12,20 @@ import {
   type ArtifactService,
 } from '../artifacts/index.js';
 import { WakeMcpServerName, type ExecutionDependencies } from '../execution/index.js';
-import { registerDeliveryOversightTools, type OversightGh } from '../integrations/index.js';
+import {
+  allowsOversightTools,
+  oversightRepositories,
+  registerDeliveryOversightTools,
+  type IntegrationsConfig,
+  type OversightGh,
+} from '../integrations/index.js';
 import type { OrchestrationService } from '../orchestration/index.js';
 
 const sessionLifetimeMs = 2 * 60 * 60 * 1000;
 
 /** Bootstrap binds Artifact's generic policy to verified Execution and Orchestration facts. */
 export function createArtifactMcpProvisioner(input: {
+  readonly integrations?: IntegrationsConfig;
   readonly artifacts: ArtifactService;
   readonly orchestration: OrchestrationService;
   readonly sessions: FileArtifactMcpSessionStore;
@@ -32,6 +39,10 @@ export function createArtifactMcpProvisioner(input: {
   }>;
 }): NonNullable<ExecutionDependencies['mcp']> {
   return async ({ runId, activation, context }) => {
+    if (activation.activity === BuiltInActivityName.Agent) {
+      const parsed = agentActivityDefinition.inputSchema.parse(activation.input);
+      if (allowsOversightTools(parsed.allowedTools)) oversightRepositories(input.integrations);
+    }
     const producer = producerFor(context.workflowInstanceId, activation.stage, activation.activity);
     const artifacts = await input.artifacts.get(context.workItemId);
     const readableProducers = new Set([
@@ -101,12 +112,13 @@ export async function createArtifactMcpServerForSession(
   const activation = workflow?.pendingActivation;
   if (activation?.activity === BuiltInActivityName.Agent) {
     const parsed = agentActivityDefinition.inputSchema.parse(activation.input);
-    if (parsed.deliveryOversight !== undefined) {
+    if (allowsOversightTools(parsed.allowedTools)) {
+      const repositories = oversightRepositories(root.config?.integrations);
       if (root.processorState === undefined || root.paths === undefined)
         throw new Error('Oversight recovery storage unavailable');
       const key = workflow!.workflowInstanceId;
       registerDeliveryOversightTools(server, {
-        repositories: parsed.deliveryOversight.repositories,
+        repositories,
         invocationId: key,
         state: root.processorState,
         ...(options.gh === undefined ? {} : { gh: options.gh }),
@@ -130,6 +142,7 @@ export async function createArtifactMcpServerForSession(
 }
 
 interface ArtifactMcpRoot {
+  readonly config?: { readonly integrations: IntegrationsConfig };
   readonly processorState?: ProcessorStateStore;
   readonly paths?: { readonly locksRoot: string };
   readonly artifacts: ArtifactService;
