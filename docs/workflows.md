@@ -51,7 +51,7 @@ Each stage says what to run and how to run it.
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `activity` | Yes | A registered Activity name. The built-in `agent` Activity invokes a local agent runner; PR activities provide deterministic review/merge operations. |
-| `with` | No | Activity input, validated against the selected Activity before the workflow compiles. For `agent`, provide exactly one of `template` or `prompt`, with optional `model` and `allowedTools` overrides, or scoped `deliveryOversight` input. |
+| `with` | No | Activity input, validated against the selected Activity before the workflow compiles. For `agent`, provide exactly one of `template` or `prompt`, with optional `model` and `allowedTools` overrides and string-valued `vars` prompt input. |
 | `execution.workspace` | No | `none`, `read-only`, or `branch`. It controls whether Execution acquires a workspace for this Activation. |
 | `execution.runnerPool` | No | Ordered runner candidates from `execution.runnerPools`. If omitted, Execution uses `defaultRunnerPool`. |
 | `requiresApproval` | No | Completion policy for ordinary `done` outcomes. The important default is explained below. |
@@ -552,7 +552,8 @@ stored separately from current scope state.
 
 The [delivery oversight example](../examples/delivery-oversight/config.workflows.yaml)
 uses an ordinary `agent` stage with the editable `triage-assign` prompt and
-operator-supplied `deliveryOversight` input. Merge its workflow and
+operator-supplied `vars.focus` text and explicit `allowedTools` opt-in. Merge its
+workflow and
 [trigger/integration configuration](../examples/delivery-oversight/config.yaml)
 into the Wake home, copy the prompt, configure an authenticated MCP-capable
 runner in `standard`, and set intake's required assignee to the identity used

@@ -7,8 +7,8 @@ workflows:
         requiresApproval: false
         with:
           template: triage-assign
-          deliveryOversight:
-            repositories: [atolis-hq/wake]
+          allowedTools: [mcp__wake__wake_github_read, mcp__wake__wake_github_assign]
+          vars:
             # Optional operator input, not a trigger objective or mutable goal.
             focus: Finish active deliveries before starting unrelated work.
         execution: { workspace: none, runnerPool: standard }

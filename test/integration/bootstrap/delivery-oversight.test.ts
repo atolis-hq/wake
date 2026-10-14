@@ -255,8 +255,11 @@ describe('configured delivery oversight', () => {
     });
     await execute(f.root, first);
     const session = f.runner.sessions[0]!;
-    expect(session.allowedTools).toEqual(['mcp__wake']);
-    expect(session.prompt).toContain('atolis-hq/wake');
+    expect(session.allowedTools).toEqual([
+      'mcp__wake__wake_github_read',
+      'mcp__wake__wake_github_assign',
+    ]);
+    expect(session.prompt).toContain('Finish active deliveries before starting unrelated work.');
     expect(session.prompt).toContain('makes that candidate ineligible');
     expect(session.prompt).toContain('continue evaluating other candidates');
     expect(session.prompt).toContain('issue closure alone is');

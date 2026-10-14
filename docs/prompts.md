@@ -12,7 +12,7 @@ following context values:
 | Value | Contents | Trust boundary |
 | --- | --- | --- |
 | `{{workItemId}}` | Wake's durable WorkItem identity. | Trusted Wake identity. |
-| `{{deliveryOversightJson}}` | Configured delivery oversight repositories and optional focus as JSON; `null` when absent. | Trusted operator Activity input. |
+| `{{vars.<name>}}` | String-valued operator prompt variables. Missing references fail strict rendering; use `lookup` for optional values. | Trusted prompt text; grants no tool authority. |
 | `{{issueTitle}}` | Current correlated ticket title. | Untrusted external text. |
 | `{{issueBody}}` | Current correlated ticket body. | Untrusted external text. |
 | `{{comments}}` | Comment list, where each entry has `author`, `occurredAt`, `body`, and optional review-comment `location` (`path`, `line`, `side`). | Untrusted external text and metadata. |
@@ -133,17 +133,28 @@ Prompt/template checks verify rendering, scaffold wiring, and content. They
 do not establish improved model behavior; no live model verification or spend
 is required for these checks.
 
+## Operator prompt variables
+
+An agent stage can supply static prompt text under `with.vars`, for example
+`with: { template: triage-assign, vars: { focus: "Finish active deliveries" } }`.
+Keys must match `[A-Za-z_][A-Za-z0-9_]*`; `__proto__`, `constructor`, and
+`prototype` are reserved. Values must be strings. Workflow compilation rejects
+invalid maps. Templates render these values under `vars` without replacing Wake
+identity fields or interpreting variable contents as another template. Empty maps
+are valid; unknown references fail. For optional text use
+`{{#if (lookup vars "focus")}}{{vars.focus}}{{/if}}`.
+
 ## Delivery oversight
 
 The editable [triage-assign prompt](../prompts/triage-assign.md) takes trusted
-`with.deliveryOversight` input: a non-empty `repositories` list of `owner/repo`
-names and optional `focus` text. Its template receives
-`{{deliveryOversightJson}}` alongside the ordinary identity/context fields.
-Ticket text cannot supply this capability. The invocation receives
-`wake_github_read` and `wake_github_assign` on its run-bound Wake MCP server;
+`with.vars.focus` prompt text. Opt in on the stage with both
+`with.allowedTools: [mcp__wake__wake_github_read, mcp__wake__wake_github_assign]`.
+Neither variables nor template frontmatter enable these tools. The run-bound
+Wake MCP server exposes the read and assignment wrappers only for this opt-in;
 these execute fixed `gh` commands without a shell. Reads are restricted to
-configured repositories; assignment is restricted to the authenticated GitHub
-identity and one durable target per workflow invocation. No lifecycle, label,
+`integrations.github.repositories`; absent or disabled GitHub configuration
+fails opted-in MCP session setup explicitly. Assignment is restricted to the
+authenticated GitHub identity and one durable target per workflow invocation. No lifecycle, label,
 merge, or arbitrary GitHub API mutation is exposed. Use a runner supporting
 Wake's ephemeral MCP capability and authenticate `gh` as the intended Wake
 identity. Broad Bash/gh permissions are unnecessary.
