@@ -32,7 +32,7 @@ import { ArtifactMcpRunner } from '../../support/artifact-mcp-runner.js';
 
 const exampleAllowedTools = YAML.parse(
   await readFile('examples/delivery-oversight/config.workflows.yaml', 'utf8'),
-).workflows['delivery-oversight'].stages.assess.with.allowedTools;
+).workflows['delivery-oversight'].stages['triage-assign'].with.allowedTools;
 const homes: string[] = [];
 afterEach(async () => {
   await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));

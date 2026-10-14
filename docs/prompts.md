@@ -182,7 +182,7 @@ checks current assignees before editing, and records observed assignment afterwa
 A lost response does not authorize switching targets; ambiguous recovery yields
 a no-op. Normal GitHub polling/intake creates the delivery WorkItem.
 
-The `assess` stage writes local `assessment.md` and the accepted successor
+The `triage-assign` stage writes local `assessment.md` and the accepted successor
 `memory.md` through Wake artifact tools. Only designated `memory.md` and
 explicit `share: true` exports enter the configured shared context. Local
 output remains readable with `contextScope` set; original WorkItem, producer,
