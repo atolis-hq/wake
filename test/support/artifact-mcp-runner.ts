@@ -10,7 +10,6 @@ import {
   type Runner,
   type RunnerRequest,
 } from '../../src/execution/index.js';
-import type { OversightGh } from '../../src/integrations/index.js';
 
 interface ToolOperation {
   readonly name: string;
@@ -22,7 +21,6 @@ export class ArtifactMcpRunner implements Runner {
   readonly name = 'fake';
   readonly supportsEphemeralMcp = true;
   root: CompositionRoot | undefined;
-  gh?: OversightGh;
   readonly scripts: {
     operations: readonly ToolOperation[];
     outcome?: AgentRunOutcome;
@@ -38,10 +36,6 @@ export class ArtifactMcpRunner implements Runner {
 
   async start(request: RunnerRequest) {
     return { result: this.execute(request), async cancel() {} };
-  }
-
-  private commandOptions() {
-    return this.gh === undefined ? {} : { gh: this.gh };
   }
 
   private async execute(request: RunnerRequest) {
@@ -60,7 +54,6 @@ export class ArtifactMcpRunner implements Runner {
       {
         now: () => new Date().toISOString(),
         nextId: () => `${request.runId}-artifact-${++count}`,
-        ...this.commandOptions(),
       },
     );
     const client = new Client({ name: 'artifact-fake', version: '1' });

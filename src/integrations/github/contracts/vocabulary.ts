@@ -104,17 +104,3 @@ export const GitHubCliIssueState = defineClosedVocabulary({
   Open: 'OPEN',
   Closed: 'CLOSED',
 } as const);
-
-// Tool operations form a local protocol vocabulary, separate from domain/event values.
-export const GitHubOversightReadOperation = {
-  Repository: 'repository',
-  Issues: 'issues',
-  AssignedIssues: 'assigned-issues',
-  Issue: 'issue',
-  PullRequests: 'pull-requests',
-  PullRequest: 'pull-request',
-  BlockedBy: 'blocked-by',
-  Compare: 'compare',
-} as const;
-
-export type GitHubOversightReadOperation = ValueOf<typeof GitHubOversightReadOperation>;

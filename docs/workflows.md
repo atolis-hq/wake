@@ -552,7 +552,7 @@ stored separately from current scope state.
 
 The [delivery oversight example](../examples/delivery-oversight/config.workflows.yaml)
 uses an ordinary `agent` stage with the editable `triage-assign` prompt and
-operator-supplied `vars.focus` text and explicit `allowedTools` opt-in. Merge its
+operator-supplied `vars.focus` text and a narrow `gh` command allowlist. Merge its
 workflow and
 [trigger/integration configuration](../examples/delivery-oversight/config.yaml)
 into the Wake home, copy the prompt, configure an authenticated MCP-capable
@@ -573,5 +573,5 @@ assigns at most one useful verified-ready issue or records a reasoned no-op.
 Assignment requests delivery via normal GitHub polling/intake; it does not
 create a delivery WorkItem directly or guarantee dispatch. See
 [Delivery oversight prompt inputs and authority](prompts.md#delivery-oversight)
-for recovery, dependency evidence, active delivery judgment, and local/shared
+for prompt-level single-selection recovery, dependency evidence, active delivery judgment, and local/shared
 artifact behavior.

@@ -278,7 +278,6 @@ export async function createCompositionRoot(
     ids,
     runners,
     mcp: createArtifactMcpProvisioner({
-      integrations: config.integrations,
       artifacts,
       orchestration,
       sessions: artifactMcpSessions,

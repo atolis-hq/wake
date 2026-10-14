@@ -147,35 +147,29 @@ are valid; unknown references fail. For optional text use
 ## Delivery oversight
 
 The editable [triage-assign prompt](../prompts/triage-assign.md) takes trusted
-`with.vars.focus` prompt text. Opt in on the stage with both
-`with.allowedTools: [mcp__wake__wake_github_read, mcp__wake__wake_github_assign]`.
-Neither variables nor template frontmatter enable these tools. The run-bound
-Wake MCP server exposes the read and assignment wrappers only for this opt-in;
-these execute fixed `gh` commands without a shell. Reads are restricted to
-`integrations.github.repositories`; absent or disabled GitHub configuration
-fails opted-in MCP session setup explicitly. Assignment is restricted to the
-authenticated GitHub identity and one durable target per workflow invocation. No lifecycle, label,
-merge, or arbitrary GitHub API mutation is exposed. Use a runner supporting
-Wake's ephemeral MCP capability and authenticate `gh` as the intended Wake
-identity. Broad Bash/gh permissions are unnecessary.
+`with.vars.focus` text and uses ordinary `gh` commands. Copy the stage
+`allowedTools` from the [example](../examples/delivery-oversight/config.workflows.yaml)
+and scope its repository patterns to your integration repositories. Authenticate
+`gh` as the intended Wake identity. Wake MCP provides artifacts and operator
+instructions; it does not proxy GitHub or store selection receipts.
 
-Read operations cover repository metadata, open backlog, `assigned-issues`, open PRs, individual
-issues/PRs (including linked closing PRs), native `blocked-by` relationships, and `compare` (base...commit).
-List reads are bounded to 100 entries; inspect specific prerequisite numbers
-when evidence is missing. Provider output remains untrusted evidence. The
-prompt keeps readiness separate from priority: explicit prerequisites must be
-verified, implementation work must be merged or available on the intended
-base, and issue closure alone is insufficient. Unverified prerequisites make
-a candidate ineligible for this invocation; assessment continues with other
-candidates. Active deliveries or supplied focus can justify a successful no-op.
-This does not enforce dependencies for other intake paths.
+Allowed commands cover issue/PR list and view, explicit GET blocked-by and
+base...commit compare API forms, and issue edit with `--add-assignee @me`.
+Avoid broad `gh api *` patterns. Command allowlists cannot enforce read-only API
+methods as strongly as fixed wrappers; narrow patterns reduce that exposure.
+Provider output remains untrusted evidence. Explicit prerequisites must be
+verified; implementation work must be merged or available on the intended base,
+and issue closure alone is insufficient. Establish the base from operator focus
+or relevant PR evidence, never repository metadata or an assumed default. If
+base-dependent readiness is unverified, skip that candidate and continue with
+others. Active delivery or focus can justify a successful no-op.
 
-Before mutation the assignment tool stores the selected repository/issue in
-processor recovery state. With no candidate argument it returns that target;
-retries inspect current provider assignment and never switch targets. A lost
-response after successful assignment is recovered by observing GitHub, not by
-assuming the prior command failed. Normal polling and correlation create the
-delivery WorkItem, including when artifact publication was interrupted.
+The at-most-one-selection guarantee is prompt-level. Before selecting, the agent
+lists issues assigned to Wake and reads existing `assessment.md`/`memory.md`
+to recover an interrupted invocation. It records its target before assignment,
+checks current assignees before editing, and records observed assignment afterward.
+A lost response does not authorize switching targets; ambiguous recovery yields
+a no-op. Normal GitHub polling/intake creates the delivery WorkItem.
 
 The `assess` stage writes local `assessment.md` and the accepted successor
 `memory.md` through Wake artifact tools. Only designated `memory.md` and

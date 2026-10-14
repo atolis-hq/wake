@@ -7,7 +7,15 @@ workflows:
         requiresApproval: false
         with:
           template: triage-assign
-          allowedTools: [mcp__wake__wake_github_read, mcp__wake__wake_github_assign]
+          # Scope these patterns to your integration repositories; do not allow gh api *.
+          allowedTools:
+            - 'Bash(gh issue list --repo atolis-hq/wake *)'
+            - 'Bash(gh issue view * --repo atolis-hq/wake --json *)'
+            - 'Bash(gh pr list --repo atolis-hq/wake *)'
+            - 'Bash(gh pr view * --repo atolis-hq/wake --json *)'
+            - 'Bash(gh api --method GET repos/atolis-hq/wake/issues/*/dependencies/blocked_by --paginate)'
+            - 'Bash(gh api --method GET repos/atolis-hq/wake/compare/*...*)'
+            - 'Bash(gh issue edit * --repo atolis-hq/wake --add-assignee @me)'
           vars:
             # Optional operator input, not a trigger objective or mutable goal.
             focus: Finish active deliveries before starting unrelated work.
