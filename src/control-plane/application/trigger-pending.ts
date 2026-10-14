@@ -21,23 +21,32 @@ export async function advancePendingTriggers(
   ports: PendingTriggerPorts,
   context: CommandContext,
 ): Promise<void> {
-  const view = await ports.view();
-  for (const request of Object.values(view.coalesced)) {
-    if (hasActiveInvocation(view, request.coordinationKey)) continue;
+  const initial = await ports.view();
+  for (const first of Object.values(initial.coalesced)) {
+    if (hasActiveInvocation(initial, first.coordinationKey)) continue;
+    // Manual admission failures consume only the manual commands; automatic work is judged separately.
+    for (const manual of first.manualRequests) {
+      const manualConfig = ports.configured(manual.triggerId);
+      const manualReason = await ports.diagnostics.ineligibleReason(
+        initial,
+        manual.triggerId,
+        manualConfig,
+        manualConfig !== undefined,
+        false,
+        true,
+      );
+      if (manualReason !== undefined) await consume(ports, manual, manualReason, context);
+    }
+    const view = await ports.view();
+    const request = view.coalesced[first.coordinationKey];
+    if (request === undefined) continue;
     const config = ports.configured(request.triggerId);
     const identity = `trigger:${request.triggerId}:${sourceIdentity(request.source)}`;
     const reason = await pendingSkipReason(ports, view, request);
     if (reason !== undefined || config === undefined) {
       // Record every manual command's terminal outcome before consuming the shared slot.
-      for (const pending of [...request.manualRequests, request]) {
-        const skip = reason ?? TriggerSkipReason.Removed;
-        await ports.diagnostics.record(pending.triggerId, pending.source, skip);
-        await ports.emit(
-          consumedTriggerRequest(pending, skip),
-          context,
-          `trigger:consume:${pending.triggerId}:${sourceIdentity(pending.source)}`,
-        );
-      }
+      for (const pending of [...request.manualRequests, request])
+        await consume(ports, pending, reason ?? TriggerSkipReason.Removed, context);
       continue;
     }
     await ports.emit(
@@ -58,6 +67,20 @@ export async function advancePendingTriggers(
     );
     await ports.recover(context);
   }
+}
+
+async function consume(
+  ports: PendingTriggerPorts,
+  pending: TriggerView['requests'][number],
+  reason: TriggerSkipReason,
+  context: CommandContext,
+): Promise<void> {
+  await ports.diagnostics.record(pending.triggerId, pending.source, reason);
+  await ports.emit(
+    consumedTriggerRequest(pending, reason),
+    context,
+    `trigger:consume:${pending.triggerId}:${sourceIdentity(pending.source)}`,
+  );
 }
 
 async function pendingSkipReason(

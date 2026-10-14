@@ -129,6 +129,27 @@ async function invocations(journal: InMemoryEventJournal) {
     );
 }
 
+function mixedScope(shared: boolean) {
+  return shared
+    ? {
+        binding: { triggerCoordinationKey: () => 'shared' },
+        ids: ['oversight', 'secondary'],
+        key: 'shared',
+        head: 'secondary',
+      }
+    : { binding: {}, ids: ['oversight'], key: 'oversight', head: 'oversight' };
+}
+
+async function claims(journal: InMemoryEventJournal) {
+  return (await journal.readAll(0))
+    .map(selectControlEvent)
+    .flatMap((event) =>
+      event?.event.eventType === ControlEventType.TriggerInvocationClaimed
+        ? [event.event.payload]
+        : [],
+    );
+}
+
 describe('composed workflow triggers', () => {
   it.each([
     { cron: '* * * * *' },
@@ -1392,13 +1413,13 @@ it('returns a capacity skip at maxConcurrentRuns even for an ungated paused manu
 it.each([false, true])(
   'enforces manual capacity for mixed pending sources (shared scope: %s)',
   async (shared) => {
-    const binding = shared ? { triggerCoordinationKey: () => 'shared' } : {};
+    const { binding, ids, key, head } = mixedScope(shared);
     const f = await fixture(
       { events: [WorkEventType.ObjectiveRevised] },
       false,
       undefined,
       binding,
-      shared ? ['oversight', 'secondary'] : ['oversight'],
+      ids,
     );
     await f.root.triggers.requestManual('oversight', f.context);
     const commands = ['mixed-manual-first', 'mixed-manual-second'];
@@ -1413,16 +1434,18 @@ it.each([false, true])(
       });
     await source(f, 'automatic-after-manual');
     await f.consume();
-    const key = shared ? 'shared' : 'oversight';
     expect((await f.root.triggers.get()).coalesced[key]?.source.kind).toBe(TriggerSourceKind.Event);
-    expect((await f.root.triggers.get()).coalesced[key]?.triggerId).toBe(
-      shared ? 'secondary' : 'oversight',
-    );
+    expect((await f.root.triggers.get()).coalesced[key]?.triggerId).toBe(head);
     await f.root.runnerControls.pause('fake', 'capacity-lost');
     await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
     const root = await restart(f, binding);
     await root.triggers.reconcile(f.context);
-    expect(await invocations(f.journal)).toHaveLength(1);
+    // Only the manual commands are skipped; the ungated automatic occurrence still starts.
+    const claimed = await claims(f.journal);
+    expect(claimed).toHaveLength(2);
+    expect(claimed[1]?.sources.length).toBeGreaterThan(0);
+    expect(claimed[1]?.sources.every((entry) => entry.kind === TriggerSourceKind.Event)).toBe(true);
+    expect(claimed[1]?.triggerId).toBe(head);
     expect((await root.triggers.get()).coalesced).toEqual({});
     await root.runnerControls.unpause('fake', 'capacity-restored');
     const recovered = await restart(f, binding);
@@ -1439,7 +1462,7 @@ it.each([false, true])(
         },
       });
     }
-    expect(await invocations(f.journal)).toHaveLength(1);
+    expect(await invocations(f.journal)).toHaveLength(2);
   },
 );
 

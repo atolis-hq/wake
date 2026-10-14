@@ -32,6 +32,8 @@ export interface TriggerView {
       ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded] & {
         readonly sources: readonly TriggerSource[];
         readonly manualRequests: readonly ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded][];
+        /** Lets a skipped manual command leave automatic work claimable under its own trigger. */
+        readonly automaticRequests: readonly ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded][];
       }
     >
   >;
@@ -120,16 +122,23 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
   },
 };
 
+/** A manual head with queued automatic work is consumed alone, so the automatic work survives. */
+function consumesWholeRequest(
+  pending: TriggerView['coalesced'][string] | undefined,
+  request: TriggerView['requests'][number],
+): boolean {
+  if (pending?.triggerId !== request.triggerId) return false;
+  if (JSON.stringify(pending.source) !== JSON.stringify(request.source)) return false;
+  return request.source.kind !== TriggerSourceKind.Manual || pending.automaticRequests.length === 0;
+}
+
 function withoutCoalesced(
   coalesced: TriggerView['coalesced'],
   request: TriggerView['requests'][number],
 ): TriggerView['coalesced'] {
   const key = request.coordinationKey;
   // An ineligible new occurrence does not discard another trigger's coalesced request.
-  if (
-    coalesced[key]?.triggerId !== request.triggerId ||
-    JSON.stringify(coalesced[key]?.source) !== JSON.stringify(request.source)
-  ) {
+  if (!consumesWholeRequest(coalesced[key], request)) {
     const pending = coalesced[key];
     if (pending === undefined || request.source.kind !== TriggerSourceKind.Manual) return coalesced;
     const commandId = request.source.commandId;
@@ -140,10 +149,13 @@ function withoutCoalesced(
         manual.source.commandId !== commandId,
     );
     if (retained.length === pending.manualRequests.length) return coalesced;
+    // Skipping manual commands must not discard automatic work queued behind them.
+    const head = pending.automaticRequests.at(-1);
     return {
       ...coalesced,
       [key]: {
         ...pending,
+        ...(pending.source.kind === TriggerSourceKind.Manual && head !== undefined ? head : {}),
         manualRequests: retained,
         sources: pending.sources.filter(
           (source) => source.kind !== TriggerSourceKind.Manual || source.commandId !== commandId,
@@ -177,6 +189,10 @@ function pendingRequest(
       ...(previous.coalesced[request.coordinationKey]?.manualRequests ?? []),
       ...(request.source.kind === TriggerSourceKind.Manual ? [request] : []),
     ].slice(0, maximumTriggerSources),
+    automaticRequests: [
+      ...(previous.coalesced[request.coordinationKey]?.automaticRequests ?? []),
+      ...(request.source.kind === TriggerSourceKind.Manual ? [] : [request]),
+    ].slice(-maximumTriggerSources),
     sources: [
       ...(previous.coalesced[request.coordinationKey]?.sources ?? []),
       request.source,
@@ -198,6 +214,7 @@ function pendingAfterPause(
     [coordinationKey]: {
       ...request,
       ...manualRequest,
+      automaticRequests: [],
       sources: request.sources.filter((source) => source.kind === TriggerSourceKind.Manual),
     },
   };

@@ -32,7 +32,10 @@ export interface TriggerResponse {
   readonly paused: boolean;
   readonly pauseReason: string | null;
   readonly nextOccurrence: string | null;
-  readonly pending: readonly Omit<TriggerView['coalesced'][string], 'manualRequests'>[];
+  readonly pending: readonly Omit<
+    TriggerView['coalesced'][string],
+    'manualRequests' | 'automaticRequests'
+  >[];
   readonly latestSkip: TriggerSkipDiagnostic | null;
   readonly invocations: readonly (TriggerInvocationView & { readonly workItemKey: string })[];
 }

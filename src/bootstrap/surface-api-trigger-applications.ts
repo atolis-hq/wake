@@ -79,7 +79,7 @@ export function createTriggerApplications(
           : new CronTriggerPolicy().nextOccurrence(definition.on.cron, asOf),
       pending: Object.values(view.coalesced)
         .filter((entry) => entry.triggerId === id)
-        .map(({ manualRequests: _, ...entry }) => entry),
+        .map(({ manualRequests: _manual, automaticRequests: _automatic, ...entry }) => entry),
       latestSkip: view.diagnostics?.find((entry) => entry.triggerId === id) ?? null,
       invocations,
     };
