@@ -213,12 +213,12 @@ describe('configured delivery oversight', () => {
     const session = f.runner.sessions[0]!;
     expect(session.allowedTools).toEqual(exampleAllowedTools);
     expect(session.allowedTools.some((tool) => tool.includes('gh api *'))).toBe(false);
-    expect(session.prompt).toContain('prompt-level');
-    expect(session.prompt).toContain('Do not assume a default branch');
+    expect(session.prompt).toContain('atolis-hq/wake');
     expect(session.prompt).toContain('Finish active deliveries before starting unrelated work.');
-    expect(session.prompt).toContain('makes that candidate ineligible');
-    expect(session.prompt).toContain('continue evaluating other candidates');
-    expect(session.prompt).toContain('issue closure alone is');
+    expect(session.prompt).toContain('dependencies/blocked_by');
+    expect(session.prompt).toContain('--add-assignee @me');
+    expect(session.prompt).toContain('Do not check execution');
+    expect(session.prompt).toContain('memory.md is not a log');
     const root = await f.restart();
     await root.runnerPipeline.run({ maxProgress: 1 });
     const view = await new ArtifactContextService(root.journal, root.artifacts).get(
