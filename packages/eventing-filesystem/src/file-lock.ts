@@ -319,7 +319,10 @@ function isProcessAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ESRCH') return false;
+    // EPERM proves the pid exists; start identity then decides whether it is the owner.
+    if (code === 'EPERM') return true;
     throw error;
   }
 }

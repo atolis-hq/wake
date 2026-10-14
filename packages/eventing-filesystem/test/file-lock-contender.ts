@@ -22,7 +22,6 @@ if (
 await writeFile(WAKE_LOCK_READY, 'ready\n');
 await waitFor(WAKE_LOCK_GO);
 const lock = await acquireFileLock(WAKE_LOCK_PATH, {
-  now: new Date(61_000),
   staleAfterMs: 60_000,
   staleRequiresDeadProcess: true,
 });

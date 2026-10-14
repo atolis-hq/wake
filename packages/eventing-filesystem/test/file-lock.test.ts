@@ -462,6 +462,34 @@ it('fails closed when an attempt-owner liveness probe is indeterminate', async (
   }
 });
 
+it.each([
+  ['reclaims', 'start-new', true],
+  ['keeps blocking', 'start-old', false],
+] as const)(
+  '%s an unsignalable pid when its start identity is %s',
+  async (_outcome, currentIdentity, reclaimed) => {
+    const path = await lockPath('eperm.lock');
+    const first = await acquireFileLock(path, {
+      staleRequiresDeadProcess: true,
+      processIdentity: async () => 'start-old',
+    });
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('not permitted'), { code: 'EPERM' });
+    });
+    try {
+      const second = await acquireFileLock(path, {
+        staleRequiresDeadProcess: true,
+        processIdentity: async () => currentIdentity,
+      });
+      expect(second.acquired).toBe(reclaimed);
+      await second.release();
+    } finally {
+      kill.mockRestore();
+      await first.release();
+    }
+  },
+);
+
 it('uses an incomplete record filename only after proving its stale owner dead', async () => {
   const path = await lockPath('incomplete-owner.lock');
   const owners = `${path}.owners`;
