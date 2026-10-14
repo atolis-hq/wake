@@ -7,7 +7,10 @@ workflows:
         requiresApproval: false
         with:
           template: triage-assign
-          # Scope these patterns to your integration repositories; do not allow gh api *.
+          # Scope to your repositories; avoid gh api *. Wildcards admit extra flags,
+          # so GET-only API use and assignment of one issue are prompt-level rules.
+          # Issue edit effectively grants general edits (dispatch labels, title/body,
+          # other assignees, multiple issues). Omit assignment if that is unacceptable.
           allowedTools:
             - 'Bash(gh issue list --repo atolis-hq/wake *)'
             - 'Bash(gh issue view * --repo atolis-hq/wake --json *)'

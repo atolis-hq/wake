@@ -99,8 +99,3 @@ export const GitHubBuiltInCommand = defineClosedVocabulary({
 } as const);
 
 export type GitHubBuiltInCommand = ValueOf<typeof GitHubBuiltInCommand>;
-
-export const GitHubCliIssueState = defineClosedVocabulary({
-  Open: 'OPEN',
-  Closed: 'CLOSED',
-} as const);

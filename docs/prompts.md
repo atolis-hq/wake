@@ -153,10 +153,21 @@ and scope its repository patterns to your integration repositories. Authenticate
 `gh` as the intended Wake identity. Wake MCP provides artifacts and operator
 instructions; it does not proxy GitHub or store selection receipts.
 
-Allowed commands cover issue/PR list and view, explicit GET blocked-by and
-base...commit compare API forms, and issue edit with `--add-assignee @me`.
-Avoid broad `gh api *` patterns. Command allowlists cannot enforce read-only API
-methods as strongly as fixed wrappers; narrow patterns reduce that exposure.
+The example patterns are intended for issue/PR list and view, GET blocked-by
+and base...commit compare reads, and assignment with `--add-assignee @me`.
+Avoid broad `gh api *` patterns. A `*` matches spaces and extra flags, even in
+the middle of a pattern. The API patterns therefore do not enforce GET-only
+access: a wildcard can absorb another `--method` or other arguments. These
+patterns cannot enforce read-only API access as strongly as fixed wrappers.
+
+The issue-edit pattern effectively grants general issue-edit authority on the
+listed repository: labels (including unattended-dispatch labels such as
+`dark-factory`), title/body changes, removal of other assignees, and edits to
+several issues in one command can fit its wildcard. Assignment-only use and
+editing at most one issue are prompt-level guarantees, not allowlist enforcement.
+If that authority is unacceptable, keep assignment out of scope rather than
+add a replacement proxy.
+
 Provider output remains untrusted evidence. Explicit prerequisites must be
 verified; implementation work must be merged or available on the intended base,
 and issue closure alone is insufficient. Establish the base from operator focus
