@@ -52,7 +52,7 @@ export async function recoverTriggerInvocation(
     exhaustedFailures(instance) &&
     invocation.failureOutcomeCount !== instance.acceptedOutcomes.length
   ) {
-    // Retrying remains an explicit workflow command; an operator must resume the trigger.
+    // Workflow retries remain explicit; pause suppresses subsequent automatic sources.
     await dependencies.emit(
       {
         eventType: ControlEventType.TriggerPaused,

@@ -438,9 +438,9 @@ it('explains paused and active manual actions', async () => {
     ),
   );
   const buttons = await screen.findAllByRole('button', { name: 'Run now' });
-  expect((buttons[0] as HTMLButtonElement).disabled).toBe(true);
+  expect((buttons[0] as HTMLButtonElement).disabled).toBe(false);
   expect((buttons[1] as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.getByText('Resume this trigger before running it.')).toBeTruthy();
+  expect(screen.getByText('Automatic runs paused; Run now still works.')).toBeTruthy();
   expect(screen.getByText('A request will coalesce while this invocation is active.')).toBeTruthy();
 });
 

@@ -42,6 +42,8 @@ Owns `control-plane.` events and defines no domain relation semantics.
 Selection, caps, pauses, retries, and scheduler serialisation remain explicit
 and bounded. Processor failure is surfaced through Eventing health; startup
 and fallback reconciliation retain their own diagnostics.
+Trigger pause suppresses automatic sources and clears only pending automatic reasons.
+Manual requests survive pause and restart without resuming the trigger or resetting retries.
 Trigger claims and pause/resume commands share a durable home lock; recovery
 completes committed claims with stable invocation identities. Cron watermarks
 belong to processor state, while request and invocation facts remain

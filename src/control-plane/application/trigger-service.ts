@@ -267,6 +267,8 @@ export class TriggerService {
         request.triggerId,
         config,
         config !== undefined,
+        false,
+        request.source.kind === TriggerSourceKind.Manual,
       );
       if (reason !== undefined || config === undefined) {
         await this.diagnostics.record(

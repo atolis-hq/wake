@@ -46,16 +46,21 @@ export class TriggerDiagnostics {
     config: TriggerConfig | undefined,
     configured: boolean,
     active = false,
+    manual = false,
   ): Promise<SkipReason | undefined> {
-    if (view.pauses[id] !== undefined) return TriggerSkipReason.Paused;
+    if (!manual && view.pauses[id] !== undefined) return TriggerSkipReason.Paused;
     if (config === undefined || !configured) return TriggerSkipReason.Removed;
     if (await this.dependencies.isDispatchPaused()) return TriggerSkipReason.DispatchPaused;
     if (
       !active &&
-      config.when?.capacityAvailable === true &&
+      requiresCapacity(config, manual) &&
       !(await this.dependencies.capacityAvailable(config))
     )
       return TriggerSkipReason.Capacity;
     return undefined;
   }
+}
+
+function requiresCapacity(config: TriggerConfig, manual: boolean): boolean {
+  return manual || config.when?.capacityAvailable === true;
 }

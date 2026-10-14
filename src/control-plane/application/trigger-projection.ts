@@ -2,6 +2,7 @@ import type { EventEnvelope, ProjectionDefinition } from '@atolis-hq/eventing';
 import {
   ControlEventType,
   TriggerRequestDisposition,
+  TriggerSourceKind,
   selectControlEvent,
   type ControlEventPayloads,
   type TriggerSource,
@@ -30,6 +31,8 @@ export interface TriggerView {
       string,
       ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded] & {
         readonly sources: readonly TriggerSource[];
+        readonly manualRequest?:
+          ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded] | undefined;
       }
     >
   >;
@@ -62,13 +65,7 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
             request.disposition === TriggerRequestDisposition.Coalesced
               ? {
                   ...previous.coalesced,
-                  [request.coordinationKey]: {
-                    ...request,
-                    sources: [
-                      ...(previous.coalesced[request.coordinationKey]?.sources ?? []),
-                      request.source,
-                    ].slice(0, maximumTriggerSources),
-                  },
+                  [request.coordinationKey]: pendingRequest(previous, request),
                 }
               : request.disposition === TriggerRequestDisposition.Started
                 ? previous.coalesced
@@ -111,9 +108,7 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
           ...previous,
           pauses: { ...previous.pauses, [payload.triggerId]: payload.reason },
           invocations: pausedInvocations(previous, payload),
-          coalesced: Object.fromEntries(
-            Object.entries(previous.coalesced).filter(([key]) => key !== payload.coordinationKey),
-          ),
+          coalesced: pendingAfterPause(previous.coalesced, payload.coordinationKey),
         };
       }
       case ControlEventType.TriggerResumed: {
@@ -151,4 +146,39 @@ function pausedInvocations(
       ? { ...invocation, failureOutcomeCount: payload.outcomeCount }
       : invocation,
   );
+}
+
+function pendingRequest(
+  previous: TriggerView,
+  request: TriggerView['requests'][number],
+): TriggerView['coalesced'][string] {
+  return {
+    ...request,
+    manualRequest:
+      request.source.kind === TriggerSourceKind.Manual
+        ? request
+        : previous.coalesced[request.coordinationKey]?.manualRequest,
+    sources: [
+      ...(previous.coalesced[request.coordinationKey]?.sources ?? []),
+      request.source,
+    ].slice(0, maximumTriggerSources),
+  };
+}
+
+function pendingAfterPause(
+  coalesced: TriggerView['coalesced'],
+  coordinationKey: string,
+): TriggerView['coalesced'] {
+  const request = coalesced[coordinationKey];
+  if (request === undefined) return coalesced;
+  const { [coordinationKey]: _, ...rest } = coalesced;
+  if (request.manualRequest === undefined) return rest;
+  return {
+    ...rest,
+    [coordinationKey]: {
+      ...request,
+      ...request.manualRequest,
+      sources: request.sources.filter((source) => source.kind === TriggerSourceKind.Manual),
+    },
+  };
 }

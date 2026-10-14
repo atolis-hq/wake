@@ -459,12 +459,12 @@ history document and stream. Normal coordination reads new journal batches
 incrementally rather than repeatedly folding historical requests and invocations.
 
 The public Control Plane trigger service exposes pause/resume/manual-run commands and a
-rebuildable invocation-history projection. Pausing clears unstarted pending
-work and skips new occurrences; active invocations continue.
+rebuildable invocation-history projection. Pausing clears pending automatic requests and skips new cron/event occurrences;
+pending manual requests survive pause and restart, and active invocations continue.
 Blocked invocations still hold their single-flight slot: operator retry or
 clarification can resume the same workflow. Only completion or supersession
-releases the slot. Pausing a trigger clears the shared scope's pending request,
-including reasons coalesced through sibling triggers.
+releases the slot. Pausing a trigger clears the shared scope's pending automatic reasons,
+including those coalesced through sibling triggers, while retaining manual requests.
 Pause survives restart and removal/re-add of the same ID. Resume enables future explicit
 sources without replaying skipped occurrences or resetting workflow retries.
 Events from the trigger's own invocation WorkItems/workflows/Runs are suppressed.
@@ -854,10 +854,13 @@ Orphan discovery reads a pure, rebuildable latest-revision projection keyed by c
 Every configured trigger can also be requested manually through **Run now** or
 `POST /api/v1/triggers/:triggerId/commands/run`. Manual sources are not configured
 in `on`; they carry the command identifier and requesting operator. They use the
-same workflow, single-flight coordination, coalescing, dispatch pause, trigger
-pause, capacity gate, and pending-source bounds. Coalesced requests remain pending
-for reconsideration after the active invocation. Manual commands never resume a
-paused trigger or reset workflow retries. Their original immediate disposition,
+same workflow, single-flight coordination, coalescing, and pending-source bounds.
+Dispatch pause, runner pause/quota, and `maxConcurrentRuns` still apply to manual
+starts, including triggers without `when.capacityAvailable`; unavailable capacity
+returns a typed skipped reason. The configured capacity gate also remains in force.
+Coalesced requests remain pending for reconsideration after the active invocation.
+Run now remains available while automatic runs are paused. Manual commands never
+resume a paused trigger or reset workflow retries. Their original immediate disposition,
 including a skipped reason, is journaled for idempotent retries. Started results
 name the new work item; coalesced results name the active work item they wait
 behind. A completed manual start records a `started` request fact, so the latest

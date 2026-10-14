@@ -12,7 +12,7 @@ import {
 } from '../contracts/events.js';
 import { TriggerSkipReason } from '../contracts/trigger-diagnostics.js';
 import type { TriggerDiagnostics } from './trigger-diagnostics.js';
-import { consumedTriggerRequest, sourceIdentity, type TriggerFactInput } from './trigger-facts.js';
+import { sourceIdentity, type TriggerFactInput } from './trigger-facts.js';
 import { maximumTriggerSources, type TriggerView } from './trigger-projection.js';
 import { hasActiveInvocation } from './trigger-rules.js';
 import type { TriggerServiceDependencies } from './trigger-service-ports.js';
@@ -57,6 +57,7 @@ export async function requestManualTrigger(
       config,
       config !== undefined,
       active,
+      true,
     )) ??
     ((view.coalesced[coordinationKey]?.sources.length ?? 0) >= maximumTriggerSources
       ? TriggerSkipReason.PendingLimit
@@ -105,7 +106,6 @@ async function recoverManualOutcome(
   // Command identity survives changes to the configured coordination scope.
   let position = 0;
   let request: ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded] | undefined;
-  let pauseCleared = false;
   const latest = await ports.dependencies.journal.latestGlobalPosition();
   while (position < latest) {
     const batch = await ports.dependencies.journal.readAll(position, 256);
@@ -113,21 +113,15 @@ async function recoverManualOutcome(
     for (const envelope of batch) {
       const event = selectControlEvent(envelope);
       request = matchingManualRequest(event, triggerId, context.commandId) ?? request;
-      if (
-        event?.event.eventType === ControlEventType.TriggerPaused &&
-        event.event.payload.coordinationKey === request?.coordinationKey
-      )
-        pauseCleared = true;
       position = envelope.globalPosition;
     }
   }
-  return resolvePausedRequest(ports, request, pauseCleared, context);
+  return resolveManualRequest(ports, request, context);
 }
 
-async function resolvePausedRequest(
+async function resolveManualRequest(
   ports: ManualRequestPorts,
   request: ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded] | undefined,
-  pauseCleared: boolean,
   context: CommandContext,
 ): Promise<ManualTriggerOutcome | undefined> {
   if (request?.manualOutcome === undefined) return undefined;
@@ -140,10 +134,7 @@ async function resolvePausedRequest(
         (source) => sourceIdentity(source) === sourceIdentity(request.source),
       ),
   );
-  if (
-    request.manualOutcome.disposition === ManualTriggerDisposition.Coalesced &&
-    (!pauseCleared || invocation !== undefined)
-  )
+  if (request.manualOutcome.disposition === ManualTriggerDisposition.Coalesced)
     return request.manualOutcome;
   if (invocation?.startedAt !== undefined) {
     const outcome: ManualTriggerOutcome = {
@@ -164,16 +155,7 @@ async function resolvePausedRequest(
     );
     return outcome;
   }
-  if (!pauseCleared || invocation !== undefined) return request.manualOutcome;
-  // Pause clears unclaimed requests, but a committed claim still recovers normally.
-  const fact = consumedTriggerRequest(request, TriggerSkipReason.Paused);
-  await ports.emit(
-    fact,
-    context,
-    'trigger:consume:' + request.triggerId + ':' + sourceIdentity(request.source),
-  );
-  await ports.diagnostics.record(request.triggerId, request.source, TriggerSkipReason.Paused);
-  return { disposition: ManualTriggerDisposition.Skipped, reason: TriggerSkipReason.Paused };
+  return request.manualOutcome;
 }
 
 function matchingManualRequest(
