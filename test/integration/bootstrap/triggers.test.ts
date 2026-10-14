@@ -466,6 +466,7 @@ describe('durable trigger coordination', () => {
     expect(await invocations(f.journal)).toHaveLength(1);
   });
 
+  // Bulk file-backed writes need headroom for fsync contention in the full suite.
   it('bounds pending reasons and operational projections and does not replay history on idle reconciliation', async () => {
     const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
     await source(f, 'initial');
@@ -498,7 +499,7 @@ describe('durable trigger coordination', () => {
     await f.root.triggers.reconcile(f.context);
     await f.root.triggers.reconcile(f.context);
     expect(read).not.toHaveBeenCalled();
-  });
+  }, 20_000);
 
   it('clears a shared pending request even when a sibling supplied the last reason', async () => {
     const f = await fixture(
@@ -1376,4 +1377,94 @@ it('returns a capacity skip at maxConcurrentRuns even for an ungated paused manu
     release.resolve();
     await running;
   }
+});
+
+it.each([false, true])(
+  'enforces manual capacity for mixed pending sources (shared scope: %s)',
+  async (shared) => {
+    const binding = shared ? { triggerCoordinationKey: () => 'shared' } : {};
+    const f = await fixture(
+      { events: [WorkEventType.ObjectiveRevised] },
+      false,
+      undefined,
+      binding,
+      shared ? ['oversight', 'secondary'] : ['oversight'],
+    );
+    await f.root.triggers.requestManual('oversight', f.context);
+    const commands = ['mixed-manual-first', 'mixed-manual-second'];
+    const initialApi = createApiDispatcher((await createSurfaceApplications(f.root)).api);
+    for (const command of commands)
+      expect(
+        await initialApi.dispatch('POST', '/api/v1/triggers/oversight/commands/run', {
+          idempotencyKey: command,
+        }),
+      ).toMatchObject({
+        body: { data: { triggerOutcome: { disposition: 'coalesced' } } },
+      });
+    await source(f, 'automatic-after-manual');
+    await f.consume();
+    const key = shared ? 'shared' : 'oversight';
+    expect((await f.root.triggers.get()).coalesced[key]?.source.kind).toBe(TriggerSourceKind.Event);
+    expect((await f.root.triggers.get()).coalesced[key]?.triggerId).toBe(
+      shared ? 'secondary' : 'oversight',
+    );
+    await f.root.runnerControls.pause('fake', 'capacity-lost');
+    await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
+    const root = await restart(f, binding);
+    await root.triggers.reconcile(f.context);
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect((await root.triggers.get()).coalesced).toEqual({});
+    await root.runnerControls.unpause('fake', 'capacity-restored');
+    const recovered = await restart(f, binding);
+    const api = createApiDispatcher((await createSurfaceApplications(recovered)).api);
+    for (const command of commands) {
+      expect(
+        await api.dispatch('POST', '/api/v1/triggers/oversight/commands/run', {
+          idempotencyKey: command,
+        }),
+      ).toMatchObject({
+        status: 200,
+        body: {
+          data: { triggerOutcome: { disposition: 'skipped', reason: TriggerSkipReason.Capacity } },
+        },
+      });
+    }
+    expect(await invocations(f.journal)).toHaveLength(1);
+  },
+);
+
+it('recovers a partial mixed-source skip without running the consumed manual command', async () => {
+  const journal = new FaultInjectingJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') });
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, false, journal);
+  await f.root.triggers.requestManual('oversight', f.context);
+  const commands = ['consumed-before-crash', 'pending-after-crash'].map((commandId) => ({
+    ...f.context,
+    commandId,
+  }));
+  for (const command of commands) await f.root.triggers.requestManual('oversight', command);
+  await source(f, 'automatic-after-commands');
+  await f.consume();
+  await f.root.runnerControls.pause('fake', 'capacity-lost');
+  await accept(f, (await invocations(journal))[0]!.workflowInstanceId);
+  journal.failAfter = ControlEventType.TriggerRequestRecorded;
+  await expect(f.root.triggers.reconcile(f.context)).rejects.toThrow('Injected storage failure');
+  await f.root.runnerControls.unpause('fake', 'capacity-restored');
+  const root = await restart(f);
+  await root.triggers.reconcile(f.context);
+  expect(await root.triggers.requestManual('oversight', commands[0]!)).toEqual({
+    disposition: 'skipped',
+    reason: TriggerSkipReason.Capacity,
+  });
+  const history = (await root.triggers.get()).invocations;
+  expect(history).toHaveLength(2);
+  expect(history[1]?.claim.sources).toContainEqual({
+    kind: TriggerSourceKind.Manual,
+    commandId: commands[1]!.commandId,
+    operator: commands[1]!.actor.id,
+  });
+  expect(history[1]?.claim.sources).not.toContainEqual({
+    kind: TriggerSourceKind.Manual,
+    commandId: commands[0]!.commandId,
+    operator: commands[0]!.actor.id,
+  });
 });

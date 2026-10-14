@@ -31,8 +31,7 @@ export interface TriggerView {
       string,
       ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded] & {
         readonly sources: readonly TriggerSource[];
-        readonly manualRequest?:
-          ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded] | undefined;
+        readonly manualRequests: readonly ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded][];
       }
     >
   >;
@@ -130,8 +129,28 @@ function withoutCoalesced(
   if (
     coalesced[key]?.triggerId !== request.triggerId ||
     JSON.stringify(coalesced[key]?.source) !== JSON.stringify(request.source)
-  )
-    return coalesced;
+  ) {
+    const pending = coalesced[key];
+    if (pending === undefined || request.source.kind !== TriggerSourceKind.Manual) return coalesced;
+    const commandId = request.source.commandId;
+    const retained = pending.manualRequests.filter(
+      (manual) =>
+        manual.triggerId !== request.triggerId ||
+        manual.source.kind !== TriggerSourceKind.Manual ||
+        manual.source.commandId !== commandId,
+    );
+    if (retained.length === pending.manualRequests.length) return coalesced;
+    return {
+      ...coalesced,
+      [key]: {
+        ...pending,
+        manualRequests: retained,
+        sources: pending.sources.filter(
+          (source) => source.kind !== TriggerSourceKind.Manual || source.commandId !== commandId,
+        ),
+      },
+    };
+  }
   const { [key]: _, ...rest } = coalesced;
   return rest;
 }
@@ -154,10 +173,10 @@ function pendingRequest(
 ): TriggerView['coalesced'][string] {
   return {
     ...request,
-    manualRequest:
-      request.source.kind === TriggerSourceKind.Manual
-        ? request
-        : previous.coalesced[request.coordinationKey]?.manualRequest,
+    manualRequests: [
+      ...(previous.coalesced[request.coordinationKey]?.manualRequests ?? []),
+      ...(request.source.kind === TriggerSourceKind.Manual ? [request] : []),
+    ].slice(0, maximumTriggerSources),
     sources: [
       ...(previous.coalesced[request.coordinationKey]?.sources ?? []),
       request.source,
@@ -172,12 +191,13 @@ function pendingAfterPause(
   const request = coalesced[coordinationKey];
   if (request === undefined) return coalesced;
   const { [coordinationKey]: _, ...rest } = coalesced;
-  if (request.manualRequest === undefined) return rest;
+  const manualRequest = request.manualRequests.at(-1);
+  if (manualRequest === undefined) return rest;
   return {
     ...rest,
     [coordinationKey]: {
       ...request,
-      ...request.manualRequest,
+      ...manualRequest,
       sources: request.sources.filter((source) => source.kind === TriggerSourceKind.Manual),
     },
   };
