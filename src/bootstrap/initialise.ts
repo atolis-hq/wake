@@ -551,9 +551,14 @@ Operator-configured focus (trusted prompt text):
 {{vars.focus}}
 {{/if}}
 
-Use ordinary gh commands through the stage's narrow allowedTools list. Operate
-only on repositories named in that list and authenticate gh as the intended
-Wake identity. Use gh issue list/view and gh pr list/view for reads; use only
+Repositories to consider (trusted operator input, a comma-separated list of
+OWNER/REPO):
+{{vars.repositories}}
+
+Use ordinary gh commands, only on those repositories, authenticated as the Wake
+identity already configured for gh (refer to it as @me; gh api user shows its
+login). Do not ask for an allowlist or identity: this prompt is the source of
+both. Use gh issue list/view and gh pr list/view for reads; use only
 explicit gh api --method GET repos/OWNER/REPO/issues/NUMBER/dependencies/blocked_by --paginate
 and gh api --method GET repos/OWNER/REPO/compare/BASE...COMMIT for API reads.
 Assign only with gh issue edit NUMBER --repo OWNER/REPO --add-assignee @me.
@@ -610,10 +615,18 @@ Normal GitHub polling/intake creates the delivery WorkItem; do not create one.
 Write assessment.md through wake_artifacts_write with the selected issue,
 readiness evidence, rationale, active work, consumed context/focus, and observed
 assignment result, or a reasoned no-op if no suitable verified-ready candidate
-remains or active work/focus makes assignment inappropriate. Write memory.md as
-its concise successor for the next fresh session, including uncertainties to
-revisit. Share assessment.md only when useful with share: true; other local
-output stays private. Do not edit another producer's artifacts. Failed or
+remains or active work/focus makes assignment inappropriate.
+
+assessment.md is the log of this invocation. memory.md is not a log: it holds
+only durable facts that stay useful to future invocations, such as repository or
+process conventions, how this project expresses prerequisites, stable selection
+learnings, and standing operator preferences. Never put per-run details in it:
+no run, WorkItem or revision identifiers, timestamps, what happened this time,
+transient blockers, or status. Rewrite it from the previous accepted memory by
+adding, correcting or removing facts; leave it unchanged in substance when you
+learned nothing durable, and if nothing durable is known write a short note
+saying so rather than run notes. Share assessment.md only when useful with
+share: true; other local output stays private. Do not edit another producer's artifacts. Failed or
 unaccepted output must not replace accepted shared memory.
 
 Finish with [[STATUS: DONE]] for an assessment including a no-op, or

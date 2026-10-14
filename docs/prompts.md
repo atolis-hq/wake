@@ -147,11 +147,16 @@ are valid; unknown references fail. For optional text use
 ## Delivery oversight
 
 The editable [triage-assign prompt](../prompts/triage-assign.md) takes trusted
-`with.vars.focus` text and uses ordinary `gh` commands. Copy the stage
+`with.vars.repositories` (required, comma-separated `OWNER/REPO`) and optional
+`with.vars.focus` text, and uses ordinary `gh` commands as the Wake identity
+(`@me`). Some runners (Codex) do not show the agent the stage `allowedTools`, so
+the prompt itself carries the repository scope and identity. Copy the stage
 `allowedTools` from the [example](../examples/delivery-oversight/config.workflows.yaml)
-and scope its repository patterns to your integration repositories. Authenticate
-`gh` as the intended Wake identity. Wake MCP provides artifacts and operator
+and scope its repository patterns to your integration repositories. Wake MCP provides artifacts and operator
 instructions; it does not proxy GitHub or store selection receipts.
+
+`memory.md` holds only durable, reusable facts; per-run detail belongs in
+`assessment.md`.
 
 The example patterns are intended for issue/PR list and view, GET blocked-by
 and base...commit compare reads, and assignment with `--add-assignee @me`.
