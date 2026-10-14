@@ -197,6 +197,64 @@ it('removes the compatibility sentinel after recovering a crashed strict owner',
   await expect(crashed.release()).resolves.toBeUndefined();
 });
 
+it.each([
+  ['unused pid', false, 'prior-generation', true],
+  ['reused pid', true, 'current-generation', true],
+  ['live matching owner', true, 'prior-generation', false],
+  ['unknown identity', true, null, false],
+  ['unknown liveness', null, 'current-generation', false],
+] as const)(
+  'immediately checks a future-dated compatibility owner with %s',
+  async (_scenario, alive, identity, acquired) => {
+    const path = await lockPath('restart.lock');
+    const owners = `${path}.owners`;
+    const ownerRecord = '123-0-prior.json';
+    const prior = {
+      pid: 123,
+      acquiredAt: '9999-12-31T23:59:59.999Z',
+      lockId: 'prior',
+      processIdentity: 'prior-generation',
+    };
+    await mkdir(owners, { recursive: true });
+    await writeFile(join(owners, ownerRecord), JSON.stringify(prior));
+    await writeFile(path, JSON.stringify({ ...prior, compatibilityOwner: true, ownerRecord }));
+    const recovered = await acquireFileLock(path, {
+      now: new Date(0),
+      staleAfterMs: 60_000,
+      staleRequiresDeadProcess: true,
+      isProcessAlive: () => {
+        if (alive === null) throw new Error('indeterminate liveness');
+        return alive;
+      },
+      processIdentity: async () => identity,
+    });
+
+    expect(recovered.acquired).toBe(acquired);
+    if (!acquired)
+      expect(JSON.parse(await readFile(join(owners, ownerRecord), 'utf8'))).toEqual(prior);
+    await recovered.release();
+  },
+);
+
+it('recovers a recent orphan owner without a stale threshold', async () => {
+  const path = await lockPath('orphan.lock');
+  const owners = `${path}.owners`;
+  await mkdir(owners, { recursive: true });
+  await writeFile(
+    join(owners, '123-0-prior.json'),
+    JSON.stringify({ pid: 123, acquiredAt: new Date(0).toISOString(), lockId: 'prior' }),
+  );
+  const recovered = await acquireFileLock(path, {
+    now: new Date(0),
+    staleRequiresDeadProcess: true,
+    isProcessAlive: () => false,
+  });
+
+  expect(recovered.acquired).toBe(true);
+  expect(await readdir(owners)).toHaveLength(1);
+  await recovered.release();
+});
+
 it('retains time-only stale recovery when dead-process proof is not requested', async () => {
   const path = await lockPath('time-only.lock');
   const first = await acquireFileLock(path, { now: new Date(0) });
@@ -222,6 +280,7 @@ it('allows exactly one concurrent contender to recover a dead stale lock', async
     const stale = await acquireFileLock(path, {
       now: new Date(0),
       staleRequiresDeadProcess: true,
+      processIdentity: async () => 'prior-generation',
     });
     const contenders = await Promise.all(
       Array.from({ length: 16 }, () =>
@@ -229,7 +288,8 @@ it('allows exactly one concurrent contender to recover a dead stale lock', async
           now: new Date(61_000),
           staleAfterMs: 60_000,
           staleRequiresDeadProcess: true,
-          isProcessAlive: () => false,
+          isProcessAlive: () => true,
+          processIdentity: async () => 'current-generation',
         }),
       ),
     );
@@ -242,7 +302,8 @@ it('allows exactly one concurrent contender to recover a dead stale lock', async
         now: new Date(61_000),
         staleAfterMs: 60_000,
         staleRequiresDeadProcess: true,
-        isProcessAlive: () => false,
+        isProcessAlive: () => true,
+        processIdentity: async () => 'current-generation',
       });
       expect(retry.acquired).toBe(true);
       await retry.release();
@@ -328,6 +389,7 @@ it(
     const stale = await acquireFileLock(path, {
       now: new Date(0),
       staleRequiresDeadProcess: true,
+      processIdentity: async () => 'prior-generation',
     });
     const go = join(root, 'go');
     const release = join(root, 'release');

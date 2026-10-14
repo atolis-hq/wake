@@ -25,7 +25,6 @@ const lock = await acquireFileLock(WAKE_LOCK_PATH, {
   now: new Date(61_000),
   staleAfterMs: 60_000,
   staleRequiresDeadProcess: true,
-  isProcessAlive: () => false,
 });
 if (lock.acquired) await appendFile(WAKE_LOCK_WINNERS, `${process.pid}\n`);
 await writeFile(WAKE_LOCK_DONE, 'done\n');
