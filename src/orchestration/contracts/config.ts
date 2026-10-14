@@ -285,6 +285,7 @@ export interface CompiledWatch extends Omit<WatchConfig, 'workflow' | 'while' | 
 }
 
 export interface CompiledWorkflow {
+  readonly remainingAgentSteps?: Readonly<Record<StageName, number>>;
   readonly name: WorkflowName;
   readonly entry: StageName;
   readonly commands: Readonly<Record<CommandName, CompiledSupplementalCommand>>;

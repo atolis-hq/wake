@@ -29,6 +29,8 @@ transitions, then retried before first runs, then `requestedPosition` and
 `activationId`. Orchestration computes the priority; Control Plane only orders.
 There is no starvation mitigation: a steady supply of near-complete or
 watch-driven work can delay a long workflow indefinitely.
+A candidate with no eligible runner still stops the dispatch pass; a paused
+runner pool can therefore hold up lower-ranked work on other pools.
 
 ## Public contracts
 

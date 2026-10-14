@@ -85,7 +85,7 @@ export function acceptSignal(
   const watchDriven =
     authority.kind === ApprovalAuthorityKind.Watch || signal.kind === ResourceTransitionSignal;
   if (target !== undefined) resumeToTarget(events, definition, state, input, target, watchDriven);
-  else requestLegacyReentry(events, definition, state, input);
+  else requestLegacyReentry(events, definition, state, input, watchDriven);
   return { kind: 'append', events };
 }
 
@@ -125,6 +125,7 @@ function requestLegacyReentry(
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: DecisionContext,
+  watchDriven: boolean,
 ): void {
   const stage = definition.stages[stageName(state.currentStage)]!;
   events.push(
@@ -141,6 +142,7 @@ function requestLegacyReentry(
           {
             execution: stage.execution,
             stage: stageName(state.currentStage),
+            watchDriven,
           },
         ),
       },

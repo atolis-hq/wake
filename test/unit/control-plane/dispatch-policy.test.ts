@@ -11,7 +11,7 @@ const candidate = (overrides: Partial<Parameters<DispatchPolicy['select']>[0][nu
 });
 
 describe('DispatchPolicy', () => {
-  it('selects the oldest eligible activation without starving another WorkItem', () => {
+  it('selects the oldest eligible activation when priorities tie', () => {
     const policy = new DispatchPolicy({ maxDispatches: 2 });
 
     expect(
@@ -117,4 +117,17 @@ describe('DispatchPolicy', () => {
       ),
     ).toEqual([]);
   });
+});
+
+it('excludes cancelled and running candidates even when they have highest priority', () => {
+  const priority = { remainingAgentSteps: 0, watchDriven: true, retried: true };
+  expect(
+    new DispatchPolicy({ maxDispatches: 3 })
+      .select([
+        candidate({ activationId: 'cancelled', cancelled: true, priority }),
+        candidate({ activationId: 'running', hasActiveRun: true, priority }),
+        candidate({ activationId: 'ready' }),
+      ])
+      .map((item) => item.activationId),
+  ).toEqual(['ready']);
 });

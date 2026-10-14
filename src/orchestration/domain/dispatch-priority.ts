@@ -24,7 +24,9 @@ export function pendingActivationPriority(
 ): PendingActivationPriority {
   const stage = activation.stage ?? view.currentStage;
   const costs: Readonly<Record<string, number>> | undefined =
-    definition === null ? undefined : remainingAgentSteps(definition.stages, isAgentActivity);
+    definition === null
+      ? undefined
+      : (definition.remainingAgentSteps ?? remainingAgentSteps(definition.stages, isAgentActivity));
   return {
     remainingAgentSteps: costs?.[stage] ?? UnreachableRemainingSteps,
     watchDriven: activation.watchDriven === true,
