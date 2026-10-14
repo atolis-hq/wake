@@ -1,4 +1,9 @@
 import { beforeEach, expect, it, vi } from 'vitest';
+import { PullRequestMergeability } from '../../../src/activities/index.js';
+import { gitHubConfigSchema } from '../../../src/integrations/github/contracts/config.js';
+import { GitHubEventType } from '../../../src/integrations/github/contracts/events.js';
+import { watermarkCheckpoint } from '../../../src/integrations/github/infrastructure/poll-watermark.js';
+import { createGitHubSource } from '../../../src/integrations/github/infrastructure/source.js';
 import {} from '../../support/identities.js';
 
 import { EventProcessorHost } from '@atolis-hq/eventing';
@@ -639,4 +644,47 @@ it('refreshes detail mergeability even when the PR list has not changed', async 
   expect((await client.listPullRequests('owner', 'repo', 10))[0]?.mergeable).toBeNull();
   expect((await client.listPullRequests('owner', 'repo', 10))[0]?.mergeable).toBe(false);
   expect(octokit.getPullRequest).toHaveBeenCalledTimes(2);
+});
+
+it('retains old PR conflict evidence and recurring transitions through restart and translation', async () => {
+  let mergeable: boolean | null = false;
+  const client = {
+    ...fakeClient({ pullRequests: async () => [{ ...pullRequest(), mergeable }] }),
+    listIssues: async () => [],
+    listIssueComments: async () => [],
+    listReviews: async () => [],
+  };
+  const runtime = sourceRuntime(client);
+  await admitPullRequest(runtime, 'recurring-conflict', 'owner/repo#7');
+  await runtime.checkpoints.save(
+    watermarkCheckpoint(undefined, 'owner/repo'),
+    Date.parse('2026-07-31T12:00:00.000Z'),
+  );
+  const config = gitHubConfigSchema.parse({
+    enabled: true,
+    token: 'token',
+    repositories: [{ owner: 'owner', repo: 'repo' }],
+  });
+  for (const value of [false, false, null, null, false, false]) {
+    mergeable = value;
+    // Recreate the source and poll service for every poll to prove durable deduplication.
+    const source = createGitHubSource(config, client, undefined, undefined, {
+      journal: runtime.journal,
+      checkpoints: runtime.checkpoints,
+    });
+    await new PollService(runtime.journal, source).pollOnce(new AbortController().signal);
+    await processInbound(runtime.translator, runtime.journal, runtime.checkpoints);
+    const resource = await runtime.lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#7',
+    });
+    expect((await runtime.pullRequests.get(resource!))?.mergeability).toBe(
+      value === false ? PullRequestMergeability.Conflicting : PullRequestMergeability.Unknown,
+    );
+  }
+  const observations = (await runtime.journal.readAll(0)).filter(
+    (event) => event.event.eventType === GitHubEventType.WorkObserved,
+  );
+  expect(observations).toHaveLength(3);
+  expect(new Set(observations.map((event) => event.event.eventId)).size).toBe(3);
 });

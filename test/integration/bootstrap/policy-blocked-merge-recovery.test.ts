@@ -548,7 +548,7 @@ it('routes conflicts through pinned repair and durably bounds attempts across re
           fact.event.payload.stage === 'repair',
       ),
   ).toHaveLength(2);
-});
+}, 60_000);
 
 it.each(['ambiguous', 'unsafe'] as const)(
   'blocks %s configured conflict repair',

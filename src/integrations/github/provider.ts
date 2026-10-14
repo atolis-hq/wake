@@ -60,6 +60,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
       eventTypes: Object.values(GitHubEventType),
       source: createGitHubSource(config, client, adapter, requests, {
         checkpoints: services.checkpoints,
+        journal: services.journal,
         now: () => services.clock.now().getTime(),
         health,
       }),
