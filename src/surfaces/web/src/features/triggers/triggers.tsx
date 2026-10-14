@@ -45,7 +45,11 @@ export function TriggersList() {
                 className={markdownStyles.markdown}
                 aria-label={'Orphaned instructions for ' + document.contextScope}
               >
-                <Markdown skipHtml>{document.content}</Markdown>
+                {document.content === null ? (
+                  <p>Instructions content is unavailable. The saved revision is retained.</p>
+                ) : (
+                  <Markdown skipHtml>{document.content}</Markdown>
+                )}
               </article>
             </section>
           ))}

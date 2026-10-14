@@ -357,3 +357,28 @@ it('shows orphaned documents when no triggers remain, with safe Markdown and rec
   expect(screen.getByText(/Configure a trigger with the same contextScope/)).toBeTruthy();
   expect(document.querySelector('script')).toBeNull();
 });
+
+it('retains orphan metadata and reports unavailable content without hiding the Triggers page', async () => {
+  mount(
+    '/triggers',
+    vi.fn(async () =>
+      json({
+        data: [],
+        orphanedInstructions: [
+          {
+            contextScope: 'retired',
+            revisionId: 'saved',
+            content: null,
+            author: 'web',
+            occurredAt: asOf,
+          },
+        ],
+        meta: { asOf },
+      }),
+    ),
+  );
+  expect(await screen.findByRole('heading', { name: 'retired' })).toBeTruthy();
+  expect(screen.getByText(/Instructions content is unavailable/)).toBeTruthy();
+  expect(screen.getByText(/Revision: saved/)).toBeTruthy();
+  expect(screen.getByText('No triggers configured or recorded')).toBeTruthy();
+});

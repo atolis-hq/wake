@@ -1,10 +1,10 @@
 import {
   EventActorKind,
   EventSourceKind,
-  scanJournal,
   WrongExpectedSequenceError,
   type CommandContext,
   type EventJournal,
+  type ProjectionStore,
 } from '@atolis-hq/eventing';
 import type { ArtifactsConfig } from '../contracts/config.js';
 import { createArtifactContextEventData } from '../contracts/context-event-factory.js';
@@ -15,10 +15,12 @@ import {
 import {
   artifactSharedContextNameSchema,
   type OperatorInstructionsDocument,
+  type OperatorInstructionsListing,
   type OperatorInstructionsRevision,
 } from '../contracts/context.js';
 import { artifactContextStream } from '../contracts/streams.js';
 import type { FileArtifactStore } from '../infrastructure/file-artifact-store.js';
+import { operatorInstructionsProjection } from './operator-instructions-projection.js';
 
 export class OperatorInstructionsConflict extends Error {}
 
@@ -30,18 +32,27 @@ export class OperatorInstructionsService {
     private readonly config: ArtifactsConfig,
   ) {}
 
-  async list(): Promise<readonly OperatorInstructionsDocument[]> {
-    const latest = new Map<string, OperatorInstructionsRevision>();
-    for await (const envelope of scanJournal(this.journal)) {
-      const event = selectArtifactContextEvent(envelope);
-      if (event?.event.eventType !== ArtifactContextEventType.InstructionsEdited) continue;
-      const { expectedRevisionId: _expected, ...revision } = event.event.payload;
-      latest.set(revision.contextScope, revision);
-    }
+  async list(
+    projections: ProjectionStore,
+    excludedScopes: ReadonlySet<string> = new Set(),
+  ): Promise<readonly OperatorInstructionsListing[]> {
+    const revisions = (
+      await projections.list<OperatorInstructionsRevision | null>(
+        operatorInstructionsProjection.name,
+      )
+    )
+      .flatMap((entry) =>
+        entry.value === null || excludedScopes.has(entry.key) ? [] : [entry.value],
+      )
+      .sort((a, b) => a.contextScope.localeCompare(b.contextScope));
     return Promise.all(
-      [...latest.values()]
-        .sort((a, b) => a.contextScope.localeCompare(b.contextScope))
-        .map((revision) => this.document(revision)),
+      revisions.map(async (revision) => {
+        try {
+          return await this.document(revision);
+        } catch {
+          return { ...revision, content: null };
+        }
+      }),
     );
   }
 

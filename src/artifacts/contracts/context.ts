@@ -99,3 +99,8 @@ export type OperatorInstructionsRevision = z.infer<typeof operatorInstructionsRe
 export type OperatorInstructionsDocument = OperatorInstructionsRevision & {
   readonly content: string;
 };
+
+/** Operator inspection can retain revision metadata when its bytes are unavailable. */
+export type OperatorInstructionsListing = OperatorInstructionsRevision & {
+  readonly content: string | null;
+};

@@ -9,6 +9,7 @@ import {
   ArtifactContextService,
   ArtifactMemoryPublicationReason,
   artifactContextStream,
+  operatorInstructionsProjection,
 } from '../../../src/artifacts/index.js';
 import {
   createCompositionRoot,
@@ -33,6 +34,7 @@ import {
 } from '../../../src/orchestration/index.js';
 import { ArtifactMcpRunner } from '../../support/artifact-mcp-runner.js';
 import { FaultInjectingJournal } from '../../support/fault-injecting-journal.js';
+import { workId } from '../../support/identities.js';
 
 const homes: string[] = [];
 afterEach(async () => {
@@ -595,7 +597,7 @@ it('lazily creates one membership-independent document, surfaces renamed scopes 
   const f = await fixture();
   const applications = await createSurfaceApplications(f.root);
   expect((await applications.api.triggers!.detail('shared'))!.data.operatorInstructions).toBeNull();
-  expect(await f.root.operatorInstructions.list()).toEqual([]);
+  expect(await f.root.operatorInstructions.list(f.root.projections)).toEqual([]);
   expect(
     await applications.api.triggers!.saveInstructions!('shared', {
       idempotencyKey: 'create-lazy',
@@ -654,4 +656,84 @@ it('lazily creates one membership-independent document, surfaces renamed scopes 
     (await (await createSurfaceApplications(restored)).api.triggers!.detail('shared'))!.data
       .operatorInstructions,
   ).toMatchObject({ content: '# Shared criteria' });
+});
+
+it('rebuilds latest instructions metadata and polls orphan projections without replaying journal history', async () => {
+  const f = await fixture();
+  const home = await mkdtemp(join(tmpdir(), 'wake-instructions-projection-'));
+  homes.push(home);
+  const root = await createCompositionRoot(home, { config: f.config });
+  const operator = { ...context(), actor: { kind: EventActorKind.Operator, id: 'web' } };
+  const active = await root.operatorInstructions.save(
+    {
+      contextScope: 'review',
+      revisionId: 'active',
+      expectedRevisionId: null,
+      content: 'Active criteria',
+    },
+    operator,
+  );
+  await root.operatorInstructions.save(
+    {
+      contextScope: 'retired',
+      revisionId: 'first',
+      expectedRevisionId: null,
+      content: 'Old criteria',
+    },
+    operator,
+  );
+  const orphan = await root.operatorInstructions.save(
+    {
+      contextScope: 'retired',
+      revisionId: 'latest',
+      expectedRevisionId: 'first',
+      content: 'Current orphan criteria',
+    },
+    operator,
+  );
+  for (let index = 0; index < 105; index++)
+    await root.work.create(
+      {
+        workItemId: workId(`projection-backlog-${index}`),
+        objective: 'Unrelated journal history',
+      },
+      { ...context(), commandId: `backlog-${index}` },
+    );
+  const applications = await createSurfaceApplications(root);
+  expect(await root.projections.list(operatorInstructionsProjection.name)).toEqual([]);
+  const initial = (await applications.api.triggers!.list()).orphanedInstructions;
+  expect(initial).toMatchObject([
+    { contextScope: 'retired', revisionId: 'latest', content: 'Current orphan criteria' },
+  ]);
+  const projected = await root.projections.read(operatorInstructionsProjection.name, 'retired');
+  expect(projected?.value).toMatchObject({ revisionId: 'latest', author: 'web' });
+  expect(projected?.value).not.toHaveProperty('content');
+  await root.projectionSubscriptions.rebuild(operatorInstructionsProjection);
+  expect((await applications.api.triggers!.list()).orphanedInstructions).toEqual(initial);
+  const checkpoint = await root.journal.latestGlobalPosition();
+  const tailReads = vi.spyOn(root.journal, 'readAll');
+  const fullScans = vi.spyOn(root.journal, 'scanAll');
+  for (let index = 0; index < 3; index++)
+    expect((await applications.api.triggers!.list()).orphanedInstructions).toEqual(initial);
+  expect(fullScans).not.toHaveBeenCalled();
+  expect(tailReads.mock.calls.every(([after]) => after >= checkpoint)).toBe(true);
+  await rm(join(root.paths.artifactsRoot, active.location));
+  expect((await applications.api.triggers!.list()).orphanedInstructions).toEqual(initial);
+  await rm(join(root.paths.artifactsRoot, orphan.location));
+  expect((await applications.api.triggers!.list()).orphanedInstructions).toMatchObject([
+    { contextScope: 'retired', revisionId: 'latest', content: null },
+  ]);
+  await root.operatorInstructions.save(
+    {
+      contextScope: 'retired',
+      revisionId: 'next',
+      expectedRevisionId: 'latest',
+      content: 'Recovered criteria',
+    },
+    operator,
+  );
+  expect((await applications.api.triggers!.list()).orphanedInstructions).toMatchObject([
+    { contextScope: 'retired', revisionId: 'next', content: 'Recovered criteria' },
+  ]);
+  expect(fullScans).not.toHaveBeenCalled();
 });

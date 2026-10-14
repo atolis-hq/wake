@@ -83,7 +83,7 @@ export function decodeOrphanedInstructions(
       z.object({
         contextScope: z.string(),
         revisionId: z.string(),
-        content: z.string(),
+        content: z.string().nullable(),
         author: z.string(),
         occurredAt: z.string(),
       }),

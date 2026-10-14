@@ -1,6 +1,9 @@
 import { correlationId, EventActorKind } from '@atolis-hq/eventing';
 import { createHash } from 'node:crypto';
-import { OperatorInstructionsConflict } from '../artifacts/index.js';
+import {
+  OperatorInstructionsConflict,
+  operatorInstructionsProjection,
+} from '../artifacts/index.js';
 import { CronTriggerPolicy, type TriggerInspectionView } from '../control-plane/index.js';
 import {
   ApiCommandStatus,
@@ -16,7 +19,7 @@ export function createTriggerApplications(
   root: CompositionRoot,
   now: () => string,
 ): NonNullable<ApiApplications['triggers']> {
-  async function list() {
+  async function inspect() {
     const view = await root.triggers.get();
     const ids = new Set([
       ...root.config.controlPlane.triggers.map((config) => config.id),
@@ -26,23 +29,27 @@ export function createTriggerApplications(
       ...(view.diagnostics ?? []).map((entry) => entry.triggerId),
     ]);
     const asOf = now();
+    return { data: [...ids].sort().map((id) => present(id, view, asOf)), meta: { asOf } };
+  }
+
+  async function list() {
+    const result = await inspect();
+    await root.projectionSubscriptions.catchUp(operatorInstructionsProjection);
     const configuredScopes = new Set(
-      root.config.controlPlane.triggers.map((trigger) => trigger.contextScope),
+      root.config.controlPlane.triggers.flatMap((trigger) =>
+        trigger.contextScope === undefined ? [] : [trigger.contextScope],
+      ),
     );
-    const orphanedInstructions = (await root.operatorInstructions.list())
-      .filter((document) => !configuredScopes.has(document.contextScope))
-      .map(({ contextScope, revisionId, content, author, occurredAt }) => ({
-        contextScope,
-        revisionId,
-        content,
-        author,
-        occurredAt,
-      }));
-    return {
-      data: [...ids].sort().map((id) => present(id, view, asOf)),
-      meta: { asOf },
-      orphanedInstructions,
-    };
+    const orphanedInstructions = (
+      await root.operatorInstructions.list(root.projections, configuredScopes)
+    ).map(({ contextScope, revisionId, content, author, occurredAt }) => ({
+      contextScope,
+      revisionId,
+      content,
+      author,
+      occurredAt,
+    }));
+    return { ...result, orphanedInstructions };
   }
 
   function present(id: string, view: TriggerInspectionView, asOf: string): TriggerResponse {
@@ -77,7 +84,7 @@ export function createTriggerApplications(
   }
 
   async function command(id: string, request: ApiCommandRequest, pause: boolean) {
-    if (!(await list()).data.some((entry) => entry.triggerId === id))
+    if (!(await inspect()).data.some((entry) => entry.triggerId === id))
       return {
         conflict: true as const,
         code: 'trigger-not-found',
@@ -102,7 +109,7 @@ export function createTriggerApplications(
   return {
     list,
     async detail(id) {
-      const result = await list();
+      const result = await inspect();
       const data = result.data.find((entry) => entry.triggerId === id);
       if (data === undefined) return undefined;
       const scope = data.definition?.contextScope;

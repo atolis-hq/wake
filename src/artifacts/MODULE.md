@@ -29,4 +29,4 @@ The MCP transport is a Surface concern; this module owns tool semantics only.
 
 Operator instructions use a separate operator-provenance context fact and the existing byte store. Trusted operator commands compare the loaded revision before appending; MCP exposes only read-only run snapshots. Names and paths supplied by agents never establish operator provenance. The configured maxWriteBytes limit applies to operator documents.
 
-The fixed name instructions.md is reserved against agent artifact commands and listings. Operator creation is lazy and independent of membership. The host-only instructions catalogue folds current revisions from journal facts; it is not a scope registry. Removing or renaming configuration never deletes a document.
+The fixed name instructions.md is reserved against agent artifact commands and listings. Operator creation is lazy and independent of membership. The host-only instructions catalogue reads the latest revision per scope from the Artifacts-owned operator-instructions projection registered in Bootstrap; it is not a scope registry. Removing or renaming configuration never deletes a document.

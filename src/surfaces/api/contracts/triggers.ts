@@ -40,7 +40,7 @@ export interface TriggerResponse {
 export interface OrphanedInstructionsResponse {
   readonly contextScope: string;
   readonly revisionId: string;
-  readonly content: string;
+  readonly content: string | null;
   readonly author: string;
   readonly occurredAt: string;
 }
