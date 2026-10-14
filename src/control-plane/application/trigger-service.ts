@@ -5,12 +5,20 @@ import {
   ControlEventType,
   TriggerRequestDisposition,
   TriggerSourceKind,
+  type ManualTriggerOutcome,
   type TriggerSource,
 } from '../contracts/events.js';
 import { TriggerSkipReason, type TriggerSkipDiagnostic } from '../contracts/trigger-diagnostics.js';
 import { CronTriggerPolicy } from '../domain/cron-trigger-policy.js';
 import { TriggerDiagnostics } from './trigger-diagnostics.js';
-import { appendTriggerFact, sourceIdentity, type TriggerFactInput } from './trigger-facts.js';
+import {
+  appendTriggerFact,
+  consumedTriggerRequest,
+  hasTriggerRequest,
+  sourceIdentity,
+  type TriggerFactInput,
+} from './trigger-facts.js';
+import { requestManualTrigger } from './trigger-manual-request.js';
 import { maximumTriggerSources, type TriggerView } from './trigger-projection.js';
 import { recoverTriggerInvocation } from './trigger-recovery.js';
 import { hasActiveInvocation, isOwnScopeSource } from './trigger-rules.js';
@@ -43,7 +51,7 @@ export class TriggerService {
 
   async get(): Promise<TriggerInspectionView> {
     return this.serialise(async () => ({
-      ...(await this.view()),
+      ...(await this.reader.get()),
       invocations: await this.dependencies.history(),
       diagnostics: await this.diagnostics.get(),
     }));
@@ -58,7 +66,7 @@ export class TriggerService {
 
   async pause(triggerId: string, reason: string, context: CommandContext): Promise<void> {
     await this.serialise(async () => {
-      await this.view();
+      await this.reader.get();
       await this.emit(
         {
           eventType: ControlEventType.TriggerPaused,
@@ -72,7 +80,7 @@ export class TriggerService {
 
   async resume(triggerId: string, context: CommandContext): Promise<void> {
     await this.serialise(async () => {
-      await this.view();
+      await this.reader.get();
       await this.emit(
         {
           eventType: ControlEventType.TriggerResumed,
@@ -82,6 +90,25 @@ export class TriggerService {
         `trigger:resume:${triggerId}:${context.commandId}`,
       );
     });
+  }
+
+  async requestManual(triggerId: string, context: CommandContext): Promise<ManualTriggerOutcome> {
+    return this.serialise(() =>
+      requestManualTrigger(
+        {
+          dependencies: this.dependencies,
+          diagnostics: this.diagnostics,
+          config: this.configured(triggerId),
+          coordinationKey: () => this.commandKey(triggerId),
+          view: () => this.reader.get(),
+          recover: (command) => this.recover(command),
+          advance: (command) => this.advanceCoalesced(command),
+          emit: (input, command, id) => this.emit(input, command, id),
+        },
+        triggerId,
+        context,
+      ),
+    );
   }
 
   async run(config: TriggerConfig, context: CommandContext): Promise<readonly string[]> {
@@ -109,7 +136,7 @@ export class TriggerService {
 
   async start(
     config: TriggerConfig,
-    source: TriggerSource,
+    source: Exclude<TriggerSource, { kind: typeof TriggerSourceKind.Manual }>,
     context: CommandContext,
     event?: EventEnvelope,
   ): Promise<boolean> {
@@ -148,10 +175,6 @@ export class TriggerService {
       : this.key(config);
   }
 
-  private view(): Promise<TriggerView> {
-    return this.reader.get();
-  }
-
   private configured(id: string): TriggerConfig | undefined {
     return this.dependencies.configurations().find((config) => config.id === id);
   }
@@ -161,7 +184,7 @@ export class TriggerService {
     context: CommandContext,
     eventId: string,
   ): Promise<void> {
-    await this.view();
+    await this.reader.get();
     await appendTriggerFact(
       this.dependencies.journal,
       this.dependencies.now(),
@@ -180,13 +203,9 @@ export class TriggerService {
     context: CommandContext,
     event?: EventEnvelope,
   ): Promise<boolean> {
-    const view = await this.view();
+    const view = await this.reader.get();
     if (await this.sourceCursor.isConsumed(config.id, source, event)) return false;
-    const duplicate = view.requests.some(
-      (request) =>
-        request.triggerId === config.id &&
-        sourceIdentity(request.source) === sourceIdentity(source),
-    );
+    const duplicate = hasTriggerRequest(view.requests, config.id, source);
     const coordinationKey = this.key(config);
     // The reactor checkpoint consumes suppressed sources. Emitting another trigger request
     // here could itself become a source when subscribed to Control Plane events.
@@ -194,7 +213,16 @@ export class TriggerService {
       await this.sourceCursor.consume(config.id, source, event);
       return false;
     }
-    if (await this.suppressed(view, config, coordinationKey, event)) {
+    if (
+      await isOwnScopeSource(view, { triggerId: config.id, coordinationKey }, event, {
+        keyOf: (id) => {
+          const other = this.configured(id);
+          return other === undefined ? undefined : this.key(other);
+        },
+        sourceWorkItem: this.dependencies.sourceWorkItem,
+        invocationScope: this.dependencies.invocationScope,
+      })
+    ) {
       await this.diagnostics.record(config.id, source, TriggerSkipReason.OwnScope);
       await this.sourceCursor.consume(config.id, source, event);
       return false;
@@ -228,24 +256,8 @@ export class TriggerService {
     return eligible;
   }
 
-  private suppressed(
-    view: TriggerView,
-    config: TriggerConfig,
-    coordinationKey: string,
-    event?: EventEnvelope,
-  ): Promise<boolean> {
-    return isOwnScopeSource(view, { triggerId: config.id, coordinationKey }, event, {
-      keyOf: (id) => {
-        const other = this.configured(id);
-        return other === undefined ? undefined : this.key(other);
-      },
-      sourceWorkItem: this.dependencies.sourceWorkItem,
-      invocationScope: this.dependencies.invocationScope,
-    });
-  }
-
   private async advanceCoalesced(context: CommandContext): Promise<void> {
-    const view = await this.view();
+    const view = await this.reader.get();
     for (const request of Object.values(view.coalesced)) {
       if (hasActiveInvocation(view, request.coordinationKey)) continue;
       const config = this.configured(request.triggerId);
@@ -264,15 +276,7 @@ export class TriggerService {
         );
         // This recorded request was reconsidered and consumed; later eligibility is not a source.
         await this.emit(
-          {
-            eventType: ControlEventType.TriggerRequestRecorded,
-            payload: {
-              triggerId: request.triggerId,
-              coordinationKey: request.coordinationKey,
-              source: request.source,
-              disposition: TriggerRequestDisposition.Skipped,
-            },
-          },
+          consumedTriggerRequest(request, reason ?? TriggerSkipReason.Removed),
           context,
           `trigger:consume:${request.triggerId}:${sourceIdentity(request.source)}`,
         );
@@ -299,7 +303,7 @@ export class TriggerService {
   }
 
   private async recover(context: CommandContext): Promise<void> {
-    for (const invocation of (await this.view()).invocations) {
+    for (const invocation of (await this.reader.get()).invocations) {
       if (invocation.result === undefined)
         await recoverTriggerInvocation(
           {

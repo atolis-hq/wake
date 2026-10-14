@@ -13,6 +13,7 @@ import {
   type TriggerControlStreamRef,
   type TriggerInvocationStreamRef,
 } from './streams.js';
+import { TriggerSkipReason } from './trigger-skip-reason.js';
 
 export const ControlEventType = {
   TriggerRequestRecorded: 'control-plane.trigger-request-recorded',
@@ -33,9 +34,37 @@ export const ControlEventNamespace = 'control-plane.' as const;
 
 export const TriggerRequestDisposition = { Coalesced: 'coalesced', Skipped: 'skipped' } as const;
 
-export const TriggerSourceKind = { Event: 'event', Cron: 'cron' } as const;
+export const TriggerSourceKind = { Event: 'event', Cron: 'cron', Manual: 'manual' } as const;
+
+const manualStartedShape = { started: true };
+
+export const ManualTriggerDisposition = {
+  Started: Object.keys(manualStartedShape)[0]! as keyof typeof manualStartedShape,
+  Coalesced: TriggerRequestDisposition.Coalesced,
+  Skipped: TriggerRequestDisposition.Skipped,
+} as const;
+
+export const manualTriggerOutcomeSchema = z.discriminatedUnion('disposition', [
+  z.object({ disposition: z.literal(ManualTriggerDisposition.Started) }).strict(),
+  z.object({ disposition: z.literal(ManualTriggerDisposition.Coalesced) }).strict(),
+  z
+    .object({
+      disposition: z.literal(ManualTriggerDisposition.Skipped),
+      reason: z.enum(TriggerSkipReason),
+    })
+    .strict(),
+]);
+
+export type ManualTriggerOutcome = z.infer<typeof manualTriggerOutcomeSchema>;
 
 export const triggerSourceSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal(TriggerSourceKind.Manual),
+      commandId: z.string().min(1),
+      operator: z.string().min(1),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal(TriggerSourceKind.Event),
@@ -58,6 +87,7 @@ export interface ControlEventPayloads {
     readonly triggerId: string;
     readonly coordinationKey: string;
     readonly source: TriggerSource;
+    readonly manualOutcome?: ManualTriggerOutcome | undefined;
     readonly disposition: (typeof TriggerRequestDisposition)[keyof typeof TriggerRequestDisposition];
   };
   readonly [ControlEventType.TriggerInvocationClaimed]: {
@@ -152,6 +182,7 @@ const eventSchema: z.ZodType<ControlEvent> = z.union([
           coordinationKey: z.string().min(1),
           source: triggerSourceSchema,
           disposition: z.enum(TriggerRequestDisposition),
+          manualOutcome: manualTriggerOutcomeSchema.optional(),
         })
         .strict(),
     }),

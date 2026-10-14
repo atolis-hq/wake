@@ -1,5 +1,8 @@
 import type { AnalyticsReportWindowId, WakeProblemDetails } from '../../../api/contracts/index.js';
-import type { RunResolutionStatusValue } from '../../../api/contracts/transport-values.js';
+import type {
+  RunResolutionStatusValue,
+  TriggerCommandNameValue,
+} from '../../../api/contracts/transport-values.js';
 import { object } from './decoder-primitives.js';
 import {
   collectionDecoder,
@@ -95,7 +98,12 @@ export class WakeApiClient {
           body: JSON.stringify({ content, expectedRevisionId, idempotencyKey }),
         },
       ),
-    command: (id: string, name: 'pause' | 'resume', idempotencyKey: string, signal?: AbortSignal) =>
+    command: (
+      id: string,
+      name: (typeof TriggerCommandNameValue)[keyof typeof TriggerCommandNameValue],
+      idempotencyKey: string,
+      signal?: AbortSignal,
+    ) =>
       this.command(
         '/triggers/' + encodeURIComponent(id) + '/commands/' + name,
         idempotencyKey,

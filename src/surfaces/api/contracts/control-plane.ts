@@ -1,3 +1,4 @@
+import type { ManualTriggerOutcome } from '../../../control-plane/index.js';
 import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 
 export interface ControlPlaneStatusResponse {
@@ -20,6 +21,7 @@ export interface ControlPlaneStatusResponse {
 }
 
 export interface AcceptedCommandResponse {
+  readonly triggerOutcome?: ManualTriggerOutcome;
   readonly commandId: string;
   readonly idempotencyKey: string;
   readonly acceptedAt: string;

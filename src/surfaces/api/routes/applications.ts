@@ -96,6 +96,7 @@ export interface ApiApplications {
         readonly expectedRevisionId: string | null;
       },
     ): Promise<ApiCommandResult>;
+    run?(id: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     pause(id: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     resume(id: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
   };

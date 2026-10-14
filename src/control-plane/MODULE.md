@@ -49,7 +49,9 @@ authoritative in the journal.
 Operational projections are keyed by coordination scope and retain only the
 active claim, last starts/requests, pause state, and at most 64 pending source
 reasons. Invocation history has a separate document and stream per WorkItem.
-Skipped occurrences advance processor cursors without journal request facts.
+Skipped background occurrences advance processor cursors without journal request facts.
+Manual commands retain their initial disposition in durable request facts for
+idempotent retries, including skips, without expanding operational projections.
 Their latest actual skip diagnostics are bounded processor-owned operational
 state (256 recent trigger identities), exposed through service inspection with
 source/time provenance; they are not projections or occurrence history.

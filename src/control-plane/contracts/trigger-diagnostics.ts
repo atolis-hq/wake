@@ -1,17 +1,9 @@
 import { z } from 'zod';
-import type { ValueOf } from '../../kernel/index.js';
 import { triggerSourceSchema } from './events.js';
 
-export const TriggerSkipReason = {
-  OwnScope: 'own-scope',
-  Paused: 'paused',
-  Removed: 'removed',
-  DispatchPaused: 'dispatch-paused',
-  Capacity: 'capacity-unavailable',
-  PendingLimit: 'pending-source-limit',
-} as const;
+import { TriggerSkipReason } from './trigger-skip-reason.js';
 
-export type TriggerSkipReason = ValueOf<typeof TriggerSkipReason>;
+export { TriggerSkipReason } from './trigger-skip-reason.js';
 
 export const triggerSkipDiagnosticSchema = z
   .object({

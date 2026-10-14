@@ -382,3 +382,86 @@ it('retains orphan metadata and reports unavailable content without hiding the T
   expect(screen.getByText(/Revision: saved/)).toBeTruthy();
   expect(screen.getByText('No triggers configured or recorded')).toBeTruthy();
 });
+
+it.each([
+  { disposition: 'started' },
+  { disposition: 'coalesced' },
+  { disposition: 'skipped', reason: 'capacity-unavailable' },
+])('runs a configured trigger and shows the $disposition disposition', async (triggerOutcome) => {
+  const calls: string[] = [];
+  mount(
+    '/triggers',
+    vi.fn(async (input, init) => {
+      if (init?.method === 'POST') {
+        calls.push(String(input));
+        return json({
+          data: {
+            commandId: 'manual',
+            idempotencyKey: 'key',
+            acceptedAt: asOf,
+            status: 'completed',
+            triggerOutcome,
+          },
+          meta: { asOf },
+        });
+      }
+      return json({ data: [entry()], meta: { asOf } });
+    }),
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Run now' }));
+  expect((await screen.findByRole('status')).textContent).toContain(triggerOutcome.disposition);
+  if ('reason' in triggerOutcome)
+    expect(screen.getByRole('status').textContent).toContain(triggerOutcome.reason);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toContain('/commands/run');
+});
+
+it('explains paused and active manual actions', async () => {
+  mount(
+    '/triggers',
+    vi.fn(async () =>
+      json({
+        data: [
+          entry({ paused: true, status: TriggerStatus.Paused }),
+          entry({ triggerId: 'active', status: TriggerStatus.Running }),
+        ],
+        meta: { asOf },
+      }),
+    ),
+  );
+  const buttons = await screen.findAllByRole('button', { name: 'Run now' });
+  expect((buttons[0] as HTMLButtonElement).disabled).toBe(true);
+  expect((buttons[1] as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText('Resume this trigger before running it.')).toBeTruthy();
+  expect(screen.getByText('A request will coalesce while this invocation is active.')).toBeTruthy();
+});
+
+it('retries a failed manual command with the original idempotency key', async () => {
+  const keys: string[] = [];
+  mount(
+    '/triggers',
+    vi.fn(async (_input, init) => {
+      if (init?.method === 'POST') {
+        keys.push(JSON.parse(String(init.body)).idempotencyKey);
+        if (keys.length === 1)
+          return json({ title: 'Storage unavailable', detail: 'Try again', status: 503 }, 503);
+        return json({
+          data: {
+            commandId: 'manual',
+            idempotencyKey: keys[0],
+            acceptedAt: asOf,
+            status: 'completed',
+            triggerOutcome: { disposition: 'started' },
+          },
+          meta: { asOf },
+        });
+      }
+      return json({ data: [entry()], meta: { asOf } });
+    }),
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Run now' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+  expect((await screen.findByRole('status')).textContent).toBe('started');
+  expect(keys).toHaveLength(2);
+  expect(keys[1]).toBe(keys[0]);
+});
