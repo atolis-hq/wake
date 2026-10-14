@@ -15,12 +15,9 @@ import {
 } from '../../conversations/index.js';
 import { RunStatus, type RunRepository } from '../../execution/index.js';
 import {
-  ApprovalAuthorityKind,
-  isApprovalAwaitingSignalKind,
   OrchestrationEventType,
   OrchestrationStreamKind,
   selectWorkflowOrchestrationEvent,
-  WatchGateVerdictSignal,
   type OrchestrationService,
   type WorkflowInstanceView,
 } from '../../orchestration/index.js';
@@ -38,7 +35,9 @@ import {
   defaultReplyPublication,
   selectReplyTarget,
 } from '../github/application/reply-target-selector.js';
-import { projectTerminalAgentRunReport, type TerminalRun } from './terminal-agent-run-report.js';
+import { MergeWaitGuidance, projectTerminalAgentRunReport } from './terminal-agent-run-report.js';
+
+import { agentRunReportInput, isMergePublicationWait } from './agent-run-publication-report.js';
 
 /** Projects terminal agent runs into one durable outbound intent per configured resource. */
 export class AgentRunPublicationReactor {
@@ -63,7 +62,8 @@ export class AgentRunPublicationReactor {
       select(event) {
         const outcome = selectWorkflowOrchestrationEvent(event);
         return outcome?.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted ||
-          outcome?.event.eventType === OrchestrationEventType.ActivityExecutionFailed
+          outcome?.event.eventType === OrchestrationEventType.ActivityExecutionFailed ||
+          outcome?.event.eventType === OrchestrationEventType.SignalWaitStarted
           ? outcome
           : null;
       },
@@ -74,6 +74,10 @@ export class AgentRunPublicationReactor {
   async react(
     outcome: NonNullable<ReturnType<typeof selectWorkflowOrchestrationEvent>>,
   ): Promise<void> {
+    if (outcome.event.eventType === OrchestrationEventType.SignalWaitStarted) {
+      await this.publishMergeWait(outcome);
+      return;
+    }
     if (outcome.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted) {
       await this.publishAcceptedOutcome(
         outcome.stream.id,
@@ -124,7 +128,9 @@ export class AgentRunPublicationReactor {
     );
     if (workflow === undefined) return;
     const stage = await this.stageForActivation(workflow.workflowInstanceId, run.activationId);
-    const report = projectTerminalAgentRunReport(reportInput(run, stage, workflow, allWorkflows));
+    const report = projectTerminalAgentRunReport(
+      agentRunReportInput(run, stage, workflow, allWorkflows),
+    );
     if (report === null) return;
     await this.recordConversationEntry(
       workflow.workItemId,
@@ -172,6 +178,46 @@ export class AgentRunPublicationReactor {
     } catch {
       /* idempotency is the deterministic run event id */
     }
+  }
+
+  private async publishMergeWait(
+    event: NonNullable<ReturnType<typeof selectWorkflowOrchestrationEvent>>,
+  ) {
+    const workflow = (await this.dependencies.orchestration.listAll()).find(
+      (view) => view.workflowInstanceId === event.stream.id,
+    );
+    if (!isMergePublicationWait(workflow)) return;
+    const replies = this.dependencies.replies ?? defaultReplyPublication;
+    const target = selectReplyTarget(
+      { stage: workflow.currentStage, outcome: 'DONE' },
+      replies.rules,
+      replies.default,
+    );
+    if (target === ReplyTarget.None) return;
+    const resource = await this.resourceForTarget(workflow.workItemId, target);
+    if (resource === undefined) return;
+    const stream = resourceStream(resource.resourceId);
+    const facts = await this.dependencies.journal.readStream(stream);
+    const eventId = `merge-wait:${event.event.eventId}`;
+    if (facts.some((fact) => fact.event.eventId === eventId)) return;
+    await this.dependencies.journal.appendToStream(stream, facts.length, [
+      createDeliveryIntentEventData({
+        eventId,
+        eventType: DeliveryIntentEventType.ReplyPublishRequested,
+        occurredAt: event.recordedAt,
+        correlationId: event.event.correlationId,
+        causationId: event.event.eventId,
+        actor: { kind: EventActorKind.Integration, id: 'agent-run-publication' },
+        source: { kind: EventSourceKind.Internal, id: 'agent-run-publication' },
+        payload: {
+          workflowInstanceId: workflow.workflowInstanceId,
+          activationId: workflow.pendingActivation.activationId,
+          resourceId: resource.resourceId,
+          body: `**Wake: Awaiting merge**\n\n${MergeWaitGuidance}`,
+          publicationOnly: true,
+        },
+      }),
+    ]);
   }
 
   private async recordConversationEntry(
@@ -247,40 +293,4 @@ export class AgentRunPublicationReactor {
     }
     return undefined;
   }
-}
-
-function reportInput(
-  run: TerminalRun,
-  stage: string | undefined,
-  workflow: WorkflowInstanceView,
-  allWorkflows: readonly WorkflowInstanceView[],
-): Parameters<typeof projectTerminalAgentRunReport>[0] {
-  const watchGateVerdict = watchGateVerdictFor(run, workflow, allWorkflows);
-  const isWaiting =
-    workflow.waitingFor !== undefined &&
-    isApprovalAwaitingSignalKind(workflow.waitingFor.signalKind);
-  return {
-    run,
-    ...(stage === undefined ? {} : { stage }),
-    ...(isWaiting ? { awaitingApproval: true } : {}),
-    ...(watchGateVerdict === undefined ? {} : { watchGateVerdict }),
-  };
-}
-
-function watchGateVerdictFor(
-  run: TerminalRun,
-  workflow: WorkflowInstanceView,
-  allWorkflows: readonly WorkflowInstanceView[],
-): { readonly runId: string } | undefined {
-  if (run.agent?.outcome !== 'DONE' && run.agent?.outcome !== 'REJECTED') return undefined;
-  if (workflow.parentWorkflowInstanceId === undefined || workflow.watchId === undefined)
-    return undefined;
-  const parent = allWorkflows.find(
-    (value) => value.workflowInstanceId === workflow.parentWorkflowInstanceId,
-  );
-  if (parent?.waitingFor?.signalKind !== WatchGateVerdictSignal) return undefined;
-  const namesThisWatch = parent.waitingFor.from?.some(
-    (entry) => entry.kind === ApprovalAuthorityKind.Watch && entry.watch === workflow.watchId,
-  );
-  return namesThisWatch === true ? { runId: run.runId } : undefined;
 }

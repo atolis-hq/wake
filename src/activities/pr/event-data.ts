@@ -48,7 +48,10 @@ export const stateChanged = (
 ): ActivityEventDataOf<typeof ActivityEventType.PrStateChanged> =>
   fact({
     ...metadata(ActivityEventType.PrStateChanged, context),
-    payload: { state: command.state },
+    payload: {
+      state: command.state,
+      ...(command.mergeability === undefined ? {} : { mergeability: command.mergeability }),
+    },
   });
 
 export const checksChanged = (

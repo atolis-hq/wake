@@ -8,6 +8,14 @@ export const PullRequestState = defineClosedVocabulary({
 
 export type PullRequestState = ValueOf<typeof PullRequestState>;
 
+export const PullRequestMergeability = defineClosedVocabulary({
+  Unknown: 'unknown',
+  Mergeable: 'clean',
+  Conflicting: 'conflicting',
+} as const);
+
+export type PullRequestMergeability = ValueOf<typeof PullRequestMergeability>;
+
 export const PullRequestCheckState = defineClosedVocabulary({
   Unknown: 'unknown',
   Pending: 'pending',

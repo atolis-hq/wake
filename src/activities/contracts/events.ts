@@ -12,6 +12,7 @@ import type {
   MergeMethod,
   PullRequestCheckState,
   PullRequestDenialCode,
+  PullRequestMergeability,
   PullRequestState,
 } from '../pr/vocabulary.js';
 import type { ReviewActorKind } from '../review/contracts.js';
@@ -42,6 +43,7 @@ export const ActivityEventType = {
 export type ActivityEventTypes = typeof ActivityEventType;
 
 export interface PullRequestDiscoveredPayload {
+  readonly mergeability?: PullRequestMergeability | undefined;
   readonly workItemId: WorkItemId;
   readonly state:
     typeof PullRequestState.Open | typeof PullRequestState.Closed | typeof PullRequestState.Merged;
@@ -147,6 +149,7 @@ export interface ActivityEventPayloads {
   };
   readonly [ActivityEventType.PrStateChanged]: {
     readonly state: PullRequestDiscoveredPayload['state'];
+    readonly mergeability?: PullRequestMergeability | undefined;
   };
   readonly [ActivityEventType.PrChecksChanged]: {
     readonly checks: PullRequestDiscoveredPayload['checks'];

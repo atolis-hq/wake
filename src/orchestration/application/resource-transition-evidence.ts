@@ -1,4 +1,8 @@
-import type { selectActivityEvent } from '../../activities/index.js';
+import type {
+  PullRequestMergeability,
+  PullRequestState,
+  selectActivityEvent,
+} from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { CompiledResourceTransition } from '../contracts/config.js';
 
@@ -18,6 +22,11 @@ export interface ResourceTransitionEvidenceResolution {
 }
 
 export interface ResourceTransitionEvidence {
+  mergeWaitState?(workItemId: WorkItemId): Promise<{
+    readonly state: PullRequestState;
+    readonly mergeability: PullRequestMergeability;
+    readonly evidenceId: string;
+  } | null>;
   /** Fact types the reactor tails on this policy's behalf. */
   readonly triggers: readonly string[];
   resolve(

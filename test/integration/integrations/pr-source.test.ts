@@ -31,6 +31,7 @@ const octokit = vi.hoisted(() => ({
   paginate: vi.fn(),
   paginateIterator: vi.fn(),
   listPullRequests: vi.fn(),
+  getPullRequest: vi.fn(),
   listCheckRunsForRef: vi.fn(),
   getCombinedStatusForRef: vi.fn(),
   listPullRequestFiles: vi.fn(),
@@ -41,7 +42,11 @@ vi.mock('@octokit/rest', () => ({
     return {
       paginate: Object.assign(octokit.paginate, { iterator: octokit.paginateIterator }),
       rest: {
-        pulls: { list: octokit.listPullRequests, listFiles: octokit.listPullRequestFiles },
+        pulls: {
+          list: octokit.listPullRequests,
+          get: octokit.getPullRequest,
+          listFiles: octokit.listPullRequestFiles,
+        },
         checks: { listForRef: octokit.listCheckRunsForRef },
         repos: { getCombinedStatusForRef: octokit.getCombinedStatusForRef },
         issues: { listForRepo: vi.fn() },
@@ -53,6 +58,10 @@ vi.mock('@octokit/rest', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  octokit.getPullRequest.mockImplementation(async ({ pull_number }) => ({
+    data: { ...pullRequest(), number: pull_number },
+    headers: {},
+  }));
   octokit.paginateIterator.mockImplementation((endpoint) =>
     endpoint === octokit.listPullRequests
       ? pagesOf({ data: [pullRequest()] })
@@ -600,3 +609,34 @@ function notModifiedPages() {
     },
   };
 }
+
+it.each([
+  [false, 'conflicting'],
+  [true, 'clean'],
+  [null, 'unknown'],
+] as const)(
+  'persists provider mergeability %s through translation',
+  async (mergeable, expected) => {
+    const runtime = sourceRuntime(
+      fakeClient({ pullRequests: async () => [{ ...pullRequest(), mergeable }] }),
+    );
+    await admitPullRequest(runtime, 'mergeability', 'owner/repo#7');
+    await runtime.poll.pollOnce(new AbortController().signal);
+    await processInbound(runtime.translator, runtime.journal, runtime.checkpoints);
+    const resourceId = await runtime.lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#7',
+    });
+    expect((await runtime.pullRequests.get(resourceId!))?.mergeability).toBe(expected);
+  },
+);
+
+it('refreshes detail mergeability even when the PR list has not changed', async () => {
+  octokit.getPullRequest
+    .mockResolvedValueOnce({ data: { ...pullRequest(), mergeable: null }, headers: {} })
+    .mockResolvedValueOnce({ data: { ...pullRequest(), mergeable: false }, headers: {} });
+  const client = createGitHubClient('token');
+  expect((await client.listPullRequests('owner', 'repo', 10))[0]?.mergeable).toBeNull();
+  expect((await client.listPullRequests('owner', 'repo', 10))[0]?.mergeable).toBe(false);
+  expect(octokit.getPullRequest).toHaveBeenCalledTimes(2);
+});

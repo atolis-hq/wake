@@ -44,6 +44,7 @@ export interface AgentRunPublicationReport {
   readonly workspacePath?: string | undefined;
   readonly metadata: Readonly<Record<string, string | number | boolean | null>>;
   readonly awaitingApproval?: boolean | undefined;
+  readonly awaitingMerge?: boolean | undefined;
   readonly watchGateVerdict?: { readonly runId: string } | undefined;
 }
 
@@ -94,6 +95,7 @@ const reportSchema = z
     workspacePath: z.string().min(1).optional(),
     metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
     awaitingApproval: z.boolean().optional(),
+    awaitingMerge: z.boolean().optional(),
     watchGateVerdict: z
       .object({ runId: z.string().min(1) })
       .strict()

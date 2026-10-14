@@ -1,5 +1,8 @@
 import type { AgentRunPublicationReport } from '../delivery/contracts/intents.js';
 
+export const MergeWaitGuidance =
+  'Wake is waiting for the primary pull request to merge. Resolve and merge it in the provider; explicit conflicts use the pinned workflow repair policy, and closed unmerged pull requests block the work.';
+
 export interface TerminalRunAgentResult {
   readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED' | 'NEEDS_CLARIFICATION';
   readonly displayBody: string;
@@ -31,6 +34,7 @@ export function projectTerminalAgentRunReport(input: {
   readonly run: TerminalRun;
   readonly stage?: string;
   readonly awaitingApproval?: boolean;
+  readonly awaitingMerge?: boolean;
   readonly watchGateVerdict?: { readonly runId: string };
 }): AgentRunPublicationReport | null {
   if (input.run.finishedAt === undefined) return null;
@@ -47,6 +51,7 @@ export function projectTerminalAgentRunReport(input: {
     ...(input.run.workspace === undefined ? {} : { workspacePath: input.run.workspace.path }),
     metadata: agent?.metadata ?? {},
     ...(input.awaitingApproval === true ? { awaitingApproval: true } : {}),
+    ...(input.awaitingMerge === true ? { awaitingMerge: true } : {}),
     ...(input.watchGateVerdict === undefined ? {} : { watchGateVerdict: input.watchGateVerdict }),
   };
 }

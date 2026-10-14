@@ -9,6 +9,7 @@ import { z } from 'zod';
 import {
   ProviderPermission,
   PullRequestCheckState,
+  PullRequestMergeability,
   PullRequestState,
   ReviewActorKind,
   ReviewerAuthorizationSource,
@@ -35,6 +36,7 @@ export const GitHubEventType = {
 } as const;
 
 export interface ExternalWorkObservedPayload {
+  readonly mergeability?: PullRequestMergeability | undefined;
   readonly externalKey: string;
   readonly kind: 'issue' | 'pull-request';
   readonly title: string;
@@ -240,6 +242,13 @@ const githubEventSchemas = {
         state: z.enum([PullRequestState.Open, PullRequestState.Closed, PullRequestState.Merged]),
         outcome: z.enum([ExternalWorkOutcome.Completed, ExternalWorkOutcome.Cancelled]).optional(),
         revision: z.string(),
+        mergeability: z
+          .enum([
+            PullRequestMergeability.Unknown,
+            PullRequestMergeability.Mergeable,
+            PullRequestMergeability.Conflicting,
+          ])
+          .optional(),
         headRevision: z.string().optional(),
         baseRevision: z.string().optional(),
         checks: z
