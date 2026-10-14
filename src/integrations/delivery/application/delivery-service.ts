@@ -11,9 +11,9 @@ import {
   createDeliveryEventData,
   type DeliveryEventDataInput,
 } from '../contracts/event-factory.js';
-import { DeliveryEventType } from '../contracts/events.js';
+import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
 import type { DeliveryIntentView } from '../contracts/views.js';
-import { DeliveryResultKind, DeliveryState } from '../contracts/vocabulary.js';
+import { DeliveryIntentKind, DeliveryResultKind, DeliveryState } from '../contracts/vocabulary.js';
 
 export interface DeliveryServiceDependencies {
   readonly journal: EventJournal;
@@ -143,7 +143,22 @@ export class DeliveryService {
 
   private async append(intent: DeliveryIntentView, draft: DeliveryEventDataInput): Promise<void> {
     const stream = deliveryStream(intent.intentEventId);
-    const sequence = (await this.dependencies.journal.readStream(stream)).length;
+    const facts = await this.dependencies.journal.readStream(stream);
+    // A durable confirmation from merged evidence can win while provider I/O is in flight.
+    if (
+      intent.kind === DeliveryIntentKind.PrMerge &&
+      facts.some((fact) => {
+        const delivery = selectDeliveryEvent(fact);
+        return (
+          delivery?.event.eventType === DeliveryEventType.Confirmed ||
+          delivery?.event.eventType === DeliveryEventType.Failed ||
+          (delivery?.event.eventType === DeliveryEventType.Reconciled &&
+            delivery.event.payload.result === DeliveryResultKind.Confirmed)
+        );
+      })
+    )
+      return;
+    const sequence = facts.length;
     await this.dependencies.journal.appendToStream(stream, sequence, [
       createDeliveryEventData(draft),
     ]);

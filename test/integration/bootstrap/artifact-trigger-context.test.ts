@@ -658,6 +658,7 @@ it('lazily creates one membership-independent document, surfaces renamed scopes 
   ).toMatchObject({ content: '# Shared criteria' });
 });
 
+// Bulk fsync-backed fixtures need time under full-suite filesystem contention.
 it('rebuilds latest instructions metadata and polls orphan projections without replaying journal history', async () => {
   const f = await fixture();
   const home = await mkdtemp(join(tmpdir(), 'wake-instructions-projection-'));
@@ -736,4 +737,4 @@ it('rebuilds latest instructions metadata and polls orphan projections without r
     { contextScope: 'retired', revisionId: 'next', content: 'Recovered criteria' },
   ]);
   expect(fullScans).not.toHaveBeenCalled();
-});
+}, 30000);

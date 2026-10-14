@@ -123,3 +123,13 @@ For the current module topology and advancement path, see
 [Architecture](architecture.md).
 
 Operator instructions are recorded as `artifact-context.instructions-edited` facts in the named context stream. Each fact includes revision metadata, expected prior revision, operator author and time. `execution.run-operator-instructions-captured` retains the scope and revision supplied to a run; a null revision records that the scope had no instructions.
+
+Merge delivery also reconciles an already-merged primary PR as confirmed when its
+observed head revision matches the intent's requested revision. GitHub reads typed
+PR state before delivery and again after a failed attempt; error text is never
+used as evidence. Durable merged facts can satisfy the exact activation's
+`delivery-result` wait, including facts recorded before the wait starts. The
+maintenance lane records `delivery.reconciled` with a confirmed result and the
+normal outcome reactor resumes configured workflow routing. Missing or different
+revision evidence, closed-unmerged PRs, and historical failed deliveries do not
+qualify. Existing failed journal facts are never rewritten.

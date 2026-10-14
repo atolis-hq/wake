@@ -161,6 +161,19 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
             return { allowed: false, reason: 'lookup-unavailable' };
           }
         },
+        async (intent) => {
+          if (
+            intent.payload.kind !== BuiltInActivityName.PullRequestMerge ||
+            !('revision' in intent.payload)
+          )
+            return null;
+          const resource = await services.resources.get(resourceId(intent.resourceId));
+          if (resource === null) return null;
+          const parsed = parsePullRequestKey(resource.externalKey.key);
+          if (parsed === null) return null;
+          const pr = await client.getPullRequest(parsed.owner, parsed.repo, parsed.number);
+          return pr.merged && pr.head.sha === intent.payload.revision ? String(pr.id) : null;
+        },
       ),
       verifyArtifact: async (kind, externalKey, context) => {
         if (kind !== resourceKind('pull-request')) return ArtifactVerificationResult.NotFound;
