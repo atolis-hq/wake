@@ -1,4 +1,5 @@
 import {
+  EventActorKind,
   eventDataSchema,
   eventEnvelopeSchema,
   type EventDataUnion,
@@ -13,19 +14,25 @@ import {
   artifactContextProvenanceSchema,
   ArtifactMemoryPublicationReason,
   artifactRevisionReferenceSchema,
+  operatorInstructionsRevisionSchema,
   type ArtifactContextEnrollment,
   type ArtifactContextPublication,
   type ArtifactDelegationGrant,
+  type OperatorInstructionsRevision,
 } from './context.js';
 import { ArtifactStreamKind, type ArtifactContextStreamRef } from './streams.js';
 
 export const ArtifactContextEventType = {
+  InstructionsEdited: 'artifact-context.instructions-edited',
   Enrolled: 'artifact-context.enrolled',
   Published: 'artifact-context.published',
   Delegated: 'artifact-context.delegated',
 } as const;
 
 export interface ArtifactContextEventPayloads {
+  readonly [ArtifactContextEventType.InstructionsEdited]: OperatorInstructionsRevision & {
+    readonly expectedRevisionId: string | null;
+  };
   readonly [ArtifactContextEventType.Enrolled]: {
     readonly contextScope: string;
   } & ArtifactContextEnrollment;
@@ -48,6 +55,15 @@ const stream = z
   .object({ kind: z.literal(ArtifactStreamKind.Context), id: artifactContextNameSchema })
   .strict();
 const schema = z.union([
+  eventEnvelopeSchema.extend({
+    stream,
+    event: eventDataSchema.extend({
+      eventType: z.literal(ArtifactContextEventType.InstructionsEdited),
+      payload: operatorInstructionsRevisionSchema.extend({
+        expectedRevisionId: z.string().min(1).nullable(),
+      }),
+    }),
+  }),
   eventEnvelopeSchema.extend({
     stream,
     event: eventDataSchema.extend({
@@ -90,6 +106,13 @@ export function decodeArtifactContextEvent(event: EventEnvelope): ArtifactContex
   const decoded = schema.parse(event);
   if (decoded.stream.id !== decoded.event.payload.contextScope)
     throw new Error('Artifact context event belongs to another scope');
+  if (
+    decoded.event.eventType === ArtifactContextEventType.InstructionsEdited &&
+    (decoded.event.actor.kind !== EventActorKind.Operator ||
+      decoded.event.actor.id !== decoded.event.payload.author ||
+      decoded.event.occurredAt !== decoded.event.payload.occurredAt)
+  )
+    throw new Error('Invalid operator instructions provenance');
   return decoded;
 }
 

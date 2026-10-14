@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import Markdown from 'react-markdown';
 import { Link, useParams } from 'react-router';
 import type { RunResponse } from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
@@ -18,6 +19,7 @@ import {
 } from '../../components/primitives.js';
 import { TokenUsage } from '../../components/token-usage.js';
 import styles from '../features.module.css';
+import markdownStyles from '../work/markdown-artifact-viewer.module.css';
 
 export function RunsList() {
   const client = useApiClient();
@@ -116,6 +118,17 @@ export function RunDetail() {
             <dl className={styles.summary}>
               <dt>Activity</dt>
               <dd>{run.data.data.activity}</dd>
+              {run.data.data.operatorInstructions && (
+                <>
+                  <dt>Operator instructions scope</dt>
+                  <dd>{run.data.data.operatorInstructions.contextScope}</dd>
+                  <dt>Operator instructions revision</dt>
+                  <dd>
+                    {run.data.data.operatorInstructions.revisionId ??
+                      'No instructions at run start'}
+                  </dd>
+                </>
+              )}
               <dt>Attempt</dt>
               <dd>{run.data.data.attempt}</dd>
               <dt>Started</dt>
@@ -133,6 +146,14 @@ export function RunDetail() {
             </dl>
             {(run.data.data.outcome ?? run.data.data.failure) !== undefined && (
               <JsonViewer value={run.data.data.outcome ?? run.data.data.failure} />
+            )}
+            {run.data.data.operatorInstructions?.content !== undefined && (
+              <>
+                <h2>Operator standing instructions received</h2>
+                <article className={markdownStyles.markdown}>
+                  <Markdown skipHtml>{run.data.data.operatorInstructions.content}</Markdown>
+                </article>
+              </>
             )}
             <h2>Transcript</h2>
             {transcript.data?.data.available ? (

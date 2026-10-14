@@ -67,6 +67,21 @@ export class WakeApiClient {
     list: (signal?: AbortSignal) => this.get('/triggers', resourceDecoder(decodeTriggers), signal),
     detail: (id: string, signal?: AbortSignal) =>
       this.get('/triggers/' + encodeURIComponent(id), resourceDecoder(decodeTrigger), signal),
+    saveInstructions: (
+      id: string,
+      content: string,
+      expectedRevisionId: string | null,
+      idempotencyKey: string,
+    ) =>
+      this.request(
+        '/triggers/' + encodeURIComponent(id) + '/commands/instructions',
+        resourceDecoder(decodeAcceptedCommand),
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ content, expectedRevisionId, idempotencyKey }),
+        },
+      ),
     command: (id: string, name: 'pause' | 'resume', idempotencyKey: string, signal?: AbortSignal) =>
       this.command(
         '/triggers/' + encodeURIComponent(id) + '/commands/' + name,

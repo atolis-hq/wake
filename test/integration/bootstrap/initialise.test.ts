@@ -24,6 +24,9 @@ describe('target initialise root', () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
     await expect(readFile(join(root, 'docker', 'Dockerfile'), 'utf8')).resolves.toContain('FROM');
+    expect(await readFile(join(root, 'prompts/triage-assign.md'), 'utf8')).toBe(
+      await readFile('prompts/triage-assign.md', 'utf8'),
+    );
     const config = await readFile(join(root, 'config.yaml'), 'utf8');
     expect(config).toContain('host:');
     expect(config).toContain('sandbox:');

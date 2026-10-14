@@ -4,6 +4,7 @@ import type {
   EventingClock,
   EventJournal,
   JournalChangeSignal,
+  JournalReadOptions,
   StreamRef,
 } from '@atolis-hq/eventing';
 import { decodeEventEnvelope, WrongExpectedSequenceError, yieldScan } from '@atolis-hq/eventing';
@@ -150,8 +151,9 @@ export class FileEventJournal implements EventJournal {
   // the entire history. A missing or stale manifest degrades to scan()'s
   // full parse rather than to incorrect data. The next successful append
   // rebuilds the derived manifest.
-  async readStream(stream: StreamRef) {
+  async readStream(stream: StreamRef, options: JournalReadOptions = {}) {
     const streamKey = key(stream);
+    if (options.fresh === true) this.invalidateValidatedEntries();
     const entries = await this.readEntriesForRead();
     if (this.cached !== undefined) {
       if (sameEntries(this.cached.entries, entries))

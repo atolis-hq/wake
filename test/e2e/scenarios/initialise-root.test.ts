@@ -30,6 +30,9 @@ defineScenario(
       'schemaVersion: 1',
     );
     await expect(readFile(join(root, 'prompts', 'refine.md'), 'utf8')).resolves.toContain('---');
+    await expect(readFile(join(root, 'prompts', 'triage-assign.md'), 'utf8')).resolves.toContain(
+      'wake_context_instructions_read',
+    );
     await expect(readFile(join(root, 'docker', 'Dockerfile'), 'utf8')).resolves.toContain('FROM');
     expect(await readdir(join(root, '.wake'))).toEqual(
       expect.arrayContaining(['events', 'projections', 'checkpoints', 'transcripts']),

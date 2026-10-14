@@ -836,3 +836,11 @@ files read-only unless the sandbox must refresh the host credential. The
 generated `SETUP.md` in each new Wake home guides runner-specific setup; see
 [Getting started](getting-started.md) for sandbox lifecycle and
 [Workflows](workflows.md) for workflow-focused examples.
+
+### Operator standing instructions
+
+Triggers with an explicit `contextScope` share one operator-authored Markdown document. Edit it from the Triggers detail UI without changing configuration or restarting. No scope registry or implicit trigger scope is created. A trigger without `contextScope` cannot save instructions.
+
+Operator saves use `artifacts.maxWriteBytes` (25 MiB by default), the existing artifact byte store, and durable `artifact-context.instructions-edited` journal facts. The loaded revision is compared on save; conflicts and oversized documents fail visibly without replacing the current text. Facts record the operator author and time, and current content is rebuilt from the journal’s latest revision. There is no revision-history editor.
+
+At run provisioning, Wake captures the exact operator revision (including absence) and records `execution.run-operator-instructions-captured` on the run. Active and resumed runs retain their snapshot; later runs see edits. The dedicated trusted prompt section takes precedence over task defaults within fixed safety constraints and the configured tool allowlist. Agent artifacts and GitHub text remain untrusted evidence. `wake_context_instructions_read` reads the run snapshot; MCP has no operator write, patch or delete capability. Operator provenance never comes from agent-provided names or paths.

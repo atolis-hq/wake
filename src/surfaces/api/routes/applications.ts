@@ -84,6 +84,13 @@ export interface ApiApplications {
   readonly triggers?: {
     list(): Promise<ApiResourceResult<readonly TriggerResponse[]>>;
     detail(id: string): Promise<ApiResourceResult<TriggerResponse> | undefined>;
+    saveInstructions?(
+      id: string,
+      command: ApiCommandRequest & {
+        readonly content: string;
+        readonly expectedRevisionId: string | null;
+      },
+    ): Promise<ApiCommandResult>;
     pause(id: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     resume(id: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
   };

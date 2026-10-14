@@ -1181,3 +1181,30 @@ it('wakes every concurrent waiter from one external append', async () => {
 
   await expect(Promise.all(waits)).resolves.toHaveLength(32);
 });
+
+it('fresh stream reads observe cross-host appends before the normal freshness window expires', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-fresh-stream-'));
+  const stream: EntityRef<'test', 'instructions'> = { kind: 'test', id: 'instructions' };
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  const reader = new FileEventJournal(root, clock, { validationNow: () => 0 });
+  const draft = (eventId: string) =>
+    createEventData({
+      eventId,
+      eventType: 'test.changed',
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'fresh-stream',
+      causationId: eventId,
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {},
+    });
+  await writer.appendToStream(stream, 0, [draft('first')]);
+  expect(await reader.readStream(stream)).toHaveLength(1);
+  await writer.appendToStream(stream, 1, [draft('second')]);
+  expect(await reader.readStream(stream)).toHaveLength(1);
+  expect(
+    (await reader.readStream(stream, { fresh: true })).map((event) => event.event.eventId),
+  ).toEqual(['first', 'second']);
+  expect(await reader.readStream(stream)).toHaveLength(2);
+});

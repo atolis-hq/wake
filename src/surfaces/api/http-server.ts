@@ -1,6 +1,6 @@
 import rateLimit from '@fastify/rate-limit';
 import secureSession from '@fastify/secure-session';
-import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type RouteHandlerMethod } from 'fastify';
 import { verifyAccessKey, type SurfaceCredentials } from '../auth/credentials.js';
 import { SurfaceCookieSecurity, SurfaceSessionAttribute } from '../auth/vocabulary.js';
 import type { AssetSource } from '../web-host/asset-source.js';
@@ -34,6 +34,7 @@ export interface ApiDispatcher {
 
 export interface SurfaceHttpServerOptions {
   readonly dispatcher: ApiDispatcher;
+  readonly operatorInstructionsMaxWriteBytes?: number;
   readonly credentials: SurfaceCredentials;
   readonly assets?: AssetSource;
   readonly auth?: {
@@ -143,7 +144,7 @@ export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): Fast
         if (!authDisabled && request.session.get(SurfaceSessionAttribute.Operator) !== true)
           return reply.code(401).send({ status: 401, title: 'Unauthorized' });
       });
-      protectedApi.all('/*', async (request, reply) => {
+      const dispatchProtected: RouteHandlerMethod = async (request, reply) => {
         const controller = new AbortController();
         const abort = () => controller.abort();
         const close = () => {
@@ -178,7 +179,15 @@ export function createSurfaceHttpServer(options: SurfaceHttpServerOptions): Fast
             request.method === 'HEAD',
           );
         return sendFastifyJson(reply, result, request.method === 'HEAD');
-      });
+      };
+      protectedApi.post(
+        '/triggers/:triggerId/commands/instructions',
+        {
+          bodyLimit: 6 * (options.operatorInstructionsMaxWriteBytes ?? 25 * 1024 * 1024) + 4096,
+        },
+        dispatchProtected,
+      );
+      protectedApi.all('/*', dispatchProtected);
       done();
     },
     { prefix: '/api/v1' },

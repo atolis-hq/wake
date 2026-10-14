@@ -33,3 +33,5 @@ export * from './contracts/context-event-factory.js';
 export * from './contracts/context-events.js';
 
 export * from './contracts/context.js';
+
+export * from './application/operator-instructions-service.js';

@@ -16,6 +16,8 @@ export function createArtifactContextEventData(
   input: ArtifactContextEventInput,
 ): ArtifactContextEventData {
   switch (input.eventType) {
+    case ArtifactContextEventType.InstructionsEdited:
+      return createEventData(input);
     case ArtifactContextEventType.Enrolled:
       return createEventData(input);
     case ArtifactContextEventType.Published:

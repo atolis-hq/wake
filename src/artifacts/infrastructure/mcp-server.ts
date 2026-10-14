@@ -3,7 +3,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { WorkItemId } from '../../work/index.js';
 import type { ArtifactService } from '../application/artifact-service.js';
-import type { ArtifactRevisionReference } from '../contracts/context.js';
+import type {
+  ArtifactRevisionReference,
+  OperatorInstructionsDocument,
+} from '../contracts/context.js';
 import { artifactPath } from '../contracts/paths.js';
 
 /** A capability token is resolved into this server-side scope by Execution. */
@@ -16,6 +19,7 @@ export interface ArtifactMcpSession {
   readonly sharedReferences?: readonly ArtifactRevisionReference[];
   readonly currentMemory?: ArtifactRevisionReference | null;
   readonly contextScope?: string;
+  readonly operatorInstructions?: OperatorInstructionsDocument;
   readonly nextRevisionId: () => string;
   readonly commandContext: () => CommandContext;
   readonly acceptedActivation: (activationId: string, workItemId?: string) => Promise<boolean>;
@@ -30,6 +34,35 @@ export function createArtifactMcpServer(
   session: ArtifactMcpSession,
 ): McpServer {
   const server = new McpServer({ name: 'wake', version: '0.1.0' });
+  server.registerTool(
+    'wake_context_instructions_read',
+    {
+      description:
+        'Read the trusted operator standing instructions captured for this run. Read-only; agent artifacts cannot replace them.',
+    },
+    async () => {
+      await session.assertActive();
+      const instructions = session.operatorInstructions;
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              instructions === undefined
+                ? null
+                : {
+                    contextScope: instructions.contextScope,
+                    revisionId: instructions.revisionId,
+                    author: instructions.author,
+                    occurredAt: instructions.occurredAt,
+                    content: instructions.content,
+                  },
+            ),
+          },
+        ],
+      };
+    },
+  );
   server.registerTool(
     'wake_artifacts_read',
     {

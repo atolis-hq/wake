@@ -30,6 +30,7 @@ export const triggerSkipDiagnosticSchema = z.object({
 const trigger = z.object({
   id: z.string(),
   workflow: z.string(),
+  contextScope: z.string().optional(),
   on: z.object({ cron: z.string().optional(), events: z.array(z.string()).optional() }),
   when: z.object({ capacityAvailable: z.literal(true) }).optional(),
 });

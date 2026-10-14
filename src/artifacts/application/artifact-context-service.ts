@@ -264,6 +264,7 @@ function foldContext(
         };
         break;
       }
+      case ArtifactContextEventType.InstructionsEdited:
       case ArtifactContextEventType.Delegated:
         break;
     }

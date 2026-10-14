@@ -66,3 +66,5 @@ composition to Bootstrap.
 ## Scenarios
 
 E2E-CONTROL-001, E2E-CONTROL-002, E2E-CONTROL-003, E2E-CONTROL-004.
+
+The Triggers surface exposes operator standing instructions through each configured explicit contextScope. No scope is inferred for a trigger. Artifacts owns edits, revision concurrency, storage and read-only MCP semantics; Bootstrap binds trusted operator commands and captures revisions for execution.

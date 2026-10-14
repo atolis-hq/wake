@@ -361,6 +361,9 @@ export const decodeRun: Decoder<RunResponse> = (value, path = '') => {
   const failure = record.failure;
   const resolution = record.resolution;
   return {
+    ...(record.operatorInstructions === undefined
+      ? {}
+      : { operatorInstructions: decodeOperatorInstructionsReference(record.operatorInstructions) }),
     runId: string(record.runId, child(path, 'runId')),
     activationId: string(record.activationId, child(path, 'activationId')),
     activity: string(record.activity, child(path, 'activity')),
@@ -664,5 +667,21 @@ function decodeMergePolicyBlock(
             ...optionalNumberProperty(policy, 'filesChanged', child(path, 'policy')),
           },
         }),
+  };
+}
+
+function decodeOperatorInstructionsReference(
+  value: unknown,
+): NonNullable<RunResponse['operatorInstructions']> {
+  const record = object(value, 'operatorInstructions');
+  return {
+    ...optionalStringProperty(record, 'content', 'operatorInstructions'),
+    ...optionalStringProperty(record, 'author', 'operatorInstructions'),
+    ...optionalStringProperty(record, 'occurredAt', 'operatorInstructions'),
+    contextScope: string(record.contextScope, 'operatorInstructions.contextScope'),
+    revisionId:
+      record.revisionId === null
+        ? null
+        : string(record.revisionId, 'operatorInstructions.revisionId'),
   };
 }

@@ -23,7 +23,12 @@ export class ArtifactMcpRunner implements Runner {
   readonly supportsEphemeralMcp = true;
   root: CompositionRoot | undefined;
   gh?: OversightGh;
-  readonly scripts: { operations: readonly ToolOperation[]; outcome?: AgentRunOutcome }[] = [];
+  readonly scripts: {
+    operations: readonly ToolOperation[];
+    outcome?: AgentRunOutcome;
+    hold?: Promise<void>;
+  }[] = [];
+
   readonly sessions: {
     prompt: string;
     manifest: string;
@@ -71,6 +76,7 @@ export class ArtifactMcpRunner implements Runner {
         results: [] as unknown[],
       };
       this.sessions.push(record);
+      await script.hold;
       for (const operation of script.operations)
         record.results.push(await client.callTool(operation));
       return {

@@ -1,4 +1,4 @@
-import { EventSourceKind, correlationId } from '@atolis-hq/eventing';
+import { EventActorKind, EventSourceKind, correlationId } from '@atolis-hq/eventing';
 import { InMemoryCheckpointStore, InMemoryProjectionStore } from '@atolis-hq/eventing/memory';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,6 +12,7 @@ import {
 } from '../../../src/artifacts/index.js';
 import {
   createCompositionRoot,
+  createSurfaceApplications,
   parseRootConfig,
   type CompositionRoot,
 } from '../../../src/bootstrap/index.js';
@@ -389,4 +390,203 @@ describe('composed trigger artifact context', () => {
       }),
     ).toThrow('reserved');
   });
+});
+
+it('edits through the operator API, keeps an active run snapshot, audits it and delivers the next revision after restart', async () => {
+  const f = await fixture();
+  const applications = await createSurfaceApplications(f.root);
+  const dispatcher = (await import('../../../src/surfaces/index.js')).createApiDispatcher(
+    applications.api,
+  );
+  const save = (
+    id: string,
+    content: string,
+    expectedRevisionId: string | null,
+    idempotencyKey: string,
+  ) =>
+    dispatcher.dispatch('POST', `/api/v1/triggers/${id}/commands/instructions`, {
+      content,
+      expectedRevisionId,
+      idempotencyKey,
+    });
+  expect((await save('unrelated', 'No invented scope', null, 'no-scope'))?.status).toBe(409);
+  expect((await save('shared', 'Only pick issues labelled ready.', null, 'first'))?.status).toBe(
+    200,
+  );
+  const detail = await applications.api.triggers!.detail('shared');
+  const firstRevision = detail!.data.operatorInstructions!.revisionId;
+  expect(detail!.data.operatorInstructions).toMatchObject({
+    author: 'web',
+    content: 'Only pick issues labelled ready.',
+  });
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.runner.scripts.push({ hold, operations: [{ name: 'wake_context_instructions_read' }] });
+  const first = await start(f);
+  const execution = execute(f.root, first);
+  await vi.waitFor(() => expect(f.runner.sessions).toHaveLength(1));
+  expect(f.runner.sessions[0]!.prompt).toContain('## Trusted operator standing instructions');
+  expect(f.runner.sessions[0]!.prompt).toContain('Only pick issues labelled ready.');
+  expect(f.runner.sessions[0]!.prompt).toContain('tool allowlist remain higher authority');
+  expect(
+    (await save('shared', 'Only pick issues labelled urgent.', firstRevision, 'second'))?.status,
+  ).toBe(200);
+  expect((await save('shared', 'Stale replacement', firstRevision, 'stale'))?.status).toBe(409);
+  release();
+  await execution;
+  expect(JSON.stringify(f.runner.sessions[0]!.results)).toContain(
+    'Only pick issues labelled ready.',
+  );
+  const run = (await f.root.execution.list(first.pendingActivation!.activationId))[0]!;
+  expect(run.operatorInstructions).toEqual({ contextScope: 'review', revisionId: firstRevision });
+  await f.root.projectionSubscriptions.catchUpOnce();
+  expect(
+    (await applications.api.execution.get!(run.runId))?.data.operatorInstructions,
+  ).toMatchObject({ revisionId: firstRevision, content: 'Only pick issues labelled ready.' });
+  const restarted = await f.restart();
+  const second = await start(f, restarted);
+  await execute(restarted, second);
+  expect(f.runner.sessions[1]!.prompt).toContain('Only pick issues labelled urgent.');
+  expect(f.runner.sessions[1]!.prompt).not.toContain('Only pick issues labelled ready.');
+  const facts = await f.journal.readStream(artifactContextStream('review'));
+  const edits = facts.filter(
+    (fact) => fact.event.eventType === ArtifactContextEventType.InstructionsEdited,
+  );
+  expect(edits).toHaveLength(2);
+  expect(edits[0]!.event.actor).toEqual({ kind: EventActorKind.Operator, id: 'web' });
+});
+
+it('persists operator edits with filesystem hosts and rejects conflicting saves across hosts', async () => {
+  const f = await fixture();
+  const home = await mkdtemp(join(tmpdir(), 'wake-operator-hosts-'));
+  homes.push(home);
+  const first = await createCompositionRoot(home, { config: f.config });
+  const second = await createCompositionRoot(home, { config: f.config });
+  const operator = { ...context(), actor: { kind: EventActorKind.Operator, id: 'web' } };
+  const input = {
+    contextScope: 'review',
+    content: 'Only ready issues',
+    revisionId: 'initial',
+    expectedRevisionId: null,
+  };
+  await first.operatorInstructions.save(input, operator);
+  const saved = await second.operatorInstructions.current('review');
+  expect(saved).toMatchObject({ content: 'Only ready issues', revisionId: 'initial' });
+  const results = await Promise.allSettled([
+    first.operatorInstructions.save(
+      { ...input, revisionId: 'first-host', expectedRevisionId: 'initial', content: 'First host' },
+      { ...operator, commandId: 'first-host' },
+    ),
+    second.operatorInstructions.save(
+      {
+        ...input,
+        revisionId: 'second-host',
+        expectedRevisionId: 'initial',
+        content: 'Second host',
+      },
+      { ...operator, commandId: 'second-host' },
+    ),
+  ]);
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  const current = await first.operatorInstructions.current('review');
+  const restarted = await createCompositionRoot(home, { config: f.config });
+  expect(await restarted.operatorInstructions.current('review')).toEqual(current);
+  expect(await restarted.operatorInstructions.read('review', 'initial')).toMatchObject({
+    content: 'Only ready issues',
+  });
+});
+
+it('does not introduce instructions when reprovisioning a run that started with an absent document', async () => {
+  const f = await fixture();
+  const first = await start(f);
+  await execute(f.root, first);
+  const run = (await f.root.execution.list(first.pendingActivation!.activationId))[0]!;
+  expect(run.operatorInstructions).toEqual({ contextScope: 'review', revisionId: null });
+  await f.root.operatorInstructions.save(
+    {
+      contextScope: 'review',
+      revisionId: 'later',
+      expectedRevisionId: null,
+      content: 'New criteria after run start',
+    },
+    { ...context(), actor: { kind: EventActorKind.Operator, id: 'web' } },
+  );
+  const { createArtifactMcpProvisioner } = await import('../../../src/bootstrap/artifact-mcp.js');
+  const { FileArtifactMcpSessionStore } = await import('../../../src/artifacts/index.js');
+  const provision = createArtifactMcpProvisioner({
+    artifacts: f.root.artifacts,
+    orchestration: f.root.orchestration,
+    journal: f.root.journal,
+    operatorInstructions: f.root.operatorInstructions,
+    sessions: new FileArtifactMcpSessionStore(f.root.paths.artifactsRoot),
+    wakeRoot: f.root.paths.wakeRoot,
+    now: () => new Date().toISOString(),
+    nextId: () => 'unused',
+    sharedContext: async () => ({ contextScope: 'review' }),
+  });
+  const capability = await provision({
+    runId: run.runId,
+    activation: first.pendingActivation!,
+    context: {
+      workItemId: first.workItemId,
+      workflowInstanceId: first.workflowInstanceId,
+      orchestrationGroupId: first.orchestrationGroupId,
+      resources: [],
+    },
+  });
+  try {
+    expect(capability.prompt).not.toContain('New criteria after run start');
+    expect(capability.operatorInstructions).toEqual({ contextScope: 'review', revisionId: null });
+  } finally {
+    await capability.release();
+  }
+});
+
+it('accepts instructions above the general HTTP body cap only on the protected operator route', async () => {
+  const f = await fixture();
+  const { createApiDispatcher, createSurfaceHttpServer } =
+    await import('../../../src/surfaces/index.js');
+  const applications = await createSurfaceApplications(f.root);
+  const server = createSurfaceHttpServer({
+    dispatcher: createApiDispatcher(applications.api),
+    credentials: {
+      accessKey: 'test',
+      sessionPassword: Buffer.alloc(32, 4).toString('base64url'),
+      createdAt: new Date().toISOString(),
+    },
+    operatorInstructionsMaxWriteBytes: f.root.config.artifacts.maxWriteBytes,
+  });
+  try {
+    const payload = {
+      content: 'x'.repeat(70 * 1024),
+      expectedRevisionId: null,
+      idempotencyKey: 'large-save',
+    };
+    const url = '/api/v1/triggers/shared/commands/instructions';
+    expect((await server.inject({ method: 'POST', url, payload })).statusCode).toBe(401);
+    const login = await server.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { accessKey: 'test' },
+    });
+    expect(login.statusCode).toBe(200);
+    const setCookie = login.headers['set-cookie'];
+    if (typeof setCookie !== 'string') throw new Error('Expected operator cookie');
+    const cookie = setCookie.split(';', 1)[0]!;
+    const saved = await server.inject({ method: 'POST', url, payload, headers: { cookie } });
+    expect(saved.statusCode).toBe(200);
+    expect((await f.root.operatorInstructions.current('review'))?.content).toBe(payload.content);
+    const ordinary = await server.inject({
+      method: 'POST',
+      url: '/api/v1/triggers/shared/commands/pause',
+      payload,
+      headers: { cookie },
+    });
+    expect(ordinary.statusCode).toBe(413);
+  } finally {
+    await server.close();
+  }
 });

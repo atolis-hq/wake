@@ -126,3 +126,5 @@ After the PR merges, the status becomes **PR merged; recovery pending**, with
 advancement guidance. The usual workflow/work state shows completion afterward.
 The work-detail API exposes this explanation as `orchestration.primary.mergePolicyBlock`;
 only applicable merge restrictions are included.
+
+The trigger detail page includes **Operator standing instructions** for its explicit contextScope. All triggers with that scope share the document. Edit Markdown, preview it with the same HTML-disabled rendering as the artifact viewer, and save it for later runs. Conflicting saves preserve the draft and offer an explicit reload of current instructions. Triggers without a scope show a configuration message and no editor. Run details show the scope and immutable instructions revision (or absence) received at run start.

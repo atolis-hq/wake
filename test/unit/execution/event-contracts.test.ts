@@ -123,6 +123,10 @@ const runSamples = [
     ExecutionEventType.RunAmbiguous,
     { reason: 'runner unavailable', finishedAt: '2026-07-31T12:01:00.000Z' },
   ],
+  [
+    ExecutionEventType.RunOperatorInstructionsCaptured,
+    { contextScope: 'triage', revisionId: 'operator-1' },
+  ],
 ] as const;
 
 const activation = activationId('activation-1');

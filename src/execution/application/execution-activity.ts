@@ -33,6 +33,10 @@ export interface ExecutionDependencies {
 }
 
 export interface ExecutionMcpConfiguration {
+  readonly operatorInstructions?: {
+    readonly contextScope: string;
+    readonly revisionId: string | null;
+  };
   readonly servers: readonly RunnerMcpServer[];
   readonly prompt?: string;
   release(): Promise<void>;
@@ -133,6 +137,27 @@ export async function executeActivity(
     reportRunnerTimeout: runnerTimeoutReporter(runtime, currentRunId),
   };
   try {
+    if (mcp?.operatorInstructions !== undefined) {
+      const loaded = await runtime.repository.load(currentRunId);
+      if (
+        loaded.view?.operatorInstructions !== undefined &&
+        (loaded.view.operatorInstructions.contextScope !== mcp.operatorInstructions.contextScope ||
+          loaded.view.operatorInstructions.revisionId !== mcp.operatorInstructions.revisionId)
+      )
+        throw new Error('Run operator instructions snapshot changed');
+      if (loaded.view?.operatorInstructions === undefined) {
+        const event = createRunEvent({
+          runId: currentRunId,
+          eventId: currentRunId + ':operator-instructions',
+          eventType: ExecutionEventType.RunOperatorInstructionsCaptured,
+          occurredAt,
+          correlationId: context.orchestrationGroupId,
+          causationId: activation.activationId,
+          payload: mcp.operatorInstructions,
+        });
+        await appendIdempotently(runtime.repository, currentRunId, loaded.sequence, event);
+      }
+    }
     return await runtime.activities.execute(
       {
         activationId: activation.activationId,

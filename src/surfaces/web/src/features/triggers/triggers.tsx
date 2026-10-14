@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import Markdown from 'react-markdown';
 import { Link, useParams } from 'react-router';
 import type { TriggerResponse } from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
@@ -13,6 +15,7 @@ import {
   PageHeader,
   Panel,
 } from '../../components/primitives.js';
+import markdownStyles from '../work/markdown-artifact-viewer.module.css';
 
 export function TriggersList() {
   const client = useApiClient();
@@ -110,6 +113,7 @@ export function TriggerDetail() {
           </p>
         )}
       </Panel>
+      <InstructionsEditor key={trigger.triggerId} trigger={trigger} />
       <Panel>
         <h2>Pending requests</h2>
         {trigger.pending.length === 0 ? (
@@ -212,5 +216,113 @@ function TriggerControl({ trigger }: { readonly trigger: TriggerResponse }) {
         />
       )}
     </>
+  );
+}
+
+function InstructionsEditor({ trigger }: { readonly trigger: TriggerResponse }) {
+  const client = useApiClient();
+  const cache = useQueryClient();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [expectedRevisionId, setExpectedRevisionId] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: () =>
+      client.triggers.saveInstructions(
+        trigger.triggerId,
+        draft ?? '',
+        expectedRevisionId,
+        'web:instructions:' + crypto.randomUUID(),
+      ),
+    onSuccess: async () => {
+      await cache.invalidateQueries({ queryKey: ['triggers'] });
+      setDraft(null);
+    },
+  });
+  const reload = useMutation({
+    mutationFn: async () => {
+      const current = await client.triggers.detail(trigger.triggerId);
+      cache.setQueryData(['triggers', trigger.triggerId], current);
+      setDraft(current.data.operatorInstructions?.content ?? '');
+      setExpectedRevisionId(current.data.operatorInstructions?.revisionId ?? null);
+      save.reset();
+    },
+  });
+  const scope = trigger.definition?.contextScope;
+  return (
+    <Panel>
+      <h2>Operator standing instructions</h2>
+      {scope === undefined ? (
+        <p>
+          This trigger has no explicit contextScope. Configure a named scope before editing
+          instructions.
+        </p>
+      ) : (
+        <>
+          <p>
+            Scope: {scope}. Shared by all triggers in this scope. Saves apply to later runs; active
+            runs keep their snapshot.
+          </p>
+          {trigger.operatorInstructions && (
+            <p>
+              Last saved by {trigger.operatorInstructions.author} at{' '}
+              <LocalTime value={trigger.operatorInstructions.occurredAt} />. Revision:{' '}
+              {trigger.operatorInstructions.revisionId}
+            </p>
+          )}
+          {draft === null ? (
+            <>
+              <article
+                className={markdownStyles.markdown}
+                aria-label="Operator standing instructions"
+              >
+                <Markdown skipHtml>{trigger.operatorInstructions?.content ?? ''}</Markdown>
+              </article>
+              <Button
+                onClick={() => {
+                  setDraft(trigger.operatorInstructions?.content ?? '');
+                  setExpectedRevisionId(trigger.operatorInstructions?.revisionId ?? null);
+                  save.reset();
+                }}
+              >
+                Edit instructions
+              </Button>
+            </>
+          ) : (
+            <>
+              <label>
+                Instructions (Markdown)
+                <textarea
+                  aria-label="Instructions (Markdown)"
+                  rows={14}
+                  value={draft}
+                  disabled={save.isPending}
+                  onChange={(event) => setDraft(event.target.value)}
+                />
+              </label>
+              <Button disabled={save.isPending} onClick={() => save.mutate()}>
+                Save instructions
+              </Button>
+              <Button
+                disabled={save.isPending}
+                onClick={() => {
+                  setDraft(null);
+                  save.reset();
+                }}
+              >
+                Cancel
+              </Button>
+              {save.error && (
+                <>
+                  <p role="alert">{save.error.message}</p>
+                  <Button disabled={reload.isPending} onClick={() => reload.mutate()}>
+                    Reload current instructions
+                  </Button>
+                </>
+              )}
+            </>
+          )}
+        </>
+      )}
+      {reload.error && <p role="alert">{reload.error.message}</p>}
+    </Panel>
   );
 }

@@ -218,6 +218,9 @@ function applyLivenessEvent(
     case ExecutionEventType.RunLeaseRenewed:
       Object.assign(state, { lease: event.payload });
       return;
+    case ExecutionEventType.RunOperatorInstructionsCaptured:
+      Object.assign(state, { operatorInstructions: event.payload });
+      return;
     case ExecutionEventType.RunExternalExecutionReported:
       Object.assign(state, { externalExecution: event.payload });
       return;

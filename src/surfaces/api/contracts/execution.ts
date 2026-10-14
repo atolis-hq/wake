@@ -1,4 +1,11 @@
 export interface RunResponse {
+  readonly operatorInstructions?: {
+    readonly contextScope: string;
+    readonly revisionId: string | null;
+    readonly content?: string;
+    readonly author?: string;
+    readonly occurredAt?: string;
+  };
   readonly runId: string;
   readonly activationId: string;
   readonly activity: string;

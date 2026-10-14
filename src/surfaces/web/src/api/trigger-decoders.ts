@@ -42,6 +42,16 @@ const invocation = z.object({
   workItemKey: z.string(),
 });
 const schema = z.object({
+  operatorInstructions: z
+    .object({
+      contextScope: z.string(),
+      revisionId: z.string(),
+      content: z.string(),
+      author: z.string(),
+      occurredAt: z.string(),
+    })
+    .nullable()
+    .optional(),
   triggerId: z.string(),
   status: z.enum(TriggerStatus),
   definition: triggerDefinitionSchema.nullable(),
