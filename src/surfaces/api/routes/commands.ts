@@ -1,5 +1,6 @@
 import { RunStatus } from '../../../execution/index.js';
 import type { ConversationMessageRequest, RunnerResponse } from '../contracts/index.js';
+import { TriggerCommandName } from '../contracts/index.js';
 import type { ApiHttpResponse } from '../http-server.js';
 import type {
   ApiApplications,
@@ -305,13 +306,18 @@ async function dispatchTriggerCommand(
   pathname: string,
   request: ApiCommandRequest,
 ): Promise<ApiHttpResponse | undefined> {
-  const trigger = /^\/api\/v1\/triggers\/([^/]+)\/commands\/(pause|resume)$/.exec(pathname);
+  const trigger = /^\/api\/v1\/triggers\/([^/]+)\/commands\/(pause|resume|run)$/.exec(pathname);
   if (trigger !== null) {
     const id = decodePathSegment(trigger[1]!);
     if (id instanceof ApiPathError) return invalidPath(id.message);
     if (applications.triggers === undefined) return unavailable('triggers');
     const operation =
-      trigger[2] === 'pause' ? applications.triggers.pause : applications.triggers.resume;
+      trigger[2] === TriggerCommandName.Run
+        ? applications.triggers.run
+        : trigger[2] === TriggerCommandName.Pause
+          ? applications.triggers.pause
+          : applications.triggers.resume;
+    if (operation === undefined) return unavailable('trigger-run');
     return accepted(await operation(id, request), applications.now(), 200);
   }
   return undefined;

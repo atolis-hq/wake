@@ -177,6 +177,28 @@ export function createTriggerApplications(
         status: ApiCommandStatus.Completed,
       };
     },
+    async run(id, request) {
+      if (!root.config.controlPlane.triggers.some((trigger) => trigger.id === id))
+        return {
+          conflict: true,
+          code: 'trigger-not-found',
+          detail: 'Trigger definition is unavailable',
+        };
+      const context = {
+        commandId: 'trigger:' + request.idempotencyKey,
+        correlationId: correlationId('trigger:' + request.idempotencyKey),
+        occurredAt: now(),
+        actor: { kind: EventActorKind.Operator, id: 'web' },
+      };
+      const triggerOutcome = await root.triggers.requestManual(id, context);
+      return {
+        commandId: context.commandId,
+        idempotencyKey: request.idempotencyKey,
+        acceptedAt: now(),
+        status: ApiCommandStatus.Completed,
+        triggerOutcome,
+      };
+    },
     pause: (id, request) => command(id, request, true),
     resume: (id, request) => command(id, request, false),
   };

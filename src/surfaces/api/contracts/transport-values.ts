@@ -1,5 +1,6 @@
 import type { ActivityOutcomeKind } from '../../../activities/index.js';
 import type {
+  ManualTriggerDisposition,
   TriggerRequestDisposition,
   TriggerSkipReason,
   TriggerSourceKind,
@@ -7,6 +8,7 @@ import type {
 import type { RunStatus } from '../../../execution/index.js';
 import { defineClosedVocabulary } from '../../../kernel/index.js';
 import type { ApiCommandStatus } from './control-plane.js';
+import type { TriggerCommandName } from './triggers.js';
 
 const commandStatusShape = { accepted: true, completed: true };
 const commandStatuses = Object.keys(commandStatusShape);
@@ -90,6 +92,7 @@ export const TranscriptGroupKindValue = {
 export const TriggerSourceKindValue: typeof TriggerSourceKind = {
   Event: 'event',
   Cron: 'cron',
+  Manual: 'manual',
 } as const;
 
 export const TriggerRequestDispositionValue: typeof TriggerRequestDisposition = {
@@ -114,3 +117,20 @@ export const TriggerFinishedStatusValue = {
   Completed: triggerFinishedStatuses[0]!,
   Superseded: triggerFinishedStatuses[1]!,
 } as const;
+
+const manualStartedShape = { started: true };
+
+export const ManualTriggerDispositionValue: typeof ManualTriggerDisposition = {
+  Started: Object.keys(manualStartedShape)[0]! as keyof typeof manualStartedShape,
+  Coalesced: TriggerRequestDispositionValue.Coalesced,
+  Skipped: TriggerRequestDispositionValue.Skipped,
+} as const;
+
+const triggerCommandShape = { pause: true, resume: true, run: true };
+const triggerCommands = Object.keys(triggerCommandShape) as (keyof typeof triggerCommandShape)[];
+
+export const TriggerCommandNameValue: typeof TriggerCommandName = {
+  Pause: triggerCommands[0]!,
+  Resume: triggerCommands[1]!,
+  Run: triggerCommands[2]!,
+};

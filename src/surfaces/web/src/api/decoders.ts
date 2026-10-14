@@ -47,6 +47,7 @@ import {
   string,
   type Decoder,
 } from './decoder-primitives.js';
+import { manualTriggerOutcomeSchema } from './trigger-transport.js';
 
 export type { Decoder } from './decoder-primitives.js';
 
@@ -121,6 +122,9 @@ export const decodeAcceptedCommand: Decoder<AcceptedCommandResponse> = (value, p
   )
     invalid(child(path, 'status'));
   return {
+    ...(record.triggerOutcome === undefined
+      ? {}
+      : { triggerOutcome: manualTriggerOutcomeSchema.parse(record.triggerOutcome) }),
     commandId: string(record.commandId, child(path, 'commandId')),
     idempotencyKey: string(record.idempotencyKey, child(path, 'idempotencyKey')),
     acceptedAt: string(record.acceptedAt, child(path, 'acceptedAt')),

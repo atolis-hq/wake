@@ -6,11 +6,15 @@ import {
 } from '@atolis-hq/eventing';
 import { createControlPlaneEventData } from '../contracts/event-factory.js';
 import {
+  ControlEventType,
+  ManualTriggerDisposition,
+  TriggerRequestDisposition,
   TriggerSourceKind,
   type ControlEventPayloads,
   type TriggerSource,
 } from '../contracts/events.js';
 import { triggerControlStream, triggerInvocationStream } from '../contracts/streams.js';
+import type { TriggerSkipReason } from '../contracts/trigger-diagnostics.js';
 
 export type TriggerFactInput = {
   [Type in keyof ControlEventPayloads]: {
@@ -20,7 +24,7 @@ export type TriggerFactInput = {
 }[keyof ControlEventPayloads];
 
 export function sourceIdentity(source: TriggerSource): string {
-  return `${source.kind}:${source.kind === TriggerSourceKind.Cron ? source.slot : source.eventId}`;
+  return `${source.kind}:${source.kind === TriggerSourceKind.Cron ? source.slot : source.kind === TriggerSourceKind.Manual ? source.commandId : source.eventId}`;
 }
 
 /** Invocation/command appends check event IDs; source appends use the caught-up scope sequence. */
@@ -57,4 +61,34 @@ export async function appendTriggerFact(
       sequence = undefined;
     }
   }
+}
+
+export function hasTriggerRequest(
+  requests: readonly { readonly triggerId: string; readonly source: TriggerSource }[],
+  triggerId: string,
+  source: TriggerSource,
+): boolean {
+  return requests.some(
+    (request) =>
+      request.triggerId === triggerId && sourceIdentity(request.source) === sourceIdentity(source),
+  );
+}
+
+export function consumedTriggerRequest(
+  request: ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded],
+  reason: TriggerSkipReason,
+): TriggerFactInput {
+  return {
+    eventType: ControlEventType.TriggerRequestRecorded,
+    payload: {
+      triggerId: request.triggerId,
+      coordinationKey: request.coordinationKey,
+      source: request.source,
+      disposition: TriggerRequestDisposition.Skipped,
+      manualOutcome:
+        request.manualOutcome?.disposition === ManualTriggerDisposition.Started
+          ? { disposition: ManualTriggerDisposition.Skipped, reason }
+          : request.manualOutcome,
+    },
+  };
 }

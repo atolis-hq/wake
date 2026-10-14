@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import {
+  ManualTriggerDispositionValue,
   TriggerFinishedStatusValue,
   TriggerRequestDispositionValue,
   TriggerSkipReasonValue,
@@ -13,6 +14,11 @@ export {
 };
 
 export const triggerSourceSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal(TriggerSourceKindValue.Manual),
+    commandId: z.string(),
+    operator: z.string(),
+  }),
   z.object({ kind: z.literal(TriggerSourceKindValue.Cron), slot: z.string() }),
   z.object({
     kind: z.literal(TriggerSourceKindValue.Event),
@@ -36,3 +42,12 @@ const trigger = z.object({
 });
 
 export const triggerDefinitionSchema = trigger;
+
+export const manualTriggerOutcomeSchema = z.discriminatedUnion('disposition', [
+  z.object({ disposition: z.literal(ManualTriggerDispositionValue.Started) }),
+  z.object({ disposition: z.literal(ManualTriggerDispositionValue.Coalesced) }),
+  z.object({
+    disposition: z.literal(ManualTriggerDispositionValue.Skipped),
+    reason: z.enum(TriggerSkipReasonValue),
+  }),
+]);

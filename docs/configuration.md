@@ -438,11 +438,11 @@ so separate invocations do not share artifacts automatically.
 
 Requests, invocation claims, source identities, starts, results, and trigger
 pause/resume facts are durable. Cron watermarks live in processor state. Hosts
-sharing a Wake home serialize trigger starts and operator pause/resume commands;
+sharing a Wake home serialize trigger starts and operator pause/resume/manual-run commands;
 recovery uses the claimed WorkItem and workflow IDs to complete an interrupted
 start. Cron catch-up consumes at most 64 occurrences per trigger per pass and
 coalesces them into one request. There is no cooldown or minimum interval.
-Skipped occurrences advance durable source cursors without adding request facts.
+Skipped background occurrences advance durable source cursors without adding request facts.
 Control Plane retains the latest actual skip diagnostic per trigger in processor
 state, bounded to 256 recent trigger identities. Each diagnostic includes the
 trigger ID, canonical source identity, observation time, and typed reason
@@ -458,7 +458,7 @@ projections are stored per coordination scope, while each invocation has its own
 history document and stream. Normal coordination reads new journal batches
 incrementally rather than repeatedly folding historical requests and invocations.
 
-The public Control Plane trigger service exposes pause/resume commands and a
+The public Control Plane trigger service exposes pause/resume/manual-run commands and a
 rebuildable invocation-history projection. Pausing clears unstarted pending
 work and skips new occurrences; active invocations continue.
 Blocked invocations still hold their single-flight slot: operator retry or
@@ -850,3 +850,13 @@ The operator document uses the reserved name `instructions.md`. Agent artifact c
 Creation is lazy: configuring a scope creates no document, and the first operator save creates its document without enrollment or a prior invocation. Triggers sharing a scope share that document. Removing or renaming a scope retains its document as orphaned; the Triggers list displays its current Markdown, author and revision. Reusing the same explicit scope reconnects it for editing and future runs. Agent-drafted suggestions are outside this feature.
 
 Orphan discovery reads a pure, rebuildable latest-revision projection keyed by context scope. Bootstrap registers it with the existing incremental projection processors; polling does not replay the full journal. The save path still reads authoritative context facts freshly and uses compare-and-swap. Inspection reads bytes only for orphaned scopes and preserves metadata with an unavailable-content message if a document cannot be read.
+
+Every configured trigger can also be requested manually through **Run now** or
+`POST /api/v1/triggers/:triggerId/commands/run`. Manual sources are not configured
+in `on`; they carry the command identifier and requesting operator. They use the
+same workflow, single-flight coordination, coalescing, dispatch pause, trigger
+pause, capacity gate, and pending-source bounds. Coalesced requests remain pending
+for reconsideration after the active invocation. Manual commands never resume a
+paused trigger or reset workflow retries. Their original immediate disposition,
+including a skipped reason, is journaled for idempotent retries; bounded latest
+skip diagnostics remain operational processor state.

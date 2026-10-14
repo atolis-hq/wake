@@ -44,3 +44,14 @@ export interface OrphanedInstructionsResponse {
   readonly author: string;
   readonly occurredAt: string;
 }
+
+const triggerCommandShape = { pause: true, resume: true, run: true };
+const triggerCommands = Object.keys(triggerCommandShape) as (keyof typeof triggerCommandShape)[];
+
+export const TriggerCommandName = {
+  Pause: triggerCommands[0]!,
+  Resume: triggerCommands[1]!,
+  Run: triggerCommands[2]!,
+} as const;
+
+export type TriggerCommandName = ValueOf<typeof TriggerCommandName>;

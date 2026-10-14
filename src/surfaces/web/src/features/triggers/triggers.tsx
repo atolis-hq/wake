@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import Markdown from 'react-markdown';
 import { Link, useParams } from 'react-router';
-import type { TriggerResponse } from '../../../../api/contracts/index.js';
+import { TriggerStatus, type TriggerResponse } from '../../../../api/contracts/index.js';
+import { TriggerCommandNameValue } from '../../../../api/contracts/transport-values.js';
 import { useApiClient } from '../../api/context.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
 import { DataTable } from '../../components/data-table.js';
@@ -217,8 +218,10 @@ function TriggerControl({ trigger }: { readonly trigger: TriggerResponse }) {
   const client = useApiClient();
   const cache = useQueryClient();
   const command = useMutation({
-    mutationFn: (request: { readonly name: 'pause' | 'resume'; readonly idempotencyKey: string }) =>
-      client.triggers.command(trigger.triggerId, request.name, request.idempotencyKey),
+    mutationFn: (request: {
+      readonly name: (typeof TriggerCommandNameValue)[keyof typeof TriggerCommandNameValue];
+      readonly idempotencyKey: string;
+    }) => client.triggers.command(trigger.triggerId, request.name, request.idempotencyKey),
     onSettled: () => cache.invalidateQueries({ queryKey: ['triggers'] }),
   });
   return (
@@ -228,13 +231,41 @@ function TriggerControl({ trigger }: { readonly trigger: TriggerResponse }) {
         disabled={command.isPending}
         onClick={() =>
           command.mutate({
-            name: trigger.paused ? 'resume' : 'pause',
+            name: trigger.paused ? TriggerCommandNameValue.Resume : TriggerCommandNameValue.Pause,
             idempotencyKey: 'web:trigger:' + crypto.randomUUID(),
           })
         }
       >
         {trigger.paused ? 'Resume' : 'Pause'}
       </Button>
+      {trigger.definition !== null && (
+        <>
+          <Button
+            type="button"
+            disabled={command.isPending || trigger.paused}
+            onClick={() =>
+              command.mutate({
+                name: TriggerCommandNameValue.Run,
+                idempotencyKey: 'web:trigger:' + crypto.randomUUID(),
+              })
+            }
+          >
+            Run now
+          </Button>
+          {trigger.paused && <p>Resume this trigger before running it.</p>}
+          {trigger.status === TriggerStatus.Running && (
+            <p>A request will coalesce while this invocation is active.</p>
+          )}
+        </>
+      )}
+      {command.data?.data.triggerOutcome && (
+        <p role="status">
+          {command.data.data.triggerOutcome.disposition}
+          {'reason' in command.data.data.triggerOutcome
+            ? ': ' + command.data.data.triggerOutcome.reason
+            : ''}
+        </p>
+      )}
       {command.error && (
         <ErrorState
           error={command.error}

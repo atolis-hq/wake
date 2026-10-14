@@ -53,7 +53,7 @@ Shared context links are not exposed until the owning context capability exists.
 
 Authenticated API routes are `GET /api/v1/triggers`,
 `GET /api/v1/triggers/:triggerId`, and
-`POST /api/v1/triggers/:triggerId/commands/pause` or `resume`.
+`POST /api/v1/triggers/:triggerId/commands/pause`, `resume`, or `run`.
 Commands accept only `{ "idempotencyKey": "..." }` and use the same durable
 start/pause lock as the engine. Unknown identities return missing/conflict
 responses; removed identities with retained history remain inspectable.
@@ -132,3 +132,19 @@ The trigger detail page includes **Operator standing instructions** for its expl
 The empty instructions editor explains its purpose and that it applies to every trigger sharing the scope. The first operator save creates `instructions.md`; it does not depend on scope membership. The Triggers list also shows retained orphaned documents after scope removal or renaming, even when no configured triggers remain. Configure a trigger with that same explicit scope to reconnect and edit the document.
 
 Orphan inspection uses the rebuildable operator-instructions projection. The host catches up new facts incrementally; repeated polling does not scan journal history. An unreadable orphan body shows an unavailable-content message while retaining its scope, author and revision.
+
+Each configured trigger offers **Run now**. Paused triggers require **Resume**
+first. During an active invocation, a manual request coalesces into the pending
+request for reconsideration after that invocation. The result appears immediately:
+`started`, `coalesced`, or `skipped` with an eligibility reason. Request retries
+reuse the command identifier. Invocation history and skip diagnostics include
+manual provenance and the requesting operator (`web` for current web commands).
+
+`POST /api/v1/triggers/:triggerId/commands/run` accepts the same
+`{ "idempotencyKey": "unique-command-key" }` body and authorization as pause/resume.
+It returns HTTP 200 with the ordinary command response and a `triggerOutcome`:
+`{ "disposition": "started" }`, `{ "disposition": "coalesced" }`, or
+`{ "disposition": "skipped", "reason": "paused" }` (also `dispatch-paused`,
+`capacity-unavailable`, or `pending-source-limit`). Retries return the original
+outcome, including skips, even if eligibility has changed. Removed definitions
+return a command conflict. There are no per-run parameters or gate overrides.

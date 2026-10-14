@@ -155,7 +155,7 @@ describe('composed workflow triggers', () => {
       expect(origin).toMatchObject({ triggerId: 'oversight', workflowName: 'inspect' });
       if (origin.source.kind === TriggerSourceKind.Cron)
         expect(origin.source.slot).toBe('2026-08-10T00:01:00.000Z');
-      else {
+      else if (origin.source.kind === TriggerSourceKind.Event) {
         const source = origin.source;
         expect(origin.source.eventType).toBe(WorkEventType.ObjectiveRevised);
         expect(
@@ -945,4 +945,216 @@ describe('durable trigger coordination', () => {
     });
     expect(await invocations(f.journal)).toHaveLength(1);
   });
+});
+
+describe('manual trigger commands', () => {
+  it('starts with operator provenance and preserves original outcomes across retries and subsequent commands', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    const context = { ...f.context, actor: { kind: EventActorKind.Operator, id: 'operator' } };
+    expect(await f.root.triggers.requestManual('oversight', context)).toEqual({
+      disposition: 'started',
+    });
+    const pendingContext = { ...context, commandId: 'pending-manual' };
+    expect(await f.root.triggers.requestManual('oversight', pendingContext)).toEqual({
+      disposition: 'coalesced',
+    });
+    const root = await restart(f);
+    expect(await root.triggers.requestManual('oversight', context)).toEqual({
+      disposition: 'started',
+    });
+    expect(await root.triggers.requestManual('oversight', pendingContext)).toEqual({
+      disposition: 'coalesced',
+    });
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect((await invocations(f.journal))[0]?.source).toEqual({
+      kind: 'manual',
+      commandId: context.commandId,
+      operator: 'operator',
+    });
+    expect(Object.values((await root.triggers.get()).coalesced)[0]?.sources).toHaveLength(1);
+  });
+
+  it.each(['paused', 'dispatch-paused', 'capacity-unavailable'] as const)(
+    'durably returns %s even after eligibility changes',
+    async (reason) => {
+      const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, true);
+      if (reason === 'paused')
+        await f.root.triggers.pause('oversight', 'Operator pause', {
+          ...f.context,
+          commandId: 'pause',
+        });
+      if (reason === 'dispatch-paused') await f.root.controlPlane.pauseDispatch('pause-dispatch');
+      if (reason === 'capacity-unavailable')
+        await f.root.runnerControls.pause('fake', 'pause-runner');
+      expect(await f.root.triggers.requestManual('oversight', f.context)).toEqual({
+        disposition: 'skipped',
+        reason,
+      });
+      await f.root.triggers.resume('oversight', { ...f.context, commandId: 'resume' });
+      await f.root.controlPlane.resumeDispatch('resume-dispatch');
+      if (reason === 'capacity-unavailable')
+        await f.root.runnerControls.unpause('fake', 'resume-runner');
+      const root = await restart(f);
+      expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
+        disposition: 'skipped',
+        reason,
+      });
+      expect(await invocations(f.journal)).toHaveLength(0);
+    },
+  );
+
+  it('recovers a persisted manual request before claim without duplication', async () => {
+    const journal = new FaultInjectingJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') });
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, false, journal);
+    journal.failAfter = ControlEventType.TriggerRequestRecorded;
+    await expect(f.root.triggers.requestManual('oversight', f.context)).rejects.toThrow(
+      'Injected storage failure',
+    );
+    expect(await invocations(journal)).toHaveLength(0);
+    const root = await restart(f);
+    expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
+      disposition: 'started',
+    });
+    expect(await invocations(journal)).toHaveLength(1);
+    expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
+      disposition: 'started',
+    });
+    expect(await invocations(journal)).toHaveLength(1);
+  });
+
+  it('exposes manual outcomes through the existing operator HTTP command path', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    const dispatcher = createApiDispatcher((await createSurfaceApplications(f.root)).api);
+    const path = '/api/v1/triggers/oversight/commands/run';
+    const request = { idempotencyKey: 'manual-api' };
+    const first = await dispatcher.dispatch('POST', path, request);
+    expect(first).toMatchObject({
+      status: 200,
+      body: { data: { triggerOutcome: { disposition: 'started' } } },
+    });
+    expect(await dispatcher.dispatch('POST', path, request)).toMatchObject({
+      status: 200,
+      body: { data: { triggerOutcome: { disposition: 'started' } } },
+    });
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect((await invocations(f.journal))[0]?.source).toMatchObject({
+      kind: 'manual',
+      operator: 'web',
+    });
+  });
+});
+
+it('serializes double manual submissions and later starts the coalesced manual request', async () => {
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+  expect(
+    await Promise.all([
+      f.root.triggers.requestManual('oversight', f.context),
+      f.root.triggers.requestManual('oversight', f.context),
+    ]),
+  ).toEqual([{ disposition: 'started' }, { disposition: 'started' }]);
+  expect(await invocations(f.journal)).toHaveLength(1);
+  await f.root.triggers.requestManual('oversight', { ...f.context, commandId: 'coalesced' });
+  await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
+  const root = await restart(f);
+  await root.triggers.reconcile(f.context);
+  expect(await invocations(f.journal)).toHaveLength(2);
+  expect((await invocations(f.journal))[1]?.source).toMatchObject({
+    kind: 'manual',
+    commandId: 'coalesced',
+  });
+});
+
+it('durably skips excess manual sources without discarding pending requests', async () => {
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+  await f.root.triggers.requestManual('oversight', f.context);
+  for (let index = 0; index < maximumTriggerSources; index += 1)
+    await f.root.triggers.requestManual('oversight', {
+      ...f.context,
+      commandId: 'pending:' + index,
+    });
+  const context = { ...f.context, commandId: 'over-limit' };
+  expect(await f.root.triggers.requestManual('oversight', context)).toEqual({
+    disposition: 'skipped',
+    reason: TriggerSkipReason.PendingLimit,
+  });
+  const view = await f.root.triggers.get();
+  expect(view.coalesced.oversight?.sources).toHaveLength(maximumTriggerSources);
+  expect(view.diagnostics).toMatchObject([
+    { source: { kind: 'manual', commandId: 'over-limit' }, reason: TriggerSkipReason.PendingLimit },
+  ]);
+  expect(await f.root.triggers.requestManual('oversight', context)).toEqual({
+    disposition: 'skipped',
+    reason: TriggerSkipReason.PendingLimit,
+  });
+});
+
+it('preserves manual command identity when the configured coordination scope changes', async () => {
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+  expect(await f.root.triggers.requestManual('oversight', f.context)).toEqual({
+    disposition: 'started',
+  });
+  const root = await restart(f, {
+    config: {
+      ...f.config,
+      controlPlane: {
+        ...f.config.controlPlane,
+        triggers: f.config.controlPlane.triggers.map((trigger) => ({
+          ...trigger,
+          contextScope: 'changed-scope',
+        })),
+      },
+    },
+  });
+  expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
+    disposition: 'started',
+  });
+  expect(await invocations(f.journal)).toHaveLength(1);
+});
+
+it('reports a durable skip if capacity changes between the manual request and claim', async () => {
+  const journal = new FaultInjectingJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') });
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, true, journal);
+  const competing = await restart(f);
+  const reached = deferred(),
+    release = deferred();
+  journal.beforeAppend = {
+    eventType: ControlEventType.TriggerRequestRecorded,
+    reached: reached.resolve,
+    release: release.promise,
+  };
+  const command = f.root.triggers.requestManual('oversight', f.context);
+  await reached.promise;
+  await competing.runnerControls.pause('fake', 'pause-capacity');
+  release.resolve();
+  expect(await command).toEqual({ disposition: 'skipped', reason: TriggerSkipReason.Capacity });
+  await f.root.runnerControls.unpause('fake', 'resume-capacity');
+  expect(await f.root.triggers.requestManual('oversight', f.context)).toEqual({
+    disposition: 'skipped',
+    reason: TriggerSkipReason.Capacity,
+  });
+  expect(await invocations(journal)).toHaveLength(0);
+});
+
+it('keeps pause consumption durable when a manual request crashes before its claim', async () => {
+  const journal = new FaultInjectingJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') });
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, false, journal);
+  journal.failAfter = ControlEventType.TriggerRequestRecorded;
+  await expect(f.root.triggers.requestManual('oversight', f.context)).rejects.toThrow(
+    'Injected storage failure',
+  );
+  const root = await restart(f);
+  await root.triggers.pause('oversight', 'Operator pause', {
+    ...f.context,
+    commandId: 'pause-after-crash',
+  });
+  await root.triggers.resume('oversight', { ...f.context, commandId: 'resume-after-crash' });
+  expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
+    disposition: 'skipped',
+    reason: TriggerSkipReason.Paused,
+  });
+  expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
+    disposition: 'skipped',
+    reason: TriggerSkipReason.Paused,
+  });
+  expect(await invocations(journal)).toHaveLength(0);
 });
