@@ -229,3 +229,44 @@ describe('E2E-OPS-002: doctor diagnostics — sandbox absence and configuration 
     );
   });
 });
+
+describe('E2E-OPS-002: doctor diagnostics — Codex tool lists', () => {
+  it('reports advisory tools without failing configuration', async () => {
+    const world = await ProcessWorld.create();
+    worlds.push(world);
+    await world.tick();
+    await writeFile(
+      join(world.wakeRoot, 'config.yaml'),
+      `schemaVersion: 1
+execution:
+  agentRunners:
+    codex: { kind: codex-cli, command: codex }
+  runnerPools: { standard: [codex] }
+  defaultRunnerPool: standard
+integrations: {}
+surfaces:
+  api: { enabled: false }
+  web: { enabled: false }
+`,
+    );
+    await writeFile(
+      join(world.wakeRoot, 'config.workflows.yaml'),
+      `default:
+  stages:
+    inspect:
+      activity: agent
+      with: { prompt: Inspect, allowedTools: [Read] }
+      execution: { workspace: none }
+      on:
+        done: { then: done }
+`,
+    );
+    await mkdir(join(world.wakeRoot, '.wake', 'transcripts'), { recursive: true });
+    await mkdir(join(world.wakeRoot, 'workspaces'), { recursive: true });
+    const report = await runDoctor(world.wakeRoot);
+    expect(report.failures).toEqual([]);
+    expect(report.notices).toContain(
+      'Workflow "default" stage "inspect": allowedTools is advisory and is not enforced by Codex runner "codex" (pool "standard").',
+    );
+  });
+});

@@ -61,6 +61,13 @@ Work on {{workItemId}}. Report the appropriate terminal activity outcome.
 when unset. `extraArgs` is validated as template metadata but is not currently
 applied to a runner invocation.
 
+For Codex CLI runners, `allowedTools` is advisory: Codex ignores the list,
+and Wake does not enforce or proxy it. It is not a security boundary, including
+for repository-scoped `gh` patterns. `wake doctor` emits a non-fatal notice for
+each Codex runner in an agent stage's resolved pool when the stage input sets a
+non-empty `allowedTools` list. An omitted stage pool uses
+`execution.defaultRunnerPool`.
+
 For a template invocation, Wake appends the WorkItem's title, body, and
 comments in a clearly delimited untrusted-data block. Treat that material as
 task context, not as instructions that can alter Wake's workflow, runner

@@ -77,3 +77,13 @@ export const TranscriptGroupKind = {
 } as const;
 
 export type TranscriptGroupKind = ValueOf<typeof TranscriptGroupKind>;
+
+export const RunnerKind = {
+  ClaudeCli: 'claude-cli',
+  CodexCli: 'codex-cli',
+  CursorCli: 'cursor-cli',
+  Command: 'command',
+  Fake: 'fake',
+} as const;
+
+export type RunnerKind = ValueOf<typeof RunnerKind>;

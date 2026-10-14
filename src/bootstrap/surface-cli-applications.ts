@@ -71,6 +71,7 @@ import {
   createResidentRunnerAdvance,
   withFinalProjectionCatchUp,
 } from './runner-tick-adapter.js';
+import { runnerToolNotices } from './runner-tool-notices.js';
 import {
   createSelfUpdateApplication,
   type SelfUpdateQuiescePort,
@@ -967,7 +968,7 @@ function spawnDocker(
 
 async function doctorDiagnostics(root: CompositionRoot) {
   const failures: string[] = [];
-  const notices: string[] = [];
+  const notices: string[] = runnerToolNotices(root.config);
   try {
     createRunnerRegistry(root.config.execution, root.fakeScenarios).resolve(
       root.config.execution.defaultRunnerPool,

@@ -57,6 +57,13 @@ Each stage says what to run and how to run it.
 | `requiresApproval` | No | Completion policy for ordinary `done` outcomes. The important default is explained below. |
 | `on` | Yes | Non-empty mapping from Activity outcome kind to its route. Only outcomes declared by the Activity are accepted. |
 
+For Codex CLI runners, `allowedTools` is advisory: Codex ignores the list,
+and Wake does not enforce or proxy it. It is not a security boundary, including
+for repository-scoped `gh` patterns. `wake doctor` emits a non-fatal notice for
+each Codex runner in an agent stage's resolved pool when the stage input sets a
+non-empty `allowedTools` list. An omitted stage pool uses
+`execution.defaultRunnerPool`.
+
 `execution` is routing policy, not agent input. Keep stable operational choices
 (workspace isolation and runner capability) in the stage; put task-specific
 instructions in a prompt template.
