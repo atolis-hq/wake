@@ -114,6 +114,49 @@ it('converts an ambiguity block into a retryable execution failure after an oper
   );
 });
 
+it('still converts a legacy run-ambiguous-after-N-attempts block into a retryable execution failure', async () => {
+  const world = new TestWorld();
+  world.registerActivity({
+    name: activityName('agent'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: 'done' } as const;
+      },
+    },
+  });
+  world.configureWorkflow('default', {
+    stages: {
+      implement: {
+        activity: 'agent',
+        with: {},
+        on: { done: { then: 'done' } },
+        requiresApproval: false,
+      },
+    },
+  });
+  const work = await world.createWork({ objective: 'resolve a legacy ambiguous block' });
+  const workflow = await world.startWorkflow({
+    workItemId: work.workItemId,
+    workflowName: workflowName('default'),
+  });
+  await world.blockWorkflow(workflow.workflowInstanceId, 'run-ambiguous-after-3-attempts');
+
+  await world.resolveExecutionFailure(workflow.workflowInstanceId, {
+    activationId: workflow.pendingActivation!.activationId,
+    runId: 'run-legacy',
+    reason: 'The external process cannot be verified.',
+  });
+
+  const view = (await world.viewWorkflow(workflow.workflowInstanceId))!;
+  expect(view).toMatchObject({ executionFailure: { runId: 'run-legacy' } });
+  expect(isOperatorRetryEligible(view)).toBe(true);
+});
+
 async function recoveryBlockWorld() {
   const world = new TestWorld();
   world.registerActivity({

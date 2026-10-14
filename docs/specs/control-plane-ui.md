@@ -179,7 +179,11 @@ run's token usage, cost, and pull-request evidence. An operator must explicitly
 resolve the run as failed (with a reason) or succeeded (with its actual activity
 outcome). Failed resolutions are followed by the work-item retry command; a
 successful resolution accepts the chosen outcome and lets the workflow advance
-normally. No outcome is inferred by the UI.
+normally. No outcome is inferred by the UI. Workflows already blocked with the
+earlier `run-ambiguous-after-N-attempts` reason in the journal are treated the
+same way: they keep the resolve controls and the resolve-then-retry path, but
+(unlike the recovery-prefixed block) still count as exhausted failures for
+trigger pause.
 
 1. **Pause / resume** — _no new mechanics._ Pause-now writes the `PAUSE` file; pause-until writes `ledger.pausedUntil` (note: `pausedUntil` is currently never read by `isPaused()` — report E13 wires it; this spec depends on that fix or ships the same two-line change). Resume deletes both. Value: the safe "stop the world" button during incidents, and the manual fallback for quota exhaustion until E13's automatic backoff lands.
 

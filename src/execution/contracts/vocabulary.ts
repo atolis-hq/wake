@@ -94,3 +94,13 @@ export const RecoveryBlockReasonPrefix = 'execution-recovery-ambiguous:';
 export function isRecoveryBlockReason(reason: string | undefined): boolean {
   return reason?.startsWith(RecoveryBlockReasonPrefix) === true;
 }
+
+// Journals written before the recovery prefix hold this reason permanently.
+const legacyAmbiguityBlockReason = /^run-ambiguous-after-\d+-attempts$/;
+
+export function isAmbiguityResolutionBlockReason(reason: string | undefined): boolean {
+  return (
+    isRecoveryBlockReason(reason) ||
+    (reason !== undefined && legacyAmbiguityBlockReason.test(reason))
+  );
+}

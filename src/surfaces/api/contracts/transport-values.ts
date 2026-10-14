@@ -150,3 +150,10 @@ const recoveryBlockReasonShape = { 'execution-recovery-ambiguous:': true };
 export const RecoveryBlockReasonPrefixValue = Object.keys(
   recoveryBlockReasonShape,
 )[0]! as typeof RecoveryBlockReasonPrefix;
+
+export function isAmbiguityResolutionBlockReasonValue(reason: string | undefined): boolean {
+  return (
+    reason?.startsWith(RecoveryBlockReasonPrefixValue) === true ||
+    (reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason))
+  );
+}

@@ -1,6 +1,6 @@
 import { EventSourceKind, type CommandContext } from '@atolis-hq/eventing';
 import { ActivityOutcomeKind, type ActivationId } from '../../activities/index.js';
-import { ExecutionFailureCode, isRecoveryBlockReason } from '../../execution/index.js';
+import { ExecutionFailureCode, isAmbiguityResolutionBlockReason } from '../../execution/index.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
@@ -66,5 +66,5 @@ export async function resolveExecutionFailure(
 }
 
 export function isAmbiguityResolutionBlock(reason: string | undefined): boolean {
-  return isRecoveryBlockReason(reason);
+  return isAmbiguityResolutionBlockReason(reason);
 }
