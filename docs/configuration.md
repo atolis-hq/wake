@@ -329,8 +329,10 @@ Each `execution.agentRunners.<name>` definition has the following shape.
 For Codex CLI runners, `allowedTools` is advisory: Codex ignores the list,
 and Wake does not enforce or proxy it. It is not a security boundary, including
 for repository-scoped `gh` patterns. `wake doctor` emits a non-fatal notice for
-each Codex runner in an agent stage's resolved pool when the stage input sets a
-non-empty `allowedTools` list. An omitted stage pool uses
+each Codex runner in an agent stage's resolved pool when its effective
+`allowedTools` list is non-empty. The stage input overrides template frontmatter,
+including an explicit empty list. Unreadable templates produce a doctor failure
+instead of a tool-list notice. An omitted stage pool uses
 `execution.defaultRunnerPool`.
 
 Pools are tried in order, skipping runners currently paused as quota-ineligible

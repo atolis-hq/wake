@@ -59,3 +59,52 @@ describe('runner tool notices', () => {
     expect(runnerToolNotices(value)).toEqual([]);
   });
 });
+
+describe('template tool lists', () => {
+  const templates = new Map([
+    ['inspect', { name: 'inspect', body: 'Inspect', frontmatter: { allowedTools: ['Read'] } }],
+  ]);
+
+  function templateConfig(allowedTools?: readonly string[]) {
+    const value = config(allowedTools);
+    value.orchestration.workflows.default!.stages.inspect!.with = {
+      template: 'inspect',
+      ...(allowedTools === undefined ? {} : { allowedTools }),
+    };
+    return value;
+  }
+
+  it('warns for tools inherited from template frontmatter', () => {
+    expect(runnerToolNotices(templateConfig(), templates)).toEqual(
+      runnerToolNotices(config(['Read'])),
+    );
+  });
+
+  it('honors an explicitly empty stage override', () => {
+    expect(runnerToolNotices(templateConfig([]), templates)).toEqual([]);
+  });
+
+  it('honors a non-empty stage override of an empty template list', () => {
+    const empty = new Map([
+      ['inspect', { name: 'inspect', body: 'Inspect', frontmatter: { allowedTools: [] } }],
+    ]);
+    expect(runnerToolNotices(templateConfig(['Read']), empty)).toHaveLength(2);
+  });
+
+  it.each([undefined, null, []])(
+    'does not warn for an unrestricted template (%s)',
+    (allowedTools) => {
+      const unrestricted = new Map([
+        ['inspect', { name: 'inspect', body: 'Inspect', frontmatter: { allowedTools } }],
+      ]);
+      expect(runnerToolNotices(templateConfig(), unrestricted)).toEqual([]);
+    },
+  );
+
+  it.each([undefined, ['Read']])(
+    'does not warn when the referenced template failed to load (%s)',
+    (tools) => {
+      expect(runnerToolNotices(templateConfig(tools))).toEqual([]);
+    },
+  );
+});

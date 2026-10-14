@@ -231,13 +231,25 @@ describe('E2E-OPS-002: doctor diagnostics — sandbox absence and configuration 
 });
 
 describe('E2E-OPS-002: doctor diagnostics — Codex tool lists', () => {
-  it('reports advisory tools without failing configuration', async () => {
-    const world = await ProcessWorld.create();
-    worlds.push(world);
-    await world.tick();
-    await writeFile(
-      join(world.wakeRoot, 'config.yaml'),
-      `schemaVersion: 1
+  it.each([
+    {
+      input: 'prompt: Inspect, allowedTools: [Read]',
+      template: false,
+      missing: false,
+      warns: true,
+    },
+    { input: 'template: inspect', template: true, missing: false, warns: true },
+    { input: 'template: inspect, allowedTools: []', template: true, missing: false, warns: false },
+    { input: 'template: inspect', template: true, missing: true, warns: false },
+  ])(
+    'diagnoses effective tool lists: $input (missing: $missing)',
+    async ({ input, template, missing, warns }) => {
+      const world = await ProcessWorld.create();
+      worlds.push(world);
+      await world.tick();
+      await writeFile(
+        join(world.wakeRoot, 'config.yaml'),
+        `schemaVersion: 1
 execution:
   agentRunners:
     codex: { kind: codex-cli, command: codex }
@@ -248,25 +260,44 @@ surfaces:
   api: { enabled: false }
   web: { enabled: false }
 `,
-    );
-    await writeFile(
-      join(world.wakeRoot, 'config.workflows.yaml'),
-      `default:
+      );
+      await writeFile(
+        join(world.wakeRoot, 'config.workflows.yaml'),
+        `default:
   stages:
     inspect:
       activity: agent
-      with: { prompt: Inspect, allowedTools: [Read] }
+      with: { ${input} }
       execution: { workspace: none }
       on:
         done: { then: done }
 `,
-    );
-    await mkdir(join(world.wakeRoot, '.wake', 'transcripts'), { recursive: true });
-    await mkdir(join(world.wakeRoot, 'workspaces'), { recursive: true });
-    const report = await runDoctor(world.wakeRoot);
-    expect(report.failures).toEqual([]);
-    expect(report.notices).toContain(
-      'Workflow "default" stage "inspect": allowedTools is advisory and is not enforced by Codex runner "codex" (pool "standard").',
-    );
-  });
+      );
+      await mkdir(join(world.wakeRoot, '.wake', 'transcripts'), { recursive: true });
+      await mkdir(join(world.wakeRoot, 'workspaces'), { recursive: true });
+      if (template && !missing) {
+        await mkdir(join(world.wakeRoot, 'prompts'), { recursive: true });
+        await writeFile(
+          join(world.wakeRoot, 'prompts', 'inspect.md'),
+          '---\nallowedTools: [Read]\n---\nInspect\n',
+        );
+      }
+      const report = await runDoctor(world.wakeRoot);
+      if (missing) {
+        expect(report.failures).toEqual([
+          expect.stringContaining('prompt template "inspect" is not readable'),
+        ]);
+      } else {
+        expect(report.failures).toEqual([]);
+      }
+      const toolNotices = report.notices.filter((notice) => notice.includes('allowedTools'));
+      expect(toolNotices).toEqual(
+        warns
+          ? [
+              'Workflow "default" stage "inspect": allowedTools is advisory and is not enforced by Codex runner "codex" (pool "standard").',
+            ]
+          : [],
+      );
+    },
+  );
 });

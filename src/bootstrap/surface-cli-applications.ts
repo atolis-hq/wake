@@ -20,6 +20,7 @@ import {
   RunStatus,
   isActiveRunStatus,
   loadPromptTemplate,
+  type PromptTemplate,
 } from '../execution/index.js';
 import { UlidIdGenerator } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
@@ -968,7 +969,8 @@ function spawnDocker(
 
 async function doctorDiagnostics(root: CompositionRoot) {
   const failures: string[] = [];
-  const notices: string[] = runnerToolNotices(root.config);
+  const notices: string[] = [];
+  const templates = new Map<string, PromptTemplate>();
   try {
     createRunnerRegistry(root.config.execution, root.fakeScenarios).resolve(
       root.config.execution.defaultRunnerPool,
@@ -983,11 +985,12 @@ async function doctorDiagnostics(root: CompositionRoot) {
   }
   for (const name of referencedPromptTemplateNames(root.config.orchestration.workflows)) {
     try {
-      await loadPromptTemplate(root.paths.wakeRoot, name);
+      templates.set(name, await loadPromptTemplate(root.paths.wakeRoot, name));
     } catch (error) {
       failures.push(`prompt template "${name}" is not readable: ${(error as Error).message}`);
     }
   }
+  notices.push(...runnerToolNotices(root.config, templates));
   await checkProviders(root, failures, notices);
   await checkMaintenanceLease(root, failures);
   notices.push(...(await dockerSandboxHealthNotices(root)));
