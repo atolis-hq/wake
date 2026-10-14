@@ -326,6 +326,15 @@ Each `execution.agentRunners.<name>` definition has the following shape.
 | `runnerTimeouts.cancellationGraceMs` | positive integer; default `30000` | Time to wait after SIGTERM before escalating cancellation to SIGKILL. |
 | `args` | list of strings; default `[]` | Additional adapter arguments. Do not include `--output-format` or `--resume`; Wake manages those flags. |
 
+For Codex CLI runners, `allowedTools` is advisory: Codex ignores the list,
+and Wake does not enforce or proxy it. It is not a security boundary, including
+for repository-scoped `gh` patterns. `wake doctor` emits a non-fatal notice for
+each Codex runner in an agent stage's resolved pool when its effective
+`allowedTools` list is non-empty. The stage input overrides template frontmatter,
+including an explicit empty list. Unreadable templates produce a doctor failure
+instead of a tool-list notice. An omitted stage pool uses
+`execution.defaultRunnerPool`.
+
 Pools are tried in order, skipping runners currently paused as quota-ineligible
 or unable to accept Wake's trusted per-run MCP configuration. A missing runner
 named by a pool is an error; Wake does not silently switch to another pool or

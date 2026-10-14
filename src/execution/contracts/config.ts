@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RunnerKind } from './vocabulary.js';
 
 const isReservedFlag = (arg: string) => arg === '--output-format' || arg === '--resume';
 const agentRunnerBase = {
@@ -26,11 +27,11 @@ export const executionConfigSchema = z
         z.string().trim().min(1),
         z
           .discriminatedUnion('kind', [
-            commandRunner('claude-cli'),
-            commandRunner('codex-cli'),
-            commandRunner('cursor-cli'),
-            commandRunner('command'),
-            z.object({ kind: z.literal('fake'), ...agentRunnerBase }).strict(),
+            commandRunner(RunnerKind.ClaudeCli),
+            commandRunner(RunnerKind.CodexCli),
+            commandRunner(RunnerKind.CursorCli),
+            commandRunner(RunnerKind.Command),
+            z.object({ kind: z.literal(RunnerKind.Fake), ...agentRunnerBase }).strict(),
           ])
           .refine((value) => !value.args.some(isReservedFlag), {
             message: 'args must not contain --output-format or --resume',
@@ -64,7 +65,7 @@ export interface ExecutionConfig {
     Record<
       string,
       {
-        readonly kind: 'claude-cli' | 'codex-cli' | 'cursor-cli' | 'command' | 'fake';
+        readonly kind: RunnerKind;
         readonly command?: string;
         readonly model?: string;
         readonly effort?: string;
