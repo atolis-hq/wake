@@ -568,7 +568,7 @@ completion events are suppressed. Cron supplies a fallback for idle systems;
 cron-only configuration is useful when completion events would cause excessive
 assessment frequency. Exhausted retries pause the trigger.
 
-The assess stage is the sole `memory.md` producer. A successful assessment
+The triage-assign stage is the sole `memory.md` producer. A successful assessment
 assigns at most one useful verified-ready issue or records a reasoned no-op.
 Assignment requests delivery via normal GitHub polling/intake; it does not
 create a delivery WorkItem directly or guarantee dispatch. See

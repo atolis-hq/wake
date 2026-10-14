@@ -1,8 +1,8 @@
 workflows:
   delivery-oversight:
-    entry: assess
+    entry: triage-assign
     stages:
-      assess:
+      triage-assign:
         activity: agent
         requiresApproval: false
         with:
