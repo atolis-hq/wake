@@ -145,6 +145,7 @@ export async function runDispatchLoop(
       stopReason = { kind: 'no-work' };
       break;
     }
+    // Legacy test ports may omit listAll; production supplies the journal-backed inventory.
     const open =
       ctx.maxOpenWorkItems === null
         ? new Set<string>()

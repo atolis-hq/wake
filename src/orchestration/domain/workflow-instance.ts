@@ -1,7 +1,7 @@
 import type { WorkflowOrchestrationEvent } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { WorkflowStatus } from '../contracts/vocabulary.js';
+import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabulary.js';
 import {
   applyWorkflowInstanceEvent,
   immutableWorkflowInstanceView,
@@ -53,7 +53,7 @@ export function continueWorkflowInstance(
   if (previous === null) return foldWorkflowInstance([event]);
   const state: MutableWorkflowInstance = {
     ...previous,
-    hasStartedActivation: previous.hasStartedActivation ?? false,
+    hasStartedActivation: previous.hasStartedActivation ?? legacyStartEvidence(previous),
     repeatCounts: { ...previous.repeatCounts },
     retryCounts: { ...previous.retryCounts },
     supplementalQueue: [...previous.supplementalQueue],
@@ -85,4 +85,13 @@ function optionalChildFields(
         requestId: payload.requestId,
       }
     : {};
+}
+
+// Preserve visible start evidence when continuing a pre-field stored view.
+function legacyStartEvidence(previous: WorkflowInstanceView): boolean {
+  return (
+    previous.acceptedOutcomes.length > 0 ||
+    (previous.pendingActivation !== undefined &&
+      previous.pendingActivation.status !== ActivityActivationStatus.Pending)
+  );
 }

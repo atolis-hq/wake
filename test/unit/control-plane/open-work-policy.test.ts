@@ -6,11 +6,15 @@ import {
   controlPlaneConfigSchema,
   createAdvanceOnce,
   deriveOpenWorkItemIds,
+  readOpenWorkItemIds,
 } from '../../../src/control-plane/index.js';
 import { createExecutionService } from '../../../src/execution/index.js';
 import {
   ActivityActivationStatus,
+  createOrchestrationService,
+  orchestrationProjection,
   signalName,
+  workflowInstanceStream,
   WorkflowStatus,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
@@ -48,6 +52,28 @@ describe('open work policy', () => {
       'blocked',
       'parent',
     ]);
+  });
+
+  it('only checks work availability for started unfinished items', async () => {
+    const lookedUp: string[] = [];
+    const open = await readOpenWorkItemIds(
+      [
+        view('done', WorkflowStatus.Completed),
+        view('new', WorkflowStatus.Active, false),
+        view('open', WorkflowStatus.Waiting),
+        view('open', WorkflowStatus.Active),
+        view('frozen', WorkflowStatus.Waiting),
+        view('deleted', WorkflowStatus.Active),
+      ],
+      {
+        async get(id) {
+          lookedUp.push(id);
+          return { frozen: id === 'frozen', deleted: id === 'deleted' };
+        },
+      },
+    );
+    expect(lookedUp).toEqual(['open', 'frozen', 'deleted']);
+    expect([...open]).toEqual(['open']);
   });
 
   it('allows unlimited dispatch and existing open items at or above capacity', () => {
@@ -94,7 +120,7 @@ describe('open work policy', () => {
         },
       },
     });
-    world.configureWorkflow('review', {
+    const definition = world.configureWorkflow('review', {
       stages: {
         review: {
           activity: 'review',
@@ -107,31 +133,39 @@ describe('open work policy', () => {
     const a = await world.createWork({ objective: 'a' });
     const b = await world.createWork({ objective: 'b' });
     const first = await world.startWorkflow({ workItemId: a.workItemId, workflowName: 'review' });
-    await world.startWorkflow({ workItemId: b.workItemId, workflowName: 'review' });
-    const advance = createAdvanceOnce(
-      world.orchestration,
-      createExecutionService(
-        world.journal,
-        world.activities,
-        { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
-        { clock: world.clock, ids: world.ids },
-      ),
-      world.resources,
-      world.clock,
-      {
+    const second = await world.startWorkflow({ workItemId: b.workItemId, workflowName: 'review' });
+    const execution = createExecutionService(
+      world.journal,
+      world.activities,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      { clock: world.clock, ids: world.ids },
+    );
+    const scheduler = (orchestration: typeof world.orchestration) =>
+      createAdvanceOnce(orchestration, execution, world.resources, world.clock, {
         ids: world.ids,
         work: world.work,
         maxOpenWorkItems: 1,
         maxConcurrentRuns: 3,
         maxDispatches: 3,
-      },
-    );
+      });
+    const advance = scheduler(world.orchestration);
     const initial = await advance({ maxProgress: 3 });
     expect(initial.kind).toBe('progressed');
     expect(calls).toBe(1);
     expect([...deriveOpenWorkItemIds(await world.orchestration.listAll())]).toEqual([a.workItemId]);
     await advance({ maxProgress: 3 });
     expect(calls).toBe(1);
+    const waiting = (await world.orchestration.get(first.workflowInstanceId))!;
+    const { hasStartedActivation: _started, ...legacyWaiting } = waiting;
+    const beforeSignal = await world.journal.readStream(
+      workflowInstanceStream(first.workflowInstanceId),
+    );
+    await world.projections.write({
+      namespace: orchestrationProjection.name,
+      key: first.workflowInstanceId,
+      lastGlobalPosition: beforeSignal.at(-1)!.globalPosition,
+      value: legacyWaiting,
+    });
     await world.acceptSignal(first.workflowInstanceId, {
       kind: signalName('reviewed'),
       actorId: 'owner',
@@ -139,12 +173,41 @@ describe('open work policy', () => {
       providerEventId: 'review-accepted',
       outcome: ActivityOutcomeKind.Done,
     });
+    const signalEvents = (
+      await world.journal.readStream(workflowInstanceStream(first.workflowInstanceId))
+    ).slice(beforeSignal.length);
+    const continued = signalEvents.reduce<WorkflowInstanceView | null>(
+      orchestrationProjection.project,
+      legacyWaiting,
+    );
+    expect(continued?.hasStartedActivation).toBe(true);
+    expect(continued?.pendingActivation?.status).toBe(ActivityActivationStatus.Pending);
+    // Even a legacy projection already resumed before upgrade has no remaining start evidence.
     const resumed = await world.orchestration.get(first.workflowInstanceId);
     expect(resumed?.acceptedOutcomes).toEqual([]);
     expect(resumed?.pendingActivation?.status).toBe(ActivityActivationStatus.Pending);
     expect([...deriveOpenWorkItemIds(await world.orchestration.listAll())]).toEqual([a.workItemId]);
-    await advance({ maxProgress: 3 });
+    const { hasStartedActivation: _resumedStarted, ...legacyResumed } = resumed!;
+    await world.projections.write({
+      namespace: orchestrationProjection.name,
+      key: first.workflowInstanceId,
+      lastGlobalPosition: signalEvents.at(-1)!.globalPosition,
+      value: legacyResumed,
+    });
+    const upgraded = createOrchestrationService(
+      world.journal,
+      world.work,
+      { review: definition },
+      world.projections,
+    );
+    expect(
+      (await upgraded.listAll()).find(
+        (item) => item.workflowInstanceId === first.workflowInstanceId,
+      )?.hasStartedActivation,
+    ).toBe(true);
+    await scheduler(upgraded)({ maxProgress: 3 });
     expect(calls).toBe(3);
+    expect((await upgraded.get(second.workflowInstanceId))?.status).toBe(WorkflowStatus.Completed);
     expect((await world.orchestration.get(first.workflowInstanceId))?.status).toBe(
       WorkflowStatus.Completed,
     );

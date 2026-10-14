@@ -50,12 +50,13 @@ export async function readOpenWorkItemIds(
   workflows: readonly WorkflowInstanceView[],
   work?: { get(id: string): Promise<WorkAvailability | null> },
 ): Promise<ReadonlySet<string>> {
+  const open = deriveOpenWorkItemIds(workflows);
   const unavailable = new Set<string>();
   await Promise.all(
-    [...new Set(workflows.map((view) => view.workItemId))].map(async (id) => {
+    [...open].map(async (id) => {
       const item = await work?.get(id);
       if (item?.frozen === true || item?.deleted === true) unavailable.add(id);
     }),
   );
-  return deriveOpenWorkItemIds(workflows, unavailable);
+  return new Set([...open].filter((id) => !unavailable.has(id)));
 }
