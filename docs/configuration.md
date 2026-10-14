@@ -551,7 +551,7 @@ Each `stages.<name>` has these fields:
 | Field | Type / default | Explanation |
 | --- | --- | --- |
 | `activity` | non-empty string; required | Registered Activity name. The built-in agent activity is `agent`. |
-| `with` | any YAML value; optional | Input validated by the selected Activity. For `agent`, supply exactly one of `template` or `prompt`, with optional `model` and `allowedTools`. |
+| `with` | any YAML value; optional | Input validated by the selected Activity. For `agent`, supply exactly one of `template` or `prompt`, with optional `model`, `allowedTools`, and string-valued `vars` with identifier keys. Variables render as `{{vars.name}}` and never enable tools. Delivery oversight uses repository-scoped `gh` command patterns in `allowedTools`; see [the example](../examples/delivery-oversight/config.workflows.yaml). Wake MCP has no GitHub proxy tools or selection receipt. |
 | `execution.workspace` | `none`, `read-only`, or `branch`; optional | Workspace mode for this Activation. |
 | `execution.runnerPool` | non-empty string; optional | Runner-pool hint for agent execution. |
 | `on` | non-empty mapping; required | Outcome name to route definition. |

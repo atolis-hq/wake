@@ -4,9 +4,11 @@ import {
   activationId,
   activityOrchestrationGroupId,
   activityWorkflowInstanceId,
+  agentActivityDefinition,
   createAgentActivity,
 } from '../../../src/activities/index.js';
 import type { RunnerRequest } from '../../../src/execution/contracts/runner.js';
+import { renderPromptTemplate } from '../../../src/execution/infrastructure/prompt-templates.js';
 import { workId } from '../../support/identities.js';
 
 describe('agent activity template context', () => {
@@ -333,7 +335,7 @@ describe('agent activity template context', () => {
     expect(rendered).toEqual([
       {
         workItemId: 'work-00000000000000000000000001',
-        deliveryOversightJson: 'null',
+        vars: {},
         isStart: true,
         isResume: false,
         issueTitle: injectedTitle,
@@ -371,7 +373,7 @@ describe('agent activity template context', () => {
     expect(rendered).toEqual([
       {
         workItemId: 'work-00000000000000000000000001',
-        deliveryOversightJson: 'null',
+        vars: {},
         isStart: true,
         isResume: false,
         issueTitle: '',
@@ -672,7 +674,11 @@ async function execute(
   });
 }
 
-function invocation(input: { prompt?: string; template?: string }) {
+function invocation(input: {
+  prompt?: string;
+  template?: string;
+  vars?: Readonly<Record<string, string>>;
+}) {
   return {
     activationId: activationId('activation-template'),
     activity: BuiltInActivityName.Agent,
@@ -684,3 +690,79 @@ function invocation(input: { prompt?: string; template?: string }) {
     resources: [],
   };
 }
+
+describe('operator prompt variables', () => {
+  it.each<{ vars: unknown }>([
+    { vars: { focus: 42 } },
+    { vars: { 'bad.key': 'text' } },
+    { vars: { 'bad-key': 'text' } },
+    { vars: { constructor: 'text' } },
+    { vars: ['text'] },
+  ])('rejects invalid vars %j', ({ vars }) => {
+    expect(
+      agentActivityDefinition.inputSchema.safeParse({ template: 'triage-assign', vars }).success,
+    ).toBe(false);
+  });
+  it('accepts empty and string-valued maps and rejects the removed input', () => {
+    expect(
+      agentActivityDefinition.inputSchema.safeParse({ prompt: 'text', vars: {} }).success,
+    ).toBe(true);
+    expect(
+      agentActivityDefinition.inputSchema.safeParse({
+        template: 'triage-assign',
+        vars: { focus: 'text' },
+      }).success,
+    ).toBe(true);
+    expect(
+      agentActivityDefinition.inputSchema.safeParse({
+        prompt: 'text',
+        deliveryOversight: { repositories: ['owner/repo'] },
+      }).success,
+    ).toBe(false);
+  });
+  it('renders variables as literal trusted text without shadowing identity or granting tools', async () => {
+    const activity = createAgentActivity({
+      async render(name, context) {
+        return {
+          prompt: renderPromptTemplate(
+            { name, body: '{{workItemId}} {{vars.workItemId}} {{vars.focus}}', frontmatter: {} },
+            context,
+          ),
+        };
+      },
+    });
+    let request: RunnerRequest | undefined;
+    await activity.execute(
+      invocation({
+        template: 'triage-assign',
+        vars: { workItemId: 'operator', focus: '{{isResume}} <focus>' },
+      }),
+      {
+        signal: new AbortController().signal,
+        occurredAt: '2026-08-08T00:00:00.000Z',
+        runner: {
+          async start(value) {
+            request = value;
+            return {
+              result: Promise.resolve({
+                transport: 'succeeded' as const,
+                output: '[[STATUS: DONE]]',
+              }),
+            };
+          },
+        },
+        async reportExternalExecution() {},
+      },
+    );
+    expect(request?.prompt).toContain('operator {{isResume}} <focus>');
+    expect(request?.prompt).toContain(workId('00000000000000000000000001'));
+    expect(request?.allowedTools).toEqual([]);
+  });
+  it('keeps missing references strict while permitting explicitly optional focus', () => {
+    const template = { name: 'test', body: '{{vars.missing}}', frontmatter: {} };
+    expect(() => renderPromptTemplate(template, { vars: {} })).toThrow();
+    template.body = '{{#if (lookup vars "focus")}}{{vars.focus}}{{/if}}';
+    expect(renderPromptTemplate(template, { vars: {} })).toBe('');
+    expect(renderPromptTemplate(template, { vars: { focus: 'text' } })).toBe('text');
+  });
+});

@@ -1,10 +1,15 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { activationId, activityName } from '../../../src/activities/index.js';
 import { FileArtifactMcpSessionStore } from '../../../src/artifacts/index.js';
-import { createArtifactMcpProvisioner } from '../../../src/bootstrap/artifact-mcp.js';
+import {
+  createArtifactMcpProvisioner,
+  createArtifactMcpServerForSession,
+} from '../../../src/bootstrap/artifact-mcp.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../../../src/execution/index.js';
 import type { OrchestrationService } from '../../../src/orchestration/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
@@ -72,7 +77,7 @@ const activation: ExecutionActivation = {
   ordinal: 1,
   activity: activityName('agent'),
   stage: 'implement',
-  input: {},
+  input: { prompt: 'Implement' },
   execution: { workspace: 'none' },
 };
 
@@ -92,3 +97,42 @@ async function directory(): Promise<string> {
   directories.push(path);
   return path;
 }
+
+it('exposes only Wake-owned tools without provider configuration or recovery storage', async () => {
+  const sessions = new FileArtifactMcpSessionStore(
+    await directory(),
+    () => '2026-09-19T12:00:00.000Z',
+  );
+  const issued = await sessions.issue({
+    workItemId: context.workItemId,
+    producer: 'workflow-1/implement',
+    runId: 'run-1',
+    activationId: activation.activationId,
+    readableProducers: [],
+    expiresAt: '2026-09-19T14:00:00.000Z',
+  });
+  const server = await createArtifactMcpServerForSession(
+    { artifacts: {} as never, orchestration: orchestration() as never },
+    sessions,
+    issued.path,
+    issued.token,
+    { now: () => '2026-09-19T12:00:00.000Z', nextId: () => 'revision-1' },
+  );
+  const client = new Client({ name: 'test', version: '1' });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  try {
+    await Promise.all([client.connect(ct), server.connect(st)]);
+    const { tools } = await client.listTools();
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      'wake_artifacts_delete',
+      'wake_artifacts_list',
+      'wake_artifacts_patch',
+      'wake_artifacts_read',
+      'wake_artifacts_write',
+      'wake_context_instructions_read',
+    ]);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});

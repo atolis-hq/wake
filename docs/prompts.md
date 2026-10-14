@@ -12,7 +12,7 @@ following context values:
 | Value | Contents | Trust boundary |
 | --- | --- | --- |
 | `{{workItemId}}` | Wake's durable WorkItem identity. | Trusted Wake identity. |
-| `{{deliveryOversightJson}}` | Configured delivery oversight repositories and optional focus as JSON; `null` when absent. | Trusted operator Activity input. |
+| `{{vars.<name>}}` | String-valued operator prompt variables. Missing references fail strict rendering; use `lookup` for optional values. | Trusted prompt text; grants no tool authority. |
 | `{{issueTitle}}` | Current correlated ticket title. | Untrusted external text. |
 | `{{issueBody}}` | Current correlated ticket body. | Untrusted external text. |
 | `{{comments}}` | Comment list, where each entry has `author`, `occurredAt`, `body`, and optional review-comment `location` (`path`, `line`, `side`). | Untrusted external text and metadata. |
@@ -133,38 +133,54 @@ Prompt/template checks verify rendering, scaffold wiring, and content. They
 do not establish improved model behavior; no live model verification or spend
 is required for these checks.
 
+## Operator prompt variables
+
+An agent stage can supply static prompt text under `with.vars`, for example
+`with: { template: triage-assign, vars: { focus: "Finish active deliveries" } }`.
+Keys must match `[A-Za-z_][A-Za-z0-9_]*`; `__proto__`, `constructor`, and
+`prototype` are reserved. Values must be strings. Workflow compilation rejects
+invalid maps. Templates render these values under `vars` without replacing Wake
+identity fields or interpreting variable contents as another template. Empty maps
+are valid; unknown references fail. For optional text use
+`{{#if (lookup vars "focus")}}{{vars.focus}}{{/if}}`.
+
 ## Delivery oversight
 
 The editable [triage-assign prompt](../prompts/triage-assign.md) takes trusted
-`with.deliveryOversight` input: a non-empty `repositories` list of `owner/repo`
-names and optional `focus` text. Its template receives
-`{{deliveryOversightJson}}` alongside the ordinary identity/context fields.
-Ticket text cannot supply this capability. The invocation receives
-`wake_github_read` and `wake_github_assign` on its run-bound Wake MCP server;
-these execute fixed `gh` commands without a shell. Reads are restricted to
-configured repositories; assignment is restricted to the authenticated GitHub
-identity and one durable target per workflow invocation. No lifecycle, label,
-merge, or arbitrary GitHub API mutation is exposed. Use a runner supporting
-Wake's ephemeral MCP capability and authenticate `gh` as the intended Wake
-identity. Broad Bash/gh permissions are unnecessary.
+`with.vars.focus` text and uses ordinary `gh` commands. Copy the stage
+`allowedTools` from the [example](../examples/delivery-oversight/config.workflows.yaml)
+and scope its repository patterns to your integration repositories. Authenticate
+`gh` as the intended Wake identity. Wake MCP provides artifacts and operator
+instructions; it does not proxy GitHub or store selection receipts.
 
-Read operations cover repository metadata, open backlog, `assigned-issues`, open PRs, individual
-issues/PRs (including linked closing PRs), native `blocked-by` relationships, and `compare` (base...commit).
-List reads are bounded to 100 entries; inspect specific prerequisite numbers
-when evidence is missing. Provider output remains untrusted evidence. The
-prompt keeps readiness separate from priority: explicit prerequisites must be
-verified, implementation work must be merged or available on the intended
-base, and issue closure alone is insufficient. Unverified prerequisites make
-a candidate ineligible for this invocation; assessment continues with other
-candidates. Active deliveries or supplied focus can justify a successful no-op.
-This does not enforce dependencies for other intake paths.
+The example patterns are intended for issue/PR list and view, GET blocked-by
+and base...commit compare reads, and assignment with `--add-assignee @me`.
+Avoid broad `gh api *` patterns. A `*` matches spaces and extra flags, even in
+the middle of a pattern. The API patterns therefore do not enforce GET-only
+access: a wildcard can absorb another `--method` or other arguments. These
+patterns cannot enforce read-only API access as strongly as fixed wrappers.
 
-Before mutation the assignment tool stores the selected repository/issue in
-processor recovery state. With no candidate argument it returns that target;
-retries inspect current provider assignment and never switch targets. A lost
-response after successful assignment is recovered by observing GitHub, not by
-assuming the prior command failed. Normal polling and correlation create the
-delivery WorkItem, including when artifact publication was interrupted.
+The issue-edit pattern effectively grants general issue-edit authority on the
+listed repository: labels (including unattended-dispatch labels such as
+`dark-factory`), title/body changes, removal of other assignees, and edits to
+several issues in one command can fit its wildcard. Assignment-only use and
+editing at most one issue are prompt-level guarantees, not allowlist enforcement.
+If that authority is unacceptable, keep assignment out of scope rather than
+add a replacement proxy.
+
+Provider output remains untrusted evidence. Explicit prerequisites must be
+verified; implementation work must be merged or available on the intended base,
+and issue closure alone is insufficient. Establish the base from operator focus
+or relevant PR evidence, never repository metadata or an assumed default. If
+base-dependent readiness is unverified, skip that candidate and continue with
+others. Active delivery or focus can justify a successful no-op.
+
+The at-most-one-selection guarantee is prompt-level. Before selecting, the agent
+lists issues assigned to Wake and reads existing `assessment.md`/`memory.md`
+to recover an interrupted invocation. It records its target before assignment,
+checks current assignees before editing, and records observed assignment afterward.
+A lost response does not authorize switching targets; ambiguous recovery yields
+a no-op. Normal GitHub polling/intake creates the delivery WorkItem.
 
 The `assess` stage writes local `assessment.md` and the accepted successor
 `memory.md` through Wake artifact tools. Only designated `memory.md` and

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { ActivityRegistry, activityName } from '../../../src/activities/index.js';
+import {
+  ActivityRegistry,
+  activityName,
+  agentActivityDefinition,
+} from '../../../src/activities/index.js';
 import { compileWorkflow, stageName } from '../../../src/orchestration/index.js';
 
 function registry(): ActivityRegistry {
@@ -330,4 +334,21 @@ describe('compileWorkflow', () => {
       expect(route?.watchGates).toHaveLength(1);
     }
   });
+});
+
+it('validates agent vars during workflow compilation', () => {
+  const activities = new ActivityRegistry();
+  activities.register(agentActivityDefinition);
+  const workflow = (vars: unknown) => ({
+    stages: {
+      assess: {
+        activity: 'agent',
+        with: { template: 'triage-assign', vars },
+        on: { done: { then: 'done' } },
+      },
+    },
+  });
+  expect(() => compileWorkflow('test', workflow({ focus: 'text' }), activities)).not.toThrow();
+  expect(() => compileWorkflow('test', workflow({ focus: 42 }), activities)).toThrow();
+  expect(() => compileWorkflow('test', workflow({ 'bad.key': 'text' }), activities)).toThrow();
 });

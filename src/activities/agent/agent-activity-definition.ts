@@ -7,10 +7,6 @@ import {
   agentActivityOutcomeSchema,
   type AgentActivityOutcome,
 } from './agent-result.js';
-import {
-  deliveryOversightInputSchema,
-  type DeliveryOversightInput,
-} from './delivery-oversight-input.js';
 
 export const agentActivityDefinition: ActivityDefinition<
   typeof BuiltInActivityName.Agent,
@@ -19,7 +15,7 @@ export const agentActivityDefinition: ActivityDefinition<
     template?: string | undefined;
     model?: string | undefined;
     allowedTools?: readonly string[] | undefined;
-    deliveryOversight?: DeliveryOversightInput | undefined;
+    vars?: Readonly<Record<string, string>> | undefined;
   },
   AgentActivityOutcome
 > = {
@@ -33,7 +29,15 @@ export const agentActivityDefinition: ActivityDefinition<
         .optional(),
       model: z.string().min(1).optional(),
       allowedTools: z.array(z.string().min(1)).optional(),
-      deliveryOversight: deliveryOversightInputSchema.optional(),
+      vars: z
+        .record(
+          z
+            .string()
+            .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+            .refine((key) => !['__proto__', 'constructor', 'prototype'].includes(key)),
+          z.string(),
+        )
+        .optional(),
     })
     .refine((value) => (value.prompt === undefined) !== (value.template === undefined), {
       message: 'Agent Activity requires exactly one of prompt or template',

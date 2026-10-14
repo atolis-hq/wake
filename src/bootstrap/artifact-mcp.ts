@@ -1,9 +1,6 @@
-import type { EventJournal, ProcessorStateStore } from '@atolis-hq/eventing';
+import type { EventJournal } from '@atolis-hq/eventing';
 import { correlationId, EventActorKind, type CommandContext } from '@atolis-hq/eventing';
-import { withFileLock } from '@atolis-hq/eventing-filesystem';
-import { createHash, randomUUID } from 'node:crypto';
-import { join } from 'node:path';
-import { agentActivityDefinition, BuiltInActivityName } from '../activities/index.js';
+import { randomUUID } from 'node:crypto';
 import type { FileArtifactMcpSessionStore } from '../artifacts/index.js';
 import {
   createArtifactMcpServer,
@@ -20,7 +17,6 @@ import {
   WakeMcpServerName,
   type ExecutionDependencies,
 } from '../execution/index.js';
-import { registerDeliveryOversightTools, type OversightGh } from '../integrations/index.js';
 import type { OrchestrationService } from '../orchestration/index.js';
 
 const sessionLifetimeMs = 2 * 60 * 60 * 1000;
@@ -104,7 +100,7 @@ export async function createArtifactMcpServerForSession(
   sessions: FileArtifactMcpSessionStore,
   path: string,
   token: string,
-  options: { readonly now: () => string; readonly nextId: () => string; readonly gh?: OversightGh },
+  options: { readonly now: () => string; readonly nextId: () => string },
 ) {
   const descriptor = await sessions.read(path, token);
   const accepted = acceptedActivation(root.orchestration, descriptor.workItemId);
@@ -118,45 +114,10 @@ export async function createArtifactMcpServerForSession(
       await sessions.read(path, token);
     },
   });
-  const workflow = (await root.orchestration.listAll()).find(
-    (item) =>
-      item.workItemId === descriptor.workItemId &&
-      item.pendingActivation?.activationId === descriptor.activationId,
-  );
-  const activation = workflow?.pendingActivation;
-  if (activation?.activity === BuiltInActivityName.Agent) {
-    const parsed = agentActivityDefinition.inputSchema.parse(activation.input);
-    if (parsed.deliveryOversight !== undefined) {
-      if (root.processorState === undefined || root.paths === undefined)
-        throw new Error('Oversight recovery storage unavailable');
-      const key = workflow!.workflowInstanceId;
-      registerDeliveryOversightTools(server, {
-        repositories: parsed.deliveryOversight.repositories,
-        invocationId: key,
-        state: root.processorState,
-        ...(options.gh === undefined ? {} : { gh: options.gh }),
-        assertActive: async () => {
-          await sessions.read(path, token);
-        },
-        serialise: (operation) =>
-          withFileLock(
-            join(
-              root.paths!.locksRoot,
-              'delivery-oversight',
-              createHash('sha256').update(key).digest('hex') + '.lock',
-            ),
-            operation,
-            { waitMs: 5_000 },
-          ),
-      });
-    }
-  }
   return server;
 }
 
 interface ArtifactMcpRoot {
-  readonly processorState?: ProcessorStateStore;
-  readonly paths?: { readonly locksRoot: string };
   readonly artifacts: ArtifactService;
   readonly orchestration: OrchestrationService;
 }

@@ -7,8 +7,19 @@ workflows:
         requiresApproval: false
         with:
           template: triage-assign
-          deliveryOversight:
-            repositories: [atolis-hq/wake]
+          # Scope to your repositories; avoid gh api *. Wildcards admit extra flags,
+          # so GET-only API use and assignment of one issue are prompt-level rules.
+          # Issue edit effectively grants general edits (dispatch labels, title/body,
+          # other assignees, multiple issues). Omit assignment if that is unacceptable.
+          allowedTools:
+            - 'Bash(gh issue list --repo atolis-hq/wake *)'
+            - 'Bash(gh issue view * --repo atolis-hq/wake --json *)'
+            - 'Bash(gh pr list --repo atolis-hq/wake *)'
+            - 'Bash(gh pr view * --repo atolis-hq/wake --json *)'
+            - 'Bash(gh api --method GET repos/atolis-hq/wake/issues/*/dependencies/blocked_by --paginate)'
+            - 'Bash(gh api --method GET repos/atolis-hq/wake/compare/*...*)'
+            - 'Bash(gh issue edit * --repo atolis-hq/wake --add-assignee @me)'
+          vars:
             # Optional operator input, not a trigger objective or mutable goal.
             focus: Finish active deliveries before starting unrelated work.
         execution: { workspace: none, runnerPool: standard }
