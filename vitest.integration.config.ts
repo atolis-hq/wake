@@ -5,8 +5,6 @@ export default defineConfig({
   resolve: { alias: workspaceSourceAliases },
   test: {
     environment: 'node',
-    // Durable filesystem fixtures can exceed Vitest's five-second default under suite load.
-    testTimeout: 30_000,
     include: ['test/integration/**/*.test.ts'],
     // Durable filesystem fixtures can exceed Vitest’s 5s default on CI runners.
     testTimeout: 30_000,

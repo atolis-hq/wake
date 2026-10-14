@@ -188,6 +188,12 @@ export class AgentRunPublicationReactor {
     );
     const body = mergeWaitComment(workflow);
     if (workflow?.pendingActivation === undefined || body === undefined) return;
+    // A replayed older wait event must not publish guidance for a newer wait.
+    if (
+      event.event.eventType === OrchestrationEventType.SignalWaitStarted &&
+      event.event.payload.signalKind !== workflow.waitingFor?.signalKind
+    )
+      return;
     const replies = this.dependencies.replies ?? defaultReplyPublication;
     const target = selectReplyTarget(
       { stage: workflow.currentStage, outcome: 'DONE' },

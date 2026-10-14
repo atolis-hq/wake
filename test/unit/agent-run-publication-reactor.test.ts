@@ -403,6 +403,7 @@ it.each(['DONE', 'REJECTED'] as const)(
 
 async function reactToMergeWait(
   workflow: Record<string, unknown>,
+  staleSignalKind?: string,
 ): Promise<Array<{ payload: { body: string } }>> {
   const appended: Array<{ payload: { body: string } }> = [];
   const reactor = new AgentRunPublicationReactor({
@@ -433,6 +434,11 @@ async function reactToMergeWait(
       eventType: OrchestrationEventType.SignalWaitStarted,
       eventId: 'wait-1',
       correlationId: 'correlation-1',
+      payload: {
+        signalKind:
+          staleSignalKind ??
+          (workflow.waitingFor as { signalKind: string } | undefined)?.signalKind,
+      },
     },
   } as never);
   return appended;
@@ -454,6 +460,10 @@ it('posts provider-merge guidance for a policy-denied manual merge wait', async 
   expect(intent?.payload.body).toContain('Awaiting merge');
   expect(intent?.payload.body).not.toContain('/approved');
   expect(intent?.payload.body).not.toContain('/changes');
+});
+
+it('ignores a replayed wait event whose signal is no longer the current wait', async () => {
+  expect(await reactToMergeWait({ waitingFor: { signalKind: 'approved' } }, 'blocked')).toEqual([]);
 });
 
 it('posts nothing for a merge-stage wait with an unrelated signal', async () => {
