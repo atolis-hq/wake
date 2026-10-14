@@ -110,5 +110,5 @@ it('keeps only /approved for an approval wait at the merge stage', () => {
   expect(comment).toContain('Awaiting approval');
   expect(comment).toContain('/approved');
   expect(comment).not.toContain('Resolve and merge it in the provider');
-  expect(comment).toContain('/changes and /ask are not accepted');
+  expect(comment).not.toContain('/ask');
 });

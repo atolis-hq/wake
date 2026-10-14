@@ -35,9 +35,9 @@ import {
   defaultReplyPublication,
   selectReplyTarget,
 } from '../github/application/reply-target-selector.js';
-import { MergeWaitGuidance, projectTerminalAgentRunReport } from './terminal-agent-run-report.js';
+import { projectTerminalAgentRunReport } from './terminal-agent-run-report.js';
 
-import { agentRunReportInput, isMergePublicationWait } from './agent-run-publication-report.js';
+import { agentRunReportInput, mergeWaitComment } from './agent-run-publication-report.js';
 
 /** Projects terminal agent runs into one durable outbound intent per configured resource. */
 export class AgentRunPublicationReactor {
@@ -186,7 +186,8 @@ export class AgentRunPublicationReactor {
     const workflow = (await this.dependencies.orchestration.listAll()).find(
       (view) => view.workflowInstanceId === event.stream.id,
     );
-    if (!isMergePublicationWait(workflow)) return;
+    const body = mergeWaitComment(workflow);
+    if (workflow?.pendingActivation === undefined || body === undefined) return;
     const replies = this.dependencies.replies ?? defaultReplyPublication;
     const target = selectReplyTarget(
       { stage: workflow.currentStage, outcome: 'DONE' },
@@ -213,7 +214,7 @@ export class AgentRunPublicationReactor {
           workflowInstanceId: workflow.workflowInstanceId,
           activationId: workflow.pendingActivation.activationId,
           resourceId: resource.resourceId,
-          body: `**Wake: Awaiting merge**\n\n${MergeWaitGuidance}`,
+          body,
           publicationOnly: true,
         },
       }),

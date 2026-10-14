@@ -1,4 +1,7 @@
-import { MergeWaitGuidance } from '../../application/terminal-agent-run-report.js';
+import {
+  MergeStageApprovalGuidance,
+  MergeWaitGuidance,
+} from '../../application/terminal-agent-run-report.js';
 
 export interface AgentRunComment {
   readonly idempotencyKey: string;
@@ -26,8 +29,7 @@ export interface AgentRunComment {
 function waitHintFor(value: AgentRunComment): string | undefined {
   if (value.awaitingMerge === true) return `_${MergeWaitGuidance}_`;
   if (value.awaitingApproval !== true) return undefined;
-  if (value.mergeStageApproval === true)
-    return '_An authorized independent reviewer can reply with /approved to continue. Approval of your own work is not permitted. /changes and /ask are not accepted at the merge stage._';
+  if (value.mergeStageApproval === true) return `_${MergeStageApprovalGuidance}_`;
   return '_An authorized independent reviewer can reply with /approved or /changes followed by feedback. Approval of your own work is not permitted. To ask a question, reply with /ask followed by your question._';
 }
 

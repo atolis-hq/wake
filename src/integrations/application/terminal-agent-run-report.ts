@@ -3,6 +3,9 @@ import type { AgentRunPublicationReport } from '../delivery/contracts/intents.js
 export const MergeWaitGuidance =
   'Wake is waiting for the primary pull request to merge. Resolve and merge it in the provider; explicit conflicts use the pinned workflow repair policy, and closed unmerged pull requests block the work.';
 
+export const MergeStageApprovalGuidance =
+  'An authorized independent reviewer can reply with /approved to continue. Approval of your own work is not permitted.';
+
 export interface TerminalRunAgentResult {
   readonly outcome: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED' | 'NEEDS_CLARIFICATION';
   readonly displayBody: string;

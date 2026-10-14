@@ -602,9 +602,11 @@ repair destination blocks; exhausted repair blocks with
 `merge.conflict-retry-exhausted`. Wake does not invent repair stages or use a
 changed current definition in place of the pinned policy.
 
-Merge-stage hints follow the wait's actual signal. A resource-transition wait
-(including policy-denied manual merge) directs operators to resolve and merge
-the PR in the provider and advertises no commands. A default `approved` wait at
-the merge stage advertises only `/approved` for authorized independent
-reviewers; `/changes` and `/ask` are not accepted there. Those commands retain
-their eligibility rules for agent review and conversation stages.
+Merge-stage hints follow the wait's actual signal and are posted to the
+configured reply target when the merge stage starts waiting. A
+resource-transition wait or a policy-denied manual-merge wait directs operators
+to resolve and merge the PR in the provider and advertises no commands. A
+default `approved` wait at the merge stage advertises only `/approved` for
+authorized independent reviewers. Waits gated by a watch keep the generic
+agent-review hint. Those commands retain their eligibility rules for agent
+review and conversation stages.
