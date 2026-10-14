@@ -17,6 +17,7 @@ import {
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
 import { appendWithIntentRecovery } from './durable-append.js';
 import { expireTimedOutWaits } from './expire-timed-out-waits.js';
+import { attributeOperatorRetry } from './operator-retry-attribution.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import {
   acceptResourceTransition,
@@ -215,9 +216,10 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
     });
     if (decision.kind === 'ignored') throw new OperatorRetryIneligibleError(decision.reason);
+    const attributed = attributeOperatorRetry(decision.events, context.actor);
     const recovered = await appendWithIntentRecovery({
       append: async () => {
-        await this.repository.append(id, loaded.sequence, decision.events);
+        await this.repository.append(id, loaded.sequence, attributed);
       },
       load: () => this.repository.loadRequired(id),
       alreadyApplied: (reloaded) =>

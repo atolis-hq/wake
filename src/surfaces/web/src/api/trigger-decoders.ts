@@ -4,6 +4,7 @@ import {
   type OrphanedInstructionsResponse,
   type TriggerResponse,
 } from '../../../api/contracts/index.js';
+import { WorkflowStatusValue } from '../../../api/contracts/transport-values.js';
 import {
   triggerDefinitionSchema,
   TriggerRequestDisposition,
@@ -18,6 +19,7 @@ const request = z.object({
   source: triggerSourceSchema,
   disposition: z.enum(TriggerRequestDisposition),
   sources: z.array(triggerSourceSchema),
+  activeWorkItemId: z.string().nullable(),
 });
 const invocation = z.object({
   claim: z.object({
@@ -56,6 +58,17 @@ const schema = z.object({
     })
     .nullable()
     .optional(),
+  activeInvocation: z
+    .object({
+      activeWorkItemId: z.string(),
+      workItemKey: z.string(),
+      triggerId: z.string(),
+      workflowInstanceId: z.string(),
+      workflowStatus: z.enum(WorkflowStatusValue).nullable(),
+      blockReason: z.string().nullable(),
+      retryEligible: z.boolean(),
+    })
+    .nullable(),
   triggerId: z.string(),
   status: z.enum(TriggerStatus),
   definition: triggerDefinitionSchema.nullable(),
