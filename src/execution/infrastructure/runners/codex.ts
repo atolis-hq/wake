@@ -67,9 +67,8 @@ export function codexCommandArgs(
     'exec',
     '--json',
     '--skip-git-repo-check',
-    ...(request.workspaceMode === undefined
-      ? []
-      : ['--sandbox', codexSandboxMode(request.workspaceMode)]),
+    '--sandbox',
+    CODEX_SANDBOX_MODE,
     ...(request.workspacePath === undefined ? [] : ['--cd', request.workspacePath]),
     ...(model === undefined ? [] : ['--model', model]),
     ...((request.effort ?? defaults.effort) === undefined
@@ -98,11 +97,11 @@ function codexMcpConfigArgs(request: RunnerRequest): readonly string[] {
 // Work around Codex's missing background-command lifecycle contract (https://github.com/openai/codex/issues/32505, https://github.com/openai/codex/issues/34866).
 const waitBackgroundInstruction = `When a command you started is still running or lacks a terminal result, do not report a normal Wake outcome. Make your entire final response exactly WAIT_BACKGROUND. Wake will reject that stop attempt and ask you to continue. After that hook prompt, poll the still-running command and report a normal terminal status only after it has settled. Do not use WAIT_BACKGROUND for a human-input or implementation blocker.`;
 
-function codexSandboxMode(_workspaceMode: NonNullable<RunnerRequest['workspaceMode']>) {
-  // Wake executes runners inside its Docker sandbox. Avoid asking Codex to
-  // create a second Linux namespace sandbox, which container runtimes may deny.
-  return 'danger-full-access';
-}
+// Wake executes runners inside its Docker sandbox. Avoid asking Codex to
+// create a second Linux namespace sandbox, which container runtimes may deny.
+// Applies to stages without a workspace too: Codex's default sandbox cannot
+// start here and denies MCP tool approvals under non-interactive exec.
+const CODEX_SANDBOX_MODE = 'danger-full-access';
 
 export function parseCodexOutput(
   stdout: string,

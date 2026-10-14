@@ -305,6 +305,8 @@ describe('cliRunner', () => {
       'exec',
       '--json',
       '--skip-git-repo-check',
+      '--sandbox',
+      'danger-full-access',
       '--model',
       'gpt-test',
       'resume',
@@ -551,6 +553,13 @@ describe('cliRunner', () => {
     expect(codexCommandArgs({ ...request, workspaceMode: 'branch' })).toEqual(
       expect.arrayContaining(['--sandbox', 'danger-full-access', '--cd', '/workspace']),
     );
+  });
+
+  it('uses the Wake Docker sandbox for Codex stages without a workspace', () => {
+    const args = codexCommandArgs({ runId: 'run-1', prompt: 'ship', allowedTools: [] });
+
+    expect(args).toEqual(expect.arrayContaining(['--sandbox', 'danger-full-access']));
+    expect(args).not.toContain('--cd');
   });
 
   it('uses Cursor trust mode with the legacy workspace permission policy', () => {
