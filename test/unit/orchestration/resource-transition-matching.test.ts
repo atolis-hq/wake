@@ -17,6 +17,8 @@ import {
   compileWorkflow,
   createOrchestrationService,
   OrchestrationEventType,
+  ResourceTransitionSignal,
+  WatchGateVerdictSignal,
   WorkflowStatus,
 } from '../../../src/orchestration/index.js';
 import { resourceStream } from '../../../src/resources/index.js';
@@ -27,7 +29,7 @@ import { resId, workId } from '../../support/identities.js';
 
 const prStream = resourceStream(resId('1'));
 
-async function waitingService() {
+async function waitingService(watchGate = false) {
   const journal = new InMemoryEventJournal(new FakeClock());
   const work = createWorkService(journal);
   const baseContext: CommandContext = {
@@ -54,6 +56,19 @@ async function waitingService() {
   const definition = compileWorkflow(
     'main',
     {
+      ...(watchGate
+        ? {
+            watches: [
+              {
+                id: 'review',
+                while: { stages: ['implement'], statuses: [WorkflowStatus.Waiting] },
+                on: { events: [ActivityEventType.PrChecksChanged] },
+                workflow: 'main',
+                maxPerGroup: 1,
+              },
+            ],
+          }
+        : {}),
       stages: {
         implement: {
           activity: 'implement',
@@ -61,6 +76,7 @@ async function waitingService() {
           on: {
             done: {
               then: 'after-merge',
+              ...(watchGate ? { watchGates: ['review'] } : {}),
               resourceTransitions: [
                 {
                   events: [ActivityEventType.PrStateChanged],
@@ -276,3 +292,30 @@ it('two overlapping applies of the same confirmed evidence, different command co
   ).length;
   expect(stageEnteredCount).toBe(1);
 });
+
+it.each([false, true])(
+  'preserves resource origin through the actual transition path with watch gate %s',
+  async (watchGate) => {
+    const { service, instance, baseContext } = await waitingService(watchGate);
+    expect(instance.waitingFor?.signalKind).toBe(
+      watchGate ? WatchGateVerdictSignal : ResourceTransitionSignal,
+    );
+    const mergedFact = eventEnvelope(
+      ActivityEventType.PrStateChanged,
+      { state: PullRequestState.Merged },
+      prStream,
+    );
+    const [match] = await service.listResourceTransitionMatches(mergedFact);
+    const resumed = await service.applyResourceTransition(
+      instance.workflowInstanceId,
+      match!.transitions[0]!.target,
+      mergedFact.event.eventId,
+      { ...baseContext, commandId: 'resume-priority' },
+    );
+    expect(resumed?.pendingActivation?.watchDriven).toBe(true);
+    expect((await service.listPendingActivations())[0]?.priority).toMatchObject({
+      watchDriven: true,
+      retried: false,
+    });
+  },
+);

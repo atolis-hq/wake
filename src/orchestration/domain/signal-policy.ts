@@ -30,6 +30,8 @@ export const AwaitTimeoutBlockReason = 'await.timeout-exceeded';
 
 export interface AcceptSignal extends DecisionContext {
   readonly signal: OrchestrationSignal;
+  /** A confirmed resource transition can share the wait's watch-verdict channel. */
+  readonly resourceTransition?: true;
   // Does the WorkItem carry operator consent for `auto` authority? Defaults to false.
   readonly consent?: boolean;
 }
@@ -83,7 +85,9 @@ export function acceptSignal(
   // Human-only gate approvals are not "reacting to something"; watch verdicts and
   // provider-observed resource transitions are.
   const watchDriven =
-    authority.kind === ApprovalAuthorityKind.Watch || signal.kind === ResourceTransitionSignal;
+    input.resourceTransition === true ||
+    authority.kind === ApprovalAuthorityKind.Watch ||
+    signal.kind === ResourceTransitionSignal;
   if (target !== undefined) resumeToTarget(events, definition, state, input, target, watchDriven);
   else requestLegacyReentry(events, definition, state, input, watchDriven);
   return { kind: 'append', events };

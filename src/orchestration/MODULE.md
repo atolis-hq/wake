@@ -29,7 +29,10 @@ terminal stage, from the compiled graph and activity `executionKind`; stages
 that cannot finish rank last), `watchDriven` (the typed `watchDriven` flag on
 the activation, set when a watch verdict or resource transition resumed the
 stage), and `retried` (the stage has a retry count above zero). Orchestration
-reports these; Control Plane orders by them.
+reports these; Control Plane orders by them. Historical definitions without
+compiled costs count removed activities conservatively as agent steps.
+Resource-transition origin remains explicit even on a watch-verdict channel;
+quota re-requests preserve that activation origin without counting a retry.
 
 ## Public contracts
 

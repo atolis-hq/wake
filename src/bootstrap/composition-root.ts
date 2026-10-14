@@ -6,11 +6,7 @@ import {
   type ProjectionStore,
 } from '@atolis-hq/eventing';
 import { acquireFileLock } from '@atolis-hq/eventing-filesystem';
-import {
-  ActivityExecutionKind,
-  createPullRequestService,
-  type ActivityRegistry,
-} from '../activities/index.js';
+import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
 import {
   ArtifactContextService,
   FileArtifactMcpSessionStore,
@@ -58,7 +54,11 @@ import type {
   ProviderInstance,
 } from '../integrations/index.js';
 import { SystemClock, UlidIdGenerator, type Clock } from '../kernel/index.js';
-import { compileWorkflow, createOrchestrationService } from '../orchestration/index.js';
+import {
+  compileWorkflow,
+  createAgentActivityClassifier,
+  createOrchestrationService,
+} from '../orchestration/index.js';
 import {
   createResourceLookup,
   createResourceService,
@@ -231,7 +231,7 @@ export async function createCompositionRoot(
     work,
     definitions,
     projections,
-    (activity) => activities.describe(activity).executionKind === ActivityExecutionKind.Agent,
+    createAgentActivityClassifier(activities),
   );
   const workspaces = new GitWorkspaceProvider(
     paths.workspacesRoot,

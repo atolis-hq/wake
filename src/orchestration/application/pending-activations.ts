@@ -1,4 +1,8 @@
-import type { ActivityName } from '../../activities/index.js';
+import {
+  ActivityExecutionKind,
+  type ActivityName,
+  type ActivityRegistry,
+} from '../../activities/index.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
 import {
@@ -10,6 +14,14 @@ import { WorkflowDefinitionUnavailableError } from './workflow-definition-regist
 
 /** Whether a stage's activity runs an agent; unknown activities conservatively count as agents. */
 export type AgentActivityClassifier = (activity: ActivityName) => boolean;
+
+export function createAgentActivityClassifier(registry: ActivityRegistry): AgentActivityClassifier {
+  const kinds = new Map(registry.list().map((activity) => [activity.name, activity.executionKind]));
+  return (activity) => {
+    const kind = kinds.get(activity);
+    return kind === undefined || kind === ActivityExecutionKind.Agent;
+  };
+}
 
 export interface PendingActivationEntry {
   readonly workflow: WorkflowInstanceView;
