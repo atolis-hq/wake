@@ -26,6 +26,7 @@ import {
   OrchestrationEventType,
   WorkflowStatus,
   orchestrationGroupId,
+  selectWorkflowOrchestrationEvent,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
@@ -101,7 +102,7 @@ const workflow = {
     },
   },
 };
-const config = () =>
+const config = (definition: unknown = workflow) =>
   parseRootConfig({
     schemaVersion: 1,
     execution: {
@@ -109,7 +110,7 @@ const config = () =>
       runnerPools: { standard: ['fake'] },
       defaultRunnerPool: 'standard',
     },
-    orchestration: { default: 'main', workflows: { main: workflow } },
+    orchestration: { default: 'main', workflows: { main: definition } },
     integrations: { fake: { enabled: true } },
   });
 const wid = workId('merge-recovery');
@@ -117,12 +118,12 @@ const pr = resId('merge-recovery');
 const iid = workflowInstanceId('merge-recovery');
 const group = orchestrationGroupId('merge-recovery');
 
-async function setup() {
+async function setup(definition: unknown = workflow) {
   const path = await mkdtemp(join(tmpdir(), 'wake-merge-recovery-'));
   roots.push(path);
   const provider = new DurableFakeDeliveryProvider();
   const root = await createCompositionRoot(path, {
-    config: config(),
+    config: config(definition),
     fakeDeliveryProvider: provider,
   });
   await root.work.create({ workItemId: wid, objective: 'Recover merge' }, command());
@@ -165,12 +166,17 @@ async function setup() {
 
 type Root = Awaited<ReturnType<typeof createCompositionRoot>>;
 
-async function observe(root: Root, state: 'open' | 'merged') {
+async function observe(
+  root: Root,
+  state: 'open' | 'merged' | 'closed',
+  mergeability?: 'unknown' | 'clean' | 'conflicting',
+) {
   return root.pullRequests.observe(
     {
       resourceId: pr,
       workItemId: wid,
       state,
+      ...(mergeability === undefined ? {} : { mergeability }),
       headRevision: 'head',
       baseRevision: 'base',
       checks: 'passing',
@@ -202,6 +208,8 @@ async function assertCompleted(root: Root, provider: DurableFakeDeliveryProvider
     async () => (await root.orchestration.get(iid))?.status === WorkflowStatus.Completed,
   );
 
+  // Final projection catch-up can enqueue publication after completion.
+  await tick(root);
   const effectsAtCompletion = provider.effects.size;
   for (let i = 0; i < 3; i++) {
     await observe(root, 'merged');
@@ -343,50 +351,56 @@ it.each(['before-wait', 'legacy-wait', 'restart'] as const)(
   },
 );
 
-it('does not release for unrelated merged PRs or unrelated human waits', async () => {
-  const { root } = await setup();
-  await until(root, () => waiting(root));
-  const otherWork = workId('other-merge');
-  const otherPr = resId('other-merge');
-  await root.work.create({ workItemId: otherWork, objective: 'Other work' }, command());
-  await root.resources.discover(
-    {
-      resourceId: otherPr,
-      kind: resourceKind('pull-request'),
-      externalKey: { adapter: 'fake', key: 'other' },
-      capabilities: [
-        BuiltInResourceCapability.Mergeable,
-        BuiltInResourceCapability.Reviewable,
-        BuiltInResourceCapability.Revisioned,
-      ],
-    },
-    command(),
-  );
-  await root.resources.correlate(otherPr, otherWork, ResourceCorrelationRole.Primary, command());
-  await root.pullRequests.observe(
-    {
-      resourceId: otherPr,
-      workItemId: otherWork,
-      state: 'merged',
-      headRevision: 'other',
-      baseRevision: 'base',
-      checks: 'passing',
-    },
-    command(),
-  );
-  await tick(root);
-  expect(await waiting(root)).toBe(true);
-  const view = (await root.orchestration.get(iid))!;
-  await root.orchestration.waitForSignal(
-    iid,
-    { signalKind: 'unrelated-human-wait' as never },
-    command(),
-  );
-  await observe(root, 'merged');
-  await tick(root);
-  expect((await root.orchestration.get(iid))?.waitingFor?.signalKind).toBe('unrelated-human-wait');
-  expect((await root.orchestration.get(iid))?.acceptedOutcomes).toEqual(view.acceptedOutcomes);
-});
+it.each(['merged', 'closed', 'conflicting'] as const)(
+  'does not release for unrelated %s PRs or unrelated human waits',
+  async (problem) => {
+    const { root } = await setup();
+    await until(root, () => waiting(root));
+    const otherWork = workId('other-merge');
+    const otherPr = resId('other-merge');
+    await root.work.create({ workItemId: otherWork, objective: 'Other work' }, command());
+    await root.resources.discover(
+      {
+        resourceId: otherPr,
+        kind: resourceKind('pull-request'),
+        externalKey: { adapter: 'fake', key: 'other' },
+        capabilities: [
+          BuiltInResourceCapability.Mergeable,
+          BuiltInResourceCapability.Reviewable,
+          BuiltInResourceCapability.Revisioned,
+        ],
+      },
+      command(),
+    );
+    await root.resources.correlate(otherPr, otherWork, ResourceCorrelationRole.Primary, command());
+    await root.pullRequests.observe(
+      {
+        resourceId: otherPr,
+        workItemId: otherWork,
+        state: problem === 'conflicting' ? 'open' : problem,
+        mergeability: problem === 'conflicting' ? 'conflicting' : 'unknown',
+        headRevision: 'other',
+        baseRevision: 'base',
+        checks: 'passing',
+      },
+      command(),
+    );
+    await tick(root);
+    expect(await waiting(root)).toBe(true);
+    const view = (await root.orchestration.get(iid))!;
+    await root.orchestration.waitForSignal(
+      iid,
+      { signalKind: 'unrelated-human-wait' as never },
+      command(),
+    );
+    await observe(root, 'merged');
+    await tick(root);
+    expect((await root.orchestration.get(iid))?.waitingFor?.signalKind).toBe(
+      'unrelated-human-wait',
+    );
+    expect((await root.orchestration.get(iid))?.acceptedOutcomes).toEqual(view.acceptedOutcomes);
+  },
+);
 
 it('uses the pinned completion route after config changes and prioritizes prior merge evidence over a late approval', async () => {
   const { root: original, path, provider } = await setup();
@@ -438,4 +452,145 @@ it('uses the pinned completion route after config changes and prioritizes prior 
   );
   expect((await root.orchestration.get(iid))?.currentStage).toBe('complete-issue');
   await assertCompleted(root, provider);
+});
+
+it.each(['closed', 'conflicting'] as const)(
+  'blocks a primary merge wait for %s evidence without a repair route',
+  async (problem) => {
+    const { root } = await setup();
+    await until(root, () => waiting(root));
+    await observe(
+      root,
+      problem === 'closed' ? 'closed' : 'open',
+      problem === 'conflicting' ? 'conflicting' : undefined,
+    );
+    await tick(root);
+    const view = await root.orchestration.get(iid);
+    expect(view?.status).toBe(WorkflowStatus.Blocked);
+    expect(view?.blockReason).toContain(
+      problem === 'closed' ? 'pr-closed-unmerged' : 'pr-conflicting',
+    );
+  },
+);
+
+it('keeps unknown mergeability waiting and follows ordinary merged completion', async () => {
+  const { root, provider } = await setup();
+  await until(root, () => waiting(root));
+  await observe(root, 'open', 'unknown');
+  await tick(root);
+  expect(await waiting(root)).toBe(true);
+  await observe(root, 'merged', 'unknown');
+  await assertCompleted(root, provider);
+});
+
+function repairWorkflow() {
+  return {
+    ...workflow,
+    stages: {
+      ...workflow.stages,
+      review: { ...workflow.stages.review, on: { done: { then: 'merge', repeat: { max: 3 } } } },
+      repair: {
+        activity: 'agent',
+        requiresApproval: false,
+        with: {
+          prompt: 'Rebase and revise the existing primary PR, preserving review and merge policy.',
+        },
+        on: { done: { then: 'review', repeat: { max: 2 } } },
+      },
+      merge: {
+        ...workflow.stages.merge,
+        on: {
+          ...workflow.stages.merge.on,
+          done: {
+            then: 'wait',
+            resourceTransitions: [
+              ...workflow.stages.merge.on.done.resourceTransitions,
+              {
+                events: ['pr.state-changed'],
+                where: { mergeability: 'conflicting' },
+                then: 'repair',
+                retry: { max: 2 },
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+}
+
+it('routes conflicts through pinned repair and durably bounds attempts across restart', async () => {
+  const definition = repairWorkflow();
+  const { root: initial, path, provider } = await setup(definition);
+  await until(initial, () => waiting(initial));
+  await observe(initial, 'open', 'conflicting');
+  await tick(initial);
+  expect((await initial.orchestration.get(iid))?.retryCounts['pr.merge:conflicting']).toBe(1);
+  // A changed current definition must not replace the pinned repair policy.
+  const root = await createCompositionRoot(path, {
+    config: config(),
+    fakeDeliveryProvider: provider,
+  });
+  await until(
+    root,
+    async () => (await root.orchestration.get(iid))?.status === WorkflowStatus.Blocked,
+  );
+  const view = await root.orchestration.get(iid);
+  expect(view?.retryCounts['pr.merge:conflicting']).toBe(2);
+  expect(view?.blockReason).toContain('conflict-retry-exhausted');
+  const facts = await root.journal.readAll(0);
+  expect(
+    facts
+      .map(selectWorkflowOrchestrationEvent)
+      .filter(
+        (fact) =>
+          fact?.event.eventType === OrchestrationEventType.StageEntered &&
+          fact.event.payload.stage === 'repair',
+      ),
+  ).toHaveLength(2);
+}, 60_000);
+
+it.each(['ambiguous', 'unsafe'] as const)(
+  'blocks %s configured conflict repair',
+  async (problem) => {
+    const definition = repairWorkflow();
+    const routes = definition.stages.merge.on.done.resourceTransitions;
+    const repair = routes.at(-1)!;
+    if (problem === 'ambiguous') routes.push(repair);
+    else
+      Object.assign(definition.stages.repair, {
+        activity: 'issue.complete',
+        with: { target: 'primary' },
+      });
+    const { root } = await setup(definition);
+    await until(root, () => waiting(root));
+    await observe(root, 'open', 'conflicting');
+    await tick(root);
+    expect((await root.orchestration.get(iid))?.blockReason).toContain('pr-conflicting');
+  },
+);
+
+it('reconciles a merge wait using its pinned explicit await signal', async () => {
+  const definition = {
+    ...workflow,
+    stages: {
+      ...workflow.stages,
+      merge: {
+        ...workflow.stages.merge,
+        with: { ...workflow.stages.merge.with, blockedPaths: [] },
+        on: {
+          ...workflow.stages.merge.on,
+          done: { then: 'complete-issue', await: { signal: 'merge-confirmed', from: ['human'] } },
+        },
+      },
+    },
+  };
+  const { root } = await setup(definition);
+  await until(
+    root,
+    async () => (await root.orchestration.get(iid))?.waitingFor?.signalKind === 'merge-confirmed',
+  );
+  await observe(root, 'closed');
+  await tick(root);
+  expect((await root.orchestration.get(iid))?.blockReason).toContain('pr-closed-unmerged');
 });

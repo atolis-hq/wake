@@ -2,6 +2,7 @@ import { EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import { createHash } from 'node:crypto';
 import {
   PullRequestCheckState,
+  PullRequestMergeability,
   PullRequestState,
   ReviewActorKind,
   type PullRequestCheckState as PullRequestCheckStateValue,
@@ -135,6 +136,12 @@ function pullRequestObservation(input: {
     title: pullRequest.title,
     body: fallback(pullRequest.body, ''),
     state: pullRequestState(pullRequest),
+    mergeability:
+      pullRequest.mergeable === false
+        ? PullRequestMergeability.Conflicting
+        : pullRequest.mergeable === true
+          ? PullRequestMergeability.Mergeable
+          : PullRequestMergeability.Unknown,
     revision,
     headRevision: revision,
     baseRevision: fallback(pullRequest.base?.sha, UnknownGitHubRevision),

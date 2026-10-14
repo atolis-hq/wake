@@ -38,6 +38,7 @@ export interface GitHubIssueCommentPayload {
 }
 
 export interface GitHubPullRequestPayload extends GitHubIssuePayload {
+  readonly mergeable?: boolean | null;
   readonly pull_request?: Record<string, unknown>;
   readonly head?: { readonly sha?: string };
   readonly base?: { readonly sha?: string };

@@ -4,6 +4,8 @@ import {
   decidePullRequestAuthority,
   PullRequestCheckState,
   PullRequestDenialCode,
+  PullRequestMergeability,
+  pullRequestProjection,
   PullRequestState,
   selectActivityEvent,
   selectPrimaryPullRequest,
@@ -30,6 +32,33 @@ export function createPullRequestTransitionEvidence(
 ): ResourceTransitionEvidence {
   return {
     triggers,
+    async mergeWaitState(workItemId) {
+      const selected = selectPrimaryPullRequest(
+        await pullRequests.authorityInput(workItemId),
+        workItemId,
+      );
+      if (selected === null) return null;
+      const resourceId = selected.pullRequest.resourceId;
+      const facts = await pullRequests.factsFor(resourceId);
+      const pr = facts.reduce<PullRequestView | null>(
+        (view, event) => pullRequestProjection.project(view, event),
+        pullRequestProjection.initial(resourceId),
+      );
+      if (pr === null) return null;
+      const fact = [...facts]
+        .reverse()
+        .find(
+          (entry) =>
+            entry.event.eventType === ActivityEventType.PrStateChanged ||
+            entry.event.eventType === ActivityEventType.PrDiscovered,
+        );
+      if (fact === undefined) return null;
+      return {
+        state: pr.state,
+        mergeability: pr.mergeability ?? PullRequestMergeability.Unknown,
+        evidenceId: fact.event.eventId,
+      };
+    },
     async resolve({
       workItemId,
       transitions,

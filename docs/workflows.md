@@ -174,8 +174,8 @@ it applies the route directly.
 
 `done` routes may additionally declare `resourceTransitions`. They are an OR
 alternative to the configured single `watchGates` verdict and only support
-trusted native PR approvals, an externally merged primary PR, and opted-in
-failing checks. `then` inherits the enclosing route when omitted.
+trusted native PR approvals, an externally merged primary PR, opted-in
+failing checks, and bounded explicit conflict repair during merge waits. `then` inherits the enclosing route when omitted.
 
 ```yaml
 on:
@@ -584,3 +584,38 @@ create a delivery WorkItem directly or guarantee dispatch. See
 [Delivery oversight prompt inputs and authority](prompts.md#delivery-oversight)
 for prompt-level single-selection recovery, dependency evidence, active delivery judgment, and local/shared
 artifact behavior.
+
+While a primary workflow waits in `pr.merge`, Wake reconciles the selected
+primary PR's durable state. A PR closed without merging blocks with
+`merge.pr-closed-unmerged`. Explicit provider conflict evidence either uses a
+single bounded repair transition in the pinned definition or blocks with
+`merge.pr-conflicting`. Missing or ambiguous primary correlation and unknown
+mergeability leave the wait unchanged. Merged observations retain the normal
+configured completion route, including policy-denied manual-merge recovery.
+
+Configure conflict repair on the merge stage's `done.resourceTransitions`:
+
+```yaml
+- events: [pr.state-changed]
+  where: { mergeability: conflicting }
+  then: revise
+  retry: { max: 2 }
+```
+
+The destination must be another `agent` stage. Its prompt should rebase/revise
+the existing primary PR and return through the configured review path. Every
+ordinary route that closes that cycle still needs its existing `repeat.max`.
+Conflict `retry.max` must be one or two; it counts repair opportunities across
+the instance's lifetime and survives restarts. An ambiguous, missing, or unsafe
+repair destination blocks; exhausted repair blocks with
+`merge.conflict-retry-exhausted`. Wake does not invent repair stages or use a
+changed current definition in place of the pinned policy.
+
+Merge-stage hints follow the wait's actual signal and are posted to the
+configured reply target when the merge stage starts waiting. A
+resource-transition wait or a policy-denied manual-merge wait directs operators
+to resolve and merge the PR in the provider and advertises no commands. A
+default `approved` wait at the merge stage advertises only `/approved` for
+authorized independent reviewers. Waits gated by a watch keep the generic
+agent-review hint. Those commands retain their eligibility rules for agent
+review and conversation stages.

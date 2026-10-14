@@ -109,7 +109,16 @@ export async function listPullRequests(
         ...(headers === undefined ? {} : { headers }),
       }),
   });
-  return pullRequests.map(normalizePullRequestState);
+  // List responses omit mergeability. Detail responses are needed even when the list ETag is unchanged.
+  const detailed = [];
+  for (const pullRequest of pullRequests) {
+    detailed.push(
+      normalizePullRequestState(
+        await getPullRequest(octokit, cache, owner, repo, pullRequest.number),
+      ),
+    );
+  }
+  return detailed;
 }
 
 export async function listReviews(

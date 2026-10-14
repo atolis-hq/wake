@@ -2,9 +2,14 @@ import type { CommandContext } from '@atolis-hq/eventing';
 import { ActivityEventType, selectActivityEvent } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { CompiledResourceTransition, TransitionTarget } from '../contracts/config.js';
+import {
+  OrchestrationEventType,
+  type WorkflowOrchestrationEventData,
+} from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
+import { stateDraft } from '../domain/decision-events.js';
 import { acceptSignal as decideSignal } from '../domain/interpreter.js';
 import { appendWithIntentRecovery } from './durable-append.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
@@ -76,7 +81,14 @@ export async function acceptResourceTransition(
   id: WorkflowInstanceId,
   target: TransitionTarget,
   evidenceId: string,
-  context: CommandContext & { readonly expectedSequence?: number },
+  context: CommandContext & {
+    readonly expectedSequence?: number;
+    readonly retry?: {
+      readonly key: string;
+      readonly max: number;
+      readonly exhaustedReason: string;
+    };
+  },
 ): Promise<WorkflowInstanceView | null> {
   const loaded = await repository.load(id);
   if (loaded.view === null || loaded.view.waitingFor === undefined) return loaded.view;
@@ -87,6 +99,11 @@ export async function acceptResourceTransition(
     return loaded.view;
   const definition = await workflows.definitionForOperation(loaded.view, loaded.sequence, context);
   if (definition === null) return loaded.view;
+  const retry = retryDraft(loaded.view, evidenceId, context);
+  if (retry?.eventType === OrchestrationEventType.InstanceBlocked) {
+    await repository.append(id, loaded.sequence, [retry]);
+    return (await repository.load(id)).view;
+  }
   const decision = decideSignal(
     definition,
     { ...loaded.view, waitingFor: { ...loaded.view.waitingFor, resume: target } },
@@ -105,7 +122,10 @@ export async function acceptResourceTransition(
   if (decision.kind === 'append') {
     const recovered = await appendWithIntentRecovery({
       append: async () => {
-        await repository.append(id, loaded.sequence, decision.events);
+        await repository.append(id, loaded.sequence, [
+          ...(retry === undefined ? [] : [retry]),
+          ...decision.events,
+        ]);
       },
       load: () => repository.load(id),
       alreadyApplied: (reloaded) =>
@@ -116,4 +136,25 @@ export async function acceptResourceTransition(
     if (recovered !== undefined) return recovered.view;
   }
   return (await repository.load(id)).view;
+}
+
+function retryDraft(
+  view: WorkflowInstanceView,
+  evidenceId: string,
+  context: Parameters<typeof acceptResourceTransition>[5],
+): WorkflowOrchestrationEventData | undefined {
+  if (context.retry === undefined) return undefined;
+  const retry = context.retry;
+  const count = (view.retryCounts[retry.key] ?? 0) + 1;
+  return stateDraft(
+    view,
+    { occurredAt: context.occurredAt, causationId: `${context.commandId}:${evidenceId}` },
+    count > retry.max
+      ? {
+          eventType: OrchestrationEventType.InstanceBlocked,
+          payload: { reason: retry.exhaustedReason },
+        }
+      : { eventType: OrchestrationEventType.RetryCounted, payload: { retryKey: retry.key, count } },
+    100,
+  );
 }

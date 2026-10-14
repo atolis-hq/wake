@@ -11,6 +11,7 @@ import type {
   MergeMethod,
   PullRequestCheckState,
   PullRequestDenialCode,
+  PullRequestMergeability,
   PullRequestState,
 } from './vocabulary.js';
 
@@ -21,6 +22,7 @@ export interface PullRequestView {
   readonly headRevision: string;
   readonly baseRevision: string;
   readonly checks: PullRequestCheckState;
+  readonly mergeability?: PullRequestMergeability | undefined;
   readonly acceptedReview?: {
     readonly revision: string;
     readonly actorId: string;
@@ -37,6 +39,7 @@ export interface ObservePullRequest {
   readonly headRevision: string;
   readonly baseRevision: string;
   readonly checks: PullRequestView['checks'];
+  readonly mergeability?: PullRequestMergeability | undefined;
   readonly changedFiles?: readonly string[] | undefined;
 }
 
