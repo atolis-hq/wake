@@ -56,6 +56,7 @@ export type MutableWorkflowInstance = {
   supplementalQueue: Array<WorkflowInstanceView['supplementalQueue'][number]>;
   acceptedSignalIds: string[];
   operatorRetryCommandIds: string[];
+  hasStartedActivation: boolean;
   acceptedOutcomes: ActivationId[];
   acceptedChildCompletionIds: WorkflowInstanceView['workflowInstanceId'][];
   causalRejectionIds: string[];
@@ -126,6 +127,7 @@ function applyActivityFact(state: MutableWorkflowInstance, event: ActivityFact):
       applyActivityRequested(state, event.payload);
       return;
     case OrchestrationEventType.ActivityStarted:
+      state.hasStartedActivation = true;
       updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Running);
       return;
     case OrchestrationEventType.ActivityOutcomeAccepted:
@@ -339,6 +341,7 @@ export function immutableWorkflowInstanceView(
     supplementalQueue: state.supplementalQueue,
     acceptedSignalIds: state.acceptedSignalIds,
     operatorRetryCommandIds: state.operatorRetryCommandIds,
+    hasStartedActivation: state.hasStartedActivation,
     acceptedOutcomes: state.acceptedOutcomes,
     acceptedChildCompletionIds: state.acceptedChildCompletionIds,
     causalRejectionIds: state.causalRejectionIds,

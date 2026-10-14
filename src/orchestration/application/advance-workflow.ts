@@ -283,6 +283,7 @@ export class AdvanceWorkflow {
       .map(({ view }) => view);
   }
 
+  // Scheduler reads replayed journal facts, never potentially stale stored projections.
   async listAll() {
     return (await this.listAllLoaded()).map(({ view }) => view);
   }

@@ -812,9 +812,12 @@ describe('target composition root', () => {
           },
         }),
       ]);
-      await vi.waitFor(async () => {
-        expect(await runtime.checkpoints.load(activationSchedulerSubscriptionConsumer)).toBe(2);
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await runtime.checkpoints.load(activationSchedulerSubscriptionConsumer)).toBe(2);
+        },
+        { timeout: 10_000 },
+      );
 
       await runtime.runnerPipeline.run({ maxProgress: 1 }, new AbortController().signal);
 

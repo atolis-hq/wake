@@ -17,6 +17,11 @@ import { WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import type { AdvanceResult, DispatchedRun } from '../contracts/views.js';
 import type { DispatchPolicy } from '../domain/dispatch-policy.js';
+import {
+  canDispatchWorkItem,
+  readOpenWorkItemIds,
+  type WorkAvailability,
+} from '../domain/open-work-policy.js';
 import type { ExecutionPort, OrchestrationPort } from './activation-scheduler-ports.js';
 import { isExecutionFailureTerminal } from './execution-reconciliation.js';
 
@@ -27,6 +32,8 @@ export interface DispatchLoopContext {
   readonly dispatchPolicy: DispatchPolicy;
   readonly maxConcurrentRuns: number;
   readonly maxDispatches: number;
+  readonly maxOpenWorkItems: number | null;
+  readonly work: { get(id: string): Promise<WorkAvailability | null> } | undefined;
   readonly runnerIneligibility: () => Promise<ReadonlySet<string>>;
   readonly isDispatchPaused: () => Promise<boolean>;
   readonly commandContext: (cause: string) => CommandContext;
@@ -117,6 +124,7 @@ export async function runDispatchLoop(
 ): Promise<AdvanceResult> {
   const dispatched: DispatchedRun[] = [];
   const dispatchedIds = new Set<string>();
+  const startedWorkflowIds = new Set<string>();
   const isolatedIds = new Set<string>();
   let isolated: Extract<AdvanceResult, { kind: typeof WorkflowStatus.Blocked }> | undefined;
   let stopReason: AdvanceResult | undefined;
@@ -137,9 +145,26 @@ export async function runDispatchLoop(
       stopReason = { kind: 'no-work' };
       break;
     }
+    // Legacy test ports may omit listAll; production supplies the journal-backed inventory.
+    const open =
+      ctx.maxOpenWorkItems === null
+        ? new Set<string>()
+        : await readOpenWorkItemIds(
+            ((await ctx.orchestration.listAll?.()) ?? pending.map((item) => item.workflow)).map(
+              (workflow) =>
+                startedWorkflowIds.has(workflow.workflowInstanceId)
+                  ? { ...workflow, hasStartedActivation: true }
+                  : workflow,
+            ),
+            ctx.work,
+          );
     const selectedCandidate = ctx.dispatchPolicy.select(
       pending
-        .filter((item) => !isolatedIds.has(item.workflow.workflowInstanceId))
+        .filter(
+          (item) =>
+            !isolatedIds.has(item.workflow.workflowInstanceId) &&
+            canDispatchWorkItem(item.workflow.workItemId, open, ctx.maxOpenWorkItems),
+        )
         .map((item, requestedPosition) => ({
           workItemId: item.workflow.workItemId,
           activationId: item.activation.activationId,
@@ -184,6 +209,7 @@ export async function runDispatchLoop(
         selected.activation.activationId,
         ctx.commandContext(selected.activation.activationId),
       );
+      startedWorkflowIds.add(selected.workflow.workflowInstanceId);
       const correlated = await ctx.resources.correlationsForWork(selected.workflow.workItemId);
       const resourceViews = (
         await Promise.all(correlated.map((entry) => ctx.resources.get(entry.resourceId)))

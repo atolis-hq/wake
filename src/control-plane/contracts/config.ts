@@ -13,6 +13,7 @@ export interface TriggerConfig {
 export interface ControlPlaneConfig {
   readonly maxDispatches: number;
   readonly maxConcurrentRuns: number;
+  readonly maxOpenWorkItems?: number | null;
   readonly triggers: readonly TriggerConfig[];
   readonly resident?: { readonly pollBackoffMs: number; readonly maxPollBackoffMs?: number };
 }
@@ -65,6 +66,7 @@ export const controlPlaneConfigSchema = z
   .object({
     maxDispatches: z.number().int().positive().default(1),
     maxConcurrentRuns: z.number().int().positive().default(1),
+    maxOpenWorkItems: z.number().int().positive().nullable().default(null),
     triggers: z.array(triggerSchema).default([]),
     resident: z
       .object({
@@ -81,6 +83,7 @@ export const controlPlaneConfigSchema = z
   .default({
     maxDispatches: 1,
     maxConcurrentRuns: 1,
+    maxOpenWorkItems: null,
     triggers: [],
     resident: { pollBackoffMs: 1000 },
   });

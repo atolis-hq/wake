@@ -74,6 +74,8 @@ export interface WorkflowInstanceView {
   readonly supplementalQueue: readonly SupplementalActivityView[];
   readonly acceptedSignalIds: readonly string[];
   readonly operatorRetryCommandIds: readonly string[];
+  /** Retained after the pending activation is replaced, derived from ActivityStarted facts. */
+  readonly hasStartedActivation?: boolean;
   readonly acceptedOutcomes: readonly ActivationId[];
   readonly acceptedChildCompletionIds: readonly WorkflowInstanceId[];
   readonly causalRejectionIds: readonly string[];

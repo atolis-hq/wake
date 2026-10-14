@@ -332,6 +332,7 @@ export async function createCompositionRoot(
       ids,
       dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
       maxConcurrentRuns: config.controlPlane.maxConcurrentRuns,
+      maxOpenWorkItems: config.controlPlane.maxOpenWorkItems ?? null,
       maxDispatches: config.controlPlane.maxDispatches,
       schedulerSerialiser: createFileActivationSchedulerSerialiser(paths.dataRoot),
       isDispatchPaused: isRuntimePaused,

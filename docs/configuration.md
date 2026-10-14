@@ -125,6 +125,7 @@ execution:
 controlPlane:
   maxDispatches: 1
   maxConcurrentRuns: 1
+  maxOpenWorkItems: null
   resident:
     pollBackoffMs: 1000
     maxPollBackoffMs: 16000
@@ -408,6 +409,7 @@ or tombstoning of the producer path.
 | Field | Type / default | Explanation |
 | --- | --- | --- |
 | `controlPlane.maxDispatches` | positive integer; default `1` | Per-call burst cap: the maximum number of new Runs a single `advanceOnce` call will start, independent of and bounded by `maxConcurrentRuns`. `advanceOnce` fills open capacity within one call up to this cap rather than dispatching a single Run per call. |
+| `controlPlane.maxOpenWorkItems` | positive integer or `null`; default `null` | Maximum distinct open work items. Open means at least one workflow has started an activation and not all workflows are terminal (currently completed or superseded). Blocked and waiting items count; frozen/deleted items and items that have never started do not. Children share their parent’s work item. At capacity, new items are skipped before dispatch ordering; existing open items continue through stages, retries, children, and signal resumptions. Capacity is rechecked after each dispatch. `null` means unlimited. |
 | `controlPlane.maxConcurrentRuns` | positive integer; default `1` | Maximum Runs that may be `started` system-wide. `advanceOnce` stops dispatching, and additional advancement calls return `no-work`, until capacity is available. |
 | `controlPlane.triggers` | list; default `[]` | Independent workflow invocations. Each entry is described below. |
 | `controlPlane.resident.pollBackoffMs` | positive integer; default `1000` | Exponential backoff base for intake's idle-or-erroring poll cadence and the runner's error-retry cadence — courtesy toward a rate-limited external API. Unrelated to journal consumption, which waits on a change signal instead of polling. |
@@ -428,7 +430,8 @@ Event consumption begins
 at registration; historical events do not cause startup invocations.
 
 The optional gate is exactly `when: { capacityAvailable: true }`. It checks
-current execution headroom under `maxConcurrentRuns`, runtime pause, and
+current execution headroom under `maxConcurrentRuns`, open-work headroom under
+`maxOpenWorkItems`, runtime pause, and
 runner eligibility in the workflow entry stage's pool. A false gate consumes
 and skips the occurrence when no invocation is active. Coalesced requests are
 checked again after the active invocation ends; an ineligible pending request
