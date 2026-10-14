@@ -49,7 +49,12 @@ export type AmbiguityResolution =
     };
 
 export interface AmbiguityWorkflowBlocker {
-  block(workflowInstanceId: string, reason: string, context: CommandContext): Promise<unknown>;
+  blockAwaitingActivation(
+    workflowInstanceId: string,
+    activationId: string,
+    reason: string,
+    context: CommandContext,
+  ): Promise<unknown>;
 }
 
 export class RecoveryService {
@@ -221,8 +226,9 @@ export class RecoveryService {
   }
 
   private async blockEscalated(run: RunView): Promise<void> {
-    await this.blocker?.block(
+    await this.blocker?.blockAwaitingActivation(
       run.workflowInstanceId,
+      run.activationId,
       `${RecoveryBlockReasonPrefix} run ${run.runId}: ${run.failure?.message ?? 'Verify the runner has stopped, then resolve the ambiguous run'}`,
       {
         commandId: `${run.runId}:recovery-escalation:${run.ambiguityAttempts}`,

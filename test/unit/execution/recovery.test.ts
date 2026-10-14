@@ -354,7 +354,7 @@ it('blocks the owning workflow when ambiguity reaches the configured bound', asy
     fixture.activities,
     { maxAmbiguityReconciliationAttempts: 1 },
     {
-      async block(workflowInstanceId, reason) {
+      async blockAwaitingActivation(workflowInstanceId, _activationId, reason) {
         blocked.push({ workflowInstanceId, reason });
       },
     },
@@ -536,7 +536,7 @@ it('repairs a restart between terminal ambiguity and its workflow block', async 
     fixture.activities,
     { maxAmbiguityReconciliationAttempts: 1 },
     {
-      async block(_workflow, _reason, context) {
+      async blockAwaitingActivation(_workflow, _activation, _reason, context) {
         commands.push(context.commandId);
         if (attempts++ === 0) throw new Error('host stopped before workflow append');
       },

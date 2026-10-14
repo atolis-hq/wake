@@ -172,7 +172,8 @@ activity, input, and execution configuration and retains the failed activation
 and Run as immutable history. Completed, waiting, active, supplemental,
 follow-on, and otherwise blocked workflows remain ineligible.
 
-When a workflow is blocked with `run-ambiguous-after-*-attempts`, the board marks
+When a workflow is blocked with an execution-recovery reason (the
+`execution-recovery-ambiguous` prefix), the board marks
 the card as needing ambiguous-run resolution and work detail presents the affected
 run's token usage, cost, and pull-request evidence. An operator must explicitly
 resolve the run as failed (with a reason) or succeeded (with its actual activity

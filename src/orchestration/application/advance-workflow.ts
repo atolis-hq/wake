@@ -99,6 +99,25 @@ export class AdvanceWorkflow {
     return (await this.repository.load(id)).view;
   }
 
+  async blockAwaitingActivation(
+    id: WorkflowInstanceId,
+    activationId: ActivationId,
+    reason: string,
+    context: CommandContext,
+  ) {
+    const loaded = await this.repository.load(id);
+    // Only a workflow still waiting on this activation may be blocked on its behalf.
+    if (
+      loaded.view === null ||
+      loaded.view.status === WorkflowStatus.Completed ||
+      loaded.view.status === WorkflowStatus.Superseded ||
+      loaded.view.pendingActivation?.activationId !== activationId ||
+      loaded.view.acceptedOutcomes.includes(activationId)
+    )
+      return loaded.view;
+    return this.block(id, reason, context);
+  }
+
   async block(id: WorkflowInstanceId, reason: string, context: CommandContext) {
     const loaded = await this.repository.load(id);
     if (loaded.view === null || loaded.view.status === WorkflowStatus.Blocked) return loaded.view;

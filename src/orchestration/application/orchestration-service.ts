@@ -279,6 +279,22 @@ export class OrchestrationService {
     );
   }
 
+  blockAwaitingActivation(
+    workflowInstanceId: WorkflowInstanceId,
+    activationId: ActivationId,
+    reason: string,
+    context: CommandContext,
+  ) {
+    return this.transitionWatchChildren(context, () =>
+      this.advanceWorkflow.blockAwaitingActivation(
+        workflowInstanceId,
+        activationId,
+        reason,
+        context,
+      ),
+    );
+  }
+
   resolveExecutionFailure(
     workflowInstanceId: WorkflowInstanceId,
     input: {
