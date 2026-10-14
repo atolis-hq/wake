@@ -1,4 +1,9 @@
-import { EventActorKind, correlationId } from '@atolis-hq/eventing';
+import {
+  EventActorKind,
+  EventSourceKind,
+  correlationId,
+  createEventData,
+} from '@atolis-hq/eventing';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -11,7 +16,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ActivityOutcomeKind,
   AgentResultStatus,
+  ExternalExecutionKind,
   RetrySafety,
+  activityName,
 } from '../../../src/activities/index.js';
 import type { CompositionRootOptions } from '../../../src/bootstrap/index.js';
 import {
@@ -33,7 +40,14 @@ import {
   type TriggerConfig,
   type TriggerView,
 } from '../../../src/control-plane/index.js';
-import { isActiveRunStatus } from '../../../src/execution/index.js';
+import {
+  ExecutionEventType,
+  RecoveryBlockReasonPrefix,
+  RunRepository,
+  isActiveRunStatus,
+  runId,
+  runStream,
+} from '../../../src/execution/index.js';
 import {
   OrchestrationEventType,
   orchestrationGroupId,
@@ -56,6 +70,7 @@ async function fixture(
   journal = new InMemoryEventJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') }),
   options: CompositionRootOptions = {},
   triggerIds: readonly string[] = ['oversight'],
+  maxOpenWorkItems: number | null = null,
 ) {
   const home = await mkdtemp(join(tmpdir(), 'wake-triggers-'));
   homes.push(home);
@@ -84,6 +99,7 @@ async function fixture(
         },
       },
       controlPlane: {
+        maxOpenWorkItems,
         triggers: triggerIds.map((id) => ({
           id,
           workflow: 'inspect',
@@ -179,6 +195,55 @@ describe('composed workflow triggers', () => {
     expect(started).toHaveLength(origins.length);
     for (const event of started)
       expect(event?.event.payload).not.toHaveProperty('parentWorkflowInstanceId');
+  });
+
+  it('skips capacity-gated cron and events when started work waits without active runs', async () => {
+    const { root, journal, consume, context } = await fixture(
+      { cron: '* * * * *', events: [WorkEventType.ObjectiveRevised] },
+      true,
+      undefined,
+      {},
+      ['oversight'],
+      1,
+    );
+    const item = workItemId('work-00000000000000000000000001');
+    await root.work.create({ workItemId: item, objective: 'open review' }, context);
+    const workflow = await root.orchestration.start(
+      {
+        workItemId: item,
+        workflowInstanceId: workflowInstanceId('workflow-review'),
+        orchestrationGroupId: orchestrationGroupId('group-review'),
+        workflowName: workflowName('inspect'),
+      },
+      { ...context, commandId: 'start-review' },
+    );
+    await root.orchestration.markActivationStarted(
+      workflow.workflowInstanceId,
+      workflow.pendingActivation!.activationId,
+      { ...context, commandId: 'started-review' },
+    );
+    await root.orchestration.acceptOutcome(
+      {
+        workflowInstanceId: workflow.workflowInstanceId,
+        activationId: workflow.pendingActivation!.activationId,
+        outcome: {
+          kind: ActivityOutcomeKind.Waiting,
+          data: { intentEventId: 'intent-review', signalKind: 'reviewed' },
+        },
+      },
+      { ...context, commandId: 'wait-review' },
+    );
+    await root.runnerPipeline.run({ maxProgress: 1 });
+    expect(await invocations(journal)).toEqual([]);
+    await root.work.revise(
+      { workItemId: item, objective: 'changed' },
+      { ...context, commandId: 'revise-review' },
+    );
+    await consume();
+    expect(await invocations(journal)).toEqual([]);
+    expect((await root.triggers.get()).diagnostics).toEqual([
+      expect.objectContaining({ reason: TriggerSkipReason.Capacity }),
+    ]);
   });
 
   it('skips gated cron and event occurrences while runners are paused; eligibility alone does not start work', async () => {
@@ -899,6 +964,79 @@ describe('durable trigger coordination', () => {
     expect((await f.root.triggers.get()).coalesced).toEqual({});
   });
 
+  it('retains the blocked slot without pausing for restart ambiguity across repeated recovery', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    const event = await source(f, 'restart-ambiguity');
+    await f.root.triggers.start(
+      f.config.controlPlane.triggers[0]!,
+      {
+        kind: TriggerSourceKind.Event,
+        eventId: event.event.eventId,
+        eventType: event.event.eventType,
+      },
+      f.context,
+      event,
+    );
+    const invocation = (await invocations(f.journal))[0]!;
+    const workflowId = workflowInstanceId(invocation.workflowInstanceId);
+    const workflow = await f.root.orchestration.get(workflowId);
+    const run = runId('restart-run');
+    const startedAt = f.clock.now().toISOString();
+    const draft = (
+      eventType: (typeof ExecutionEventType)[keyof typeof ExecutionEventType],
+      payload: unknown,
+    ) =>
+      createEventData({
+        eventId: `${run}:${eventType}`,
+        eventType,
+        occurredAt: startedAt,
+        correlationId: run,
+        causationId: run,
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        stream: runStream(run),
+        payload,
+      } as never);
+    // A run left behind by a previous container: expired lease, uninspectable process identity.
+    await new RunRepository(f.journal).append(run, 0, [
+      draft(ExecutionEventType.RunStarted, {
+        activationId: workflow!.pendingActivation!.activationId,
+        activity: activityName('agent'),
+        workflowInstanceId: workflowId,
+        orchestrationGroupId: workflow!.orchestrationGroupId,
+        attempt: 1,
+        startedAt,
+      }),
+      draft(ExecutionEventType.RunLeaseClaimed, {
+        owner: 'previous-container',
+        acquiredAt: startedAt,
+        expiresAt: startedAt,
+      }),
+      draft(ExecutionEventType.RunExternalExecutionReported, {
+        kind: ExternalExecutionKind.Process,
+        id: 'identity-from-previous-container',
+        startedAt,
+      }),
+    ] as never);
+    const config = parseRootConfig({
+      ...f.config,
+      execution: { ...f.config.execution, maxAmbiguityReconciliationAttempts: 1 },
+    });
+    let reason: string | undefined;
+    for (let i = 0; i < 3; i++) {
+      const root = await restart(f, { config });
+      await root.recovery.recoverActive(`resident-${i}`);
+      await root.runnerPipeline.run({ maxProgress: 1 });
+      expect((await root.triggers.get()).pauses.oversight).toBeUndefined();
+      const blocked = await root.orchestration.get(workflowId);
+      expect(blocked?.status).toBe('blocked');
+      expect(blocked?.blockReason).toContain(RecoveryBlockReasonPrefix);
+      reason ??= blocked?.blockReason;
+      expect(blocked?.blockReason).toBe(reason);
+      expect(await invocations(f.journal)).toHaveLength(1);
+    }
+  });
+
   it('pauses on exhausted workflow failures and does not reset retry counters on resume', async () => {
     const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
     const config = parseRootConfig({
@@ -1195,4 +1333,119 @@ it('keeps pause consumption durable when a manual request crashes before its cla
     reason: TriggerSkipReason.Paused,
   });
   expect(await invocations(journal)).toHaveLength(0);
+});
+
+it('inspects a blocked slot through HTTP and retries durably across restart before reconsidering queued work', async () => {
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+  await f.root.triggers.requestManual('oversight', { ...f.context, commandId: 'first' });
+  const first = (await invocations(f.journal))[0]!;
+  await f.root.triggers.requestManual('oversight', { ...f.context, commandId: 'queued' });
+  await accept(f, first.workflowInstanceId, ActivityOutcomeKind.Failed);
+  const api = createApiDispatcher((await createSurfaceApplications(f.root)).api);
+  expect(await api.dispatch('GET', '/api/v1/triggers/oversight', undefined)).toMatchObject({
+    status: 200,
+    body: {
+      data: {
+        activeInvocation: {
+          activeWorkItemId: first.workItemId,
+          workflowStatus: 'blocked',
+          blockReason: 'unconfigured outcome failed',
+          retryEligible: true,
+        },
+        pending: [{ activeWorkItemId: first.workItemId }],
+      },
+    },
+  });
+  const path = '/api/v1/work-items/' + toWorkItemKey(first.workItemId) + '/commands/retry';
+  expect(await api.dispatch('POST', path, { idempotencyKey: 'release-slot' })).toMatchObject({
+    status: 202,
+  });
+  const recovered = await restart(f);
+  const recoveredApi = createApiDispatcher((await createSurfaceApplications(recovered)).api);
+  expect(
+    await recoveredApi.dispatch('POST', path, { idempotencyKey: 'release-slot' }),
+  ).toMatchObject({ status: 202 });
+  const retries = (await f.journal.readAll(0)).filter(
+    (entry) => entry.event.eventType === OrchestrationEventType.OperatorRetryRequested,
+  );
+  expect(retries).toHaveLength(1);
+  expect(retries[0]?.event.actor).toEqual({ kind: EventActorKind.Operator, id: 'web' });
+  await recovered.triggers.reconcile(f.context);
+  expect(await invocations(f.journal)).toHaveLength(1);
+  await accept({ ...f, root: recovered }, first.workflowInstanceId);
+  const again = await restart(f);
+  await again.triggers.reconcile(f.context);
+  expect(await invocations(f.journal)).toHaveLength(2);
+  expect((await again.triggers.get()).coalesced).toEqual({});
+});
+
+it('attributes shared pending requests to the sibling invocation holding their coordination slot', async () => {
+  const f = await fixture(
+    { events: [WorkEventType.ObjectiveRevised] },
+    false,
+    undefined,
+    { triggerCoordinationKey: () => 'shared' },
+    ['oversight', 'secondary'],
+  );
+  await f.root.triggers.requestManual('oversight', { ...f.context, commandId: 'holder' });
+  const holder = (await invocations(f.journal))[0]!;
+  const api = (await createSurfaceApplications(f.root)).api;
+  expect((await api.triggers!.detail('secondary'))?.data.activeInvocation).toMatchObject({
+    activeWorkItemId: holder.workItemId,
+  });
+  await f.root.triggers.requestManual('secondary', { ...f.context, commandId: 'sibling' });
+  for (const id of ['oversight', 'secondary']) {
+    expect((await api.triggers!.detail(id))?.data).toMatchObject({
+      activeInvocation: { activeWorkItemId: holder.workItemId, triggerId: 'oversight' },
+      pending: [{ triggerId: 'secondary', activeWorkItemId: holder.workItemId }],
+    });
+  }
+});
+
+it('keeps retry eligibility and pause semantics on trigger inspection and the shared Work command', async () => {
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+  await f.root.triggers.requestManual('oversight', { ...f.context, commandId: 'first' });
+  const first = (await invocations(f.journal))[0]!;
+  await accept(f, first.workflowInstanceId, ActivityOutcomeKind.Failed);
+  await f.root.triggers.reconcile(f.context);
+  const api = (await createSurfaceApplications(f.root)).api;
+  const key = toWorkItemKey(first.workItemId);
+  await f.root.work.freeze(workItemId(first.workItemId), { ...f.context, commandId: 'freeze' });
+  expect((await api.triggers!.detail('oversight'))?.data.activeInvocation?.retryEligible).toBe(
+    false,
+  );
+  expect(await api.work.retry!(key, { idempotencyKey: 'frozen-retry' })).toMatchObject({
+    conflict: true,
+    code: 'retry-ineligible',
+  });
+  await f.root.work.unfreeze(workItemId(first.workItemId), { ...f.context, commandId: 'unfreeze' });
+  expect((await api.triggers!.detail('oversight'))?.data.activeInvocation?.retryEligible).toBe(
+    true,
+  );
+  await api.work.retry!(key, { idempotencyKey: 'paused-retry' });
+  await f.root.work.freeze(workItemId(first.workItemId), {
+    ...f.context,
+    commandId: 'freeze-after-retry',
+  });
+  expect(await api.work.retry!(key, { idempotencyKey: 'paused-retry' })).toMatchObject({
+    status: 'accepted',
+  });
+  await f.root.work.unfreeze(workItemId(first.workItemId), {
+    ...f.context,
+    commandId: 'unfreeze-after-replay',
+  });
+  expect((await api.triggers!.detail('oversight'))?.data).toMatchObject({
+    paused: true,
+    activeInvocation: {
+      activeWorkItemId: first.workItemId,
+      workflowStatus: 'active',
+      retryEligible: false,
+    },
+  });
+  await accept(f, first.workflowInstanceId);
+  await f.root.triggers.reconcile(f.context);
+  expect((await api.triggers!.detail('oversight'))?.data).toMatchObject({
+    paused: true,
+    activeInvocation: null,
+  });
 });

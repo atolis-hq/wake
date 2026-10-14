@@ -8,6 +8,8 @@ export default defineConfig({
     // Durable filesystem fixtures can exceed Vitest's five-second default under suite load.
     testTimeout: 30_000,
     include: ['test/integration/**/*.test.ts'],
+    // Durable filesystem fixtures can exceed Vitest’s 5s default on CI runners.
+    testTimeout: 30_000,
     fileParallelism: true,
     // File-backed fixtures contend on fsync-backed locks when all CPUs are workers.
     maxWorkers: 4,

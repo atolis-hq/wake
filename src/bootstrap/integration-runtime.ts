@@ -26,6 +26,8 @@ import {
   createRunnerPipeline,
   createTriggerReactor,
   createWorkCancellationPolicy,
+  hasOpenWorkCapacity,
+  readOpenWorkItemIds,
   selectControlEvent,
   triggerInvocationProjection,
   triggerInvocationStream,
@@ -277,6 +279,7 @@ export async function composeIntegrationRuntime(
       if (await input.isPaused()) return false;
       const active = (await input.execution.list()).filter((run) => isActiveRunStatus(run.status));
       if (active.length >= input.config.controlPlane.maxConcurrentRuns) return false;
+      if (!(await openWorkCapacityAvailable())) return false;
       const workflow = input.config.orchestration.workflows[trigger.workflow]!;
       const stage = workflow.stages[workflow.entry ?? Object.keys(workflow.stages)[0]!]!;
       const pool = stage.execution?.runnerPool ?? input.config.execution.defaultRunnerPool;
@@ -300,6 +303,18 @@ export async function composeIntegrationRuntime(
     orchestration: input.orchestration,
     now: () => input.clock.now().toISOString(),
   });
+
+  async function openWorkCapacityAvailable(): Promise<boolean> {
+    const limit = input.config.controlPlane.maxOpenWorkItems ?? null;
+    return (
+      limit === null ||
+      hasOpenWorkCapacity(
+        await readOpenWorkItemIds(await input.orchestration.listAll(), input.work),
+        limit,
+      )
+    );
+  }
+
   const triggerReactors = input.config.controlPlane.triggers.map((config) =>
     createTriggerReactor(triggers, config, decodeCanonicalEvent),
   );

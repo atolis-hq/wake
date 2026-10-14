@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { localProcessIdentity } from './local-process-inspector.js';
 
 // Agent CLIs can emit arbitrarily large machine-readable transcripts. Capture
 // raw bytes ourselves so overflow never enters a third-party string buffer.
@@ -39,14 +40,22 @@ export function runProcess(
   signal: AbortSignal,
   options?: ProcessExecutionOptions,
   shell = false,
-): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
+): {
+  readonly identity?: string;
+  readonly result: Promise<ProcessExecutionResult>;
+  cancel(): Promise<void>;
+} {
   const child = spawn(command, args, {
     ...(cwd === undefined ? {} : { cwd }),
     shell,
     ...(shell && process.platform !== 'win32' ? { detached: true } : {}),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  return captureProcessOutput(child, signal, options, shell);
+  const identity = localProcessIdentity(child.pid);
+  return {
+    ...captureProcessOutput(child, signal, options, shell),
+    ...(identity === undefined ? {} : { identity }),
+  };
 }
 
 // Lifecycle coordination must share these closures so first-event-wins is atomic.

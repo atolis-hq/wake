@@ -40,3 +40,20 @@ agent process. The current guarantees are implemented by `execution`,
 The executable contracts live in `src/execution/`, with cross-domain
 advancement in `src/control-plane/` and `src/orchestration/`. See
 [Architecture](architecture.md) for the complete flow.
+
+## Recovery after a host or container restart
+
+Local CLI runs persist an opaque Linux process identity containing the boot ID,
+PID namespace, PID, and process start ticks. After lease expiry, recovery renews
+the lease of a matching live process without launching another attempt. A changed
+boot, missing PID, or reused PID proves the original process is gone: Execution
+records one failed interrupted attempt and Orchestration applies the configured
+workflow retry route. Repeated recovery does not append another terminal outcome.
+
+A changed PID namespace, unsupported platform, missing identity, or inspection
+error does not prove absence. Recovery retains ambiguity up to its configured
+reconciliation bound, then blocks with the Run ID and inspection reason. Verify
+the previous runner/container has stopped before resolving the ambiguous run
+through the operator recovery command. This block retains the trigger's
+single-flight slot but does not automatically pause the trigger or count as an
+exhausted workflow failure. Ordinary exhausted workflow failures still pause it.

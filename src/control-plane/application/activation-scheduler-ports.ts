@@ -1,5 +1,5 @@
 import type { CommandContext } from '@atolis-hq/eventing';
-import type { RunView, WorkspaceRecovery } from '../../execution/index.js';
+import type { ExecutionFailureCode, RunView, WorkspaceRecovery } from '../../execution/index.js';
 import type { IdGenerator } from '../../kernel/index.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
@@ -29,7 +29,12 @@ export interface OrchestrationPort {
   ): Promise<WorkflowInstanceView>;
   resolveExecutionFailure?(
     workflowInstanceId: string,
-    input: { readonly activationId: string; readonly runId: string; readonly reason: string },
+    input: {
+      readonly activationId: string;
+      readonly runId: string;
+      readonly reason: string;
+      readonly failureKind?: ExecutionFailureCode;
+    },
     context: CommandContext,
   ): Promise<WorkflowInstanceView | null>;
   retryRunnerQuotaFailure?(
@@ -96,6 +101,7 @@ export interface ActivationSchedulerDependencies {
   readonly closedWorkItemIds?: () => Promise<readonly string[]>;
   readonly dispatchPolicy?: DispatchPolicy;
   readonly maxConcurrentRuns?: number;
+  readonly maxOpenWorkItems?: number | null;
   readonly maxDispatches?: number;
   readonly schedulerSerialiser?: ActivationSchedulerSerialiser;
 }
