@@ -14,7 +14,7 @@ import {
 } from '@atolis-hq/eventing';
 import { createInMemoryProcessorRunSerialiser } from '@atolis-hq/eventing/memory';
 import { activityProjectionDefinitions } from '../activities/index.js';
-import { artifactProjection } from '../artifacts/index.js';
+import { artifactProjection, operatorInstructionsProjection } from '../artifacts/index.js';
 import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
 import { conversationProjection } from '../conversations/index.js';
 import { executionProjection, runsByWorkflowInstanceProjection } from '../execution/index.js';
@@ -37,6 +37,7 @@ import type { EventProcessorRuntime } from './event-processor-runtime.js';
 
 export const runtimeProjectionDefinitions = [
   artifactProjection,
+  operatorInstructionsProjection,
   conversationProjection,
   workProjection,
   resourceProjection,

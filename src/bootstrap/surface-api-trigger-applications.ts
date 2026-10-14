@@ -1,4 +1,9 @@
 import { correlationId, EventActorKind } from '@atolis-hq/eventing';
+import { createHash } from 'node:crypto';
+import {
+  OperatorInstructionsConflict,
+  operatorInstructionsProjection,
+} from '../artifacts/index.js';
 import { CronTriggerPolicy, type TriggerInspectionView } from '../control-plane/index.js';
 import {
   ApiCommandStatus,
@@ -14,7 +19,7 @@ export function createTriggerApplications(
   root: CompositionRoot,
   now: () => string,
 ): NonNullable<ApiApplications['triggers']> {
-  async function list() {
+  async function inspect() {
     const view = await root.triggers.get();
     const ids = new Set([
       ...root.config.controlPlane.triggers.map((config) => config.id),
@@ -25,6 +30,26 @@ export function createTriggerApplications(
     ]);
     const asOf = now();
     return { data: [...ids].sort().map((id) => present(id, view, asOf)), meta: { asOf } };
+  }
+
+  async function list() {
+    const result = await inspect();
+    await root.projectionSubscriptions.catchUp(operatorInstructionsProjection);
+    const configuredScopes = new Set(
+      root.config.controlPlane.triggers.flatMap((trigger) =>
+        trigger.contextScope === undefined ? [] : [trigger.contextScope],
+      ),
+    );
+    const orphanedInstructions = (
+      await root.operatorInstructions.list(root.projections, configuredScopes)
+    ).map(({ contextScope, revisionId, content, author, occurredAt }) => ({
+      contextScope,
+      revisionId,
+      content,
+      author,
+      occurredAt,
+    }));
+    return { ...result, orphanedInstructions };
   }
 
   function present(id: string, view: TriggerInspectionView, asOf: string): TriggerResponse {
@@ -59,7 +84,7 @@ export function createTriggerApplications(
   }
 
   async function command(id: string, request: ApiCommandRequest, pause: boolean) {
-    if (!(await list()).data.some((entry) => entry.triggerId === id))
+    if (!(await inspect()).data.some((entry) => entry.triggerId === id))
       return {
         conflict: true as const,
         code: 'trigger-not-found',
@@ -84,9 +109,73 @@ export function createTriggerApplications(
   return {
     list,
     async detail(id) {
-      const result = await list();
+      const result = await inspect();
       const data = result.data.find((entry) => entry.triggerId === id);
-      return data === undefined ? undefined : { data, meta: result.meta };
+      if (data === undefined) return undefined;
+      const scope = data.definition?.contextScope;
+      const instructions =
+        scope === undefined ? null : await root.operatorInstructions.current(scope);
+      return {
+        data: {
+          ...data,
+          operatorInstructions:
+            instructions === null
+              ? null
+              : {
+                  contextScope: instructions.contextScope,
+                  revisionId: instructions.revisionId,
+                  content: instructions.content,
+                  author: instructions.author,
+                  occurredAt: instructions.occurredAt,
+                },
+        },
+        meta: result.meta,
+      };
+    },
+    async saveInstructions(id, request) {
+      const scope = root.config.controlPlane.triggers.find(
+        (trigger) => trigger.id === id,
+      )?.contextScope;
+      if (scope === undefined)
+        return {
+          conflict: true,
+          code: 'trigger-no-context-scope',
+          detail:
+            'This trigger has no explicit contextScope. Configure a named scope before editing instructions.',
+        };
+      const context = {
+        commandId: 'operator-instructions:' + request.idempotencyKey,
+        correlationId: correlationId(request.idempotencyKey),
+        occurredAt: now(),
+        actor: { kind: EventActorKind.Operator, id: 'web' },
+      };
+      try {
+        await root.operatorInstructions.save(
+          {
+            contextScope: scope,
+            content: request.content,
+            expectedRevisionId: request.expectedRevisionId,
+            revisionId: createHash('sha256').update(request.idempotencyKey).digest('hex'),
+          },
+          context,
+        );
+      } catch (error) {
+        if (error instanceof OperatorInstructionsConflict)
+          return { conflict: true, code: 'operator-instructions-conflict', detail: error.message };
+        if (error instanceof Error && error.message.includes('byte limit'))
+          return {
+            conflict: true,
+            code: 'operator-instructions-size-limit',
+            detail: error.message,
+          };
+        throw error;
+      }
+      return {
+        commandId: context.commandId,
+        idempotencyKey: request.idempotencyKey,
+        acceptedAt: now(),
+        status: ApiCommandStatus.Completed,
+      };
     },
     pause: (id, request) => command(id, request, true),
     resume: (id, request) => command(id, request, false),

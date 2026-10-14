@@ -19,6 +19,13 @@ export const TriggerStatus = {
 export type TriggerStatus = ValueOf<typeof TriggerStatus>;
 
 export interface TriggerResponse {
+  readonly operatorInstructions?: {
+    readonly contextScope: string;
+    readonly revisionId: string;
+    readonly content: string;
+    readonly author: string;
+    readonly occurredAt: string;
+  } | null;
   readonly triggerId: string;
   readonly status: TriggerStatus;
   readonly definition: TriggerConfig | null;
@@ -28,4 +35,12 @@ export interface TriggerResponse {
   readonly pending: readonly TriggerView['coalesced'][string][];
   readonly latestSkip: TriggerSkipDiagnostic | null;
   readonly invocations: readonly (TriggerInvocationView & { readonly workItemKey: string })[];
+}
+
+export interface OrphanedInstructionsResponse {
+  readonly contextScope: string;
+  readonly revisionId: string;
+  readonly content: string | null;
+  readonly author: string;
+  readonly occurredAt: string;
 }

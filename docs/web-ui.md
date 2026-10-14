@@ -126,3 +126,9 @@ After the PR merges, the status becomes **PR merged; recovery pending**, with
 advancement guidance. The usual workflow/work state shows completion afterward.
 The work-detail API exposes this explanation as `orchestration.primary.mergePolicyBlock`;
 only applicable merge restrictions are included.
+
+The trigger detail page includes **Operator standing instructions** for its explicit contextScope. All triggers with that scope share the document. Edit Markdown, preview it with the same HTML-disabled rendering as the artifact viewer, and save it for later runs. Conflicting saves preserve the draft and offer an explicit reload of current instructions. Triggers without a scope show a configuration message and no editor. Run details show the scope and immutable instructions revision (or absence) received at run start.
+
+The empty instructions editor explains its purpose and that it applies to every trigger sharing the scope. The first operator save creates `instructions.md`; it does not depend on scope membership. The Triggers list also shows retained orphaned documents after scope removal or renaming, even when no configured triggers remain. Configure a trigger with that same explicit scope to reconnect and edit the document.
+
+Orphan inspection uses the rebuildable operator-instructions projection. The host catches up new facts incrementally; repeated polling does not scan journal history. An unreadable orphan body shows an unavailable-content message while retaining its scope, author and revision.

@@ -81,3 +81,26 @@ export interface ArtifactDelegationGrant {
   readonly childWorkItemId: ReturnType<typeof workItemId>;
   readonly childReferences: readonly ArtifactRevisionReference[];
 }
+
+export const operatorInstructionsRevisionSchema = z
+  .object({
+    contextScope: artifactSharedContextNameSchema,
+    revisionId: z.string().min(1),
+    location: z.string().min(1),
+    digest: z.string().min(1),
+    byteLength: z.number().int().nonnegative(),
+    author: z.string().min(1),
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+export type OperatorInstructionsRevision = z.infer<typeof operatorInstructionsRevisionSchema>;
+
+export type OperatorInstructionsDocument = OperatorInstructionsRevision & {
+  readonly content: string;
+};
+
+/** Operator inspection can retain revision metadata when its bytes are unavailable. */
+export type OperatorInstructionsListing = OperatorInstructionsRevision & {
+  readonly content: string | null;
+};

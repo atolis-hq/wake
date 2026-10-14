@@ -26,6 +26,8 @@ export function createExecutionEventData(input: ExecutionEventDataInput): Execut
   switch (input.eventType) {
     case ExecutionEventType.RunPreparationStarted:
       return createEventData(input);
+    case ExecutionEventType.RunOperatorInstructionsCaptured:
+      return createEventData(input);
     case ExecutionEventType.RunStarted:
       return createEventData(input);
     case ExecutionEventType.RunSucceeded:

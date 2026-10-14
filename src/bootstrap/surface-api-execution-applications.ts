@@ -79,8 +79,25 @@ export function createExecutionApplications(
         runId,
       );
       if (stored?.value.view == null) return undefined;
+      const data = await enrichRun(root, presentRun(stored.value.view));
+      const reference = data.operatorInstructions;
+      const instructions =
+        reference?.revisionId == null
+          ? null
+          : await root.operatorInstructions.read(reference.contextScope, reference.revisionId);
       return {
-        data: await enrichRun(root, presentRun(stored.value.view)),
+        data:
+          instructions === null
+            ? data
+            : {
+                ...data,
+                operatorInstructions: {
+                  ...reference!,
+                  content: instructions.content,
+                  author: instructions.author,
+                  occurredAt: instructions.occurredAt,
+                },
+              },
         meta: await projectionMeta(root.journal, [stored], now()),
       };
     },

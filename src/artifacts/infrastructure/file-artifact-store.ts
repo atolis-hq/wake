@@ -23,23 +23,40 @@ export class FileArtifactStore {
     readonly bytes: Uint8Array;
   }): Promise<StoredArtifactBytes> {
     assertSegment(input.workItemId, 'Work item ID');
-    assertSegment(input.revisionId, 'Artifact revision ID');
-    const digest = createHash('sha256').update(input.bytes).digest('hex');
-    const location = join(input.workItemId, `${input.revisionId}.${digest}`);
+    return this.writeRevision([input.workItemId], input.revisionId, input.bytes);
+  }
+
+  private async writeRevision(
+    namespace: readonly string[],
+    revisionId: string,
+    bytes: Uint8Array,
+  ): Promise<StoredArtifactBytes> {
+    assertSegment(revisionId, 'Artifact revision ID');
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    const location = join(...namespace, `${revisionId}.${digest}`);
     const destination = this.absolute(location);
     await mkdir(dirname(destination), { recursive: true });
     const temporary = `${destination}.${randomUUID()}.pending`;
     try {
-      await writeFile(temporary, input.bytes);
+      await writeFile(temporary, bytes);
       await rename(temporary, destination);
     } finally {
       await rm(temporary, { force: true });
     }
     return {
       location,
-      byteLength: input.bytes.byteLength,
+      byteLength: bytes.byteLength,
       digest,
     };
+  }
+
+  async writeOperatorInstructions(input: {
+    readonly contextScope: string;
+    readonly revisionId: string;
+    readonly bytes: Uint8Array;
+  }): Promise<StoredArtifactBytes> {
+    const scopeKey = createHash('sha256').update(input.contextScope).digest('hex');
+    return this.writeRevision(['operator-instructions', scopeKey], input.revisionId, input.bytes);
   }
 
   async read(location: string): Promise<Uint8Array> {

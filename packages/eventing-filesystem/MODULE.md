@@ -35,3 +35,5 @@ are fresh-only: this adapter neither reads nor migrates prior projection paths.
 
 Keep Node filesystem detail behind Eventing ports. Do not add domain knowledge,
 Wake path discovery, or a new persistence service here.
+
+The journal’s optional fresh stream-read request checks current segment fingerprints instead of the bounded read cache. Operator documents and other immediate cross-host decisions can opt into this through Eventing’s public port.

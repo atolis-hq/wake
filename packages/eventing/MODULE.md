@@ -31,3 +31,5 @@ nor Node filesystem APIs.
 
 Define portable contracts and runtime capabilities here. Put a concrete storage
 adapter in its own package and compose it in the consuming application.
+
+Journal stream reads accept an optional fresh-read request for decisions that must observe already committed cross-host writes. In-memory adapters are inherently fresh; caching adapters must bypass their freshness window when requested.

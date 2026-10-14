@@ -1,5 +1,6 @@
 import type { AnalyticsReportWindowId, WakeProblemDetails } from '../../../api/contracts/index.js';
 import type { RunResolutionStatusValue } from '../../../api/contracts/transport-values.js';
+import { object } from './decoder-primitives.js';
 import {
   collectionDecoder,
   decodeAcceptedCommand,
@@ -27,7 +28,7 @@ import {
   decodeProblem,
   decodeWebhookSetup,
 } from './system-decoders.js';
-import { decodeTrigger, decodeTriggers } from './trigger-decoders.js';
+import { decodeOrphanedInstructions, decodeTrigger, decodeTriggers } from './trigger-decoders.js';
 
 export class ApiProblem extends Error {
   constructor(readonly problem: WakeProblemDetails) {
@@ -64,9 +65,36 @@ export class WakeApiClient {
   };
 
   readonly triggers = {
-    list: (signal?: AbortSignal) => this.get('/triggers', resourceDecoder(decodeTriggers), signal),
+    list: (signal?: AbortSignal) =>
+      this.get(
+        '/triggers',
+        (value: unknown) => {
+          const resource = resourceDecoder(decodeTriggers)(value);
+          const record = object(value, 'triggers');
+          return {
+            ...resource,
+            orphanedInstructions: decodeOrphanedInstructions(record.orphanedInstructions ?? []),
+          };
+        },
+        signal,
+      ),
     detail: (id: string, signal?: AbortSignal) =>
       this.get('/triggers/' + encodeURIComponent(id), resourceDecoder(decodeTrigger), signal),
+    saveInstructions: (
+      id: string,
+      content: string,
+      expectedRevisionId: string | null,
+      idempotencyKey: string,
+    ) =>
+      this.request(
+        '/triggers/' + encodeURIComponent(id) + '/commands/instructions',
+        resourceDecoder(decodeAcceptedCommand),
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ content, expectedRevisionId, idempotencyKey }),
+        },
+      ),
     command: (id: string, name: 'pause' | 'resume', idempotencyKey: string, signal?: AbortSignal) =>
       this.command(
         '/triggers/' + encodeURIComponent(id) + '/commands/' + name,

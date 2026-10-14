@@ -11,6 +11,7 @@ import {
   ArtifactContextService,
   FileArtifactMcpSessionStore,
   FileArtifactStore,
+  OperatorInstructionsService,
   createArtifactService,
 } from '../artifacts/index.js';
 import {
@@ -124,6 +125,7 @@ export interface CompositionRoot {
   readonly activities: ActivityRegistry;
   readonly work: ReturnType<typeof createWorkService>;
   readonly artifacts: ReturnType<typeof createArtifactService>;
+  readonly operatorInstructions: OperatorInstructionsService;
   readonly conversations: ReturnType<typeof createConversationService>;
   readonly resources: ReturnType<typeof createResourceService>;
   readonly pullRequests: ReturnType<typeof createPullRequestService>;
@@ -185,6 +187,11 @@ export async function createCompositionRoot(
     config.artifacts,
   );
   const artifactContexts = new ArtifactContextService(journal, artifacts);
+  const operatorInstructions = new OperatorInstructionsService(
+    journal,
+    new FileArtifactStore(paths.artifactsRoot),
+    config.artifacts,
+  );
   const artifactMcpSessions = new FileArtifactMcpSessionStore(paths.artifactsRoot, () =>
     clock.now().toISOString(),
   );
@@ -278,6 +285,8 @@ export async function createCompositionRoot(
       now: () => clock.now().toISOString(),
       nextId: () => ids.next('artifact'),
       sharedContext: artifactTriggerContext.provision,
+      operatorInstructions,
+      journal,
     }),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
     ...(transcriptStore !== undefined
@@ -399,6 +408,7 @@ export async function createCompositionRoot(
     activities,
     work,
     artifacts,
+    operatorInstructions,
     conversations,
     resources,
     pullRequests,

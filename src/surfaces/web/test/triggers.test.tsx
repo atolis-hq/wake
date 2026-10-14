@@ -209,3 +209,176 @@ it('retries the original command and key after a racing status refresh', async (
   expect(commands[0]!.url).toContain('/commands/pause');
   expect(commands[1]).toEqual(commands[0]);
 });
+
+it('edits scope instructions and preserves its draft on a conflicting save', async () => {
+  const trigger = entry({
+    definition: {
+      id: 'oversight',
+      workflow: 'inspect',
+      contextScope: 'review',
+      on: { cron: '* * * * *' },
+    },
+    operatorInstructions: {
+      contextScope: 'review',
+      revisionId: 'revision-1',
+      content: '# Only ready issues',
+      author: 'web',
+      occurredAt: asOf,
+    },
+  });
+  const requests: unknown[] = [];
+  mount(
+    '/triggers/oversight',
+    vi.fn(async (_input, init) => {
+      if (init?.method === 'POST') {
+        requests.push(JSON.parse(String(init.body)));
+        return json(
+          {
+            type: 'about:blank',
+            status: 409,
+            title: 'Conflict',
+            detail: 'Instructions changed. Reload before saving; your draft has been preserved.',
+          },
+          409,
+        );
+      }
+      return json({ data: trigger, meta: { asOf } });
+    }),
+  );
+  expect(await screen.findByRole('heading', { name: 'Only ready issues' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit instructions' }));
+  const editor = screen.getByRole('textbox', { name: 'Instructions (Markdown)' });
+  fireEvent.change(editor, { target: { value: 'Only urgent issues' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save instructions' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('Instructions changed');
+  expect((editor as HTMLTextAreaElement).value).toBe('Only urgent issues');
+  expect(requests).toEqual([
+    expect.objectContaining({ content: 'Only urgent issues', expectedRevisionId: 'revision-1' }),
+  ]);
+});
+
+it('rejects editing a trigger with no explicit scope without inventing one', async () => {
+  mount(
+    '/triggers/oversight',
+    vi.fn(async () => json({ data: entry(), meta: { asOf } })),
+  );
+  expect(await screen.findByText(/has no explicit contextScope/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Edit instructions' })).toBeNull();
+});
+
+it('saves operator instructions and renders the refreshed Markdown', async () => {
+  let trigger = entry({
+    definition: { id: 'oversight', workflow: 'inspect', contextScope: 'review', on: {} },
+    operatorInstructions: null,
+  });
+  mount(
+    '/triggers/oversight',
+    vi.fn(async (_input, init) => {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as {
+          content: string;
+          expectedRevisionId: string | null;
+          idempotencyKey: string;
+        };
+        expect(body.expectedRevisionId).toBeNull();
+        trigger = {
+          ...trigger,
+          operatorInstructions: {
+            contextScope: 'review',
+            revisionId: 'saved',
+            content: body.content,
+            author: 'web',
+            occurredAt: asOf,
+          },
+        };
+        return json({
+          data: {
+            commandId: 'save',
+            idempotencyKey: body.idempotencyKey,
+            acceptedAt: asOf,
+            status: 'completed',
+          },
+          meta: { asOf },
+        });
+      }
+      return json({ data: trigger, meta: { asOf } });
+    }),
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit instructions' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Instructions (Markdown)' }), {
+    target: { value: '# Ready only' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save instructions' }));
+  expect(await screen.findByRole('heading', { name: 'Ready only' })).toBeTruthy();
+});
+
+it('explains lazy creation and shared scope in the empty editor placeholder', async () => {
+  const trigger = entry({
+    definition: { id: 'oversight', workflow: 'inspect', contextScope: 'review', on: {} },
+    operatorInstructions: null,
+  });
+  mount(
+    '/triggers/oversight',
+    vi.fn(async () => json({ data: trigger, meta: { asOf } })),
+  );
+  expect(await screen.findByText(/No instructions document exists yet/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit instructions' }));
+  const editor = screen.getByPlaceholderText(
+    /Describe what agents should do on future invocations/,
+  );
+  expect((editor as HTMLTextAreaElement).value).toBe('');
+  expect(editor.getAttribute('placeholder')).toContain('every trigger sharing this context scope');
+});
+
+it('shows orphaned documents when no triggers remain, with safe Markdown and reconnection guidance', async () => {
+  mount(
+    '/triggers',
+    vi.fn(async () =>
+      json({
+        data: [],
+        orphanedInstructions: [
+          {
+            contextScope: 'old.review',
+            revisionId: 'saved',
+            content: '# Retained criteria\n<script>bad()</script>',
+            author: 'web',
+            occurredAt: asOf,
+          },
+        ],
+        meta: { asOf },
+      }),
+    ),
+  );
+  expect(
+    await screen.findByRole('heading', { name: 'Orphaned operator instructions' }),
+  ).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'old.review' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Retained criteria' })).toBeTruthy();
+  expect(screen.getByText(/Configure a trigger with the same contextScope/)).toBeTruthy();
+  expect(document.querySelector('script')).toBeNull();
+});
+
+it('retains orphan metadata and reports unavailable content without hiding the Triggers page', async () => {
+  mount(
+    '/triggers',
+    vi.fn(async () =>
+      json({
+        data: [],
+        orphanedInstructions: [
+          {
+            contextScope: 'retired',
+            revisionId: 'saved',
+            content: null,
+            author: 'web',
+            occurredAt: asOf,
+          },
+        ],
+        meta: { asOf },
+      }),
+    ),
+  );
+  expect(await screen.findByRole('heading', { name: 'retired' })).toBeTruthy();
+  expect(screen.getByText(/Instructions content is unavailable/)).toBeTruthy();
+  expect(screen.getByText(/Revision: saved/)).toBeTruthy();
+  expect(screen.getByText('No triggers configured or recorded')).toBeTruthy();
+});

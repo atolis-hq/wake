@@ -476,6 +476,7 @@ function createHttpStarter(
       throw new Error('Packaged Wake web assets are missing');
     const server = createSurfaceHttpServer({
       dispatcher: createApiDispatcher(api),
+      operatorInstructionsMaxWriteBytes: root.config.artifacts.maxWriteBytes,
       credentials: await loadOrCreateCredentials(root.paths.wakeRoot),
       auth: {
         disabled: root.config.surfaces.web.auth.disabled,

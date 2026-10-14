@@ -99,8 +99,9 @@ orchestration:
       }),
     );
     const advertised = await client.listTools();
-    expect(advertised.tools).toHaveLength(5);
-    for (const tool of advertised.tools) expect(tool.name).toMatch(/^wake_artifacts_[a-z]+$/);
+    expect(advertised.tools).toHaveLength(6);
+    for (const tool of advertised.tools)
+      expect(tool.name).toMatch(/^wake_(artifacts_[a-z]+|context_instructions_read)$/);
     const write = await client.callTool({
       name: 'wake_artifacts_write',
       arguments: { path: 'plan.md', content: '# Plan', mediaType: 'text/markdown' },

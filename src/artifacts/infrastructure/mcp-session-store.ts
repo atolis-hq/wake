@@ -6,7 +6,9 @@ import type { WorkItemId } from '../../work/index.js';
 import {
   artifactRevisionReferenceSchema,
   artifactSharedContextNameSchema,
+  operatorInstructionsRevisionSchema,
   type ArtifactRevisionReference,
+  type OperatorInstructionsDocument,
 } from '../contracts/context.js';
 
 export interface ArtifactMcpSessionDescriptor {
@@ -19,6 +21,7 @@ export interface ArtifactMcpSessionDescriptor {
   readonly sharedReferences?: readonly ArtifactRevisionReference[];
   readonly currentMemory?: ArtifactRevisionReference | null;
   readonly contextScope?: string;
+  readonly operatorInstructions?: OperatorInstructionsDocument;
 }
 
 interface StoredArtifactMcpSessionDescriptor extends ArtifactMcpSessionDescriptor {
@@ -88,6 +91,9 @@ export class FileArtifactMcpSessionStore {
 
 const sharedContextSchema = z.object({
   contextScope: artifactSharedContextNameSchema.optional(),
+  operatorInstructions: operatorInstructionsRevisionSchema
+    .extend({ content: z.string() })
+    .optional(),
   sharedReferences: z.array(artifactRevisionReferenceSchema).optional(),
   currentMemory: artifactRevisionReferenceSchema.nullable().optional(),
 });
@@ -95,6 +101,7 @@ const sharedContextSchema = z.object({
 function validSharedContext(descriptor: Partial<ArtifactMcpSessionDescriptor>): boolean {
   return sharedContextSchema.safeParse({
     contextScope: descriptor.contextScope,
+    operatorInstructions: descriptor.operatorInstructions,
     sharedReferences: descriptor.sharedReferences,
     currentMemory: descriptor.currentMemory,
   }).success;

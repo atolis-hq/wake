@@ -40,17 +40,12 @@ export async function dispatchCommand(
   if (work !== undefined) return work;
   const maintenance = await dispatchMaintenanceClear(applications, url.pathname, body);
   if (maintenance !== undefined) return maintenance;
+  const instructions = await dispatchInstructions(applications, url.pathname, body);
+  if (instructions !== undefined) return instructions;
   const request = commandRequest(body);
   if (isHttpResponse(request)) return request;
-  const trigger = /^\/api\/v1\/triggers\/([^/]+)\/commands\/(pause|resume)$/.exec(url.pathname);
-  if (trigger !== null) {
-    const id = decodePathSegment(trigger[1]!);
-    if (id instanceof ApiPathError) return invalidPath(id.message);
-    if (applications.triggers === undefined) return unavailable('triggers');
-    const operation =
-      trigger[2] === 'pause' ? applications.triggers.pause : applications.triggers.resume;
-    return accepted(await operation(id, request), applications.now(), 200);
-  }
+  const trigger = await dispatchTriggerCommand(applications, url.pathname, request);
+  if (trigger !== undefined) return trigger;
   const control = await dispatchControlCommand(applications, url.pathname, request);
   if (control !== undefined) return control;
   const runner = await dispatchRunnerCommand(applications, url.pathname, request);
@@ -264,4 +259,60 @@ function isHttpResponse(value: unknown): value is ApiHttpResponse {
     'status' in value &&
     typeof value.status === 'number'
   );
+}
+
+async function dispatchInstructions(
+  applications: ApiApplications,
+  pathname: string,
+  body: unknown,
+): Promise<ApiHttpResponse | undefined> {
+  const instructions = /^\/api\/v1\/triggers\/([^/]+)\/commands\/instructions$/.exec(pathname);
+  if (instructions !== null) {
+    const id = decodePathSegment(instructions[1]!);
+    if (id instanceof ApiPathError) return invalidPath(id.message);
+    if (
+      !isObject(body) ||
+      Object.keys(body).some(
+        (key) => !['idempotencyKey', 'content', 'expectedRevisionId'].includes(key),
+      )
+    )
+      return invalidRequest('', 'Expected idempotencyKey, content and expectedRevisionId');
+    const request = commandRequest({ idempotencyKey: body.idempotencyKey });
+    if (isHttpResponse(request)) return request;
+    if (typeof body.content !== 'string') return invalidRequest('content', 'Must be a string');
+    if (
+      body.expectedRevisionId !== null &&
+      (typeof body.expectedRevisionId !== 'string' || body.expectedRevisionId.length === 0)
+    )
+      return invalidRequest('expectedRevisionId', 'Must be a revision ID or null');
+    const save = applications.triggers?.saveInstructions;
+    if (save === undefined) return unavailable('operator-instructions');
+    return accepted(
+      await save(id, {
+        ...request,
+        content: body.content,
+        expectedRevisionId: body.expectedRevisionId,
+      }),
+      applications.now(),
+      200,
+    );
+  }
+  return undefined;
+}
+
+async function dispatchTriggerCommand(
+  applications: ApiApplications,
+  pathname: string,
+  request: ApiCommandRequest,
+): Promise<ApiHttpResponse | undefined> {
+  const trigger = /^\/api\/v1\/triggers\/([^/]+)\/commands\/(pause|resume)$/.exec(pathname);
+  if (trigger !== null) {
+    const id = decodePathSegment(trigger[1]!);
+    if (id instanceof ApiPathError) return invalidPath(id.message);
+    if (applications.triggers === undefined) return unavailable('triggers');
+    const operation =
+      trigger[2] === 'pause' ? applications.triggers.pause : applications.triggers.resume;
+    return accepted(await operation(id, request), applications.now(), 200);
+  }
+  return undefined;
 }

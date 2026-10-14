@@ -121,3 +121,5 @@ and lock semantics.
 
 For the current module topology and advancement path, see
 [Architecture](architecture.md).
+
+Operator instructions are recorded as `artifact-context.instructions-edited` facts in the named context stream. Each fact includes revision metadata, expected prior revision, operator author and time. `execution.run-operator-instructions-captured` retains the scope and revision supplied to a run; a null revision records that the scope had no instructions.

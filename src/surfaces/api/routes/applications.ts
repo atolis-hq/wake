@@ -11,6 +11,7 @@ import type {
   ConversationMessageRequest,
   HealthResponse,
   MetricsResponse,
+  OrphanedInstructionsResponse,
   ResourceItemResponse,
   ResourceResponse,
   ResponseMeta,
@@ -82,8 +83,19 @@ export interface ApiApplications {
     clearMaintenance?(command: ApiClearMaintenanceRequest): Promise<ApiCommandResult>;
   };
   readonly triggers?: {
-    list(): Promise<ApiResourceResult<readonly TriggerResponse[]>>;
+    list(): Promise<
+      ApiResourceResult<readonly TriggerResponse[]> & {
+        readonly orphanedInstructions?: readonly OrphanedInstructionsResponse[];
+      }
+    >;
     detail(id: string): Promise<ApiResourceResult<TriggerResponse> | undefined>;
+    saveInstructions?(
+      id: string,
+      command: ApiCommandRequest & {
+        readonly content: string;
+        readonly expectedRevisionId: string | null;
+      },
+    ): Promise<ApiCommandResult>;
     pause(id: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     resume(id: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
   };

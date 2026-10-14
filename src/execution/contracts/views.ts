@@ -15,6 +15,10 @@ import { type RunStatus } from './vocabulary.js';
 export type RunTransportStatus = RunStatus;
 
 export interface RunView {
+  readonly operatorInstructions?: {
+    readonly contextScope: string;
+    readonly revisionId: string | null;
+  };
   readonly runId: RunId;
   readonly activationId: ActivationId;
   readonly activity: ActivityName;

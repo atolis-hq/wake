@@ -127,6 +127,7 @@ export const runnerResultPayloadSchema = z
 export const ExecutionEventType = {
   RunPreparationStarted: 'execution.run-preparation-started',
   RunStarted: 'execution.run-started',
+  RunOperatorInstructionsCaptured: 'execution.run-operator-instructions-captured',
   RunSucceeded: 'execution.run-succeeded',
   RunFailed: 'execution.run-failed',
   RunLeaseClaimed: 'execution.run-lease-claimed',
@@ -192,6 +193,10 @@ export interface RunPreparationStartedPayload {
 }
 
 export interface RunExecutionEventPayloads {
+  readonly [ExecutionEventType.RunOperatorInstructionsCaptured]: {
+    readonly contextScope: string;
+    readonly revisionId: string | null;
+  };
   readonly [ExecutionEventType.RunPreparationStarted]: RunPreparationStartedPayload;
   readonly [ExecutionEventType.RunStarted]: RunStartedPayload;
   readonly [ExecutionEventType.RunSucceeded]: {
@@ -265,6 +270,12 @@ const activationStreamSchema = z
 
 const runEventSchema: z.ZodType<RunExecutionEvent> = eventEnvelopeSchema.extend({
   event: z.discriminatedUnion('eventType', [
+    eventDataSchema.extend({
+      eventType: z.literal(ExecutionEventType.RunOperatorInstructionsCaptured),
+      payload: z
+        .object({ contextScope: z.string().min(1), revisionId: z.string().min(1).nullable() })
+        .strict(),
+    }),
     eventDataSchema.extend({
       eventType: z.literal(ExecutionEventType.RunPreparationStarted),
       payload: runPreparationStartedPayloadSchema,

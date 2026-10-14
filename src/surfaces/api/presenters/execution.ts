@@ -28,6 +28,9 @@ export function presentRun(value: RunView): RunResponse {
           ? outcomeSentinels[value.outcome.kind]
           : value.status.toUpperCase()));
   return {
+    ...(value.operatorInstructions === undefined
+      ? {}
+      : { operatorInstructions: value.operatorInstructions }),
     runId: value.runId,
     activationId: value.activationId,
     activity: value.activity,
