@@ -19,6 +19,11 @@ import { appendWithIntentRecovery } from './durable-append.js';
 import { expireTimedOutWaits } from './expire-timed-out-waits.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import {
+  prioritisePendingActivations,
+  type AgentActivityClassifier,
+  type PendingActivationEntry,
+} from './pending-activations.js';
+import {
   acceptResourceTransition,
   matchResourceTransitions,
 } from './resource-transition-matching.js';
@@ -38,6 +43,7 @@ export class AdvanceWorkflow {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
+    private readonly isAgentActivity: AgentActivityClassifier = () => true,
   ) {}
 
   async requestSupplementalActivity(
@@ -266,15 +272,9 @@ export class AdvanceWorkflow {
     return (await this.repository.load(id)).view;
   }
 
-  async listPendingActivations(workItemId?: string) {
-    return (await this.listAllLoaded())
-      .filter(
-        ({ view }) =>
-          view.status === WorkflowStatus.Active &&
-          view.pendingActivation !== undefined &&
-          (workItemId === undefined || view.workItemId === workItemId),
-      )
-      .map(({ view }) => ({ workflow: view, activation: view.pendingActivation! }));
+  async listPendingActivations(workItemId?: string): Promise<readonly PendingActivationEntry[]> {
+    const views = (await this.listAllLoaded()).map(({ view }) => view);
+    return prioritisePendingActivations(this.workflows, views, this.isAgentActivity, workItemId);
   }
 
   async listWaiting(signalKind?: SignalName) {

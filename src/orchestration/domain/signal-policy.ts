@@ -9,7 +9,7 @@ import type {
   SignalExpectation,
   WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
-import { OrchestrationEventType } from '../contracts/events.js';
+import { OrchestrationEventType, ResourceTransitionSignal } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
@@ -80,7 +80,11 @@ export function acceptSignal(
   ];
   const target =
     signal.outcome === ActivityOutcomeKind.Rejected ? expected.onRejectResume : expected.resume;
-  if (target !== undefined) resumeToTarget(events, definition, state, input, target);
+  // Human-only gate approvals are not "reacting to something"; watch verdicts and
+  // provider-observed resource transitions are.
+  const watchDriven =
+    authority.kind === ApprovalAuthorityKind.Watch || signal.kind === ResourceTransitionSignal;
+  if (target !== undefined) resumeToTarget(events, definition, state, input, target, watchDriven);
   else requestLegacyReentry(events, definition, state, input);
   return { kind: 'append', events };
 }

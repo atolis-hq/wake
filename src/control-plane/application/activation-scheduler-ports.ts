@@ -1,16 +1,24 @@
 import type { CommandContext } from '@atolis-hq/eventing';
 import type { RunView, WorkspaceRecovery } from '../../execution/index.js';
 import type { IdGenerator } from '../../kernel/index.js';
-import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
+import type {
+  ActivityActivationView,
+  PendingActivationPriority,
+  WorkflowInstanceView,
+} from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import type { WorkStatus } from '../../work/index.js';
 import type { DispatchPolicy } from '../domain/dispatch-policy.js';
 
 export interface OrchestrationPort {
   reconcileChildCompletions(context: CommandContext): Promise<void>;
-  listPendingActivations(
-    workItemId?: string,
-  ): Promise<readonly { workflow: WorkflowInstanceView; activation: ActivityActivationView }[]>;
+  listPendingActivations(workItemId?: string): Promise<
+    readonly {
+      workflow: WorkflowInstanceView;
+      activation: ActivityActivationView;
+      priority?: PendingActivationPriority;
+    }[]
+  >;
   listWaiting(): Promise<readonly (WorkflowInstanceView | null)[]>;
   get?(workflowInstanceId: string): Promise<WorkflowInstanceView | null>;
   expireTimedOutWaits?(context: CommandContext): Promise<readonly WorkflowInstanceView[]>;

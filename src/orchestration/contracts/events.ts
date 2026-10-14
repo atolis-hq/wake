@@ -279,6 +279,8 @@ export interface ActivityRequestedPayload {
   readonly sessionPolicy?: 'fresh' | undefined;
   readonly followOnIndex?: number | undefined;
   readonly supplemental?: boolean | undefined;
+  /** Requested as the resume of a watch- or provider-observed signal; absent means false. */
+  readonly watchDriven?: boolean | undefined;
 }
 
 export interface SignalExpectation {

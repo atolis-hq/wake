@@ -31,7 +31,9 @@ caller.
 - `DispatchPolicy.select` MUST return an empty list when `state.blocked` is
   `true` or `maxDispatches <= 0`, regardless of the candidate list.
 - Otherwise it MUST exclude every candidate that is `cancelled` or already
-  has an active run, order the remainder by ascending `requestedPosition`,
+  has an active run, order the remainder by ascending `priority.remainingAgentSteps`, then
+  watch-driven before not, then retried before not, then ascending
+  `requestedPosition`,
   break ties by ascending lexicographic `activationId`, and return at most
   `maxDispatches` of the result.
 - `QuotaPolicy.decide` MUST return `resume` when a `pausedUntil` deadline is
@@ -53,7 +55,8 @@ caller.
 | --- | --- | --- |
 | `workItemId` | WorkItem identity | The candidate's owning WorkItem. |
 | `activationId` | Orchestration activation identity | The candidate itself; also the selection's tie-break key. |
-| `requestedPosition` | number | The fairness ordering key; lower is selected first. |
+| `priority` | `remainingAgentSteps`, `watchDriven`, `retried` | Ordering keys computed by Orchestration; fewer steps, then watch-driven, then retried are selected first. |
+| `requestedPosition` | number | The fairness ordering key after priority; lower is selected first. |
 | `hasActiveRun` | boolean | Excludes the candidate from selection when `true`. |
 | `cancelled` | boolean | Excludes the candidate from selection when `true`. |
 

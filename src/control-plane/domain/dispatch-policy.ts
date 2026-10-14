@@ -1,7 +1,14 @@
+export interface DispatchPriority {
+  readonly remainingAgentSteps: number;
+  readonly watchDriven: boolean;
+  readonly retried: boolean;
+}
+
 export interface DispatchCandidate {
   readonly workItemId: string;
   readonly activationId: string;
   readonly requestedPosition: number;
+  readonly priority: DispatchPriority;
   readonly hasActiveRun: boolean;
   readonly cancelled: boolean;
 }
@@ -26,6 +33,9 @@ export class DispatchPolicy {
       .filter((candidate) => !candidate.cancelled && !candidate.hasActiveRun)
       .sort(
         (left, right) =>
+          left.priority.remainingAgentSteps - right.priority.remainingAgentSteps ||
+          Number(right.priority.watchDriven) - Number(left.priority.watchDriven) ||
+          Number(right.priority.retried) - Number(left.priority.retried) ||
           left.requestedPosition - right.requestedPosition ||
           left.activationId.localeCompare(right.activationId),
       )

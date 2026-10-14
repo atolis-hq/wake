@@ -43,6 +43,7 @@ export function activation(
     readonly stage?: StageName;
     readonly followOnIndex?: number;
     readonly supplemental?: boolean;
+    readonly watchDriven?: boolean;
   },
 ): ActivityRequestedPayload {
   return {
@@ -55,6 +56,7 @@ export function activation(
     ...(options.sessionPolicy === undefined ? {} : { sessionPolicy: options.sessionPolicy }),
     ...(options.followOnIndex === undefined ? {} : { followOnIndex: options.followOnIndex }),
     ...(options.supplemental === true ? { supplemental: true } : {}),
+    ...(options.watchDriven === true ? { watchDriven: true } : {}),
   };
 }
 

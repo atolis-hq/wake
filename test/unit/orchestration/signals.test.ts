@@ -281,6 +281,7 @@ it('restarts the current refine stage when an approval is rejected', async () =>
     OrchestrationEventType.ActivityRequested,
   ]);
   expect(events.at(-1)?.event.payload).toMatchObject({ activity: 'refine' });
+  expect(events.at(-1)?.event.payload).not.toHaveProperty('watchDriven');
 });
 
 it('honors an explicit rejection resume target', async () => {

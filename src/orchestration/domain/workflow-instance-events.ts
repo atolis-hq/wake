@@ -310,6 +310,7 @@ function applyActivityRequested(
     status: ActivityActivationStatus.Pending,
     ...(payload.followOnIndex === undefined ? {} : { followOnIndex: payload.followOnIndex }),
     ...(payload.supplemental === true ? { supplemental: true } : {}),
+    ...(payload.watchDriven === true ? { watchDriven: true as const } : {}),
   };
 }
 

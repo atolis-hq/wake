@@ -6,7 +6,11 @@ import {
   type ProjectionStore,
 } from '@atolis-hq/eventing';
 import { acquireFileLock } from '@atolis-hq/eventing-filesystem';
-import { createPullRequestService, type ActivityRegistry } from '../activities/index.js';
+import {
+  ActivityExecutionKind,
+  createPullRequestService,
+  type ActivityRegistry,
+} from '../activities/index.js';
 import {
   ArtifactContextService,
   FileArtifactMcpSessionStore,
@@ -222,7 +226,13 @@ export async function createCompositionRoot(
       compileWorkflow(name, definition, activities, Object.keys(config.orchestration.workflows)),
     ]),
   );
-  const orchestration = createOrchestrationService(journal, work, definitions, projections);
+  const orchestration = createOrchestrationService(
+    journal,
+    work,
+    definitions,
+    projections,
+    (activity) => activities.describe(activity).executionKind === ActivityExecutionKind.Agent,
+  );
   const workspaces = new GitWorkspaceProvider(
     paths.workspacesRoot,
     {

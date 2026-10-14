@@ -10,6 +10,7 @@ import {
 import { workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import {
   type ActivityActivationView,
+  type PendingActivationPriority,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import { TestWorld } from '../../e2e/support/world.js';
@@ -1179,7 +1180,11 @@ describe('advanceOnce', () => {
     }
 
     function createOrchestration(
-      pending: readonly { workflow: WorkflowInstanceView; activation: ActivityActivationView }[],
+      pending: readonly {
+        workflow: WorkflowInstanceView;
+        activation: ActivityActivationView;
+        priority?: PendingActivationPriority;
+      }[],
     ) {
       const started: string[] = [];
       const accepted: string[] = [];
@@ -1411,6 +1416,50 @@ describe('advanceOnce', () => {
         ],
       });
       expect(execution.attempts).toEqual(['activation-a', 'activation-b']);
+    });
+
+    it('drains near-complete, then watch-driven, then retried, then fresh work at maxConcurrentRuns 1', async () => {
+      const priorities = {
+        'fresh-old': { remainingAgentSteps: 3, watchDriven: false, retried: false },
+        retried: { remainingAgentSteps: 3, watchDriven: false, retried: true },
+        'watch-driven': { remainingAgentSteps: 3, watchDriven: true, retried: false },
+        'near-complete': { remainingAgentSteps: 1, watchDriven: false, retried: false },
+      };
+      const pending = Object.keys(priorities).map((id) => ({
+        ...candidate(id),
+        priority: priorities[id as keyof typeof priorities],
+      }));
+      const remaining = [...pending];
+      const orchestration = createOrchestration(remaining);
+      const execution = createExecution();
+      const advance = createAdvanceOnce(
+        orchestration.port,
+        execution.port,
+        { correlationsForWork: async () => [] } as never,
+        { now: () => new Date('2026-08-11T00:00:00.000Z') },
+        {
+          ids: { next: () => 'command-00000000000000000000000001' } as never,
+          maxConcurrentRuns: 1,
+          maxDispatches: 4,
+        },
+      );
+
+      for (let pass = 0; pass < pending.length; pass += 1) {
+        await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });
+        // The dispatched Run completes, freeing the single slot.
+        execution.runs.clear();
+        remaining.splice(
+          remaining.findIndex((item) => item.activation.activationId === execution.attempts.at(-1)),
+          1,
+        );
+      }
+
+      expect(execution.attempts).toEqual([
+        'activation-near-complete',
+        'activation-watch-driven',
+        'activation-retried',
+        'activation-fresh-old',
+      ]);
     });
   });
 });
