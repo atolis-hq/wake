@@ -195,7 +195,7 @@ export function cliRunner(
       return {
         identity: {
           kind: ExternalExecutionKind.Process,
-          id: request.runId,
+          id: process.identity ?? request.runId,
           startedAt: new Date().toISOString(),
         },
         result: process.result.then((value): AgentRunnerResult =>

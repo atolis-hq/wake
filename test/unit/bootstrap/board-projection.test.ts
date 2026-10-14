@@ -350,7 +350,7 @@ describe('operator board projection', () => {
       ),
       eventEnvelope(
         OrchestrationEventType.InstanceBlocked,
-        { reason: 'run-ambiguous-after-3-attempts' },
+        { reason: 'execution-recovery-ambiguous: runner inspection unavailable' },
         workflowInstanceStream(workflowId),
         3,
       ),
@@ -361,7 +361,7 @@ describe('operator board projection', () => {
 
     expect(view.cards[item]).toMatchObject({
       condition: 'needs-input',
-      blockReason: 'run-ambiguous-after-3-attempts',
+      blockReason: 'execution-recovery-ambiguous: runner inspection unavailable',
     });
   });
 
@@ -419,7 +419,7 @@ describe('operator board projection', () => {
       ),
       eventEnvelope(
         OrchestrationEventType.InstanceBlocked,
-        { reason: 'run-ambiguous-after-3-attempts' },
+        { reason: 'execution-recovery-ambiguous: runner inspection unavailable' },
         workflowInstanceStream(workflowId),
         3,
       ),

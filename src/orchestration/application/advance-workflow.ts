@@ -15,10 +15,15 @@ import {
   requestRunnerQuotaRetry,
 } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
+import type { AcceptActivityOutcome } from './accept-activity-outcome.js';
 import { appendWithIntentRecovery } from './durable-append.js';
 import { expireTimedOutWaits } from './expire-timed-out-waits.js';
 import { attributeOperatorRetry } from './operator-retry-attribution.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import {
+  resolveExecutionFailure,
+  type ExecutionFailureInput,
+} from './resolve-execution-failure.js';
 import {
   acceptResourceTransition,
   matchResourceTransitions,
@@ -39,6 +44,7 @@ export class AdvanceWorkflow {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
+    private readonly acceptOutcome: AcceptActivityOutcome['execute'],
   ) {}
 
   async requestSupplementalActivity(
@@ -114,43 +120,12 @@ export class AdvanceWorkflow {
     return expireTimedOutWaits(this.repository, context);
   }
 
-  async resolveExecutionFailure(
+  resolveExecutionFailure(
     id: WorkflowInstanceId,
-    input: { readonly activationId: ActivationId; readonly runId: string; readonly reason: string },
+    input: ExecutionFailureInput,
     context: CommandContext,
   ) {
-    const loaded = await this.repository.load(id);
-    if (
-      loaded.view === null ||
-      (loaded.view.status === WorkflowStatus.Blocked &&
-        !isAmbiguityResolutionBlock(loaded.view.blockReason)) ||
-      loaded.view.pendingActivation?.activationId !== input.activationId ||
-      loaded.view.acceptedOutcomes.includes(input.activationId)
-    )
-      return loaded.view;
-    await this.repository.append(id, loaded.sequence, [
-      workflowEventData({
-        eventId: `${context.commandId}:${OrchestrationEventType.ActivityExecutionFailed}`,
-        eventType: OrchestrationEventType.ActivityExecutionFailed,
-        occurredAt: context.occurredAt,
-        correlationId: context.correlationId,
-        causationId: context.commandId,
-        actor: context.actor,
-        source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-        payload: input,
-      }),
-      workflowEventData({
-        eventId: `${context.commandId}:${OrchestrationEventType.InstanceBlocked}`,
-        eventType: OrchestrationEventType.InstanceBlocked,
-        occurredAt: context.occurredAt,
-        correlationId: context.correlationId,
-        causationId: context.commandId,
-        actor: context.actor,
-        source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
-        payload: { reason: input.reason },
-      }),
-    ]);
-    return (await this.repository.load(id)).view;
+    return resolveExecutionFailure(this.repository, this.acceptOutcome, id, input, context);
   }
 
   async retryRunnerQuotaFailure(
@@ -324,6 +299,4 @@ export class AdvanceWorkflow {
   }
 }
 
-export function isAmbiguityResolutionBlock(reason: string | undefined): boolean {
-  return reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason);
-}
+export { isAmbiguityResolutionBlock } from './resolve-execution-failure.js';

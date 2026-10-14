@@ -22,6 +22,7 @@ import {
   ExecutionFailureCode,
   ExternalExecutionState,
   isActiveRunStatus,
+  RecoveryBlockReasonPrefix,
   RunStatus,
 } from '../contracts/vocabulary.js';
 import { RunRepository } from './run-repository.js';
@@ -72,6 +73,7 @@ export class RecoveryService {
     const currentRunId = runId(id);
     const loaded = await this.repository.load(currentRunId);
     const run = loaded.view;
+    if (run?.status === RunStatus.Ambiguous) await this.blockEscalated(run);
     if (run === null || !isActiveRunStatus(run.status)) return requireRun(run);
     if (run.lease !== undefined && new Date(run.lease.expiresAt) > this.clock.now())
       throw new Error(`Run ${id} does not have an expired lease`);
@@ -80,6 +82,7 @@ export class RecoveryService {
         currentRunId,
         run,
         'Preparation was interrupted before execution started',
+        ExecutionFailureCode.Interrupted,
       );
     if (run.externalExecution === undefined)
       return this.appendFailure(currentRunId, run, 'External execution was never reported');
@@ -89,7 +92,12 @@ export class RecoveryService {
     if (inspection.kind === ExternalExecutionState.Completed)
       return this.appendRecovered(currentRunId, run, inspection.result);
     if (inspection.kind === ExternalExecutionState.Absent)
-      return this.appendFailure(currentRunId, run, 'External execution is absent');
+      return this.appendFailure(
+        currentRunId,
+        run,
+        'Execution interrupted: original runner process is absent',
+        ExecutionFailureCode.Interrupted,
+      );
     return this.appendAmbiguity(currentRunId, run, inspection.reason);
   }
 
@@ -145,6 +153,10 @@ export class RecoveryService {
   ): Promise<readonly RunView[]> {
     const recovered: RunView[] = [];
     for (const run of await this.repository.list()) {
+      if (run.status === RunStatus.Ambiguous) {
+        await this.blockEscalated(run);
+        continue;
+      }
       if (!isActiveRunStatus(run.status)) continue;
       if (isLocallyActive(run.runId)) continue;
       if (run.lease !== undefined && new Date(run.lease.expiresAt) > this.clock.now()) continue;
@@ -178,16 +190,16 @@ export class RecoveryService {
     return this.append(id, recoveredDraft(id, run, { result, outcome, finishedAt }, finishedAt));
   }
 
-  private async appendFailure(id: RunId, run: RunView, message: string) {
+  private async appendFailure(
+    id: RunId,
+    run: RunView,
+    message: string,
+    kind: ExecutionFailureCode = ExecutionFailureCode.Unexpected,
+  ) {
     const finishedAt = this.clock.now().toISOString();
     return this.append(
       id,
-      failedDraft(
-        id,
-        run,
-        { failure: { kind: ExecutionFailureCode.Unexpected, message }, finishedAt },
-        finishedAt,
-      ),
+      failedDraft(id, run, { failure: { kind, message }, finishedAt }, finishedAt),
     );
   }
 
@@ -204,18 +216,21 @@ export class RecoveryService {
       drafts.push(ambiguousDraft(id, loaded.view, { reason, finishedAt: occurredAt }, occurredAt));
     await this.repository.append(id, loaded.sequence, drafts);
     const updated = (await this.repository.load(id)).view!;
-    if (updated.escalated)
-      await this.blocker?.block(
-        updated.workflowInstanceId,
-        `run-ambiguous-after-${attempt}-attempts`,
-        {
-          commandId: `${id}:recovery-escalation:${attempt}`,
-          correlationId: correlationId(updated.orchestrationGroupId),
-          occurredAt,
-          actor: { kind: EventActorKind.System, id: 'execution-recovery' },
-        },
-      );
+    if (updated.escalated) await this.blockEscalated(updated);
     return updated;
+  }
+
+  private async blockEscalated(run: RunView): Promise<void> {
+    await this.blocker?.block(
+      run.workflowInstanceId,
+      `${RecoveryBlockReasonPrefix} run ${run.runId}: ${run.failure?.message ?? 'Verify the runner has stopped, then resolve the ambiguous run'}`,
+      {
+        commandId: `${run.runId}:recovery-escalation:${run.ambiguityAttempts}`,
+        correlationId: correlationId(run.orchestrationGroupId),
+        occurredAt: run.finishedAt!,
+        actor: { kind: EventActorKind.System, id: 'execution-recovery' },
+      },
+    );
   }
 
   private async append(id: RunId, draft: RunExecutionEventData): Promise<RunView> {
@@ -266,7 +281,7 @@ function failedDraft(
   run: RunView,
   payload: {
     readonly failure: {
-      readonly kind: typeof ExecutionFailureCode.Unexpected;
+      readonly kind: ExecutionFailureCode;
       readonly message: string;
     };
     readonly finishedAt: string;

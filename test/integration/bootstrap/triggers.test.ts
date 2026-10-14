@@ -33,7 +33,7 @@ import {
   type TriggerConfig,
   type TriggerView,
 } from '../../../src/control-plane/index.js';
-import { isActiveRunStatus } from '../../../src/execution/index.js';
+import { RecoveryBlockReasonPrefix, isActiveRunStatus } from '../../../src/execution/index.js';
 import {
   OrchestrationEventType,
   orchestrationGroupId,
@@ -897,6 +897,39 @@ describe('durable trigger coordination', () => {
     await f.root.runnerPipeline.run({ maxProgress: 1 });
     expect(await invocations(f.journal)).toHaveLength(1);
     expect((await f.root.triggers.get()).coalesced).toEqual({});
+  });
+
+  it('retains the blocked slot without pausing for restart ambiguity across repeated recovery', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    const event = await source(f, 'restart-ambiguity');
+    await f.root.triggers.start(
+      f.config.controlPlane.triggers[0]!,
+      {
+        kind: TriggerSourceKind.Event,
+        eventId: event.event.eventId,
+        eventType: event.event.eventType,
+      },
+      f.context,
+      event,
+    );
+    const invocation = (await invocations(f.journal))[0]!;
+    const reason =
+      RecoveryBlockReasonPrefix +
+      ' runner identity unavailable; verify the old container stopped and resolve the run';
+    await f.root.orchestration.block(workflowInstanceId(invocation.workflowInstanceId), reason, {
+      ...f.context,
+      commandId: 'restart-block',
+    });
+    for (let i = 0; i < 3; i++) {
+      const root = await restart(f);
+      await root.runnerPipeline.run({ maxProgress: 1 });
+      expect((await root.triggers.get()).pauses.oversight).toBeUndefined();
+      expect(
+        (await root.orchestration.get(workflowInstanceId(invocation.workflowInstanceId)))
+          ?.blockReason,
+      ).toBe(reason);
+      expect(await invocations(f.journal)).toHaveLength(1);
+    }
   });
 
   it('pauses on exhausted workflow failures and does not reset retry counters on resume', async () => {

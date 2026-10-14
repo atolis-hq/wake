@@ -5,7 +5,7 @@ import type {
   TriggerSkipReason,
   TriggerSourceKind,
 } from '../../../control-plane/index.js';
-import type { RunStatus } from '../../../execution/index.js';
+import type { RecoveryBlockReasonPrefix, RunStatus } from '../../../execution/index.js';
 import { defineClosedVocabulary } from '../../../kernel/index.js';
 import type { WorkflowStatus } from '../../../orchestration/index.js';
 import type { ApiCommandStatus } from './control-plane.js';
@@ -144,3 +144,9 @@ export const WorkflowStatusValue: typeof WorkflowStatus = defineClosedVocabulary
   Blocked: 'blocked',
   Superseded: 'superseded',
 } as const);
+
+const recoveryBlockReasonShape = { 'execution-recovery-ambiguous:': true };
+
+export const RecoveryBlockReasonPrefixValue = Object.keys(
+  recoveryBlockReasonShape,
+)[0]! as typeof RecoveryBlockReasonPrefix;

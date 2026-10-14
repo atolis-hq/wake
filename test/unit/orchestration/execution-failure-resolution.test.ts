@@ -91,7 +91,10 @@ it('converts an ambiguity block into a retryable execution failure after an oper
     workItemId: work.workItemId,
     workflowName: workflowName('default'),
   });
-  await world.blockWorkflow(workflow.workflowInstanceId, 'run-ambiguous-after-3-attempts');
+  await world.blockWorkflow(
+    workflow.workflowInstanceId,
+    'execution-recovery-ambiguous: runner inspection unavailable',
+  );
 
   await world.resolveExecutionFailure(workflow.workflowInstanceId, {
     activationId: workflow.pendingActivation!.activationId,

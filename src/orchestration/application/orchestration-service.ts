@@ -2,7 +2,8 @@ import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 /* eslint-disable max-lines */
 import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
-import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
+import { type ActivationId, type ActivityOutcome } from '../../activities/index.js';
+import type { ExecutionFailureCode } from '../../execution/index.js';
 import {
   WorkStatus,
   type WorkItemId,
@@ -80,7 +81,9 @@ export class OrchestrationService {
     this.claims = new CoordinationClaims(journal);
     this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
     this.startWorkflow = new StartWorkflow(repository, this.claims, work, this.definitions);
-    this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow);
+    this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow, (command, context) =>
+      this.acceptActivityOutcome.execute(command, context),
+    );
     this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.childWorkflows = new RequestChild(
       repository,
@@ -278,7 +281,12 @@ export class OrchestrationService {
 
   resolveExecutionFailure(
     workflowInstanceId: WorkflowInstanceId,
-    input: { readonly activationId: ActivationId; readonly runId: string; readonly reason: string },
+    input: {
+      readonly activationId: ActivationId;
+      readonly runId: string;
+      readonly reason: string;
+      readonly failureKind?: ExecutionFailureCode;
+    },
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, () =>

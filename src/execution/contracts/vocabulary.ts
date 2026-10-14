@@ -24,6 +24,7 @@ export function isActiveRunStatus(
 
 export const ExecutionFailureCode = defineClosedVocabulary({
   Unexpected: 'unexpected-execution-failure',
+  Interrupted: 'interrupted-execution',
 } as const);
 
 export type ExecutionFailureCode = ValueOf<typeof ExecutionFailureCode>;
@@ -87,3 +88,9 @@ export const RunnerKind = {
 } as const;
 
 export type RunnerKind = ValueOf<typeof RunnerKind>;
+
+export const RecoveryBlockReasonPrefix = 'execution-recovery-ambiguous:';
+
+export function isRecoveryBlockReason(reason: string | undefined): boolean {
+  return reason?.startsWith(RecoveryBlockReasonPrefix) === true;
+}
