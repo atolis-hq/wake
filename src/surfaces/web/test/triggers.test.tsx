@@ -384,8 +384,8 @@ it('retains orphan metadata and reports unavailable content without hiding the T
 });
 
 it.each([
-  { disposition: 'started' },
-  { disposition: 'coalesced' },
+  { disposition: 'started', workItemId: 'work-started' },
+  { disposition: 'coalesced', activeWorkItemId: 'work-active' },
   { disposition: 'skipped', reason: 'capacity-unavailable' },
 ])('runs a configured trigger and shows the $disposition disposition', async (triggerOutcome) => {
   const calls: string[] = [];
@@ -409,7 +409,15 @@ it.each([
     }),
   );
   fireEvent.click(await screen.findByRole('button', { name: 'Run now' }));
-  expect((await screen.findByRole('status')).textContent).toContain(triggerOutcome.disposition);
+  expect((await screen.findByRole('status')).textContent).toContain(
+    triggerOutcome.disposition === 'coalesced' ? 'queued' : triggerOutcome.disposition,
+  );
+  if ('workItemId' in triggerOutcome)
+    expect(screen.getByRole('status').textContent).toContain(triggerOutcome.workItemId);
+  if ('activeWorkItemId' in triggerOutcome)
+    expect(screen.getByRole('status').textContent).toContain(
+      'behind ' + triggerOutcome.activeWorkItemId,
+    );
   if ('reason' in triggerOutcome)
     expect(screen.getByRole('status').textContent).toContain(triggerOutcome.reason);
   expect(calls).toHaveLength(1);

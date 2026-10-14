@@ -67,6 +67,7 @@ export async function requestManualTrigger(
           disposition: active
             ? ManualTriggerDisposition.Coalesced
             : ManualTriggerDisposition.Started,
+          ...activeWorkItem(view, coordinationKey),
         }
       : { disposition: ManualTriggerDisposition.Skipped, reason };
   const source: TriggerSource = {
@@ -129,19 +130,41 @@ async function resolvePausedRequest(
   pauseCleared: boolean,
   context: CommandContext,
 ): Promise<ManualTriggerOutcome | undefined> {
-  if (request?.manualOutcome?.disposition !== ManualTriggerDisposition.Started || !pauseCleared)
-    return request?.manualOutcome;
+  if (request?.manualOutcome === undefined) return undefined;
+  if (settledManualOutcome(request.manualOutcome)) return request.manualOutcome;
   const history = await ports.dependencies.history();
+  const invocation = history.find(
+    (invocation) =>
+      invocation.claim.triggerId === request.triggerId &&
+      invocation.claim.sources.some(
+        (source) => sourceIdentity(source) === sourceIdentity(request.source),
+      ),
+  );
   if (
-    history.some(
-      (invocation) =>
-        invocation.claim.triggerId === request.triggerId &&
-        invocation.claim.sources.some(
-          (source) => sourceIdentity(source) === sourceIdentity(request.source),
-        ),
-    )
+    request.manualOutcome.disposition === ManualTriggerDisposition.Coalesced &&
+    (!pauseCleared || invocation !== undefined)
   )
     return request.manualOutcome;
+  if (invocation?.startedAt !== undefined) {
+    const outcome: ManualTriggerOutcome = {
+      disposition: ManualTriggerDisposition.Started,
+      workItemId: invocation.claim.workItemId,
+    };
+    await ports.emit(
+      {
+        eventType: ControlEventType.TriggerRequestRecorded,
+        payload: {
+          ...request,
+          disposition: TriggerRequestDisposition.Started,
+          manualOutcome: outcome,
+        },
+      },
+      context,
+      'trigger:result:' + request.triggerId + ':' + sourceIdentity(request.source),
+    );
+    return outcome;
+  }
+  if (!pauseCleared || invocation !== undefined) return request.manualOutcome;
   // Pause clears unclaimed requests, but a committed claim still recovers normally.
   const fact = consumedTriggerRequest(request, TriggerSkipReason.Paused);
   await ports.emit(
@@ -167,4 +190,21 @@ function matchingManualRequest(
   )
     return event.event.payload;
   return undefined;
+}
+
+function activeWorkItem(
+  view: TriggerView,
+  coordinationKey: string,
+): { readonly activeWorkItemId?: string } {
+  const invocation = view.invocations.find(
+    (entry) => entry.claim.coordinationKey === coordinationKey && entry.result === undefined,
+  );
+  return invocation === undefined ? {} : { activeWorkItemId: invocation.claim.workItemId };
+}
+
+function settledManualOutcome(outcome: ManualTriggerOutcome): boolean {
+  return (
+    outcome.disposition === ManualTriggerDisposition.Skipped ||
+    (outcome.disposition === ManualTriggerDisposition.Started && outcome.workItemId !== undefined)
+  );
 }

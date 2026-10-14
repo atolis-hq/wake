@@ -3,7 +3,10 @@ import { useState } from 'react';
 import Markdown from 'react-markdown';
 import { Link, useParams } from 'react-router';
 import { TriggerStatus, type TriggerResponse } from '../../../../api/contracts/index.js';
-import { TriggerCommandNameValue } from '../../../../api/contracts/transport-values.js';
+import {
+  ManualTriggerDispositionValue,
+  TriggerCommandNameValue,
+} from '../../../../api/contracts/transport-values.js';
 import { useApiClient } from '../../api/context.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
 import { DataTable } from '../../components/data-table.js';
@@ -260,7 +263,15 @@ function TriggerControl({ trigger }: { readonly trigger: TriggerResponse }) {
       )}
       {command.data?.data.triggerOutcome && (
         <p role="status">
-          {command.data.data.triggerOutcome.disposition}
+          {command.data.data.triggerOutcome.disposition === ManualTriggerDispositionValue.Coalesced
+            ? 'queued'
+            : command.data.data.triggerOutcome.disposition}
+          {'workItemId' in command.data.data.triggerOutcome
+            ? ': ' + command.data.data.triggerOutcome.workItemId
+            : ''}
+          {'activeWorkItemId' in command.data.data.triggerOutcome
+            ? ' behind ' + command.data.data.triggerOutcome.activeWorkItemId
+            : ''}
           {'reason' in command.data.data.triggerOutcome
             ? ': ' + command.data.data.triggerOutcome.reason
             : ''}

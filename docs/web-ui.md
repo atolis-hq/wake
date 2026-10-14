@@ -136,15 +136,17 @@ Orphan inspection uses the rebuildable operator-instructions projection. The hos
 Each configured trigger offers **Run now**. Paused triggers require **Resume**
 first. During an active invocation, a manual request coalesces into the pending
 request for reconsideration after that invocation. The result appears immediately:
-`started`, `coalesced`, or `skipped` with an eligibility reason. Request retries
+`started` with the new work item, `queued` behind the named active invocation, or `skipped` with an eligibility reason. Request retries
 reuse the command identifier. Invocation history and skip diagnostics include
 manual provenance and the requesting operator (`web` for current web commands).
 
 `POST /api/v1/triggers/:triggerId/commands/run` accepts the same
 `{ "idempotencyKey": "unique-command-key" }` body and authorization as pause/resume.
 It returns HTTP 200 with the ordinary command response and a `triggerOutcome`:
-`{ "disposition": "started" }`, `{ "disposition": "coalesced" }`, or
+`{ "disposition": "started", "workItemId": "..." }`,
+`{ "disposition": "coalesced", "activeWorkItemId": "..." }` (shown as queued), or
 `{ "disposition": "skipped", "reason": "paused" }` (also `dispatch-paused`,
 `capacity-unavailable`, or `pending-source-limit`). Retries return the original
-outcome, including skips, even if eligibility has changed. Removed definitions
+outcome, including skips, even if eligibility has changed. If a pause clears an
+unclaimed queued request, its durable result becomes `skipped` with reason `paused`. Removed definitions
 return a command conflict. There are no per-run parameters or gate overrides.

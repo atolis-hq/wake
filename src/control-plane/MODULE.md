@@ -52,6 +52,8 @@ reasons. Invocation history has a separate document and stream per WorkItem.
 Skipped background occurrences advance processor cursors without journal request facts.
 Manual commands retain their initial disposition in durable request facts for
 idempotent retries, including skips, without expanding operational projections.
+Completed manual starts record the invocation WorkItem in a started request fact;
+queued manual outcomes identify the active WorkItem holding the slot.
 Their latest actual skip diagnostics are bounded processor-owned operational
 state (256 recent trigger identities), exposed through service inspection with
 source/time provenance; they are not projections or occurrence history.

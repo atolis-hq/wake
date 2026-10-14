@@ -951,18 +951,31 @@ describe('manual trigger commands', () => {
   it('starts with operator provenance and preserves original outcomes across retries and subsequent commands', async () => {
     const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
     const context = { ...f.context, actor: { kind: EventActorKind.Operator, id: 'operator' } };
+    expect(await f.root.triggers.requestManual('oversight', context)).toMatchObject({
+      disposition: 'started',
+    });
+    const workItemId = (await invocations(f.journal))[0]!.workItemId;
     expect(await f.root.triggers.requestManual('oversight', context)).toEqual({
       disposition: 'started',
+      workItemId,
+    });
+    const requests = (await f.journal.readAll(0, 256))
+      .map(selectControlEvent)
+      .filter((event) => event?.event.eventType === ControlEventType.TriggerRequestRecorded);
+    expect(requests.at(-1)?.event.payload).toMatchObject({
+      disposition: 'started',
+      manualOutcome: { disposition: 'started', workItemId },
     });
     const pendingContext = { ...context, commandId: 'pending-manual' };
-    expect(await f.root.triggers.requestManual('oversight', pendingContext)).toEqual({
+    expect(await f.root.triggers.requestManual('oversight', pendingContext)).toMatchObject({
       disposition: 'coalesced',
+      activeWorkItemId: workItemId,
     });
     const root = await restart(f);
-    expect(await root.triggers.requestManual('oversight', context)).toEqual({
+    expect(await root.triggers.requestManual('oversight', context)).toMatchObject({
       disposition: 'started',
     });
-    expect(await root.triggers.requestManual('oversight', pendingContext)).toEqual({
+    expect(await root.triggers.requestManual('oversight', pendingContext)).toMatchObject({
       disposition: 'coalesced',
     });
     expect(await invocations(f.journal)).toHaveLength(1);
@@ -972,6 +985,31 @@ describe('manual trigger commands', () => {
       operator: 'operator',
     });
     expect(Object.values((await root.triggers.get()).coalesced)[0]?.sources).toHaveLength(1);
+  });
+
+  it('reports a queued request cleared by pause as skipped on retry', async () => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    await f.root.triggers.requestManual('oversight', f.context);
+    const queued = { ...f.context, commandId: 'queued-before-pause' };
+    expect(await f.root.triggers.requestManual('oversight', queued)).toMatchObject({
+      disposition: 'coalesced',
+      activeWorkItemId: (await invocations(f.journal))[0]!.workItemId,
+    });
+    await f.root.triggers.pause('oversight', 'Operator pause', {
+      ...f.context,
+      commandId: 'clear-queued',
+    });
+    const root = await restart(f);
+    expect(await root.triggers.requestManual('oversight', queued)).toEqual({
+      disposition: 'skipped',
+      reason: TriggerSkipReason.Paused,
+    });
+    expect(await root.triggers.requestManual('oversight', queued)).toEqual({
+      disposition: 'skipped',
+      reason: TriggerSkipReason.Paused,
+    });
+    expect(await invocations(f.journal)).toHaveLength(1);
+    expect((await root.triggers.get()).coalesced).toEqual({});
   });
 
   it.each(['paused', 'dispatch-paused', 'capacity-unavailable'] as const)(
@@ -1012,11 +1050,11 @@ describe('manual trigger commands', () => {
     );
     expect(await invocations(journal)).toHaveLength(0);
     const root = await restart(f);
-    expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
+    expect(await root.triggers.requestManual('oversight', f.context)).toMatchObject({
       disposition: 'started',
     });
     expect(await invocations(journal)).toHaveLength(1);
-    expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
+    expect(await root.triggers.requestManual('oversight', f.context)).toMatchObject({
       disposition: 'started',
     });
     expect(await invocations(journal)).toHaveLength(1);
@@ -1051,7 +1089,7 @@ it('serializes double manual submissions and later starts the coalesced manual r
       f.root.triggers.requestManual('oversight', f.context),
       f.root.triggers.requestManual('oversight', f.context),
     ]),
-  ).toEqual([{ disposition: 'started' }, { disposition: 'started' }]);
+  ).toMatchObject([{ disposition: 'started' }, { disposition: 'started' }]);
   expect(await invocations(f.journal)).toHaveLength(1);
   await f.root.triggers.requestManual('oversight', { ...f.context, commandId: 'coalesced' });
   await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
@@ -1090,7 +1128,7 @@ it('durably skips excess manual sources without discarding pending requests', as
 
 it('preserves manual command identity when the configured coordination scope changes', async () => {
   const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
-  expect(await f.root.triggers.requestManual('oversight', f.context)).toEqual({
+  expect(await f.root.triggers.requestManual('oversight', f.context)).toMatchObject({
     disposition: 'started',
   });
   const root = await restart(f, {
@@ -1105,7 +1143,7 @@ it('preserves manual command identity when the configured coordination scope cha
       },
     },
   });
-  expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
+  expect(await root.triggers.requestManual('oversight', f.context)).toMatchObject({
     disposition: 'started',
   });
   expect(await invocations(f.journal)).toHaveLength(1);

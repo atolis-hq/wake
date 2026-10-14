@@ -44,8 +44,14 @@ const trigger = z.object({
 export const triggerDefinitionSchema = trigger;
 
 export const manualTriggerOutcomeSchema = z.discriminatedUnion('disposition', [
-  z.object({ disposition: z.literal(ManualTriggerDispositionValue.Started) }),
-  z.object({ disposition: z.literal(ManualTriggerDispositionValue.Coalesced) }),
+  z.object({
+    disposition: z.literal(ManualTriggerDispositionValue.Started),
+    workItemId: z.string().optional(),
+  }),
+  z.object({
+    disposition: z.literal(ManualTriggerDispositionValue.Coalesced),
+    activeWorkItemId: z.string().optional(),
+  }),
   z.object({
     disposition: z.literal(ManualTriggerDispositionValue.Skipped),
     reason: z.enum(TriggerSkipReasonValue),

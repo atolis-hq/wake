@@ -95,7 +95,10 @@ export const TriggerSourceKindValue: typeof TriggerSourceKind = {
   Manual: 'manual',
 } as const;
 
+const manualStartedShape = { started: true };
+
 export const TriggerRequestDispositionValue: typeof TriggerRequestDisposition = {
+  Started: Object.keys(manualStartedShape)[0]! as keyof typeof manualStartedShape,
   Coalesced: 'coalesced',
   Skipped: 'skipped',
 } as const;
@@ -117,8 +120,6 @@ export const TriggerFinishedStatusValue = {
   Completed: triggerFinishedStatuses[0]!,
   Superseded: triggerFinishedStatuses[1]!,
 } as const;
-
-const manualStartedShape = { started: true };
 
 export const ManualTriggerDispositionValue: typeof ManualTriggerDisposition = {
   Started: Object.keys(manualStartedShape)[0]! as keyof typeof manualStartedShape,
