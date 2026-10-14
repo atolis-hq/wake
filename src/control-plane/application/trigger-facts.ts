@@ -86,7 +86,8 @@ export function consumedTriggerRequest(
       source: request.source,
       disposition: TriggerRequestDisposition.Skipped,
       manualOutcome:
-        request.manualOutcome?.disposition === ManualTriggerDisposition.Started
+        request.manualOutcome !== undefined &&
+        request.manualOutcome.disposition !== ManualTriggerDisposition.Skipped
           ? { disposition: ManualTriggerDisposition.Skipped, reason }
           : request.manualOutcome,
     },

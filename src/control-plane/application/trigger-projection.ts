@@ -70,7 +70,9 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
                     ].slice(0, maximumTriggerSources),
                   },
                 }
-              : withoutCoalesced(previous.coalesced, request),
+              : request.disposition === TriggerRequestDisposition.Started
+                ? previous.coalesced
+                : withoutCoalesced(previous.coalesced, request),
         };
       }
       case ControlEventType.TriggerInvocationClaimed: {

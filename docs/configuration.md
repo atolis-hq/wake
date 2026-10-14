@@ -858,5 +858,8 @@ same workflow, single-flight coordination, coalescing, dispatch pause, trigger
 pause, capacity gate, and pending-source bounds. Coalesced requests remain pending
 for reconsideration after the active invocation. Manual commands never resume a
 paused trigger or reset workflow retries. Their original immediate disposition,
-including a skipped reason, is journaled for idempotent retries; bounded latest
+including a skipped reason, is journaled for idempotent retries. Started results
+name the new work item; coalesced results name the active work item they wait
+behind. A completed manual start records a `started` request fact, so the latest
+request fact agrees with the command response; bounded latest
 skip diagnostics remain operational processor state.

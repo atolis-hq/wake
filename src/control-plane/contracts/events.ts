@@ -32,11 +32,15 @@ export const RunnerPauseCause = { Manual: 'manual', Quota: 'quota' } as const;
 
 export const ControlEventNamespace = 'control-plane.' as const;
 
-export const TriggerRequestDisposition = { Coalesced: 'coalesced', Skipped: 'skipped' } as const;
+const manualStartedShape = { started: true };
+
+export const TriggerRequestDisposition = {
+  Started: Object.keys(manualStartedShape)[0]! as keyof typeof manualStartedShape,
+  Coalesced: 'coalesced',
+  Skipped: 'skipped',
+} as const;
 
 export const TriggerSourceKind = { Event: 'event', Cron: 'cron', Manual: 'manual' } as const;
-
-const manualStartedShape = { started: true };
 
 export const ManualTriggerDisposition = {
   Started: Object.keys(manualStartedShape)[0]! as keyof typeof manualStartedShape,
@@ -45,8 +49,18 @@ export const ManualTriggerDisposition = {
 } as const;
 
 export const manualTriggerOutcomeSchema = z.discriminatedUnion('disposition', [
-  z.object({ disposition: z.literal(ManualTriggerDisposition.Started) }).strict(),
-  z.object({ disposition: z.literal(ManualTriggerDisposition.Coalesced) }).strict(),
+  z
+    .object({
+      disposition: z.literal(ManualTriggerDisposition.Started),
+      workItemId: z.string().min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      disposition: z.literal(ManualTriggerDisposition.Coalesced),
+      activeWorkItemId: z.string().min(1).optional(),
+    })
+    .strict(),
   z
     .object({
       disposition: z.literal(ManualTriggerDisposition.Skipped),
