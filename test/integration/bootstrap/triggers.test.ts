@@ -70,6 +70,7 @@ async function fixture(
   journal = new InMemoryEventJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') }),
   options: CompositionRootOptions = {},
   triggerIds: readonly string[] = ['oversight'],
+  maxOpenWorkItems: number | null = null,
 ) {
   const home = await mkdtemp(join(tmpdir(), 'wake-triggers-'));
   homes.push(home);
@@ -98,6 +99,7 @@ async function fixture(
         },
       },
       controlPlane: {
+        maxOpenWorkItems,
         triggers: triggerIds.map((id) => ({
           id,
           workflow: 'inspect',
@@ -193,6 +195,55 @@ describe('composed workflow triggers', () => {
     expect(started).toHaveLength(origins.length);
     for (const event of started)
       expect(event?.event.payload).not.toHaveProperty('parentWorkflowInstanceId');
+  });
+
+  it('skips capacity-gated cron and events when started work waits without active runs', async () => {
+    const { root, journal, consume, context } = await fixture(
+      { cron: '* * * * *', events: [WorkEventType.ObjectiveRevised] },
+      true,
+      undefined,
+      {},
+      ['oversight'],
+      1,
+    );
+    const item = workItemId('work-00000000000000000000000001');
+    await root.work.create({ workItemId: item, objective: 'open review' }, context);
+    const workflow = await root.orchestration.start(
+      {
+        workItemId: item,
+        workflowInstanceId: workflowInstanceId('workflow-review'),
+        orchestrationGroupId: orchestrationGroupId('group-review'),
+        workflowName: workflowName('inspect'),
+      },
+      { ...context, commandId: 'start-review' },
+    );
+    await root.orchestration.markActivationStarted(
+      workflow.workflowInstanceId,
+      workflow.pendingActivation!.activationId,
+      { ...context, commandId: 'started-review' },
+    );
+    await root.orchestration.acceptOutcome(
+      {
+        workflowInstanceId: workflow.workflowInstanceId,
+        activationId: workflow.pendingActivation!.activationId,
+        outcome: {
+          kind: ActivityOutcomeKind.Waiting,
+          data: { intentEventId: 'intent-review', signalKind: 'reviewed' },
+        },
+      },
+      { ...context, commandId: 'wait-review' },
+    );
+    await root.runnerPipeline.run({ maxProgress: 1 });
+    expect(await invocations(journal)).toEqual([]);
+    await root.work.revise(
+      { workItemId: item, objective: 'changed' },
+      { ...context, commandId: 'revise-review' },
+    );
+    await consume();
+    expect(await invocations(journal)).toEqual([]);
+    expect((await root.triggers.get()).diagnostics).toEqual([
+      expect.objectContaining({ reason: TriggerSkipReason.Capacity }),
+    ]);
   });
 
   it('skips gated cron and event occurrences while runners are paused; eligibility alone does not start work', async () => {

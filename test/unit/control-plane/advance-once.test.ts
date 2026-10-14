@@ -1259,6 +1259,26 @@ describe('advanceOnce', () => {
       expect(execution.attempts).toEqual(['activation-a']);
     });
 
+    it('rechecks open work capacity within a burst even before starts are visible', async () => {
+      const pending = [candidate('a'), candidate('b'), candidate('c')];
+      const orchestration = createOrchestration(pending);
+      const execution = createExecution({ reflectDispatches: false });
+      const advance = createAdvanceOnce(
+        orchestration.port,
+        execution.port,
+        { correlationsForWork: async () => [] } as never,
+        { now: () => new Date('2026-08-11T00:00:00.000Z') },
+        {
+          ids: { next: () => 'command' } as never,
+          maxConcurrentRuns: 3,
+          maxDispatches: 3,
+          maxOpenWorkItems: 1,
+        },
+      );
+      await advance({ maxProgress: 3 });
+      expect(execution.attempts).toEqual(['activation-a']);
+    });
+
     it('dispatches N runs in one call when maxConcurrentRuns and maxDispatches both allow it', async () => {
       const pending = [candidate('a'), candidate('b'), candidate('c')];
       const orchestration = createOrchestration(pending);

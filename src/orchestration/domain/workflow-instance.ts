@@ -35,6 +35,7 @@ export function foldWorkflowInstance(
     supplementalQueue: [],
     acceptedSignalIds: [],
     operatorRetryCommandIds: [],
+    hasStartedActivation: false,
     acceptedOutcomes: [],
     acceptedChildCompletionIds: [],
     causalRejectionIds: [],
@@ -52,6 +53,7 @@ export function continueWorkflowInstance(
   if (previous === null) return foldWorkflowInstance([event]);
   const state: MutableWorkflowInstance = {
     ...previous,
+    hasStartedActivation: previous.hasStartedActivation ?? false,
     repeatCounts: { ...previous.repeatCounts },
     retryCounts: { ...previous.retryCounts },
     supplementalQueue: [...previous.supplementalQueue],

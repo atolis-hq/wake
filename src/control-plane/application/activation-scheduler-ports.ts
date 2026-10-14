@@ -101,6 +101,7 @@ export interface ActivationSchedulerDependencies {
   readonly closedWorkItemIds?: () => Promise<readonly string[]>;
   readonly dispatchPolicy?: DispatchPolicy;
   readonly maxConcurrentRuns?: number;
+  readonly maxOpenWorkItems?: number | null;
   readonly maxDispatches?: number;
   readonly schedulerSerialiser?: ActivationSchedulerSerialiser;
 }
