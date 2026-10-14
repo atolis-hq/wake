@@ -1096,6 +1096,16 @@ describe('manual trigger commands', () => {
       kind: 'manual',
       operator: 'web',
     });
+    await dispatcher.dispatch('POST', path, { idempotencyKey: 'queued-api' });
+    const detail = await (
+      await createSurfaceApplications(f.root)
+    ).api.triggers!.detail('oversight');
+    expect(detail?.data.pending).toHaveLength(1);
+    expect(detail?.data.pending[0]).not.toHaveProperty('manualRequests');
+    expect(detail?.data.pending[0]?.sources).toEqual([
+      { kind: TriggerSourceKind.Manual, commandId: 'trigger:queued-api', operator: 'web' },
+    ]);
+    expect(detail?.data.pending[0]?.manualOutcome).toMatchObject({ disposition: 'coalesced' });
   });
 });
 

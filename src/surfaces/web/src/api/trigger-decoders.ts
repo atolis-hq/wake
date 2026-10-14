@@ -5,6 +5,7 @@ import {
   type TriggerResponse,
 } from '../../../api/contracts/index.js';
 import {
+  manualTriggerOutcomeSchema,
   triggerDefinitionSchema,
   TriggerRequestDisposition,
   triggerSkipDiagnosticSchema,
@@ -18,6 +19,7 @@ const request = z.object({
   source: triggerSourceSchema,
   disposition: z.enum(TriggerRequestDisposition),
   sources: z.array(triggerSourceSchema),
+  manualOutcome: manualTriggerOutcomeSchema.optional(),
 });
 const invocation = z.object({
   claim: z.object({
