@@ -8,7 +8,11 @@ import {
 import { createArtifactEventData } from '../contracts/event-factory.js';
 import { ArtifactEventType } from '../contracts/events.js';
 import { artifactWorkItemIdForWorkItem } from '../contracts/identifiers.js';
-import { artifactPath, type ArtifactPath } from '../contracts/paths.js';
+import {
+  agentArtifactPath,
+  isOperatorInstructionsPath,
+  type ArtifactPath,
+} from '../contracts/paths.js';
 import type { ArtifactWorkItemView } from '../contracts/views.js';
 import type { FileArtifactStore } from '../infrastructure/file-artifact-store.js';
 import { ArtifactRepository } from './artifact-repository.js';
@@ -99,6 +103,7 @@ export function createArtifactService(
     );
     if (
       revision === undefined ||
+      isOperatorInstructionsPath(revision.path) ||
       revision.deleted ||
       !(await acceptedActivation(revision.activationId, reference.workItemId))
     )
@@ -142,7 +147,7 @@ export function createArtifactService(
       if (retained + command.bytes.byteLength > config.maxWorkItemBytes)
         throw new Error(`Artifact work item exceeds ${config.maxWorkItemBytes} byte limit`);
       const selectedExport = contextExport(command.share, scope.contextScope);
-      const path = artifactPath(String(command.path));
+      const path = agentArtifactPath(String(command.path));
       const stored = await store.write({
         workItemId: scope.workItemId,
         revisionId: command.revisionId,
@@ -193,7 +198,7 @@ export function createArtifactService(
             workItemId: scope.workItemId,
             revisionId: command.revisionId,
             producer: scope.producer,
-            path: artifactPath(String(command.path)),
+            path: agentArtifactPath(String(command.path)),
             runId: scope.runId,
             activationId: scope.activationId,
           },
@@ -211,7 +216,11 @@ export function createArtifactService(
       const visible = [] as ArtifactWorkItemView['revisions'][number][];
       const latest = new Map<string, ArtifactWorkItemView['revisions'][number]>();
       for (const revision of view.view?.revisions ?? []) {
-        if (!(await acceptedActivation(revision.activationId))) continue;
+        if (
+          isOperatorInstructionsPath(revision.path) ||
+          !(await acceptedActivation(revision.activationId))
+        )
+          continue;
         latest.set(`${revision.producer}\u0000${revision.path}`, revision);
       }
       for (const revision of latest.values()) if (!revision.deleted) visible.push(revision);
@@ -221,6 +230,7 @@ export function createArtifactService(
       const view = await repository.load(artifactWorkItemIdForWorkItem(scope.workItemId as never));
       const latest = new Map<string, ArtifactWorkItemView['revisions'][number]>();
       for (const revision of view.view?.revisions ?? []) {
+        if (isOperatorInstructionsPath(revision.path)) continue;
         const published =
           scope.readableProducers.has(revision.producer) &&
           (await acceptedActivation(revision.activationId));
@@ -243,6 +253,7 @@ export function createArtifactService(
       );
       if (
         revision === undefined ||
+        isOperatorInstructionsPath(revision.path) ||
         revision.deleted ||
         revision.location === undefined ||
         !(await acceptedActivation(revision.activationId))

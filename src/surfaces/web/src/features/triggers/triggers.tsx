@@ -27,6 +27,30 @@ export function TriggersList() {
   return (
     <>
       <PageHeader title="Triggers" />
+      {query.data && query.data.orphanedInstructions.length > 0 && (
+        <Panel>
+          <h2>Orphaned operator instructions</h2>
+          <p>
+            These documents are retained but have no configured trigger using their scope. Configure
+            a trigger with the same contextScope to use and edit them again.
+          </p>
+          {query.data.orphanedInstructions.map((document) => (
+            <section key={document.contextScope}>
+              <h3>{document.contextScope}</h3>
+              <p>
+                Document: instructions.md. Saved by {document.author} at{' '}
+                <LocalTime value={document.occurredAt} />. Revision: {document.revisionId}
+              </p>
+              <article
+                className={markdownStyles.markdown}
+                aria-label={'Orphaned instructions for ' + document.contextScope}
+              >
+                <Markdown skipHtml>{document.content}</Markdown>
+              </article>
+            </section>
+          ))}
+        </Panel>
+      )}
       {query.isPending ? (
         <LoadingState label="Loading triggers" />
       ) : query.error ? (
@@ -250,6 +274,7 @@ function InstructionsEditor({ trigger }: { readonly trigger: TriggerResponse }) 
   return (
     <Panel>
       <h2>Operator standing instructions</h2>
+      <p>Document: instructions.md</p>
       {scope === undefined ? (
         <p>
           This trigger has no explicit contextScope. Configure a named scope before editing
@@ -274,7 +299,15 @@ function InstructionsEditor({ trigger }: { readonly trigger: TriggerResponse }) 
                 className={markdownStyles.markdown}
                 aria-label="Operator standing instructions"
               >
-                <Markdown skipHtml>{trigger.operatorInstructions?.content ?? ''}</Markdown>
+                {trigger.operatorInstructions === null ||
+                trigger.operatorInstructions === undefined ? (
+                  <p>
+                    No instructions document exists yet. The first operator save creates it; no
+                    scope membership or prior invocation is required.
+                  </p>
+                ) : (
+                  <Markdown skipHtml>{trigger.operatorInstructions.content}</Markdown>
+                )}
               </article>
               <Button
                 onClick={() => {
@@ -292,6 +325,7 @@ function InstructionsEditor({ trigger }: { readonly trigger: TriggerResponse }) 
                 Instructions (Markdown)
                 <textarea
                   aria-label="Instructions (Markdown)"
+                  placeholder="Describe what agents should do on future invocations. These instructions apply to every trigger sharing this context scope, within fixed safety constraints."
                   rows={14}
                   value={draft}
                   disabled={save.isPending}

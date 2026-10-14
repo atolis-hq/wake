@@ -36,3 +36,11 @@ export interface TriggerResponse {
   readonly latestSkip: TriggerSkipDiagnostic | null;
   readonly invocations: readonly (TriggerInvocationView & { readonly workItemKey: string })[];
 }
+
+export interface OrphanedInstructionsResponse {
+  readonly contextScope: string;
+  readonly revisionId: string;
+  readonly content: string;
+  readonly author: string;
+  readonly occurredAt: string;
+}

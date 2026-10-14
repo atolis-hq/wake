@@ -11,3 +11,16 @@ export function artifactPath(value: string): ArtifactPath {
     throw new Error('Artifact path must be a normalized relative path');
   return value as ArtifactPath;
 }
+
+export const OperatorInstructionsPath = 'instructions.md';
+
+export function isOperatorInstructionsPath(value: string): boolean {
+  return value.split('/').at(-1)?.toLowerCase() === OperatorInstructionsPath;
+}
+
+export function agentArtifactPath(value: string): ArtifactPath {
+  const path = artifactPath(value);
+  if (isOperatorInstructionsPath(path))
+    throw new Error('instructions.md is reserved for operator standing instructions');
+  return path;
+}

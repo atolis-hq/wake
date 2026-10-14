@@ -311,3 +311,49 @@ it('saves operator instructions and renders the refreshed Markdown', async () =>
   fireEvent.click(screen.getByRole('button', { name: 'Save instructions' }));
   expect(await screen.findByRole('heading', { name: 'Ready only' })).toBeTruthy();
 });
+
+it('explains lazy creation and shared scope in the empty editor placeholder', async () => {
+  const trigger = entry({
+    definition: { id: 'oversight', workflow: 'inspect', contextScope: 'review', on: {} },
+    operatorInstructions: null,
+  });
+  mount(
+    '/triggers/oversight',
+    vi.fn(async () => json({ data: trigger, meta: { asOf } })),
+  );
+  expect(await screen.findByText(/No instructions document exists yet/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit instructions' }));
+  const editor = screen.getByPlaceholderText(
+    /Describe what agents should do on future invocations/,
+  );
+  expect((editor as HTMLTextAreaElement).value).toBe('');
+  expect(editor.getAttribute('placeholder')).toContain('every trigger sharing this context scope');
+});
+
+it('shows orphaned documents when no triggers remain, with safe Markdown and reconnection guidance', async () => {
+  mount(
+    '/triggers',
+    vi.fn(async () =>
+      json({
+        data: [],
+        orphanedInstructions: [
+          {
+            contextScope: 'old.review',
+            revisionId: 'saved',
+            content: '# Retained criteria\n<script>bad()</script>',
+            author: 'web',
+            occurredAt: asOf,
+          },
+        ],
+        meta: { asOf },
+      }),
+    ),
+  );
+  expect(
+    await screen.findByRole('heading', { name: 'Orphaned operator instructions' }),
+  ).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'old.review' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Retained criteria' })).toBeTruthy();
+  expect(screen.getByText(/Configure a trigger with the same contextScope/)).toBeTruthy();
+  expect(document.querySelector('script')).toBeNull();
+});

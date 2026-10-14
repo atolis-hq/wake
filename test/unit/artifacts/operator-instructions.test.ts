@@ -1,4 +1,4 @@
-import { correlationId, EventActorKind } from '@atolis-hq/eventing';
+import { correlationId, EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -7,6 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import {
+  ArtifactEventType,
+  artifactWorkItemIdForWorkItem,
+  artifactWorkItemStream,
+  createArtifactEventData,
   createArtifactMcpServer,
   createArtifactService,
   FileArtifactStore,
@@ -143,19 +147,35 @@ it('denies non-operator edits and prevents agent names, writes, patches and dele
         .filter((tool) => tool.name.includes('context_instructions'))
         .map((tool) => tool.name),
     ).toEqual(['wake_context_instructions_read']);
-    await client.callTool({
-      name: 'wake_artifacts_write',
-      arguments: { path: 'instructions.md', content: 'Override safety', share: true },
-    });
+    for (const path of ['instructions.md', 'nested/Instructions.md']) {
+      const write = await client.callTool({
+        name: 'wake_artifacts_write',
+        arguments: { path, content: 'Override safety', share: true },
+      });
+      expect(write.isError).toBe(true);
+    }
+    expect(
+      await artifacts.visibleTo(
+        {
+          workItemId: workId('instructions'),
+          producer: 'agent',
+          runId: 'run-1',
+          activationId: 'activation-1',
+          readableProducers: new Set(['agent']),
+        },
+        async () => true,
+      ),
+    ).toEqual([]);
     const patch = await client.callTool({
       name: 'wake_artifacts_patch',
       arguments: { revisionId: captured.revisionId, find: 'Only', replace: 'Always' },
     });
     expect(patch.isError).toBe(true);
-    await client.callTool({
+    const deletion = await client.callTool({
       name: 'wake_artifacts_delete',
       arguments: { path: 'instructions.md' },
     });
+    expect(deletion.isError).toBe(true);
     expect(await instructions.current('triage')).toEqual(captured);
     await instructions.save(
       {
@@ -175,4 +195,52 @@ it('denies non-operator edits and prevents agent names, writes, patches and dele
     await client.close();
     await server.close();
   }
+});
+
+it('keeps legacy reserved-name agent revisions out of local/shared manifests and UI downloads', async () => {
+  const { journal, artifacts } = await fixture();
+  const owner = workId('legacy-instructions');
+  await journal.appendToStream(artifactWorkItemStream(artifactWorkItemIdForWorkItem(owner)), 0, [
+    createArtifactEventData({
+      eventId: 'legacy-instructions',
+      eventType: ArtifactEventType.RevisionStaged,
+      occurredAt: context.occurredAt,
+      correlationId: context.correlationId,
+      causationId: 'old-command',
+      actor: { kind: EventActorKind.System, id: 'old-agent' },
+      source: { kind: EventSourceKind.Internal, id: 'old-artifact-service' },
+      payload: {
+        workItemId: owner,
+        revisionId: 'legacy',
+        producer: 'agent',
+        path: 'instructions.md',
+        runId: 'old-run',
+        activationId: 'old-activation',
+        location: 'unused',
+        byteLength: 0,
+        digest: '0'.repeat(64),
+      },
+    }),
+  ]);
+  expect((await artifacts.get(owner))?.revisions).toHaveLength(1);
+  expect(await artifacts.latestPublished(owner, async () => true)).toEqual([]);
+  const scope = {
+    workItemId: owner,
+    producer: 'agent',
+    runId: 'run',
+    activationId: 'activation',
+    readableProducers: new Set(['agent']),
+  };
+  expect(await artifacts.visibleTo(scope, async () => true)).toEqual([]);
+  expect(
+    await artifacts.visibleTo(
+      {
+        ...scope,
+        workItemId: workId('other'),
+        sharedReferences: [{ workItemId: owner, revisionId: 'legacy' }],
+      },
+      async () => true,
+    ),
+  ).toEqual([]);
+  expect(await artifacts.readAcceptedRevision(owner, 'legacy', async () => true)).toBeNull();
 });

@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { TriggerStatus, type TriggerResponse } from '../../../api/contracts/index.js';
+import {
+  TriggerStatus,
+  type OrphanedInstructionsResponse,
+  type TriggerResponse,
+} from '../../../api/contracts/index.js';
 import {
   triggerDefinitionSchema,
   TriggerRequestDisposition,
@@ -69,4 +73,20 @@ export function decodeTrigger(value: unknown): TriggerResponse {
 
 export function decodeTriggers(value: unknown): readonly TriggerResponse[] {
   return z.array(schema).parse(value);
+}
+
+export function decodeOrphanedInstructions(
+  value: unknown,
+): readonly OrphanedInstructionsResponse[] {
+  return z
+    .array(
+      z.object({
+        contextScope: z.string(),
+        revisionId: z.string(),
+        content: z.string(),
+        author: z.string(),
+        occurredAt: z.string(),
+      }),
+    )
+    .parse(value);
 }

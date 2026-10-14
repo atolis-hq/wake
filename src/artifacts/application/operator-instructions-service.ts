@@ -1,6 +1,7 @@
 import {
   EventActorKind,
   EventSourceKind,
+  scanJournal,
   WrongExpectedSequenceError,
   type CommandContext,
   type EventJournal,
@@ -28,6 +29,21 @@ export class OperatorInstructionsService {
     private readonly store: FileArtifactStore,
     private readonly config: ArtifactsConfig,
   ) {}
+
+  async list(): Promise<readonly OperatorInstructionsDocument[]> {
+    const latest = new Map<string, OperatorInstructionsRevision>();
+    for await (const envelope of scanJournal(this.journal)) {
+      const event = selectArtifactContextEvent(envelope);
+      if (event?.event.eventType !== ArtifactContextEventType.InstructionsEdited) continue;
+      const { expectedRevisionId: _expected, ...revision } = event.event.payload;
+      latest.set(revision.contextScope, revision);
+    }
+    return Promise.all(
+      [...latest.values()]
+        .sort((a, b) => a.contextScope.localeCompare(b.contextScope))
+        .map((revision) => this.document(revision)),
+    );
+  }
 
   async current(contextScope: string): Promise<OperatorInstructionsDocument | null> {
     const revisions = await this.revisions(contextScope);

@@ -1,5 +1,6 @@
 import type { AnalyticsReportWindowId, WakeProblemDetails } from '../../../api/contracts/index.js';
 import type { RunResolutionStatusValue } from '../../../api/contracts/transport-values.js';
+import { object } from './decoder-primitives.js';
 import {
   collectionDecoder,
   decodeAcceptedCommand,
@@ -27,7 +28,7 @@ import {
   decodeProblem,
   decodeWebhookSetup,
 } from './system-decoders.js';
-import { decodeTrigger, decodeTriggers } from './trigger-decoders.js';
+import { decodeOrphanedInstructions, decodeTrigger, decodeTriggers } from './trigger-decoders.js';
 
 export class ApiProblem extends Error {
   constructor(readonly problem: WakeProblemDetails) {
@@ -64,7 +65,19 @@ export class WakeApiClient {
   };
 
   readonly triggers = {
-    list: (signal?: AbortSignal) => this.get('/triggers', resourceDecoder(decodeTriggers), signal),
+    list: (signal?: AbortSignal) =>
+      this.get(
+        '/triggers',
+        (value: unknown) => {
+          const resource = resourceDecoder(decodeTriggers)(value);
+          const record = object(value, 'triggers');
+          return {
+            ...resource,
+            orphanedInstructions: decodeOrphanedInstructions(record.orphanedInstructions ?? []),
+          };
+        },
+        signal,
+      ),
     detail: (id: string, signal?: AbortSignal) =>
       this.get('/triggers/' + encodeURIComponent(id), resourceDecoder(decodeTrigger), signal),
     saveInstructions: (

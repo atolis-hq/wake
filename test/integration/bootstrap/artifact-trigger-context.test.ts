@@ -590,3 +590,68 @@ it('accepts instructions above the general HTTP body cap only on the protected o
     await server.close();
   }
 });
+
+it('lazily creates one membership-independent document, surfaces renamed scopes as orphaned and reconnects them', async () => {
+  const f = await fixture();
+  const applications = await createSurfaceApplications(f.root);
+  expect((await applications.api.triggers!.detail('shared'))!.data.operatorInstructions).toBeNull();
+  expect(await f.root.operatorInstructions.list()).toEqual([]);
+  expect(
+    await applications.api.triggers!.saveInstructions!('shared', {
+      idempotencyKey: 'create-lazy',
+      content: '# Shared criteria',
+      expectedRevisionId: null,
+    }),
+  ).toMatchObject({ status: 'completed' });
+  expect((await contexts(f.root).get('review')).members).toEqual([]);
+  const sharedConfig = {
+    ...f.config,
+    controlPlane: {
+      ...f.config.controlPlane,
+      triggers: f.config.controlPlane.triggers.map((trigger) => ({
+        ...trigger,
+        contextScope: 'review',
+      })),
+    },
+  };
+  const withSharedScope = await createCompositionRoot(f.root.paths.wakeRoot, {
+    config: sharedConfig,
+    journal: f.journal,
+  });
+  const sharedApi = (await createSurfaceApplications(withSharedScope)).api;
+  expect((await sharedApi.triggers!.detail('unrelated'))!.data.operatorInstructions).toEqual(
+    (await sharedApi.triggers!.detail('shared'))!.data.operatorInstructions,
+  );
+  expect((await sharedApi.triggers!.list()).orphanedInstructions).toEqual([]);
+  const renamedConfig = {
+    ...sharedConfig,
+    controlPlane: {
+      ...sharedConfig.controlPlane,
+      triggers: sharedConfig.controlPlane.triggers.map((trigger) => ({
+        ...trigger,
+        contextScope: 'renamed',
+      })),
+    },
+  };
+  const renamed = await createCompositionRoot(f.root.paths.wakeRoot, {
+    config: renamedConfig,
+    journal: f.journal,
+  });
+  const renamedApi = (await createSurfaceApplications(renamed)).api;
+  expect((await renamedApi.triggers!.detail('shared'))!.data.operatorInstructions).toBeNull();
+  expect((await renamedApi.triggers!.list()).orphanedInstructions).toMatchObject([
+    { contextScope: 'review', content: '# Shared criteria' },
+  ]);
+  const removed = await createCompositionRoot(f.root.paths.wakeRoot, {
+    config: { ...sharedConfig, controlPlane: { ...sharedConfig.controlPlane, triggers: [] } },
+    journal: f.journal,
+  });
+  expect(
+    (await (await createSurfaceApplications(removed)).api.triggers!.list()).orphanedInstructions,
+  ).toMatchObject([{ contextScope: 'review', content: '# Shared criteria' }]);
+  const restored = await f.restart();
+  expect(
+    (await (await createSurfaceApplications(restored)).api.triggers!.detail('shared'))!.data
+      .operatorInstructions,
+  ).toMatchObject({ content: '# Shared criteria' });
+});

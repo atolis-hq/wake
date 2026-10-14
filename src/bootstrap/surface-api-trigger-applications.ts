@@ -26,7 +26,23 @@ export function createTriggerApplications(
       ...(view.diagnostics ?? []).map((entry) => entry.triggerId),
     ]);
     const asOf = now();
-    return { data: [...ids].sort().map((id) => present(id, view, asOf)), meta: { asOf } };
+    const configuredScopes = new Set(
+      root.config.controlPlane.triggers.map((trigger) => trigger.contextScope),
+    );
+    const orphanedInstructions = (await root.operatorInstructions.list())
+      .filter((document) => !configuredScopes.has(document.contextScope))
+      .map(({ contextScope, revisionId, content, author, occurredAt }) => ({
+        contextScope,
+        revisionId,
+        content,
+        author,
+        occurredAt,
+      }));
+    return {
+      data: [...ids].sort().map((id) => present(id, view, asOf)),
+      meta: { asOf },
+      orphanedInstructions,
+    };
   }
 
   function present(id: string, view: TriggerInspectionView, asOf: string): TriggerResponse {
