@@ -122,14 +122,17 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
   },
 };
 
-/** A manual head with queued automatic work is consumed alone, so the automatic work survives. */
+/** A manual head is consumed alone while other manual or automatic work is still queued. */
 function consumesWholeRequest(
   pending: TriggerView['coalesced'][string] | undefined,
   request: TriggerView['requests'][number],
 ): boolean {
   if (pending?.triggerId !== request.triggerId) return false;
   if (JSON.stringify(pending.source) !== JSON.stringify(request.source)) return false;
-  return request.source.kind !== TriggerSourceKind.Manual || pending.automaticRequests.length === 0;
+  return (
+    request.source.kind !== TriggerSourceKind.Manual ||
+    (pending.automaticRequests.length === 0 && pending.manualRequests.length <= 1)
+  );
 }
 
 function withoutCoalesced(
@@ -149,13 +152,14 @@ function withoutCoalesced(
         manual.source.commandId !== commandId,
     );
     if (retained.length === pending.manualRequests.length) return coalesced;
-    // Skipping manual commands must not discard automatic work queued behind them.
-    const head = pending.automaticRequests.at(-1);
+    // Skipping a manual command must not discard other queued work; the head stays pending work.
+    const head = pending.automaticRequests.at(-1) ?? retained.at(-1);
+    const removedHead = JSON.stringify(pending.source) === JSON.stringify(request.source);
     return {
       ...coalesced,
       [key]: {
         ...pending,
-        ...(pending.source.kind === TriggerSourceKind.Manual && head !== undefined ? head : {}),
+        ...(removedHead && head !== undefined ? head : {}),
         manualRequests: retained,
         sources: pending.sources.filter(
           (source) => source.kind !== TriggerSourceKind.Manual || source.commandId !== commandId,

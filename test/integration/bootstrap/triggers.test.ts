@@ -1466,6 +1466,88 @@ it.each([false, true])(
   },
 );
 
+it.each([
+  { name: 'later command fails', order: ['oversight', 'secondary'] },
+  { name: 'earlier command fails', order: ['secondary', 'oversight'] },
+])(
+  'keeps the passing manual command pending when a shared-scope sibling fails admission ($name)',
+  async ({ order }) => {
+    const stage = (runnerPool: string) => ({
+      start: {
+        activity: 'agent',
+        requiresApproval: false,
+        execution: { runnerPool },
+        with: { prompt: 'Inspect configured task' },
+        on: { done: { then: 'done' } },
+      },
+    });
+    const config = parseRootConfig({
+      execution: {
+        agentRunners: { fake: { kind: 'fake' }, other: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'], isolated: ['other'] },
+        defaultRunnerPool: 'standard',
+      },
+      orchestration: {
+        default: 'inspect',
+        workflows: {
+          inspect: { stages: stage('standard') },
+          isolated: { stages: stage('isolated') },
+        },
+      },
+      controlPlane: {
+        triggers: [
+          {
+            id: 'oversight',
+            workflow: 'inspect',
+            on: { events: [WorkEventType.ObjectiveRevised] },
+          },
+          {
+            id: 'secondary',
+            workflow: 'isolated',
+            on: { events: [WorkEventType.ObjectiveRevised] },
+          },
+        ],
+      },
+    });
+    const binding = { triggerCoordinationKey: () => 'shared', config };
+    const f = await fixture(
+      { events: [WorkEventType.ObjectiveRevised] },
+      false,
+      undefined,
+      binding,
+    );
+    await f.root.triggers.requestManual('oversight', f.context);
+    const api = createApiDispatcher((await createSurfaceApplications(f.root)).api);
+    for (const trigger of order)
+      expect(
+        await api.dispatch('POST', `/api/v1/triggers/${trigger}/commands/run`, {
+          idempotencyKey: `shared-${trigger}`,
+        }),
+      ).toMatchObject({ body: { data: { triggerOutcome: { disposition: 'coalesced' } } } });
+    await f.root.runnerControls.pause('other', 'isolated-capacity-lost');
+    await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
+    const root = await restart(f, binding);
+    await root.triggers.reconcile(f.context);
+    const claimed = await claims(f.journal);
+    expect(claimed).toHaveLength(2);
+    expect(claimed[1]?.triggerId).toBe('oversight');
+    expect(claimed[1]?.sources).toEqual([
+      { kind: TriggerSourceKind.Manual, commandId: 'trigger:shared-oversight', operator: 'web' },
+    ]);
+    expect((await root.triggers.get()).coalesced).toEqual({});
+    const recovered = createApiDispatcher((await createSurfaceApplications(root)).api);
+    expect(
+      await recovered.dispatch('POST', '/api/v1/triggers/secondary/commands/run', {
+        idempotencyKey: 'shared-secondary',
+      }),
+    ).toMatchObject({
+      body: {
+        data: { triggerOutcome: { disposition: 'skipped', reason: TriggerSkipReason.Capacity } },
+      },
+    });
+  },
+);
+
 it('recovers a partial mixed-source skip without running the consumed manual command', async () => {
   const journal = new FaultInjectingJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') });
   const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, false, journal);
