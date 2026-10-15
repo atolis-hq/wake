@@ -27,6 +27,14 @@ export interface ReportDescriptor {
 }
 
 export interface TimeSeriesReport {
+  readonly durationRows?: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly createdAt: string;
+    readonly completedAt: string;
+    readonly durationMs: number;
+  }[];
+  readonly excludedDurationCount?: number;
   readonly report: ReportDescriptor;
   readonly window: ReportWindow;
   readonly series: readonly (ReportDescriptor & { readonly unit?: string })[];

@@ -76,6 +76,27 @@ export const decodeReport: Decoder<AnalyticsReport> = (value, path = '') => {
         ...(series.unit === undefined ? {} : { unit: string(series.unit, child(path, 'unit')) }),
       };
     }),
+    ...(record.durationRows === undefined
+      ? {}
+      : {
+          durationRows: array(
+            record.durationRows,
+            child(path, 'durationRows'),
+            (value, path = '') => {
+              const row = object(value, path);
+              return {
+                ...decodeReportDescriptor(value, path),
+                createdAt: string(row.createdAt, child(path, 'createdAt')),
+                completedAt: string(row.completedAt, child(path, 'completedAt')),
+                durationMs: number(row.durationMs, child(path, 'durationMs')),
+              };
+            },
+          ),
+          excludedDurationCount: number(
+            record.excludedDurationCount,
+            child(path, 'excludedDurationCount'),
+          ),
+        }),
     totals: decodeValues(record.totals, child(path, 'totals')),
     buckets: array(record.buckets, child(path, 'buckets'), (value, path = '') => {
       const bucket = object(value, path);

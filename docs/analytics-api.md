@@ -75,3 +75,21 @@ summary tiles. Missing usage contributes zero; partial usage contributes its
 available counters and reported cost. Empty windows return zero totals and
 zero-valued buckets. No token category splits or dimensional groupings are
 included. The web view plots each measure separately because their units differ.
+
+`work-item-throughput` returns completion series and buckets with the
+`work-items-done` measure (unit `work items`), reconciling with the Work items
+done tile. Cohort membership uses the first primary workflow completion in
+journal order, with the same half-open window and UTC bucket boundaries.
+Duplicate and child completions do not count. It also returns `durationRows`,
+ordered by completion time descending, then work ID for ties. Rows contain
+`id`, `title` (the recorded creation objective), `createdAt`, `completedAt`, and
+`durationMs`. Missing or invalid creation times and completion before creation
+exclude duration rows only; `excludedDurationCount` states how many qualifying
+completions have no valid duration. Invalid completion times cannot belong to
+a window. Empty windows return zero totals, zero buckets and no duration rows.
+The Reports view explains exclusions and retains counts when all durations are
+excluded, with independent asynchronous loading, error/retry and empty states.
+Malformed persisted events (including non-ISO timestamps) are rejected by the
+owning event decoder and use the report error state rather than being silently
+ignored. Duration exclusions apply to decoded facts with missing creation or
+inconsistent time ordering.

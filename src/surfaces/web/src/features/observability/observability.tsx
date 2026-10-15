@@ -302,13 +302,56 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
         })}
         <line x1="0" y1={height} x2={width} y2={height} stroke="currentColor" />
       </svg>
+      {data.durationRows !== undefined && (
+        <>
+          <p>
+            Completion means the first primary workflow completion per work item; child workflows
+            are excluded.
+          </p>
+          <p>
+            Duration rows exclude missing, invalid, or inconsistent timestamps (completion before
+            creation). Excluded: {data.excludedDurationCount ?? 0}. Completion counts still include
+            these items.
+          </p>
+          {Object.values(data.totals).every((value) => value === 0) ? (
+            <EmptyState>No completed work items in this window</EmptyState>
+          ) : data.durationRows.length === 0 ? (
+            <EmptyState>No valid work item durations in this window</EmptyState>
+          ) : (
+            <div className={reportStyles.table}>
+              <table aria-label="Work item durations">
+                <thead>
+                  <tr>
+                    <th>Work item</th>
+                    <th>Created (UTC)</th>
+                    <th>Completed (UTC)</th>
+                    <th>End-to-end duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.durationRows.map((row) => (
+                    <tr key={row.id}>
+                      <th scope="row">
+                        {row.title} ({row.id})
+                      </th>
+                      <td>{row.createdAt}</td>
+                      <td>{row.completedAt}</td>
+                      <td>{(row.durationMs / 1000).toLocaleString()} s</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
       <details>
         <summary>Bucket values</summary>
         <div className={reportStyles.table}>
           <table
             aria-label={
               data.series[0]?.unit === undefined
-                ? 'Run outcomes by bucket'
+                ? `${data.report.title} by bucket`
                 : `${data.report.title} by bucket`
             }
           >
