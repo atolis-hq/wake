@@ -168,3 +168,8 @@ Trigger API responses include nullable `activeInvocation` with
 nullable `workflowStatus` and `blockReason`, and `retryEligible`.
 Each `pending` entry includes nullable `activeWorkItemId`. Status is null
 when a claimed workflow awaits recovery; no holder is represented by null.
+
+The Reports selector includes **Token and cost usage**. The shared Window
+dropdown controls separate total-token and USD-cost charts, with bucket tables.
+Values reconcile with the summary tiles for the same window; missing usage
+and empty buckets show zero. Loading and retry states use the report framework.

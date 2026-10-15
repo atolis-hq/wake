@@ -29,7 +29,7 @@ export interface ReportDescriptor {
 export interface TimeSeriesReport {
   readonly report: ReportDescriptor;
   readonly window: ReportWindow;
-  readonly series: readonly ReportDescriptor[];
+  readonly series: readonly (ReportDescriptor & { readonly unit?: string })[];
   readonly totals: Readonly<Record<string, number>>;
   readonly buckets: readonly {
     readonly from: string;

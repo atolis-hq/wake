@@ -30,7 +30,13 @@ it('composes the registered report and independent summary, validates identifier
     await dispatcher.dispatch('GET', '/api/v1/observability/reports', undefined),
   ).toMatchObject({
     status: 200,
-    body: { data: [{ id: 'run-outcomes-over-time' }, { id: 'run-breakdowns-by-dimension' }] },
+    body: {
+      data: [
+        { id: 'run-outcomes-over-time' },
+        { id: 'run-breakdowns-by-dimension' },
+        { id: 'token-and-cost-usage' },
+      ],
+    },
   });
   expect(
     await dispatcher.dispatch(
@@ -150,6 +156,36 @@ it('serves the registered live breakdown through the API', async () => {
           { id: 'run-runner', rows: [] },
           { id: 'run-model', rows: [] },
         ],
+      },
+    },
+  });
+});
+
+it('serves the registered usage report with zero buckets and explicit units', async () => {
+  const { dispatcher } = fixture();
+  expect(
+    await dispatcher.dispatch(
+      'GET',
+      '/api/v1/observability/reports?window=3d&report=token-and-cost-usage',
+      undefined,
+    ),
+  ).toMatchObject({
+    status: 200,
+    body: {
+      data: {
+        window: { id: '3d' },
+        series: [
+          { id: 'total-tokens', unit: 'tokens' },
+          { id: 'total-cost-usd', unit: 'USD' },
+        ],
+        totals: { 'total-tokens': 0, 'total-cost-usd': 0 },
+        buckets: expect.arrayContaining([
+          {
+            from: expect.any(String),
+            to: expect.any(String),
+            values: { 'total-tokens': 0, 'total-cost-usd': 0 },
+          },
+        ]),
       },
     },
   });

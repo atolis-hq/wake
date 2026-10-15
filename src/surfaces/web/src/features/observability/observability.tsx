@@ -207,14 +207,38 @@ function Summary({ data }: { readonly data: AnalyticsSummaryResponse }) {
     </div>
   );
 }
+function formatReportValue(value: number, unit?: string): string {
+  return unit === 'USD' ? '$' + value.toFixed(4) : value.toLocaleString();
+}
+
 const colors = ['#36a269', '#c58a31', '#687bd3', '#d15b65', '#8b929e'];
 function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
+  if (data.series.some((series) => series.unit !== undefined) && data.series.length > 1)
+    return (
+      <>
+        {data.series.map((series) => (
+          <OutcomeChart
+            key={series.id}
+            data={{
+              ...data,
+              report: { ...data.report, title: series.title },
+              series: [series],
+              buckets: data.buckets.map((bucket) => ({
+                ...bucket,
+                values: { [series.id]: bucket.values[series.id] ?? 0 },
+              })),
+            }}
+          />
+        ))}
+      </>
+    );
   const max = Math.max(
-    1,
+    0,
     ...data.buckets.map((bucket) =>
       Object.values(bucket.values).reduce((sum, count) => sum + count, 0),
     ),
   );
+  const scale = max || 1;
   const width = 800,
     height = 200,
     bar = width / Math.max(1, data.buckets.length);
@@ -228,7 +252,7 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
         {data.series.map(({ id, title }, index) => (
           <span key={id}>
             <i style={{ backgroundColor: colors[index % colors.length] }} />
-            {title}: {data.totals[id] ?? 0}
+            {title}: {formatReportValue(data.totals[id] ?? 0, data.series[index]?.unit)}
           </span>
         ))}
       </div>
@@ -239,7 +263,7 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
         aria-label={data.report.title}
       >
         <text x="0" y="12">
-          {max} runs
+          {formatReportValue(max, data.series[0]?.unit)} {data.series[0]?.unit ?? 'runs'}
         </text>
         {data.buckets.map((bucket, index) => {
           let offset = 0;
@@ -248,11 +272,14 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
               <title>
                 {bucket.from}:{' '}
                 {data.series
-                  .map(({ id, title }) => `${title} ${bucket.values[id] ?? 0}`)
+                  .map(
+                    ({ id, title, unit }) =>
+                      `${title} ${formatReportValue(bucket.values[id] ?? 0, unit)}`,
+                  )
                   .join(', ')}
               </title>
               {data.series.map(({ id }, seriesIndex) => {
-                const h = ((bucket.values[id] ?? 0) / max) * (height - 20);
+                const h = ((bucket.values[id] ?? 0) / scale) * (height - 20);
                 offset += h;
                 return (
                   <rect
@@ -278,7 +305,13 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
       <details>
         <summary>Bucket values</summary>
         <div className={reportStyles.table}>
-          <table aria-label="Run outcomes by bucket">
+          <table
+            aria-label={
+              data.series[0]?.unit === undefined
+                ? 'Run outcomes by bucket'
+                : `${data.report.title} by bucket`
+            }
+          >
             <thead>
               <tr>
                 <th>Bucket start (UTC)</th>
@@ -291,8 +324,8 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
               {data.buckets.map((bucket) => (
                 <tr key={bucket.from}>
                   <th>{bucket.from}</th>
-                  {data.series.map(({ id }) => (
-                    <td key={id}>{bucket.values[id] ?? 0}</td>
+                  {data.series.map(({ id, unit }) => (
+                    <td key={id}>{formatReportValue(bucket.values[id] ?? 0, unit)}</td>
                   ))}
                 </tr>
               ))}

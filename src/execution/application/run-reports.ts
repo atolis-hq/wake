@@ -17,8 +17,26 @@ import { foldRunEvent } from '../domain/run.js';
 
 export const RunReportId = defineClosedVocabulary({
   Outcomes: 'run-outcomes-over-time',
+  Usage: 'token-and-cost-usage',
   Breakdown: 'run-breakdowns-by-dimension',
 } as const);
+
+export const RunUsageMeasure = defineClosedVocabulary({
+  Tokens: 'total-tokens',
+  CostUsd: 'total-cost-usd',
+} as const);
+const usageSeries = [
+  { id: RunUsageMeasure.Tokens, title: 'Total tokens', unit: 'tokens' },
+  { id: RunUsageMeasure.CostUsd, title: 'Total cost (USD)', unit: 'USD' },
+];
+const usageDescriptor = { id: RunReportId.Usage, title: 'Token and cost usage' };
+
+export function createRunUsageReport(journal: EventJournal): ReportDefinition {
+  return {
+    ...usageDescriptor,
+    query: async (query) => (await queryRunAnalytics(journal, query)).usage,
+  };
+}
 
 export const RunReportDimension = defineClosedVocabulary({
   Action: 'run-action',
@@ -99,24 +117,23 @@ export function createRunOutcomesReport(journal: EventJournal): ReportDefinition
 export async function queryRunAnalytics(
   journal: EventJournal,
   query: ReportQuery,
-): Promise<{ report: TimeSeriesReport; breakdown: BreakdownReport; summary: RunSummary }> {
-  const grouped = new Map<string, RunView>();
-  for await (const event of scanJournal(journal, query.signal)) {
-    const owned = selectRunExecutionEvent(event);
-    if (owned === null) continue;
-    grouped.set(owned.stream.id, foldRunEvent(grouped.get(owned.stream.id) ?? null, owned));
-  }
+): Promise<{
+  report: TimeSeriesReport;
+  breakdown: BreakdownReport;
+  usage: TimeSeriesReport;
+  summary: RunSummary;
+}> {
+  const grouped = await readRuns(journal, query);
   const from = Date.parse(query.window.from);
   const to = Date.parse(query.window.to);
   const first = Math.floor(from / query.window.bucketMs) * query.window.bucketMs;
   const zero = () => Object.fromEntries(series.map(({ id }) => [id, 0]));
-  const buckets = [];
-  for (let start = first; start < to; start += query.window.bucketMs)
-    buckets.push({
-      from: new Date(start).toISOString(),
-      to: new Date(start + query.window.bucketMs).toISOString(),
-      values: zero(),
-    });
+  const buckets = outcomeBuckets(first, to, query.window.bucketMs);
+  const usageBuckets = buckets.map(({ from, to }) => ({
+    from,
+    to,
+    values: { [RunUsageMeasure.Tokens]: 0, [RunUsageMeasure.CostUsd]: 0 },
+  }));
   const totals = zero();
   const durations: number[] = [];
   const counts = dimensions.map(() => new Map<string, number>());
@@ -138,8 +155,13 @@ export async function queryRunAnalytics(
       groups.set(value, (groups.get(value) ?? 0) + 1);
     });
     const usage = agentTokenUsage(run.agent?.metadata);
-    totalTokens += finiteOrZero(usage.tokens);
-    totalCostUsd += finiteOrZero(usage.costUsd);
+    const tokens = finiteOrZero(usage.tokens);
+    const cost = finiteOrZero(usage.costUsd);
+    totalTokens += tokens;
+    totalCostUsd += cost;
+    const bucket = usageBuckets[Math.floor((start - first) / query.window.bucketMs)]!;
+    bucket.values[RunUsageMeasure.Tokens] += tokens;
+    bucket.values[RunUsageMeasure.CostUsd] += cost;
     const duration = runDuration(run);
     if (duration !== null) durations.push(duration);
   }
@@ -152,18 +174,14 @@ export async function queryRunAnalytics(
       totals,
       buckets,
     },
-    breakdown: {
-      report: { id: RunReportId.Breakdown, title: 'Run breakdowns by dimension' },
+    usage: {
+      report: usageDescriptor,
       window: query.window,
-      total: runs,
-      dimensions: dimensions.map(({ id, title }, index) => ({
-        id,
-        title,
-        rows: [...counts[index]!.entries()]
-          .sort(([a, ac], [b, bc]) => bc - ac || (a < b ? -1 : a > b ? 1 : 0))
-          .map(([value, count]) => ({ value, count, share: count / runs })),
-      })),
+      series: usageSeries,
+      totals: { [RunUsageMeasure.Tokens]: totalTokens, [RunUsageMeasure.CostUsd]: totalCostUsd },
+      buckets: usageBuckets,
     },
+    breakdown: runBreakdown(query, runs, counts),
     summary: {
       runs,
       completed: totals[RunReportOutcome.Completed]!,
@@ -185,4 +203,44 @@ function runDuration(run: RunView): number | null {
   if (run.finishedAt === undefined) return null;
   const duration = Date.parse(run.finishedAt) - Date.parse(run.startedAt);
   return Number.isFinite(duration) && duration >= 0 ? duration : null;
+}
+
+async function readRuns(journal: EventJournal, query: ReportQuery) {
+  const grouped = new Map<string, RunView>();
+  for await (const event of scanJournal(journal, query.signal)) {
+    const owned = selectRunExecutionEvent(event);
+    if (owned === null) continue;
+    grouped.set(owned.stream.id, foldRunEvent(grouped.get(owned.stream.id) ?? null, owned));
+  }
+  return grouped;
+}
+
+function runBreakdown(
+  query: ReportQuery,
+  runs: number,
+  counts: readonly Map<string, number>[],
+): BreakdownReport {
+  return {
+    report: { id: RunReportId.Breakdown, title: 'Run breakdowns by dimension' },
+    window: query.window,
+    total: runs,
+    dimensions: dimensions.map(({ id, title }, index) => ({
+      id,
+      title,
+      rows: [...counts[index]!.entries()]
+        .sort(([a, ac], [b, bc]) => bc - ac || (a < b ? -1 : a > b ? 1 : 0))
+        .map(([value, count]) => ({ value, count, share: count / runs })),
+    })),
+  };
+}
+
+function outcomeBuckets(first: number, to: number, bucketMs: number) {
+  const buckets = [];
+  for (let start = first; start < to; start += bucketMs)
+    buckets.push({
+      from: new Date(start).toISOString(),
+      to: new Date(start + bucketMs).toISOString(),
+      values: Object.fromEntries(series.map(({ id }) => [id, 0])),
+    });
+  return buckets;
 }

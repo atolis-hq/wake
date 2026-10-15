@@ -7,6 +7,7 @@ import {
   runId,
   RunReportOutcome,
   runStream,
+  RunUsageMeasure,
 } from '../../../src/execution/index.js';
 import { reportWindow, ReportWindowId } from '../../../src/kernel/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
@@ -42,6 +43,15 @@ describe('live run analytics', () => {
         Object.values(bucket.values).every((count) => count === 0),
       ),
     ).toBe(true);
+    for (const [measure, total] of [
+      [RunUsageMeasure.Tokens, result.summary.totalTokens],
+      [RunUsageMeasure.CostUsd, result.summary.totalCostUsd],
+    ] as const) {
+      expect(result.usage.totals[measure]).toBe(total);
+      expect(result.usage.buckets.reduce((sum, bucket) => sum + bucket.values[measure]!, 0)).toBe(
+        total,
+      );
+    }
     expect(result.summary).toEqual({
       runs: 0,
       completed: 0,
@@ -88,7 +98,13 @@ describe('live run analytics', () => {
             agent: {
               outcome: 'DONE',
               displayBody: '',
-              metadata: { inputTokens: 10, costUsd: 0.25 },
+              metadata: {
+                inputTokens: 10,
+                outputTokens: 2,
+                cacheWriteTokens: 3,
+                cacheReadTokens: 5,
+                costUsd: 0.25,
+              },
             },
           },
           stream,
@@ -129,7 +145,7 @@ describe('live run analytics', () => {
       completed: 1,
       blockedOrAwaitingApproval: 2,
       failed: 2,
-      totalTokens: 60,
+      totalTokens: 120,
       totalCostUsd: 1.5,
       medianRunDurationMs: 90_000_000,
     });
@@ -268,4 +284,77 @@ it('orders ties alphabetically and preserves distinct recorded and unknown value
     { value: 'alpha', count: 1, share: 0.2 },
     { value: 'zeta', count: 1, share: 0.2 },
   ]);
+});
+
+it('reconciles non-zero usage across buckets, excluding both window boundaries outside the cohort', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  const starts = [
+    query.window.from,
+    '2026-07-31T13:15:00.000Z',
+    '2026-07-31T14:00:00.000Z',
+    '2026-07-31T12:29:59.999Z',
+    query.window.to,
+  ];
+  const metadata = [
+    { inputTokens: 1000, outputTokens: 20, cacheReadTokens: 3, cacheWriteTokens: 4, costUsd: 0.1 },
+    { outputTokens: 5, costUsd: 0.2 },
+    undefined,
+    { inputTokens: 9999, costUsd: 99 },
+    { inputTokens: 9999, costUsd: 99 },
+  ];
+  for (const [index, startedAt] of starts.entries()) {
+    const stream = runStream(runId(`usage-${index}`));
+    await journal.appendToStream(stream, 0, [
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: `usage-${index}`,
+          activity: 'agent',
+          workflowInstanceId: 'workflow-1',
+          orchestrationGroupId: 'group-1',
+          attempt: 1,
+          startedAt,
+        },
+        stream,
+      ).event,
+    ]);
+    if (metadata[index] !== undefined) {
+      await journal.appendToStream(stream, 1, [
+        eventEnvelope(
+          ExecutionEventType.RunRunnerResultReported,
+          {
+            transport: 'succeeded',
+            agent: { outcome: 'DONE', displayBody: '', metadata: metadata[index] },
+          },
+          stream,
+        ).event,
+      ]);
+    }
+  }
+  const { usage, summary } = await queryRunAnalytics(journal, query);
+  expect(summary.runs).toBe(3);
+  expect(usage.totals).toEqual({
+    [RunUsageMeasure.Tokens]: summary.totalTokens,
+    [RunUsageMeasure.CostUsd]: summary.totalCostUsd,
+  });
+  expect(summary.totalTokens).toBe(1032);
+  expect(summary.totalCostUsd).toBeCloseTo(0.3);
+  expect(usage.buckets[0]?.values).toEqual({
+    [RunUsageMeasure.Tokens]: 1027,
+    [RunUsageMeasure.CostUsd]: 0.1,
+  });
+  expect(usage.buckets[1]?.values).toEqual({
+    [RunUsageMeasure.Tokens]: 5,
+    [RunUsageMeasure.CostUsd]: 0.2,
+  });
+  expect(
+    usage.buckets
+      .slice(2)
+      .every(({ values }) => Object.values(values).every((value) => value === 0)),
+  ).toBe(true);
+  for (const measure of Object.values(RunUsageMeasure)) {
+    expect(usage.buckets.reduce((sum, bucket) => sum + bucket.values[measure]!, 0)).toBe(
+      usage.totals[measure],
+    );
+  }
 });

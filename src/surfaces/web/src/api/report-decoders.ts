@@ -69,7 +69,13 @@ export const decodeReport: Decoder<AnalyticsReport> = (value, path = '') => {
   return {
     report: decodeReportDescriptor(record.report, child(path, 'report')),
     window: decodeWindow(record.window, child(path, 'window')),
-    series: array(record.series, child(path, 'series'), decodeReportDescriptor),
+    series: array(record.series, child(path, 'series'), (value, path = '') => {
+      const series = object(value, path);
+      return {
+        ...decodeReportDescriptor(value, path),
+        ...(series.unit === undefined ? {} : { unit: string(series.unit, child(path, 'unit')) }),
+      };
+    }),
     totals: decodeValues(record.totals, child(path, 'totals')),
     buckets: array(record.buckets, child(path, 'buckets'), (value, path = '') => {
       const bucket = object(value, path);
