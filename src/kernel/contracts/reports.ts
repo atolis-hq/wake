@@ -59,7 +59,26 @@ export interface BreakdownReport {
   })[];
 }
 
-export type AnalyticsReport = TimeSeriesReport | BreakdownReport;
+export interface DurationStatistics {
+  readonly count: number;
+  readonly medianMs: number | null;
+  readonly averageMs: number | null;
+}
+
+export interface DurationReport {
+  readonly report: ReportDescriptor;
+  readonly window: ReportWindow;
+  readonly statistics: DurationStatistics;
+  readonly groups: readonly (ReportDescriptor & {
+    readonly rows: readonly (DurationStatistics & { readonly value: string })[];
+  })[];
+  readonly buckets: readonly (DurationStatistics & {
+    readonly from: string;
+    readonly to: string;
+  })[];
+}
+
+export type AnalyticsReport = TimeSeriesReport | BreakdownReport | DurationReport;
 
 export interface ReportDefinition extends ReportDescriptor {
   query(query: ReportQuery): Promise<AnalyticsReport>;

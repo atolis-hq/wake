@@ -1,6 +1,7 @@
 import type { EventJournal } from '@atolis-hq/eventing';
 import {
   createRunBreakdownReport,
+  createRunDurationReport,
   createRunOutcomesReport,
   createRunUsageReport,
   queryRunAnalytics,
@@ -15,6 +16,7 @@ export function createAnalyticsReports(journal: EventJournal, now: () => string)
     createRunBreakdownReport(journal),
     createRunUsageReport(journal),
     createWorkThroughputReport(journal),
+    createRunDurationReport(journal),
   ];
   return {
     catalogue: () => definitions.map(({ id, title }) => ({ id, title })),

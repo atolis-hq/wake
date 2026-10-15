@@ -18,6 +18,8 @@ export type {
   AnalyticsReport,
   ReportWindowId as AnalyticsReportWindowId,
   BreakdownReport,
+  DurationReport,
+  DurationStatistics,
   ReportDescriptor,
   ReportWindow,
   TimeSeriesReport,

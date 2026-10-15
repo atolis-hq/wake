@@ -358,3 +358,96 @@ it('reconciles non-zero usage across buckets, excluding both window boundaries o
     );
   }
 });
+
+it('computes exact duration statistics, groups and start buckets with invalid durations excluded', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  for (const [index, duration] of [0, 2000, 7000, 11000, -1, null].entries()) {
+    const stream = runStream(runId(`duration-${index}`));
+    const startedAt = query.window.from;
+    await journal.appendToStream(stream, 0, [
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: `duration-${index}`,
+          activity: 'agent',
+          workflowInstanceId: 'workflow-1',
+          orchestrationGroupId: 'group-1',
+          attempt: 1,
+          startedAt,
+          ...(index === 2 ? { stage: 'review' } : {}),
+        },
+        stream,
+      ).event,
+    ]);
+    if (duration !== null)
+      await journal.appendToStream(stream, 1, [
+        eventEnvelope(
+          ExecutionEventType.RunSucceeded,
+          {
+            finishedAt: new Date(Date.parse(startedAt) + duration).toISOString(),
+            outcome: { kind: ActivityOutcomeKind.Done },
+          },
+          stream,
+        ).event,
+      ]);
+  }
+  const { duration, summary } = await queryRunAnalytics(journal, query);
+  expect(duration.statistics).toEqual({ count: 4, medianMs: 4500, averageMs: 5000 });
+  expect(duration.statistics.medianMs).toBe(summary.medianRunDurationMs);
+  expect(duration.groups[0]?.rows).toEqual([{ value: 'agent', ...duration.statistics }]);
+  expect(duration.groups[1]?.rows).toEqual([
+    { value: 'unknown', count: 3, medianMs: 2000, averageMs: 13000 / 3 },
+    { value: 'review', count: 1, medianMs: 7000, averageMs: 7000 },
+  ]);
+  expect(duration.buckets[0]).toMatchObject(duration.statistics);
+  expect(
+    duration.buckets
+      .slice(1)
+      .every(
+        (bucket) => bucket.count === 0 && bucket.medianMs === null && bucket.averageMs === null,
+      ),
+  ).toBe(true);
+  const empty = await queryRunAnalytics(new InMemoryEventJournal(clock), query);
+  expect(empty.duration.statistics).toEqual({ count: 0, medianMs: null, averageMs: null });
+});
+
+it('buckets duration by start with half-open window boundaries', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  const starts = [
+    query.window.from,
+    '2026-07-31T13:00:00.000Z',
+    query.window.to,
+    '2026-07-31T12:29:59.999Z',
+  ];
+  for (const [index, startedAt] of starts.entries()) {
+    const stream = runStream(runId(`duration-boundary-${index}`));
+    await journal.appendToStream(stream, 0, [
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: `boundary-${index}`,
+          activity: 'agent',
+          workflowInstanceId: 'workflow-1',
+          orchestrationGroupId: 'group-1',
+          attempt: 1,
+          startedAt,
+        },
+        stream,
+      ).event,
+    ]);
+    await journal.appendToStream(stream, 1, [
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        {
+          finishedAt: new Date(Date.parse(startedAt) + 1000).toISOString(),
+          outcome: { kind: ActivityOutcomeKind.Done },
+        },
+        stream,
+      ).event,
+    ]);
+  }
+  const { duration } = await queryRunAnalytics(journal, query);
+  expect(duration.statistics).toEqual({ count: 2, medianMs: 1000, averageMs: 1000 });
+  expect(duration.buckets.slice(0, 2).map((bucket) => bucket.count)).toEqual([1, 1]);
+  expect(duration.buckets.slice(2).every((bucket) => bucket.count === 0)).toBe(true);
+});
