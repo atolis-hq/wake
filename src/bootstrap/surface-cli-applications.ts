@@ -1055,6 +1055,7 @@ async function checkProviders(
       failures.push('configured provider has no adapter identity');
       continue;
     }
+    notices.push(...((await provider.webhook?.diagnostics?.()) ?? []));
     if (provider.checkConnectivity === undefined) continue;
     try {
       await provider.checkConnectivity();

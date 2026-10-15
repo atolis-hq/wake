@@ -77,7 +77,9 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
           if (check.channel !== 'webhook') return [check];
           if (!config.webhooks.enabled) return [];
           return [
-            check.successCount === 0 ? { ...check, status: AdapterHealthStatus.Unknown } : check,
+            check.successCount === 0 && check.failureCount === 0
+              ? { ...check, status: AdapterHealthStatus.Unknown }
+              : check,
           ];
         }),
       webhook: createGitHubWebhook(

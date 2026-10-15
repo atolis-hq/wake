@@ -2,10 +2,16 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AdapterId } from '../../contracts/identifiers.js';
+import {
+  WebhookOperation,
+  webhookDiagnosisSchema,
+  type WebhookDiagnosis,
+} from './webhook-diagnosis.js';
 
 export interface GitHubWebhookState {
   readonly secret: string;
   readonly hookId?: number;
+  readonly diagnosis?: WebhookDiagnosis;
 }
 
 /** Provider operational state: intentionally outside configuration and projections. */
@@ -33,6 +39,20 @@ export class GitHubWebhookStateStore {
     const state = { secret: randomBytes(32).toString('hex') };
     await this.save(owner, repo, state);
     return state;
+  }
+
+  async diagnosis(owner: string, repo: string): Promise<WebhookDiagnosis | undefined> {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(this.path(owner, repo), 'utf8'));
+      if (typeof parsed === 'object' && parsed !== null && 'diagnosis' in parsed) {
+        const result = webhookDiagnosisSchema.safeParse(parsed.diagnosis);
+        return result.success ? result.data : undefined;
+      }
+      return undefined;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      return { operation: WebhookOperation.State };
+    }
   }
 
   async save(owner: string, repo: string, state: GitHubWebhookState): Promise<void> {
