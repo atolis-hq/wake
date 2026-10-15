@@ -4,6 +4,7 @@ import {
   defineClosedVocabulary,
   median,
   type BreakdownReport,
+  type DurationReport,
   type ReportDefinition,
   type ReportQuery,
   type TimeSeriesReport,
@@ -16,10 +17,20 @@ import { RunStatus } from '../contracts/vocabulary.js';
 import { foldRunEvent } from '../domain/run.js';
 
 export const RunReportId = defineClosedVocabulary({
+  Duration: 'run-duration',
   Outcomes: 'run-outcomes-over-time',
   Usage: 'token-and-cost-usage',
   Breakdown: 'run-breakdowns-by-dimension',
 } as const);
+
+const durationDescriptor = { id: RunReportId.Duration, title: 'Run duration' };
+
+export function createRunDurationReport(journal: EventJournal): ReportDefinition {
+  return {
+    ...durationDescriptor,
+    query: async (query) => (await queryRunAnalytics(journal, query)).duration,
+  };
+}
 
 export const RunUsageMeasure = defineClosedVocabulary({
   Tokens: 'total-tokens',
@@ -118,30 +129,29 @@ export async function queryRunAnalytics(
   journal: EventJournal,
   query: ReportQuery,
 ): Promise<{
+  duration: DurationReport;
   report: TimeSeriesReport;
   breakdown: BreakdownReport;
   usage: TimeSeriesReport;
   summary: RunSummary;
 }> {
-  const grouped = await readRuns(journal, query);
   const from = Date.parse(query.window.from);
   const to = Date.parse(query.window.to);
   const first = Math.floor(from / query.window.bucketMs) * query.window.bucketMs;
-  const zero = () => Object.fromEntries(series.map(({ id }) => [id, 0]));
   const buckets = outcomeBuckets(first, to, query.window.bucketMs);
   const usageBuckets = buckets.map(({ from, to }) => ({
     from,
     to,
     values: { [RunUsageMeasure.Tokens]: 0, [RunUsageMeasure.CostUsd]: 0 },
   }));
-  const totals = zero();
-  const durations: number[] = [];
+  const totals = Object.fromEntries(series.map(({ id }) => [id, 0]));
+  const durationData = collectDurations(query, buckets);
   const counts = dimensions.map(() => new Map<string, number>());
   let runs = 0,
     totalTokens = 0,
     totalCostUsd = 0,
     processed = 0;
-  for (const run of grouped.values()) {
+  for (const run of (await readRuns(journal, query)).values()) {
     if (processed++ % 100 === 0) await yieldScan(query.signal);
     const start = Date.parse(run.startedAt);
     if (!(start >= from && start < to)) continue;
@@ -162,11 +172,12 @@ export async function queryRunAnalytics(
     const bucket = usageBuckets[Math.floor((start - first) / query.window.bucketMs)]!;
     bucket.values[RunUsageMeasure.Tokens] += tokens;
     bucket.values[RunUsageMeasure.CostUsd] += cost;
-    const duration = runDuration(run);
-    if (duration !== null) durations.push(duration);
+    durationData.add(run, Math.floor((start - first) / query.window.bucketMs));
   }
+  const duration = await durationData.report();
   query.signal?.throwIfAborted();
   return {
+    duration,
     report: {
       report: { id: RunReportId.Outcomes, title: 'Run outcomes over time' },
       window: query.window,
@@ -190,7 +201,7 @@ export async function queryRunAnalytics(
       failed: totals[RunReportOutcome.Failed]!,
       totalTokens,
       totalCostUsd,
-      medianRunDurationMs: await median(durations, () => yieldScan(query.signal)),
+      medianRunDurationMs: duration.statistics.medianMs,
     },
   };
 }
@@ -243,4 +254,68 @@ function outcomeBuckets(first: number, to: number, bucketMs: number) {
       values: Object.fromEntries(series.map(({ id }) => [id, 0])),
     });
   return buckets;
+}
+
+function collectDurations(query: ReportQuery, buckets: TimeSeriesReport['buckets']) {
+  const durations: number[] = [];
+  const durationBuckets = buckets.map(() => [] as number[]);
+  const durationGroups = dimensions.slice(0, 2).map(() => new Map<string, number[]>());
+  return {
+    add(run: RunView, bucketIndex: number) {
+      const duration = runDuration(run);
+      if (duration !== null) {
+        durations.push(duration);
+        durationBuckets[bucketIndex]!.push(duration);
+        dimensions.slice(0, 2).forEach((dimension, index) => {
+          const value = dimension.value(run) ?? RunReportValue.Unknown;
+          const groups = durationGroups[index]!;
+          const values = groups.get(value) ?? [];
+          values.push(duration);
+          groups.set(value, values);
+        });
+      }
+    },
+    async report(): Promise<DurationReport> {
+      const statistics = async (values: readonly number[]) => {
+        let sum = 0;
+        for (const [index, value] of values.entries()) {
+          if (index % 1024 === 0) await yieldScan(query.signal);
+          sum += value;
+        }
+        return {
+          count: values.length,
+          medianMs: await median(values, () => yieldScan(query.signal)),
+          averageMs: values.length === 0 ? null : sum / values.length,
+        };
+      };
+      const groups: DurationReport['groups'][number][] = [];
+      for (const [index, dimension] of dimensions.slice(0, 2).entries()) {
+        const rows = [];
+        for (const [value, values] of durationGroups[index]!) {
+          await yieldScan(query.signal);
+          rows.push({ value, ...(await statistics(values)) });
+        }
+        rows.sort(
+          (a, b) => b.count - a.count || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0),
+        );
+        groups.push({ id: dimension.id, title: dimension.title, rows });
+      }
+      const durationSeries = [];
+      for (const [index, bucket] of buckets.entries()) {
+        durationSeries.push({
+          from: bucket.from,
+          to: bucket.to,
+          ...(await statistics(durationBuckets[index]!)),
+        });
+      }
+
+      return {
+        report: durationDescriptor,
+        window: query.window,
+        statistics: await statistics(durations),
+        groups,
+        buckets: durationSeries,
+      };
+    },
+  };
 }

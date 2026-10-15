@@ -2,6 +2,7 @@ import {
   ReportWindowId,
   type AnalyticsReport,
   type AnalyticsSummaryResponse,
+  type DurationStatistics,
   type ReportDescriptor,
   type ReportWindow,
 } from '../../../api/contracts/index.js';
@@ -46,6 +47,41 @@ function decodeValues(value: unknown, path: string) {
 
 export const decodeReport: Decoder<AnalyticsReport> = (value, path = '') => {
   const record = object(value, path);
+  if ('statistics' in record) {
+    const statistics: Decoder<DurationStatistics> = (value, path = '') => {
+      const row = object(value, path);
+      const nullable = (key: string) =>
+        row[key] === null ? null : number(row[key], child(path, key));
+      return {
+        count: number(row.count, child(path, 'count')),
+        medianMs: nullable('medianMs'),
+        averageMs: nullable('averageMs'),
+      };
+    };
+    return {
+      report: decodeReportDescriptor(record.report, child(path, 'report')),
+      window: decodeWindow(record.window, child(path, 'window')),
+      statistics: statistics(record.statistics, child(path, 'statistics')),
+      groups: array(record.groups, child(path, 'groups'), (value, path = '') => {
+        const group = object(value, path);
+        return {
+          ...decodeReportDescriptor(value, path),
+          rows: array(group.rows, child(path, 'rows'), (value, path = '') => {
+            const row = object(value, path);
+            return { value: string(row.value, child(path, 'value')), ...statistics(value, path) };
+          }),
+        };
+      }),
+      buckets: array(record.buckets, child(path, 'buckets'), (value, path = '') => {
+        const bucket = object(value, path);
+        return {
+          from: string(bucket.from, child(path, 'from')),
+          to: string(bucket.to, child(path, 'to')),
+          ...statistics(value, path),
+        };
+      }),
+    };
+  }
   if ('dimensions' in record)
     return {
       report: decodeReportDescriptor(record.report, child(path, 'report')),

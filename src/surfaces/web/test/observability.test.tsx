@@ -442,3 +442,51 @@ it('renders throughput identity, UTC timestamps and newest-first duration rows',
   expect(within(table).getByText(now)).toBeTruthy();
   expect(within(table).getByText(`${(86400).toLocaleString()} s`)).toBeTruthy();
 });
+
+it.each([0, 2])('loads and retries run duration with %i qualifying runs', async (count) => {
+  const descriptor = { id: 'run-duration', title: 'Run duration' };
+  let finish!: (response: Response) => void;
+  let calls = 0;
+  const statistics = { count, medianMs: count ? 2000 : null, averageMs: count ? 3000 : null };
+  mount(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/reports')) return json([descriptor]);
+    if (url.includes('/summary?')) return json(summary);
+    if (++calls === 1)
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    return json({
+      report: descriptor,
+      window,
+      statistics,
+      groups: ['Action', 'Stage'].map((title) => ({
+        id: title,
+        title,
+        rows: count ? [{ value: 'agent', ...statistics }] : [],
+      })),
+      buckets: [{ from: window.from, to: now, ...statistics }],
+    });
+  });
+  expect(await screen.findByText('Loading report…')).toBeTruthy();
+  await act(async () =>
+    finish(
+      new Response(
+        JSON.stringify({ type: 'about:blank', title: 'Duration unavailable', status: 500 }),
+        { status: 500 },
+      ),
+    ),
+  );
+  await screen.findByText('Duration unavailable');
+  fireEvent.click(
+    within(screen.getByRole('region', { name: 'Selected report' })).getByRole('button', {
+      name: 'Retry',
+    }),
+  );
+  expect(await screen.findByText(/Unfinished runs and runs without valid/)).toBeTruthy();
+  expect(screen.getByRole('table', { name: 'Run duration by Action' })).toBeTruthy();
+  expect(screen.getByRole('table', { name: 'Run duration by Stage' })).toBeTruthy();
+  const buckets = screen.getByRole('table', { name: 'Run duration over time' });
+  expect(within(buckets).getByText(count ? '2 s' : 'No data', { selector: 'strong' })).toBeTruthy();
+  if (!count) expect(screen.getByText('No valid run durations in this window')).toBeTruthy();
+});

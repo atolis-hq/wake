@@ -36,6 +36,7 @@ it('composes the registered report and independent summary, validates identifier
         { id: 'run-breakdowns-by-dimension' },
         { id: 'token-and-cost-usage' },
         { id: 'work-item-throughput' },
+        { id: 'run-duration' },
       ],
     },
   });
@@ -208,6 +209,26 @@ it('serves registered throughput with empty duration rows and completion buckets
         totals: { 'work-items-done': 0 },
         durationRows: [],
         excludedDurationCount: 0,
+        buckets: expect.any(Array),
+      },
+    },
+  });
+});
+
+it('serves the registered duration report with unavailable empty statistics', async () => {
+  const { dispatcher } = fixture();
+  expect(
+    await dispatcher.dispatch(
+      'GET',
+      '/api/v1/observability/reports?window=1d&report=run-duration',
+      undefined,
+    ),
+  ).toMatchObject({
+    status: 200,
+    body: {
+      data: {
+        statistics: { count: 0, medianMs: null, averageMs: null },
+        groups: [{ id: 'run-action' }, { id: 'run-stage' }],
         buckets: expect.any(Array),
       },
     },

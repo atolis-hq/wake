@@ -173,3 +173,16 @@ The Reports selector includes **Token and cost usage**. The shared Window
 dropdown controls separate total-token and USD-cost charts, with bucket tables.
 Values reconcile with the summary tiles for the same window; missing usage
 and empty buckets show zero. Loading and retry states use the report framework.
+
+The `run-duration` report shows run duration by Action and Stage and over the
+selected window's buckets, using run start time for cohort and bucket membership.
+Median is primary and arithmetic average is secondary, both in milliseconds in
+the API and seconds in the UI, alongside qualifying-run counts. Unfinished runs
+and runs without valid, nonnegative start/finish durations are excluded; zero
+durations qualify. Missing dimensions use `unknown`. Empty statistics are null
+("No data" in the UI), and empty buckets remain present. The overall median
+matches the summary tile. Reports load asynchronously with loading, retry and
+empty states, using live facts without an additional projection. The duration
+response has `statistics`, `groups` (descriptors with value/statistics rows),
+and `buckets` (from/to plus statistics); statistics contain `count`,
+`medianMs`, and `averageMs`.

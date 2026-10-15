@@ -93,3 +93,16 @@ Malformed persisted events (including non-ISO timestamps) are rejected by the
 owning event decoder and use the report error state rather than being silently
 ignored. Duration exclusions apply to decoded facts with missing creation or
 inconsistent time ordering.
+
+The `run-duration` report shows run duration by Action and Stage and over the
+selected window's buckets, using run start time for cohort and bucket membership.
+Median is primary and arithmetic average is secondary, both in milliseconds in
+the API and seconds in the UI, alongside qualifying-run counts. Unfinished runs
+and runs without valid, nonnegative start/finish durations are excluded; zero
+durations qualify. Missing dimensions use `unknown`. Empty statistics are null
+("No data" in the UI), and empty buckets remain present. The overall median
+matches the summary tile. Reports load asynchronously with loading, retry and
+empty states, using live facts without an additional projection. The duration
+response has `statistics`, `groups` (descriptors with value/statistics rows),
+and `buckets` (from/to plus statistics); statistics contain `count`,
+`medianMs`, and `averageMs`.

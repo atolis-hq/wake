@@ -4,6 +4,7 @@ import {
   ReportWindowId,
   type AnalyticsSummaryResponse,
   type BreakdownReport,
+  type DurationReport,
   type TimeSeriesReport,
 } from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
@@ -172,6 +173,8 @@ function Reports() {
               <LoadingState label="Loading report" />
             ) : report.error ? (
               <ErrorState error={report.error} retry={() => void report.refetch()} />
+            ) : 'statistics' in report.data.data ? (
+              <DurationTables data={report.data.data} />
             ) : 'dimensions' in report.data.data ? (
               <BreakdownTable data={report.data.data} />
             ) : (
@@ -423,6 +426,83 @@ function BreakdownTable({ data }: { readonly data: BreakdownReport }) {
           </table>
         </div>
       )}
+    </>
+  );
+}
+
+function DurationTables({ data }: { readonly data: DurationReport }) {
+  const duration = (value: number | null) =>
+    value === null
+      ? 'No data'
+      : `${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} s`;
+  return (
+    <>
+      <h2>{data.report.title}</h2>
+      <p>
+        {data.window.from} to {data.window.to} (UTC)
+      </p>
+      <p>
+        Unfinished runs and runs without valid start/finish timestamps are excluded. Counts show
+        qualifying runs.
+      </p>
+      <p>
+        Median: {duration(data.statistics.medianMs)}; Average: {duration(data.statistics.averageMs)}
+      </p>
+      {data.statistics.count === 0 && (
+        <EmptyState>No valid run durations in this window</EmptyState>
+      )}
+      {data.groups.map((group) => (
+        <div key={group.id} className={reportStyles.table}>
+          <table aria-label={`Run duration by ${group.title}`}>
+            <thead>
+              <tr>
+                <th>{group.title}</th>
+                <th>Run count</th>
+                <th>Median</th>
+                <th>Average</th>
+              </tr>
+            </thead>
+            <tbody>
+              {group.rows.map((row) => (
+                <tr key={row.value}>
+                  <th scope="row">{row.value}</th>
+                  <td>{row.count}</td>
+                  <td>
+                    <strong>{duration(row.medianMs)}</strong>
+                  </td>
+                  <td>{duration(row.averageMs)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <div className={reportStyles.table}>
+        <table aria-label="Run duration over time">
+          <thead>
+            <tr>
+              <th>Bucket start (UTC)</th>
+              <th>Bucket end (UTC)</th>
+              <th>Run count</th>
+              <th>Median</th>
+              <th>Average</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.buckets.map((bucket) => (
+              <tr key={bucket.from}>
+                <th scope="row">{bucket.from}</th>
+                <td>{bucket.to}</td>
+                <td>{bucket.count}</td>
+                <td>
+                  <strong>{duration(bucket.medianMs)}</strong>
+                </td>
+                <td>{duration(bucket.averageMs)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }
