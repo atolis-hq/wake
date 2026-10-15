@@ -8,6 +8,7 @@ import {
 import {
   ActivityEventType,
   PullRequestCheckState,
+  PullRequestDenialCode,
   PullRequestMergeability,
   PullRequestState,
   type ActivityName,
@@ -131,7 +132,22 @@ export const outcomeRouteConfigSchema = z
     activities: z.array(followOnActivityConfigSchema).readonly().optional(),
     then: identifier,
     repeat: bound.optional(),
-    retry: bound.optional(),
+    retry: z
+      .object({
+        max: z.number().int().positive(),
+        reasons: z
+          .array(
+            z.enum([PullRequestDenialCode.ChecksUnavailable, PullRequestDenialCode.ChecksPending]),
+          )
+          .min(1)
+          .optional(),
+        delaysMs: z.array(z.number().int().positive()).min(1).optional(),
+      })
+      .strict()
+      .refine((value) => value.delaysMs === undefined || value.delaysMs.length === value.max, {
+        message: 'retry.delaysMs must contain one delay per retry',
+      })
+      .optional(),
     await: awaitConfigSchema.optional(),
     watchGates: z.array(watchGateConfigSchema).optional(),
     resourceTransitions: z.array(resourceTransitionConfigSchema).min(1).optional(),

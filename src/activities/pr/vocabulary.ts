@@ -40,6 +40,7 @@ export const PullRequestDenialCode = defineClosedVocabulary({
   Closed: 'closed',
   StaleApproval: 'stale-approval',
   ChecksPending: 'checks-pending',
+  ChecksUnavailable: 'checks-could-not-be-read',
   ChecksFailing: 'checks-failing',
   UntrustedActor: 'untrusted-actor',
   TooManyFilesChanged: 'too-many-files-changed',

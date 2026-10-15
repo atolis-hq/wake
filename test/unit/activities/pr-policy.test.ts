@@ -154,7 +154,7 @@ describe('decidePullRequestAuthority', () => {
       { pullRequests: [{ ...authorityInput().pullRequests[0]!, state: 'closed' as const }] },
     ],
     [
-      'checks-pending',
+      'checks-could-not-be-read',
       { pullRequests: [{ ...authorityInput().pullRequests[0]!, checks: 'unknown' as const }] },
     ],
     [

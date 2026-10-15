@@ -48,7 +48,7 @@ describe('pr.merge Activity', () => {
     ]);
   });
 
-  it.each(['pending', 'failing'] as const)(
+  it.each(['unknown', 'pending', 'failing'] as const)(
     'blocks without a merge intent when checks are %s',
     async (checks) => {
       const world = new TestWorld();
@@ -61,7 +61,10 @@ describe('pr.merge Activity', () => {
           invocation(work.workItemId, { target: 'primary', method: 'merge', requireChecks: true }),
           context(),
         ),
-      ).resolves.toEqual({ kind: 'blocked', data: { reason: `checks-${checks}` } });
+      ).resolves.toEqual({
+        kind: 'blocked',
+        data: { reason: checks === 'unknown' ? 'checks-could-not-be-read' : `checks-${checks}` },
+      });
       expect(await world.events('pr.merge-requested')).toHaveLength(0);
       expect(await world.events('pr.merge-denied')).toHaveLength(1);
     },
@@ -113,28 +116,39 @@ describe('pr.merge Activity', () => {
     ).toMatchObject({ requireApproval: true, autoMerge: false });
   });
 
-  it('allows a pending-check auto-merge after the workflow review gate without a native review', async () => {
-    const world = new TestWorld();
-    const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
-    await setupApprovedPullRequest(world, work.workItemId, 'pending', false);
-    const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
+  it.each(['pending', 'unknown'] as const)(
+    'preserves auto-merge authority for %s checks',
+    async (checks) => {
+      const world = new TestWorld();
+      const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
+      await setupApprovedPullRequest(world, work.workItemId, checks, false);
+      const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
 
-    await expect(
-      activity.handler.execute(
-        invocation(work.workItemId, {
-          target: 'primary',
-          method: 'squash',
-          requireChecks: true,
-          requireApproval: false,
-          autoMerge: true,
-        }),
-        context(),
-      ),
-    ).resolves.toMatchObject({ kind: 'waiting' });
-    expect(await world.events('pr.merge-requested')).toMatchObject([
-      { event: { payload: { autoMerge: true } } },
-    ]);
-  });
+      await expect(
+        activity.handler.execute(
+          invocation(work.workItemId, {
+            target: 'primary',
+            method: 'squash',
+            requireChecks: true,
+            requireApproval: false,
+            autoMerge: true,
+          }),
+          context(),
+        ),
+      ).resolves.toMatchObject(
+        checks === 'pending'
+          ? { kind: 'waiting' }
+          : { kind: 'blocked', data: { reason: 'checks-could-not-be-read' } },
+      );
+      if (checks === 'unknown') {
+        expect(await world.events('pr.merge-requested')).toHaveLength(0);
+        return;
+      }
+      expect(await world.events('pr.merge-requested')).toMatchObject([
+        { event: { payload: { autoMerge: true } } },
+      ]);
+    },
+  );
 
   it('rejects an unapproved direct merge at the public Activity boundary', () => {
     const world = new TestWorld();
@@ -160,7 +174,7 @@ describe('pr.merge Activity', () => {
 async function setupApprovedPullRequest(
   world: TestWorld,
   work: ReturnType<typeof workItemId>,
-  checks: 'pending' | 'passing' | 'failing' = 'passing',
+  checks: 'unknown' | 'pending' | 'passing' | 'failing' = 'passing',
   reviewed = true,
 ) {
   const resource = resId('1');

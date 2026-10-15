@@ -302,6 +302,7 @@ function applyActivityRequested(
   state.status = orchestrationStatusTransitions[OrchestrationEventType.ActivityRequested]!;
   delete state.waitingFor;
   state.pendingActivation = {
+    ...(payload.notBefore === undefined ? {} : { notBefore: payload.notBefore }),
     activationId: payload.activationId,
     ordinal: payload.ordinal,
     activity: payload.activity,

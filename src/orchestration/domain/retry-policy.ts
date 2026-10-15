@@ -13,6 +13,11 @@ export function mayRetry(
   outcome: ActivityOutcome,
 ): boolean {
   if (route.retry === undefined || requiresReconciliation(outcome)) return false;
+  if (route.retry.reasons !== undefined) {
+    const data = outcome.data;
+    if (typeof data !== 'object' || data === null || !('reason' in data)) return false;
+    if (!route.retry.reasons.some((reason) => reason === data.reason)) return false;
+  }
   const retryKey = `${state.currentStage}:${outcome.kind}`;
   return (state.retryCounts[retryKey] ?? 0) < route.retry.max;
 }
@@ -26,6 +31,7 @@ export function requestRetry(
   const retryKey = `${state.currentStage}:${input.outcome.kind}`;
   const count = (state.retryCounts[retryKey] ?? 0) + 1;
   const stage = definition.stages[stageName(state.currentStage)]!;
+  const delay = stage.on[input.outcome.kind]?.retry?.delaysMs?.[count - 1];
   events.push(
     stateDraft(
       state,
@@ -38,16 +44,15 @@ export function requestRetry(
       input,
       {
         eventType: OrchestrationEventType.ActivityRequested,
-        payload: activation(
-          state.workflowInstanceId,
-          nextOrdinal(state),
-          stage.activity,
-          stage.with,
-          {
+        payload: {
+          ...(delay === undefined
+            ? {}
+            : { notBefore: new Date(Date.parse(input.occurredAt) + delay).toISOString() }),
+          ...activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
             execution: stage.execution,
             stage: stageName(state.currentStage),
-          },
-        ),
+          }),
+        },
       },
       events.length + 2,
     ),

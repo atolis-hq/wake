@@ -64,6 +64,7 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
             PullRequestDenialCode.Closed,
             PullRequestDenialCode.StaleApproval,
             PullRequestDenialCode.ChecksPending,
+            PullRequestDenialCode.ChecksUnavailable,
             PullRequestDenialCode.ChecksFailing,
             PullRequestDenialCode.UntrustedActor,
             PullRequestDenialCode.TooManyFilesChanged,
