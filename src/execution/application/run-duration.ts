@@ -9,7 +9,7 @@ import {
 import { RunReportValue } from '../contracts/run-report-value.js';
 import type { RunView } from '../contracts/views.js';
 
-function runDuration(run: RunView): number | null {
+export function runDuration(run: RunView): number | null {
   if (run.finishedAt === undefined) return null;
   const duration = Date.parse(run.finishedAt) - Date.parse(run.startedAt);
   return Number.isFinite(duration) && duration >= 0 ? duration : null;

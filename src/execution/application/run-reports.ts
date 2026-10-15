@@ -11,11 +11,11 @@ import {
 } from '../../kernel/index.js';
 import { selectRunExecutionEvent } from '../contracts/events.js';
 import { RunReportValue } from '../contracts/run-report-value.js';
-import { agentTokenUsage } from '../contracts/runner.js';
 import type { RunView } from '../contracts/views.js';
 import { RunStatus } from '../contracts/vocabulary.js';
 import { foldRunEvent } from '../domain/run.js';
 import { collectDurations } from './run-duration.js';
+import { runBreakdownMetrics } from './run-metrics.js';
 
 export const RunReportId = defineClosedVocabulary({
   Duration: 'run-duration',
@@ -168,7 +168,7 @@ export async function queryRunAnalytics(
   }));
   const totals = Object.fromEntries(series.map(({ id }) => [id, 0]));
   const durationData = collectDurations(query, buckets, dimensions, durationDescriptor);
-  const counts = dimensions.map(() => new Map<string, number>());
+  const counts = dimensions.map(() => new Map<string, BreakdownTotals>());
   let runs = 0,
     totalTokens = 0,
     totalCostUsd = 0,
@@ -181,10 +181,9 @@ export async function queryRunAnalytics(
     totals[outcome]!++;
     buckets[Math.floor((start - first) / query.window.bucketMs)]!.values[outcome]!++;
     runs++;
-    countDimensions(run, counts, repositoryForRun);
-    const usage = agentTokenUsage(run.agent?.metadata);
-    const tokens = finiteOrZero(usage.tokens);
-    const cost = finiteOrZero(usage.costUsd);
+    const metrics = runBreakdownMetrics(run);
+    const { tokens, costUsd: cost } = metrics;
+    countDimensions(run, counts, metrics, repositoryForRun);
     totalTokens += tokens;
     totalCostUsd += cost;
     const bucket = usageBuckets[Math.floor((start - first) / query.window.bucketMs)]!;
@@ -224,10 +223,6 @@ export async function queryRunAnalytics(
   };
 }
 
-function finiteOrZero(value: number): number {
-  return Number.isFinite(value) ? value : 0;
-}
-
 async function readRuns(journal: EventJournal, query: ReportQuery) {
   const grouped = new Map<string, RunView>();
   for await (const event of scanJournal(journal, query.signal)) {
@@ -241,7 +236,7 @@ async function readRuns(journal: EventJournal, query: ReportQuery) {
 function runBreakdown(
   query: ReportQuery,
   runs: number,
-  counts: readonly Map<string, number>[],
+  counts: readonly Map<string, BreakdownTotals>[],
 ): BreakdownReport {
   return {
     report: { id: RunReportId.Breakdown, title: 'Run breakdowns by dimension' },
@@ -251,8 +246,8 @@ function runBreakdown(
       id,
       title,
       rows: [...counts[index]!.entries()]
-        .sort(([a, ac], [b, bc]) => bc - ac || (a < b ? -1 : a > b ? 1 : 0))
-        .map(([value, count]) => ({ value, count, share: count / runs })),
+        .sort(([a, ac], [b, bc]) => bc.count - ac.count || (a < b ? -1 : a > b ? 1 : 0))
+        .map(([value, metrics]) => ({ value, ...metrics, share: metrics.count / runs })),
     })),
   };
 }
@@ -268,9 +263,15 @@ function outcomeBuckets(first: number, to: number, bucketMs: number) {
   return buckets;
 }
 
+type BreakdownTotals = Omit<
+  BreakdownReport['dimensions'][number]['rows'][number],
+  'value' | 'share'
+>;
+
 function countDimensions(
   run: RunView,
-  counts: readonly Map<string, number>[],
+  counts: readonly Map<string, BreakdownTotals>[],
+  metrics: BreakdownTotals,
   repositoryForRun?: (run: RunView) => string | undefined,
 ) {
   dimensions.forEach((dimension, index) => {
@@ -279,6 +280,20 @@ function countDimensions(
         ? repositoryForRun?.(run)
         : dimension.value(run)) ?? RunReportValue.Unknown;
     const groups = counts[index]!;
-    groups.set(value, (groups.get(value) ?? 0) + 1);
+    const previous = groups.get(value);
+    groups.set(
+      value,
+      previous === undefined
+        ? { ...metrics }
+        : {
+            count: previous.count + metrics.count,
+            tokens: previous.tokens + metrics.tokens,
+            costUsd: previous.costUsd + metrics.costUsd,
+            durationMs: previous.durationMs + metrics.durationMs,
+            tokenRuns: previous.tokenRuns + metrics.tokenRuns,
+            costRuns: previous.costRuns + metrics.costRuns,
+            durationRuns: previous.durationRuns + metrics.durationRuns,
+          },
+    );
   });
 }

@@ -55,6 +55,12 @@ export interface BreakdownReport {
       readonly value: string;
       readonly count: number;
       readonly share: number;
+      readonly tokens: number;
+      readonly costUsd: number;
+      readonly durationMs: number;
+      readonly tokenRuns: number;
+      readonly costRuns: number;
+      readonly durationRuns: number;
     }[];
   })[];
 }

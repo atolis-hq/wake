@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
 import { createSurfaceApiApplications } from '../../../src/bootstrap/surface-api-applications.js';
+import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
 import { createApiDispatcher, createSurfaceHttpServer } from '../../../src/surfaces/index.js';
 import { WorkEventType, workItemStream } from '../../../src/work/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
@@ -232,6 +233,71 @@ it('serves the registered duration report with unavailable empty statistics', as
         statistics: { count: 0, medianMs: null, averageMs: null },
         groups: [{ id: 'run-action' }, { id: 'run-stage' }],
         buckets: expect.any(Array),
+      },
+    },
+  });
+});
+
+it('preserves breakdown metrics and sample counts through the report API', async () => {
+  const { journal, dispatcher } = fixture();
+  const stream = runStream(runId('api-samples'));
+  await journal.appendToStream(stream, 0, [
+    eventEnvelope(
+      ExecutionEventType.RunStarted,
+      {
+        activationId: 'api-samples',
+        activity: 'agent',
+        workflowInstanceId: 'workflow-1',
+        orchestrationGroupId: 'group-1',
+        attempt: 1,
+        startedAt: '2026-08-01T12:00:00.000Z',
+      },
+      stream,
+    ).event,
+  ]);
+  await journal.appendToStream(stream, 1, [
+    eventEnvelope(
+      ExecutionEventType.RunRunnerResultReported,
+      {
+        transport: 'succeeded',
+        agent: { outcome: 'DONE', displayBody: '', metadata: { inputTokens: 12, costUsd: 0 } },
+      },
+      stream,
+    ).event,
+  ]);
+  expect(
+    await dispatcher.dispatch(
+      'GET',
+      '/api/v1/observability/reports?window=1d&report=run-breakdowns-by-dimension',
+      undefined,
+    ),
+  ).toMatchObject({
+    status: 200,
+    body: {
+      data: {
+        dimensions: [
+          {
+            id: 'run-action',
+            rows: [
+              {
+                value: 'agent',
+                count: 1,
+                share: 1,
+                tokens: 12,
+                costUsd: 0,
+                durationMs: 0,
+                tokenRuns: 1,
+                costRuns: 1,
+                durationRuns: 0,
+              },
+            ],
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+        ],
       },
     },
   });

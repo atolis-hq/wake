@@ -384,6 +384,9 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
 }
 
 function BreakdownTable({ data }: { readonly data: BreakdownReport }) {
+  const [averages, setAverages] = useState(false);
+  const metric = (total: number, samples: number, format: (value: number) => string) =>
+    averages && samples === 0 ? 'n/a' : format(averages ? total / samples : total);
   const [selected, setSelected] = useState<string>();
   const dimension = data.dimensions.find(({ id }) => id === selected) ?? data.dimensions[0];
   return (
@@ -402,6 +405,16 @@ function BreakdownTable({ data }: { readonly data: BreakdownReport }) {
           ))}
         </select>
       </label>
+      <label>
+        Metrics{' '}
+        <select
+          value={averages ? 'averages' : 'totals'}
+          onChange={(event) => setAverages(event.target.value === 'averages')}
+        >
+          <option value="totals">Totals</option>
+          <option value="averages">Average per run</option>
+        </select>
+      </label>
       {data.total === 0 ? (
         <EmptyState>No runs in this window</EmptyState>
       ) : (
@@ -412,16 +425,44 @@ function BreakdownTable({ data }: { readonly data: BreakdownReport }) {
                 <th>{dimension?.title}</th>
                 <th>Run count</th>
                 <th>Share</th>
+                <th>{averages ? 'Avg tokens / run' : 'Tokens'}</th>
+                <th>{averages ? 'Avg cost / run (USD)' : 'Cost (USD)'}</th>
+                <th>{averages ? 'Avg duration / run' : 'Duration'}</th>
               </tr>
             </thead>
             <tbody>
-              {dimension?.rows.map(({ value, count, share }) => (
-                <tr key={value}>
-                  <th scope="row">{value}</th>
-                  <td>{count.toLocaleString()}</td>
-                  <td>{(share * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%</td>
-                </tr>
-              ))}
+              {dimension?.rows.map(
+                ({
+                  value,
+                  count,
+                  share,
+                  tokens,
+                  costUsd,
+                  durationMs,
+                  tokenRuns,
+                  costRuns,
+                  durationRuns,
+                }) => (
+                  <tr key={value}>
+                    <th scope="row">{value}</th>
+                    <td>{count.toLocaleString()}</td>
+                    <td>
+                      {(share * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%
+                    </td>
+                    <td>{metric(tokens, tokenRuns, (value) => value.toLocaleString())}</td>
+                    <td>{metric(costUsd, costRuns, (value) => '$' + value.toFixed(4))}</td>
+                    <td>
+                      {metric(
+                        durationMs,
+                        durationRuns,
+                        (value) =>
+                          (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 }) +
+                          ' s',
+                      )}
+                    </td>
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         </div>
