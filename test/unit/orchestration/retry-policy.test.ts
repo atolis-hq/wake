@@ -11,6 +11,7 @@ import {
   compileWorkflow,
   foldWorkflowInstance,
   orchestrationActivityOutcome,
+  outcomeRouteConfigSchema,
   startInstance,
   workflowInstanceStream,
   type WorkflowOrchestrationEvent,
@@ -134,3 +135,71 @@ function recorded(events: readonly WorkflowOrchestrationEventData[]): WorkflowOr
     globalPosition: index + 1,
   }));
 }
+
+it('journals each delayed retry and preserves the final unknown-check reason on exhaustion', () => {
+  const fixture = retryFixture();
+  const stage = fixture.definition.stages[fixture.definition.entry]!;
+  const definition = {
+    ...fixture.definition,
+    stages: {
+      ...fixture.definition.stages,
+      [fixture.definition.entry]: {
+        ...stage,
+        on: {
+          ...stage.on,
+          blocked: {
+            ...stage.on.failed!,
+            retry: {
+              max: 3,
+              reasons: ['checks-could-not-be-read' as const, 'checks-pending' as const],
+              delaysMs: [60000, 300000, 900000],
+            },
+          },
+        },
+      },
+    },
+  };
+  const events = [...fixture.events];
+  let now = Date.parse('2026-07-30T12:01:00.000Z');
+  for (const [index, delay] of [60000, 300000, 900000].entries()) {
+    const state = foldWorkflowInstance(recorded(events))!;
+    const decision = acceptActivityOutcome(definition, state, {
+      activationId: state.pendingActivation!.activationId,
+      outcome: orchestrationActivityOutcome({
+        kind: 'blocked',
+        data: { reason: 'checks-could-not-be-read' },
+      }),
+      occurredAt: new Date(now).toISOString(),
+      causationId: `denial-${index}`,
+    });
+    if (decision.kind !== 'append') throw new Error('expected retry');
+    events.push(...decision.events);
+    const replayed = foldWorkflowInstance(recorded(events))!;
+    expect(replayed.pendingActivation?.notBefore).toBe(new Date(now + delay).toISOString());
+    expect(replayed.retryCounts['implement:blocked']).toBe(index + 1);
+    now += delay;
+  }
+  const state = foldWorkflowInstance(recorded(events))!;
+  const exhausted = acceptActivityOutcome(definition, state, {
+    activationId: state.pendingActivation!.activationId,
+    outcome: orchestrationActivityOutcome({
+      kind: 'blocked',
+      data: { reason: 'checks-could-not-be-read' },
+    }),
+    occurredAt: new Date(now).toISOString(),
+    causationId: 'exhausted',
+  });
+  if (exhausted.kind !== 'append') throw new Error('expected route');
+  const final = foldWorkflowInstance(recorded([...events, ...exhausted.events]))!;
+  expect(final.status).toBe('waiting');
+  expect(final.retryCounts['implement:blocked']).toBe(3);
+  expect(final.lastOutcome?.data).toEqual({ reason: 'checks-could-not-be-read' });
+});
+
+it.each([
+  { max: 3, delaysMs: [60000] },
+  { max: 1, delaysMs: [0] },
+  { max: 1, reasons: ['checks-failing'] },
+])('rejects malformed selective retry configuration %j', (retry) => {
+  expect(outcomeRouteConfigSchema.safeParse({ then: 'await-human', retry }).success).toBe(false);
+});

@@ -269,6 +269,7 @@ export interface GroupBudgetExhaustedPayload extends ChildCoordinationMetadata {
 }
 
 export interface ActivityRequestedPayload {
+  readonly notBefore?: string;
   readonly activationId: ActivationId;
   readonly ordinal: number;
   readonly activity: ActivityName;
