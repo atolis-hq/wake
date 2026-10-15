@@ -209,6 +209,25 @@ function Summary({ data }: { readonly data: AnalyticsSummaryResponse }) {
 }
 const colors = ['#36a269', '#c58a31', '#687bd3', '#d15b65', '#8b929e'];
 function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
+  if (data.series.some((series) => series.unit !== undefined) && data.series.length > 1)
+    return (
+      <>
+        {data.series.map((series) => (
+          <OutcomeChart
+            key={series.id}
+            data={{
+              ...data,
+              report: { ...data.report, title: series.title },
+              series: [series],
+              buckets: data.buckets.map((bucket) => ({
+                ...bucket,
+                values: { [series.id]: bucket.values[series.id] ?? 0 },
+              })),
+            }}
+          />
+        ))}
+      </>
+    );
   const max = Math.max(
     1,
     ...data.buckets.map((bucket) =>
@@ -239,7 +258,7 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
         aria-label={data.report.title}
       >
         <text x="0" y="12">
-          {max} runs
+          {max} {data.series[0]?.unit ?? 'runs'}
         </text>
         {data.buckets.map((bucket, index) => {
           let offset = 0;
@@ -278,7 +297,13 @@ function OutcomeChart({ data }: { readonly data: TimeSeriesReport }) {
       <details>
         <summary>Bucket values</summary>
         <div className={reportStyles.table}>
-          <table aria-label="Run outcomes by bucket">
+          <table
+            aria-label={
+              data.series[0]?.unit === undefined
+                ? 'Run outcomes by bucket'
+                : `${data.report.title} by bucket`
+            }
+          >
             <thead>
               <tr>
                 <th>Bucket start (UTC)</th>

@@ -7,6 +7,7 @@ import {
   runId,
   RunReportOutcome,
   runStream,
+  RunUsageMeasure,
 } from '../../../src/execution/index.js';
 import { reportWindow, ReportWindowId } from '../../../src/kernel/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
@@ -42,6 +43,15 @@ describe('live run analytics', () => {
         Object.values(bucket.values).every((count) => count === 0),
       ),
     ).toBe(true);
+    for (const [measure, total] of [
+      [RunUsageMeasure.Tokens, result.summary.totalTokens],
+      [RunUsageMeasure.CostUsd, result.summary.totalCostUsd],
+    ] as const) {
+      expect(result.usage.totals[measure]).toBe(total);
+      expect(result.usage.buckets.reduce((sum, bucket) => sum + bucket.values[measure]!, 0)).toBe(
+        total,
+      );
+    }
     expect(result.summary).toEqual({
       runs: 0,
       completed: 0,
@@ -88,7 +98,13 @@ describe('live run analytics', () => {
             agent: {
               outcome: 'DONE',
               displayBody: '',
-              metadata: { inputTokens: 10, costUsd: 0.25 },
+              metadata: {
+                inputTokens: 10,
+                outputTokens: 2,
+                cacheWriteTokens: 3,
+                cacheReadTokens: 5,
+                costUsd: 0.25,
+              },
             },
           },
           stream,
@@ -129,7 +145,7 @@ describe('live run analytics', () => {
       completed: 1,
       blockedOrAwaitingApproval: 2,
       failed: 2,
-      totalTokens: 60,
+      totalTokens: 120,
       totalCostUsd: 1.5,
       medianRunDurationMs: 90_000_000,
     });

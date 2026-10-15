@@ -67,3 +67,11 @@ cohort and latest Run facts as the summary Runs tile. Missing values appear as
 then alphabetically by value. Empty windows return zero total and empty rows.
 The Reports tab offers a dimension selector and displays count and percentage
 share, with asynchronous loading, retry on failure, and an empty state.
+
+`token-and-cost-usage` returns a time series with `total-tokens` and
+`total-cost-usd` measures, labelled with `tokens` and `USD` units.
+It uses the same run start cohort, usage parser, and window buckets as the
+summary tiles. Missing usage contributes zero; partial usage contributes its
+available counters and reported cost. Empty windows return zero totals and
+zero-valued buckets. No token category splits or dimensional groupings are
+included. The web view plots each measure separately because their units differ.

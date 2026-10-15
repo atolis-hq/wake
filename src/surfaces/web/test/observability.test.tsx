@@ -245,3 +245,58 @@ it('loads, retries and displays an empty breakdown without non-finite shares', a
   expect(await screen.findByText('No runs in this window')).toBeTruthy();
   expect(screen.queryByText(/NaN|Infinity/)).toBeNull();
 });
+
+it('selects usage, switches windows, retries and renders separate token and cost scales', async () => {
+  const descriptor = { id: 'token-and-cost-usage', title: 'Token and cost usage' };
+  let finish!: (response: Response) => void;
+  let calls = 0;
+  const urls: string[] = [];
+  mount(async (input) => {
+    const url = String(input);
+    urls.push(url);
+    if (url.endsWith('/reports')) return json([...definitions, descriptor]);
+    if (url.includes('/summary?')) return json(summary);
+    if (!url.includes(descriptor.id)) return json(report);
+    if (++calls === 1)
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    return json({
+      report: descriptor,
+      window,
+      series: [
+        { id: 'total-tokens', title: 'Total tokens', unit: 'tokens' },
+        { id: 'total-cost-usd', title: 'Total cost (USD)', unit: 'USD' },
+      ],
+      totals: { 'total-tokens': 0, 'total-cost-usd': 0 },
+      buckets: [{ from: window.from, to: now, values: { 'total-tokens': 0, 'total-cost-usd': 0 } }],
+    });
+  });
+  await screen.findByRole('img', { name: 'Run outcomes over time' });
+  fireEvent.change(screen.getByLabelText('Report'), { target: { value: descriptor.id } });
+  expect(await screen.findByText('Loading report…')).toBeTruthy();
+  await act(async () =>
+    finish(
+      new Response(
+        JSON.stringify({ type: 'about:blank', title: 'Usage unavailable', status: 500 }),
+        { status: 500 },
+      ),
+    ),
+  );
+  await screen.findByText('Usage unavailable');
+  fireEvent.click(
+    within(screen.getByRole('region', { name: 'Selected report' })).getByRole('button', {
+      name: 'Retry',
+    }),
+  );
+  expect(await screen.findByRole('img', { name: 'Total tokens' })).toBeTruthy();
+  expect(screen.getByRole('img', { name: 'Total cost (USD)' })).toBeTruthy();
+  expect(
+    within(screen.getByRole('table', { name: 'Total cost (USD) by bucket' })).getByText('0'),
+  ).toBeTruthy();
+  expect(screen.queryByText(/NaN|Infinity/)).toBeNull();
+  fireEvent.change(screen.getByLabelText('Window'), { target: { value: '7d' } });
+  await waitFor(() =>
+    expect(urls.some((url) => url.includes('window=7d') && url.includes(descriptor.id))).toBe(true),
+  );
+});
