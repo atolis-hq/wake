@@ -69,3 +69,5 @@ export * from './infrastructure/webhook.js';
 export * from './infrastructure/webhook-state.js';
 
 export * from './provider.js';
+
+export { gitHubRepositoryIdentity } from './contracts/external-key.js';

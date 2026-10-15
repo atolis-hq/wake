@@ -28,3 +28,13 @@ export function parseGitHubResourceKey(key: string): GitHubResourceLocator {
     );
   return { owner: matched[1]!, repo: matched[2]!, number: parsed.data };
 }
+
+/** Resolve only provider-owned issue/PR keys; malformed historical keys remain unknown. */
+export function gitHubRepositoryIdentity(key: string): string | undefined {
+  try {
+    const locator = parseGitHubResourceKey(key);
+    return `${locator.owner}/${locator.repo}`;
+  } catch {
+    return undefined;
+  }
+}

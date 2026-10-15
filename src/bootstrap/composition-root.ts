@@ -44,6 +44,7 @@ import {
 import {
   createGitHubAgentContextReader,
   gitHubProviderDefinition,
+  gitHubRepositoryIdentity,
   resolveGitHubResourceUrl,
 } from '../integrations/github/index.js';
 import type {
@@ -156,6 +157,15 @@ export interface CompositionRoot {
   readonly runnerPipeline: RunnerPipeline;
   readonly requestImmediatePoll: (adapter: string) => void;
   readonly resolveResourceLink: ResourceLinkResolver;
+  readonly resolveResourceRepositoryIdentity: (
+    externalKey: Parameters<ResourceLinkResolver>[0],
+  ) => string | undefined;
+}
+
+export function resolveResourceRepositoryIdentity(
+  externalKey: Parameters<ResourceLinkResolver>[0],
+): string | undefined {
+  return externalKey.adapter === 'github' ? gitHubRepositoryIdentity(externalKey.key) : undefined;
 }
 
 const resourceLinkResolvers: Record<string, ResourceLinkResolver> = {
@@ -516,6 +526,7 @@ export async function createCompositionRoot(
     processorRuntime,
     advanceOnce,
     resolveResourceLink,
+    resolveResourceRepositoryIdentity,
     ...runtime,
   };
 }

@@ -196,7 +196,7 @@ it('keeps cancelled and ambiguous runs in other while execution failures count a
   expect(result.summary.medianRunDurationMs).toBe(1_800_000);
 });
 
-it('groups all four dimensions across the window with deterministic counts and shares', async () => {
+it('groups all six dimensions across the window with deterministic counts and shares', async () => {
   const journal = new InMemoryEventJournal(clock);
   for (const [index, startedAt] of [
     query.window.from,
@@ -232,6 +232,8 @@ it('groups all four dimensions across the window with deterministic counts and s
     'run-stage',
     'run-runner',
     'run-model',
+    'run-repository',
+    'run-runner-pool',
   ]);
   expect(breakdown.dimensions[0]?.rows).toEqual([
     { value: 'alpha', count: 2, share: 2 / 3 },
@@ -240,7 +242,10 @@ it('groups all four dimensions across the window with deterministic counts and s
   for (const dimension of breakdown.dimensions) {
     expect(dimension.rows.reduce((sum, row) => sum + row.count, 0)).toBe(summary.runs);
   }
-  for (const dimension of breakdown.dimensions.slice(1)) {
+  for (const dimension of breakdown.dimensions.slice(4)) {
+    expect(dimension.rows).toEqual([{ value: 'unknown', count: 3, share: 1 }]);
+  }
+  for (const dimension of breakdown.dimensions.slice(1, 4)) {
     expect(dimension.rows[1]).toEqual({ value: 'unknown', count: 1, share: 1 / 3 });
   }
 });

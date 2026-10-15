@@ -157,6 +157,8 @@ it('serves the registered live breakdown through the API', async () => {
           { id: 'run-stage', rows: [] },
           { id: 'run-runner', rows: [] },
           { id: 'run-model', rows: [] },
+          { id: 'run-repository', rows: [] },
+          { id: 'run-runner-pool', rows: [] },
         ],
       },
     },

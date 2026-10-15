@@ -27,3 +27,5 @@ export * from './contracts/vocabulary.js';
 export * from './domain/correlation.js';
 
 export * from './domain/resource.js';
+
+export * from './domain/repository-candidate.js';

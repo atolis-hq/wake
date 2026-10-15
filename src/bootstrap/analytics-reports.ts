@@ -8,12 +8,18 @@ import {
 } from '../execution/index.js';
 import { reportWindow, type ReportDefinition, type ReportWindowId } from '../kernel/index.js';
 import { createWorkThroughputReport, queryWorkCompletionSummary } from '../orchestration/index.js';
+import type { ResourceRepositoryIdentityResolver } from '../resources/index.js';
+import { createRunRepositoryLookup } from './run-repository-lookup.js';
 import { sampledMeta } from './surface-api-metadata.js';
 
-export function createAnalyticsReports(journal: EventJournal, now: () => string) {
+export function createAnalyticsReports(
+  journal: EventJournal,
+  now: () => string,
+  resolveIdentity?: ResourceRepositoryIdentityResolver,
+) {
   const definitions: readonly ReportDefinition[] = [
     createRunOutcomesReport(journal),
-    createRunBreakdownReport(journal),
+    createRunBreakdownReport(journal, createRunRepositoryLookup(journal, resolveIdentity)),
     createRunUsageReport(journal),
     createWorkThroughputReport(journal),
     createRunDurationReport(journal),

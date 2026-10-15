@@ -59,12 +59,19 @@ returned series and buckets or dimension rows.
 
 `run-breakdowns-by-dimension` returns `report`, `window`, `total`, and
 `dimensions`. Each dimension has an `id`, `title`, and `rows` containing
-`value`, `count`, and `share` (a fraction of `total`). The four dimensions are
-`run-action` (run activity), `run-stage`, `run-runner` (runner name), and `run-model` (runner
-model). Counts aggregate the entire selected window using the same start
+`value`, `count`, and `share` (a fraction of `total`). The six dimensions are
+`run-action` (run activity), `run-stage`, `run-runner` (runner name), `run-model` (runner model), `run-repository`, and `run-runner-pool`
+(recorded runner pool). Counts aggregate the entire selected window using the same start
 cohort and latest Run facts as the summary Runs tile. Missing values appear as
 `unknown`; recorded values remain distinct. Rows sort by descending count,
 then alphabetically by value. Empty windows return zero total and empty rows.
+Repository identity follows the run’s workflow instance to its work item and active
+resource correlations. Repository resources use their canonical external key; GitHub
+Issue and PullRequest resources use the typed owner/repository component of their
+external key, including existing intake facts. Candidates are selected in Repository,
+PullRequest, Issue order, then by ascending resource ID within a kind. A missing
+correlation or an invalid selected key yields `unknown`; each run counts once.
+No analytics projection or additional persisted run data is required.
 The Reports tab offers a dimension selector and displays count and percentage
 share, with asynchronous loading, retry on failure, and an empty state.
 
