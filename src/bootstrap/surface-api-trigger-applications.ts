@@ -91,7 +91,7 @@ export function createTriggerApplications(
           : new CronTriggerPolicy().nextOccurrence(definition.on.cron, asOf),
       pending: Object.values(view.coalesced)
         .filter((entry) => entry.coordinationKey === coordinationKey)
-        .map((entry) => ({
+        .map(({ manualRequests: _manual, automaticRequests: _automatic, ...entry }) => ({
           ...entry,
           activeWorkItemId: activeInvocation?.activeWorkItemId ?? null,
         })),

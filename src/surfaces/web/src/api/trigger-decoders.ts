@@ -6,6 +6,7 @@ import {
 } from '../../../api/contracts/index.js';
 import { WorkflowStatusValue } from '../../../api/contracts/transport-values.js';
 import {
+  manualTriggerOutcomeSchema,
   triggerDefinitionSchema,
   TriggerRequestDisposition,
   triggerSkipDiagnosticSchema,
@@ -19,6 +20,7 @@ const request = z.object({
   source: triggerSourceSchema,
   disposition: z.enum(TriggerRequestDisposition),
   sources: z.array(triggerSourceSchema),
+  manualOutcome: manualTriggerOutcomeSchema.optional(),
   activeWorkItemId: z.string().nullable(),
 });
 const invocation = z.object({

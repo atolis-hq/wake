@@ -42,7 +42,10 @@ export interface TriggerResponse {
   readonly paused: boolean;
   readonly pauseReason: string | null;
   readonly nextOccurrence: string | null;
-  readonly pending: readonly (TriggerView['coalesced'][string] & {
+  readonly pending: readonly (Omit<
+    TriggerView['coalesced'][string],
+    'manualRequests' | 'automaticRequests'
+  > & {
     readonly activeWorkItemId: string | null;
   })[];
   readonly latestSkip: TriggerSkipDiagnostic | null;

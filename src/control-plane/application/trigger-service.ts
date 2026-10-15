@@ -13,13 +13,13 @@ import { CronTriggerPolicy } from '../domain/cron-trigger-policy.js';
 import { TriggerDiagnostics } from './trigger-diagnostics.js';
 import {
   appendTriggerFact,
-  consumedTriggerRequest,
   hasTriggerRequest,
   sourceIdentity,
   type TriggerFactInput,
 } from './trigger-facts.js';
 import { inspectTriggers } from './trigger-inspection.js';
 import { requestManualTrigger } from './trigger-manual-request.js';
+import { advancePendingTriggers } from './trigger-pending.js';
 import { maximumTriggerSources, type TriggerView } from './trigger-projection.js';
 import { recoverTriggerInvocation } from './trigger-recovery.js';
 import { hasActiveInvocation, isOwnScopeSource } from './trigger-rules.js';
@@ -264,49 +264,17 @@ export class TriggerService {
   }
 
   private async advanceCoalesced(context: CommandContext): Promise<void> {
-    const view = await this.reader.get();
-    for (const request of Object.values(view.coalesced)) {
-      if (hasActiveInvocation(view, request.coordinationKey)) continue;
-      const config = this.configured(request.triggerId);
-      const identity = `trigger:${request.triggerId}:${sourceIdentity(request.source)}`;
-      const reason = await this.diagnostics.ineligibleReason(
-        view,
-        request.triggerId,
-        config,
-        config !== undefined,
-      );
-      if (reason !== undefined || config === undefined) {
-        await this.diagnostics.record(
-          request.triggerId,
-          request.source,
-          reason ?? TriggerSkipReason.Removed,
-        );
-        // This recorded request was reconsidered and consumed; later eligibility is not a source.
-        await this.emit(
-          consumedTriggerRequest(request, reason ?? TriggerSkipReason.Removed),
-          context,
-          `trigger:consume:${request.triggerId}:${sourceIdentity(request.source)}`,
-        );
-        continue;
-      }
-      await this.emit(
-        {
-          eventType: ControlEventType.TriggerInvocationClaimed,
-          payload: {
-            triggerId: config.id,
-            coordinationKey: request.coordinationKey,
-            source: request.source,
-            sources: request.sources,
-            workItemId: this.dependencies.ids.next('work'),
-            workflowInstanceId: `workflow-${encodeURIComponent(identity)}`,
-            workflowName: config.workflow,
-          },
-        },
-        context,
-        `${identity}:claim`,
-      );
-      await this.recover(context);
-    }
+    await advancePendingTriggers(
+      {
+        dependencies: this.dependencies,
+        diagnostics: this.diagnostics,
+        view: () => this.reader.get(),
+        configured: (id) => this.configured(id),
+        emit: (input, command, id) => this.emit(input, command, id),
+        recover: (command) => this.recover(command),
+      },
+      context,
+    );
   }
 
   private async recover(context: CommandContext): Promise<void> {

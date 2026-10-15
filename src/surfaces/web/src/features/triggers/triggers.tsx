@@ -307,7 +307,7 @@ function TriggerControl({ trigger }: { readonly trigger: TriggerResponse }) {
         <>
           <Button
             type="button"
-            disabled={command.isPending || trigger.paused}
+            disabled={command.isPending}
             onClick={() =>
               command.mutate({
                 name: TriggerCommandNameValue.Run,
@@ -317,7 +317,7 @@ function TriggerControl({ trigger }: { readonly trigger: TriggerResponse }) {
           >
             Run now
           </Button>
-          {trigger.paused && <p>Resume this trigger before running it.</p>}
+          {trigger.paused && <p>Automatic runs paused; Run now still works.</p>}
           {trigger.status === TriggerStatus.Running && (
             <p>A request will coalesce while this invocation is active.</p>
           )}

@@ -2,6 +2,7 @@ import type { EventEnvelope, ProjectionDefinition } from '@atolis-hq/eventing';
 import {
   ControlEventType,
   TriggerRequestDisposition,
+  TriggerSourceKind,
   selectControlEvent,
   type ControlEventPayloads,
   type TriggerSource,
@@ -30,6 +31,9 @@ export interface TriggerView {
       string,
       ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded] & {
         readonly sources: readonly TriggerSource[];
+        readonly manualRequests: readonly ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded][];
+        /** Lets a skipped manual command leave automatic work claimable under its own trigger. */
+        readonly automaticRequests: readonly ControlEventPayloads[typeof ControlEventType.TriggerRequestRecorded][];
       }
     >
   >;
@@ -62,13 +66,7 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
             request.disposition === TriggerRequestDisposition.Coalesced
               ? {
                   ...previous.coalesced,
-                  [request.coordinationKey]: {
-                    ...request,
-                    sources: [
-                      ...(previous.coalesced[request.coordinationKey]?.sources ?? []),
-                      request.source,
-                    ].slice(0, maximumTriggerSources),
-                  },
+                  [request.coordinationKey]: pendingRequest(previous, request),
                 }
               : request.disposition === TriggerRequestDisposition.Started
                 ? previous.coalesced
@@ -111,9 +109,7 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
           ...previous,
           pauses: { ...previous.pauses, [payload.triggerId]: payload.reason },
           invocations: pausedInvocations(previous, payload),
-          coalesced: Object.fromEntries(
-            Object.entries(previous.coalesced).filter(([key]) => key !== payload.coordinationKey),
-          ),
+          coalesced: pendingAfterPause(previous.coalesced, payload.coordinationKey),
         };
       }
       case ControlEventType.TriggerResumed: {
@@ -126,17 +122,53 @@ export const triggerProjection: ProjectionDefinition<TriggerView> = {
   },
 };
 
+/** A manual head is consumed alone while other manual or automatic work is still queued. */
+function consumesWholeRequest(
+  pending: TriggerView['coalesced'][string] | undefined,
+  request: TriggerView['requests'][number],
+): boolean {
+  if (pending?.triggerId !== request.triggerId) return false;
+  if (JSON.stringify(pending.source) !== JSON.stringify(request.source)) return false;
+  return (
+    request.source.kind !== TriggerSourceKind.Manual ||
+    (pending.automaticRequests.length === 0 && pending.manualRequests.length <= 1)
+  );
+}
+
 function withoutCoalesced(
   coalesced: TriggerView['coalesced'],
   request: TriggerView['requests'][number],
 ): TriggerView['coalesced'] {
   const key = request.coordinationKey;
   // An ineligible new occurrence does not discard another trigger's coalesced request.
-  if (
-    coalesced[key]?.triggerId !== request.triggerId ||
-    JSON.stringify(coalesced[key]?.source) !== JSON.stringify(request.source)
-  )
-    return coalesced;
+  if (!consumesWholeRequest(coalesced[key], request)) {
+    const pending = coalesced[key];
+    if (pending === undefined || request.source.kind !== TriggerSourceKind.Manual) return coalesced;
+    const commandId = request.source.commandId;
+    const retained = pending.manualRequests.filter(
+      (manual) =>
+        manual.triggerId !== request.triggerId ||
+        manual.source.kind !== TriggerSourceKind.Manual ||
+        manual.source.commandId !== commandId,
+    );
+    if (retained.length === pending.manualRequests.length) return coalesced;
+    // Skipping a manual command must not discard other queued work; the head stays pending work.
+    const head = pending.automaticRequests.at(-1) ?? retained.at(-1);
+    const removedHead = JSON.stringify(pending.source) === JSON.stringify(request.source);
+    return {
+      ...coalesced,
+      [key]: {
+        ...pending,
+        ...(removedHead && head !== undefined
+          ? { ...head, manualOutcome: head.manualOutcome }
+          : {}),
+        manualRequests: retained,
+        sources: pending.sources.filter(
+          (source) => source.kind !== TriggerSourceKind.Manual || source.commandId !== commandId,
+        ),
+      },
+    };
+  }
   const { [key]: _, ...rest } = coalesced;
   return rest;
 }
@@ -151,4 +183,45 @@ function pausedInvocations(
       ? { ...invocation, failureOutcomeCount: payload.outcomeCount }
       : invocation,
   );
+}
+
+function pendingRequest(
+  previous: TriggerView,
+  request: TriggerView['requests'][number],
+): TriggerView['coalesced'][string] {
+  return {
+    ...request,
+    manualRequests: [
+      ...(previous.coalesced[request.coordinationKey]?.manualRequests ?? []),
+      ...(request.source.kind === TriggerSourceKind.Manual ? [request] : []),
+    ].slice(0, maximumTriggerSources),
+    automaticRequests: [
+      ...(previous.coalesced[request.coordinationKey]?.automaticRequests ?? []),
+      ...(request.source.kind === TriggerSourceKind.Manual ? [] : [request]),
+    ].slice(-maximumTriggerSources),
+    sources: [
+      ...(previous.coalesced[request.coordinationKey]?.sources ?? []),
+      request.source,
+    ].slice(0, maximumTriggerSources),
+  };
+}
+
+function pendingAfterPause(
+  coalesced: TriggerView['coalesced'],
+  coordinationKey: string,
+): TriggerView['coalesced'] {
+  const request = coalesced[coordinationKey];
+  if (request === undefined) return coalesced;
+  const { [coordinationKey]: _, ...rest } = coalesced;
+  const manualRequest = request.manualRequests.at(-1);
+  if (manualRequest === undefined) return rest;
+  return {
+    ...rest,
+    [coordinationKey]: {
+      ...request,
+      ...manualRequest,
+      automaticRequests: [],
+      sources: request.sources.filter((source) => source.kind === TriggerSourceKind.Manual),
+    },
+  };
 }

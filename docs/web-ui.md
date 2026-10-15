@@ -133,8 +133,8 @@ The empty instructions editor explains its purpose and that it applies to every 
 
 Orphan inspection uses the rebuildable operator-instructions projection. The host catches up new facts incrementally; repeated polling does not scan journal history. An unreadable orphan body shows an unavailable-content message while retaining its scope, author and revision.
 
-Each configured trigger offers **Run now**. Paused triggers require **Resume**
-first. During an active invocation, a manual request coalesces into the pending
+Each configured trigger offers **Run now**. Pausing stops automatic runs; **Run now** remains available and keeps the
+trigger paused. During an active invocation, a manual request coalesces into the pending
 request for reconsideration after that invocation. The result appears immediately:
 `started` with the new work item, `queued` behind the named active invocation, or `skipped` with an eligibility reason. Request retries
 reuse the command identifier. Invocation history and skip diagnostics include

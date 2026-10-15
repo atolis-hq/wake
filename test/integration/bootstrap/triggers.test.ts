@@ -145,6 +145,27 @@ async function invocations(journal: InMemoryEventJournal) {
     );
 }
 
+function mixedScope(shared: boolean) {
+  return shared
+    ? {
+        binding: { triggerCoordinationKey: () => 'shared' },
+        ids: ['oversight', 'secondary'],
+        key: 'shared',
+        head: 'secondary',
+      }
+    : { binding: {}, ids: ['oversight'], key: 'oversight', head: 'oversight' };
+}
+
+async function claims(journal: InMemoryEventJournal) {
+  return (await journal.readAll(0))
+    .map(selectControlEvent)
+    .flatMap((event) =>
+      event?.event.eventType === ControlEventType.TriggerInvocationClaimed
+        ? [event.event.payload]
+        : [],
+    );
+}
+
 describe('composed workflow triggers', () => {
   it.each([
     { cron: '* * * * *' },
@@ -1077,6 +1098,17 @@ describe('durable trigger coordination', () => {
     workflow = await accept(failing, first.workflowInstanceId, ActivityOutcomeKind.Failed);
     await root.runnerPipeline.run({ maxProgress: 1 });
     expect((await root.triggers.get()).pauses.oversight).toBeDefined();
+    const paused = (await root.triggers.get()).pauses.oversight;
+    expect(
+      await root.triggers.requestManual('oversight', {
+        ...f.context,
+        commandId: 'manual-auto-paused',
+      }),
+    ).toMatchObject({ disposition: 'coalesced', activeWorkItemId: first.workItemId });
+    expect((await root.triggers.get()).pauses.oversight).toBe(paused);
+    expect((await root.orchestration.get(workflow.workflowInstanceId))?.retryCounts).toEqual({
+      'start:failed': 1,
+    });
     await root.triggers.resume('oversight', { ...f.context, commandId: 'failure-resume' });
     await root.runnerPipeline.run({ maxProgress: 1 });
     expect((await root.orchestration.get(workflow.workflowInstanceId))?.retryCounts).toEqual({
@@ -1126,7 +1158,7 @@ describe('manual trigger commands', () => {
     expect(Object.values((await root.triggers.get()).coalesced)[0]?.sources).toHaveLength(1);
   });
 
-  it('reports a queued request cleared by pause as skipped on retry', async () => {
+  it('preserves queued manual requests across pause and restart', async () => {
     const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
     await f.root.triggers.requestManual('oversight', f.context);
     const queued = { ...f.context, commandId: 'queued-before-pause' };
@@ -1139,27 +1171,28 @@ describe('manual trigger commands', () => {
       commandId: 'clear-queued',
     });
     const root = await restart(f);
-    expect(await root.triggers.requestManual('oversight', queued)).toEqual({
-      disposition: 'skipped',
-      reason: TriggerSkipReason.Paused,
-    });
-    expect(await root.triggers.requestManual('oversight', queued)).toEqual({
-      disposition: 'skipped',
-      reason: TriggerSkipReason.Paused,
+    expect(await root.triggers.requestManual('oversight', queued)).toMatchObject({
+      disposition: 'coalesced',
     });
     expect(await invocations(f.journal)).toHaveLength(1);
-    expect((await root.triggers.get()).coalesced).toEqual({});
+    await expect(root.triggers.get()).resolves.toMatchObject({
+      pauses: { oversight: 'Operator pause' },
+    });
+    expect(Object.values((await root.triggers.get()).coalesced)[0]?.sources).toHaveLength(1);
+    await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
+    await root.triggers.reconcile(f.context);
+    expect(await invocations(f.journal)).toHaveLength(2);
+    expect((await invocations(f.journal))[1]?.source).toMatchObject({
+      kind: 'manual',
+      commandId: queued.commandId,
+    });
+    expect((await root.triggers.get()).pauses.oversight).toBe('Operator pause');
   });
 
-  it.each(['paused', 'dispatch-paused', 'capacity-unavailable'] as const)(
+  it.each(['dispatch-paused', 'capacity-unavailable'] as const)(
     'durably returns %s even after eligibility changes',
     async (reason) => {
       const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, true);
-      if (reason === 'paused')
-        await f.root.triggers.pause('oversight', 'Operator pause', {
-          ...f.context,
-          commandId: 'pause',
-        });
       if (reason === 'dispatch-paused') await f.root.controlPlane.pauseDispatch('pause-dispatch');
       if (reason === 'capacity-unavailable')
         await f.root.runnerControls.pause('fake', 'pause-runner');
@@ -1201,6 +1234,10 @@ describe('manual trigger commands', () => {
 
   it('exposes manual outcomes through the existing operator HTTP command path', async () => {
     const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    await f.root.triggers.pause('oversight', 'Operator pause', {
+      ...f.context,
+      commandId: 'api-pause',
+    });
     const dispatcher = createApiDispatcher((await createSurfaceApplications(f.root)).api);
     const path = '/api/v1/triggers/oversight/commands/run';
     const request = { idempotencyKey: 'manual-api' };
@@ -1218,6 +1255,16 @@ describe('manual trigger commands', () => {
       kind: 'manual',
       operator: 'web',
     });
+    await dispatcher.dispatch('POST', path, { idempotencyKey: 'queued-api' });
+    const detail = await (
+      await createSurfaceApplications(f.root)
+    ).api.triggers!.detail('oversight');
+    expect(detail?.data.pending).toHaveLength(1);
+    expect(detail?.data.pending[0]).not.toHaveProperty('manualRequests');
+    expect(detail?.data.pending[0]?.sources).toEqual([
+      { kind: TriggerSourceKind.Manual, commandId: 'trigger:queued-api', operator: 'web' },
+    ]);
+    expect(detail?.data.pending[0]?.manualOutcome).toMatchObject({ disposition: 'coalesced' });
   });
 });
 
@@ -1312,7 +1359,7 @@ it('reports a durable skip if capacity changes between the manual request and cl
   expect(await invocations(journal)).toHaveLength(0);
 });
 
-it('keeps pause consumption durable when a manual request crashes before its claim', async () => {
+it('starts a persisted manual request after pause and restart before claim', async () => {
   const journal = new FaultInjectingJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') });
   const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, false, journal);
   journal.failAfter = ControlEventType.TriggerRequestRecorded;
@@ -1324,16 +1371,390 @@ it('keeps pause consumption durable when a manual request crashes before its cla
     ...f.context,
     commandId: 'pause-after-crash',
   });
-  await root.triggers.resume('oversight', { ...f.context, commandId: 'resume-after-crash' });
-  expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
-    disposition: 'skipped',
-    reason: TriggerSkipReason.Paused,
+  const recovered = await restart(f);
+  const outcome = await recovered.triggers.requestManual('oversight', f.context);
+  expect(outcome).toMatchObject({ disposition: 'started' });
+  expect(await recovered.triggers.requestManual('oversight', f.context)).toEqual(outcome);
+  expect(await invocations(journal)).toHaveLength(1);
+  await accept({ ...f, root: recovered }, (await invocations(journal))[0]!.workflowInstanceId);
+  await recovered.triggers.reconcile(f.context);
+  expect((await recovered.triggers.get()).pauses.oversight).toBe('Operator pause');
+});
+
+it('starts manual work while operator-paused and remains paused after completion', async () => {
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+  await f.root.triggers.pause('oversight', 'Operator pause', {
+    ...f.context,
+    commandId: 'pause-first',
   });
-  expect(await root.triggers.requestManual('oversight', f.context)).toEqual({
-    disposition: 'skipped',
-    reason: TriggerSkipReason.Paused,
+  expect(await f.root.triggers.requestManual('oversight', f.context)).toMatchObject({
+    disposition: 'started',
   });
-  expect(await invocations(journal)).toHaveLength(0);
+  const first = (await invocations(f.journal))[0]!;
+  await accept(f, first.workflowInstanceId);
+  await f.root.triggers.reconcile(f.context);
+  expect((await f.root.triggers.get()).pauses.oversight).toBe('Operator pause');
+});
+
+it.each(['dispatch', 'runner'] as const)(
+  'returns a typed API skip for %s controls on a paused ungated trigger',
+  async (control) => {
+    const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+    await f.root.triggers.pause('oversight', 'Operator pause', {
+      ...f.context,
+      commandId: 'pause',
+    });
+    if (control === 'dispatch') await f.root.controlPlane.pauseDispatch('dispatch');
+    else await f.root.runnerControls.pause('fake', 'runner');
+    const api = createApiDispatcher((await createSurfaceApplications(f.root)).api);
+    expect(
+      await api.dispatch('POST', '/api/v1/triggers/oversight/commands/run', {
+        idempotencyKey: 'gated-api',
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: {
+        data: {
+          triggerOutcome: {
+            disposition: 'skipped',
+            reason:
+              control === 'dispatch'
+                ? TriggerSkipReason.DispatchPaused
+                : TriggerSkipReason.Capacity,
+          },
+        },
+      },
+    });
+    expect(await invocations(f.journal)).toHaveLength(0);
+  },
+);
+
+it('clears automatic sources around a manual pending request without losing manual provenance', async () => {
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+  await f.root.triggers.requestManual('oversight', f.context);
+  await source(f, 'automatic-before');
+  await f.consume();
+  const manual = {
+    ...f.context,
+    commandId: 'surviving-manual',
+    actor: { kind: EventActorKind.Operator, id: 'operator' },
+  };
+  await f.root.triggers.requestManual('oversight', manual);
+  await source(f, 'automatic-after');
+  await f.consume();
+  await f.root.triggers.pause('oversight', 'Operator pause', {
+    ...f.context,
+    commandId: 'pause-mixed',
+  });
+  const root = await restart(f);
+  expect((await root.triggers.get()).coalesced.oversight?.sources).toEqual([
+    { kind: TriggerSourceKind.Manual, commandId: manual.commandId, operator: 'operator' },
+  ]);
+  await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
+  await root.triggers.reconcile(f.context);
+  const second = (await invocations(f.journal))[1]!;
+  expect(second.source).toEqual({
+    kind: TriggerSourceKind.Manual,
+    commandId: manual.commandId,
+    operator: 'operator',
+  });
+  expect((await root.triggers.get()).invocations[1]?.claim.sources).toEqual([second.source]);
+});
+
+it('starts a new manual invocation after exhausted failures without resuming or resetting retries', async () => {
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
+  const config = parseRootConfig({
+    ...f.config,
+    orchestration: {
+      ...f.config.orchestration,
+      workflows: {
+        inspect: {
+          stages: {
+            start: {
+              activity: 'agent',
+              requiresApproval: false,
+              with: { prompt: 'Inspect' },
+              on: { done: { then: 'done' }, failed: { retry: { max: 1 }, then: 'done' } },
+            },
+          },
+        },
+      },
+    },
+  });
+  const root = await restart(f, { config });
+  const failing = { ...f, root, config };
+  await root.triggers.requestManual('oversight', f.context);
+  const first = (await invocations(f.journal))[0]!;
+  await accept(failing, first.workflowInstanceId, ActivityOutcomeKind.Failed);
+  await accept(failing, first.workflowInstanceId, ActivityOutcomeKind.Failed);
+  await root.triggers.reconcile(f.context);
+  const paused = (await root.triggers.get()).pauses.oversight;
+  expect(paused).toBeDefined();
+  expect(
+    await root.triggers.requestManual('oversight', {
+      ...f.context,
+      commandId: 'manual-after-failure',
+    }),
+  ).toMatchObject({ disposition: 'started' });
+  const second = (await invocations(f.journal))[1]!;
+  await accept(failing, second.workflowInstanceId);
+  await root.triggers.reconcile(f.context);
+  expect((await root.triggers.get()).pauses.oversight).toBe(paused);
+  expect(
+    (await root.orchestration.get(workflowInstanceId(first.workflowInstanceId)))?.retryCounts,
+  ).toEqual({ 'start:failed': 1 });
+});
+
+it('returns a capacity skip at maxOpenWorkItems even for an ungated paused manual trigger', async () => {
+  const f = await fixture(
+    { events: [WorkEventType.ObjectiveRevised] },
+    false,
+    undefined,
+    {},
+    ['oversight'],
+    1,
+  );
+  const item = workItemId('work-00000000000000000000000001');
+  await f.root.work.create({ workItemId: item, objective: 'open review' }, f.context);
+  const workflow = await f.root.orchestration.start(
+    {
+      workItemId: item,
+      workflowInstanceId: workflowInstanceId('workflow-review'),
+      orchestrationGroupId: orchestrationGroupId('group-review'),
+      workflowName: workflowName('inspect'),
+    },
+    { ...f.context, commandId: 'start-review' },
+  );
+  await f.root.orchestration.markActivationStarted(
+    workflow.workflowInstanceId,
+    workflow.pendingActivation!.activationId,
+    { ...f.context, commandId: 'started-review' },
+  );
+  await f.root.triggers.pause('oversight', 'Operator pause', {
+    ...f.context,
+    commandId: 'pause-open-work',
+  });
+  expect(
+    await f.root.triggers.requestManual('oversight', { ...f.context, commandId: 'manual-open' }),
+  ).toEqual({ disposition: 'skipped', reason: TriggerSkipReason.Capacity });
+  expect(await invocations(f.journal)).toEqual([]);
+});
+
+it('returns a capacity skip at maxConcurrentRuns even for an ungated paused manual trigger', async () => {
+  const started = deferred(),
+    release = deferred();
+  const f = await fixture(
+    { events: [WorkEventType.ObjectiveRevised] },
+    false,
+    undefined,
+    {
+      decorateRunner(runner) {
+        return {
+          async start(request, signal) {
+            const execution = await runner.start(request, signal);
+            started.resolve();
+            return { ...execution, result: release.promise.then(() => execution.result) };
+          },
+        };
+      },
+    },
+    ['oversight', 'secondary'],
+  );
+  await f.root.triggers.requestManual('oversight', f.context);
+  const running = f.root.advanceOnce({ maxProgress: 1 });
+  try {
+    await started.promise;
+    expect(
+      (await f.root.execution.list()).filter((run) => isActiveRunStatus(run.status)),
+    ).toHaveLength(1);
+    await f.root.triggers.pause('secondary', 'Operator pause', {
+      ...f.context,
+      commandId: 'pause-secondary',
+    });
+    expect(
+      await f.root.triggers.requestManual('secondary', {
+        ...f.context,
+        commandId: 'manual-at-limit',
+      }),
+    ).toEqual({ disposition: 'skipped', reason: TriggerSkipReason.Capacity });
+  } finally {
+    release.resolve();
+    await running;
+  }
+});
+
+it.each([false, true])(
+  'enforces manual capacity for mixed pending sources (shared scope: %s)',
+  async (shared) => {
+    const { binding, ids, key, head } = mixedScope(shared);
+    const f = await fixture(
+      { events: [WorkEventType.ObjectiveRevised] },
+      false,
+      undefined,
+      binding,
+      ids,
+    );
+    await f.root.triggers.requestManual('oversight', f.context);
+    const commands = ['mixed-manual-first', 'mixed-manual-second'];
+    const initialApi = createApiDispatcher((await createSurfaceApplications(f.root)).api);
+    for (const command of commands)
+      expect(
+        await initialApi.dispatch('POST', '/api/v1/triggers/oversight/commands/run', {
+          idempotencyKey: command,
+        }),
+      ).toMatchObject({
+        body: { data: { triggerOutcome: { disposition: 'coalesced' } } },
+      });
+    await source(f, 'automatic-after-manual');
+    await f.consume();
+    expect((await f.root.triggers.get()).coalesced[key]?.source.kind).toBe(TriggerSourceKind.Event);
+    expect((await f.root.triggers.get()).coalesced[key]?.triggerId).toBe(head);
+    await f.root.runnerControls.pause('fake', 'capacity-lost');
+    await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
+    const root = await restart(f, binding);
+    await root.triggers.reconcile(f.context);
+    // Only the manual commands are skipped; the ungated automatic occurrence still starts.
+    const claimed = await claims(f.journal);
+    expect(claimed).toHaveLength(2);
+    expect(claimed[1]?.sources.length).toBeGreaterThan(0);
+    expect(claimed[1]?.sources.every((entry) => entry.kind === TriggerSourceKind.Event)).toBe(true);
+    expect(claimed[1]?.triggerId).toBe(head);
+    expect((await root.triggers.get()).coalesced).toEqual({});
+    await root.runnerControls.unpause('fake', 'capacity-restored');
+    const recovered = await restart(f, binding);
+    const api = createApiDispatcher((await createSurfaceApplications(recovered)).api);
+    for (const command of commands) {
+      expect(
+        await api.dispatch('POST', '/api/v1/triggers/oversight/commands/run', {
+          idempotencyKey: command,
+        }),
+      ).toMatchObject({
+        status: 200,
+        body: {
+          data: { triggerOutcome: { disposition: 'skipped', reason: TriggerSkipReason.Capacity } },
+        },
+      });
+    }
+    expect(await invocations(f.journal)).toHaveLength(2);
+  },
+);
+
+it.each([
+  { name: 'later command fails', order: ['oversight', 'secondary'] },
+  { name: 'earlier command fails', order: ['secondary', 'oversight'] },
+])(
+  'keeps the passing manual command pending when a shared-scope sibling fails admission ($name)',
+  async ({ order }) => {
+    const stage = (runnerPool: string) => ({
+      start: {
+        activity: 'agent',
+        requiresApproval: false,
+        execution: { runnerPool },
+        with: { prompt: 'Inspect configured task' },
+        on: { done: { then: 'done' } },
+      },
+    });
+    const config = parseRootConfig({
+      execution: {
+        agentRunners: { fake: { kind: 'fake' }, other: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'], isolated: ['other'] },
+        defaultRunnerPool: 'standard',
+      },
+      orchestration: {
+        default: 'inspect',
+        workflows: {
+          inspect: { stages: stage('standard') },
+          isolated: { stages: stage('isolated') },
+        },
+      },
+      controlPlane: {
+        triggers: [
+          {
+            id: 'oversight',
+            workflow: 'inspect',
+            on: { events: [WorkEventType.ObjectiveRevised] },
+          },
+          {
+            id: 'secondary',
+            workflow: 'isolated',
+            on: { events: [WorkEventType.ObjectiveRevised] },
+          },
+        ],
+      },
+    });
+    const binding = { triggerCoordinationKey: () => 'shared', config };
+    const f = await fixture(
+      { events: [WorkEventType.ObjectiveRevised] },
+      false,
+      undefined,
+      binding,
+    );
+    await f.root.triggers.requestManual('oversight', f.context);
+    const api = createApiDispatcher((await createSurfaceApplications(f.root)).api);
+    for (const trigger of order)
+      expect(
+        await api.dispatch('POST', `/api/v1/triggers/${trigger}/commands/run`, {
+          idempotencyKey: `shared-${trigger}`,
+        }),
+      ).toMatchObject({ body: { data: { triggerOutcome: { disposition: 'coalesced' } } } });
+    await f.root.runnerControls.pause('other', 'isolated-capacity-lost');
+    await accept(f, (await invocations(f.journal))[0]!.workflowInstanceId);
+    const root = await restart(f, binding);
+    await root.triggers.reconcile(f.context);
+    const claimed = await claims(f.journal);
+    expect(claimed).toHaveLength(2);
+    expect(claimed[1]?.triggerId).toBe('oversight');
+    expect(claimed[1]?.sources).toEqual([
+      { kind: TriggerSourceKind.Manual, commandId: 'trigger:shared-oversight', operator: 'web' },
+    ]);
+    expect((await root.triggers.get()).coalesced).toEqual({});
+    const recovered = createApiDispatcher((await createSurfaceApplications(root)).api);
+    expect(
+      await recovered.dispatch('POST', '/api/v1/triggers/secondary/commands/run', {
+        idempotencyKey: 'shared-secondary',
+      }),
+    ).toMatchObject({
+      body: {
+        data: { triggerOutcome: { disposition: 'skipped', reason: TriggerSkipReason.Capacity } },
+      },
+    });
+  },
+);
+
+it('recovers a partial mixed-source skip without running the consumed manual command', async () => {
+  const journal = new FaultInjectingJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') });
+  const f = await fixture({ events: [WorkEventType.ObjectiveRevised] }, false, journal);
+  await f.root.triggers.requestManual('oversight', f.context);
+  const commands = ['consumed-before-crash', 'pending-after-crash'].map((commandId) => ({
+    ...f.context,
+    commandId,
+  }));
+  for (const command of commands) await f.root.triggers.requestManual('oversight', command);
+  await source(f, 'automatic-after-commands');
+  await f.consume();
+  await f.root.runnerControls.pause('fake', 'capacity-lost');
+  await accept(f, (await invocations(journal))[0]!.workflowInstanceId);
+  journal.failAfter = ControlEventType.TriggerRequestRecorded;
+  await expect(f.root.triggers.reconcile(f.context)).rejects.toThrow('Injected storage failure');
+  await f.root.runnerControls.unpause('fake', 'capacity-restored');
+  const root = await restart(f);
+  await root.triggers.reconcile(f.context);
+  expect(await root.triggers.requestManual('oversight', commands[0]!)).toEqual({
+    disposition: 'skipped',
+    reason: TriggerSkipReason.Capacity,
+  });
+  const history = (await root.triggers.get()).invocations;
+  expect(history).toHaveLength(2);
+  expect(history[1]?.claim.sources).toContainEqual({
+    kind: TriggerSourceKind.Manual,
+    commandId: commands[1]!.commandId,
+    operator: commands[1]!.actor.id,
+  });
+  expect(history[1]?.claim.sources).not.toContainEqual({
+    kind: TriggerSourceKind.Manual,
+    commandId: commands[0]!.commandId,
+    operator: commands[0]!.actor.id,
+  });
 });
 
 it('inspects a blocked slot through HTTP and retries durably across restart before reconsidering queued work', async () => {
