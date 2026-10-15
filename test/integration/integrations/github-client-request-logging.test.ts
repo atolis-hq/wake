@@ -37,6 +37,24 @@ describe('GitHub client request logging', () => {
     },
   );
 
+  it.each([403, 404])(
+    'leaves hooks endpoint %i failures to the provisioning diagnostic',
+    async (status) => {
+      fetch.mockResolvedValueOnce(githubFailure(status, 'HOOK:1'));
+      const client = createGitHubClient('ghp_configured_token');
+      await expect(
+        client.createHook({
+          owner: 'atolis-hq',
+          repo: 'wake',
+          url: 'https://wake.example/webhooks/github',
+          secret: 'webhook-secret',
+          events: ['issues'],
+        }),
+      ).rejects.toMatchObject({ status });
+      expect(stderr).not.toHaveBeenCalled();
+    },
+  );
+
   it('keeps a real GitHub 304 request failure quiet', async () => {
     fetch.mockResolvedValueOnce(githubFailure(304, 'ABCD:304'));
     const client = createGitHubClient('ghp_configured_token');

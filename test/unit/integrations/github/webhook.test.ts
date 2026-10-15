@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,69 @@ import { createGitHubWebhook } from '../../../../src/integrations/github/infrast
 const repository = { owner: 'atolis-hq', repo: 'wake' };
 
 describe('GitHub webhooks', () => {
+  it.each([403, 404])(
+    'persists a safe actionable %i diagnosis and clears it on recovery',
+    async (status) => {
+      const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const health = createGitHubAdapterHealthRegistry([repository]);
+      const config = gitHubConfigSchema.parse({
+        enabled: true,
+        repositories: [repository],
+        webhooks: { enabled: true },
+      });
+      const hooks = {
+        getHook: vi.fn(),
+        createHook: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error('secret-token webhook-secret'), { status })),
+        updateHook: vi.fn(),
+      };
+      const webhook = createGitHubWebhook(
+        adapterId('github'),
+        config,
+        'https://wake.example',
+        root,
+        hooks,
+        health,
+      );
+      try {
+        await webhook.provision();
+        const messages = await webhook.diagnostics!();
+        expect(messages).toEqual([
+          expect.stringContaining('atolis-hq/wake: create webhook failed: HTTP ' + status),
+        ]);
+        expect(messages[0]).toContain('Webhooks read/write permission');
+        expect(messages[0]).toContain('Intake continues by polling');
+        expect(stderr).toHaveBeenCalledExactlyOnceWith(messages[0] + '\n');
+        expect(health.snapshotAll().find((check) => check.channel === 'webhook')?.detail).toContain(
+          messages[0],
+        );
+        const restarted = createGitHubWebhook(
+          adapterId('github'),
+          config,
+          'https://wake.example',
+          root,
+          hooks,
+          health,
+        );
+        await expect(restarted.diagnostics!()).resolves.toEqual(messages);
+        expect(
+          await readFile(join(root, 'github-webhooks/github/atolis-hq--wake.json'), 'utf8'),
+        ).not.toMatch(/secret-token|webhook-secret/);
+        hooks.createHook.mockResolvedValue(42);
+        await restarted.provision();
+        await expect(webhook.diagnostics!()).resolves.toEqual([]);
+        expect(health.snapshotAll().find((check) => check.channel === 'webhook')?.status).toBe(
+          'ok',
+        );
+        expect(stderr).toHaveBeenCalledOnce();
+      } finally {
+        stderr.mockRestore();
+      }
+    },
+  );
+
   it('defaults to disabled and does not accept delivery', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
     const webhook = createWebhook(root, false);
@@ -165,6 +228,30 @@ describe('GitHub webhooks', () => {
     );
   });
 
+  it('identifies update failures without replacing an owned hook', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
+    const state = new GitHubWebhookStateStore(root, adapterId('github'));
+    await state.save('atolis-hq', 'wake', { secret: 'saved-secret', hookId: 42 });
+    const hooks = {
+      getHook: vi.fn(),
+      createHook: vi.fn(),
+      updateHook: vi.fn().mockRejectedValue({ status: 404, message: 'saved-secret' }),
+    };
+    const webhook = createWebhook(root, true, hooks);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await webhook.provision();
+      expect(hooks.createHook).not.toHaveBeenCalled();
+      await expect(webhook.diagnostics!()).resolves.toEqual([
+        expect.stringContaining('update managed webhook failed: HTTP 404'),
+      ]);
+      expect(stderr).toHaveBeenCalledOnce();
+      expect(JSON.stringify(stderr.mock.calls)).not.toContain('saved-secret');
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   it('returns the documented malformed and out-of-scope statuses', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
     const webhook = createWebhook(root, true);
@@ -220,6 +307,11 @@ describe('GitHub webhooks', () => {
       health,
     );
     await webhook.provision();
+    await expect(webhook.diagnostics!()).resolves.toEqual([
+      expect.stringContaining(
+        'surfaces.web.publicUrl is not configured. Intake continues by polling.',
+      ),
+    ]);
     expect(health.snapshotAll().find((check) => check.channel === 'webhook')).toMatchObject({
       status: 'degraded',
       failureCount: 1,

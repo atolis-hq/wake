@@ -128,6 +128,8 @@ export interface ProviderInstance {
 
 export interface ProviderWebhook {
   provision(): Promise<void>;
+  /** Safe provisioning notices, read without contacting the external provider. */
+  diagnostics?(): Promise<readonly string[]>;
   setupInstructions(): Promise<readonly ProviderWebhookSetup[]>;
   receive(
     body: Buffer,

@@ -3,6 +3,12 @@ import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ProviderWebhook } from '../../contracts/provider.js';
 import type { GitHubConfig } from '../contracts/config.js';
 import type { GitHubAdapterHealthRegistry } from './adapter-health-registry.js';
+import {
+  WebhookOperation,
+  WebhookProvisioningFailure,
+  renderWebhookDiagnosis,
+  webhookOperation,
+} from './webhook-diagnosis.js';
 import { GitHubWebhookStateStore } from './webhook-state.js';
 
 const events = new Set([
@@ -48,22 +54,23 @@ export function createGitHubWebhook(
     async provision() {
       for (const repository of config.repositories) {
         if (!config.webhooks.enabled) continue;
-        if (endpoint === undefined) {
-          health.recordFailure(
-            `${repository.owner}/${repository.repo}`,
-            'webhook',
-            new Error('surfaces.web.publicUrl is not configured'),
-          );
-          continue;
-        }
-        try {
-          await state.serialise(repository.owner, repository.repo, () =>
-            provisionRepository(repository, endpoint, state, client, health),
-          );
-        } catch (error) {
-          health.recordFailure(`${repository.owner}/${repository.repo}`, 'webhook', error);
-        }
+        await provisionWithDiagnosis(repository, endpoint, state, client, health);
       }
+    },
+    async diagnostics() {
+      if (!config.webhooks.enabled) return [];
+      const messages = await Promise.all(
+        config.repositories.map(async ({ owner, repo }) => {
+          const diagnosis =
+            endpoint === undefined
+              ? { operation: WebhookOperation.Configure }
+              : await state.diagnosis(owner, repo);
+          return diagnosis === undefined
+            ? undefined
+            : renderWebhookDiagnosis(owner + '/' + repo, diagnosis);
+        }),
+      );
+      return messages.filter((message): message is string => message !== undefined);
     },
     async receive(body, headers, trigger) {
       if (!config.webhooks.enabled) return 404;
@@ -86,7 +93,7 @@ export function createGitHubWebhook(
         const expected = `sha256=${createHmac('sha256', saved.secret).update(body).digest('hex')}`;
         if (!safeEqual(signature, expected)) return 401;
         if (!events.has(event)) return 404;
-        health.recordSuccess(`${owner}/${repo}`, 'webhook');
+        if (saved.diagnosis === undefined) health.recordSuccess(`${owner}/${repo}`, 'webhook');
         trigger();
         return 202;
       });
@@ -107,32 +114,68 @@ export function createGitHubWebhook(
   };
 }
 
+async function provisionWithDiagnosis(
+  repository: { readonly owner: string; readonly repo: string },
+  endpoint: string | undefined,
+  state: GitHubWebhookStateStore,
+  client: HookClient,
+  health: GitHubAdapterHealthRegistry,
+): Promise<void> {
+  const scope = repository.owner + '/' + repository.repo;
+  try {
+    await state.serialise(repository.owner, repository.repo, async () => {
+      try {
+        if (endpoint === undefined)
+          throw new WebhookProvisioningFailure({ operation: WebhookOperation.Configure });
+        await provisionRepository(repository, endpoint, state, client);
+        const { diagnosis: _diagnosis, ...saved } = await state.load(
+          repository.owner,
+          repository.repo,
+        );
+        await state.save(repository.owner, repository.repo, saved);
+        health.recordSuccess(scope, 'webhook');
+      } catch (error) {
+        const diagnosis =
+          error instanceof WebhookProvisioningFailure
+            ? error.diagnosis
+            : { operation: WebhookOperation.State };
+        const message = renderWebhookDiagnosis(scope, diagnosis);
+        const saved = await state.load(repository.owner, repository.repo);
+        await state.save(repository.owner, repository.repo, { ...saved, diagnosis });
+        health.recordFailure(scope, 'webhook', new Error(message));
+        process.stderr.write(message + '\n');
+      }
+    });
+  } catch {
+    // Unavailable provider state must not prevent polling from starting.
+    const message = renderWebhookDiagnosis(scope, { operation: WebhookOperation.State });
+    health.recordFailure(scope, 'webhook', new Error(message));
+    process.stderr.write(message + '\n');
+  }
+}
+
 async function provisionRepository(
   repository: { readonly owner: string; readonly repo: string },
   endpoint: string,
   state: GitHubWebhookStateStore,
   client: HookClient,
-  health: GitHubAdapterHealthRegistry,
 ): Promise<void> {
-  const scope = `${repository.owner}/${repository.repo}`;
-  try {
-    const saved = await state.load(repository.owner, repository.repo);
-    if (
-      saved.hookId !== undefined &&
-      (await updateManagedHook(repository, endpoint, saved, client))
-    ) {
-      return;
-    }
-    const hookId = await client.createHook({
+  const saved = await state.load(repository.owner, repository.repo);
+  if (
+    saved.hookId !== undefined &&
+    (await updateManagedHook(repository, endpoint, saved, client))
+  ) {
+    return;
+  }
+  const hookId = await webhookOperation(WebhookOperation.Create, () =>
+    client.createHook({
       ...repository,
       url: endpoint,
       secret: saved.secret,
       events: [...events],
-    });
-    await state.save(repository.owner, repository.repo, { ...saved, hookId });
-  } catch (error) {
-    health.recordFailure(scope, 'webhook', error);
-  }
+    }),
+  );
+  await state.save(repository.owner, repository.repo, { ...saved, hookId });
 }
 
 async function updateManagedHook(
@@ -141,19 +184,29 @@ async function updateManagedHook(
   saved: { readonly secret: string; readonly hookId?: number },
   client: HookClient,
 ): Promise<boolean> {
-  if (saved.hookId === undefined) return false;
+  const hookId = saved.hookId;
+  if (hookId === undefined) return false;
   try {
-    await client.getHook(repository.owner, repository.repo, saved.hookId);
-    await client.updateHook({
-      ...repository,
-      hookId: saved.hookId,
-      url: endpoint,
-      secret: saved.secret,
-      events: [...events],
-    });
+    await webhookOperation(WebhookOperation.Read, () =>
+      client.getHook(repository.owner, repository.repo, hookId),
+    );
+    await webhookOperation(WebhookOperation.Update, () =>
+      client.updateHook({
+        ...repository,
+        hookId,
+        url: endpoint,
+        secret: saved.secret,
+        events: [...events],
+      }),
+    );
     return true;
   } catch (error) {
-    if (statusOf(error) === 404) return false;
+    if (
+      error instanceof WebhookProvisioningFailure &&
+      error.diagnosis.operation === WebhookOperation.Read &&
+      error.diagnosis.status === 404
+    )
+      return false;
     throw error;
   }
 }
@@ -192,15 +245,6 @@ function safeEqual(left: string, right: string): boolean {
   const b = Buffer.from(right);
 
   return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function statusOf(error: unknown): number | undefined {
-  return typeof error === 'object' &&
-    error !== null &&
-    'status' in error &&
-    typeof error.status === 'number'
-    ? error.status
-    : undefined;
 }
 
 function webhookEndpoint(publicUrl: string): string {

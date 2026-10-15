@@ -634,6 +634,15 @@ Use `provider: github` for the built-in GitHub integration.
 | `publication.replies` | object; default `{ rules: [], default: primary }` | Routes agent-run reply comments. Rules are evaluated in order and the first match wins. |
 | `commands` | string list; default `[]` | Additional command syntax advertised on the web UI's Configuration → Commands tab alongside the adapter's built-in commands (`/approved`, `/accepted`, `/changes`, `/retry`, `/restart`, `/extend`). Purely descriptive: Wake does not recognize these itself, so any behavior they imply must be handled by whatever reads the comment. |
 
+Webhook provisioning failures produce one repository-specific diagnosis per attempt.
+HTTP 403/404 on the hooks endpoint can indicate missing repository **Webhooks:
+read/write** permission or repository access. Wake continues intake by polling.
+The same safe diagnosis appears in `wake doctor` notices and adapter health;
+the last failure is retained under `.wake/github-webhooks/` for Doctor across
+restarts, and successful provisioning clears it. A missing
+`surfaces.web.publicUrl` is reported explicitly. Provisioning runs at resident
+startup, not on every poll.
+
 Each `intake[]` rule has `where`, optional `matchMode` (`any` by default or
 `all`), optional `ignoredLabels` (default `[]`), and `tags` (default `[]`). An
 observation carrying any `ignoredLabels` value is discarded before Wake creates

@@ -42,6 +42,8 @@ export function redactGitHubRequestMessage(message: unknown): string {
 function logGitHubRequestFailure(message: unknown): void {
   const text = redactGitHubRequestMessage(message);
   if (requestLogStatus(text) === 304) return;
+  // Provisioning reports a repository-specific, secret-free diagnosis instead.
+  if (/^(?:GET|POST|PATCH) \/repos\/[^/\s]+\/[^/\s]+\/hooks(?:\/\d+)? - /.test(text)) return;
   process.stderr.write(`GitHub request failed: ${text}\n`);
 }
 
