@@ -79,6 +79,42 @@ describe('createGitHubRequestCoordinator', () => {
     });
   });
 
+  it('cools down on a rate-limit 403 but not on a plain permission 403', async () => {
+    let now = 1_000;
+    const coordinator = createGitHubRequestCoordinator({ maxConcurrent: 1, now: () => now });
+
+    await expect(
+      coordinator.run(async () => {
+        throw Object.assign(new Error('Resource not accessible'), { status: 403 });
+      }),
+    ).rejects.toThrow('Resource not accessible');
+    await expect(coordinator.run(async () => 'ok')).resolves.toBe('ok');
+
+    await expect(
+      coordinator.run(async () => {
+        throw Object.assign(new Error('forbidden'), {
+          status: 403,
+          response: { headers: { 'retry-after': '30' } },
+        });
+      }),
+    ).rejects.toThrow('forbidden');
+    await expect(coordinator.run(async () => 'too-early')).rejects.toMatchObject({
+      retryAt: now + 30_000,
+    });
+    now += 30_000;
+
+    await expect(
+      coordinator.run(async () => {
+        throw Object.assign(new Error('You have exceeded a secondary rate limit'), {
+          status: 403,
+        });
+      }),
+    ).rejects.toThrow('secondary rate limit');
+    await expect(coordinator.run(async () => 'too-early')).rejects.toMatchObject({
+      retryAt: now + 60_000,
+    });
+  });
+
   it('applies exponential provider cooldown to 5xx and network failures', async () => {
     let now = 0;
     const coordinator = createGitHubRequestCoordinator({ maxConcurrent: 1, now: () => now });
