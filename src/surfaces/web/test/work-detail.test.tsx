@@ -133,14 +133,16 @@ function detailClient(
                       orchestrationGroupId: 'group-1',
                       attempt: 1,
                       status:
-                        primary?.blockReason === 'run-ambiguous-after-3-attempts'
+                        primary?.blockReason ===
+                        'execution-recovery-ambiguous: runner inspection unavailable'
                           ? 'ambiguous'
                           : 'succeeded',
                       active: false,
                       startedAt: asOf,
                       finishedAt: asOf,
                       sentinel:
-                        primary?.blockReason === 'run-ambiguous-after-3-attempts'
+                        primary?.blockReason ===
+                        'execution-recovery-ambiguous: runner inspection unavailable'
                           ? 'AMBIGUOUS'
                           : 'DONE',
                       workflowName: 'delivery',
@@ -811,7 +813,7 @@ describe('work detail', () => {
               orchestrationGroupId: 'group-1',
               status: 'blocked',
               currentStage: 'implement',
-              blockReason: 'run-ambiguous-after-3-attempts',
+              blockReason: 'execution-recovery-ambiguous: runner inspection unavailable',
             },
             undefined,
             requests,
@@ -845,7 +847,7 @@ describe('work detail', () => {
               orchestrationGroupId: 'group-1',
               status: 'blocked',
               currentStage: 'implement',
-              blockReason: 'run-ambiguous-after-3-attempts',
+              blockReason: 'execution-recovery-ambiguous: runner inspection unavailable',
             },
             undefined,
             requests,
@@ -882,7 +884,7 @@ describe('work detail', () => {
                 orchestrationGroupId: 'group-1',
                 status: 'blocked',
                 currentStage: 'implement',
-                blockReason: 'run-ambiguous-after-3-attempts',
+                blockReason: 'execution-recovery-ambiguous: runner inspection unavailable',
               },
               undefined,
               requests,

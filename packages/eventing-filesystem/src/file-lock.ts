@@ -15,7 +15,7 @@ export interface FileLockMetadata {
 export interface FileLockOptions {
   readonly staleAfterMs?: number;
   readonly now?: Date;
-  /** A stale owner may be ignored only when this probe proves its process dead. */
+  /** Recover immediately only when process evidence proves the owner generation dead. */
   readonly staleRequiresDeadProcess?: boolean;
   readonly isProcessAlive?: (pid: number) => boolean;
   readonly processIdentity?: (pid: number) => Promise<string | null>;
@@ -278,7 +278,6 @@ async function ownerBlocksAcquisition(
       lockId: encoded[3]!,
     };
   }
-  if (options?.staleAfterMs === undefined || !isStale(owner, options)) return true;
   return ownerMetadataBlocks(owner, options);
 }
 
@@ -286,8 +285,11 @@ async function ownerMetadataBlocks(
   owner: FileLockMetadata,
   options: FileLockOptions | undefined,
 ): Promise<boolean> {
-  if (options?.staleAfterMs === undefined || !isStale(owner, options)) return true;
-  if (!options.staleRequiresDeadProcess || !ownerMayBeAlive(options, owner.pid)) return false;
+  if (!options?.staleRequiresDeadProcess)
+    return options?.staleAfterMs === undefined || !isStale(owner, options);
+  const alive = ownerMayBeAlive(options, owner.pid);
+  if (alive === null) return true;
+  if (!alive) return false;
   const identity = await processIdentity(owner.pid, options);
   if (owner.processIdentity !== undefined)
     return identity === null || identity === owner.processIdentity;
@@ -316,16 +318,20 @@ function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ESRCH') return false;
+    // EPERM proves the pid exists; start identity then decides whether it is the owner.
+    if (code === 'EPERM') return true;
+    throw error;
   }
 }
 
-function ownerMayBeAlive(options: FileLockOptions, pid: number): boolean {
+function ownerMayBeAlive(options: FileLockOptions, pid: number): boolean | null {
   try {
     return (options.isProcessAlive ?? isProcessAlive)(pid);
   } catch {
-    return true;
+    return null;
   }
 }
 

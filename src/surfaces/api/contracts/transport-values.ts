@@ -5,8 +5,9 @@ import type {
   TriggerSkipReason,
   TriggerSourceKind,
 } from '../../../control-plane/index.js';
-import type { RunStatus } from '../../../execution/index.js';
+import type { RecoveryBlockReasonPrefix, RunStatus } from '../../../execution/index.js';
 import { defineClosedVocabulary } from '../../../kernel/index.js';
+import type { WorkflowStatus } from '../../../orchestration/index.js';
 import type { ApiCommandStatus } from './control-plane.js';
 import type { TriggerCommandName } from './triggers.js';
 
@@ -135,3 +136,24 @@ export const TriggerCommandNameValue: typeof TriggerCommandName = {
   Resume: triggerCommands[1]!,
   Run: triggerCommands[2]!,
 };
+
+export const WorkflowStatusValue: typeof WorkflowStatus = defineClosedVocabulary({
+  Active: 'active',
+  Waiting: 'waiting',
+  Completed: 'completed',
+  Blocked: 'blocked',
+  Superseded: 'superseded',
+} as const);
+
+const recoveryBlockReasonShape = { 'execution-recovery-ambiguous:': true };
+
+export const RecoveryBlockReasonPrefixValue = Object.keys(
+  recoveryBlockReasonShape,
+)[0]! as typeof RecoveryBlockReasonPrefix;
+
+export function isAmbiguityResolutionBlockReasonValue(reason: string | undefined): boolean {
+  return (
+    reason?.startsWith(RecoveryBlockReasonPrefixValue) === true ||
+    (reason !== undefined && /^run-ambiguous-after-\d+-attempts$/.test(reason))
+  );
+}

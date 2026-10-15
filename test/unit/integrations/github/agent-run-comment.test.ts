@@ -80,3 +80,35 @@ describe('formatAgentRunComment', () => {
     expect(comment).toContain('"outcome": "NEEDS_CLARIFICATION"');
   });
 });
+
+it.each(['DONE', 'BLOCKED', 'FAILED'] as const)(
+  'publishes %s merge guidance without unsupported commands',
+  (outcome) => {
+    const comment = formatAgentRunComment({
+      idempotencyKey: 'merge',
+      outcome,
+      displayBody: 'Provider merge policy requires a human.',
+      metadata: {},
+      awaitingMerge: true,
+    });
+    expect(comment).toContain('Awaiting merge');
+    expect(comment).toContain('Resolve and merge it in the provider');
+    for (const command of ['/approved', '/changes', '/ask', '/retry'])
+      expect(comment).not.toContain(command);
+  },
+);
+
+it('keeps only /approved for an approval wait at the merge stage', () => {
+  const comment = formatAgentRunComment({
+    idempotencyKey: 'merge-approval',
+    outcome: 'DONE',
+    displayBody: 'Ready to merge.',
+    metadata: {},
+    awaitingApproval: true,
+    mergeStageApproval: true,
+  });
+  expect(comment).toContain('Awaiting approval');
+  expect(comment).toContain('/approved');
+  expect(comment).not.toContain('Resolve and merge it in the provider');
+  expect(comment).not.toContain('/ask');
+});

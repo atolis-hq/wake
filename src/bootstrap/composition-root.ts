@@ -32,11 +32,11 @@ import {
 import { createConversationService } from '../conversations/index.js';
 import {
   ExecutionCancellationReason,
-  ExternalExecutionState,
   GitWorkspaceProvider,
   RecoveryService,
   TranscriptStore,
   createExecutionService,
+  createLocalProcessInspector,
   createRunnerMemoryProfileDecorator,
   type FakeScenarioResolver,
   type Runner,
@@ -316,15 +316,7 @@ export async function createCompositionRoot(
   const recovery = new RecoveryService(
     journal,
     clock,
-    {
-      async inspect() {
-        // Unknown external work follows the safe ambiguity path until runners expose inspection.
-        return {
-          kind: ExternalExecutionState.Unknown,
-          reason: 'External execution inspection is not configured for this runtime',
-        };
-      },
-    },
+    createLocalProcessInspector(),
     activities,
     config.execution,
     orchestration,
@@ -350,6 +342,7 @@ export async function createCompositionRoot(
       ids,
       dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
       maxConcurrentRuns: config.controlPlane.maxConcurrentRuns,
+      maxOpenWorkItems: config.controlPlane.maxOpenWorkItems ?? null,
       maxDispatches: config.controlPlane.maxDispatches,
       schedulerSerialiser: createFileActivationSchedulerSerialiser(paths.dataRoot),
       isDispatchPaused: isRuntimePaused,

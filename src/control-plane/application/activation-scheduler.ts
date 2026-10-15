@@ -1,6 +1,6 @@
 /* eslint-disable complexity, max-lines-per-function */
 import { correlationId, EventActorKind } from '@atolis-hq/eventing';
-import { RunStatus } from '../../execution/index.js';
+import { ExecutionFailureCode, RunStatus } from '../../execution/index.js';
 import { type Clock } from '../../kernel/index.js';
 import {
   isAmbiguityResolutionBlock,
@@ -169,15 +169,29 @@ export function createActivationScheduler(
             ],
           };
         }
-        await orchestration.resolveExecutionFailure?.(
+        const resolved = await orchestration.resolveExecutionFailure?.(
           recovery.item.workflow.workflowInstanceId,
           {
             activationId: recovery.item.activation.activationId,
             runId: recovery.run.runId,
             reason: recovery.run.failure?.message ?? 'execution failed',
+            ...(recovery.run.failure === undefined
+              ? {}
+              : { failureKind: recovery.run.failure.kind }),
           },
           context(recovery.run.runId),
         );
+        if (
+          recovery.run.failure?.kind === ExecutionFailureCode.Interrupted &&
+          resolved != null &&
+          resolved.status !== WorkflowStatus.Blocked
+        )
+          return {
+            kind: 'progressed',
+            dispatched: [
+              { activationId: recovery.item.activation.activationId, runId: recovery.run.runId },
+            ],
+          };
         return {
           kind: WorkflowStatus.Blocked,
           workflowInstanceId: recovery.item.workflow.workflowInstanceId,
@@ -209,6 +223,8 @@ export function createActivationScheduler(
             resources,
             dispatchPolicy,
             maxConcurrentRuns,
+            maxOpenWorkItems: dependencies.maxOpenWorkItems ?? null,
+            work: dependencies.work,
             maxDispatches,
             runnerIneligibility,
             isDispatchPaused,
@@ -230,6 +246,8 @@ export function createActivationScheduler(
       resources,
       dispatchPolicy,
       maxConcurrentRuns,
+      maxOpenWorkItems: dependencies.maxOpenWorkItems ?? null,
+      work: dependencies.work,
       maxDispatches,
       runnerIneligibility,
       isDispatchPaused,

@@ -5,6 +5,8 @@ import { resId, workId } from '../../support/identities.js';
 import { correlationId } from '@atolis-hq/eventing';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import {
+  ActivityEventType,
+  PullRequestMergeability,
   createPullRequestService,
   decidePullRequestAuthority,
 } from '../../../src/activities/index.js';
@@ -66,6 +68,29 @@ describe('PullRequestService', () => {
       'pr.revision-changed',
       'pr.checks-changed',
     ]);
+
+    const observation = {
+      resourceId: resource,
+      workItemId: workItem,
+      state: 'open' as const,
+      headRevision: 'head-b',
+      baseRevision: 'base-a',
+      checks: 'passing' as const,
+      mergeability: PullRequestMergeability.Conflicting,
+    };
+    await service.observe(observation, context('conflict'));
+    await service.observe(observation, context('same-conflict'));
+    expect((await service.get(resource))?.mergeability).toBe(PullRequestMergeability.Conflicting);
+    expect(
+      (await service.factsFor(resource)).filter(
+        (fact) => fact.event.eventType === ActivityEventType.PrStateChanged,
+      ),
+    ).toHaveLength(1);
+    await service.observe(
+      { ...observation, headRevision: 'head-c', mergeability: undefined },
+      context('new-revision'),
+    );
+    expect((await service.get(resource))?.mergeability).toBeUndefined();
   });
 });
 

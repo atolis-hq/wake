@@ -157,12 +157,16 @@ class JournalPullRequestService implements PullRequestService {
     command: ObservePullRequest,
     context: CommandContext,
   ): Promise<void> {
-    if (
+    const revisionHasChanged =
       current.headRevision !== command.headRevision ||
-      current.baseRevision !== command.baseRevision
-    )
+      current.baseRevision !== command.baseRevision;
+    if (revisionHasChanged)
       await this.append(command.resourceId, revisionChanged(command, context));
-    if (current.state !== command.state)
+    if (
+      current.state !== command.state ||
+      current.mergeability !== command.mergeability ||
+      (revisionHasChanged && command.mergeability !== undefined)
+    )
       await this.append(command.resourceId, stateChanged(command, context));
     if (current.checks !== command.checks)
       await this.append(command.resourceId, checksChanged(command, context));

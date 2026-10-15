@@ -125,6 +125,7 @@ execution:
 controlPlane:
   maxDispatches: 1
   maxConcurrentRuns: 1
+  maxOpenWorkItems: null
   resident:
     pollBackoffMs: 1000
     maxPollBackoffMs: 16000
@@ -326,6 +327,15 @@ Each `execution.agentRunners.<name>` definition has the following shape.
 | `runnerTimeouts.cancellationGraceMs` | positive integer; default `30000` | Time to wait after SIGTERM before escalating cancellation to SIGKILL. |
 | `args` | list of strings; default `[]` | Additional adapter arguments. Do not include `--output-format` or `--resume`; Wake manages those flags. |
 
+For Codex CLI runners, `allowedTools` is advisory: Codex ignores the list,
+and Wake does not enforce or proxy it. It is not a security boundary, including
+for repository-scoped `gh` patterns. `wake doctor` emits a non-fatal notice for
+each Codex runner in an agent stage's resolved pool when its effective
+`allowedTools` list is non-empty. The stage input overrides template frontmatter,
+including an explicit empty list. Unreadable templates produce a doctor failure
+instead of a tool-list notice. An omitted stage pool uses
+`execution.defaultRunnerPool`.
+
 Pools are tried in order, skipping runners currently paused as quota-ineligible
 or unable to accept Wake's trusted per-run MCP configuration. A missing runner
 named by a pool is an error; Wake does not silently switch to another pool or
@@ -399,6 +409,7 @@ or tombstoning of the producer path.
 | Field | Type / default | Explanation |
 | --- | --- | --- |
 | `controlPlane.maxDispatches` | positive integer; default `1` | Per-call burst cap: the maximum number of new Runs a single `advanceOnce` call will start, independent of and bounded by `maxConcurrentRuns`. `advanceOnce` fills open capacity within one call up to this cap rather than dispatching a single Run per call. |
+| `controlPlane.maxOpenWorkItems` | positive integer or `null`; default `null` | Maximum distinct open work items. Open means at least one workflow has started an activation and not all workflows are terminal (currently completed or superseded). Blocked and waiting items count; frozen/deleted items and items that have never started do not. Children share their parent’s work item. At capacity, new items are skipped before dispatch ordering; existing open items continue through stages, retries, children, and signal resumptions. Capacity is rechecked after each dispatch. `null` means unlimited. |
 | `controlPlane.maxConcurrentRuns` | positive integer; default `1` | Maximum Runs that may be `started` system-wide. `advanceOnce` stops dispatching, and additional advancement calls return `no-work`, until capacity is available. |
 | `controlPlane.triggers` | list; default `[]` | Independent workflow invocations. Each entry is described below. |
 | `controlPlane.resident.pollBackoffMs` | positive integer; default `1000` | Exponential backoff base for intake's idle-or-erroring poll cadence and the runner's error-retry cadence — courtesy toward a rate-limited external API. Unrelated to journal consumption, which waits on a change signal instead of polling. |
@@ -419,7 +430,8 @@ Event consumption begins
 at registration; historical events do not cause startup invocations.
 
 The optional gate is exactly `when: { capacityAvailable: true }`. It checks
-current execution headroom under `maxConcurrentRuns`, runtime pause, and
+current execution headroom under `maxConcurrentRuns`, open-work headroom under
+`maxOpenWorkItems`, runtime pause, and
 runner eligibility in the workflow entry stage's pool. A false gate consumes
 and skips the occurrence when no invocation is active. Coalesced requests are
 checked again after the active invocation ends; an ineligible pending request

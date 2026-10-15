@@ -80,6 +80,7 @@ export function TriggersList() {
               ),
             },
             { label: 'Status', render: (entry) => entry.status },
+            { label: 'Slot holder', render: (entry) => <SlotHolder trigger={entry} /> },
             {
               label: 'Workflow',
               render: (entry) =>
@@ -125,10 +126,11 @@ export function TriggerDetail() {
       <Link to="/triggers">All triggers</Link>
       <Panel>
         <p>Status: {trigger.status}</p>
+        <SlotHolder trigger={trigger} />
         <TriggerControl trigger={trigger} />
         <p>
-          Pause leaves active invocations running. Manage cancellation and freezing on their
-          WorkItems.
+          Pause leaves active invocations running. Operator cancellation is not available yet. Retry
+          resumes the same invocation; its slot remains occupied until it finishes.
         </p>
         {trigger.pauseReason && <p>Pause reason: {trigger.pauseReason}</p>}
         {trigger.definition === null ? (
@@ -151,7 +153,19 @@ export function TriggerDetail() {
         {trigger.pending.length === 0 ? (
           <p>No pending request</p>
         ) : (
-          <pre>{JSON.stringify(trigger.pending, null, 2)}</pre>
+          <>
+            {trigger.pending.map((request) => (
+              <section key={request.coordinationKey}>
+                <p>
+                  {request.triggerId}:{' '}
+                  {request.activeWorkItemId
+                    ? 'Waiting on ' + request.activeWorkItemId
+                    : 'Awaiting reconsideration'}
+                </p>
+                <pre>{JSON.stringify(request.sources, null, 2)}</pre>
+              </section>
+            ))}
+          </>
         )}
       </Panel>
       <Panel>
@@ -198,6 +212,54 @@ export function TriggerDetail() {
           />
         )}
       </Panel>
+    </>
+  );
+}
+
+function SlotHolder({ trigger }: { readonly trigger: TriggerResponse }) {
+  const client = useApiClient();
+  const cache = useQueryClient();
+  const holder = trigger.activeInvocation;
+  const retry = useMutation({
+    mutationFn: (request: { workItemKey: string; idempotencyKey: string }) =>
+      client.work.command(request.workItemKey, 'retry', request.idempotencyKey),
+    onSettled: () => cache.invalidateQueries({ queryKey: ['triggers'] }),
+  });
+  if (holder === null) return <span>No active invocation</span>;
+  return (
+    <>
+      <p>
+        Slot held by{' '}
+        <Link to={'/work/' + encodeURIComponent(holder.workItemKey)}>
+          {holder.activeWorkItemId}
+        </Link>{' '}
+        ({holder.workflowStatus ?? 'Pending recovery'}), trigger {holder.triggerId}
+      </p>
+      {holder.blockReason && <p>Block reason: {holder.blockReason}</p>}
+      {holder.retryEligible && (
+        <Button
+          disabled={retry.isPending}
+          onClick={() =>
+            retry.mutate({
+              workItemKey: holder.workItemKey,
+              idempotencyKey: 'web:retry:' + crypto.randomUUID(),
+            })
+          }
+        >
+          Retry invocation
+        </Button>
+      )}
+      {retry.isSuccess && (
+        <p role="status">Retry accepted. The slot remains held until this invocation finishes.</p>
+      )}
+      {retry.error && (
+        <ErrorState
+          error={retry.error}
+          retry={() => {
+            if (retry.variables) retry.mutate(retry.variables);
+          }}
+        />
+      )}
     </>
   );
 }

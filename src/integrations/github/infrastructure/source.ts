@@ -1,9 +1,9 @@
-import type { CheckpointStore } from '@atolis-hq/eventing';
+import type { CheckpointStore, EventJournal } from '@atolis-hq/eventing';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ExternalEventSource } from '../../contracts/intake.js';
 import { gitHubIssueQueryFilters } from '../application/intake-policy.js';
 import type { GitHubConfig } from '../contracts/config.js';
-import { GitHubEventType } from '../contracts/events.js';
+import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
 import {
   createGitHubAdapterHealthRegistry,
   type GitHubAdapterHealthRegistry,
@@ -13,6 +13,7 @@ import {
   reviewCommentEventsFor,
   reviewEventsFor,
 } from './comment-source.js';
+import { consecutivePullRequestObservations } from './consecutive-pr-observations.js';
 import { issueObservation } from './issue-source.js';
 import {
   batchesComplete,
@@ -41,14 +42,18 @@ export function createGitHubSource(
   }),
   state?: {
     readonly checkpoints?: CheckpointStore;
+    readonly journal?: EventJournal;
     readonly now?: () => number;
     readonly health?: GitHubAdapterHealthRegistry;
   },
-): ExternalEventSource {
+): Omit<ExternalEventSource, 'poll'> & {
+  poll(
+    ...args: Parameters<ExternalEventSource['poll']>
+  ): Promise<readonly GitHubAdapterEventData[]>;
+} {
   const health = state?.health ?? createGitHubAdapterHealthRegistry(config.repositories);
-  // Event ids are content fingerprints (see issue-source.ts/pr-source.ts), and the polling
-  // persistence boundary deduplicates them durably. This cache avoids returning unchanged
-  // work observations within one process lifetime, so it is only a performance optimization.
+  // PR observations use the journal to deduplicate consecutive evidence durably.
+  // This cache avoids returning unchanged issue observations within one process.
   const lastEventIds = new Map<string, string>();
   const pendingWatermarks = new Map<string, number>();
   const now = state?.now ?? Date.now;
@@ -83,14 +88,18 @@ export function createGitHubSource(
       for (const result of perRepository)
         if (result.watermark !== undefined)
           pendingWatermarks.set(result.repository, result.watermark);
-      return perRepository
-        .flatMap((result) => result.drafts)
-        .filter((draft) => {
-          if (draft.eventType !== GitHubEventType.WorkObserved) return true;
-          const prior = lastEventIds.get(draft.payload.externalKey);
-          lastEventIds.set(draft.payload.externalKey, draft.eventId);
-          return prior !== draft.eventId;
-        });
+      const drafts = await consecutivePullRequestObservations(
+        perRepository.flatMap((result) => result.drafts),
+        state?.journal,
+        adapter,
+      );
+      return drafts.filter((draft) => {
+        if (draft.eventType !== GitHubEventType.WorkObserved) return true;
+        if (draft.payload.kind === 'pull-request' && state?.journal !== undefined) return true;
+        const prior = lastEventIds.get(draft.payload.externalKey);
+        lastEventIds.set(draft.payload.externalKey, draft.eventId);
+        return prior !== draft.eventId;
+      });
     },
     async markPollPersisted() {
       if (state?.checkpoints === undefined) return;
@@ -175,9 +184,8 @@ async function pollRepository(input: {
     ? pullRequestsResult.value
     : [];
   const topLevelTimestampsValid = timestampsValid(returnedIssues, returnedPullRequestPayloads);
-  const pullRequestPayloads = returnedPullRequestPayloads
-    .filter(hasProviderTimestamp)
-    .filter((pullRequest) => since === undefined || pullRequest.updated_at >= since);
+  // Mergeability and checks can change without updating the PR timestamp.
+  const pullRequestPayloads = returnedPullRequestPayloads.filter(hasProviderTimestamp);
   const [pullRequests, reviews, reviewComments, issueComments] = await Promise.all([
     pullRequestEventsFor(
       {

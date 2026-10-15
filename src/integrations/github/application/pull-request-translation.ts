@@ -12,6 +12,7 @@ export function observePullRequest(
     resourceId,
     workItemId,
     state: payload.state,
+    ...(payload.mergeability === undefined ? {} : { mergeability: payload.mergeability }),
     headRevision: payload.headRevision ?? payload.revision,
     baseRevision: payload.baseRevision ?? 'unknown',
     checks: payload.checks ?? 'unknown',

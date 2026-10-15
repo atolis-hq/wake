@@ -5,6 +5,7 @@ import {
   operatorInstructionsProjection,
 } from '../artifacts/index.js';
 import { CronTriggerPolicy, type TriggerInspectionView } from '../control-plane/index.js';
+import { selectOperatorRetryTarget } from '../orchestration/index.js';
 import {
   ApiCommandStatus,
   toWorkItemKey,
@@ -13,6 +14,7 @@ import {
   type ApiCommandRequest,
   type TriggerResponse,
 } from '../surfaces/index.js';
+import { workItemId, WorkStatus } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 
 export function createTriggerApplications(
@@ -29,7 +31,10 @@ export function createTriggerApplications(
       ...(view.diagnostics ?? []).map((entry) => entry.triggerId),
     ]);
     const asOf = now();
-    return { data: [...ids].sort().map((id) => present(id, view, asOf)), meta: { asOf } };
+    return {
+      data: await Promise.all([...ids].sort().map((id) => present(id, view, asOf))),
+      meta: { asOf },
+    };
   }
 
   async function list() {
@@ -52,16 +57,23 @@ export function createTriggerApplications(
     return { ...result, orphanedInstructions };
   }
 
-  function present(id: string, view: TriggerInspectionView, asOf: string): TriggerResponse {
+  async function present(
+    id: string,
+    view: TriggerInspectionView,
+    asOf: string,
+  ): Promise<TriggerResponse> {
     const definition = root.config.controlPlane.triggers.find((config) => config.id === id) ?? null;
     const invocations = view.invocations
       .filter((entry) => entry.claim.triggerId === id)
       .sort((a, b) => b.claimedAt.localeCompare(a.claimedAt))
       .map((entry) => ({ ...entry, workItemKey: toWorkItemKey(entry.claim.workItemId) }));
     const pauseReason = view.pauses[id] ?? null;
-    const running = invocations.some((entry) => entry.result === undefined);
+    const coordinationKey = view.coordinationKeys[id] ?? id;
+    const activeInvocation = await inspectHolder(coordinationKey, view);
+    const running = activeInvocation !== null;
     return {
       triggerId: id,
+      activeInvocation,
       definition,
       paused: pauseReason !== null,
       pauseReason,
@@ -77,9 +89,45 @@ export function createTriggerApplications(
         definition?.on.cron === undefined
           ? null
           : new CronTriggerPolicy().nextOccurrence(definition.on.cron, asOf),
-      pending: Object.values(view.coalesced).filter((entry) => entry.triggerId === id),
+      pending: Object.values(view.coalesced)
+        .filter((entry) => entry.coordinationKey === coordinationKey)
+        .map((entry) => ({
+          ...entry,
+          activeWorkItemId: activeInvocation?.activeWorkItemId ?? null,
+        })),
       latestSkip: view.diagnostics?.find((entry) => entry.triggerId === id) ?? null,
       invocations,
+    };
+  }
+
+  async function inspectHolder(
+    coordinationKey: string,
+    view: TriggerInspectionView,
+  ): Promise<TriggerResponse['activeInvocation']> {
+    const holder = view.invocations.find(
+      (entry) => entry.result === undefined && entry.claim.coordinationKey === coordinationKey,
+    );
+    if (holder === undefined) return null;
+    const workflows = (await root.orchestration.listAll()).filter(
+      (entry) => entry.workItemId === holder.claim.workItemId,
+    );
+    const workflow = workflows.find(
+      (entry) => entry.workflowInstanceId === holder.claim.workflowInstanceId,
+    );
+    const work = await root.work.get(workItemId(holder.claim.workItemId));
+    return {
+      activeWorkItemId: holder.claim.workItemId,
+      workItemKey: toWorkItemKey(holder.claim.workItemId),
+      triggerId: holder.claim.triggerId,
+      workflowInstanceId: holder.claim.workflowInstanceId,
+      workflowStatus: workflow?.status ?? null,
+      blockReason: workflow?.blockReason ?? null,
+      retryEligible:
+        work !== null &&
+        work.deleted !== true &&
+        !work.frozen &&
+        work.state === WorkStatus.Open &&
+        selectOperatorRetryTarget(workflows) !== undefined,
     };
   }
 

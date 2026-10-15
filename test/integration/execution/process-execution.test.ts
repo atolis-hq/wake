@@ -5,6 +5,7 @@ import {
   claudeCommandArgs,
   cliRunner,
   codexCommandArgs,
+  createLocalProcessInspector,
   cursorCommandArgs,
   ExecutionCancellationReason,
 } from '../../../src/execution/index.js';
@@ -17,6 +18,46 @@ import {
 } from '../../../src/execution/infrastructure/runners/cursor.js';
 
 describe('runProcess', () => {
+  it.runIf(process.platform === 'linux')(
+    'inspects durable identity across live, reused, and absent processes',
+    async () => {
+      const execution = runProcess(
+        process.execPath,
+        ['-e', 'setInterval(() => {}, 1000)'],
+        undefined,
+        new AbortController().signal,
+      );
+      try {
+        expect(execution.identity).toBeDefined();
+        const reference = {
+          kind: 'process' as const,
+          id: execution.identity!,
+          startedAt: new Date().toISOString(),
+        };
+        const inspector = createLocalProcessInspector();
+        await expect(inspector.inspect(reference)).resolves.toEqual({ kind: 'running' });
+        const identity = JSON.parse(reference.id);
+        await expect(
+          inspector.inspect({ ...reference, id: JSON.stringify({ ...identity, start: '0' }) }),
+        ).resolves.toEqual({ kind: 'absent' });
+        await expect(
+          inspector.inspect({
+            ...reference,
+            id: JSON.stringify({ ...identity, namespace: 'other' }),
+          }),
+        ).resolves.toMatchObject({ kind: 'unknown' });
+        await execution.cancel();
+        await execution.result;
+        await expect(inspector.inspect(reference)).resolves.toEqual({ kind: 'absent' });
+        await expect(
+          inspector.inspect({ ...reference, id: 'legacy-run-id' }),
+        ).resolves.toMatchObject({ kind: 'unknown' });
+      } finally {
+        await execution.cancel();
+        await execution.result;
+      }
+    },
+  );
   it('closes stdin so non-interactive CLIs do not wait for more input', async () => {
     const execution = runProcess(
       process.execPath,

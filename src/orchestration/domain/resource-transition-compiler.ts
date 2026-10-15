@@ -22,6 +22,7 @@ export function compileResourceTransitions(
         throw new Error(`Unknown resourceTransitions target: ${then}`);
       return Object.freeze({
         event: entry.events[0],
+        ...(!('retry' in entry) ? {} : { retry: entry.retry }),
         ...(!('where' in entry) || entry.where === undefined ? {} : { where: entry.where }),
         target: compileTarget(then, context.outcomeKind),
       });

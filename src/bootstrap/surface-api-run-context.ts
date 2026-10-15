@@ -1,5 +1,6 @@
 import { ActivityOutcomeKind } from '../activities/index.js';
 import {
+  deliveryProjectionKey,
   DeliveryState,
   IntegrationStreamKind,
   type DeliveryIntentView,
@@ -38,7 +39,7 @@ export async function withDeliveryResolution(
   if (intentEventId === undefined) return run;
   const stored = await root.projections.read<DeliveryIntentView>(
     IntegrationStreamKind.Delivery,
-    intentEventId,
+    deliveryProjectionKey(intentEventId),
   );
   const delivery = stored?.value;
   if (delivery === undefined || delivery.resolvedAt === undefined) return run;

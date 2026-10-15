@@ -25,13 +25,21 @@ export function projectDeliveries(events: readonly EventEnvelope[]): readonly De
     .sort((left, right) => left.globalPosition - right.globalPosition);
 }
 
+/**
+ * Intent event ids can contain path separators (GitHub comment ids embed owner/repo), which the
+ * filesystem projection store rejects. Encode only those, so existing stored keys stay valid.
+ */
+export function deliveryProjectionKey(eventId: string): string {
+  return /[\\/]/.test(eventId) ? `encoded:${encodeURIComponent(eventId)}` : eventId;
+}
+
 export const deliveryProjection: ProjectionDefinition<DeliveryIntentView | null> = {
   name: IntegrationStreamKind.Delivery,
   select(event) {
     const intent = intentView(event);
-    if (intent !== null) return { key: intent.eventId };
+    if (intent !== null) return { key: deliveryProjectionKey(intent.eventId) };
     const delivery = selectDeliveryEvent(event);
-    return delivery === null ? null : { key: delivery.stream.id };
+    return delivery === null ? null : { key: deliveryProjectionKey(delivery.stream.id) };
   },
   initial: () => null,
   project(previous, event) {

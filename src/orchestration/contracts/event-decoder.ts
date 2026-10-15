@@ -7,6 +7,7 @@ import {
   activityName,
   ActivityOutcomeKind,
   PullRequestCheckState,
+  PullRequestMergeability,
   PullRequestState,
 } from '../../activities/index.js';
 import { WorkspaceMode } from '../../execution/index.js';
@@ -153,11 +154,16 @@ const resourceTransitionSchema = z
     ]),
     where: z
       .union([
+        z.object({ mergeability: z.literal(PullRequestMergeability.Conflicting) }).strict(),
         z.object({ state: z.literal(PullRequestState.Merged) }).strict(),
         z.object({ checks: z.literal(PullRequestCheckState.Failing) }).strict(),
       ])
       .optional(),
     target: transitionTargetSchema,
+    retry: z
+      .object({ max: z.number().int().min(1).max(2) })
+      .strict()
+      .optional(),
   })
   .strict();
 

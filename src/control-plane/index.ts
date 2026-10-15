@@ -53,3 +53,5 @@ export * from './infrastructure/tick-host.js';
 export * from './application/trigger-invocation-projection.js';
 
 export * from './application/trigger-projection.js';
+
+export * from './domain/open-work-policy.js';

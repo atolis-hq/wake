@@ -12,6 +12,8 @@ export * from './application/durable-append.js';
 
 export * from './application/pull-request-transition-evidence.js';
 
+export { isPolicyBlockedMergeWait } from './application/policy-blocked-merge-recovery.js';
+
 export * from './application/resource-transition-evidence.js';
 
 export * from './application/resource-transition-matching.js';
