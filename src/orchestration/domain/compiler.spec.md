@@ -77,6 +77,11 @@ name is recognised.
   each route, its watches, and its commands — MUST be deeply frozen; nothing
   downstream may mutate a compiled definition in place.
 
+Remaining agent-step costs are computed and frozen at compilation using the
+registry execution kind and the minimum route cost to completion. Wait targets
+follow their resume, watch rejection, and resource-transition edges. Stages
+without a terminal path use a finite maximum sentinel and rank last.
+
 ## Conceptual schema
 
 **CompiledWorkflow** — the immutable runtime form of one configured

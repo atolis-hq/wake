@@ -64,6 +64,7 @@ import {
   deliveryProjectionDefinitions,
   fakeProviderDefinition,
   publishConversationCommandFeedback,
+  reconcileMergedDeliveries,
   type DeliveryIntentView,
   type DurableFakeDeliveryProvider,
   type ExternalDeliveryAdapter,
@@ -471,6 +472,12 @@ export async function composeIntegrationRuntime(
         await recoverMergedWaits();
         await watchReconciler.reconcileOnce();
         await artifacts.reconcileOnce();
+        await reconcileMergedDeliveries({
+          journal: input.journal,
+          projections: input.projections,
+          orchestration: input.orchestration,
+          pullRequests: input.pullRequests,
+        });
         await outcomes.reconcileOnce();
         for (const provider of providers) {
           await provider.reconciler?.reconcileOnce();

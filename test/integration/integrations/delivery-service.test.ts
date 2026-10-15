@@ -4,7 +4,9 @@ import { resId } from '../../support/identities.js';
 import { eventId } from '@atolis-hq/eventing';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { MergeMethod } from '../../../src/activities/index.js';
+import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryService } from '../../../src/integrations/delivery/application/delivery-service.js';
+import { createDeliveryEventData } from '../../../src/integrations/delivery/contracts/event-factory.js';
 import type { DeliveryIntentView } from '../../../src/integrations/delivery/contracts/views.js';
 import {
   decodeDeliveryEvent,
@@ -162,4 +164,66 @@ describe('DeliveryService', () => {
       },
     });
   });
+});
+
+it('preserves merged confirmation when an in-flight provider attempt later fails', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const intent: DeliveryIntentView = {
+    intentEventId: eventId('merge-race'),
+    globalPosition: 1,
+    workflowInstanceId: 'workflow-1',
+    activationId: 'activation-1',
+    kind: DeliveryIntentKind.PrMerge,
+    resourceId: resId('race'),
+    payload: {
+      kind: DeliveryIntentKind.PrMerge,
+      revision: 'abc',
+      method: MergeMethod.Squash,
+      autoMerge: true,
+    },
+    state: DeliveryState.Pending,
+    attempts: 0,
+    occurrenceOrdinal: 0,
+  };
+  const service = new DeliveryService({
+    journal,
+    intents: async () => [intent],
+    resource: async () => ({ resourceId: intent.resourceId, adapter: 'fake' }),
+    adapter: () => ({
+      deliver: async () => {
+        await journal.appendToStream(deliveryStream(intent.intentEventId), 1, [
+          createDeliveryEventData({
+            eventId: 'merged-race-confirmation',
+            eventType: DeliveryEventType.Reconciled,
+            occurredAt: '2026-07-31T12:00:00.000Z',
+            correlationId: 'race',
+            causationId: 'race',
+            actor: { kind: 'system', id: 'test' },
+            source: { kind: 'internal', id: 'test' },
+            payload: {
+              intentEventId: intent.intentEventId,
+              intentGlobalPosition: 1,
+              workflowInstanceId: intent.workflowInstanceId,
+              activationId: intent.activationId,
+              occurrenceOrdinal: 1,
+              result: DeliveryResultKind.Confirmed,
+              externalId: 'pr-race',
+            },
+          }),
+        ]);
+        return {
+          kind: DeliveryResultKind.Failed,
+          code: 'github-error',
+          message: 'provider failed',
+        };
+      },
+      reconcile: async () => ({ kind: DeliveryResultKind.Unknown }),
+    }),
+    now: () => '2026-07-31T12:00:00.000Z',
+  });
+  await service.deliverNext(new AbortController().signal);
+  expect((await journal.readAll(0)).map((event) => event.event.eventType)).toEqual([
+    DeliveryEventType.AttemptStarted,
+    DeliveryEventType.Reconciled,
+  ]);
 });

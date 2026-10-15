@@ -61,6 +61,7 @@ interface ScenarioSetup {
 
 export interface ComposedMergeRootOptions {
   readonly provider: ExternalDeliveryAdapter;
+  readonly waitForMerged?: boolean;
   readonly clock?: Clock;
   readonly journal?: EventJournal;
   readonly projections?: ProjectionStore;
@@ -92,7 +93,21 @@ export async function createComposedMergeRoot(
               merge: {
                 activity: 'pr.merge',
                 with: { method: 'squash', requireChecks: true },
-                on: outcomeRoutes(),
+                on: options.waitForMerged
+                  ? {
+                      ...outcomeRoutes(),
+                      done: {
+                        then: 'wait',
+                        resourceTransitions: [
+                          {
+                            events: ['pr.state-changed'],
+                            where: { state: 'merged' },
+                            then: 'done',
+                          },
+                        ],
+                      },
+                    }
+                  : outcomeRoutes(),
                 requiresApproval: false,
               },
             },

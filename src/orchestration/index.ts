@@ -6,9 +6,13 @@ export * from './application/orchestration-service.js';
 
 export * from './application/advance-workflow.js';
 
+export * from './application/pending-activations.js';
+
 export * from './application/durable-append.js';
 
 export * from './application/pull-request-transition-evidence.js';
+
+export { isPolicyBlockedMergeWait } from './application/policy-blocked-merge-recovery.js';
 
 export * from './application/resource-transition-evidence.js';
 
@@ -49,6 +53,8 @@ export * from './contracts/views.js';
 export * from './contracts/vocabulary.js';
 
 export * from './domain/compiler.js';
+
+export * from './domain/dispatch-priority.js';
 
 export * from './domain/interpreter.js';
 

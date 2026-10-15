@@ -36,6 +36,8 @@ export * from './contracts/streams.js';
 
 export * from './delivery/application/delivery-outcome-reactor.js';
 
+export * from './delivery/application/merged-delivery-evidence.js';
+
 export * from './delivery/application/delivery-projector.js';
 
 export * from './delivery/application/delivery-service.js';

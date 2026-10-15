@@ -23,6 +23,17 @@ folding. Watch and resource-transition processors use stable consumers and
 idempotent handlers; watch recovery remains a separate reconciler with its own
 checkpoint.
 
+`listPendingActivations` attaches a dispatch priority to each pending
+activation: remaining agent steps (minimum agent-running stages on a route to a
+terminal stage, from the compiled graph and activity `executionKind`; stages
+that cannot finish rank last), `watchDriven` (the typed `watchDriven` flag on
+the activation, set when a watch verdict or resource transition resumed the
+stage), and `retried` (the stage has a retry count above zero). Orchestration
+reports these; Control Plane orders by them. Historical definitions without
+compiled costs count removed activities conservatively as agent steps.
+Resource-transition origin remains explicit even on a watch-verdict channel;
+quota re-requests preserve that activation origin without counting a retry.
+
 ## Public contracts
 
 `index.ts` is the only public entry. `OrchestrationService` is a compatibility

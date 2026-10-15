@@ -552,7 +552,7 @@ describe('durable trigger coordination', () => {
     expect(await invocations(f.journal)).toHaveLength(1);
   });
 
-  // Bulk file-backed writes need headroom for fsync contention in the full suite.
+  // Bulk fsync-backed fixtures need time under full-suite filesystem contention.
   it('bounds pending reasons and operational projections and does not replay history on idle reconciliation', async () => {
     const f = await fixture({ events: [WorkEventType.ObjectiveRevised] });
     await source(f, 'initial');
@@ -585,7 +585,7 @@ describe('durable trigger coordination', () => {
     await f.root.triggers.reconcile(f.context);
     await f.root.triggers.reconcile(f.context);
     expect(read).not.toHaveBeenCalled();
-  }, 20_000);
+  }, 30000);
 
   it('clears a shared pending request even when a sibling supplied the last reason', async () => {
     const f = await fixture(

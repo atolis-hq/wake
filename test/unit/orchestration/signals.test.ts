@@ -16,6 +16,7 @@ import {
   workflowName,
 } from '../../../src/orchestration/contracts/identifiers.js';
 import {
+  ApprovalAuthorityKind,
   ApprovedSignal,
   compileWorkflow,
   createOrchestrationService,
@@ -23,6 +24,8 @@ import {
   isApprovalAwaitingSignalKind,
   OrchestrationEventType,
   orchestrationStatusTransitions,
+  ResourceTransitionSignal,
+  TransitionTargetKind,
   WatchGateVerdictSignal,
   WorkflowStatus,
 } from '../../../src/orchestration/index.js';
@@ -281,6 +284,7 @@ it('restarts the current refine stage when an approval is rejected', async () =>
     OrchestrationEventType.ActivityRequested,
   ]);
   expect(events.at(-1)?.event.payload).toMatchObject({ activity: 'refine' });
+  expect(events.at(-1)?.event.payload).not.toHaveProperty('watchDriven');
 });
 
 it('honors an explicit rejection resume target', async () => {
@@ -632,3 +636,40 @@ it('is the single source every status-changing orchestration event derives from'
     [OrchestrationEventType.InstanceSuperseded]: WorkflowStatus.Superseded,
   });
 });
+
+it.each([WatchGateVerdictSignal, ResourceTransitionSignal])(
+  'marks a stage resumed by %s as watch-driven',
+  async (kind) => {
+    const { service, baseContext } = await waitingService();
+    const id = workflowInstanceId('workflow-1');
+    const authority =
+      kind === WatchGateVerdictSignal
+        ? ({ kind: ApprovalAuthorityKind.Watch, watch: watchId('review') } as const)
+        : ({ kind: ApprovalAuthorityKind.Human } as const);
+    await service.waitForSignal(
+      id,
+      {
+        signalKind: kind,
+        from: [authority],
+        resume: { kind: TransitionTargetKind.Stage, stage: stageName('implement') },
+      },
+      { ...baseContext, commandId: 'priority-wait' },
+    );
+    const resumed = await service.acceptSignal(
+      id,
+      {
+        kind,
+        authority,
+        actorId: 'review',
+        providerEventId: 'priority-verdict',
+        actorDecision: { authorized: true, evidenceId: 'priority-verdict' },
+      },
+      { ...baseContext, commandId: 'priority-resume' },
+    );
+    expect(resumed.pendingActivation?.watchDriven).toBe(true);
+    expect((await service.listPendingActivations())[0]?.priority).toMatchObject({
+      watchDriven: true,
+      retried: true,
+    });
+  },
+);

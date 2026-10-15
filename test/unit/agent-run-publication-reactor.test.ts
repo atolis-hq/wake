@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { parseAgentRunnerResponse } from '../../src/execution/infrastructure/agent-runner-adapter.js';
 import { AgentRunPublicationReactor } from '../../src/integrations/application/agent-run-publication-reactor.js';
 import { formatAgentRunComment } from '../../src/integrations/github/application/agent-run-comment.js';
+import { OrchestrationEventType, WorkflowStatus } from '../../src/orchestration/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
 const workflowStream = { kind: 'workflow-instance', id: 'workflow-1' } as const;
@@ -399,3 +400,72 @@ it.each(['DONE', 'REJECTED'] as const)(
     expect(comment).not.toContain('Reply on this thread to continue');
   },
 );
+
+async function reactToMergeWait(
+  workflow: Record<string, unknown>,
+  staleSignalKind?: string,
+): Promise<Array<{ payload: { body: string } }>> {
+  const appended: Array<{ payload: { body: string } }> = [];
+  const reactor = new AgentRunPublicationReactor({
+    journal: {
+      readStream: async () => [],
+      appendToStream: async (_stream: unknown, _sequence: number, events: unknown[]) => {
+        appended.push(...(events as Array<{ payload: { body: string } }>));
+      },
+    },
+    resources: { correlationsForWork: async () => [{ role: 'primary', resourceId: 'resource-1' }] },
+    orchestration: {
+      listAll: async () => [
+        {
+          workflowInstanceId: 'workflow-1',
+          workItemId: 'work-1',
+          status: WorkflowStatus.Waiting,
+          currentStage: 'merge',
+          pendingActivation: { activationId: 'activation-1', activity: 'pr.merge' },
+          ...workflow,
+        },
+      ],
+    },
+  } as never);
+  await reactor.react({
+    stream: { kind: 'workflow-instance', id: 'workflow-1' },
+    recordedAt: '2026-10-14T00:00:00.000Z',
+    event: {
+      eventType: OrchestrationEventType.SignalWaitStarted,
+      eventId: 'wait-1',
+      correlationId: 'correlation-1',
+      payload: {
+        signalKind:
+          staleSignalKind ??
+          (workflow.waitingFor as { signalKind: string } | undefined)?.signalKind,
+      },
+    },
+  } as never);
+  return appended;
+}
+
+it('posts only /approved when the merge stage starts a default approval wait', async () => {
+  const [intent] = await reactToMergeWait({ waitingFor: { signalKind: 'approved' } });
+  expect(intent?.payload.body).toContain('Awaiting approval');
+  expect(intent?.payload.body).toContain('/approved');
+  expect(intent?.payload.body).not.toContain('/changes');
+  expect(intent?.payload.body).not.toContain('/ask');
+});
+
+it('posts provider-merge guidance for a policy-denied manual merge wait', async () => {
+  const [intent] = await reactToMergeWait({
+    waitingFor: { signalKind: 'blocked' },
+    lastOutcome: { kind: 'blocked', data: { reason: 'blocked-path-changed' } },
+  });
+  expect(intent?.payload.body).toContain('Awaiting merge');
+  expect(intent?.payload.body).not.toContain('/approved');
+  expect(intent?.payload.body).not.toContain('/changes');
+});
+
+it('ignores a replayed wait event whose signal is no longer the current wait', async () => {
+  expect(await reactToMergeWait({ waitingFor: { signalKind: 'approved' } }, 'blocked')).toEqual([]);
+});
+
+it('posts nothing for a merge-stage wait with an unrelated signal', async () => {
+  expect(await reactToMergeWait({ waitingFor: { signalKind: 'other' } })).toEqual([]);
+});

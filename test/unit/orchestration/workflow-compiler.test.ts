@@ -352,3 +352,36 @@ it('validates agent vars during workflow compilation', () => {
   expect(() => compileWorkflow('test', workflow({ focus: 42 }), activities)).toThrow();
   expect(() => compileWorkflow('test', workflow({ 'bad.key': 'text' }), activities)).toThrow();
 });
+
+it('compiles and freezes remaining costs from registry execution kinds', () => {
+  const activities = registry();
+  activities.register(agentActivityDefinition);
+  const compiled = compileWorkflow(
+    'costs',
+    {
+      stages: {
+        first: {
+          activity: 'agent',
+          with: { template: 'triage-assign' },
+          requiresApproval: false,
+          on: { done: { then: 'gate' } },
+        },
+        gate: {
+          activity: 'review',
+          with: { prompt: 'check' },
+          requiresApproval: false,
+          on: { done: { then: 'last' } },
+        },
+        last: {
+          activity: 'agent',
+          with: { template: 'triage-assign' },
+          requiresApproval: false,
+          on: { done: { then: 'done' } },
+        },
+      },
+    },
+    activities,
+  );
+  expect(compiled.remainingAgentSteps).toEqual({ first: 2, gate: 1, last: 1 });
+  expect(Object.isFrozen(compiled.remainingAgentSteps)).toBe(true);
+});

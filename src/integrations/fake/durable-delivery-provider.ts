@@ -9,6 +9,7 @@ export class DurableFakeDeliveryProvider implements ExternalDeliveryAdapter {
   deliveryCalls = 0;
   private ambiguous = new Map<string, EventId>();
   private crashAfterEffect = false;
+  private deferEffect = false;
 
   constructor(options: DurableFakeDeliveryProviderOptions = {}) {
     this.effects = new Map(Object.entries(options.effects ?? {}));
@@ -21,8 +22,17 @@ export class DurableFakeDeliveryProvider implements ExternalDeliveryAdapter {
     this.crashAfterEffect = true;
   }
 
+  deferNextDelivery(): void {
+    this.deferEffect = true;
+  }
+
   async deliver(intent: DeliveryIntentView) {
     this.deliveryCalls += 1;
+    if (this.deferEffect) {
+      this.deferEffect = false;
+      this.rememberAmbiguous(intent.intentEventId, intent.intentEventId);
+      return { kind: DeliveryResultKind.Ambiguous, reconciliationKey: intent.intentEventId };
+    }
     const existing = this.effects.get(intent.intentEventId);
     if (existing !== undefined) return { kind: DeliveryResultKind.Confirmed, externalId: existing };
     const externalId = `external-${this.effects.size + 1}`;

@@ -1,3 +1,8 @@
+import {
+  MergeStageApprovalGuidance,
+  MergeWaitGuidance,
+} from '../../application/terminal-agent-run-report.js';
+
 export interface AgentRunComment {
   readonly idempotencyKey: string;
   readonly displayBody: string;
@@ -14,8 +19,18 @@ export interface AgentRunComment {
   readonly sessionId?: string | undefined;
   readonly workspacePath?: string | undefined;
   readonly awaitingApproval?: boolean | undefined;
+  readonly awaitingMerge?: boolean | undefined;
+  readonly mergeStageApproval?: boolean | undefined;
   readonly watchGateVerdict?: { readonly runId: string } | undefined;
   readonly publicUiUrl?: string | undefined;
+}
+
+/** Names only the commands the current wait accepts. */
+function waitHintFor(value: AgentRunComment): string | undefined {
+  if (value.awaitingMerge === true) return `_${MergeWaitGuidance}_`;
+  if (value.awaitingApproval !== true) return undefined;
+  if (value.mergeStageApproval === true) return `_${MergeStageApprovalGuidance}_`;
+  return '_An authorized independent reviewer can reply with /approved or /changes followed by feedback. Approval of your own work is not permitted. To ask a question, reply with /ask followed by your question._';
 }
 
 export function formatAgentRunComment(value: AgentRunComment): string {
@@ -24,20 +39,18 @@ export function formatAgentRunComment(value: AgentRunComment): string {
     '<!-- wake:agent -->',
     `<!-- wake:delivery:${value.idempotencyKey} -->`,
     `**${wakeHeading(value.publicUiUrl)}** _(Wake${details ? ` - ${details}` : ''})_`,
-    `**Outcome:** ${value.awaitingApproval === true ? '⏳ Awaiting approval' : outcome(value.outcome)}`,
+    `**Outcome:** ${commentOutcome(value)}`,
     value.displayBody.trim() || fallback(value.outcome),
   ];
-  if (value.awaitingApproval === true)
-    sections.push(
-      '_An authorized independent reviewer can reply with /approved or /changes followed by feedback. Approval of your own work is not permitted. To ask a question, reply with /ask followed by your question._',
-    );
-  if (value.outcome === 'BLOCKED' || value.outcome === 'NEEDS_CLARIFICATION')
+  const waitHint = waitHintFor(value);
+  if (waitHint !== undefined) sections.push(waitHint);
+  if (hasContinuationHint(value))
     sections.push(
       value.outcome === 'NEEDS_CLARIFICATION'
         ? '_Reply with the requested clarification. A maintainer with repository write, maintain, or admin permission can also use /changes followed by instructions to continue eligible blocked work._'
         : '_A maintainer with repository write, maintain, or admin permission can continue eligible blocked work with /changes followed by instructions, including on an issue they authored. The authenticated UI also offers Continue with instructions. /retry is for eligible failed stages._',
     );
-  if (value.outcome === 'FAILED')
+  if (value.outcome === 'FAILED' && value.awaitingMerge !== true)
     sections.push(
       '_An authorized maintainer can use /retry for an eligible failed stage, or /restart for a fresh session. These commands do not continue a blocked outcome._',
     );
@@ -128,4 +141,16 @@ function cost(metadata: AgentRunComment['metadata']) {
 
 function formatDuration(value: number) {
   return `${Math.max(0, Math.round(value / 1000))}s`;
+}
+
+function commentOutcome(value: AgentRunComment): string {
+  if (value.awaitingMerge === true) return '⏳ Awaiting merge';
+  return value.awaitingApproval === true ? '⏳ Awaiting approval' : outcome(value.outcome);
+}
+
+function hasContinuationHint(value: AgentRunComment): boolean {
+  return (
+    value.awaitingMerge !== true &&
+    (value.outcome === 'BLOCKED' || value.outcome === 'NEEDS_CLARIFICATION')
+  );
 }

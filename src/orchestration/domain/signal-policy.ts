@@ -9,7 +9,7 @@ import type {
   SignalExpectation,
   WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
-import { OrchestrationEventType } from '../contracts/events.js';
+import { OrchestrationEventType, ResourceTransitionSignal } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
@@ -30,6 +30,8 @@ export const AwaitTimeoutBlockReason = 'await.timeout-exceeded';
 
 export interface AcceptSignal extends DecisionContext {
   readonly signal: OrchestrationSignal;
+  /** A confirmed resource transition can share the wait's watch-verdict channel. */
+  readonly resourceTransition?: true;
   // Does the WorkItem carry operator consent for `auto` authority? Defaults to false.
   readonly consent?: boolean;
 }
@@ -80,8 +82,14 @@ export function acceptSignal(
   ];
   const target =
     signal.outcome === ActivityOutcomeKind.Rejected ? expected.onRejectResume : expected.resume;
-  if (target !== undefined) resumeToTarget(events, definition, state, input, target);
-  else requestLegacyReentry(events, definition, state, input);
+  // Human-only gate approvals are not "reacting to something"; watch verdicts and
+  // provider-observed resource transitions are.
+  const watchDriven =
+    input.resourceTransition === true ||
+    authority.kind === ApprovalAuthorityKind.Watch ||
+    signal.kind === ResourceTransitionSignal;
+  if (target !== undefined) resumeToTarget(events, definition, state, input, target, watchDriven);
+  else requestLegacyReentry(events, definition, state, input, watchDriven);
   return { kind: 'append', events };
 }
 
@@ -121,6 +129,7 @@ function requestLegacyReentry(
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: DecisionContext,
+  watchDriven: boolean,
 ): void {
   const stage = definition.stages[stageName(state.currentStage)]!;
   events.push(
@@ -137,6 +146,7 @@ function requestLegacyReentry(
           {
             execution: stage.execution,
             stage: stageName(state.currentStage),
+            watchDriven,
           },
         ),
       },

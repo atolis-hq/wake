@@ -9,6 +9,7 @@ import {
   MergeMethod,
   PullRequestCheckState,
   PullRequestDenialCode,
+  PullRequestMergeability,
   PullRequestState,
 } from '../pr/vocabulary.js';
 import { ReviewActorKind } from '../review/contracts.js';
@@ -173,6 +174,12 @@ export const deniedOutcomeSchema = z
   })
   .strict();
 
+const mergeabilitySchema = z.enum([
+  PullRequestMergeability.Unknown,
+  PullRequestMergeability.Mergeable,
+  PullRequestMergeability.Conflicting,
+]);
+
 export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
   return [
     resourceFactDraft(
@@ -192,6 +199,7 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
         .object({
           workItemId: workItemIdSchema,
           state: stateSchema,
+          mergeability: mergeabilitySchema.optional(),
           headRevision: z.string(),
           baseRevision: z.string(),
           checks: checksSchema,
@@ -209,7 +217,10 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
         })
         .strict(),
     ),
-    resourceFactDraft(eventTypes.PrStateChanged, z.object({ state: stateSchema }).strict()),
+    resourceFactDraft(
+      eventTypes.PrStateChanged,
+      z.object({ state: stateSchema, mergeability: mergeabilitySchema.optional() }).strict(),
+    ),
     resourceFactDraft(eventTypes.PrChecksChanged, z.object({ checks: checksSchema }).strict()),
     resourceFactDraft(eventTypes.PrReviewAccepted, reviewSchema),
     resourceFactDraft(

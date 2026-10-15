@@ -8,6 +8,7 @@ import {
 import {
   ActivityEventType,
   PullRequestCheckState,
+  PullRequestMergeability,
   PullRequestState,
   type ActivityName,
 } from '../../activities/index.js';
@@ -52,6 +53,14 @@ const watchGateConfigSchema = z.union([
     .strict(),
 ]);
 const resourceTransitionConfigSchema = z.union([
+  z
+    .object({
+      events: z.tuple([z.literal(ActivityEventType.PrStateChanged)]),
+      where: z.object({ mergeability: z.literal(PullRequestMergeability.Conflicting) }).strict(),
+      then: identifier,
+      retry: z.object({ max: z.number().int().min(1).max(2) }).strict(),
+    })
+    .strict(),
   z
     .object({
       events: z.tuple([z.literal(ActivityEventType.PrReviewAccepted)]),
@@ -259,7 +268,9 @@ export interface CompiledResourceTransition {
     | typeof ActivityEventType.PrReviewAccepted
     | typeof ActivityEventType.PrStateChanged
     | typeof ActivityEventType.PrChecksChanged;
+  readonly retry?: { readonly max: number };
   readonly where?:
+    | { readonly mergeability: typeof PullRequestMergeability.Conflicting }
     | { readonly state: typeof PullRequestState.Merged }
     | { readonly checks: typeof PullRequestCheckState.Failing };
   readonly target: TransitionTarget;
@@ -285,6 +296,7 @@ export interface CompiledWatch extends Omit<WatchConfig, 'workflow' | 'while' | 
 }
 
 export interface CompiledWorkflow {
+  readonly remainingAgentSteps?: Readonly<Record<StageName, number>>;
   readonly name: WorkflowName;
   readonly entry: StageName;
   readonly commands: Readonly<Record<CommandName, CompiledSupplementalCommand>>;

@@ -42,6 +42,11 @@ and, for `auto` authority, the WorkItem's consent fact.
 
 **Accepting a Signal (`acceptSignal`)**
 
+- Resumed stage activations carry `watchDriven: true` for watch authority or
+  a resource transition. Confirmed resource transitions carry explicit domain
+  decision input even when their wait uses a watch-verdict signal kind.
+  Human-only approvals do not acquire watch priority.
+
 - A signal whose `providerEventId` already appears in `acceptedSignalIds`
   MUST be ignored as a duplicate ("provider signal was already accepted");
   redelivery is safe and non-erroring.

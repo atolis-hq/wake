@@ -1,4 +1,4 @@
-import type { CompiledStage } from '../contracts/config.js';
+import type { CompiledStage, TransitionTarget } from '../contracts/config.js';
 import type { StageName } from '../contracts/identifiers.js';
 import { stageName } from '../contracts/identifiers.js';
 import { TransitionTargetKind } from '../contracts/vocabulary.js';
@@ -39,6 +39,54 @@ export function assertCyclesBounded(stages: Readonly<Record<StageName, CompiledS
         throw new Error(`Cycle-closing route ${route.id} requires repeat.max`);
     }
   }
+}
+
+/** Cost of a stage that cannot reach a terminal stage; finite so it survives JSON. */
+export const UnreachableRemainingSteps = Number.MAX_SAFE_INTEGER;
+
+function routeTargets(stage: CompiledStage): TransitionTarget[] {
+  return Object.values(stage.on).flatMap((route) => [
+    route.target,
+    ...(route.await === undefined ? [] : [route.await.resume]),
+    ...(route.watchGates ?? []).map((gate) => gate.onRejectTarget),
+    ...(route.resourceTransitions ?? []).map((transition) => transition.target),
+  ]);
+}
+
+/**
+ * Minimum number of agent-running stages from each stage to a terminal stage,
+ * counting the stage itself. Costs are non-negative, so loop-backs never lie on
+ * a shortest path. Stages with no path to completion get UnreachableRemainingSteps.
+ */
+export function remainingAgentSteps(
+  stages: Readonly<Record<StageName, CompiledStage>>,
+  isAgentActivity: (activity: CompiledStage['activity']) => boolean,
+): Readonly<Record<StageName, number>> {
+  const names = Object.keys(stages) as StageName[];
+  const cost: Record<string, number> = Object.fromEntries(
+    names.map((name) => [name, UnreachableRemainingSteps]),
+  );
+  const targetCost = (target: TransitionTarget): number => {
+    if (target.kind === TransitionTargetKind.Complete) return 0;
+    if (target.kind === TransitionTargetKind.Stage) return cost[target.stage]!;
+    return UnreachableRemainingSteps;
+  };
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const name of names) {
+      const stage = stages[name]!;
+      const onward = Math.min(UnreachableRemainingSteps, ...routeTargets(stage).map(targetCost));
+      const next =
+        onward >= UnreachableRemainingSteps
+          ? UnreachableRemainingSteps
+          : onward + (isAgentActivity(stage.activity) ? 1 : 0);
+      if (next < cost[name]!) {
+        cost[name] = next;
+        changed = true;
+      }
+    }
+  }
+  return cost as Record<StageName, number>;
 }
 
 function canReach(
