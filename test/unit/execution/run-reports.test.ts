@@ -236,17 +236,59 @@ it('groups all six dimensions across the window with deterministic counts and sh
     'run-runner-pool',
   ]);
   expect(breakdown.dimensions[0]?.rows).toEqual([
-    { value: 'alpha', count: 2, share: 2 / 3 },
-    { value: 'zeta', count: 1, share: 1 / 3 },
+    {
+      tokens: 0,
+      costUsd: 0,
+      durationMs: 0,
+      tokenRuns: 0,
+      costRuns: 0,
+      durationRuns: 0,
+      value: 'alpha',
+      count: 2,
+      share: 2 / 3,
+    },
+    {
+      tokens: 0,
+      costUsd: 0,
+      durationMs: 0,
+      tokenRuns: 0,
+      costRuns: 0,
+      durationRuns: 0,
+      value: 'zeta',
+      count: 1,
+      share: 1 / 3,
+    },
   ]);
   for (const dimension of breakdown.dimensions) {
     expect(dimension.rows.reduce((sum, row) => sum + row.count, 0)).toBe(summary.runs);
   }
   for (const dimension of breakdown.dimensions.slice(4)) {
-    expect(dimension.rows).toEqual([{ value: 'unknown', count: 3, share: 1 }]);
+    expect(dimension.rows).toEqual([
+      {
+        tokens: 0,
+        costUsd: 0,
+        durationMs: 0,
+        tokenRuns: 0,
+        costRuns: 0,
+        durationRuns: 0,
+        value: 'unknown',
+        count: 3,
+        share: 1,
+      },
+    ]);
   }
   for (const dimension of breakdown.dimensions.slice(1, 4)) {
-    expect(dimension.rows[1]).toEqual({ value: 'unknown', count: 1, share: 1 / 3 });
+    expect(dimension.rows[1]).toEqual({
+      tokens: 0,
+      costUsd: 0,
+      durationMs: 0,
+      tokenRuns: 0,
+      costRuns: 0,
+      durationRuns: 0,
+      value: 'unknown',
+      count: 1,
+      share: 1 / 3,
+    });
   }
 });
 
@@ -284,10 +326,50 @@ it('orders ties alphabetically and preserves distinct recorded and unknown value
   }
   const { breakdown } = await queryRunAnalytics(journal, query);
   expect(breakdown.dimensions[1]?.rows).toEqual([
-    { value: 'unknown', count: 2, share: 0.4 },
-    { value: 'Alpha', count: 1, share: 0.2 },
-    { value: 'alpha', count: 1, share: 0.2 },
-    { value: 'zeta', count: 1, share: 0.2 },
+    {
+      tokens: 0,
+      costUsd: 0,
+      durationMs: 0,
+      tokenRuns: 0,
+      costRuns: 0,
+      durationRuns: 0,
+      value: 'unknown',
+      count: 2,
+      share: 0.4,
+    },
+    {
+      tokens: 0,
+      costUsd: 0,
+      durationMs: 0,
+      tokenRuns: 0,
+      costRuns: 0,
+      durationRuns: 0,
+      value: 'Alpha',
+      count: 1,
+      share: 0.2,
+    },
+    {
+      tokens: 0,
+      costUsd: 0,
+      durationMs: 0,
+      tokenRuns: 0,
+      costRuns: 0,
+      durationRuns: 0,
+      value: 'alpha',
+      count: 1,
+      share: 0.2,
+    },
+    {
+      tokens: 0,
+      costUsd: 0,
+      durationMs: 0,
+      tokenRuns: 0,
+      costRuns: 0,
+      durationRuns: 0,
+      value: 'zeta',
+      count: 1,
+      share: 0.2,
+    },
   ]);
 });
 
@@ -455,4 +537,86 @@ it('buckets duration by start with half-open window boundaries', async () => {
   expect(duration.statistics).toEqual({ count: 2, medianMs: 1000, averageMs: 1000 });
   expect(duration.buckets.slice(0, 2).map((bucket) => bucket.count)).toEqual([1, 1]);
   expect(duration.buckets.slice(2).every((bucket) => bucket.count === 0)).toBe(true);
+});
+
+it('aggregates independent usage samples including zeros and excludes absent or malformed values', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  const usages = [
+    { inputTokens: 10, costUsd: 0.5 },
+    { outputTokens: 0 },
+    { costUsd: 0 },
+    { inputTokens: 'bad', costUsd: null },
+    undefined,
+  ];
+  for (const [index, metadata] of usages.entries()) {
+    const stream = runStream(runId(`samples-${index}`));
+    await journal.appendToStream(stream, 0, [
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: `samples-${index}`,
+          activity: index === 4 ? 'empty' : 'agent',
+          workflowInstanceId: 'workflow-1',
+          orchestrationGroupId: 'group-1',
+          attempt: 1,
+          startedAt: query.window.from,
+        },
+        stream,
+      ).event,
+    ]);
+    if (metadata !== undefined)
+      await journal.appendToStream(stream, 1, [
+        eventEnvelope(
+          ExecutionEventType.RunRunnerResultReported,
+          {
+            transport: 'succeeded',
+            agent: { outcome: 'DONE', displayBody: '', metadata },
+          },
+          stream,
+        ).event,
+      ]);
+    if (index < 3)
+      await journal.appendToStream(stream, 2, [
+        eventEnvelope(
+          ExecutionEventType.RunSucceeded,
+          {
+            finishedAt: new Date(
+              Date.parse(query.window.from) + [2000, 0, -1][index]!,
+            ).toISOString(),
+            outcome: { kind: ActivityOutcomeKind.Done },
+          },
+          stream,
+        ).event,
+      ]);
+  }
+  const { breakdown, summary } = await queryRunAnalytics(journal, query);
+  expect(breakdown.dimensions[0]?.rows).toEqual([
+    {
+      value: 'agent',
+      count: 4,
+      share: 0.8,
+      tokens: 10,
+      costUsd: 0.5,
+      durationMs: 2000,
+      tokenRuns: 2,
+      costRuns: 2,
+      durationRuns: 2,
+    },
+    {
+      value: 'empty',
+      count: 1,
+      share: 0.2,
+      tokens: 0,
+      costUsd: 0,
+      durationMs: 0,
+      tokenRuns: 0,
+      costRuns: 0,
+      durationRuns: 0,
+    },
+  ]);
+  for (const { rows } of breakdown.dimensions) {
+    expect(rows.reduce((sum, row) => sum + row.tokens, 0)).toBe(summary.totalTokens);
+    expect(rows.reduce((sum, row) => sum + row.costUsd, 0)).toBe(summary.totalCostUsd);
+    expect(rows.reduce((sum, row) => sum + row.durationMs, 0)).toBe(2000);
+  }
 });

@@ -59,7 +59,14 @@ returned series and buckets or dimension rows.
 
 `run-breakdowns-by-dimension` returns `report`, `window`, `total`, and
 `dimensions`. Each dimension has an `id`, `title`, and `rows` containing
-`value`, `count`, and `share` (a fraction of `total`). The six dimensions are
+`value`, `count`, and `share` (a fraction of `total`), plus `tokens`,
+`costUsd`, and `durationMs` totals and independent `tokenRuns`, `costRuns`, and
+`durationRuns` contributing counts. Finite reported usage and valid nonnegative
+finished-run durations contribute; explicit zeros count, missing values do not.
+Tokens and cost reconcile to summary totals; duration uses the valid-duration
+cohort (the summary reports its median). Averages divide totals by contributing
+counts; zero contributors render as “n/a”. A table-wide Totals / Average per run
+control defaults to Totals and switches without refetching or reordering rows. The six dimensions are
 `run-action` (run activity), `run-stage`, `run-runner` (runner name), `run-model` (runner model), `run-repository`, and `run-runner-pool`
 (recorded runner pool). Counts aggregate the entire selected window using the same start
 cohort and latest Run facts as the summary Runs tile. Missing values appear as

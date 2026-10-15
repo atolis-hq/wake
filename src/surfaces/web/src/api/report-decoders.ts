@@ -97,6 +97,12 @@ export const decodeReport: Decoder<AnalyticsReport> = (value, path = '') => {
               value: string(row.value, child(path, 'value')),
               count: number(row.count, child(path, 'count')),
               share: number(row.share, child(path, 'share')),
+              tokens: number(row.tokens, child(path, 'tokens')),
+              costUsd: number(row.costUsd, child(path, 'costUsd')),
+              durationMs: number(row.durationMs, child(path, 'durationMs')),
+              tokenRuns: number(row.tokenRuns, child(path, 'tokenRuns')),
+              costRuns: number(row.costRuns, child(path, 'costRuns')),
+              durationRuns: number(row.durationRuns, child(path, 'durationRuns')),
             };
           }),
         };

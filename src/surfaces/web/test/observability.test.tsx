@@ -183,18 +183,53 @@ it('shows whole-window counts and shares and switches all six dimensions', async
         id: title.toLowerCase(),
         title,
         rows: [
-          { value: `${title} value`, count: 3, share: 0.75 },
-          { value: 'unknown', count: 1, share: 0.25 },
+          {
+            value: `${title} value`,
+            count: 3,
+            share: 0.75,
+            tokens: 120,
+            costUsd: 0.6,
+            durationMs: 6000,
+            tokenRuns: 2,
+            costRuns: 1,
+            durationRuns: 3,
+          },
+          {
+            value: 'unknown',
+            count: 1,
+            share: 0.25,
+            tokens: 0,
+            costUsd: 0,
+            durationMs: 0,
+            tokenRuns: 0,
+            costRuns: 0,
+            durationRuns: 0,
+          },
         ],
       }),
     ),
   };
+  let requests = 0;
   mount(async (input) => {
+    requests++;
     const url = String(input);
     if (url.endsWith('/reports')) return json([breakdown.report]);
     return json(url.includes('/summary?') ? { ...summary, runs: 4 } : breakdown);
   });
   const table = await screen.findByRole('table', { name: 'Run breakdowns by dimension' });
+  expect(within(table).getByText('120')).toBeTruthy();
+  expect(within(table).getByText('$0.6000')).toBeTruthy();
+  expect(within(table).getByText('6 s')).toBeTruthy();
+  const loadedRequests = requests;
+  fireEvent.change(screen.getByLabelText('Metrics'), { target: { value: 'averages' } });
+  expect(within(table).getByText('Avg tokens / run')).toBeTruthy();
+  expect(within(table).getByText('60')).toBeTruthy();
+  expect(within(table).getByText('$0.6000')).toBeTruthy();
+  expect(within(table).getByText('2 s')).toBeTruthy();
+  expect(within(table).getAllByText('n/a')).toHaveLength(3);
+  expect(requests).toBe(loadedRequests);
+  fireEvent.change(screen.getByLabelText('Metrics'), { target: { value: 'totals' } });
+  expect(within(table).getByText('120')).toBeTruthy();
   expect(within(table).getByText('75%')).toBeTruthy();
   expect(within(table).getByText('25%')).toBeTruthy();
   expect(within(table).getByText('unknown')).toBeTruthy();
