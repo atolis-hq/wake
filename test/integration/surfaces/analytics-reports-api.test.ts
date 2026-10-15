@@ -35,6 +35,7 @@ it('composes the registered report and independent summary, validates identifier
         { id: 'run-outcomes-over-time' },
         { id: 'run-breakdowns-by-dimension' },
         { id: 'token-and-cost-usage' },
+        { id: 'work-item-throughput' },
       ],
     },
   });
@@ -186,6 +187,28 @@ it('serves the registered usage report with zero buckets and explicit units', as
             values: { 'total-tokens': 0, 'total-cost-usd': 0 },
           },
         ]),
+      },
+    },
+  });
+});
+
+it('serves registered throughput with empty duration rows and completion buckets', async () => {
+  const { dispatcher } = fixture();
+  expect(
+    await dispatcher.dispatch(
+      'GET',
+      '/api/v1/observability/reports?window=1d&report=work-item-throughput',
+      undefined,
+    ),
+  ).toMatchObject({
+    status: 200,
+    body: {
+      data: {
+        report: { id: 'work-item-throughput' },
+        totals: { 'work-items-done': 0 },
+        durationRows: [],
+        excludedDurationCount: 0,
+        buckets: expect.any(Array),
       },
     },
   });

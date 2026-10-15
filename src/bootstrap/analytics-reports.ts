@@ -6,7 +6,7 @@ import {
   queryRunAnalytics,
 } from '../execution/index.js';
 import { reportWindow, type ReportDefinition, type ReportWindowId } from '../kernel/index.js';
-import { queryWorkCompletionSummary } from '../orchestration/index.js';
+import { createWorkThroughputReport, queryWorkCompletionSummary } from '../orchestration/index.js';
 import { sampledMeta } from './surface-api-metadata.js';
 
 export function createAnalyticsReports(journal: EventJournal, now: () => string) {
@@ -14,6 +14,7 @@ export function createAnalyticsReports(journal: EventJournal, now: () => string)
     createRunOutcomesReport(journal),
     createRunBreakdownReport(journal),
     createRunUsageReport(journal),
+    createWorkThroughputReport(journal),
   ];
   return {
     catalogue: () => definitions.map(({ id, title }) => ({ id, title })),

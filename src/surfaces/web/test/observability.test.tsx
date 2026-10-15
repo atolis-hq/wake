@@ -67,7 +67,7 @@ it('loads the selected report while tiles are pending and renders empty values w
   ).toBeTruthy();
   expect(screen.queryByText(/NaN/)).toBeNull();
   expect(
-    within(screen.getByRole('table', { name: 'Run outcomes by bucket' })).getByText('0'),
+    within(screen.getByRole('table', { name: 'Run outcomes over time by bucket' })).getByText('0'),
   ).toBeTruthy();
 });
 
@@ -345,4 +345,100 @@ it('formats non-zero usage like the tiles in legends, axes, tooltips and bucket 
     within(screen.getByRole('group', { name: 'Total tokens' })).getByText(formattedTokens),
   ).toBeTruthy();
   expect(screen.queryByText(/0\.30000000000000004/)).toBeNull();
+});
+
+it.each([0, 2])(
+  'loads, retries and explains throughput exclusions with %i completions',
+  async (total) => {
+    const descriptor = { id: 'work-item-throughput', title: 'Work item throughput' };
+    let finish!: (response: Response) => void;
+    let calls = 0;
+    mount(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/reports')) return json([descriptor]);
+      if (url.includes('/summary?')) return json({ ...summary, workItemsDone: total });
+      if (++calls === 1)
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return json({
+        ...report,
+        report: descriptor,
+        series: [{ id: 'work-items-done', title: 'Work items done', unit: 'work items' }],
+        totals: { 'work-items-done': total },
+        buckets: [{ from: window.from, to: now, values: { 'work-items-done': total } }],
+        durationRows: [],
+        excludedDurationCount: total,
+      });
+    });
+    expect(await screen.findByText('Loading report…')).toBeTruthy();
+    await act(async () =>
+      finish(
+        new Response(
+          JSON.stringify({ type: 'about:blank', title: 'Throughput unavailable', status: 500 }),
+          {
+            status: 500,
+          },
+        ),
+      ),
+    );
+    await screen.findByText('Throughput unavailable');
+    fireEvent.click(
+      within(screen.getByRole('region', { name: 'Selected report' })).getByRole('button', {
+        name: 'Retry',
+      }),
+    );
+    expect(
+      await screen.findByText(
+        total === 0
+          ? 'No completed work items in this window'
+          : 'No valid work item durations in this window',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Duration rows exclude missing, invalid, or inconsistent timestamps/)
+        .textContent,
+    ).toContain(`Excluded: ${total}`);
+    expect(
+      within(screen.getByRole('group', { name: 'Work items done' })).getByText(String(total)),
+    ).toBeTruthy();
+    expect(screen.getByText(`Work items done: ${total}`)).toBeTruthy();
+  },
+);
+
+it('renders throughput identity, UTC timestamps and newest-first duration rows', async () => {
+  const descriptor = { id: 'work-item-throughput', title: 'Work item throughput' };
+  mount(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/reports')) return json([descriptor]);
+    if (url.includes('/summary?')) return json({ ...summary, workItemsDone: 2 });
+    return json({
+      ...report,
+      report: descriptor,
+      totals: { completed: 2 },
+      durationRows: [
+        {
+          id: 'new',
+          title: 'New item',
+          createdAt: window.from,
+          completedAt: now,
+          durationMs: 86400000,
+        },
+        {
+          id: 'old',
+          title: 'Old item',
+          createdAt: window.from,
+          completedAt: '2026-08-01T10:00:00.000Z',
+          durationMs: 77400000,
+        },
+      ],
+      excludedDurationCount: 0,
+    });
+  });
+  const table = await screen.findByRole('table', { name: 'Work item durations' });
+  const rows = within(table).getAllByRole('row');
+  expect(rows[1]?.textContent).toContain('New item (new)');
+  expect(rows[2]?.textContent).toContain('Old item (old)');
+  expect(within(table).getByText(now)).toBeTruthy();
+  expect(within(table).getByText(`${(86400).toLocaleString()} s`)).toBeTruthy();
 });
