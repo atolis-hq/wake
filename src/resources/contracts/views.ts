@@ -42,3 +42,7 @@ export interface ResourceCorrelationView {
   readonly provenance: ResourceCorrelationProvenance;
   readonly establishedByEventId: string;
 }
+
+export type ResourceRepositoryIdentityResolver = (
+  externalKey: ExternalResourceKey,
+) => string | undefined;

@@ -2,7 +2,6 @@ import { scanJournal, yieldScan, type EventJournal } from '@atolis-hq/eventing';
 import { ActivityOutcomeKind } from '../../activities/index.js';
 import {
   defineClosedVocabulary,
-  median,
   type BreakdownReport,
   type DurationReport,
   type ReportDefinition,
@@ -11,10 +10,12 @@ import {
   type ValueOf,
 } from '../../kernel/index.js';
 import { selectRunExecutionEvent } from '../contracts/events.js';
+import { RunReportValue } from '../contracts/run-report-value.js';
 import { agentTokenUsage } from '../contracts/runner.js';
 import type { RunView } from '../contracts/views.js';
 import { RunStatus } from '../contracts/vocabulary.js';
 import { foldRunEvent } from '../domain/run.js';
+import { collectDurations } from './run-duration.js';
 
 export const RunReportId = defineClosedVocabulary({
   Duration: 'run-duration',
@@ -54,21 +55,40 @@ export const RunReportDimension = defineClosedVocabulary({
   Stage: 'run-stage',
   Runner: 'run-runner',
   Model: 'run-model',
+  Repository: 'run-repository',
+  RunnerPool: 'run-runner-pool',
 } as const);
 
-export const RunReportValue = defineClosedVocabulary({ Unknown: 'unknown' } as const);
+export { RunReportValue } from '../contracts/run-report-value.js';
 const dimensions = [
   { id: RunReportDimension.Action, title: 'Action', value: (run: RunView) => run.activity },
   { id: RunReportDimension.Stage, title: 'Stage', value: (run: RunView) => run.stage },
   { id: RunReportDimension.Runner, title: 'Runner', value: (run: RunView) => run.runner?.name },
   { id: RunReportDimension.Model, title: 'Model', value: (run: RunView) => run.runner?.model },
+  {
+    id: RunReportDimension.Repository,
+    title: 'Repository',
+    value: (_run: RunView): string | undefined => undefined,
+  },
+  {
+    id: RunReportDimension.RunnerPool,
+    title: 'Runner pool',
+    value: (run: RunView) => run.runner?.pool,
+  },
 ];
 
-export function createRunBreakdownReport(journal: EventJournal): ReportDefinition {
+export type RunRepositoryLookup = (
+  query: ReportQuery,
+) => Promise<(run: RunView) => string | undefined>;
+
+export function createRunBreakdownReport(
+  journal: EventJournal,
+  repositories?: RunRepositoryLookup,
+): ReportDefinition {
   return {
     id: RunReportId.Breakdown,
     title: 'Run breakdowns by dimension',
-    query: async (query) => (await queryRunAnalytics(journal, query)).breakdown,
+    query: async (query) => (await queryRunAnalytics(journal, query, repositories)).breakdown,
   };
 }
 
@@ -128,6 +148,7 @@ export function createRunOutcomesReport(journal: EventJournal): ReportDefinition
 export async function queryRunAnalytics(
   journal: EventJournal,
   query: ReportQuery,
+  repositories?: RunRepositoryLookup,
 ): Promise<{
   duration: DurationReport;
   report: TimeSeriesReport;
@@ -135,6 +156,7 @@ export async function queryRunAnalytics(
   usage: TimeSeriesReport;
   summary: RunSummary;
 }> {
+  const repositoryForRun = await repositories?.(query);
   const from = Date.parse(query.window.from);
   const to = Date.parse(query.window.to);
   const first = Math.floor(from / query.window.bucketMs) * query.window.bucketMs;
@@ -145,7 +167,7 @@ export async function queryRunAnalytics(
     values: { [RunUsageMeasure.Tokens]: 0, [RunUsageMeasure.CostUsd]: 0 },
   }));
   const totals = Object.fromEntries(series.map(({ id }) => [id, 0]));
-  const durationData = collectDurations(query, buckets);
+  const durationData = collectDurations(query, buckets, dimensions, durationDescriptor);
   const counts = dimensions.map(() => new Map<string, number>());
   let runs = 0,
     totalTokens = 0,
@@ -159,11 +181,7 @@ export async function queryRunAnalytics(
     totals[outcome]!++;
     buckets[Math.floor((start - first) / query.window.bucketMs)]!.values[outcome]!++;
     runs++;
-    dimensions.forEach((dimension, index) => {
-      const value = dimension.value(run) ?? RunReportValue.Unknown;
-      const groups = counts[index]!;
-      groups.set(value, (groups.get(value) ?? 0) + 1);
-    });
+    countDimensions(run, counts, repositoryForRun);
     const usage = agentTokenUsage(run.agent?.metadata);
     const tokens = finiteOrZero(usage.tokens);
     const cost = finiteOrZero(usage.costUsd);
@@ -210,12 +228,6 @@ function finiteOrZero(value: number): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function runDuration(run: RunView): number | null {
-  if (run.finishedAt === undefined) return null;
-  const duration = Date.parse(run.finishedAt) - Date.parse(run.startedAt);
-  return Number.isFinite(duration) && duration >= 0 ? duration : null;
-}
-
 async function readRuns(journal: EventJournal, query: ReportQuery) {
   const grouped = new Map<string, RunView>();
   for await (const event of scanJournal(journal, query.signal)) {
@@ -256,66 +268,17 @@ function outcomeBuckets(first: number, to: number, bucketMs: number) {
   return buckets;
 }
 
-function collectDurations(query: ReportQuery, buckets: TimeSeriesReport['buckets']) {
-  const durations: number[] = [];
-  const durationBuckets = buckets.map(() => [] as number[]);
-  const durationGroups = dimensions.slice(0, 2).map(() => new Map<string, number[]>());
-  return {
-    add(run: RunView, bucketIndex: number) {
-      const duration = runDuration(run);
-      if (duration !== null) {
-        durations.push(duration);
-        durationBuckets[bucketIndex]!.push(duration);
-        dimensions.slice(0, 2).forEach((dimension, index) => {
-          const value = dimension.value(run) ?? RunReportValue.Unknown;
-          const groups = durationGroups[index]!;
-          const values = groups.get(value) ?? [];
-          values.push(duration);
-          groups.set(value, values);
-        });
-      }
-    },
-    async report(): Promise<DurationReport> {
-      const statistics = async (values: readonly number[]) => {
-        let sum = 0;
-        for (const [index, value] of values.entries()) {
-          if (index % 1024 === 0) await yieldScan(query.signal);
-          sum += value;
-        }
-        return {
-          count: values.length,
-          medianMs: await median(values, () => yieldScan(query.signal)),
-          averageMs: values.length === 0 ? null : sum / values.length,
-        };
-      };
-      const groups: DurationReport['groups'][number][] = [];
-      for (const [index, dimension] of dimensions.slice(0, 2).entries()) {
-        const rows = [];
-        for (const [value, values] of durationGroups[index]!) {
-          await yieldScan(query.signal);
-          rows.push({ value, ...(await statistics(values)) });
-        }
-        rows.sort(
-          (a, b) => b.count - a.count || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0),
-        );
-        groups.push({ id: dimension.id, title: dimension.title, rows });
-      }
-      const durationSeries = [];
-      for (const [index, bucket] of buckets.entries()) {
-        durationSeries.push({
-          from: bucket.from,
-          to: bucket.to,
-          ...(await statistics(durationBuckets[index]!)),
-        });
-      }
-
-      return {
-        report: durationDescriptor,
-        window: query.window,
-        statistics: await statistics(durations),
-        groups,
-        buckets: durationSeries,
-      };
-    },
-  };
+function countDimensions(
+  run: RunView,
+  counts: readonly Map<string, number>[],
+  repositoryForRun?: (run: RunView) => string | undefined,
+) {
+  dimensions.forEach((dimension, index) => {
+    const value =
+      (dimension.id === RunReportDimension.Repository
+        ? repositoryForRun?.(run)
+        : dimension.value(run)) ?? RunReportValue.Unknown;
+    const groups = counts[index]!;
+    groups.set(value, (groups.get(value) ?? 0) + 1);
+  });
 }

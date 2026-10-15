@@ -284,7 +284,7 @@ async function recentEvents(
 
 function createObservabilityApplications(root: CompositionRoot, now: () => string) {
   return {
-    reports: createAnalyticsReports(root.journal, now),
+    reports: createAnalyticsReports(root.journal, now, root.resolveResourceRepositoryIdentity),
     async metrics(query = { days: 7 }) {
       const collectedAt = now();
       const stored = await root.projections.read<AnalyticsProjectionView>(

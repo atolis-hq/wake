@@ -173,19 +173,21 @@ it('keeps today’s system counters available on a keyboard-accessible tab', asy
   expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'System activity' }));
 });
 
-it('shows whole-window counts and shares and switches all four dimensions', async () => {
+it('shows whole-window counts and shares and switches all six dimensions', async () => {
   const breakdown = {
     report: { id: 'run-breakdowns-by-dimension', title: 'Run breakdowns by dimension' },
     window,
     total: 4,
-    dimensions: ['Action', 'Stage', 'Runner', 'Model'].map((title) => ({
-      id: title.toLowerCase(),
-      title,
-      rows: [
-        { value: `${title} value`, count: 3, share: 0.75 },
-        { value: 'unknown', count: 1, share: 0.25 },
-      ],
-    })),
+    dimensions: ['Action', 'Stage', 'Runner', 'Model', 'Repository', 'Runner pool'].map(
+      (title) => ({
+        id: title.toLowerCase(),
+        title,
+        rows: [
+          { value: `${title} value`, count: 3, share: 0.75 },
+          { value: 'unknown', count: 1, share: 0.25 },
+        ],
+      }),
+    ),
   };
   mount(async (input) => {
     const url = String(input);
@@ -196,7 +198,7 @@ it('shows whole-window counts and shares and switches all four dimensions', asyn
   expect(within(table).getByText('75%')).toBeTruthy();
   expect(within(table).getByText('25%')).toBeTruthy();
   expect(within(table).getByText('unknown')).toBeTruthy();
-  for (const title of ['Action', 'Stage', 'Runner', 'Model']) {
+  for (const title of ['Action', 'Stage', 'Runner', 'Model', 'Repository', 'Runner pool']) {
     fireEvent.change(screen.getByLabelText('Dimension'), {
       target: { value: title.toLowerCase() },
     });
@@ -220,11 +222,13 @@ it('loads, retries and displays an empty breakdown without non-finite shares', a
       report: descriptor,
       window,
       total: 0,
-      dimensions: ['Action', 'Stage', 'Runner', 'Model'].map((title) => ({
-        id: title.toLowerCase(),
-        title,
-        rows: [],
-      })),
+      dimensions: ['Action', 'Stage', 'Runner', 'Model', 'Repository', 'Runner pool'].map(
+        (title) => ({
+          id: title.toLowerCase(),
+          title,
+          rows: [],
+        }),
+      ),
     });
   });
   expect(await screen.findByText('Loading report…')).toBeTruthy();
