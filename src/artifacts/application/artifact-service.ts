@@ -273,7 +273,8 @@ function sameRevision(
 }
 
 function contextExport(share: boolean | undefined, contextScope: string | undefined) {
-  if (share !== true) return {};
-  if (contextScope === undefined) throw new Error('This run has no trusted shared context');
+  // Only trigger invocations carry a shared context; for a WorkItem run the work-item scope already
+  // is the artifact context, so a share request is a no-op rather than a failed write.
+  if (share !== true || contextScope === undefined) return {};
   return { contextExport: artifactSharedContextNameSchema.parse(contextScope) };
 }
