@@ -12,7 +12,6 @@ import {
   type CompiledAwait,
   type CompiledOutcomeRoute,
   type CompiledStage,
-  type CompiledSupplementalCommand,
   type CompiledWatchGate,
   type CompiledWorkflow,
   type StageConfig,
@@ -20,7 +19,6 @@ import {
   type WorkflowDefinitionConfig,
 } from '../contracts/config.js';
 import {
-  commandName,
   signalName,
   stageName,
   watchId,
@@ -29,6 +27,8 @@ import {
 } from '../contracts/identifiers.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
 import { defaultApprovalAwait } from './approval-defaults.js';
+import { compileCommands } from './command-compiler.js';
+import { reportUnroutedOutcomes, type WorkflowCompileDiagnostic } from './compile-diagnostics.js';
 import { compileResourceTransitions } from './resource-transition-compiler.js';
 import {
   compileTarget,
@@ -42,6 +42,7 @@ export function compileWorkflow(
   input: unknown,
   activities: ActivityRegistry,
   knownWorkflowNames: readonly string[] = [name],
+  reportDiagnostic: (diagnostic: WorkflowCompileDiagnostic) => void = () => {},
 ): CompiledWorkflow {
   const compiledName = workflowName(name);
   const config = workflowDefinitionConfigSchema.parse(input) as WorkflowDefinitionConfig;
@@ -59,6 +60,7 @@ export function compileWorkflow(
   const watches = compileWatches(config, rawStageNames, knownWorkflowNames);
   assertReachable(compiledEntry, stages);
   assertCyclesBounded(stages);
+  reportUnroutedOutcomes(name, stages, activities, reportDiagnostic);
   return Object.freeze({
     remainingAgentSteps: Object.freeze(
       remainingAgentSteps(
@@ -294,20 +296,4 @@ function compileAuthority(
       `Unknown watch reference in workflow "${workflow}" stage "${rawStageName}": "${entry.id}"`,
     );
   return { kind: ApprovalAuthorityKind.Watch, watch: watchId(entry.id) };
-}
-
-function compileCommands(
-  config: WorkflowDefinitionConfig,
-  activities: ActivityRegistry,
-): Record<ReturnType<typeof commandName>, CompiledSupplementalCommand> {
-  return Object.fromEntries(
-    Object.entries(config.commands ?? {}).map(([command, configured]) => [
-      commandName(command),
-      Object.freeze({
-        activity: activityName(configured.activity),
-        with: activities.validateInput(activityName(configured.activity), configured.with),
-        allowedActors: Object.freeze([...configured.allowedActors]),
-      }),
-    ]),
-  ) as Record<ReturnType<typeof commandName>, CompiledSupplementalCommand>;
 }

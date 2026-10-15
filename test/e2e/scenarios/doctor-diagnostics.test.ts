@@ -49,6 +49,12 @@ describe('E2E-OPS-002: doctor diagnostics — prompt templates and provider conn
     );
 
     const report = await runDoctor(world.wakeRoot);
+    expect(report.notices).toEqual(
+      expect.arrayContaining([
+        'Workflow "default" stage "implement": declared outcome "blocked" has no route.',
+        'Workflow "default" stage "implement": declared outcome "failed" has no route.',
+      ]),
+    );
 
     expect(report.failures).toEqual(
       expect.arrayContaining([expect.stringMatching(/prompt template "implement"/)]),

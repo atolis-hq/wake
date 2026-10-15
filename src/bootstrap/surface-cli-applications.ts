@@ -969,7 +969,7 @@ function spawnDocker(
 
 async function doctorDiagnostics(root: CompositionRoot) {
   const failures: string[] = [];
-  const notices: string[] = [];
+  const notices: string[] = [...root.workflowNotices];
   const templates = new Map<string, PromptTemplate>();
   try {
     createRunnerRegistry(root.config.execution, root.fakeScenarios).resolve(
