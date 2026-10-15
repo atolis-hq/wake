@@ -98,12 +98,16 @@ workflows:
         with: { template: refine }
         execution: { workspace: read-only, runnerPool: light }
         on:
+          blocked: { then: await-human }
+          failed: { then: await-human }
           done: { then: implement }
       implement:
         activity: agent
         with: { template: implement }
         execution: { workspace: branch, runnerPool: standard }
         on:
+          blocked: { then: await-human }
+          failed: { then: await-human }
           done: { then: done }
   approval:
     entry: refine
@@ -113,6 +117,8 @@ workflows:
         with: { template: refine }
         execution: { workspace: read-only, runnerPool: light }
         on:
+          blocked: { then: await-human }
+          failed: { then: await-human }
           done:
             then: implement
             await:
@@ -123,6 +129,8 @@ workflows:
         with: { template: implement }
         execution: { workspace: branch, runnerPool: standard }
         on:
+          blocked: { then: await-human }
+          failed: { then: await-human }
           done: { then: done }`;
 
 // Frontmatter is limited to model/maxTurns/allowedTools/extraArgs (see

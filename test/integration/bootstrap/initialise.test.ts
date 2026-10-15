@@ -56,6 +56,12 @@ describe('target initialise root', () => {
     await initialiseWakeRoot(root);
 
     const config = await loadConfig(root);
+    for (const workflow of Object.values(config.orchestration.workflows)) {
+      for (const stage of Object.values(workflow.stages)) {
+        expect(stage.on.blocked).toEqual({ then: 'await-human' });
+        expect(stage.on.failed).toEqual({ then: 'await-human' });
+      }
+    }
 
     expect(config.host.sandbox.containerName).toBe('wake-sandbox-my-project-v2');
   });

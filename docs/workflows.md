@@ -23,6 +23,7 @@ workflows:
         execution: { workspace: read-only, runnerPool: light }
         requiresApproval: false
         on:
+          failed: { then: await-human }
           done: { then: implement }
           blocked: { then: await-human }
       implement:
@@ -318,12 +319,26 @@ stages:
     with: { template: refine }
     execution: { workspace: read-only, runnerPool: light }
     on:
+      failed: { then: await-human }
+      blocked: { then: await-human }
       done:
         then: implement
         await:
           signal: approved
           from: [human, auto]
 ```
+
+
+Unrouted declared Activity outcomes produce non-fatal warnings when workflows
+compile during configuration startup, and appear in `wake doctor` notices.
+Each warning names the workflow, stage, and outcome. Routes with retry, await,
+or watch gates count as configured. Add an explicit `then: await-human` route
+to acknowledge an outcome that requires human intervention.
+
+An unrouted non-`waiting` outcome is recorded and blocks the instance; warnings
+do not change this fail-closed behavior. Warnings also cover `waiting`, but the
+interpreter handles that outcome before route lookup, so a missing `waiting`
+route does not itself block the instance.
 
 ## Retry, repeat, and loop safety
 
@@ -342,6 +357,8 @@ stages:
     activity: agent
     with: { template: review }
     on:
+      failed: { then: await-human }
+      blocked: { then: await-human }
       rejected:
         then: implement
         repeat: { max: 3 }
@@ -415,6 +432,8 @@ workflows:
         with: { template: implement }
         execution: { workspace: branch, runnerPool: standard }
         on:
+          failed: { then: await-human }
+          blocked: { then: await-human }
           done:
             then: done
             watchGates:
@@ -455,6 +474,7 @@ workflows:
         with: { template: implement }
         execution: { workspace: branch, runnerPool: standard }
         on:
+          failed: { then: await-human }
           done: { then: done }
           blocked: { then: await-human }
     watches:
