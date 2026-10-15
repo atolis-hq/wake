@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import YAML from 'yaml';
+import { ActivityRegistry, agentActivityDefinition } from '../../../src/activities/index.js';
 import { ArtifactContextService } from '../../../src/artifacts/index.js';
 import {
   createCompositionRoot,
@@ -23,9 +24,11 @@ import {
 } from '../../../src/control-plane/index.js';
 import { isActiveRunStatus, RunStatus } from '../../../src/execution/index.js';
 import {
+  compileWorkflow,
   orchestrationGroupId,
   workflowInstanceId,
   workflowName,
+  type WorkflowCompileDiagnostic,
 } from '../../../src/orchestration/index.js';
 import { WorkEventType, workItemId } from '../../../src/work/index.js';
 import { ArtifactMcpRunner } from '../../support/artifact-mcp-runner.js';
@@ -346,6 +349,19 @@ describe('configured delivery oversight', () => {
       },
       orchestration: { default: 'delivery-oversight', workflows: workflows.workflows },
     });
+    const activities = new ActivityRegistry();
+    activities.register(agentActivityDefinition);
+    const diagnostics: WorkflowCompileDiagnostic[] = [];
+    for (const [name, definition] of Object.entries(parsed.orchestration.workflows)) {
+      compileWorkflow(
+        name,
+        definition,
+        activities,
+        Object.keys(parsed.orchestration.workflows),
+        (diagnostic) => diagnostics.push(diagnostic),
+      );
+    }
+    expect(diagnostics).toEqual([]);
     expect(parsed.controlPlane.triggers[0]!.when).toEqual({ capacityAvailable: true });
     expect(parsed.controlPlane.triggers[0]!.contextScope).toBe('delivery-main');
   });

@@ -23,6 +23,8 @@ workflows:
         execution: { workspace: read-only, runnerPool: light }
         requiresApproval: false
         on:
+          rejected: { then: await-human }
+          failed: { then: await-human }
           done: { then: implement }
           blocked: { then: await-human }
       implement:
@@ -30,6 +32,7 @@ workflows:
         with: { template: implement }
         execution: { workspace: branch, runnerPool: standard }
         on:
+          rejected: { then: await-human }
           done: { then: done }
           blocked: { then: await-human }
           failed: { then: implement, retry: { max: 2 } }
@@ -90,6 +93,7 @@ with:
   target: primary
   body: "Approved after deterministic validation."
 on:
+  waiting: { then: await-human }
   done: { then: done }
   blocked: { then: await-human }
   failed: { then: await-human }
@@ -115,6 +119,7 @@ with:
   maxFilesChanged: 20
   blockedPaths: [".github/workflows/release.yml", "infra/production.yml"]
 on:
+  waiting: { then: await-human }
   done: { then: done }
   blocked: { then: await-human }
   failed: { then: await-human }
@@ -140,6 +145,7 @@ completion does not end the workflow, so later configured stages still run.
 activity: issue.complete
 with: { target: primary }
 on:
+  waiting: { then: await-human }
   done: { then: publish-release-notes }
   blocked: { then: await-human }
 ```
@@ -216,6 +222,7 @@ merge:
     requireChecks: true
     autoMerge: true
   on:
+    waiting: { then: await-human }
     done:
       then: wait
       resourceTransitions:
@@ -318,12 +325,29 @@ stages:
     with: { template: refine }
     execution: { workspace: read-only, runnerPool: light }
     on:
+      rejected: { then: await-human }
+      failed: { then: await-human }
+      blocked: { then: await-human }
       done:
         then: implement
         await:
           signal: approved
           from: [human, auto]
 ```
+
+Unrouted declared Activity outcomes produce non-fatal warnings when workflows
+compile during configuration startup, and appear in `wake doctor` notices.
+Each warning names the workflow, stage, and outcome. Routes with retry, await,
+or watch gates count as configured. Add an explicit `then: await-human` route
+to acknowledge an outcome that requires human intervention.
+
+An unrouted non-`waiting` outcome is recorded and blocks the instance; warnings
+do not change this fail-closed behavior. Warnings also cover `waiting`, but the
+interpreter handles that outcome before route lookup, so a missing `waiting`
+route does not itself block the instance. An explicit
+`waiting: { then: await-human }` acknowledges that declared outcome and
+silences its warning without changing the durable delivery wait behavior; the
+interpreter still handles `waiting` before following any route.
 
 ## Retry, repeat, and loop safety
 
@@ -342,6 +366,8 @@ stages:
     activity: agent
     with: { template: review }
     on:
+      failed: { then: await-human }
+      blocked: { then: await-human }
       rejected:
         then: implement
         repeat: { max: 3 }
@@ -415,6 +441,9 @@ workflows:
         with: { template: implement }
         execution: { workspace: branch, runnerPool: standard }
         on:
+          rejected: { then: await-human }
+          failed: { then: await-human }
+          blocked: { then: await-human }
           done:
             then: done
             watchGates:
@@ -455,6 +484,8 @@ workflows:
         with: { template: implement }
         execution: { workspace: branch, runnerPool: standard }
         on:
+          rejected: { then: await-human }
+          failed: { then: await-human }
           done: { then: done }
           blocked: { then: await-human }
     watches:
@@ -475,6 +506,7 @@ workflows:
         execution: { workspace: branch, runnerPool: standard }
         requiresApproval: false
         on:
+          rejected: { then: await-human }
           done: { then: done }
           blocked: { then: await-human }
           failed: { then: await-human }

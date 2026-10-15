@@ -117,6 +117,7 @@ export interface CompositionRootOptions {
 }
 
 export interface CompositionRoot {
+  readonly workflowNotices: readonly string[];
   readonly triggers: TriggerService;
   readonly config: ResolvedWakeModulesConfig;
   readonly fakeScenarios: FakeScenarioResolver;
@@ -210,10 +211,20 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
         conversations,
       ),
     );
+  const workflowNotices: string[] = [];
   const definitions = Object.fromEntries(
     Object.entries(config.orchestration.workflows).map(([name, definition]) => [
       name,
-      compileWorkflow(name, definition, activities, Object.keys(config.orchestration.workflows)),
+      compileWorkflow(
+        name,
+        definition,
+        activities,
+        Object.keys(config.orchestration.workflows),
+        (diagnostic) => {
+          workflowNotices.push(diagnostic.message);
+          process.stderr.write(`Warning: ${diagnostic.message}\n`);
+        },
+      ),
     ]),
   );
   const orchestration = createOrchestrationService(
@@ -474,6 +485,7 @@ export async function createCompositionRoot(
   });
   processorRuntime.register([activationSchedulerSubscriber.processor, ...runtime.processors]);
   return {
+    workflowNotices,
     config,
     fakeScenarios,
     paths,

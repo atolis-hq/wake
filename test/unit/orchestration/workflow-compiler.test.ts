@@ -5,7 +5,11 @@ import {
   activityName,
   agentActivityDefinition,
 } from '../../../src/activities/index.js';
-import { compileWorkflow, stageName } from '../../../src/orchestration/index.js';
+import {
+  compileWorkflow,
+  stageName,
+  type WorkflowCompileDiagnostic,
+} from '../../../src/orchestration/index.js';
 
 function registry(): ActivityRegistry {
   const result = new ActivityRegistry();
@@ -28,6 +32,65 @@ function registry(): ActivityRegistry {
 }
 
 describe('compileWorkflow', () => {
+  it('reports every unrouted declared outcome and accepts explicit handling', () => {
+    const activities = registry();
+    activities.register({
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.string() }).strict(),
+      resources: [],
+      executionKind: 'deterministic',
+      handler: {
+        async execute() {
+          return { kind: 'done' };
+        },
+      },
+      name: activityName('waiting-task'),
+      outcomeKinds: ['done', 'waiting', 'blocked', 'failed'],
+    });
+    const diagnostics: WorkflowCompileDiagnostic[] = [];
+    const stage = {
+      activity: 'waiting-task',
+      with: { prompt: 'go' },
+      on: { done: { then: 'done' } },
+    };
+    compileWorkflow(
+      'delivery',
+      { stages: { implement: stage } },
+      activities,
+      ['delivery'],
+      (diagnostic) => diagnostics.push(diagnostic),
+    );
+    expect(diagnostics).toEqual(
+      ['waiting', 'blocked', 'failed'].map((outcome) => ({
+        workflow: 'delivery',
+        stage: 'implement',
+        outcome,
+        message: `Workflow "delivery" stage "implement": declared outcome "${outcome}" has no route.`,
+      })),
+    );
+    diagnostics.length = 0;
+    compileWorkflow(
+      'delivery',
+      {
+        stages: {
+          implement: {
+            ...stage,
+            on: {
+              ...stage.on,
+              waiting: { then: 'await-human' },
+              blocked: { then: 'await-human', await: { signal: 'approved', from: ['human'] } },
+              failed: { then: 'done', retry: { max: 1 } },
+            },
+          },
+        },
+      },
+      activities,
+      ['delivery'],
+      (diagnostic) => diagnostics.push(diagnostic),
+    );
+    expect(diagnostics).toEqual([]);
+  });
+
   it('compiles owned shapes and defaults entry to the first stage', () => {
     const compiled = compileWorkflow(
       'default',
@@ -110,6 +173,7 @@ describe('compileWorkflow', () => {
   });
 
   it('compiles a watch gate with a self-loop rejection target', () => {
+    const diagnostics: WorkflowCompileDiagnostic[] = [];
     const compiled = compileWorkflow(
       'parent',
       {
@@ -132,7 +196,9 @@ describe('compileWorkflow', () => {
       },
       registry(),
       ['parent', 'pr-review'],
+      (diagnostic) => diagnostics.push(diagnostic),
     );
+    expect(diagnostics).toEqual([]);
     expect(compiled.stages[stageName('implement')]?.on.done?.watchGates?.[0]).toEqual({
       watch: 'pr-review',
       onRejectTarget: { kind: 'stage', stage: 'implement' },
