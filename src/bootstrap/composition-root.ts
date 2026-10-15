@@ -73,7 +73,7 @@ import { createArtifactTriggerContext } from './artifact-trigger-context.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
-import { composeIntegrationRuntime } from './integration-runtime.js';
+import { composeIntegrationRuntime, composeProviders } from './integration-runtime.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { composePersistence } from './persistence-composition.js';
 import type { RuntimeProjectionSubscriptions } from './projection-runtime.js';
@@ -166,11 +166,7 @@ function resolveResourceLink(externalKey: Parameters<ResourceLinkResolver>[0]): 
   return resourceLinkResolvers[externalKey.adapter]?.(externalKey) ?? null;
 }
 
-// eslint-disable-next-line complexity
-export async function createCompositionRoot(
-  wakeRoot: string,
-  options: CompositionRootOptions = {},
-): Promise<CompositionRoot> {
+async function createApplicationServices(wakeRoot: string, options: CompositionRootOptions = {}) {
   const config = options.config ?? (await loadConfig(wakeRoot));
   const fakeScenarios = await loadFakeScenarios(wakeRoot);
   const paths = resolveWakePaths(wakeRoot);
@@ -179,12 +175,6 @@ export async function createCompositionRoot(
   const ids = new UlidIdGenerator();
   const { journal, projections, checkpoints, processorState, subscriptionRunSerialiser } =
     composePersistence(paths, clock, options);
-  const processorRuntime = new EventProcessorRuntime(
-    journal,
-    checkpoints,
-    subscriptionRunSerialiser,
-    clock,
-  );
   const work = createWorkService(journal);
   const artifacts = createArtifactService(
     journal,
@@ -341,6 +331,92 @@ export async function createCompositionRoot(
     ids,
     runners: new Set(Object.values(config.execution.runnerPools).flat()),
   });
+  return {
+    config,
+    fakeScenarios,
+    workflowNotices,
+    paths,
+    maintenance,
+    clock,
+    ids,
+    journal,
+    projections,
+    checkpoints,
+    processorState,
+    subscriptionRunSerialiser,
+    work,
+    artifacts,
+    operatorInstructions,
+    conversations,
+    resources,
+    pullRequests,
+    lookup,
+    orchestration,
+    execution,
+    recovery,
+    transcriptStore,
+    runnerControls,
+    controlPlane,
+    isRuntimePaused,
+    activities,
+    runners,
+    artifactTriggerContext,
+    workspaces,
+  };
+}
+
+export async function createDiagnosticRoot(wakeRoot: string) {
+  const base = await createApplicationServices(wakeRoot);
+  const { instances, failures } = await composeProviders({
+    ...base,
+    wakeRoot,
+    providerDefinitions: [gitHubProviderDefinition],
+  });
+  return { ...base, providers: instances, providerFailures: failures };
+}
+
+export async function createCompositionRoot(
+  wakeRoot: string,
+  options: CompositionRootOptions = {},
+): Promise<CompositionRoot> {
+  const {
+    config,
+    fakeScenarios,
+    workflowNotices,
+    paths,
+    maintenance,
+    clock,
+    ids,
+    journal,
+    projections,
+    checkpoints,
+    processorState,
+    subscriptionRunSerialiser,
+    work,
+    artifacts,
+    operatorInstructions,
+    conversations,
+    resources,
+    pullRequests,
+    lookup,
+    orchestration,
+    execution,
+    recovery,
+    transcriptStore,
+    runnerControls,
+    controlPlane,
+    isRuntimePaused,
+    activities,
+    runners,
+    artifactTriggerContext,
+    workspaces,
+  } = await createApplicationServices(wakeRoot, options);
+  const processorRuntime = new EventProcessorRuntime(
+    journal,
+    checkpoints,
+    subscriptionRunSerialiser,
+    clock,
+  );
   const activationScheduler = createActivationScheduler(
     orchestration,
     {

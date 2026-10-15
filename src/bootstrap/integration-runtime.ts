@@ -160,35 +160,7 @@ export async function composeIntegrationRuntime(
           memoryUsage: () => process.memoryUsage(),
         })
       : undefined;
-  const registry = new ProviderRegistry();
-  registry.register(fakeProviderDefinition);
-  for (const definition of input.providerDefinitions) registry.register(definition);
-  const { instances, failures: providerFailures } = registry.compose(
-    await hydrateFakeProviderEvidence(input.wakeRoot, input.config.integrations),
-    {
-      publicUiUrl: input.config.surfaces.web.publicUrl,
-      providerStateRoot: join(input.wakeRoot, '.wake'),
-      work: input.work,
-      conversations: input.conversations,
-      resources: input.resources,
-      resourceLookup: input.lookup,
-      pullRequests: input.pullRequests,
-      runs: new RunRepository(input.journal),
-      orchestration: input.orchestration,
-      ids: input.ids,
-      clock: input.clock,
-      journal: input.journal,
-      checkpoints: input.checkpoints,
-      routing: createWorkflowRouter(input.config.orchestration),
-      conclusion: createWorkCancellationPolicy(
-        input.work,
-        input.orchestration,
-        input.execution,
-        input.clock,
-        input.ids,
-      ),
-    },
-  );
+  const { instances, failures: providerFailures } = await composeProviders(input);
   const composedProviders =
     input.fakeDeliveryProvider === undefined
       ? instances
@@ -567,4 +539,54 @@ function createWorkflowRouter(
   const selectors = compileWorkflowSelectors(orchestration.workflowSelectors);
   const fallback = workflowName(orchestration.default);
   return { select: (candidate) => selectWorkflow(candidate, selectors, fallback) };
+}
+
+export async function composeProviders(
+  input: Pick<
+    IntegrationRuntimeInput,
+    | 'wakeRoot'
+    | 'config'
+    | 'work'
+    | 'conversations'
+    | 'resources'
+    | 'lookup'
+    | 'pullRequests'
+    | 'journal'
+    | 'orchestration'
+    | 'ids'
+    | 'clock'
+    | 'checkpoints'
+    | 'execution'
+    | 'providerDefinitions'
+  >,
+) {
+  const registry = new ProviderRegistry();
+  registry.register(fakeProviderDefinition);
+  for (const definition of input.providerDefinitions) registry.register(definition);
+  return registry.compose(
+    await hydrateFakeProviderEvidence(input.wakeRoot, input.config.integrations),
+    {
+      publicUiUrl: input.config.surfaces.web.publicUrl,
+      providerStateRoot: join(input.wakeRoot, '.wake'),
+      work: input.work,
+      conversations: input.conversations,
+      resources: input.resources,
+      resourceLookup: input.lookup,
+      pullRequests: input.pullRequests,
+      runs: new RunRepository(input.journal),
+      orchestration: input.orchestration,
+      ids: input.ids,
+      clock: input.clock,
+      journal: input.journal,
+      checkpoints: input.checkpoints,
+      routing: createWorkflowRouter(input.config.orchestration),
+      conclusion: createWorkCancellationPolicy(
+        input.work,
+        input.orchestration,
+        input.execution,
+        input.clock,
+        input.ids,
+      ),
+    },
+  );
 }
