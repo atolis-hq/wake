@@ -85,7 +85,7 @@ class CoordinatedGitHubRequests implements GitHubRequestCoordinator {
 
   private recordFailure(error: unknown): void {
     const retryAfterMs = retryAfterMilliseconds(error, this.now());
-    if (statusOf(error) === 429) {
+    if (isRateLimited(error)) {
       this.cooldownUntil = this.now() + (retryAfterMs ?? 60_000);
       this.transientFailureCount = 0;
       return;
@@ -101,6 +101,19 @@ class CoordinatedGitHubRequests implements GitHubRequestCoordinator {
 function statusOf(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null || !('status' in error)) return undefined;
   return typeof error.status === 'number' ? error.status : undefined;
+}
+
+// Secondary rate limits arrive as 403, not 429; a plain permission 403 must not cool down.
+function isRateLimited(error: unknown): boolean {
+  const status = statusOf(error);
+  if (status === 429) return true;
+  if (status !== 403) return false;
+  const headers = responseHeaders(error);
+  return (
+    headerValue(headers, 'retry-after') !== undefined ||
+    headerValue(headers, 'x-ratelimit-remaining') === '0' ||
+    (error instanceof Error && /rate limit/i.test(error.message))
+  );
 }
 
 function isTransient(error: unknown): boolean {
@@ -125,20 +138,23 @@ function retryAfterMilliseconds(error: unknown, now: number): number | undefined
 }
 
 function retryAfterValue(error: unknown): string | undefined {
+  return headerValue(responseHeaders(error), 'retry-after');
+}
+
+function responseHeaders(error: unknown): unknown {
   if (typeof error !== 'object' || error === null || !('response' in error)) return undefined;
   const response = error.response;
   if (typeof response !== 'object' || response === null || !('headers' in response))
     return undefined;
-  return headerValue(response.headers);
+  return response.headers;
 }
 
-function headerValue(headers: unknown): string | undefined {
+function headerValue(headers: unknown, name: string): string | undefined {
   if (typeof headers !== 'object' || headers === null) return undefined;
   if ('get' in headers && typeof headers.get === 'function') {
-    const value = headers.get('retry-after');
+    const value = headers.get(name);
     return typeof value === 'string' ? value : undefined;
   }
-  if ('retry-after' in headers && typeof headers['retry-after'] === 'string')
-    return headers['retry-after'];
-  return undefined;
+  const value = (headers as Record<string, unknown>)[name];
+  return typeof value === 'string' ? value : undefined;
 }
