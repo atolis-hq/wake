@@ -62,6 +62,7 @@ interface ScenarioSetup {
 export interface ComposedMergeRootOptions {
   readonly provider: ExternalDeliveryAdapter;
   readonly waitForMerged?: boolean;
+  readonly retryChecks?: boolean;
   readonly clock?: Clock;
   readonly journal?: EventJournal;
   readonly projections?: ProjectionStore;
@@ -107,7 +108,19 @@ export async function createComposedMergeRoot(
                         ],
                       },
                     }
-                  : outcomeRoutes(),
+                  : options.retryChecks
+                    ? {
+                        ...outcomeRoutes(),
+                        blocked: {
+                          then: 'await-human',
+                          retry: {
+                            max: 3,
+                            reasons: ['checks-could-not-be-read', 'checks-pending'],
+                            delaysMs: [60000, 300000, 900000],
+                          },
+                        },
+                      }
+                    : outcomeRoutes(),
                 requiresApproval: false,
               },
             },
@@ -129,7 +142,10 @@ export async function createComposedMergeRoot(
 }
 
 /** Appends merge evidence through the composed services, then waits on the runtime checkpoint barrier. */
-export async function prepareComposedSafeMerge(root: CompositionRoot): Promise<WorkflowInstanceId> {
+export async function prepareComposedSafeMerge(
+  root: CompositionRoot,
+  checks: 'unknown' | 'pending' | 'passing' | 'failing' = 'passing',
+): Promise<WorkflowInstanceId> {
   const context = composedCommand('create-work');
   const work = await root.work.create(
     { workItemId: workId('one'), objective: 'merge safe' },
@@ -162,7 +178,7 @@ export async function prepareComposedSafeMerge(root: CompositionRoot): Promise<W
       state: 'open',
       headRevision: 'revision-a',
       baseRevision: 'base-a',
-      checks: 'passing',
+      checks,
     },
     composedCommand('observe-primary'),
   );

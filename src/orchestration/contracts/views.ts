@@ -16,6 +16,7 @@ import type {
 import type { ActivityActivationStatus, WorkflowStatus } from './vocabulary.js';
 
 export interface ActivityActivationView {
+  readonly notBefore?: string;
   readonly activationId: ActivationId;
   readonly ordinal: number;
   readonly activity: ActivityName;

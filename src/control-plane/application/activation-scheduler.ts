@@ -114,6 +114,11 @@ export function createActivationScheduler(
     const pending = (
       await Promise.all(
         rawPending.map(async (candidate) => {
+          if (
+            candidate.activation.notBefore !== undefined &&
+            Date.parse(candidate.activation.notBefore) > clock.now().getTime()
+          )
+            return null;
           const work = await dependencies.work?.get(candidate.workflow.workItemId);
           return work?.frozen || work?.deleted ? null : candidate;
         }),

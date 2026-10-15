@@ -99,6 +99,7 @@ const denialCodeSchema = z.enum([
   PullRequestDenialCode.Closed,
   PullRequestDenialCode.StaleApproval,
   PullRequestDenialCode.ChecksPending,
+  PullRequestDenialCode.ChecksUnavailable,
   PullRequestDenialCode.ChecksFailing,
   PullRequestDenialCode.UntrustedActor,
   PullRequestDenialCode.TooManyFilesChanged,

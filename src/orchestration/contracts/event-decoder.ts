@@ -113,6 +113,7 @@ const executionSchema = z
 
 export const activityRequestedSchema = z
   .object({
+    notBefore: z.iso.datetime().optional(),
     activationId: brandedStringSchema(activationId),
     ordinal: z.number().int().positive(),
     activity: brandedStringSchema(activityName),

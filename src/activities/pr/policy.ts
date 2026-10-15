@@ -203,7 +203,7 @@ function changedFilesAuthority(
 
 function checkAuthority(pullRequest: PullRequestView, allowPendingChecks: boolean): Denial | null {
   if (pullRequest.checks === PullRequestCheckState.Unknown)
-    return denied(PullRequestDenialCode.ChecksPending);
+    return denied(PullRequestDenialCode.ChecksUnavailable);
   if (pullRequest.checks === PullRequestCheckState.Pending && !allowPendingChecks)
     return denied(PullRequestDenialCode.ChecksPending);
   return pullRequest.checks === PullRequestCheckState.Failing

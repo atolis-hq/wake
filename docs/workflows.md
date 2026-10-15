@@ -222,10 +222,31 @@ merge:
         - events: [pr.state-changed]
           where: { state: merged }
           then: complete-issue
-    blocked: { then: await-human }
+    blocked:
+      then: await-human
+      retry:
+        max: 3
+        reasons: [checks-could-not-be-read, checks-pending]
+        delaysMs: [60000, 300000, 900000]
     failed: { then: await-human }
   requiresApproval: false
 ```
+
+For the dark-factory merge stage, use the selective blocked retry policy above.
+It permits three retries after the initial denial, delayed by 1, 5, and 15
+minutes from the preceding outcome. Retry counts and activation `notBefore`
+times are journaled and survive restart. The control plane skips dispatch until
+the deadline, then evaluates current PR evidence on its next pass. Passing
+checks proceed automatically; failing checks and other denials take their
+configured route immediately. Exhaustion follows `then`; the last outcome
+retains `checks-could-not-be-read` for unknown evidence or `checks-pending` for
+pending checks. Unknown never passes required-check authority; pending remains
+allowed for provider-managed `autoMerge`.
+
+Existing `retry: { max: N }` policies still retry immediately without filtering.
+Optional `reasons` selects check-denial codes, and optional `delaysMs` must have
+exactly `max` positive integer delays. This policy belongs in the configured
+workflow; it does not retry runners.
 
 This is useful for native auto-merge: delivery confirmation means the provider
 accepted the enablement request, not that the pull request merged. Wake stays
