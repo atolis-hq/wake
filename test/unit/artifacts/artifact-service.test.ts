@@ -61,6 +61,36 @@ describe('ArtifactService', () => {
     });
   });
 
+  it('treats a share request without a trusted context as a no-op local write', async () => {
+    const service = createArtifactService(
+      new InMemoryEventJournal(new FakeClock()),
+      new FileArtifactStore(await directory()),
+      { maxWriteBytes: 100, maxWorkItemBytes: 200 },
+    );
+    const workItemId = workId('artifact-share-no-context');
+    const scope = {
+      workItemId,
+      producer: 'workflow-1/refine',
+      runId: 'run-1',
+      activationId: 'activation-1',
+    };
+
+    await service.stageRevision(
+      {
+        revisionId: 'revision-1',
+        path: artifactPath('plan.md'),
+        bytes: new TextEncoder().encode('plan'),
+        share: true,
+      },
+      scope,
+      context,
+    );
+
+    const view = await service.get(workItemId);
+    expect(view?.revisions).toHaveLength(1);
+    expect(view?.revisions[0]).not.toHaveProperty('contextExport');
+  });
+
   it('enforces global write and retained-work-item limits', async () => {
     const service = createArtifactService(
       new InMemoryEventJournal(new FakeClock()),

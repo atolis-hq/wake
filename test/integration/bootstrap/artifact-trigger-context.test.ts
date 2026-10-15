@@ -211,7 +211,9 @@ describe('composed trigger artifact context', () => {
     });
     await execute(recovered, unrelated);
     expect(f.runner.sessions[2]!.manifest).not.toContain(memory.revisionId);
-    expect(f.runner.sessions[2]!.results).toMatchObject([{ isError: true }, { isError: true }]);
+    // Self-enrollment is denied by membership, not by failing the write: share is a no-op here.
+    expect(f.runner.sessions[2]!.results).toMatchObject([{ isError: true }, {}]);
+    expect(f.runner.sessions[2]!.results[1]!.isError).toBeFalsy();
     expect((await contexts(recovered).get('review')).members).not.toContainEqual(
       expect.objectContaining({ workItemId: unrelated.workItemId }),
     );
@@ -317,7 +319,9 @@ describe('composed trigger artifact context', () => {
       ],
     });
     await execute(f.root, manual);
-    expect(f.runner.sessions.at(-1)!.results).toMatchObject([{ isError: true }, { isError: true }]);
+    // A share request without a trusted context is a harmless no-op; the read of the shared name is still denied.
+    expect(f.runner.sessions.at(-1)!.results).toMatchObject([{}, { isError: true }]);
+    expect(f.runner.sessions.at(-1)!.results[0]!.isError).toBeFalsy();
     expect((await contexts(f.root).get('review')).members).not.toContainEqual(
       expect.objectContaining({ workItemId: item }),
     );

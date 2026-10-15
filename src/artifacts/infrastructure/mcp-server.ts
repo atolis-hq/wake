@@ -166,7 +166,7 @@ export function createArtifactMcpServer(
           .boolean()
           .optional()
           .describe(
-            "Select this revision for export to the run's trusted context after successful acceptance.",
+            "Select this revision for export to the run's trusted shared context after successful acceptance. Only recurring trigger invocations have one; elsewhere (including plan.md) it has no effect, and the artifact stays readable by later stages of the same WorkItem.",
           ),
       },
     },
