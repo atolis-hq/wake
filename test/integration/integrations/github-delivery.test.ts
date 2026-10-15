@@ -266,3 +266,44 @@ describe('GitHub agent-run comments', () => {
     ).toContain('Blocked');
   });
 });
+
+it('confirms an already merged target without issuing another merge', async () => {
+  const deliver = vi.fn(async () => 'unexpected');
+  const adapter = createGitHubDelivery(deliver, undefined, undefined, async () => 'pr-1');
+  expect(await adapter.deliver(mergeIntent, new AbortController().signal)).toEqual({
+    kind: DeliveryResultKind.Confirmed,
+    externalId: 'pr-1',
+  });
+  expect(deliver).not.toHaveBeenCalled();
+});
+
+it('re-reads merged state after a racing merge attempt fails', async () => {
+  let merged = false;
+  const adapter = createGitHubDelivery(
+    async () => {
+      merged = true;
+      throw new Error('arbitrary provider error');
+    },
+    undefined,
+    undefined,
+    async () => (merged ? 'pr-1' : null),
+  );
+  expect(await adapter.deliver(mergeIntent, new AbortController().signal)).toEqual({
+    kind: DeliveryResultKind.Confirmed,
+    externalId: 'pr-1',
+  });
+});
+
+it('keeps closed-unmerged and unverified targets failed', async () => {
+  const adapter = createGitHubDelivery(
+    async () => {
+      throw new Error('closed');
+    },
+    undefined,
+    undefined,
+    async () => null,
+  );
+  expect(await adapter.deliver(mergeIntent, new AbortController().signal)).toMatchObject({
+    kind: DeliveryResultKind.Failed,
+  });
+});

@@ -11,10 +11,19 @@ export function createGitHubDelivery(
   precondition?: (
     intent: DeliveryIntentView,
   ) => Promise<{ readonly allowed: boolean; readonly reason?: string }>,
+  mergedTarget?: (intent: DeliveryIntentView) => Promise<string | null>,
 ): ExternalDeliveryAdapter {
+  async function confirmedMerge(intent: DeliveryIntentView) {
+    if (intent.kind !== BuiltInActivityName.PullRequestMerge) return null;
+    const externalId = await mergedTarget?.(intent);
+    return externalId == null ? null : { kind: DeliveryResultKind.Confirmed, externalId };
+  }
+
   return {
     async deliver(intent) {
       try {
+        const merged = await confirmedMerge(intent);
+        if (merged !== null) return merged;
         if (
           intent.kind === BuiltInActivityName.PullRequestMerge &&
           'autoMerge' in intent.payload &&
@@ -29,6 +38,12 @@ export function createGitHubDelivery(
           externalId: await deliver(intent, intent.intentEventId),
         };
       } catch (error) {
+        try {
+          const merged = await confirmedMerge(intent);
+          if (merged !== null) return merged;
+        } catch {
+          // Unavailable evidence cannot turn a failed attempt into success.
+        }
         return {
           kind: DeliveryResultKind.Failed,
           code: GitHubDeliveryFailureCode,
@@ -37,6 +52,13 @@ export function createGitHubDelivery(
       }
     },
     async reconcile(intent) {
+      if (intent.kind === BuiltInActivityName.PullRequestMerge) {
+        try {
+          return (await confirmedMerge(intent)) ?? { kind: DeliveryResultKind.Unknown };
+        } catch {
+          return { kind: DeliveryResultKind.Unknown };
+        }
+      }
       if (intent.kind !== BuiltInActivityName.IssueComplete || reconcileIssue === undefined)
         return { kind: DeliveryResultKind.Unknown };
       try {

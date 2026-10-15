@@ -232,6 +232,16 @@ accepted the enablement request, not that the pull request merged. Wake stays
 waiting until the matching merged-PR fact arrives, including through the
 existing catch-up path for a fact observed before the wait was recorded.
 
+Merge delivery also reconciles an already-merged primary PR as confirmed when its
+observed head revision matches the intent's requested revision. GitHub reads typed
+PR state before delivery and again after a failed attempt; error text is never
+used as evidence. Durable merged facts can satisfy the exact activation's
+`delivery-result` wait, including facts recorded before the wait starts. The
+maintenance lane records `delivery.reconciled` with a confirmed result and the
+normal outcome reactor resumes configured workflow routing. Missing or different
+revision evidence, closed-unmerged PRs, and historical failed deliveries do not
+qualify. Existing failed journal facts are never rewritten.
+
 Wake processes `resourceTransitions` through two durable reactor paths. A
 matching resource fact observed while the route is waiting is evaluated as it
 arrives. When `orchestration.signal-wait-started` is recorded, the reactor also

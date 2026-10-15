@@ -73,7 +73,7 @@ describe('GitHub provider auto-merge security precondition', () => {
         repo: 'repo',
         issue_number: 42,
       });
-      expect(octokit.getPullRequest).not.toHaveBeenCalled();
+      expect(octokit.graphql).not.toHaveBeenCalled();
     },
   );
 
@@ -155,6 +155,20 @@ describe('GitHub provider auto-merge security precondition', () => {
     expect(octokit.getIssue).not.toHaveBeenCalled();
   });
 
+  it.each(['abc', 'different', undefined])(
+    'requires matching typed merged revision %s',
+    async (revision) => {
+      const provider = await composeProvider({ prLabels: ['security'], issueLabels: [] });
+      octokit.getPullRequest.mockResolvedValue({
+        data: { id: 17, merged: true, head: { sha: revision } },
+        headers: {},
+      });
+      const result = await provider.delivery.deliver(mergeIntent, new AbortController().signal);
+      expect(result.kind).toBe(revision === 'abc' ? 'confirmed' : 'failed');
+      expect(octokit.graphql).not.toHaveBeenCalled();
+    },
+  );
+
   it('fails closed when a fresh label lookup fails', async () => {
     const provider = await composeProvider({ prLabels: [], issueLabels: [] });
     octokit.getIssue.mockRejectedValueOnce(new Error('GitHub unavailable'));
@@ -189,7 +203,10 @@ async function composeProvider(input: {
       },
     }),
   );
-  octokit.getPullRequest.mockResolvedValue({ data: { node_id: 'node-17' } });
+  octokit.getPullRequest.mockResolvedValue({
+    data: { id: 17, node_id: 'node-17', merged: false, head: { sha: 'abc' } },
+    headers: {},
+  });
   octokit.graphql.mockResolvedValue({
     enablePullRequestAutoMerge: { pullRequest: { id: 'node-17' } },
   });
