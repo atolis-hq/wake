@@ -292,11 +292,57 @@ it('selects usage, switches windows, retries and renders separate token and cost
   expect(await screen.findByRole('img', { name: 'Total tokens' })).toBeTruthy();
   expect(screen.getByRole('img', { name: 'Total cost (USD)' })).toBeTruthy();
   expect(
-    within(screen.getByRole('table', { name: 'Total cost (USD) by bucket' })).getByText('0'),
+    within(screen.getByRole('table', { name: 'Total cost (USD) by bucket' })).getByText('$0.0000'),
   ).toBeTruthy();
   expect(screen.queryByText(/NaN|Infinity/)).toBeNull();
   fireEvent.change(screen.getByLabelText('Window'), { target: { value: '7d' } });
   await waitFor(() =>
     expect(urls.some((url) => url.includes('window=7d') && url.includes(descriptor.id))).toBe(true),
   );
+});
+
+it('formats non-zero usage like the tiles in legends, axes, tooltips and bucket tables', async () => {
+  const descriptor = { id: 'token-and-cost-usage', title: 'Token and cost usage' };
+  const cost = 0.1 + 0.2;
+  const tokens = 12345;
+  mount(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/reports')) return json([descriptor]);
+    if (url.includes('/summary?'))
+      return json({ ...summary, totalTokens: tokens, totalCostUsd: cost });
+    return json({
+      report: descriptor,
+      window,
+      series: [
+        { id: 'total-tokens', title: 'Total tokens', unit: 'tokens' },
+        { id: 'total-cost-usd', title: 'Total cost (USD)', unit: 'USD' },
+      ],
+      totals: { 'total-tokens': tokens, 'total-cost-usd': cost },
+      buckets: [
+        { from: window.from, to: now, values: { 'total-tokens': tokens, 'total-cost-usd': cost } },
+      ],
+    });
+  });
+  const chart = await screen.findByRole('img', { name: 'Total cost (USD)' });
+  expect(within(chart).getByText('$0.3000 USD')).toBeTruthy();
+  expect(within(chart).getByText(`${window.from}: Total cost (USD) $0.3000`)).toBeTruthy();
+  expect(chart.querySelector('rect')?.getAttribute('height')).toBe('180');
+  expect(screen.getByText('Total cost (USD): $0.3000')).toBeTruthy();
+  expect(
+    within(screen.getByRole('table', { name: 'Total cost (USD) by bucket' })).getByText('$0.3000'),
+  ).toBeTruthy();
+  expect(
+    within(screen.getByRole('group', { name: 'Total cost (USD)' })).getByText('$0.3000'),
+  ).toBeTruthy();
+  const formattedTokens = tokens.toLocaleString();
+  expect(screen.getByText(`Total tokens: ${formattedTokens}`)).toBeTruthy();
+  expect(
+    within(screen.getByRole('table', { name: 'Total tokens by bucket' })).getByText(
+      formattedTokens,
+    ),
+  ).toBeTruthy();
+  expect(
+    within(screen.getByRole('group', { name: 'Total tokens' })).getByText(formattedTokens),
+  ).toBeTruthy();
+  expect(screen.queryByText(/0\.30000000000000004/)).toBeNull();
 });
