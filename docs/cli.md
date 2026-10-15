@@ -91,7 +91,10 @@ even when triggers are configured. Sandbox management still needs Docker
 access and a writable host `logs/` directory. Rebuilds and commands that run
 or mutate the control plane retain their runtime locking requirements.
 
-`sandbox update` replaces the container without clearing a retained failed
-self-update maintenance lease. After investigating the failure, explicitly run
-`wake maintenance clear --failed` as the runtime-state owner to resume intake
-and dispatch.
+`sandbox update` clears a retained failed self-update maintenance lease through
+the replacement container, as its runtime user; the host does not write the
+lease. It never clears an in-progress update. To explicitly abandon a failed
+lease from the host, run
+`wake sandbox exec -- wake maintenance clear --failed --wake-root /wake --no-sandbox`.
+Without a sandbox, run `wake maintenance clear --failed` as the runtime-state
+owner.

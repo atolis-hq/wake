@@ -334,6 +334,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
   return {
     config,
     fakeScenarios,
+    workflowNotices,
     paths,
     maintenance,
     clock,
@@ -381,6 +382,7 @@ export async function createCompositionRoot(
   const {
     config,
     fakeScenarios,
+    workflowNotices,
     paths,
     maintenance,
     clock,

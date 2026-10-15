@@ -26,7 +26,7 @@ it.each([false, true])(
       await chmod(join(home, 'logs'), 0o777);
       await writeFile(
         join(bin, 'docker'),
-        `#!/bin/sh\nprintf '%s\\n' "$*" >> '${calls}'\nif [ "$1" = container ]; then echo false; fi\n`,
+        `#!/bin/sh\nprintf '%s\\n' "$*" >> '${calls}'\nif [ "$1" = container ]; then echo false; fi\nif [ "$1" = run ] && [ -e '${home}/fail-update' ]; then exit 23; fi\n`,
       );
       await chmod(join(bin, 'docker'), 0o755);
       await writeFile(
@@ -105,6 +105,9 @@ it.each([false, true])(
       }
       const doctor = await cli(['doctor', '--wake-root', home]);
       expect(JSON.parse(doctor.stdout)).toMatchObject({ journal: 'ok', checkpoints: 'ok' });
+      expect(JSON.parse(doctor.stdout).notices).toContain(
+        'Workflow "inspect" stage "start": declared outcome "blocked" has no route.',
+      );
       expect(JSON.parse(doctor.stdout).failures).toContainEqual(
         expect.stringContaining('update maintenance lease is held'),
       );
@@ -135,8 +138,50 @@ it.each([false, true])(
       expect(await readFile(join(state, 'update-maintenance.json'), 'utf8')).toBe(lease);
       const dockerCalls = await readFile(calls, 'utf8');
       expect(dockerCalls).toContain('wake doctor --wake-root /wake');
+      expect(dockerCalls).toContain(
+        'wake maintenance clear --failed --wake-root /wake --no-sandbox',
+      );
+      // Host-side recovery must also use the runtime user's Docker exec boundary.
+      await cli([
+        'sandbox',
+        'exec',
+        '--wake-root',
+        home,
+        '--',
+        'wake',
+        'maintenance',
+        'clear',
+        '--failed',
+        '--wake-root',
+        '/wake',
+        '--no-sandbox',
+      ]);
+      expect(await readFile(calls, 'utf8')).toContain(
+        'wake maintenance clear --failed --wake-root /wake',
+      );
+      // An in-progress lease must never be cleared by manual sandbox replacement.
+      await chmod(state, 0o755);
+      const activeLease = JSON.stringify({ ...JSON.parse(lease), phase: 'updating' });
+      await writeFile(join(state, 'update-maintenance.json'), activeLease);
+      await chmod(state, 0o555);
+      const beforeActiveUpdate = await readFile(calls, 'utf8');
+      await cli(['sandbox', 'update', '--wake-root', home]);
+      expect((await readFile(calls, 'utf8')).slice(beforeActiveUpdate.length)).not.toContain(
+        'maintenance clear',
+      );
+      expect(await readFile(join(state, 'update-maintenance.json'), 'utf8')).toBe(activeLease);
       for (const invocation of ['start ', 'stop ', 'run ', 'logs ', 'exec '])
         expect(dockerCalls).toContain(invocation);
+      await chmod(state, 0o755);
+      await writeFile(join(state, 'update-maintenance.json'), lease);
+      await chmod(state, 0o555);
+      await writeFile(join(home, 'fail-update'), '');
+      const beforeFailedUpdate = await readFile(calls, 'utf8');
+      await expect(cli(['sandbox', 'update', '--wake-root', home])).rejects.toThrow('23');
+      expect((await readFile(calls, 'utf8')).slice(beforeFailedUpdate.length)).not.toContain(
+        'maintenance clear',
+      );
+      expect(await readFile(join(state, 'update-maintenance.json'), 'utf8')).toBe(lease);
       if (triggers) {
         for (const arguments_ of [
           ['tick'],

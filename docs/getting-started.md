@@ -119,8 +119,9 @@ wake sandbox update
 `sandbox update` preserves the mounted Wake home and `/home/wake` auth
 state (GitHub, Claude, SSH credentials). Sandbox management runs on the host
 without registering trigger subscriptions or writing container-owned runtime
-state. A retained failed self-update lease requires explicit
-`wake maintenance clear --failed` as the runtime-state owner after recovery.
+state on the host. After replacement, it clears a retained failed self-update
+lease inside the container as the runtime user. See [CLI recovery](cli.md) for
+the explicit failed-lease recovery command.
 
 ## Recommended practices
 

@@ -273,6 +273,38 @@ function requiredArgument(value: string | undefined, label: string): string {
   return value;
 }
 
+export interface WakeReadApplications {
+  readonly doctor?: (arguments_: readonly string[]) => Promise<unknown>;
+  readonly audit?: WakeCliApplications['audit'];
+  readonly validateState?: Pick<WakeCliApplications['validateState'], 'health'>;
+}
+
+/** Shared presentation for both storage-only reads and fully composed facades. */
+export async function runWakeReadCommand(
+  command: WakeCommand,
+  applications: WakeReadApplications,
+  output: CliOutput,
+): Promise<boolean> {
+  if (command.kind === 'doctor' && applications.doctor !== undefined) {
+    writeResult(output, await applications.doctor(command.arguments));
+    return true;
+  }
+  if (command.kind === 'audit' && applications.audit !== undefined) {
+    for (const record of await applications.audit.read(command.workItemId))
+      writeResult(output, record);
+    return true;
+  }
+  if (
+    command.kind === 'validate-state' &&
+    !command.rebuildProjections &&
+    applications.validateState !== undefined
+  ) {
+    writeResult(output, await applications.validateState.health());
+    return true;
+  }
+  return false;
+}
+
 // eslint-disable-next-line complexity -- each parsed command has one explicit application dispatch.
 export async function runWakeCommand(
   command: WakeCommand,
@@ -281,11 +313,18 @@ export async function runWakeCommand(
   signal: AbortSignal,
 ): Promise<void> {
   switch (command.kind) {
+    case 'doctor':
+      await runWakeReadCommand(
+        command,
+        { doctor: (arguments_) => operational(applications).doctor(arguments_) },
+        output,
+      );
+      return;
+    case 'audit':
+      await runWakeReadCommand(command, { audit: applications.audit }, output);
+      return;
     case 'init':
       writeResult(output, await operational(applications).init(command.arguments));
-      return;
-    case 'doctor':
-      writeResult(output, await operational(applications).doctor(command.arguments));
       return;
     case WakeOperationalCommand.Maintenance:
       writeResult(output, await operational(applications).maintenance(command.arguments));
@@ -326,10 +365,6 @@ export async function runWakeCommand(
     case 'mcp':
       await mcp(applications).serve(command.sessionPath, process.env.WAKE_MCP_TOKEN ?? '');
       return;
-    case 'audit':
-      for (const record of await applications.audit.read(command.workItemId))
-        output.write(`${JSON.stringify(record)}\n`);
-      return;
     case 'correlate':
       output.write(
         `${JSON.stringify(await applications.correlate.correlate(command.resource, command.workItemId))}\n`,
@@ -342,7 +377,11 @@ export async function runWakeCommand(
       return;
     case 'validate-state': {
       if (command.rebuildProjections) await applications.validateState.rebuildProjections();
-      output.write(`${JSON.stringify(await applications.validateState.health())}\n`);
+      await runWakeReadCommand(
+        { ...command, rebuildProjections: false },
+        { validateState: applications.validateState },
+        output,
+      );
       return;
     }
   }

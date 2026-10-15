@@ -24,9 +24,9 @@ import {
 } from '../execution/index.js';
 import { SystemClock, UlidIdGenerator } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
-import type { WakeOperationalCommand } from '../surfaces/index.js';
 import {
   DockerProcessError,
+  WakeOperationalCommand,
   createApiDispatcher,
   createLoggedDockerCli,
   createPackagedAssetSource,
@@ -46,6 +46,7 @@ import {
   runSandboxSetup,
   runSelfUpdateLatestLoop,
   runTargetSmoke,
+  runWakeReadCommand,
   serveMcpOverStdio,
   verifyResidentStart,
   waitForActiveRuns,
@@ -85,6 +86,10 @@ import {
 import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
 import { createUpdateLedger } from './update-ledger.js';
+import {
+  UpdateMaintenancePhase,
+  createUpdateMaintenanceLease,
+} from './update-maintenance-lease.js';
 import { resolveWakeVersion, wakePackageVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
@@ -96,6 +101,7 @@ type DiagnosticRoot = Pick<
   | 'paths'
   | 'config'
   | 'fakeScenarios'
+  | 'workflowNotices'
   | typeof WakeOperationalCommand.Maintenance
   | 'providers'
   | 'providerFailures'
@@ -110,38 +116,41 @@ export async function runHostCommand(
   if (command.kind === 'sandbox') {
     const root = { config: await loadConfig(wakeRoot), paths: resolveWakePaths(wakeRoot) };
     const arguments_ = withoutOperationalWakeRoot(command.arguments);
-    await runSandbox(arguments_, await createSandboxDockerForCommand(root, arguments_));
+    await runSandboxManagement(root, arguments_);
     return true;
   }
   if (command.kind === 'doctor' && !command.arguments.includes('--rebuild-projections')) {
     const root = await createDiagnosticRoot(wakeRoot);
-    const result = await runDoctor({
-      diagnose: () => doctorDiagnostics(root),
-      projections: {
-        health: () => projectionHealth(root),
-        rebuild: async () => {
-          throw new Error('Read-only diagnostics cannot rebuild projections');
-        },
+    return runWakeReadCommand(
+      command,
+      {
+        doctor: async () =>
+          runDoctor({
+            diagnose: () => doctorDiagnostics(root),
+            projections: {
+              health: () => projectionHealth(root),
+              rebuild: async () => {
+                throw new Error('Read-only diagnostics cannot rebuild projections');
+              },
+            },
+          }),
       },
-    });
-    output.write(JSON.stringify(result) + '\n');
-    return true;
+      output,
+    );
   }
   if (
     command.kind === 'audit' ||
     (command.kind === 'validate-state' && !command.rebuildProjections)
   ) {
     const stores = composePersistence(resolveWakePaths(wakeRoot), new SystemClock(), {});
-    if (command.kind === 'audit') {
-      for (const record of await createAuditApplication(stores).read(command.workItemId))
-        output.write(JSON.stringify(record) + '\n');
-    } else {
-      await stores.journal.readAll(0, 1);
-      await stores.projections.list('work');
-      await stores.checkpoints.load('surface-health');
-      output.write(JSON.stringify({ journal: 'ok', projections: 'ok', checkpoints: 'ok' }) + '\n');
-    }
-    return true;
+    return runWakeReadCommand(
+      command,
+      {
+        audit: createAuditApplication(stores),
+        validateState: { health: createStateHealth(stores) },
+      },
+      output,
+    );
   }
   return false;
 }
@@ -649,7 +658,7 @@ async function resolveSandboxBuildVersion(root: HostRoot): Promise<string> {
     : wakePackageVersion;
 }
 
-function sandboxWakeInvocation(root: CompositionRoot): readonly string[] {
+function sandboxWakeInvocation(root: HostRoot): readonly string[] {
   return root.config.host.development.mode === 'source'
     ? ['node', '/app/dist/src/main.js']
     : ['wake'];
@@ -787,6 +796,25 @@ async function rollbackSandboxTag(
   await promoteSandboxImage(docker, image, root.config.host.sandbox.image);
 }
 
+async function runSandboxManagement(root: HostRoot, arguments_: readonly string[]): Promise<void> {
+  const docker = await createSandboxDockerForCommand(root, arguments_);
+  await runSandbox(arguments_, docker);
+  if (arguments_[0] !== 'update') return;
+  const maintenance = createUpdateMaintenanceLease(root.paths.wakeRoot);
+  if ((await maintenance.read())?.phase !== UpdateMaintenancePhase.Failed) return;
+  // The new container owns runtime writes; clearFailed still refuses a changed active lease.
+  await docker.exec([
+    ...sandboxWakeInvocation(root),
+    WakeOperationalCommand.Maintenance,
+    'clear',
+    '--failed',
+    '--wake-root',
+    '/wake',
+    '--no-sandbox',
+  ]);
+}
+
+// Direct facade consumers also use these; production host reads dispatch before full composition.
 function createOperationalApplications(root: CompositionRoot) {
   return {
     init: async () => unsupportedOperationalCommand('init'),
@@ -818,7 +846,7 @@ function createOperationalApplications(root: CompositionRoot) {
       );
     },
     sandbox: async (arguments_: readonly string[]) => {
-      await runSandbox(arguments_, await createSandboxDockerForCommand(root, arguments_));
+      await runSandboxManagement(root, withoutOperationalWakeRoot(arguments_));
     },
     sandboxEntrypoint: async () => {
       await runSandboxEntrypoint(createSandboxEntrypointDependencies(root));
@@ -1080,7 +1108,8 @@ async function checkMaintenanceLease(root: DiagnosticRoot, failures: string[]): 
   failures.push(
     `update maintenance lease is held in phase "${lease.phase}" since ${lease.startedAt}${detail} -- ` +
       'every resident loop stays paused until it is cleared or resumes; run `wake self-update` ' +
-      'to retry, or clear the lease manually if the attempt is abandoned',
+      'to retry, or run `wake sandbox exec -- wake maintenance clear --failed --wake-root /wake --no-sandbox` ' +
+      'from the host if abandoning a failed sandbox update (without a sandbox, run `wake maintenance clear --failed` as the runtime-state owner)',
   );
 }
 
@@ -1213,14 +1242,18 @@ function unsupportedOperationalCommand(command: string): never {
   throw new Error(`wake ${command} has not been composed`);
 }
 
+function createStateHealth(root: Pick<CompositionRoot, 'journal' | 'projections' | 'checkpoints'>) {
+  return async () => {
+    await root.journal.readAll(0, 1);
+    await root.projections.list('work');
+    await root.checkpoints.load('surface-health');
+    return { journal: 'ok', projections: 'ok', checkpoints: 'ok' };
+  };
+}
+
 function createValidationApplications(root: CompositionRoot) {
   return {
-    async health() {
-      await root.journal.readAll(0, 1);
-      await root.projections.list('work');
-      await root.checkpoints.load('surface-health');
-      return { journal: 'ok', projections: 'ok', checkpoints: 'ok' };
-    },
+    health: createStateHealth(root),
     async rebuildProjections() {
       for (const definition of runtimeProjectionDefinitions)
         await root.projectionSubscriptions.rebuild(definition);
