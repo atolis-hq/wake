@@ -12,7 +12,11 @@ import {
   RunStatus,
   WorkspaceMode,
 } from '../../execution/index.js';
-import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
+import type {
+  ActivityActivationView,
+  PendingActivationPriority,
+  WorkflowInstanceView,
+} from '../../orchestration/index.js';
 import { WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import type { AdvanceResult, DispatchedRun } from '../contracts/views.js';
@@ -42,7 +46,15 @@ export interface DispatchLoopContext {
 interface PendingActivation {
   readonly workflow: WorkflowInstanceView;
   readonly activation: ActivityActivationView;
+  readonly priority?: PendingActivationPriority | undefined;
 }
+
+// Ports without priority (older fakes) rank neutrally and fall back to oldest-first.
+const neutralPriority: PendingActivationPriority = {
+  remainingAgentSteps: 0,
+  watchDriven: false,
+  retried: false,
+};
 
 export async function advancementWasDurablyApplied(
   orchestration: OrchestrationPort,
@@ -169,6 +181,7 @@ export async function runDispatchLoop(
           workItemId: item.workflow.workItemId,
           activationId: item.activation.activationId,
           requestedPosition,
+          priority: item.priority ?? neutralPriority,
           hasActiveRun:
             dispatchedIds.has(item.activation.activationId) ||
             activeActivationIds.has(item.activation.activationId) ||

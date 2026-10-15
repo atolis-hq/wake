@@ -23,6 +23,15 @@ the processor host owns cursor advancement, while the scheduler owns bounded
 selection and durable effects. Its separate reconciler and schedule/poll
 watermarks remain explicit one-shot or periodic lanes.
 
+When more activations are ready than capacity allows, `DispatchPolicy` orders
+candidates by fewer remaining agent steps, then watch-driven before normal
+transitions, then retried before first runs, then `requestedPosition` and
+`activationId`. Orchestration computes the priority; Control Plane only orders.
+There is no starvation mitigation: a steady supply of near-complete or
+watch-driven work can delay a long workflow indefinitely.
+A candidate with no eligible runner still stops the dispatch pass; a paused
+runner pool can therefore hold up lower-ranked work on other pools.
+
 ## Public contracts
 
 `index.ts` is the only public entry.

@@ -128,6 +128,7 @@ function pushStageEntry(
   state: WorkflowInstanceView,
   input: DecisionContext,
   stageName: StageName,
+  watchDriven = false,
 ): void {
   const stage = definition.stages[stageName]!;
   events.push(
@@ -150,6 +151,7 @@ function pushStageEntry(
           {
             execution: stage.execution,
             stage: stageName,
+            watchDriven,
           },
         ),
       },
@@ -166,6 +168,7 @@ export function resumeToTarget(
   state: WorkflowInstanceView,
   input: DecisionContext,
   target: TransitionTarget,
+  watchDriven = false,
 ): void {
   if (target.kind === TransitionTargetKind.Complete) {
     events.push(
@@ -194,5 +197,5 @@ export function resumeToTarget(
   }
   if (target.kind === TransitionTargetKind.ResourceTransitionWait)
     throw new Error('resource-transition wait must be resumed by a resource transition');
-  pushStageEntry(events, definition, state, input, target.stage);
+  pushStageEntry(events, definition, state, input, target.stage, watchDriven);
 }

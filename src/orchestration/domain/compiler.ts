@@ -1,5 +1,6 @@
 import {
   ActivityEventType,
+  ActivityExecutionKind,
   activityName,
   ActivityOutcomeKind,
   type ActivityRegistry,
@@ -29,7 +30,12 @@ import {
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
 import { defaultApprovalAwait } from './approval-defaults.js';
 import { compileResourceTransitions } from './resource-transition-compiler.js';
-import { assertCyclesBounded, assertReachable } from './workflow-graph.js';
+import {
+  compileTarget,
+  isReservedRouteTarget,
+  isReservedTerminalTarget,
+} from './transition-target.js';
+import { assertCyclesBounded, assertReachable, remainingAgentSteps } from './workflow-graph.js';
 
 export function compileWorkflow(
   name: string,
@@ -54,6 +60,12 @@ export function compileWorkflow(
   assertReachable(compiledEntry, stages);
   assertCyclesBounded(stages);
   return Object.freeze({
+    remainingAgentSteps: Object.freeze(
+      remainingAgentSteps(
+        stages,
+        (activity) => activities.describe(activity).executionKind === ActivityExecutionKind.Agent,
+      ),
+    ),
     name: compiledName,
     entry: compiledEntry,
     commands: Object.freeze(commands),
@@ -298,18 +310,4 @@ function compileCommands(
       }),
     ]),
   ) as Record<ReturnType<typeof commandName>, CompiledSupplementalCommand>;
-}
-
-const isReservedRouteTarget = (target: string): boolean =>
-  target === ActivityOutcomeKind.Done || target === 'await-human' || target === 'wait';
-
-const isReservedTerminalTarget = (target: string): boolean =>
-  target === ActivityOutcomeKind.Done || target === 'await-human';
-
-function compileTarget(target: string, outcomeKind: string): CompiledOutcomeRoute['target'] {
-  if (target === ActivityOutcomeKind.Done) return { kind: TransitionTargetKind.Complete };
-  if (target === 'await-human')
-    return { kind: TransitionTargetKind.AwaitSignal, signal: signalName(outcomeKind) };
-  if (target === 'wait') return { kind: TransitionTargetKind.ResourceTransitionWait };
-  return { kind: TransitionTargetKind.Stage, stage: stageName(target) };
 }

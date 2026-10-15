@@ -54,7 +54,11 @@ import type {
   ProviderInstance,
 } from '../integrations/index.js';
 import { SystemClock, UlidIdGenerator, type Clock } from '../kernel/index.js';
-import { compileWorkflow, createOrchestrationService } from '../orchestration/index.js';
+import {
+  compileWorkflow,
+  createAgentActivityClassifier,
+  createOrchestrationService,
+} from '../orchestration/index.js';
 import {
   createResourceLookup,
   createResourceService,
@@ -222,7 +226,13 @@ export async function createCompositionRoot(
       compileWorkflow(name, definition, activities, Object.keys(config.orchestration.workflows)),
     ]),
   );
-  const orchestration = createOrchestrationService(journal, work, definitions, projections);
+  const orchestration = createOrchestrationService(
+    journal,
+    work,
+    definitions,
+    projections,
+    createAgentActivityClassifier(activities),
+  );
   const workspaces = new GitWorkspaceProvider(
     paths.workspacesRoot,
     {

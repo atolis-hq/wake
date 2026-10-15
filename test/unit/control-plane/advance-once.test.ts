@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { activityName } from '../../../src/activities/index.js';
+import {
+  ActivityExecutionKind,
+  ActivityOutcomeKind,
+  activityName,
+} from '../../../src/activities/index.js';
 import { createAdvanceOnce } from '../../../src/control-plane/index.js';
 import {
   ActivationClaimConflictError,
@@ -9,7 +13,13 @@ import {
 } from '../../../src/execution/index.js';
 import { workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import {
+  ApprovalAuthorityKind,
+  TransitionTargetKind,
+  WatchGateVerdictSignal,
+  stageName,
+  watchId,
   type ActivityActivationView,
+  type PendingActivationPriority,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import { TestWorld } from '../../e2e/support/world.js';
@@ -1179,7 +1189,11 @@ describe('advanceOnce', () => {
     }
 
     function createOrchestration(
-      pending: readonly { workflow: WorkflowInstanceView; activation: ActivityActivationView }[],
+      pending: readonly {
+        workflow: WorkflowInstanceView;
+        activation: ActivityActivationView;
+        priority?: PendingActivationPriority;
+      }[],
     ) {
       const started: string[] = [];
       const accepted: string[] = [];
@@ -1432,5 +1446,130 @@ describe('advanceOnce', () => {
       });
       expect(execution.attempts).toEqual(['activation-a', 'activation-b']);
     });
+
+    it('drains near-complete, then watch-driven, then retried, then fresh work at maxConcurrentRuns 1', async () => {
+      const priorities = {
+        'fresh-old': { remainingAgentSteps: 3, watchDriven: false, retried: false },
+        retried: { remainingAgentSteps: 3, watchDriven: false, retried: true },
+        'watch-driven': { remainingAgentSteps: 3, watchDriven: true, retried: false },
+        'near-complete': { remainingAgentSteps: 1, watchDriven: false, retried: false },
+      };
+      const pending = Object.keys(priorities).map((id) => ({
+        ...candidate(id),
+        priority: priorities[id as keyof typeof priorities],
+      }));
+      const remaining = [...pending];
+      const orchestration = createOrchestration(remaining);
+      const execution = createExecution();
+      const advance = createAdvanceOnce(
+        orchestration.port,
+        execution.port,
+        { correlationsForWork: async () => [] } as never,
+        { now: () => new Date('2026-08-11T00:00:00.000Z') },
+        {
+          ids: { next: () => 'command-00000000000000000000000001' } as never,
+          maxConcurrentRuns: 1,
+          maxDispatches: 4,
+        },
+      );
+
+      for (let pass = 0; pass < pending.length; pass += 1) {
+        await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });
+        // The dispatched Run completes, freeing the single slot.
+        execution.runs.clear();
+        remaining.splice(
+          remaining.findIndex((item) => item.activation.activationId === execution.attempts.at(-1)),
+          1,
+        );
+      }
+
+      expect(execution.attempts).toEqual([
+        'activation-near-complete',
+        'activation-watch-driven',
+        'activation-retried',
+        'activation-fresh-old',
+      ]);
+    });
   });
+});
+
+it('orders durable workflow activations through advanceOnce with one available slot', async () => {
+  const w = new TestWorld();
+  w.registerActivity({
+    name: activityName('dispatch-agent'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({
+      kind: z.enum([ActivityOutcomeKind.Done, ActivityOutcomeKind.Failed]),
+    }),
+    outcomeKinds: [ActivityOutcomeKind.Done, ActivityOutcomeKind.Failed],
+    resources: [],
+    executionKind: ActivityExecutionKind.Agent,
+    handler: { execute: async () => ({ kind: ActivityOutcomeKind.Done }) },
+  });
+  w.configureWorkflow('priority', {
+    stages: {
+      main: {
+        activity: 'dispatch-agent',
+        with: {},
+        requiresApproval: false,
+        on: {
+          done: { then: 'finish' },
+          failed: { then: 'finish', retry: { max: 1 } },
+        },
+      },
+      finish: {
+        activity: 'dispatch-agent',
+        with: {},
+        requiresApproval: false,
+        on: { done: { then: 'done' } },
+      },
+    },
+  });
+  const workflows: WorkflowInstanceView[] = [];
+  for (const objective of ['fresh', 'retried', 'watch', 'near']) {
+    const work = await w.createWork({ objective });
+    workflows.push(
+      await w.startWorkflow({ workItemId: work.workItemId, workflowName: 'priority' }),
+    );
+  }
+  const [fresh, retry, watch, near] = workflows;
+  await w.acceptOutcome(retry!.workflowInstanceId, retry!.pendingActivation!.activationId, {
+    kind: ActivityOutcomeKind.Failed,
+  });
+  await w.acceptOutcome(near!.workflowInstanceId, near!.pendingActivation!.activationId, {
+    kind: ActivityOutcomeKind.Done,
+  });
+  await w.blockWorkflow(watch!.workflowInstanceId, 'await verdict');
+  await w.waitForSignal(watch!.workflowInstanceId, {
+    signalKind: WatchGateVerdictSignal,
+    from: [{ kind: ApprovalAuthorityKind.Watch, watch: watchId('review') }],
+    resume: { kind: TransitionTargetKind.Stage, stage: stageName('main') },
+  });
+  await w.acceptSignal(watch!.workflowInstanceId, {
+    kind: WatchGateVerdictSignal,
+    authority: { kind: ApprovalAuthorityKind.Watch, watch: watchId('review') },
+    actorId: 'review',
+    actorDecision: { authorized: true, evidenceId: 'verdict' },
+    providerEventId: 'verdict',
+  });
+  const attempts: string[] = [];
+  const advance = createAdvanceOnce(
+    w.orchestration,
+    {
+      list: async () => [],
+      attempt: async (activation) => {
+        attempts.push(activation.activationId);
+        return { runId: 'run-priority', status: 'started' } as never;
+      },
+    },
+    w.resources,
+    w.clock,
+    { ids: w.ids, maxConcurrentRuns: 1 },
+  );
+  for (const workflow of [near!, watch!, retry!, fresh!]) {
+    const view = await w.orchestration.get(workflow.workflowInstanceId);
+    await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });
+    expect(attempts.at(-1)).toBe(view!.pendingActivation!.activationId);
+    await w.blockWorkflow(workflow.workflowInstanceId, 'release test slot');
+  }
 });

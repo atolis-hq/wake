@@ -26,6 +26,7 @@ export interface ActivityActivationView {
   readonly status: ActivityActivationStatus;
   readonly followOnIndex?: number;
   readonly supplemental?: boolean;
+  readonly watchDriven?: true;
 }
 
 export interface SignalExpectationView {

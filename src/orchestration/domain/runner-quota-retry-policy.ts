@@ -68,6 +68,7 @@ export function requestRunnerQuotaRetry(
           interrupted.input,
           {
             execution: interrupted.execution,
+            ...(interrupted.watchDriven === true ? { watchDriven: true } : {}),
             ...(interrupted.stage === undefined ? {} : { stage: interrupted.stage }),
             ...(interrupted.followOnIndex === undefined
               ? {}

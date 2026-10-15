@@ -49,6 +49,7 @@ import { CoordinationClaims } from './coordination-claims.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { workflowsByWorkItemProjection } from './orchestration-projection.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
+import type { AgentActivityClassifier } from './pending-activations.js';
 import { RequestChild } from './request-child.js';
 import { StartWorkflow } from './start-workflow.js';
 import { continuesWaitingForSameWatchGate } from './watch-child-transitions.js';
@@ -73,6 +74,7 @@ export class OrchestrationService {
     work: WorkService,
     definitions: Readonly<Record<string, CompiledWorkflow>>,
     projections?: ProjectionStore,
+    isAgentActivity?: AgentActivityClassifier,
   ) {
     this.projections = projections;
     this.journal = journal;
@@ -81,8 +83,11 @@ export class OrchestrationService {
     this.claims = new CoordinationClaims(journal);
     this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
     this.startWorkflow = new StartWorkflow(repository, this.claims, work, this.definitions);
-    this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow, (command, context) =>
-      this.acceptActivityOutcome.execute(command, context),
+    this.advanceWorkflow = new AdvanceWorkflow(
+      repository,
+      this.startWorkflow,
+      (command, context) => this.acceptActivityOutcome.execute(command, context),
+      isAgentActivity,
     );
     this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.childWorkflows = new RequestChild(
@@ -602,7 +607,8 @@ export const createOrchestrationService = (
   work: WorkService,
   definitions: Readonly<Record<string, CompiledWorkflow>>,
   projections?: ProjectionStore,
-) => new OrchestrationService(journal, work, definitions, projections);
+  isAgentActivity?: AgentActivityClassifier,
+) => new OrchestrationService(journal, work, definitions, projections, isAgentActivity);
 
 function isWorkControllable(work: WorkItemView | null): boolean {
   return work !== null && !work.deleted && !work.frozen && work.state === WorkStatus.Open;

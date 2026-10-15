@@ -122,6 +122,7 @@ export const activityRequestedSchema = z
     followOnIndex: z.number().int().nonnegative().optional(),
     sessionPolicy: z.literal('fresh').optional(),
     supplemental: z.literal(true).optional(),
+    watchDriven: z.literal(true).optional(),
   })
   .strict();
 const approvalAuthoritySchema = z.discriminatedUnion('kind', [

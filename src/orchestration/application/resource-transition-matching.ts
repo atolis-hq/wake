@@ -117,6 +117,7 @@ export async function acceptResourceTransition(
       occurredAt: context.occurredAt,
       causationId: `${context.commandId}:${evidenceId}`,
       consent: true,
+      resourceTransition: true,
     },
   );
   if (decision.kind === 'append') {
