@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../../src/bootstrap/config/load-config.js';
+import { createCompositionRoot } from '../../../src/bootstrap/index.js';
 import { initialiseWakeRoot } from '../../../src/bootstrap/initialise.js';
 import { loadPromptTemplate, renderPromptTemplate } from '../../../src/execution/index.js';
 
@@ -64,6 +65,15 @@ describe('target initialise root', () => {
     }
 
     expect(config.host.sandbox.containerName).toBe('wake-sandbox-my-project-v2');
+  });
+
+  it('compiles every initialized workflow without outcome warnings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-initialise-outcomes-'));
+    await initialiseWakeRoot(root);
+
+    const composed = await createCompositionRoot(root);
+
+    expect(composed.workflowNotices).toEqual([]);
   });
 
   it('writes a config.yaml and config.workflows.yaml that together load and validate as-is', async () => {

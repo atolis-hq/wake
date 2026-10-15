@@ -98,6 +98,7 @@ workflows:
         with: { template: refine }
         execution: { workspace: read-only, runnerPool: light }
         on:
+          rejected: { then: await-human }
           blocked: { then: await-human }
           failed: { then: await-human }
           done: { then: implement }
@@ -106,6 +107,7 @@ workflows:
         with: { template: implement }
         execution: { workspace: branch, runnerPool: standard }
         on:
+          rejected: { then: await-human }
           blocked: { then: await-human }
           failed: { then: await-human }
           done: { then: done }
@@ -117,6 +119,7 @@ workflows:
         with: { template: refine }
         execution: { workspace: read-only, runnerPool: light }
         on:
+          rejected: { then: await-human }
           blocked: { then: await-human }
           failed: { then: await-human }
           done:
@@ -129,6 +132,7 @@ workflows:
         with: { template: implement }
         execution: { workspace: branch, runnerPool: standard }
         on:
+          rejected: { then: await-human }
           blocked: { then: await-human }
           failed: { then: await-human }
           done: { then: done }`;
