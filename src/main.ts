@@ -13,10 +13,16 @@ import {
   usage,
   type CliOutput,
   type WakeCliApplications,
+  type WakeCommand,
 } from './surfaces/index.js';
 
 export interface TargetMainDependencies {
   readonly compose: (wakeRoot: string) => Promise<WakeCliApplications>;
+  readonly runHostCommand?: (
+    command: WakeCommand,
+    wakeRoot: string,
+    output: CliOutput,
+  ) => Promise<boolean>;
   readonly initialise?: (wakeRoot: string) => Promise<unknown>;
   readonly sandboxRuntime?: SandboxRuntimeRouter;
   readonly output: CliOutput;
@@ -46,16 +52,17 @@ export async function main(
     resolvedDependencies.output.write(`${JSON.stringify(result)}\n`);
     return;
   }
-  if (resolvedDependencies.sandboxRuntime !== undefined) {
-    const sandboxRuntime = resolvedDependencies.sandboxRuntime;
-    const ranInSandbox = await runInSandboxIfAvailable({
-      commandKind: command.kind,
+  if (
+    await routeSandboxCommand(
+      command,
+      wakeRoot,
+      suppliedArguments,
       bypassSandbox,
-      hasDockerfile: () => sandboxRuntime.hasDockerfile(wakeRoot),
-      exec: () => sandboxRuntime.exec(wakeRoot, rewriteSandboxArguments(suppliedArguments)),
-    });
-    if (ranInSandbox) return;
-  }
+      resolvedDependencies.sandboxRuntime,
+    )
+  )
+    return;
+  if (await runHostCommandIfAvailable(command, wakeRoot, output, resolvedDependencies)) return;
   const applications = await resolvedDependencies.compose(wakeRoot);
   if (applications.sandboxRuntime !== undefined) {
     const sandboxRuntime = applications.sandboxRuntime;
@@ -73,6 +80,31 @@ export async function main(
     resolvedDependencies.output,
     resolvedDependencies.signal,
   );
+}
+
+async function runHostCommandIfAvailable(
+  command: WakeCommand,
+  wakeRoot: string,
+  output: CliOutput,
+  dependencies: TargetMainDependencies,
+): Promise<boolean> {
+  return (await dependencies.runHostCommand?.(command, wakeRoot, output)) ?? false;
+}
+
+async function routeSandboxCommand(
+  command: WakeCommand,
+  wakeRoot: string,
+  arguments_: readonly string[],
+  bypassSandbox: boolean,
+  router: SandboxRuntimeRouter | undefined,
+): Promise<boolean> {
+  if (router === undefined) return false;
+  return runInSandboxIfAvailable({
+    commandKind: command.kind,
+    bypassSandbox,
+    hasDockerfile: () => router.hasDockerfile(wakeRoot),
+    exec: () => router.exec(wakeRoot, rewriteSandboxArguments(arguments_)),
+  });
 }
 
 function normalizeDeveloperAlias(arguments_: readonly string[]): readonly string[] {
@@ -163,8 +195,10 @@ function rewriteSandboxArguments(arguments_: readonly string[]): readonly string
 }
 
 function operationalWakeRoot(arguments_: readonly string[]): string | undefined {
-  const index = arguments_.indexOf('--wake-root');
-  return index === -1 ? undefined : arguments_[index + 1];
+  const end = arguments_.indexOf('--');
+  const options = end === -1 ? arguments_ : arguments_.slice(0, end);
+  const index = options.indexOf('--wake-root');
+  return index === -1 ? undefined : options[index + 1];
 }
 
 function productionDependencies(): TargetMainDependencies {
@@ -173,6 +207,10 @@ function productionDependencies(): TargetMainDependencies {
   process.once('SIGTERM', () => controller.abort());
   return {
     initialise: initialiseWakeRoot,
+    async runHostCommand(command, wakeRoot, output) {
+      const { runHostCommand } = await import('./bootstrap/surface-applications.js');
+      return runHostCommand(command, wakeRoot, output);
+    },
     sandboxRuntime: productionSandboxRuntime(),
     async compose(wakeRoot) {
       const [{ createCompositionRoot }, { createSurfaceApplications }] = await Promise.all([

@@ -83,3 +83,15 @@ scheduler. Use `wake doctor` after initialization and sandbox build, and use
 - `wake stop` waits for active runs to finish before it stops the resident
   flow. `wake doctor` is the host-side diagnostic to run after initialization
   and after a sandbox build.
+
+Sandbox management commands and ordinary `doctor`, `audit`, and `validate-state`
+reads do not register control-plane processors or trigger subscriptions. They
+can read container-owned runtime state without write access to `.wake/locks`,
+even when triggers are configured. Sandbox management still needs Docker
+access and a writable host `logs/` directory. Rebuilds and commands that run
+or mutate the control plane retain their runtime locking requirements.
+
+`sandbox update` replaces the container without clearing a retained failed
+self-update maintenance lease. After investigating the failure, explicitly run
+`wake maintenance clear --failed` as the runtime-state owner to resume intake
+and dispatch.

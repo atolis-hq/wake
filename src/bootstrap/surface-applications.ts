@@ -20,3 +20,5 @@ export function createSurfaceApplications(
   const api = createSurfaceApiApplications(root, now);
   return { api, cli: createSurfaceCliApplications(root, api, now) };
 }
+
+export { runHostCommand } from './surface-cli-applications.js';
