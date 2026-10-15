@@ -156,40 +156,38 @@ are valid; unknown references fail. For optional text use
 ## Delivery oversight
 
 The editable [triage-assign prompt](../prompts/triage-assign.md) takes trusted
-`with.vars.focus` text and uses ordinary `gh` commands. Copy the stage
+`with.vars.repositories` (required, comma-separated `OWNER/REPO`) and optional
+`with.vars.focus` text, and uses ordinary `gh` commands as the Wake identity
+(`@me`). Some runners (Codex) do not show the agent the stage `allowedTools`, so
+the prompt itself carries the repository scope and identity. Copy the stage
 `allowedTools` from the [example](../examples/delivery-oversight/config.workflows.yaml)
-and scope its repository patterns to your integration repositories. Authenticate
-`gh` as the intended Wake identity. Wake MCP provides artifacts and operator
+and scope its repository patterns to your integration repositories. Wake MCP provides artifacts and operator
 instructions; it does not proxy GitHub or store selection receipts.
 
-The example patterns are intended for issue/PR list and view, GET blocked-by
-and base...commit compare reads, and assignment with `--add-assignee @me`.
-Avoid broad `gh api *` patterns. A `*` matches spaces and extra flags, even in
-the middle of a pattern. The API patterns therefore do not enforce GET-only
-access: a wildcard can absorb another `--method` or other arguments. These
-patterns cannot enforce read-only API access as strongly as fixed wrappers.
+`memory.md` holds only durable, reusable facts; per-run detail belongs in
+`assessment.md`.
+
+The example patterns are intended for issue/PR list and view, the GET blocked-by
+read, assignment with `--add-assignee @me`, and, when operator instructions
+request dark-factory dispatch, adding that one label. The label starts unattended
+work on the assigned issue, so omit its pattern if you do not want triage to
+dispatch. Avoid broad `gh api *` patterns. A `*` matches spaces and extra flags,
+even in the middle of a pattern, so these patterns cannot enforce read-only API
+access as strongly as fixed wrappers, and on Codex they are advisory.
 
 The issue-edit pattern effectively grants general issue-edit authority on the
-listed repository: labels (including unattended-dispatch labels such as
-`dark-factory`), title/body changes, removal of other assignees, and edits to
-several issues in one command can fit its wildcard. Assignment-only use and
-editing at most one issue are prompt-level guarantees, not allowlist enforcement.
-If that authority is unacceptable, keep assignment out of scope rather than
-add a replacement proxy.
+listed repository. Assigning at most one issue, adding only the dispatch label,
+and making no other change are prompt-level guarantees, not allowlist
+enforcement. If that authority is unacceptable, keep assignment out of scope
+rather than add a replacement proxy.
 
-Provider output remains untrusted evidence. Explicit prerequisites must be
-verified; implementation work must be merged or available on the intended base,
-and issue closure alone is insufficient. Establish the base from operator focus
-or relevant PR evidence, never repository metadata or an assumed default. If
-base-dependent readiness is unverified, skip that candidate and continue with
-others. Active delivery or focus can justify a successful no-op.
-
-The at-most-one-selection guarantee is prompt-level. Before selecting, the agent
-lists issues assigned to Wake and reads existing `assessment.md`/`memory.md`
-to recover an interrupted invocation. It records its target before assignment,
-checks current assignees before editing, and records observed assignment afterward.
-A lost response does not authorize switching targets; ambiguous recovery yields
-a no-op. Normal GitHub polling/intake creates the delivery WorkItem.
+The prompt is deliberately short. It reads the open backlog, excludes work that
+is already assigned or has an open PR, picks the best candidate by the operator
+instructions, requires its dependencies (native blocked-by and prerequisites in
+the issue body) to be merged, and assigns it. If an interrupted invocation
+recorded a selection in `assessment.md`, it finishes only that one. It does not
+check execution capacity; the trigger's `when` gate does that before the run.
+Normal GitHub polling/intake creates the delivery WorkItem.
 
 The `triage-assign` stage writes local `assessment.md` and the accepted successor
 `memory.md` through Wake artifact tools. Only designated `memory.md` and
