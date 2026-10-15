@@ -2,11 +2,12 @@ import type { EventId } from '@atolis-hq/eventing';
 import { rename, writeFile } from 'node:fs/promises';
 import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
 import type { DeliveryIntentView } from '../delivery/contracts/views.js';
-import { DeliveryResultKind } from '../delivery/contracts/vocabulary.js';
+import { DeliveryIntentKind, DeliveryResultKind } from '../delivery/contracts/vocabulary.js';
 
 export class DurableFakeDeliveryProvider implements ExternalDeliveryAdapter {
   readonly effects: Map<string, string>;
   deliveryCalls = 0;
+  mergeDeliveryCalls = 0;
   private ambiguous = new Map<string, EventId>();
   private crashAfterEffect = false;
   private deferEffect = false;
@@ -28,6 +29,7 @@ export class DurableFakeDeliveryProvider implements ExternalDeliveryAdapter {
 
   async deliver(intent: DeliveryIntentView) {
     this.deliveryCalls += 1;
+    if (intent.kind === DeliveryIntentKind.PrMerge) this.mergeDeliveryCalls += 1;
     if (this.deferEffect) {
       this.deferEffect = false;
       this.rememberAmbiguous(intent.intentEventId, intent.intentEventId);

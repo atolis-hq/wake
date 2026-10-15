@@ -57,7 +57,8 @@ it('uses merged evidence to reconcile a pending delivery and follow the configur
   );
   for (let i = 0; i < 4; i++) await runComposedDeliveryCycle(root);
   expect((await root.orchestration.get(workflowId))?.status).toBe('completed');
-  expect(provider.deliveryCalls).toBe(1);
+  // Merge-wait guidance replies are deliveries too; the merge itself must be attempted once.
+  expect(provider.mergeDeliveryCalls).toBe(1);
   const reconciliations = (await root.journal.readAll(0)).filter(
     (event) => event.event.eventType === DeliveryEventType.Reconciled,
   );
