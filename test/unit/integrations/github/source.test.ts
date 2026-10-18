@@ -1,4 +1,5 @@
 import { FileCheckpointStore } from '@atolis-hq/eventing-filesystem';
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,8 @@ import {
   ProviderPermission,
   ReviewerAuthorizationSource,
 } from '../../../../src/activities/index.js';
+import { PollService } from '../../../../src/integrations/application/poll-service.js';
+import type { ProviderInstance } from '../../../../src/integrations/contracts/provider.js';
 import { gitHubConfigSchema } from '../../../../src/integrations/github/contracts/config.js';
 import { GitHubEventType } from '../../../../src/integrations/github/contracts/events.js';
 import type { GitHubIssueQueryFilters } from '../../../../src/integrations/github/contracts/issue-query.js';
@@ -15,6 +18,7 @@ import type {
   GitHubIssuePayload,
   GitHubReviewPayload,
 } from '../../../../src/integrations/github/contracts/payloads.js';
+import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
 import { createGitHubAdapterHealthRegistry } from '../../../../src/integrations/github/infrastructure/adapter-health-registry.js';
 import {
   providerWatermark,
@@ -918,3 +922,132 @@ function review(id: number, state: string, body: string): GitHubReviewPayload {
     user: { login: 'a', type: 'User' },
   };
 }
+
+it('discards an aborted poll cursor before a following partial poll commits', async () => {
+  const saved: number[] = [];
+  let partial = false;
+  const controller = new AbortController();
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    {
+      ...fakeClient({
+        issues: [issue(5, 'Issue')],
+        issueComments: { 5: [comment(10, '/changes')] },
+      }),
+      async listPullRequests() {
+        if (partial) throw new Error('GitHub unavailable');
+        return [];
+      },
+    },
+    undefined,
+    undefined,
+    {
+      checkpoints: {
+        async load() {
+          return 0;
+        },
+        async save(_consumer, position) {
+          saved.push(position);
+        },
+        async reset() {},
+      },
+    },
+  );
+
+  const journal = new InMemoryEventJournal({ now: () => new Date('2026-08-08T00:00:00Z') });
+  const append = journal.appendToStream.bind(journal);
+  journal.appendToStream = async (...args) => {
+    const result = await append(...args);
+    // Deadline fires after one draft is durable, leaving the comment unpersisted.
+    controller.abort();
+    return result;
+  };
+  const service = new PollService(journal, {
+    adapter: GitHubAdapter,
+    source,
+    eventTypes: Object.values(GitHubEventType),
+  } as unknown as ProviderInstance);
+  expect(await service.pollOnce(controller.signal)).toEqual({ appended: 1, failed: 1 });
+  expect(await journal.readAll(0)).toHaveLength(1);
+  await source.markPollPersisted?.();
+  expect(saved).toEqual([]);
+
+  partial = true;
+  await service.pollOnce(new AbortController().signal, { bypassInterval: true });
+  expect((await journal.readAll(0)).map(({ event }) => event)).toContainEqual(
+    expect.objectContaining({
+      eventType: GitHubEventType.CommentObserved,
+      payload: expect.objectContaining({ body: '/changes' }),
+    }),
+  );
+  await source.markPollPersisted?.();
+  expect(saved).toEqual([]);
+
+  partial = false;
+  await source.poll(new AbortController().signal, { bypassInterval: true });
+  await source.markPollPersisted?.();
+  expect(saved).toEqual([Date.parse('2026-08-08T00:00:00Z')]);
+});
+
+it('does not publish cursors from a journal read that finishes after abort', async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const reading = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const journal = new InMemoryEventJournal({ now: () => new Date('2026-08-08T00:00:00Z') });
+  const read = journal.readStream.bind(journal);
+  journal.readStream = async (...args) => {
+    entered();
+    await gate;
+    return read(...args);
+  };
+  const saved: number[] = [];
+  let partial = false;
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    {
+      ...fakeClient({ issues: [issue(5, 'Issue')], issueComments: {} }),
+      async listPullRequests() {
+        if (partial) throw new Error('GitHub unavailable');
+        return [];
+      },
+    },
+    undefined,
+    undefined,
+    {
+      journal,
+      checkpoints: {
+        async load() {
+          return 0;
+        },
+        async save(_consumer, position) {
+          saved.push(position);
+        },
+        async reset() {},
+      },
+    },
+  );
+  const controller = new AbortController();
+  const leaked = source.poll(controller.signal);
+  await reading;
+  controller.abort();
+  partial = true;
+  const following = source.poll(new AbortController().signal, { bypassInterval: true });
+  release();
+  await expect(leaked).rejects.toThrow();
+  await following;
+  await source.markPollPersisted?.();
+  expect(saved).toEqual([]);
+});

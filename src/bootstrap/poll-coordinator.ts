@@ -75,7 +75,10 @@ export function createPollCoordinator(options: PollCoordinatorOptions) {
   };
 
   return {
-    /** Joins an in-flight poll for the adapter instead of competing with it. */
+    /**
+     * Joins the existing run using its original signal; a joining caller cannot
+     * cancel it. Changes arriving after its reads wait for the next interval.
+     */
     poll(
       provider: ProviderInstance,
       signal: AbortSignal,
