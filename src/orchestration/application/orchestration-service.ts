@@ -1,3 +1,4 @@
+import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
 import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
@@ -58,6 +59,7 @@ import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
 export class OrchestrationService {
   readonly delegatedWork: DelegatedWork;
+  private readonly deferredSignals: DeferredSignals;
   private readonly startWorkflow: StartWorkflow;
   private readonly acceptActivityOutcome: AcceptActivityOutcome;
   private readonly acceptWorkflowSignal: AcceptSignal;
@@ -103,6 +105,14 @@ export class OrchestrationService {
     this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work, (id) =>
       this.delegatedWork.fences(id),
     );
+    this.deferredSignals = new DeferredSignals(
+      journal,
+      repository,
+      (id, signal, context) => this.acceptWorkflowSignal.execute(id, signal, context),
+      (id, target, evidenceId, context) =>
+        this.advanceWorkflow.applyResourceTransition(id, target, evidenceId, context),
+      (id) => this.delegatedWork.fences(id),
+    );
     this.childWorkflows = new RequestChild(
       repository,
       this.claims,
@@ -116,8 +126,10 @@ export class OrchestrationService {
       async (context) => {
         await this.delegatedWork.reconcile(context);
         await this.childWorkflows.reconcileChildCompletions(context);
+        await this.deferredSignals.reconcile(context);
       },
       (id) => this.delegatedWork.fences(id),
+      (id, activationId) => this.delegatedWork.holdsActivation(id, activationId),
     );
   }
 
@@ -154,9 +166,10 @@ export class OrchestrationService {
     expectation: SignalExpectation,
     context: CommandContext,
   ) {
-    return this.transitionWatchChildren(context, () =>
-      this.acceptWorkflowSignal.wait(workflowInstanceId, expectation, context),
-    );
+    return this.transitionWatchChildren(context, async () => {
+      await this.acceptWorkflowSignal.wait(workflowInstanceId, expectation, context);
+      return this.deferredSignals.reconcileWorkflow(workflowInstanceId, context);
+    });
   }
 
   acceptSignal(
@@ -166,7 +179,7 @@ export class OrchestrationService {
   ) {
     return this.coordinateAcceptSignal(() =>
       this.transitionWatchChildren(context, () =>
-        this.acceptWorkflowSignal.execute(workflowInstanceId, signal, context),
+        this.deferredSignals.accept(workflowInstanceId, signal, context),
       ),
     );
   }
@@ -522,9 +535,10 @@ export class OrchestrationService {
 
   async reconcileChildCompletions(context: CommandContext) {
     await this.delegatedWork.reconcile(context);
-    return this.transitionWatchChildren(context, () =>
-      this.childWorkflows.reconcileChildCompletions(context),
-    );
+    return this.transitionWatchChildren(context, async () => {
+      await this.childWorkflows.reconcileChildCompletions(context);
+      await this.deferredSignals.reconcile(context);
+    });
   }
 
   private async transitionWatchChildren<Result>(
@@ -596,7 +610,7 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.applyResourceTransition(workflowInstanceId, target, evidenceId, context),
+      this.deferredSignals.applyTransition(workflowInstanceId, target, evidenceId, context),
     );
   }
 }

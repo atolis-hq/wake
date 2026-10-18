@@ -410,6 +410,19 @@ const eventSchemas = {
     OrchestrationEventType.SignalWaitStarted,
     expectationSchema,
   ),
+  [OrchestrationEventType.SignalDeferred]: workflowEnvelope(
+    OrchestrationEventType.SignalDeferred,
+    z
+      .object({
+        stage: brandedStringSchema(stageName),
+        intentEventId: z.string().optional(),
+        resourceId: z.string().optional(),
+        revision: z.string().optional(),
+        signal: signalSchema,
+        target: transitionTargetSchema.optional(),
+      })
+      .strict(),
+  ),
   [OrchestrationEventType.SignalAccepted]: workflowEnvelope(
     OrchestrationEventType.SignalAccepted,
     signalSchema,

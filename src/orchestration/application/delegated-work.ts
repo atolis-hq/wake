@@ -68,6 +68,7 @@ const defaultLimits: DelegationLimits = { maxDepth: 1, maxDescendants: 8 };
  */
 export class DelegatedWork {
   private artifacts: DelegationArtifacts | undefined;
+  private runHasEnded: ((runId: string) => Promise<boolean>) | undefined;
   private readonly ledger: DelegationLedger;
 
   constructor(
@@ -79,6 +80,20 @@ export class DelegatedWork {
     private readonly workflows: StartWorkflow,
   ) {
     this.ledger = new DelegationLedger(journal, repository);
+  }
+
+  setRunCompletion(check: (runId: string) => Promise<boolean>): void {
+    this.runHasEnded = check;
+  }
+
+  async holdsActivation(id: WorkflowInstanceId, activationId: string): Promise<boolean> {
+    const events = await this.ledger.events();
+    return reservationsOf(events).some(
+      (entry) =>
+        entry.parentWorkflowInstanceId === id &&
+        entry.activationId === activationId &&
+        !isSettled(events, entry),
+    );
   }
 
   setArtifacts(artifacts: DelegationArtifacts): void {
@@ -122,9 +137,14 @@ export class DelegatedWork {
     const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     const identity = await this.parentIdentity(parent);
     let reservation = buildReservation(identity.parent, caller, cohortId, assignments, limits);
-    for (;;) {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const rootEvents = await this.journal.readStream(workflowInstanceStream(identity.root));
+      const rootFacts = rootEvents.flatMap((entry) => {
+        const fact = selectWorkflowOrchestrationEvent(entry);
+        return fact === null ? [] : [fact];
+      });
       const events = await this.ledger.events();
-      const all = reservationsOf(events).filter(
+      const all = reservationsOf(rootFacts).filter(
         (entry) => entry.rootWorkItemId === reservation.rootWorkItemId,
       );
       const rootLimits = {
@@ -146,10 +166,12 @@ export class DelegatedWork {
       );
       for (const child of reservation.children)
         await this.prepareChild(artifacts, parent, child, context);
-      if (await this.commit(identity.root, events, reservation, context)) break;
+      if (await this.commit(identity.root, rootEvents.length, reservation, context)) {
+        await this.reconcile(context);
+        return reservation;
+      }
     }
-    await this.reconcile(context);
-    return reservation;
+    throw new Error('Delegation reservation contention exceeded retry limit');
   }
 
   async reconcile(context: CommandContext): Promise<void> {
@@ -268,13 +290,10 @@ export class DelegatedWork {
     context: CommandContext,
   ): Promise<void> {
     await artifacts.validateInputs(parent, child.context);
-    const definition = await this.definitions.resolve(
-      {
-        workflowName: child.workflowName,
-        workflowDefinitionFingerprint: child.workflowFingerprint,
-      },
-      { journalFallback: true },
-    );
+    const current = this.definitions.currentDefinition(child.workflowName);
+    if (current.fingerprint !== child.workflowFingerprint)
+      throw new Error('Delegation workflow fingerprint must match current configuration');
+    const definition = current.definition;
     await this.definitions.register(
       child.workflowName,
       child.workflowFingerprint,
@@ -286,20 +305,12 @@ export class DelegatedWork {
   /** Appends the reservation only if the root stream is unchanged since `events` was read. */
   private async commit(
     root: WorkflowInstanceId,
-    events: Awaited<ReturnType<DelegationLedger['events']>>,
+    expectedSequence: number,
     reservation: DelegationReservation,
     context: CommandContext,
   ): Promise<boolean> {
-    const loaded = await this.repository.loadRequired(root);
-    const rootEvents = await this.journal.readStream(workflowInstanceStream(root));
-    const known = new Set(events.map((event) => event.event.eventId));
-    if (
-      rootEvents.length !== loaded.sequence ||
-      rootEvents.some((e) => !known.has(e.event.eventId))
-    )
-      return false;
     try {
-      await this.repository.append(root, loaded.sequence, [
+      await this.repository.append(root, expectedSequence, [
         delegationDraft(
           context,
           `reserve:${reservation.cohortId}`,
@@ -327,8 +338,10 @@ export class DelegatedWork {
     }
     if (!(await this.ensureWait(reservation, context))) return;
     const root = await this.registerChildren(artifacts, reservation, context);
-    for (const child of reservation.children)
+    for (const child of reservation.children) {
+      if (isSettled(await this.ledger.events(), reservation)) break;
       await this.advanceChild(artifacts, root, reservation, child, context);
+    }
     const results = selectedResults(await this.ledger.events(), reservation);
     if (reservation.children.every((c) => results.some((r) => r.childWorkItemId === c.workItemId)))
       await this.join(reservation, results, context);
@@ -519,12 +532,19 @@ export class DelegatedWork {
     });
   }
 
+  private endedRun(id: string): Promise<boolean> {
+    if (this.runHasEnded === undefined)
+      throw new Error('Delegation Run completion adapter unavailable');
+    return this.runHasEnded(id);
+  }
+
   /** Join and continuation commit together, so a duplicate trigger cannot resume the parent twice. */
   private async join(
     reservation: DelegationReservation,
     results: readonly DelegationResult[],
     context: CommandContext,
   ): Promise<void> {
+    if (!(await this.endedRun(reservation.runId))) return;
     const parentId = reservation.parentWorkflowInstanceId;
     for (;;) {
       const loaded = await this.repository.loadRequired(parentId);

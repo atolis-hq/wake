@@ -257,6 +257,7 @@ function applyCoordinationFact(state: MutableWorkflowInstance, event: Coordinati
     case OrchestrationEventType.GroupBudgetExhausted:
     case OrchestrationEventType.DelegationFailed:
     case OrchestrationEventType.DelegationReconciliationFailed:
+    case OrchestrationEventType.SignalDeferred:
     case OrchestrationEventType.DelegationReserved:
     case OrchestrationEventType.DelegationRegistered:
     case OrchestrationEventType.DelegationResultSelected:

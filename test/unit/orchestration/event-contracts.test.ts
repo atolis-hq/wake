@@ -88,6 +88,11 @@ const delegationReservation = {
 
 const delegationSamples = [
   eventEnvelope(
+    OrchestrationEventType.SignalDeferred,
+    { stage: stageName('implement'), signal },
+    workflow,
+  ),
+  eventEnvelope(
     OrchestrationEventType.DelegationFailed,
     { cohortId: 'cohort-1', reason: 'Child failed' },
     workflow,

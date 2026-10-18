@@ -52,6 +52,8 @@ export function createOrchestrationEventData(
       return createEventData(input);
     case OrchestrationEventType.SignalWaitStarted:
       return createEventData(input);
+    case OrchestrationEventType.SignalDeferred:
+      return createEventData(input);
     case OrchestrationEventType.SignalAccepted:
       return createEventData(input);
     case OrchestrationEventType.SupplementalActivityQueued:

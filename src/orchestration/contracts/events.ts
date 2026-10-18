@@ -51,6 +51,7 @@ export const OrchestrationEventType = {
   ActivityWaiting: 'orchestration.activity-waiting',
   SignalWaitStarted: 'orchestration.signal-wait-started',
   SignalAccepted: 'orchestration.signal-accepted',
+  SignalDeferred: 'orchestration.signal-deferred',
   SupplementalActivityQueued: 'orchestration.supplemental-activity-queued',
   SupplementalActivityDequeued: 'orchestration.supplemental-activity-dequeued',
   RepeatCounted: 'orchestration.repeat-counted',
@@ -70,7 +71,17 @@ export const OrchestrationEventType = {
   GroupBudgetGranted: 'orchestration.group-budget-granted',
 } as const;
 
+export interface DeferredWorkflowSignal {
+  readonly stage: StageName;
+  readonly intentEventId?: string;
+  readonly resourceId?: string;
+  readonly revision?: string;
+  readonly signal: OrchestrationSignal;
+  readonly target?: TransitionTarget;
+}
+
 export interface OrchestrationEventPayloads {
+  readonly [OrchestrationEventType.SignalDeferred]: DeferredWorkflowSignal;
   readonly [OrchestrationEventType.DelegationFailed]: {
     readonly cohortId: string;
     readonly reason: string;

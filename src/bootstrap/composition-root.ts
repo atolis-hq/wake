@@ -34,10 +34,12 @@ import {
   ExecutionCancellationReason,
   GitWorkspaceProvider,
   RecoveryService,
+  RunStatus,
   TranscriptStore,
   createExecutionService,
   createLocalProcessInspector,
   createRunnerMemoryProfileDecorator,
+  isActiveRunStatus,
   type FakeScenarioResolver,
   type Runner,
 } from '../execution/index.js';
@@ -323,6 +325,15 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
         }
       : {}),
     workspaces,
+  });
+  orchestration.delegatedWork.setRunCompletion(async (runId) => {
+    const run = (await execution.list()).find((entry) => entry.runId === runId);
+    return (
+      run !== undefined &&
+      !isActiveRunStatus(run.status) &&
+      run.status !== RunStatus.Ambiguous &&
+      !execution.isLocallyActive(runId)
+    );
   });
   orchestration.setWatchChildCancellation({
     cancelSupersededWatchChildren: (workflowInstanceIds) =>

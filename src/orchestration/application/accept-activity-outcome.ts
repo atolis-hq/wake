@@ -1,6 +1,7 @@
 import type { CommandContext } from '@atolis-hq/eventing';
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import { orchestrationActivityOutcome } from '../contracts/activity-outcome.js';
+import { DelegationPendingError } from '../contracts/delegation.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import { acceptActivityOutcome as decideActivityOutcome } from '../domain/interpreter.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
@@ -21,10 +22,16 @@ export class AcceptActivityOutcome {
       id: WorkflowInstanceId,
       activationId: ActivationId,
     ) => Promise<boolean> = async () => false,
+    private readonly heldActivation: (
+      id: WorkflowInstanceId,
+      activationId: ActivationId,
+    ) => Promise<boolean> = async () => false,
   ) {}
 
   async execute(command: AcceptActivityOutcomeCommand, context: CommandContext) {
     if (await this.delegationFence(command.workflowInstanceId, command.activationId)) {
+      if (!(await this.heldActivation(command.workflowInstanceId, command.activationId)))
+        throw new DelegationPendingError(command.workflowInstanceId);
       await this.reconcileChildCompletions(context);
       return (await this.repository.loadRequired(command.workflowInstanceId)).view;
     }

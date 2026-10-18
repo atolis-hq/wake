@@ -38,10 +38,12 @@ export class AcceptSignal {
   async execute(
     workflowInstanceId: WorkflowInstanceId,
     signal: OrchestrationSignal,
-    context: CommandContext,
+    context: CommandContext & { readonly expectedSequence?: number },
   ) {
     const loaded = await this.repository.loadRequired(workflowInstanceId);
     if (await this.fenced(workflowInstanceId)) throw new DelegationPendingError(workflowInstanceId);
+    if (context.expectedSequence !== undefined && context.expectedSequence !== loaded.sequence)
+      return loaded.view;
     const expiry = expireTimedOutAwait(loaded.view, {
       occurredAt: context.occurredAt,
       causationId: context.commandId,

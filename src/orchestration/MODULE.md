@@ -47,8 +47,14 @@ delegation controls work; Bootstrap supplies the Artifacts adapter. Reconciliati
 faults are recorded once per cohort and reason and retried without stalling
 unrelated work, even if recording the diagnostic fails. Missing adapters fail
 explicitly when durable delegation needs reconciliation. Signals, approvals,
-resource transitions and execution retries reject with a retryable
-`DelegationPendingError` while fenced, so their callers retain the input.
+resource transitions are durably deferred while fenced and replayed through
+normal authority checks when the same stage, intent and resource revision wait
+exists. Execution retries reject with a retryable `DelegationPendingError`;
+the scheduler retains their durable Runs without blocking the parent.
+Only the exact reserving activation's outcome may be held. Join waits for the
+reserving Run to end before continuation. New assignments must select a current
+configured workflow fingerprint; committed reservations recover the pinned one.
+Reservation contention retries are bounded and use fresh root-stream sequences.
 Blocked children remain recoverable and keep the cohort waiting.
 A terminal child without qualifying outputs blocks the parent and settles the
 cohort. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the

@@ -4,6 +4,7 @@ import type { WorkItemId } from '../../work/index.js';
 import type { CompiledResourceTransition, TransitionTarget } from '../contracts/config.js';
 import {
   OrchestrationEventType,
+  type OrchestrationSignal,
   type WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
@@ -108,12 +109,7 @@ export async function acceptResourceTransition(
     definition,
     { ...loaded.view, waitingFor: { ...loaded.view.waitingFor, resume: target } },
     {
-      signal: {
-        kind: loaded.view.waitingFor.signalKind,
-        actorId: 'resource-transition',
-        actorDecision: { authorized: true, evidenceId },
-        providerEventId: evidenceId,
-      },
+      signal: resourceWaitSignal(loaded.view.waitingFor, evidenceId),
       occurredAt: context.occurredAt,
       causationId: `${context.commandId}:${evidenceId}`,
       consent: true,
@@ -158,4 +154,18 @@ function retryDraft(
       : { eventType: OrchestrationEventType.RetryCounted, payload: { retryKey: retry.key, count } },
     100,
   );
+}
+
+function resourceWaitSignal(
+  wait: NonNullable<WorkflowInstanceView['waitingFor']>,
+  evidenceId: string,
+): OrchestrationSignal {
+  return {
+    kind: wait.signalKind,
+    ...(wait.resourceId === undefined ? {} : { resourceId: wait.resourceId }),
+    ...(wait.revision === undefined ? {} : { revision: wait.revision }),
+    actorId: 'resource-transition',
+    actorDecision: { authorized: true, evidenceId },
+    providerEventId: evidenceId,
+  };
 }

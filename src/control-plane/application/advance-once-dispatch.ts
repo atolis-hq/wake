@@ -1,10 +1,10 @@
+import {
+  isRunnerQuotaOutcome,
+  reportUnappliedRunnerQuotaRetry,
+  runnerQuotaMessage,
+} from './runner-quota-outcome.js';
 /* eslint-disable complexity, max-lines-per-function */
 import type { CommandContext } from '@atolis-hq/eventing';
-import {
-  ActivityFailureCode,
-  ActivityOutcomeKind,
-  type ActivityOutcome,
-} from '../../activities/index.js';
 import {
   ActivationClaimConflictError,
   isActiveRunStatus,
@@ -17,7 +17,7 @@ import type {
   PendingActivationPriority,
   WorkflowInstanceView,
 } from '../../orchestration/index.js';
-import { WorkflowStatus } from '../../orchestration/index.js';
+import { DelegationPendingError, WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import type { AdvanceResult, DispatchedRun } from '../contracts/views.js';
 import type { DispatchPolicy } from '../domain/dispatch-policy.js';
@@ -87,37 +87,6 @@ export async function blockIsolatedWorkflow(
     });
   await orchestration.block(workflowInstanceId, reason, context);
   return reason;
-}
-
-export function isRunnerQuotaOutcome(outcome: ActivityOutcome): boolean {
-  return (
-    outcome.kind === ActivityOutcomeKind.Failed &&
-    typeof outcome.data === 'object' &&
-    outcome.data !== null &&
-    'reason' in outcome.data &&
-    (outcome.data as { reason?: unknown }).reason === ActivityFailureCode.RunnerQuotaExceeded
-  );
-}
-
-export function runnerQuotaMessage(outcome: ActivityOutcome): string {
-  const data = outcome.data as { message?: unknown };
-  return typeof data.message === 'string' ? data.message : 'runner reported quota exhaustion';
-}
-
-/**
- * A quota retry deliberately leaves the outcome unaccepted, so a port that
- * never applied it (absent method, or a workflow instance that vanished)
- * leaves the Run permanently unresolved. Surface that rather than going
- * silent; it is an operational defect, not a workflow state.
- */
-export function reportUnappliedRunnerQuotaRetry(
-  result: unknown,
-  input: { readonly activationId: string; readonly runId: string },
-): void {
-  if (result !== null && result !== undefined) return;
-  console.error(
-    `Runner-quota retry was not applied for activation ${input.activationId} (run ${input.runId}); its outcome remains unaccepted.`,
-  );
 }
 
 /**
@@ -299,6 +268,14 @@ export async function runDispatchLoop(
       dispatched.push({ activationId: selected.activation.activationId, runId: run.runId });
       dispatchedIds.add(selected.activation.activationId);
     } catch (error) {
+      if (error instanceof DelegationPendingError) {
+        isolatedIds.add(selected.workflow.workflowInstanceId);
+        stopReason = {
+          kind: WorkflowStatus.Waiting,
+          workflowInstanceId: selected.workflow.workflowInstanceId,
+        };
+        continue;
+      }
       if (error instanceof ActivationClaimConflictError) {
         stopReason = { kind: 'no-work' };
         break;

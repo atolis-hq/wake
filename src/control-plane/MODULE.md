@@ -50,7 +50,9 @@ Owns `control-plane.` events and defines no domain relation semantics.
 
 Selection, caps, pauses, retries, and scheduler serialisation remain explicit
 and bounded. Processor failure is surfaced through Eventing health; startup
-and fallback reconciliation retain their own diagnostics.
+and fallback reconciliation retain their own diagnostics. Delegation backpressure
+retains terminal Run evidence and leaves its parent waiting; dispatch and recovery
+do not classify it as an isolated workflow failure.
 Trigger pause suppresses automatic sources and clears only pending automatic reasons.
 Manual requests survive pause and restart without resuming the trigger or resetting retries.
 Mixed pending sources retain each manual command for admission checks and durable skipped outcomes.
