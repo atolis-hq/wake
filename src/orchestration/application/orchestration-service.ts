@@ -186,13 +186,21 @@ export class OrchestrationService {
   }
 
   async hasLiveDelegatedWork(id: WorkItemId): Promise<boolean> {
-    return (await this.deliveryTree(id)).some((cohort) =>
-      cohort.children.some(
-        ({ workflow }) =>
-          workflow === null ||
-          (workflow.status !== WorkflowStatus.Completed &&
-            workflow.status !== WorkflowStatus.Superseded),
-      ),
+    // A concluded root can never join its cohorts, so nothing remains to wait for.
+    const root = await this.work.get(id);
+    if (root === null || root.deleted === true || root.state !== WorkStatus.Open) return false;
+    return (await this.deliveryTree(id)).some(
+      (cohort) =>
+        !cohort.settled &&
+        cohort.children.some(
+          ({ work, workflow }) =>
+            work !== null &&
+            work.deleted !== true &&
+            work.state === WorkStatus.Open &&
+            (workflow === null ||
+              (workflow.status !== WorkflowStatus.Completed &&
+                workflow.status !== WorkflowStatus.Superseded)),
+        ),
     );
   }
 
@@ -794,5 +802,4 @@ const unavailableArtifacts: DelegationArtifacts = {
 const unavailableDelegationAuthority: DelegationAuthority = {
   assertCaller: unavailableRunCompletion,
   repositories: unavailableRunCompletion,
-  registerRepositories: unavailableRunCompletion,
 };

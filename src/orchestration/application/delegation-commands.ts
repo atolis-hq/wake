@@ -51,16 +51,14 @@ export class DelegationCommands {
         !rootPolicy.workflows.includes(assignment.workflowName)
       )
         throw new Error('Delegation workflow is not allowed');
-      const repositories =
-        assignment.repositoryResourceIds ??
-        inherited.filter(
-          (id) => policy.repositories === undefined || policy.repositories.includes(id),
-        );
+      // The permitted set only bounds explicit requests; it never selects a checkout target.
+      const repositories = assignment.repositoryResourceIds ?? [];
       if (
         repositories.some(
           (id) =>
             !inherited.includes(id) ||
-            (policy.repositories !== undefined && !policy.repositories.includes(id)),
+            (policy.repositories !== undefined && !policy.repositories.includes(id)) ||
+            (rootPolicy.repositories !== undefined && !rootPolicy.repositories.includes(id)),
         )
       )
         throw new Error('Delegation repository authority exceeded');

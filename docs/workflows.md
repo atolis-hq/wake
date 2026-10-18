@@ -703,11 +703,12 @@ artifact context references and named outputs (name and path). Wake pins each
 current workflow definition. Caller, Run, activation and reservation limits
 are server-owned; agents cannot supply them.
 
-Optional repositoryResourceIds select a subset of the invoking WorkItem's
-correlated Repository resources. Omission inherits that set. Workflow-level
-delegation.repositories, when present, narrows those resource IDs further.
-It never grants every configured repository. Artifact-only work needs no
-repository. Child workflows need their own policy only if they delegate again.
+Optional repositoryResourceIds are checked against the invoking WorkItem's
+correlated Repository resources (the permitted set). Omission requests no
+repository and links none; the permitted set never selects a checkout target.
+Workflow-level delegation.repositories, on both the parent and the root, when
+present, narrows the permitted set further. It never grants every configured
+repository. Artifact-only work needs no repository. Child workflows need their own policy only if they delegate again.
 Nested workflow choices must also be permitted by the root policy. This
 capability does not grant operator consent or independent review authority.
 

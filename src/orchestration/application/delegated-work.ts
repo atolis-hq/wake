@@ -74,12 +74,12 @@ export class DelegatedWork {
   async inspect(id: WorkItemId) {
     const item = await this.work.get(id);
     const root = item?.delegation?.rootWorkItemId ?? id;
-    const reservations = (await this.ledger.reservations()).filter(
-      (entry) => entry.rootWorkItemId === root,
-    );
+    const events = await this.ledger.events();
+    const reservations = reservationsOf(events).filter((entry) => entry.rootWorkItemId === root);
     return Promise.all(
       reservations.map(async (reservation) => ({
         ...reservation,
+        settled: isSettled(events, reservation),
         children: await Promise.all(
           reservation.children.map(async (child) => ({
             ...child,
@@ -465,7 +465,6 @@ export class DelegatedWork {
         },
         childContext,
       );
-      await this.dependencies.authority?.registerRepositories(child, childContext);
       await this.claims.claimPrimary(child.workItemId, child.workflowInstanceId, childContext);
       await artifacts.registerChild(
         {

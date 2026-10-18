@@ -13,6 +13,9 @@ export class DelegationGate {
   ) {}
 
   async unavailable(view: WorkflowInstanceView): Promise<boolean> {
+    // Standalone work keeps existing freeze semantics; only delegated trees and fenced parents are held.
+    const item = await this.work.get(view.workItemId, { fresh: true });
+    if (item?.delegation === undefined && view.delegationFence === undefined) return false;
     return (await readDeliveryAvailability(view.workItemId, this.work)).reason !== undefined;
   }
 

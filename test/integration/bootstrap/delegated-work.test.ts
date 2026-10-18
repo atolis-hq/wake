@@ -784,11 +784,12 @@ it('run-scoped production commands reject escalation and finish a tree with one 
   await expect(f.root.orchestration.inspectDelegation(caller!)).rejects.toThrow('stale');
   const restarted = await f.restart();
   const child = (await restarted.orchestration.get(childId!))!;
+  // The permitted repository set must not become an implicit checkout target.
   expect(
     (await restarted.resources.correlationsForWork(child.workItemId)).map(
       (entry) => entry.resourceId,
     ),
-  ).toContain(repository.resourceId);
+  ).not.toContain(repository.resourceId);
   const detail = await (
     await createSurfaceApplications(restarted)
   ).api.work.detail(toWorkItemKey(parent.workItemId));

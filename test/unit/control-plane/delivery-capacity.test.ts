@@ -36,6 +36,29 @@ it('counts parent, child and watch Runs against their common root, but no waitin
   expect(idle.full.size).toBe(0);
 });
 
+it('reads ancestry only for live work and limits only for roots with active Runs', async () => {
+  const read: string[] = [];
+  const limited: string[] = [];
+  const work = {
+    async get(id: string) {
+      read.push(id);
+      return { state: 'open' };
+    },
+  };
+  const workflows = [
+    { workItemId: 'done', workflowInstanceId: 'a', status: 'completed' },
+    { workItemId: 'idle', workflowInstanceId: 'b', status: 'waiting' },
+    { workItemId: 'busy', workflowInstanceId: 'c', status: 'active' },
+  ] as WorkflowInstanceView[];
+  const runs = [{ workflowInstanceId: 'c', status: 'started' }] as RunView[];
+  await deliveryCapacity(workflows, runs, work, async (id) => {
+    limited.push(id);
+    return 1;
+  });
+  expect(read.sort()).toEqual(['busy', 'idle']);
+  expect(limited).toEqual(['busy']);
+});
+
 it('marks descendants unavailable when their root is frozen, cancelled or absent', async () => {
   const root = workId('work-root');
   const child = workId('work-child');

@@ -2,12 +2,7 @@ import type { EventJournal } from '@atolis-hq/eventing';
 import { ActivityExecutionKind, type ActivityRegistry } from '../activities/index.js';
 import { RunRepository, isActiveRunStatus, runId } from '../execution/index.js';
 import type { DelegationAuthority } from '../orchestration/index.js';
-import {
-  BuiltInResourceKind,
-  ResourceCorrelationRole,
-  resourceId,
-  type ResourceService,
-} from '../resources/index.js';
+import { BuiltInResourceKind, type ResourceService } from '../resources/index.js';
 
 /** Bind delegation to durable Run identity; credentials and audit actors alone are insufficient. */
 export function createDelegationAuthority(
@@ -37,15 +32,6 @@ export function createDelegationAuthority(
       return views
         .filter((view) => view?.kind === BuiltInResourceKind.Repository)
         .map((view) => view!.resourceId);
-    },
-    async registerRepositories(child, context) {
-      for (const id of child.repositoryResourceIds ?? [])
-        await resources.correlate(
-          resourceId(id),
-          child.workItemId,
-          ResourceCorrelationRole.Secondary,
-          { ...context, commandId: context.commandId + ':repository:' + id },
-        );
     },
   };
 }

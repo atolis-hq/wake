@@ -32,8 +32,4 @@ export interface DelegationArtifacts {
 export interface DelegationAuthority {
   assertCaller(caller: DelegationCaller, parent: WorkflowInstanceView): Promise<void>;
   repositories(parent: WorkflowInstanceView): Promise<readonly string[]>;
-  registerRepositories(
-    child: DelegationReservation['children'][number],
-    context: CommandContext,
-  ): Promise<void>;
 }

@@ -1931,4 +1931,11 @@ it('suppresses delegated trigger sources across recovery without context members
       await new ArtifactContextService(f.journal, recovered.artifacts).get('delegated-scope')
     ).members.some((member) => member.workItemId === child.workItemId),
   ).toBe(false);
+  expect(await recovered.orchestration.hasLiveDelegatedWork(parent.workItemId)).toBe(true);
+  // A cancelled root can never join its cohort, so its claim must not be held forever.
+  await recovered.work.cancel(parent.workItemId, 'stop', {
+    ...f.context,
+    commandId: 'cancel-trigger-root',
+  });
+  expect(await recovered.orchestration.hasLiveDelegatedWork(parent.workItemId)).toBe(false);
 });
