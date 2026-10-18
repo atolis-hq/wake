@@ -682,3 +682,46 @@ default `approved` wait at the merge stage advertises only `/approved` for
 authorized independent reviewers. Waits gated by a watch keep the generic
 agent-review hint. Those commands retain their eligibility rules for agent
 review and conversation stages.
+
+## Delegated delivery controls
+
+A named workflow can opt into independent child WorkItems:
+
+~~~yaml
+delegation:
+  workflows: [investigation-child, implementation-child]
+  maxDepth: 2
+  maxDescendants: 8
+  maxConcurrentRuns: 2
+~~~
+
+Omission disables agent delegation. The Run-scoped tools
+wake_delegation_submit and wake_delegation_inspect submit and inspect work
+through the current agent Run. Submission accepts a stable cohortId and
+assignments with assignmentId, objective, criteria, workflowName, exact
+artifact context references and named outputs (name and path). Wake pins each
+current workflow definition. Caller, Run, activation and reservation limits
+are server-owned; agents cannot supply them.
+
+Optional repositoryResourceIds select a subset of the invoking WorkItem's
+correlated Repository resources. Omission inherits that set. Workflow-level
+delegation.repositories, when present, narrows those resource IDs further.
+It never grants every configured repository. Artifact-only work needs no
+repository. Child workflows need their own policy only if they delegate again.
+Nested workflow choices must also be permitted by the root policy. This
+capability does not grant operator consent or independent review authority.
+
+After submission, the agent finishes its current activity with its ordinary
+outcome. Wake holds the parent until every required child produces its named
+accepted artifacts and the submitting Run ends, then starts a fresh continuation.
+Depth and descendant reservations serialize on the root workflow stream;
+the first reservation fixes the root limits across recovery.
+
+A delivery root occupies one open-work slot while required workflows remain
+live. Every actual Run, including watch/review Runs, consumes global and root
+Run capacity. Waiting parents consume no Run slot. Frozen or cancelled ancestry
+blocks new reservations, dispatch and continuation, including late outcomes.
+Trigger descendants suppress their root's self-source events without inheriting
+named shared context or operator instructions. Work detail shows delivery
+parent/root links, child workflows, status, resources and blockers; existing
+freeze controls stop dispatch for the selected subtree.

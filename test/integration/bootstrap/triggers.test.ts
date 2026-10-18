@@ -20,6 +20,7 @@ import {
   RetrySafety,
   activityName,
 } from '../../../src/activities/index.js';
+import { ArtifactContextService } from '../../../src/artifacts/index.js';
 import type { CompositionRootOptions } from '../../../src/bootstrap/index.js';
 import {
   createCompositionRoot,
@@ -68,7 +69,7 @@ async function fixture(
   on: TriggerConfig['on'],
   gated = false,
   journal = new InMemoryEventJournal({ now: () => new Date('2026-08-10T00:01:30.000Z') }),
-  options: CompositionRootOptions = {},
+  options: CompositionRootOptions & { readonly triggerContextScope?: string } = {},
   triggerIds: readonly string[] = ['oversight'],
   maxOpenWorkItems: number | null = null,
 ) {
@@ -103,6 +104,9 @@ async function fixture(
         triggers: triggerIds.map((id) => ({
           id,
           workflow: 'inspect',
+          ...(options.triggerContextScope === undefined
+            ? {}
+            : { contextScope: options.triggerContextScope }),
           on,
           ...(gated ? { when: { capacityAvailable: true } } : {}),
         })),
@@ -1870,4 +1874,61 @@ it('keeps retry eligibility and pause semantics on trigger inspection and the sh
     paused: true,
     activeInvocation: null,
   });
+});
+
+it('suppresses delegated trigger sources across recovery without context membership or claim release (DC-27)', async () => {
+  const f = await fixture(
+    { events: [WorkEventType.ObjectiveRevised] },
+    false,
+    undefined,
+    { triggerContextScope: 'delegated-scope' },
+    undefined,
+    null,
+  );
+  await source(f, 'delegated-initial');
+  await f.consume();
+  const first = (await invocations(f.journal))[0]!;
+  const parent = (await f.root.orchestration.get(workflowInstanceId(first.workflowInstanceId)))!;
+  const reservation = await f.root.orchestration['delegatedWork'].reserve(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      runId: 'delegating-run',
+    },
+    'trigger-cohort',
+    [
+      {
+        assignmentId: 'inspect-child',
+        objective: 'Inspect independently',
+        criteria: ['Findings'],
+        workflowName: workflowName('inspect'),
+        workflowFingerprint: parent.workflowDefinitionFingerprint!,
+        context: [],
+        outputs: [{ name: 'findings', path: 'findings.md' }],
+      },
+    ],
+    { ...f.context, commandId: 'trigger-delegation' },
+  );
+  const child = reservation.children[0]!;
+  await f.root.work.revise(
+    { workItemId: child.workItemId, objective: 'Own child source' },
+    { ...f.context, commandId: 'own-child-source' },
+  );
+  const recovered = await restart(f);
+  await recovered.processorRuntime.catchUp(
+    'delegated trigger sources',
+    recovered.processorRuntime.processors.filter((processor) =>
+      processor.consumer.startsWith('reactor:control-plane.trigger:'),
+    ),
+  );
+  await recovered.triggers.reconcile({ ...f.context, commandId: 'recover-delegated-trigger' });
+  expect(await invocations(f.journal)).toHaveLength(1);
+  const view = await recovered.triggers.get();
+  expect(view.coalesced).toEqual({});
+  expect(view.invocations[0]!.result).toBeUndefined();
+  expect(
+    (
+      await new ArtifactContextService(f.journal, recovered.artifacts).get('delegated-scope')
+    ).members.some((member) => member.workItemId === child.workItemId),
+  ).toBe(false);
 });

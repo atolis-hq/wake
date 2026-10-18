@@ -182,9 +182,22 @@ export const supplementalCommandConfigSchema = z
   })
   .strict();
 
+export const delegationPolicySchema = z
+  .object({
+    workflows: z.array(identifier).min(1),
+    repositories: z.array(identifier).min(1).optional(),
+    maxDepth: z.number().int().positive(),
+    maxDescendants: z.number().int().positive(),
+    maxConcurrentRuns: z.number().int().positive(),
+  })
+  .strict();
+
+export type DelegationPolicy = z.infer<typeof delegationPolicySchema>;
+
 export const workflowDefinitionConfigSchema = z
   .object({
     entry: identifier.optional(),
+    delegation: delegationPolicySchema.optional(),
     commands: z.record(commandName, supplementalCommandConfigSchema).optional(),
     watches: z.array(watchConfigSchema).readonly().optional(),
     stages: z
@@ -312,6 +325,7 @@ export interface CompiledWatch extends Omit<WatchConfig, 'workflow' | 'while' | 
 }
 
 export interface CompiledWorkflow {
+  readonly delegation?: DelegationPolicy;
   readonly remainingAgentSteps?: Readonly<Record<StageName, number>>;
   readonly name: WorkflowName;
   readonly entry: StageName;

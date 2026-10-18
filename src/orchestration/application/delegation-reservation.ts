@@ -61,6 +61,7 @@ export function sameDelegation(a: DelegationReservation, b: DelegationReservatio
   const content = (reservation: DelegationReservation) => ({
     ...reservation,
     runId: undefined,
+    maxConcurrentRuns: undefined,
     maxDepth: undefined,
     maxDescendants: undefined,
     children: reservation.children.map(

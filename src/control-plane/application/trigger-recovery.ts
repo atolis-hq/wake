@@ -69,7 +69,11 @@ export async function recoverTriggerInvocation(
     );
   }
   const status = finishedStatus(instance);
-  if (status === undefined) return;
+  if (
+    status === undefined ||
+    (await dependencies.orchestration.hasLiveDelegatedWork?.(workItemId(claim.workItemId)))
+  )
+    return;
   await dependencies.emit(
     {
       eventType: ControlEventType.TriggerInvocationFinished,

@@ -3,8 +3,12 @@ import {
   WorkflowStatus,
   type WorkflowInstanceView,
 } from '../../orchestration/index.js';
+import type { WorkDelegation } from '../../work/index.js';
+import { readDeliveryAvailability } from '../../work/index.js';
 
 export interface WorkAvailability {
+  readonly state?: string;
+  readonly delegation?: WorkDelegation;
   readonly frozen?: boolean;
   readonly deleted?: boolean;
 }
@@ -50,13 +54,14 @@ export async function readOpenWorkItemIds(
   workflows: readonly WorkflowInstanceView[],
   work?: { get(id: string): Promise<WorkAvailability | null> },
 ): Promise<ReadonlySet<string>> {
-  const open = deriveOpenWorkItemIds(workflows);
-  const unavailable = new Set<string>();
-  await Promise.all(
-    [...open].map(async (id) => {
-      const item = await work?.get(id);
-      if (item?.frozen === true || item?.deleted === true) unavailable.add(id);
-    }),
-  );
-  return new Set([...open].filter((id) => !unavailable.has(id)));
+  const roots = new Set<string>();
+  for (const id of deriveOpenWorkItemIds(workflows)) {
+    if (work === undefined) {
+      roots.add(id);
+      continue;
+    }
+    const delivery = await readDeliveryAvailability(id, work);
+    if (delivery.reason === undefined) roots.add(delivery.rootWorkItemId);
+  }
+  return roots;
 }

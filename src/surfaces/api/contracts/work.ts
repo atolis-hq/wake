@@ -22,6 +22,20 @@ export interface WorkItemResponse {
 }
 
 export interface WorkDetailResponse {
+  readonly delegation?: {
+    readonly rootWorkItemKey: WorkItemKey;
+    readonly parentWorkItemKey?: WorkItemKey;
+    readonly children: readonly {
+      readonly workItemKey: WorkItemKey;
+      readonly parentWorkItemKey: WorkItemKey;
+      readonly objective: string;
+      readonly workflowName: string;
+      readonly status: string;
+      readonly cohortId: string;
+      readonly blockReason?: string;
+      readonly resources: readonly ResourceItemResponse[];
+    }[];
+  };
   readonly triggerOrigin?: string;
   readonly work: WorkItemResponse;
   readonly resources: readonly ResourceItemResponse[];

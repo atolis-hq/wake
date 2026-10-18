@@ -1,4 +1,9 @@
-import { cachedJournalView, type CachedJournalView, type EventJournal } from '@atolis-hq/eventing';
+import {
+  cachedJournalView,
+  type CachedJournalView,
+  type EventJournal,
+  type JournalReadOptions,
+} from '@atolis-hq/eventing';
 import type { ActivationId } from '../../activities/index.js';
 import {
   decodeRunExecutionEvent,
@@ -19,12 +24,15 @@ export class RunRepository {
     this.runs = cachedJournalView(journal, deriveRuns);
   }
 
-  async load(runId: RunId): Promise<{
+  async load(
+    runId: RunId,
+    options?: JournalReadOptions,
+  ): Promise<{
     readonly sequence: number;
     readonly events?: readonly RunExecutionEvent[];
     readonly view: ReturnType<typeof foldRun>;
   }> {
-    const events = await this.journal.readStream(runStream(runId));
+    const events = await this.journal.readStream(runStream(runId), options);
     const decoded = events.map(decodeRunExecutionEvent);
     return { sequence: events.length, events: decoded, view: foldRun(decoded) };
   }

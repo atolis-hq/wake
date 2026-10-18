@@ -46,6 +46,7 @@ export function compileWorkflow(
 ): CompiledWorkflow {
   const compiledName = workflowName(name);
   const config = workflowDefinitionConfigSchema.parse(input) as WorkflowDefinitionConfig;
+  assertDelegationWorkflows(config, knownWorkflowNames);
   const rawStageNames = Object.keys(config.stages);
   for (const candidate of rawStageNames) {
     if (isReservedRouteTarget(candidate)) throw new Error(`Reserved stage name: ${candidate}`);
@@ -68,6 +69,7 @@ export function compileWorkflow(
         (activity) => activities.describe(activity).executionKind === ActivityExecutionKind.Agent,
       ),
     ),
+    ...(config.delegation === undefined ? {} : { delegation: config.delegation }),
     name: compiledName,
     entry: compiledEntry,
     commands: Object.freeze(commands),
@@ -296,4 +298,12 @@ function compileAuthority(
       `Unknown watch reference in workflow "${workflow}" stage "${rawStageName}": "${entry.id}"`,
     );
   return { kind: ApprovalAuthorityKind.Watch, watch: watchId(entry.id) };
+}
+
+function assertDelegationWorkflows(
+  config: WorkflowDefinitionConfig,
+  known: readonly string[],
+): void {
+  for (const child of config.delegation?.workflows ?? [])
+    if (!known.includes(child)) throw new Error('Unknown delegation workflow: ' + child);
 }

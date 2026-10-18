@@ -1,3 +1,4 @@
+import { deliveryCapacity } from '../domain/delivery-capacity.js';
 import {
   isRunnerQuotaOutcome,
   reportUnappliedRunnerQuotaRetry,
@@ -20,7 +21,7 @@ import type {
 import { DelegationPendingError, WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import type { AdvanceResult, DispatchedRun } from '../contracts/views.js';
-import type { DispatchPolicy } from '../domain/dispatch-policy.js';
+import { neutralDispatchPriority, type DispatchPolicy } from '../domain/dispatch-policy.js';
 import {
   canDispatchWorkItem,
   readOpenWorkItemIds,
@@ -48,13 +49,6 @@ interface PendingActivation {
   readonly activation: ActivityActivationView;
   readonly priority?: PendingActivationPriority | undefined;
 }
-
-// Ports without priority (older fakes) rank neutrally and fall back to oldest-first.
-const neutralPriority: PendingActivationPriority = {
-  remainingAgentSteps: 0,
-  watchDriven: false,
-  retried: false,
-};
 
 export async function advancementWasDurablyApplied(
   orchestration: OrchestrationPort,
@@ -89,16 +83,7 @@ export async function blockIsolatedWorkflow(
   return reason;
 }
 
-/**
- * Fills open capacity within one Advancement call: dispatches ready
- * activations one at a time, rechecking `maxConcurrentRuns` and reselecting
- * fresh candidates after every dispatch (per #346's capacity-recheck
- * principle), until capacity, the per-call `maxDispatches` burst cap, or
- * eligible candidates are exhausted. Candidates dispatched earlier in the
- * same call are excluded from later selection via `dispatchedIds`, since
- * their Run lifecycle event is not guaranteed visible through
- * `execution.list()` yet.
- */
+/** Recheck capacity and select a fresh candidate after each dispatch. */
 export async function runDispatchLoop(
   pending: readonly PendingActivation[],
   ctx: DispatchLoopContext,
@@ -126,16 +111,22 @@ export async function runDispatchLoop(
       stopReason = { kind: 'no-work' };
       break;
     }
+    const inventory = (await ctx.orchestration.listAll?.()) ?? pending.map((item) => item.workflow);
+    const capacity = await deliveryCapacity(
+      inventory,
+      allRuns,
+      ctx.work,
+      ctx.orchestration.deliveryRunLimit?.bind(ctx.orchestration),
+    );
     // Legacy test ports may omit listAll; production supplies the journal-backed inventory.
     const open =
       ctx.maxOpenWorkItems === null
         ? new Set<string>()
         : await readOpenWorkItemIds(
-            ((await ctx.orchestration.listAll?.()) ?? pending.map((item) => item.workflow)).map(
-              (workflow) =>
-                startedWorkflowIds.has(workflow.workflowInstanceId)
-                  ? { ...workflow, hasStartedActivation: true }
-                  : workflow,
+            inventory.map((workflow) =>
+              startedWorkflowIds.has(workflow.workflowInstanceId)
+                ? { ...workflow, hasStartedActivation: true }
+                : workflow,
             ),
             ctx.work,
           );
@@ -144,13 +135,21 @@ export async function runDispatchLoop(
         .filter(
           (item) =>
             !isolatedIds.has(item.workflow.workflowInstanceId) &&
-            canDispatchWorkItem(item.workflow.workItemId, open, ctx.maxOpenWorkItems),
+            !capacity.unavailable.has(item.workflow.workItemId) &&
+            !capacity.full.has(
+              capacity.roots.get(item.workflow.workItemId) ?? item.workflow.workItemId,
+            ) &&
+            canDispatchWorkItem(
+              capacity.roots.get(item.workflow.workItemId) ?? item.workflow.workItemId,
+              open,
+              ctx.maxOpenWorkItems,
+            ),
         )
         .map((item, requestedPosition) => ({
           workItemId: item.workflow.workItemId,
           activationId: item.activation.activationId,
           requestedPosition,
-          priority: item.priority ?? neutralPriority,
+          priority: item.priority ?? neutralDispatchPriority,
           hasActiveRun:
             dispatchedIds.has(item.activation.activationId) ||
             activeActivationIds.has(item.activation.activationId) ||

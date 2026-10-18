@@ -43,6 +43,7 @@ import {
 import { workItemId, WorkStatus, type WorkItemView } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
+import { presentDelivery } from './surface-api-delivery.js';
 import { presentPrimaryWorkflow } from './surface-api-merge-policy.js';
 import { projectionMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
@@ -326,6 +327,7 @@ async function workDetail(
   // the production root always composes Conversations.
   const conversation = await conversationForWorkItem(root, id);
   const data: WorkDetailResponse = {
+    ...(await presentDelivery(root, work)),
     ...(await triggerOriginForWork(root, id)),
     work: presentDetailWork(work, externalRef, runs),
     resources: resources.map(presentResource(root.resolveResourceLink)),

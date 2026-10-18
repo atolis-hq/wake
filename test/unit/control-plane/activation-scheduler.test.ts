@@ -25,7 +25,7 @@ import type {
 } from '../../../src/orchestration/index.js';
 import { BuiltInResourceKind } from '../../../src/resources/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
-import { resId } from '../../support/identities.js';
+import { resId, workId } from '../../support/identities.js';
 
 function candidate(id = 'one') {
   return {
@@ -436,6 +436,7 @@ describe('ActivationScheduler', () => {
   it('runs the full scheduler sequence in order before dispatching the selected activation', async () => {
     const trace: string[] = [];
     const pending = candidate();
+    const reclaimed = workId('reclaimed-closed-work');
     const scheduler = createActivationScheduler(
       {
         reconcileChildCompletions: async () => {
@@ -492,12 +493,12 @@ describe('ActivationScheduler', () => {
           return false;
         },
         work: {
-          get: async () => ({ state: 'closed' as never }),
+          get: async (id) => ({ state: id === reclaimed ? 'closed' : 'open' }),
         },
         workspaceRecovery: {
           recover: async (_runs, hooks) => {
             trace.push('workspace-recovery');
-            await hooks?.onWorkspaceReclaimed?.(pending.workflow.workItemId);
+            await hooks?.onWorkspaceReclaimed?.(reclaimed);
             return { reclaimed: 0, failures: [] };
           },
         },

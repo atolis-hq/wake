@@ -336,6 +336,56 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
             {query.data.data.work.externalRef && <span>{query.data.data.work.externalRef}</span>}
             {query.data.data.work.objective}
           </h1>
+          {query.data.data.delegation && (
+            <Panel>
+              <h2>Delivery tree</h2>
+              <p>
+                Root:{' '}
+                <Link
+                  to={'/work/' + encodeURIComponent(query.data.data.delegation.rootWorkItemKey)}
+                >
+                  View delivery root
+                </Link>
+                {query.data.data.delegation.parentWorkItemKey && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <Link
+                      to={
+                        '/work/' + encodeURIComponent(query.data.data.delegation.parentWorkItemKey)
+                      }
+                    >
+                      View parent
+                    </Link>
+                  </>
+                )}
+              </p>
+              <ul>
+                {query.data.data.delegation.children.map((child) => (
+                  <li key={child.workItemKey}>
+                    <Link to={'/work/' + encodeURIComponent(child.workItemKey)}>
+                      {child.objective}
+                    </Link>
+                    {' · '}
+                    {child.workflowName}
+                    {' · '}
+                    {child.status}
+                    {child.blockReason && <p>{child.blockReason}</p>}
+                    {child.resources.map((resource) => (
+                      <span key={resource.resourceId}>
+                        {' · '}
+                        {resource.externalUrl ? (
+                          <a href={resource.externalUrl}>{resource.title ?? resource.resourceId}</a>
+                        ) : (
+                          resource.resourceId
+                        )}
+                      </span>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
           {query.data.data.triggerOrigin && (
             <p>
               Trigger origin:{' '}

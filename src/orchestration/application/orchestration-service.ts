@@ -1,6 +1,8 @@
-import type { DelegationArtifacts } from '../contracts/delegation-ports.js';
+import type { DelegationArtifacts, DelegationAuthority } from '../contracts/delegation-ports.js';
+import type { DelegationCaller, DelegationSubmission } from '../contracts/delegation.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
+import { DelegationCommands } from './delegation-commands.js';
 import { DelegationGate } from './delegation-gate.js';
 import { expireTimedOutWaits } from './expire-timed-out-waits.js';
 import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
@@ -33,7 +35,11 @@ import {
 } from '../contracts/identifiers.js';
 import { childOrchestrationGroupStream, workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { ApprovalAuthorityKind, ConversationBuiltInCommand } from '../contracts/vocabulary.js';
+import {
+  ApprovalAuthorityKind,
+  ConversationBuiltInCommand,
+  WorkflowStatus,
+} from '../contracts/vocabulary.js';
 import {
   isGroupBudgetExtensionEligible,
   isNeedsClarificationResumeEligible,
@@ -61,6 +67,7 @@ import { continuesWaitingForSameWatchGate } from './watch-child-transitions.js';
 import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
 export class OrchestrationService {
+  private readonly delegationCommands: DelegationCommands;
   private readonly delegationGate: DelegationGate;
   private readonly delegatedWork: DelegatedWork;
   private readonly repository: OrchestrationRepository;
@@ -91,7 +98,7 @@ export class OrchestrationService {
     this.work = work;
     const repository = new OrchestrationRepository(journal);
     this.repository = repository;
-    this.delegationGate = new DelegationGate(repository);
+    this.delegationGate = new DelegationGate(repository, work);
     const dependencies = delegation?.({
       isActivationAccepted: (id, item) => this.isActivationAccepted(id, item),
     });
@@ -105,9 +112,18 @@ export class OrchestrationService {
       this.definitions,
       this.startWorkflow,
       {
+        authority: dependencies?.authority,
         artifacts: dependencies?.artifacts ?? unavailableArtifacts,
         runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
       },
+    );
+    this.delegationCommands = new DelegationCommands(
+      repository,
+      work,
+      this.startWorkflow,
+      this.definitions,
+      this.delegatedWork,
+      dependencies?.authority ?? unavailableDelegationAuthority,
     );
     this.advanceWorkflow = new AdvanceWorkflow(
       repository,
@@ -150,6 +166,33 @@ export class OrchestrationService {
         view !== null &&
         (item === undefined || view.workItemId === item) &&
         view.acceptedOutcomes.some((accepted) => accepted === id),
+    );
+  }
+
+  submitDelegation(caller: DelegationCaller, input: DelegationSubmission, context: CommandContext) {
+    return this.delegationCommands.submit(caller, input, context);
+  }
+
+  inspectDelegation(caller: DelegationCaller) {
+    return this.delegationCommands.inspect(caller);
+  }
+
+  deliveryTree(id: WorkItemId) {
+    return this.delegatedWork.inspect(id);
+  }
+
+  deliveryRunLimit(id: WorkItemId) {
+    return this.delegatedWork.runLimit(id);
+  }
+
+  async hasLiveDelegatedWork(id: WorkItemId): Promise<boolean> {
+    return (await this.deliveryTree(id)).some((cohort) =>
+      cohort.children.some(
+        ({ workflow }) =>
+          workflow === null ||
+          (workflow.status !== WorkflowStatus.Completed &&
+            workflow.status !== WorkflowStatus.Superseded),
+      ),
     );
   }
 
@@ -340,7 +383,12 @@ export class OrchestrationService {
     return this.advanceWorkflow.markActivationStarted(workflowInstanceId, activationId, context);
   }
 
-  validateActivationDispatch(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
+  async validateActivationDispatch(
+    workflowInstanceId: WorkflowInstanceId,
+    context: CommandContext,
+  ) {
+    const view = (await this.repository.load(workflowInstanceId)).view;
+    if (view !== null && (await this.delegationGate.unavailable(view))) return false;
     return this.childWorkflows.validateChildDispatch(workflowInstanceId, context);
   }
 
@@ -517,7 +565,14 @@ export class OrchestrationService {
 
   async listPendingActivations(workItemId?: string) {
     const entries = await this.advanceWorkflow.listPendingActivations(workItemId);
-    return entries.filter((entry) => this.delegationGate.allows(entry.workflow));
+    const available = await Promise.all(
+      entries.map(
+        async (entry) =>
+          this.delegationGate.allows(entry.workflow) &&
+          !(await this.delegationGate.unavailable(entry.workflow)),
+      ),
+    );
+    return entries.filter((_, index) => available[index]);
   }
 
   listWaiting(signalKind?: SignalName) {
@@ -720,7 +775,11 @@ function isReviewConversationCommand(command: string): boolean {
 /** Immutable dependencies are resolved once; callbacks may refer to services composed later. */
 type DelegationDependenciesFactory = (queries: {
   isActivationAccepted: (activationId: string, workItemId?: string) => Promise<boolean>;
-}) => { artifacts: DelegationArtifacts; runHasEnded: (runId: string) => Promise<boolean> };
+}) => {
+  artifacts: DelegationArtifacts;
+  authority?: DelegationAuthority;
+  runHasEnded: (runId: string) => Promise<boolean>;
+};
 
 async function unavailableRunCompletion(): Promise<never> {
   throw new Error('Delegation adapters unavailable');
@@ -730,4 +789,10 @@ const unavailableArtifacts: DelegationArtifacts = {
   validateInputs: unavailableRunCompletion,
   registerChild: unavailableRunCompletion,
   qualifyingOutputs: unavailableRunCompletion,
+};
+
+const unavailableDelegationAuthority: DelegationAuthority = {
+  assertCaller: unavailableRunCompletion,
+  repositories: unavailableRunCompletion,
+  registerRepositories: unavailableRunCompletion,
 };

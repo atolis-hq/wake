@@ -1,7 +1,9 @@
+import type { WorkItemId } from '../../work/index.js';
+import type { DelegationAuthority } from '../contracts/delegation-ports.js';
 /* eslint-disable max-lines */
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
 import { activationId } from '../../activities/index.js';
-import { WorkStatus, type WorkService } from '../../work/index.js';
+import { readDeliveryAvailability, WorkStatus, type WorkService } from '../../work/index.js';
 import type { DelegationArtifacts } from '../contracts/delegation-ports.js';
 import type {
   DelegatedAssignment,
@@ -58,14 +60,49 @@ export class DelegatedWork {
     private readonly claims: CoordinationClaims,
     private readonly definitions: WorkflowDefinitionRegistry,
     private readonly workflows: StartWorkflow,
-    dependencies: {
+    private readonly dependencies: {
       readonly artifacts: DelegationArtifacts;
       readonly runHasEnded: (runId: string) => Promise<boolean>;
+      readonly authority?: DelegationAuthority | undefined;
     },
   ) {
     this.ledger = new DelegationLedger(repository);
     this.artifacts = dependencies.artifacts;
     this.runHasEnded = dependencies.runHasEnded;
+  }
+
+  async inspect(id: WorkItemId) {
+    const item = await this.work.get(id);
+    const root = item?.delegation?.rootWorkItemId ?? id;
+    const reservations = (await this.ledger.reservations()).filter(
+      (entry) => entry.rootWorkItemId === root,
+    );
+    return Promise.all(
+      reservations.map(async (reservation) => ({
+        ...reservation,
+        children: await Promise.all(
+          reservation.children.map(async (child) => ({
+            ...child,
+            work: await this.work.get(child.workItemId),
+            workflow: (await this.repository.load(child.workflowInstanceId)).view,
+          })),
+        ),
+      })),
+    );
+  }
+
+  async runLimit(id: WorkItemId): Promise<number | undefined> {
+    const item = await this.work.get(id);
+    const root = item?.delegation?.rootWorkItemId ?? id;
+    const reserved = (await this.ledger.reservations()).find(
+      (entry) => entry.rootWorkItemId === root,
+    )?.maxConcurrentRuns;
+    if (reserved !== undefined) return reserved;
+    const claim = await this.claims.primaryWorkflowInstanceId(root);
+    if (claim === undefined) return undefined;
+    const view = (await this.repository.load(workflowInstanceId(claim))).view;
+    if (view === null) return undefined;
+    return (await this.definitions.resolve(view)).delegation?.maxConcurrentRuns;
   }
 
   async contextWorkItems(parent: WorkflowInstanceView): Promise<ReadonlySet<string>> {
@@ -108,6 +145,7 @@ export class DelegatedWork {
         (entry) => entry.rootWorkItemId === reservation.rootWorkItemId,
       );
       const rootLimits = {
+        ...rootRunLimit(all, limits),
         maxDepth: all[0]?.maxDepth ?? limits.maxDepth,
         maxDescendants: all[0]?.maxDescendants ?? limits.maxDescendants,
       };
@@ -201,6 +239,8 @@ export class DelegatedWork {
   private async parentIdentity(
     parent: WorkflowInstanceView,
   ): Promise<{ parent: ReservationParent; root: WorkflowInstanceId }> {
+    const availability = await readDeliveryAvailability(parent.workItemId, this.work);
+    if (availability.reason !== undefined) throw new Error(availability.reason);
     const item = await this.work.get(parent.workItemId);
     if (item === null || item.state !== WorkStatus.Open || item.frozen || item.deleted)
       throw new Error('Delegation requires open, unfrozen work');
@@ -226,6 +266,8 @@ export class DelegatedWork {
     reservation: DelegationReservation,
     limits: DelegationLimits,
   ): Promise<void> {
+    const availability = await readDeliveryAvailability(reservation.parentWorkItemId, this.work);
+    if (availability.reason !== undefined) throw new Error(availability.reason);
     const current = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     if (
       current.pendingActivation?.activationId !== caller.activationId ||
@@ -295,6 +337,10 @@ export class DelegatedWork {
     context: CommandContext,
   ): Promise<void> {
     if (isSettled(await this.ledger.events(), reservation)) return;
+    if (
+      (await readDeliveryAvailability(reservation.parentWorkItemId, this.work)).reason !== undefined
+    )
+      return;
     const parent = (await this.repository.loadRequired(reservation.parentWorkflowInstanceId)).view;
     if (parent.status !== WorkflowStatus.Active && parent.status !== WorkflowStatus.Waiting) {
       await this.fail(reservation, 'Delegating parent is no longer active or waiting', context);
@@ -419,6 +465,7 @@ export class DelegatedWork {
         },
         childContext,
       );
+      await this.dependencies.authority?.registerRepositories(child, childContext);
       await this.claims.claimPrimary(child.workItemId, child.workflowInstanceId, childContext);
       await artifacts.registerChild(
         {
@@ -448,6 +495,10 @@ export class DelegatedWork {
     child: DelegationReservation['children'][number],
     context: CommandContext,
   ): Promise<void> {
+    if (
+      (await readDeliveryAvailability(reservation.parentWorkItemId, this.work)).reason !== undefined
+    )
+      return;
     const existing = await this.repository.load(child.workflowInstanceId);
     if (await this.childWorkTerminated(child.workItemId, existing.view)) {
       await this.fail(reservation, 'Delegated child work is no longer open', context);
@@ -541,13 +592,20 @@ export class DelegatedWork {
     return this.runHasEnded(id);
   }
 
+  private async canJoin(reservation: DelegationReservation): Promise<boolean> {
+    return (
+      (await this.endedRun(reservation.runId)) &&
+      (await readDeliveryAvailability(reservation.parentWorkItemId, this.work)).reason === undefined
+    );
+  }
+
   /** Join and continuation commit together, so a duplicate trigger cannot resume the parent twice. */
   private async join(
     reservation: DelegationReservation,
     results: readonly DelegationResult[],
     context: CommandContext,
   ): Promise<void> {
-    if (!(await this.endedRun(reservation.runId))) return;
+    if (!(await this.canJoin(reservation))) return;
     const parentId = reservation.parentWorkflowInstanceId;
     for (;;) {
       const loaded = await this.repository.loadRequired(parentId);
@@ -601,4 +659,12 @@ export class DelegatedWork {
       }
     }
   }
+}
+
+function rootRunLimit(
+  reservations: readonly DelegationReservation[],
+  limits: DelegationLimits,
+): Pick<DelegationLimits, 'maxConcurrentRuns'> {
+  const maxConcurrentRuns = reservations[0]?.maxConcurrentRuns ?? limits.maxConcurrentRuns;
+  return maxConcurrentRuns === undefined ? {} : { maxConcurrentRuns };
 }

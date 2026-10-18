@@ -47,6 +47,7 @@ import {
   string,
   type Decoder,
 } from './decoder-primitives.js';
+import { decodeDelivery } from './delivery-decoder.js';
 import { manualTriggerOutcomeSchema } from './trigger-transport.js';
 
 export type { Decoder } from './decoder-primitives.js';
@@ -432,6 +433,15 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
       ? undefined
       : object(record.conversation, child(path, conversationTransportField));
   return {
+    ...(record.delegation === undefined
+      ? {}
+      : {
+          delegation: decodeDelivery(
+            record.delegation,
+            child(path, 'delegation'),
+            decodeResourceItem,
+          )!,
+        }),
     ...optionalStringProperty(record, 'triggerOrigin', path),
     work: decodeWorkItem(record.work, child(path, 'work')),
     resources: array(record.resources, child(path, 'resources'), decodeResourceItem),

@@ -19,6 +19,7 @@ export const delegatedAssignmentSchema = z
     objective: z.string().trim().min(1),
     criteria: z.array(z.string().trim().min(1)).min(1),
     workflowName: brandedStringSchema(workflowName),
+    repositoryResourceIds: z.array(z.string().min(1)).min(1).optional(),
     workflowFingerprint: z.string().min(1),
     context: z.array(delegationRevisionReferenceSchema),
     outputs: z
@@ -26,6 +27,15 @@ export const delegatedAssignmentSchema = z
       .min(1),
   })
   .strict();
+
+export const delegationSubmissionSchema = z
+  .object({
+    cohortId: z.string().min(1),
+    assignments: z.array(delegatedAssignmentSchema.omit({ workflowFingerprint: true })).min(1),
+  })
+  .strict();
+
+export type DelegationSubmission = z.infer<typeof delegationSubmissionSchema>;
 
 export type DelegatedAssignment = z.infer<typeof delegatedAssignmentSchema>;
 
@@ -38,6 +48,7 @@ export const delegationReservationSchema = z
     activationId: brandedStringSchema(activationId),
     runId: z.string().min(1),
     ancestors: z.array(brandedStringSchema(workItemId)),
+    maxConcurrentRuns: z.number().int().positive().optional(),
     maxDepth: z.number().int().positive(),
     maxDescendants: z.number().int().positive(),
     children: z
@@ -81,6 +92,7 @@ export const delegationJoinSchema = z
   .strict();
 
 export interface DelegationLimits {
+  readonly maxConcurrentRuns?: number;
   readonly maxDepth: number;
   readonly maxDescendants: number;
 }

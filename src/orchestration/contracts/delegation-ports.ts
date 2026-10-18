@@ -1,6 +1,7 @@
 import type { CommandContext } from '@atolis-hq/eventing';
 import type {
   DelegatedAssignment,
+  DelegationCaller,
   DelegationReservation,
   DelegationResult,
   DelegationRevisionReference,
@@ -26,4 +27,13 @@ export interface DelegationArtifacts {
     child: WorkflowInstanceView,
     outputs: DelegatedAssignment['outputs'],
   ): Promise<DelegationResult['outputs'] | null>;
+}
+
+export interface DelegationAuthority {
+  assertCaller(caller: DelegationCaller, parent: WorkflowInstanceView): Promise<void>;
+  repositories(parent: WorkflowInstanceView): Promise<readonly string[]>;
+  registerRepositories(
+    child: DelegationReservation['children'][number],
+    context: CommandContext,
+  ): Promise<void>;
 }

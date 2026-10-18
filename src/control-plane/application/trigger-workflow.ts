@@ -16,6 +16,7 @@ export interface TriggerWorkflowPorts {
   readonly orchestration: {
     start(command: StartWorkflowInstance, context: CommandContext): Promise<unknown>;
     get(id: ReturnType<typeof workflowInstanceId>): Promise<WorkflowInstanceView | null>;
+    hasLiveDelegatedWork?(id: ReturnType<typeof workItemId>): Promise<boolean>;
   };
 }
 

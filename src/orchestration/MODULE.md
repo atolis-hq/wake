@@ -42,8 +42,7 @@ descendant limits). Wait, WorkItem, claim, artifact grant, child start, result
 selection and join are reconciled idempotently from it. The parent is fenced
 from ordinary advancement until `delegation-joined` or terminal `delegation-failed`; a child qualifies only when
 its workflow reached configured terminal completion without a failure outcome and every named output resolves to
-an accepted exact artifact revision. Production exposure is deferred to the
-delegation controls work. Bootstrap wires an Artifacts-owned adapter through an immutable
+an accepted exact artifact revision. Run-scoped production commands enforce opt-in workflow policy and Bootstrap-supplied Run/repository authority. Delivery-wide limits are recorded on root reservations. Work ancestry gates dispatch, outcomes and continuation when an ancestor is unavailable. Bootstrap wires an Artifacts-owned adapter through an immutable
 Orchestration-owned port; Orchestration has no dependency on Artifacts or its schemas.
 The public surface exposes the port, accepted-activation and joined-results queries,
 and the retryable error, while registration and reconciliation stay internal.

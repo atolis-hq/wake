@@ -213,3 +213,31 @@ describe('open work policy', () => {
     );
   });
 });
+
+it('counts validated delivery roots once while any descendant remains live (DC-26)', async () => {
+  const root = 'work-root';
+  const child = 'work-child';
+  const work = {
+    async get(id: string) {
+      return {
+        state: 'open',
+        ...(id === child
+          ? {
+              delegation: {
+                parentWorkItemId: root,
+                rootWorkItemId: root,
+                ancestors: [root],
+              } as never,
+            }
+          : {}),
+      };
+    },
+  };
+  const open = await readOpenWorkItemIds(
+    [view(root, WorkflowStatus.Completed), view(child, WorkflowStatus.Waiting)],
+    work,
+  );
+  expect([...open]).toEqual([root]);
+  expect(canDispatchWorkItem(root, open, 1)).toBe(true);
+  expect(canDispatchWorkItem('unrelated', open, 1)).toBe(false);
+});
