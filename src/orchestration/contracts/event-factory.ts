@@ -18,6 +18,16 @@ export function createOrchestrationEventData(
   input: OrchestrationEventDataInput,
 ): OrchestrationEventData {
   switch (input.eventType) {
+    case OrchestrationEventType.DelegationReserved:
+      return createEventData(input);
+    case OrchestrationEventType.DelegationRegistered:
+      return createEventData(input);
+    case OrchestrationEventType.DelegationResultSelected:
+      return createEventData(input);
+    case OrchestrationEventType.DelegationWaitStarted:
+      return createEventData(input);
+    case OrchestrationEventType.DelegationJoined:
+      return createEventData(input);
     case OrchestrationEventType.WorkflowDefinitionRegistered:
       return createEventData(input);
     case OrchestrationEventType.InstanceStarted:

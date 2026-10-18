@@ -17,6 +17,9 @@ export const workProjection: ProjectionDefinition<WorkItemView | null> = {
       return {
         workItemId: owned.stream.id,
         objective: owned.event.payload.objective,
+        ...(owned.event.payload.delegation === undefined
+          ? {}
+          : { delegation: owned.event.payload.delegation }),
         state: WorkStatus.Open,
         tags: owned.event.payload.tags ?? [],
         autoApprovalGranted: false,

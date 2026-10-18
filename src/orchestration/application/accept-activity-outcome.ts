@@ -17,9 +17,17 @@ export class AcceptActivityOutcome {
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
     private readonly reconcileChildCompletions: (context: CommandContext) => Promise<void>,
+    private readonly delegationFence: (
+      id: WorkflowInstanceId,
+      activationId: ActivationId,
+    ) => Promise<boolean> = async () => false,
   ) {}
 
   async execute(command: AcceptActivityOutcomeCommand, context: CommandContext) {
+    if (await this.delegationFence(command.workflowInstanceId, command.activationId)) {
+      await this.reconcileChildCompletions(context);
+      return (await this.repository.loadRequired(command.workflowInstanceId)).view;
+    }
     const loaded = await this.repository.loadRequired(command.workflowInstanceId);
     const definition = await this.workflows.definitionForOperation(
       loaded.view,

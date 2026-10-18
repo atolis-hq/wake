@@ -14,6 +14,7 @@ import type {
   StageConfig,
   TransitionTarget,
 } from './config.js';
+import type { DelegationReservation, DelegationResult } from './delegation.js';
 import type {
   CommandName,
   OrchestrationGroupId,
@@ -32,6 +33,11 @@ import type {
 } from './streams.js';
 
 export const OrchestrationEventType = {
+  DelegationReserved: 'orchestration.delegation-reserved',
+  DelegationRegistered: 'orchestration.delegation-registered',
+  DelegationResultSelected: 'orchestration.delegation-result-selected',
+  DelegationWaitStarted: 'orchestration.delegation-wait-started',
+  DelegationJoined: 'orchestration.delegation-joined',
   WorkflowDefinitionRegistered: 'orchestration.workflow-definition-registered',
   InstanceStarted: 'orchestration.instance-started',
   StageEntered: 'orchestration.stage-entered',
@@ -63,6 +69,17 @@ export const OrchestrationEventType = {
 } as const;
 
 export interface OrchestrationEventPayloads {
+  readonly [OrchestrationEventType.DelegationReserved]: DelegationReservation;
+  readonly [OrchestrationEventType.DelegationRegistered]: { readonly cohortId: string };
+  readonly [OrchestrationEventType.DelegationResultSelected]: DelegationResult;
+  readonly [OrchestrationEventType.DelegationWaitStarted]: {
+    readonly cohortId: string;
+    readonly activationId: ActivationId;
+  };
+  readonly [OrchestrationEventType.DelegationJoined]: {
+    readonly cohortId: string;
+    readonly results: readonly DelegationResult[];
+  };
   readonly [OrchestrationEventType.InstanceStarted]:
     | {
         readonly workItemId: WorkItemId;

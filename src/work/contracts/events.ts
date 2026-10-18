@@ -7,7 +7,7 @@ import {
 } from '@atolis-hq/eventing';
 import { z } from 'zod';
 import { brandedStringSchema } from '../../kernel/index.js';
-import type { LinkWorkItems } from './commands.js';
+import type { LinkWorkItems, WorkDelegation } from './commands.js';
 import { workItemId, type WorkItemId } from './identifiers.js';
 import { WorkStreamKind, type WorkItemStreamRef } from './streams.js';
 
@@ -31,6 +31,7 @@ export interface WorkItemLinkedPayload {
 
 export interface WorkItemCreatedPayload {
   readonly objective: string;
+  readonly delegation?: WorkDelegation | undefined;
   // Optional so events recorded before tags existed still decode.
   readonly tags?: readonly string[] | undefined;
 }
@@ -69,6 +70,16 @@ const reasonSchema = z.object({ reason: z.string() }).strict();
 const consentSchema = z.object({}).strict();
 const itemCreatedSchema = objectiveSchema.extend({
   tags: z.array(z.string().trim().min(1)).readonly().optional(),
+  delegation: z
+    .object({
+      parentWorkItemId: brandedStringSchema(workItemId),
+      rootWorkItemId: brandedStringSchema(workItemId),
+      ancestors: z.array(brandedStringSchema(workItemId)).min(1).readonly(),
+      assignmentId: z.string().min(1),
+      criteria: z.array(z.string().trim().min(1)).min(1).readonly(),
+    })
+    .strict()
+    .optional(),
 });
 const eventSchema: z.ZodType<WorkEvent> = eventEnvelopeSchema.extend({
   event: z.discriminatedUnion('eventType', [

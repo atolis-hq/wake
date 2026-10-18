@@ -22,6 +22,7 @@ export const orchestrationStatusTransitions: Readonly<
   Partial<Record<WorkflowFact['eventType'], WorkflowInstanceView['status']>>
 > = {
   [OrchestrationEventType.ActivityRequested]: WorkflowStatus.Active,
+  [OrchestrationEventType.DelegationWaitStarted]: WorkflowStatus.Waiting,
   [OrchestrationEventType.ActivityWaiting]: WorkflowStatus.Waiting,
   [OrchestrationEventType.SignalWaitStarted]: WorkflowStatus.Waiting,
   [OrchestrationEventType.SignalAccepted]: WorkflowStatus.Active,
@@ -46,6 +47,7 @@ export type MutableWorkflowInstance = {
   triggerId?: string;
   causalCycleId?: string;
   requestId?: string;
+  delegationWait?: WorkflowInstanceView['delegationWait'];
   status: WorkflowInstanceView['status'];
   blockReason?: string;
   currentStage: WorkflowInstanceView['currentStage'];
@@ -227,13 +229,36 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
   }
 }
 
+function applyDelegationFact(
+  state: MutableWorkflowInstance,
+  event: FactsOf<
+    | typeof OrchestrationEventType.DelegationWaitStarted
+    | typeof OrchestrationEventType.DelegationJoined
+  >,
+): void {
+  if (event.eventType === OrchestrationEventType.DelegationJoined) {
+    delete state.delegationWait;
+    return;
+  }
+  state.delegationWait = event.payload;
+  state.status = WorkflowStatus.Waiting;
+}
+
+// Exhaustive dispatch over the closed coordination event set.
+// eslint-disable-next-line complexity
 function applyCoordinationFact(state: MutableWorkflowInstance, event: CoordinationFact): void {
   switch (event.eventType) {
     case OrchestrationEventType.InstanceStarted:
     case OrchestrationEventType.ChildRequested:
     case OrchestrationEventType.ChildStarted:
     case OrchestrationEventType.GroupBudgetExhausted:
+    case OrchestrationEventType.DelegationReserved:
+    case OrchestrationEventType.DelegationRegistered:
+    case OrchestrationEventType.DelegationResultSelected:
       return;
+    case OrchestrationEventType.DelegationWaitStarted:
+    case OrchestrationEventType.DelegationJoined:
+      return applyDelegationFact(state, event);
     case OrchestrationEventType.ChildCompleted:
       state.childCompletionRecorded = true;
       return;
@@ -317,6 +342,8 @@ function applyActivityRequested(
   };
 }
 
+// One optional-field projection per view property; branching mirrors the view shape.
+// eslint-disable-next-line complexity
 export function immutableWorkflowInstanceView(
   state: MutableWorkflowInstance,
 ): WorkflowInstanceView {
@@ -335,6 +362,7 @@ export function immutableWorkflowInstanceView(
     ...(state.triggerId === undefined ? {} : { triggerId: state.triggerId }),
     ...(state.causalCycleId === undefined ? {} : { causalCycleId: state.causalCycleId }),
     ...(state.requestId === undefined ? {} : { requestId: state.requestId }),
+    ...(state.delegationWait === undefined ? {} : { delegationWait: state.delegationWait }),
     status: state.status,
     ...(state.blockReason === undefined ? {} : { blockReason: state.blockReason }),
     currentStage: state.currentStage,

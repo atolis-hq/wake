@@ -136,6 +136,7 @@ export class WorkflowDefinitionRegistry {
 
   async resolve(
     view: Pick<WorkflowInstanceView, 'workflowName' | 'workflowDefinitionFingerprint'>,
+    options: { readonly journalFallback?: boolean } = {},
   ): Promise<CompiledWorkflow> {
     if (view.workflowDefinitionFingerprint === undefined)
       return this.currentDefinition(view.workflowName).definition;
@@ -149,7 +150,22 @@ export class WorkflowDefinitionRegistry {
       workflowDefinitionsProjection.name,
       workflowDefinitionKey(view.workflowName, view.workflowDefinitionFingerprint),
     );
-    if (stored === null || stored === undefined) throw new WorkflowDefinitionUnavailableError();
-    return stored.value;
+    if (stored !== null && stored !== undefined) return stored.value;
+    if (options.journalFallback !== true) throw new WorkflowDefinitionUnavailableError();
+    return this.fromJournal(view.workflowName, view.workflowDefinitionFingerprint);
+  }
+
+  /** Committed delegation recovery cannot depend on projection catch-up or current configuration. */
+  private async fromJournal(name: WorkflowName, fingerprint: string): Promise<CompiledWorkflow> {
+    for (const event of await this.journal.readStream(workflowDefinitionsStream())) {
+      const owned = selectOrchestrationEvent(event);
+      if (
+        owned?.event.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
+        owned.event.payload.workflowName === name &&
+        owned.event.payload.fingerprint === fingerprint
+      )
+        return owned.event.payload.compiledDefinition;
+    }
+    throw new WorkflowDefinitionUnavailableError();
   }
 }

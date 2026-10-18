@@ -65,3 +65,7 @@ export * from './domain/workflow-selector.js';
 export * from './application/work-completion-summary.js';
 
 export type { WorkflowCompileDiagnostic } from './domain/compile-diagnostics.js';
+
+export * from './application/delegated-work.js';
+
+export * from './contracts/delegation.js';

@@ -1,4 +1,11 @@
+/* eslint-disable max-lines */
 import { z } from 'zod';
+import {
+  delegationJoinSchema,
+  delegationReservationSchema,
+  delegationResultSchema,
+  delegationWaitSchema,
+} from './delegation.js';
 
 import { eventDataSchema, eventEnvelopeSchema, type EventEnvelope } from '@atolis-hq/eventing';
 import {
@@ -284,6 +291,26 @@ const groupBudgetGrantedEnvelope = childGroupEnvelope(
     });
 });
 const eventSchemas = {
+  [OrchestrationEventType.DelegationReserved]: workflowEnvelope(
+    OrchestrationEventType.DelegationReserved,
+    delegationReservationSchema,
+  ),
+  [OrchestrationEventType.DelegationRegistered]: workflowEnvelope(
+    OrchestrationEventType.DelegationRegistered,
+    z.object({ cohortId: z.string().min(1) }).strict(),
+  ),
+  [OrchestrationEventType.DelegationResultSelected]: workflowEnvelope(
+    OrchestrationEventType.DelegationResultSelected,
+    delegationResultSchema,
+  ),
+  [OrchestrationEventType.DelegationWaitStarted]: workflowEnvelope(
+    OrchestrationEventType.DelegationWaitStarted,
+    delegationWaitSchema,
+  ),
+  [OrchestrationEventType.DelegationJoined]: workflowEnvelope(
+    OrchestrationEventType.DelegationJoined,
+    delegationJoinSchema,
+  ),
   [OrchestrationEventType.InstanceStarted]: workflowEnvelope(
     OrchestrationEventType.InstanceStarted,
     z.union([

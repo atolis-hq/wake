@@ -28,11 +28,17 @@ export class StartWorkflow {
   ) {}
 
   async execute(command: StartWorkflowInstance, context: CommandContext) {
-    if (!(await this.isWorkItemOpen(command.workItemId)))
-      throw new Error('WorkItem must exist and be open');
-    const { definition, fingerprint } = this.definitions.currentDefinition(command.workflowName);
     const existing = await this.repository.load(command.workflowInstanceId);
     if (existing.view !== null) return existing.view;
+    if (!(await this.isWorkItemOpen(command.workItemId)))
+      throw new Error('WorkItem must exist and be open');
+    const fingerprint =
+      command.workflowDefinitionFingerprint ??
+      this.definitions.currentDefinition(command.workflowName).fingerprint;
+    const definition = await this.definitions.resolve(
+      { workflowName: command.workflowName, workflowDefinitionFingerprint: fingerprint },
+      { journalFallback: command.workflowDefinitionFingerprint !== undefined },
+    );
     const startKind = validateChildProvenance(command);
     if (startKind === WorkflowInstanceKind.Primary) {
       await this.claims.claimPrimary(command.workItemId, command.workflowInstanceId, context);

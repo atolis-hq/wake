@@ -629,6 +629,7 @@ it('is the single source every status-changing orchestration event derives from'
   expect(orchestrationStatusTransitions).toEqual({
     [OrchestrationEventType.ActivityRequested]: WorkflowStatus.Active,
     [OrchestrationEventType.ActivityWaiting]: WorkflowStatus.Waiting,
+    [OrchestrationEventType.DelegationWaitStarted]: WorkflowStatus.Waiting,
     [OrchestrationEventType.SignalWaitStarted]: WorkflowStatus.Waiting,
     [OrchestrationEventType.SignalAccepted]: WorkflowStatus.Active,
     [OrchestrationEventType.InstanceCompleted]: WorkflowStatus.Completed,

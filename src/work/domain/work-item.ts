@@ -24,6 +24,9 @@ export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null 
   return {
     workItemId: id,
     objective: state.objective,
+    ...(events[0].event.payload.delegation === undefined
+      ? {}
+      : { delegation: events[0].event.payload.delegation }),
     state: state.lifecycle,
     tags: state.tags,
     autoApprovalGranted: state.autoApprovalGranted,

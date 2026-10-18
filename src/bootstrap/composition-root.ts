@@ -72,6 +72,7 @@ import { createBuiltInActivityRegistry } from './activity-registry.js';
 import { createArtifactMcpProvisioner } from './artifact-mcp.js';
 import { createArtifactTriggerContext } from './artifact-trigger-context.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
+import { createDelegationArtifacts } from './delegation-artifacts.js';
 import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime, composeProviders } from './integration-runtime.js';
@@ -243,6 +244,9 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
     definitions,
     projections,
     createAgentActivityClassifier(activities),
+  );
+  orchestration.delegatedWork.setArtifacts(
+    createDelegationArtifacts({ artifacts, contexts: artifactContexts, orchestration }),
   );
   const workspaces = new GitWorkspaceProvider(
     paths.workspacesRoot,

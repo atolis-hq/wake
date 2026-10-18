@@ -1,3 +1,4 @@
+import { DelegatedWork } from './delegated-work.js';
 import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 /* eslint-disable max-lines */
@@ -56,6 +57,7 @@ import { continuesWaitingForSameWatchGate } from './watch-child-transitions.js';
 import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
 export class OrchestrationService {
+  readonly delegatedWork: DelegatedWork;
   private readonly startWorkflow: StartWorkflow;
   private readonly acceptActivityOutcome: AcceptActivityOutcome;
   private readonly acceptWorkflowSignal: AcceptSignal;
@@ -83,6 +85,14 @@ export class OrchestrationService {
     this.claims = new CoordinationClaims(journal);
     this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
     this.startWorkflow = new StartWorkflow(repository, this.claims, work, this.definitions);
+    this.delegatedWork = new DelegatedWork(
+      journal,
+      repository,
+      work,
+      this.claims,
+      this.definitions,
+      this.startWorkflow,
+    );
     this.advanceWorkflow = new AdvanceWorkflow(
       repository,
       this.startWorkflow,
@@ -100,7 +110,11 @@ export class OrchestrationService {
     this.acceptActivityOutcome = new AcceptActivityOutcome(
       repository,
       this.startWorkflow,
-      (context) => this.childWorkflows.reconcileChildCompletions(context),
+      async (context) => {
+        await this.delegatedWork.reconcile(context);
+        await this.childWorkflows.reconcileChildCompletions(context);
+      },
+      (id, activationId) => this.delegatedWork.fences(id, activationId),
     );
   }
 
@@ -439,8 +453,18 @@ export class OrchestrationService {
     return this.childWorkflows.getPrimaryWorkflowInstanceId(workItemId);
   }
 
-  listPendingActivations(workItemId?: string) {
-    return this.advanceWorkflow.listPendingActivations(workItemId);
+  async listPendingActivations(workItemId?: string) {
+    const entries = await this.advanceWorkflow.listPendingActivations(workItemId);
+    const allowed = await Promise.all(
+      entries.map(
+        async (entry) =>
+          !(await this.delegatedWork.fences(
+            entry.workflow.workflowInstanceId,
+            entry.activation.activationId,
+          )),
+      ),
+    );
+    return entries.filter((_, index) => allowed[index]);
   }
 
   listWaiting(signalKind?: SignalName) {
@@ -497,7 +521,8 @@ export class OrchestrationService {
     );
   }
 
-  reconcileChildCompletions(context: CommandContext) {
+  async reconcileChildCompletions(context: CommandContext) {
+    await this.delegatedWork.reconcile(context);
     return this.transitionWatchChildren(context, () =>
       this.childWorkflows.reconcileChildCompletions(context),
     );

@@ -34,6 +34,17 @@ compiled costs count removed activities conservatively as agent steps.
 Resource-transition origin remains explicit even on a watch-verdict channel;
 quota re-requests preserve that activation origin without counting a retry.
 
+Delegated work (`DelegatedWork`) starts independent child WorkItems with their
+own primary workflow, separate from same-WorkItem watch children. A
+`delegation-reserved` event on the root's primary workflow stream is the single
+commit point (identities, pinned workflow fingerprints, root-wide depth and
+descendant limits). Wait, WorkItem, claim, artifact grant, child start, result
+selection and join are reconciled idempotently from it. The parent is fenced
+from ordinary advancement until `delegation-joined`; a child qualifies only when
+its workflow completed with a `done` outcome and every named output resolves to
+an accepted exact artifact revision. Production exposure is deferred to the
+delegation controls work; Bootstrap supplies the Artifacts adapter.
+
 ## Public contracts
 
 `index.ts` is the only public entry. `OrchestrationService` is a compatibility

@@ -66,6 +66,7 @@ export interface WorkflowInstanceView {
   readonly triggerId?: string;
   readonly causalCycleId?: string;
   readonly requestId?: string;
+  readonly delegationWait?: { readonly cohortId: string; readonly activationId: ActivationId };
   readonly status: WorkflowStatus;
   readonly blockReason?: string;
   readonly currentStage: StageName;
