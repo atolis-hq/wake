@@ -174,3 +174,68 @@ async function eventually<Value>(
   }
   expect(await read()).toBe(expected);
 }
+
+it('settles sibling catch-up before reporting an attributable failure and retries in order', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  const checkpoints = new InMemoryCheckpointStore();
+  await appendFact(journal);
+  const diagnostics: Error[] = [];
+  const retries: number[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let failing = true;
+  const original = new Error('poison event');
+  const attempts: string[] = [];
+  const runtime = new EventProcessorRuntime(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    clock,
+    {
+      onFailure: (error) => {
+        diagnostics.push(error);
+      },
+      retryBackoff: async (failures) => {
+        retries.push(failures);
+      },
+    },
+  );
+  const bad = processor('reactor:bad', 'bad', async () => {
+    attempts.push('test-event-one');
+    if (failing) throw original;
+  });
+  const good = processor('reactor:good', 'good', async () => {
+    await held;
+  });
+  runtime.register([bad, good]);
+  let settled = false;
+  const pass = runtime.catchUp('tick').catch((error: unknown) => {
+    settled = true;
+    return error;
+  });
+  await eventually(() => diagnostics.length, 1);
+  expect(settled).toBe(false);
+  release();
+  const failure = await pass;
+  expect(failure).toBeInstanceOf(AggregateError);
+  expect(String(failure)).toContain('bad (reactor:bad)');
+  expect(String(failure)).toContain('test-event-one at global position 1');
+  expect(diagnostics[0]?.cause).toBe(original);
+  expect(original.stack).toContain('poison event');
+  expect(await checkpoints.load(bad.consumer)).toBe(0);
+  expect(await checkpoints.load(good.consumer)).toBe(1);
+  expect(await runtime.health()).toContainEqual(
+    expect.objectContaining({ consumer: bad.consumer, status: 'degraded', consecutiveFailures: 1 }),
+  );
+  await expect(runtime.catchUp('retry')).rejects.toThrow('poison event');
+  failing = false;
+  await runtime.catchUp('recovery');
+  expect(retries).toEqual([1, 2]);
+  expect(attempts).toEqual(['test-event-one', 'test-event-one', 'test-event-one']);
+  expect(await checkpoints.load(bad.consumer)).toBe(1);
+  expect(await runtime.health()).toContainEqual(
+    expect.objectContaining({ consumer: bad.consumer, status: 'healthy', consecutiveFailures: 0 }),
+  );
+});

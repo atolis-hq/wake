@@ -541,8 +541,8 @@ it('publishes a healthy head and bounds both error name and message', async () =
   await retryObserved.promise;
   expect(host.health('bounded-error')).toMatchObject({ head: 1, status: 'degraded' });
   expect(host.health('bounded-error')?.lastError).toMatchObject({
-    name: 'n'.repeat(1_000),
-    message: 'm'.repeat(1_000),
+    name: 'EventProcessorFailure',
+    message: expect.stringContaining('Processor'),
   });
   run.abort();
   holdRetry.resolve();
@@ -785,3 +785,64 @@ defineEventProcessor({
     void message;
   },
 });
+
+it.each(['select', 'handle'] as const)(
+  'attributes %s failures and retries without reaching later events',
+  async (phase) => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    await appendFacts(journal, 3);
+    const checkpoints = new InMemoryCheckpointStore();
+    const reports: Error[] = [];
+    const retries: number[] = [];
+    const host = new EventProcessorHost(
+      journal,
+      checkpoints,
+      createInMemoryProcessorRunSerialiser(),
+      clock,
+      {
+        onFailure: (error) => {
+          reports.push(error);
+        },
+        retryBackoff: async (failures) => {
+          retries.push(failures);
+        },
+      },
+    );
+    const selected: number[] = [];
+    const handled: number[] = [];
+    let fail = true;
+    const cause = new Error('poison');
+    const processor = defineEventProcessor({
+      consumer: 'reactor:ordered',
+      name: 'ordered',
+      owner: 'test',
+      category: EventProcessorCategory.Reactor,
+      replayPolicy: EventProcessorReplayPolicy.Idempotent,
+      select: (event) => {
+        selected.push(event.globalPosition);
+        if (fail && phase === 'select' && event.globalPosition === 2) throw cause;
+        return event.globalPosition;
+      },
+      handle: async (position) => {
+        handled.push(position);
+        if (fail && phase === 'handle' && position === 2) throw cause;
+      },
+    });
+    await expect(host.runThrough(processor, 3)).rejects.toThrow('at global position 2');
+    expect(reports[0]?.cause).toBe(cause);
+    expect(selected).toEqual([1, 2]);
+    expect(await checkpoints.load(processor.consumer)).toBe(0);
+    expect(host.health(processor.consumer)).toMatchObject({
+      status: 'degraded',
+      checkpoint: 0,
+      consecutiveFailures: 1,
+    });
+    fail = false;
+    await host.runThrough(processor, 3);
+    expect(selected).toEqual([1, 2, 1, 2, 3]);
+    expect(handled).toEqual(phase === 'select' ? [1, 1, 2, 3] : [1, 2, 1, 2, 3]);
+    expect(retries).toEqual([1]);
+    expect(await checkpoints.load(processor.consumer)).toBe(3);
+  },
+);

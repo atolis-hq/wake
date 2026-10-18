@@ -31,6 +31,11 @@ export function credentialsPath(wakeRoot: string): string {
   return join(wakeRoot, '.wake', 'auth', 'credentials.json');
 }
 
+/** Read existing credentials without creating auth state. */
+export async function loadCredentials(wakeRoot: string): Promise<SurfaceCredentials> {
+  return decodeCredentials(JSON.parse(await readFile(credentialsPath(wakeRoot), 'utf8')));
+}
+
 export async function loadOrCreateCredentials(wakeRoot: string): Promise<SurfaceCredentials> {
   const path = credentialsPath(wakeRoot);
   try {

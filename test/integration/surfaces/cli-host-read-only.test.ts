@@ -103,7 +103,27 @@ it.each([false, true])(
           ...(action === 'exec' ? ['--', 'wake', 'doctor', '--wake-root', '/wake'] : []),
         ]);
       }
+      // Root must also leave no runtime files behind, even though it can bypass permissions.
+      if (process.getuid?.() === 0) {
+        await execute(
+          process.execPath,
+          [
+            resolve('node_modules/tsx/dist/cli.mjs'),
+            '--tsconfig',
+            resolve('tsconfig.source.json'),
+            resolve('src/main.ts'),
+            'doctor',
+            '--wake-root',
+            home,
+          ],
+          { env: options.env, cwd: home, timeout: 30_000 },
+        );
+        expect(await readdir(state)).toEqual(['locks', 'update-maintenance.json']);
+      }
       const doctor = await cli(['doctor', '--wake-root', home]);
+      expect(JSON.parse(doctor.stdout).notices).toContainEqual(
+        expect.stringContaining('Processor health unavailable'),
+      );
       expect(JSON.parse(doctor.stdout)).toMatchObject({ journal: 'ok', checkpoints: 'ok' });
       expect(JSON.parse(doctor.stdout).notices).toContain(
         'Workflow "inspect" stage "start": declared outcome "blocked" has no route.',

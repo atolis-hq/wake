@@ -1,3 +1,4 @@
+import type { EventEnvelope } from '../contracts/events.js';
 import type { CheckpointStore } from '../store/checkpoint-store.js';
 import type { EventJournal } from '../store/event-journal.js';
 import { type EventProcessor } from '../subscriptions/event-processor.js';
@@ -20,6 +21,7 @@ const defaultFallbackMs = 30_000;
 const maximumTimerDelayMs = 2_147_483_647;
 
 export interface EventProcessorHostOptions {
+  readonly onFailure?: (error: EventProcessorFailure) => void;
   readonly fallbackMs?: number;
   readonly retryBackoff?: (consecutiveFailures: number, signal: AbortSignal) => Promise<void>;
 }
@@ -49,7 +51,7 @@ export class EventProcessorHost {
     private readonly checkpoints: CheckpointStore,
     private readonly serialiseRun: ProcessorRunSerialiser,
     clock: EventingClock,
-    options: EventProcessorHostOptions = {},
+    private readonly options: EventProcessorHostOptions = {},
   ) {
     this.fallbackMs = options.fallbackMs ?? defaultFallbackMs;
     this.retryBackoff = options.retryBackoff ?? defaultRetryBackoff;
@@ -76,7 +78,7 @@ export class EventProcessorHost {
   async runOnce(processor: EventProcessor, signal?: AbortSignal): Promise<EventProcessorPass> {
     assertProcessor(processor);
     const runSignal = signal ?? new AbortController().signal;
-    return this.serialiseRun(processor.consumer, runSignal, () =>
+    return this.observedRun(processor, runSignal, () =>
       this.runProcessorPass(processor, runSignal),
     );
   }
@@ -89,9 +91,65 @@ export class EventProcessorHost {
     assertProcessor(processor);
     assertNonNegativeSafeInteger(targetGlobalPosition, 'Processor target global position');
     const runSignal = signal ?? new AbortController().signal;
-    return this.serialiseRun(processor.consumer, runSignal, () =>
+    return this.observedRun(processor, runSignal, () =>
       this.runProcessorThrough(processor, targetGlobalPosition, runSignal),
     );
+  }
+
+  private async observedRun(
+    processor: EventProcessor,
+    signal: AbortSignal,
+    operation: () => Promise<EventProcessorPass>,
+  ): Promise<EventProcessorPass> {
+    try {
+      return await this.serialiseRun(processor.consumer, signal, async () => {
+        const previous = this.healthRegistry.get(processor.consumer);
+        if (previous?.status === EventProcessorHealthStatus.Degraded)
+          await this.retryBackoff(previous.consecutiveFailures, signal);
+        throwIfAborted(signal);
+        const pass = await operation();
+        const head = await this.journal.latestGlobalPosition();
+        await this.healthRegistry.update(
+          processor,
+          pass.checkpoint >= head
+            ? EventProcessorHealthStatus.Healthy
+            : EventProcessorHealthStatus.CatchingUp,
+          pass.checkpoint,
+          0,
+          { lastSuccessAt: this.healthRegistry.now() },
+          head,
+        );
+        return pass;
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      const previous = this.healthRegistry.get(processor.consumer);
+      const failure = this.failure(processor, error);
+      let checkpoint = previous?.checkpoint ?? 0;
+      try {
+        checkpoint = await this.checkpoints.load(processor.consumer);
+      } catch {
+        /* Retain known position. */
+      }
+      await this.healthRegistry.degrade(
+        processor,
+        checkpoint,
+        (previous?.consecutiveFailures ?? 0) + 1,
+        failure,
+      );
+      throw failure;
+    }
+  }
+
+  private failure(processor: EventProcessor, error: unknown): EventProcessorFailure {
+    const failure =
+      error instanceof EventProcessorFailure ? error : new EventProcessorFailure(processor, error);
+    try {
+      this.options.onFailure?.(failure);
+    } catch {
+      /* Diagnostics cannot stop supervision. */
+    }
+    return failure;
   }
 
   health(consumer: string): EventProcessorHealth | undefined {
@@ -141,7 +199,12 @@ export class EventProcessorHost {
           } catch {
             // The next supervised attempt re-reads the durable checkpoint.
           }
-          await this.healthRegistry.degrade(processor, checkpoint, consecutiveFailures, error);
+          await this.healthRegistry.degrade(
+            processor,
+            checkpoint,
+            consecutiveFailures,
+            this.failure(processor, error),
+          );
           await this.retryBackoff(consecutiveFailures, signal);
         }
       }
@@ -185,10 +248,14 @@ export class EventProcessorHost {
     let handledCount = 0;
     for (const event of bounded) {
       throwIfAborted(signal);
-      const message = processor.select(event);
-      if (message === null) continue;
-      handledCount += 1;
-      await processor.handle(message, event, signal);
+      try {
+        const message = processor.select(event);
+        if (message === null) continue;
+        handledCount += 1;
+        await processor.handle(message, event, signal);
+      } catch (error) {
+        throw new EventProcessorFailure(processor, error, event);
+      }
     }
     const nextCheckpoint = bounded.at(-1)!.globalPosition;
     await this.checkpoints.save(processor.consumer, nextCheckpoint);
@@ -238,5 +305,20 @@ function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void
 export class EventProcessorRunAbortedError extends Error {
   constructor() {
     super('Event processor run aborted');
+  }
+}
+
+/** Preserves the original stack as cause and attributes only known event context. */
+export class EventProcessorFailure extends Error {
+  constructor(
+    processor: Pick<EventProcessor, 'name' | 'consumer'>,
+    cause: unknown,
+    event?: EventEnvelope,
+  ) {
+    super(
+      `Processor ${processor.name} (${processor.consumer}) failed${event === undefined ? '' : ` on event ${event.event.eventId} at global position ${event.globalPosition}`}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+    this.name = 'EventProcessorFailure';
   }
 }
