@@ -83,7 +83,9 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
       },
       health: () =>
         health.snapshotAll().flatMap(({ lastSuccessAt, ...check }) => {
-          if (check.channel === 'poll')
+          // A process that never polled (standalone UI/API host) cannot judge a stall;
+          // the intake-owning process reports it.
+          if (check.channel === 'poll' && check.successCount + check.failureCount > 0)
             return [
               applyPollStall(
                 check,

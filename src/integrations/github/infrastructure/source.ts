@@ -85,6 +85,8 @@ export function createGitHubSource(
           }),
         ),
       );
+      // A poll aborted at its deadline must not queue watermarks for a later poll to save.
+      signal.throwIfAborted();
       for (const result of perRepository)
         if (result.watermark !== undefined)
           pendingWatermarks.set(result.repository, result.watermark);

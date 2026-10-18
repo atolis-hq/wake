@@ -42,6 +42,16 @@ it('reads authenticated live health without changing auth or runtime state', asy
               detail: 'healthy',
             },
           ],
+          adapters: [
+            {
+              adapter: 'github',
+              scope: 'org/repo',
+              channel: 'poll',
+              status: 'degraded',
+              detail: 'stalled: no successful poll for 900s (threshold 180s)',
+            },
+            { adapter: 'github', scope: 'org/repo', channel: 'deliver', status: 'unknown' },
+          ],
         },
       }),
     );
@@ -62,7 +72,10 @@ it('reads authenticated live health without changing auth or runtime state', asy
     });
     await writeFile(join(home, '.wake/auth/credentials.json'), credentials);
     expect(await doctorProcessorHealth(home, config)).toEqual({
-      failures: ['Processor projection:delivery: event poison at global position 4'],
+      failures: [
+        'Processor projection:delivery: event poison at global position 4',
+        'Adapter github org/repo (poll): stalled: no successful poll for 900s (threshold 180s)',
+      ],
       notices: ['Processor activation-scheduler: healthy'],
     });
     expect(requests).toEqual(['/api/v1/auth/login', '/api/v1/system/health']);

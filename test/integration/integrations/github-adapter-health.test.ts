@@ -64,6 +64,11 @@ describe('GitHub adapter write health', () => {
         provider.health!().find((c) => c.scope === 'org/repo' && c.channel === 'poll')!;
       expect(poll().status).toBe('ok');
 
+      // A process that never polled (standalone UI host) must not claim a stall.
+      vi.advanceTimersByTime(3 * 60_000 * 10);
+      expect(poll().status).toBe('ok');
+
+      provider.recordPollFailure!(new Error('Poll lock is held by another process'));
       vi.advanceTimersByTime(3 * 60_000 * 10);
       expect(poll().status).toBe('degraded');
       expect(poll().detail).toMatch(/stalled: no successful poll/);

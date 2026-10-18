@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
 import type { EventJournal } from '@atolis-hq/eventing';
-import { withFileLock } from '@atolis-hq/eventing-filesystem';
+import { acquireFileLock } from '@atolis-hq/eventing-filesystem';
 
 import { PollService, type ProviderInstance } from '../integrations/index.js';
 
@@ -32,8 +32,6 @@ export const DEFAULT_POLL_DEADLINE_MS = 5 * 60_000;
 
 export const DEFAULT_POLL_LOCK_WAIT_MS = 5_000;
 
-const lockHeldMessage = 'File lock is already held';
-
 export type PollCoordinator = ReturnType<typeof createPollCoordinator>;
 
 /**
@@ -52,29 +50,27 @@ export function createPollCoordinator(options: PollCoordinatorOptions) {
     pollOptions: PollRunOptions,
   ): Promise<PollRunResult> => {
     const lockPath = join(options.wakeRoot, '.wake', 'locks', `poll-${provider.adapter}.lock`);
+    const lock = await acquireWithin(lockPath, lockWaitMs);
+    if (!lock.acquired) {
+      const error = new Error(`Poll lock is held by another process: ${lockPath}`);
+      provider.recordPollFailure?.(error);
+      console.warn(`Skipping ${provider.adapter} poll: ${error.message}`);
+      return { outcome: PollOutcome.LockContended, appended: 0 };
+    }
     try {
-      return await withFileLock(
-        lockPath,
-        async () => {
-          const appended = await runWithDeadline(
-            (boundedSignal) =>
-              new PollService(options.journal, provider).pollOnce(boundedSignal, pollOptions),
-            signal,
-            deadlineMs,
-            provider.adapter,
-          );
-          return { outcome: PollOutcome.Polled, appended: appended.appended };
-        },
-        { waitMs: lockWaitMs, retryIntervalMs: 50 },
+      const result = await runWithDeadline(
+        (boundedSignal) =>
+          new PollService(options.journal, provider).pollOnce(boundedSignal, pollOptions),
+        signal,
+        deadlineMs,
+        provider.adapter,
       );
+      return { outcome: PollOutcome.Polled, appended: result.appended };
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith(lockHeldMessage)) {
-        provider.recordPollFailure?.(error);
-        console.warn(`Skipping ${provider.adapter} poll: ${error.message}`);
-        return { outcome: PollOutcome.LockContended, appended: 0 };
-      }
       provider.recordPollFailure?.(error);
       throw error;
+    } finally {
+      await lock.release();
     }
   };
 
@@ -94,6 +90,18 @@ export function createPollCoordinator(options: PollCoordinatorOptions) {
       return started;
     },
   };
+}
+
+async function acquireWithin(path: string, waitMs: number) {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const lock = await acquireFileLock(path, {
+      staleAfterMs: 60_000,
+      staleRequiresDeadProcess: true,
+    });
+    if (lock.acquired || Date.now() >= deadline) return lock;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 async function runWithDeadline<Value>(
