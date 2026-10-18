@@ -56,12 +56,16 @@ export function createGitHubSource(
   // This cache avoids returning unchanged issue observations within one process.
   const lastEventIds = new Map<string, string>();
   const pendingWatermarks = new Map<string, number>();
+  let pendingSignal: AbortSignal | undefined;
   const now = state?.now ?? Date.now;
   // In-memory only: an extra real poll after a process restart is harmless,
   // the same tradeoff already made for lastEventIds above.
   let lastPolledAt: number | undefined;
   return {
     async poll(signal, options) {
+      // Uncommitted cursors belong only to the attempt that produced them.
+      pendingWatermarks.clear();
+      pendingSignal = undefined;
       const currentTime = now();
       if (
         options?.bypassInterval !== true &&
@@ -85,14 +89,17 @@ export function createGitHubSource(
           }),
         ),
       );
-      for (const result of perRepository)
-        if (result.watermark !== undefined)
-          pendingWatermarks.set(result.repository, result.watermark);
       const drafts = await consecutivePullRequestObservations(
         perRepository.flatMap((result) => result.drafts),
         state?.journal,
         adapter,
       );
+      // Journal reads can outlive the deadline too; never publish leaked cursors.
+      signal.throwIfAborted();
+      pendingSignal = signal;
+      for (const result of perRepository)
+        if (result.watermark !== undefined)
+          pendingWatermarks.set(result.repository, result.watermark);
       return drafts.filter((draft) => {
         if (draft.eventType !== GitHubEventType.WorkObserved) return true;
         if (draft.payload.kind === 'pull-request' && state?.journal !== undefined) return true;
@@ -102,12 +109,13 @@ export function createGitHubSource(
       });
     },
     async markPollPersisted() {
-      if (state?.checkpoints === undefined) return;
+      if (state?.checkpoints === undefined || pendingSignal?.aborted === true) return;
       const checkpoints = state.checkpoints;
-      for (const [repository, watermark] of pendingWatermarks) {
+      // Detach before awaiting saves: a deadline may let the next attempt start.
+      const committed = [...pendingWatermarks];
+      pendingWatermarks.clear();
+      for (const [repository, watermark] of committed)
         await checkpoints.save(watermarkCheckpoint(adapter, repository), watermark);
-        pendingWatermarks.delete(repository);
-      }
     },
   };
 }

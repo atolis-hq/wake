@@ -8,7 +8,11 @@ import {
   resourceKind,
 } from '../../resources/index.js';
 import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
-import { AdapterHealthStatus, type ProviderDefinition } from '../contracts/provider.js';
+import {
+  AdapterHealthStatus,
+  type AdapterHealthCheck,
+  type ProviderDefinition,
+} from '../contracts/provider.js';
 import { InboundTranslator } from './application/inbound-translator.js';
 import { translateGitHubOutbound } from './application/outbound-translator.js';
 import { createGitHubWakeLabelReconciler } from './application/wake-labels.js';
@@ -42,6 +46,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
       maxConcurrent: config.polling.maxConcurrent,
     });
     const health = createGitHubAdapterHealthRegistry(config.repositories);
+    const healthStartedAt = Date.now();
     const inbound = new InboundTranslator(services.journal, services.work, services.resources, {
       pullRequests: services.pullRequests,
       ids: services.ids,
@@ -72,8 +77,23 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         setLabels: client.setIssueLabels,
         requests,
       }),
+      recordPollFailure: (error) => {
+        for (const { owner, repo } of config.repositories)
+          health.recordFailure(`${owner}/${repo}`, 'poll', error);
+      },
       health: () =>
-        health.snapshotAll().flatMap((check) => {
+        health.snapshotAll().flatMap(({ lastSuccessAt, ...check }) => {
+          // A process that never polled (standalone UI/API host) cannot judge a stall;
+          // the intake-owning process reports it.
+          if (check.channel === 'poll' && check.successCount + check.failureCount > 0)
+            return [
+              applyPollStall(
+                check,
+                lastSuccessAt ?? healthStartedAt,
+                Date.now(),
+                config.polling.intervalMs,
+              ),
+            ];
           if (check.channel !== 'webhook') return [check];
           if (!config.webhooks.enabled) return [];
           return [
@@ -217,6 +237,27 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
     };
   },
 };
+
+/** Multiple of the poll interval without a success before observation counts as stalled. */
+export const POLL_STALL_INTERVALS = 3;
+
+// Derived at read time so a wedged process cannot keep reporting a stale "ok".
+function applyPollStall(
+  check: AdapterHealthCheck,
+  lastProgressAt: number,
+  nowMs: number,
+  intervalMs: number,
+): AdapterHealthCheck {
+  const silentMs = nowMs - lastProgressAt;
+  const thresholdMs = intervalMs * POLL_STALL_INTERVALS;
+  if (silentMs <= thresholdMs) return check;
+  const stalled = `stalled: no successful poll for ${Math.round(silentMs / 1000)}s (threshold ${Math.round(thresholdMs / 1000)}s)`;
+  return {
+    ...check,
+    status: 'degraded',
+    detail: check.detail === undefined ? stalled : `${stalled}; ${check.detail}`,
+  };
+}
 
 function parsePullRequestKey(
   key: string,

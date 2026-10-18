@@ -56,6 +56,36 @@ describe('GitHub adapter write health', () => {
     expect(webhook).toMatchObject({ status: 'unknown', successCount: 0, failureCount: 0 });
   });
 
+  it('reports the poll channel as stalled once no poll succeeds for three intervals', async () => {
+    vi.useFakeTimers();
+    try {
+      const provider = await composeProvider();
+      const poll = () =>
+        provider.health!().find((c) => c.scope === 'org/repo' && c.channel === 'poll')!;
+      expect(poll().status).toBe('ok');
+
+      // A process that never polled (standalone UI host) must not claim a stall.
+      vi.advanceTimersByTime(3 * 60_000 * 10);
+      expect(poll().status).toBe('ok');
+
+      provider.recordPollFailure!(new Error('Poll lock is held by another process'));
+      vi.advanceTimersByTime(3 * 60_000 * 10);
+      expect(poll().status).toBe('degraded');
+      expect(poll().detail).toMatch(/stalled: no successful poll/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('records whole-poll failures such as lock contention against the poll channel', async () => {
+    const provider = await composeProvider();
+
+    provider.recordPollFailure!(new Error('File lock is already held'));
+
+    const poll = provider.health!().find((c) => c.scope === 'org/repo' && c.channel === 'poll')!;
+    expect(poll.failureCount).toBe(1);
+  });
+
   it('records a per-repository write success after a confirmed delivery', async () => {
     vi.clearAllMocks();
     octokit.createComment.mockResolvedValue({ data: { id: 99 } });

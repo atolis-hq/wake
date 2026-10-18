@@ -23,6 +23,8 @@ export class PollService {
     let appended = 0;
     let failed = 0;
     for (const draft of drafts) {
+      // A run past its deadline may be leaked; it must not persist or advance state.
+      if (signal.aborted) return { appended, failed: failed + 1 };
       try {
         if (!this.instance.eventTypes.includes(draft.eventType))
           throw new Error(`Provider ${adapter} emitted an unknown event type`);
@@ -36,7 +38,7 @@ export class PollService {
         console.error(`Polling ${adapter} could not persist ${draft.eventId}`, error);
       }
     }
-    if (failed === 0) await this.instance.source.markPollPersisted?.();
+    if (failed === 0 && !signal.aborted) await this.instance.source.markPollPersisted?.();
     return { appended, failed };
   }
 }

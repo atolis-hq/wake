@@ -19,6 +19,17 @@ const healthSchema = z.object({
         detail: z.string().optional(),
       }),
     ),
+    adapters: z
+      .array(
+        z.object({
+          adapter: z.string(),
+          scope: z.string(),
+          channel: z.string(),
+          status: z.string(),
+          detail: z.string().optional(),
+        }),
+      )
+      .optional(),
   }),
 });
 
@@ -66,10 +77,20 @@ export async function doctorProcessorHealth(wakeRoot: string, config: SurfacesCo
       ({ kind }) => kind === ApiHealthCheckKind.Processor,
     );
     if (checks.length === 0) return unavailable('the API reported no processors');
+    // Only degraded adapters are reported; 'unknown' means never exercised.
+    const adapterFailures = (parsed.data.data.adapters ?? [])
+      .filter(({ status }) => status === 'degraded')
+      .map(
+        ({ adapter, scope, channel, detail }) =>
+          `Adapter ${adapter} ${scope} (${channel}): ${detail ?? 'degraded'}`,
+      );
     return {
-      failures: checks
-        .filter(({ status }) => status !== healthyStatus)
-        .map(({ name, detail }) => `Processor ${name}: ${detail ?? 'degraded'}`),
+      failures: [
+        ...checks
+          .filter(({ status }) => status !== healthyStatus)
+          .map(({ name, detail }) => `Processor ${name}: ${detail ?? 'degraded'}`),
+        ...adapterFailures,
+      ],
       notices: checks
         .filter(({ status }) => status === healthyStatus)
         .map(({ name, detail }) => `Processor ${name}: ${detail ?? 'ok'}`),
