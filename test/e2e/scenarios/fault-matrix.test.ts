@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { correlationId, type EventEnvelope } from '@atolis-hq/eventing';
+import { EventProcessorFailure, correlationId, type EventEnvelope } from '@atolis-hq/eventing';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -403,13 +403,27 @@ async function triggerFault(
     try {
       await tick(root);
     } catch (error) {
-      expect(error).toBeInstanceOf(InjectedFaultError);
+      expectInjectedFault(error, point);
     }
     if (!faults.isArmed(point)) return;
   }
   throw new Error(
     `The armed composed fault ${point} was never reached by runnerPipeline; events=${(await root.journal.readAll(0)).map((event) => event.event.eventType).join(',')}`,
   );
+}
+
+function expectInjectedFault(error: unknown, point: string): void {
+  if (error instanceof AggregateError) {
+    expect(error.errors.length).toBeGreaterThan(0);
+    for (const failure of error.errors) expectInjectedFault(failure, point);
+    return;
+  }
+  if (error instanceof EventProcessorFailure) {
+    expectInjectedFault(error.cause, point);
+    return;
+  }
+  expect(error).toBeInstanceOf(InjectedFaultError);
+  expect(error).toMatchObject({ faultName: point });
 }
 
 function context(commandId: string) {

@@ -6,6 +6,13 @@ export const ApiAdapterHealthStatus = defineClosedVocabulary({
 
 export type ApiAdapterHealthStatus = 'ok' | 'degraded' | ValueOf<typeof ApiAdapterHealthStatus>;
 
+/** Marks checks that report an event processor, so clients need not infer it from names. */
+export const ApiHealthCheckKind = defineClosedVocabulary({
+  Processor: 'event-processor',
+} as const);
+
+export type ApiHealthCheckKind = ValueOf<typeof ApiHealthCheckKind>;
+
 export interface HealthResponse {
   readonly status: 'ok' | 'degraded';
   readonly version: string;
@@ -13,6 +20,7 @@ export interface HealthResponse {
   readonly checks?: readonly {
     readonly name: string;
     readonly status: 'ok' | 'degraded';
+    readonly kind?: ApiHealthCheckKind;
     readonly detail?: string;
   }[];
   readonly adapters?: readonly {

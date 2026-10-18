@@ -1,11 +1,16 @@
-import { EventActorKind, JOURNAL_CHANGE_FALLBACK_MS, correlationId } from '@atolis-hq/eventing';
+import {
+  EventActorKind,
+  EventProcessorFailure,
+  JOURNAL_CHANGE_FALLBACK_MS,
+  correlationId,
+} from '@atolis-hq/eventing';
 import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import type { FastifyInstance } from 'fastify';
 import { execFile as nodeExecFile, spawn } from 'node:child_process';
 import { access, copyFile, mkdir, writeFile as writeFileContent } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
-import { promisify } from 'node:util';
+import { inspect, promisify } from 'node:util';
 import { BuiltInActivityName, agentActivityDefinition } from '../activities/index.js';
 import { FileArtifactMcpSessionStore } from '../artifacts/index.js';
 import {
@@ -68,6 +73,7 @@ import { WorkStreamKind, workItemId } from '../work/index.js';
 import { createArtifactMcpServerForSession } from './artifact-mcp.js';
 import { createDiagnosticRoot, type CompositionRoot } from './composition-root.js';
 import { loadConfig } from './config/load-config.js';
+import { doctorProcessorHealth } from './doctor-processor-health.js';
 import { createNpmUpdatePort } from './npm-update-port.js';
 import { resolveWakePaths } from './paths.js';
 import { composePersistence } from './persistence-composition.js';
@@ -167,8 +173,12 @@ export function createSurfaceCliApplications(
   const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
   const runnerIdleWait = createRunnerIdleWait(root, root.config.controlPlane?.resident);
   const reportResidentError = (label: 'intake' | 'runner') => async (error: unknown) => {
+    // Processor failures were already logged with their stack by the runtime.
+    const attributed =
+      error instanceof AggregateError &&
+      error.errors.every((cause) => cause instanceof EventProcessorFailure);
     process.stderr.write(
-      `Wake ${label} tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      `Wake ${label} tick failed: ${attributed ? error.message : inspect(error, { depth: 8 })}\n`,
     );
   };
   // Intake owns provider polling, so only its resident loop backs off
@@ -1075,6 +1085,9 @@ async function doctorDiagnostics(root: DiagnosticRoot) {
       failures.push(name + ' runtime directory is not accessible: ' + path);
     }
   }
+  const processors = await doctorProcessorHealth(root.paths.wakeRoot, root.config.surfaces);
+  failures.push(...processors.failures);
+  notices.push(...processors.notices);
   return { failures, notices };
 }
 

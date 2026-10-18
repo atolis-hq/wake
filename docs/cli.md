@@ -98,3 +98,25 @@ lease from the host, run
 `wake sandbox exec -- wake maintenance clear --failed --wake-root /wake --no-sandbox`.
 Without a sandbox, run `wake maintenance clear --failed` as the runtime-state
 owner.
+
+Ordinary `wake doctor` reads volatile processor health from the configured running
+API. With authentication enabled it reads existing local credentials and obtains
+an API session; it never creates credentials. Degraded processors appear in
+`failures`, including the consumer, event id and global position when known.
+Healthy processors appear in `notices`. If the API is disabled, unreachable, or
+cannot be authenticated, doctor explicitly reports processor health unavailable;
+offline diagnostics do not imply healthy processors. Doctor does not start
+processors or persist their health. `--rebuild-projections` remains an explicit
+state-changing operation requiring a stopped resident.
+
+Processor failures preserve the durable checkpoint and retry in journal order
+with capped exponential backoff. Resident processors run independently. One-shot
+catch-up waits for all sibling passes before reporting failures. The health API
+and UI report degraded processors with their latest attributed error; runtime
+failure logs include the original cause and stack the first time a processor
+fails or its failure changes; identical repeats log a short line only at each
+power-of-ten count. The health `lastError` keeps the original error class and an
+attributed, length-bounded message. Processor entries in the health API carry
+`kind: "event-processor"`, which doctor uses to select them. Batch failures report the
+consumer without inventing a specific event id. One-shot `tick` still skips
+triggers, maintenance and delivery when fact catch-up fails.

@@ -1,4 +1,4 @@
-import type { CheckpointStore, EventJournal } from '@atolis-hq/eventing';
+import type { CheckpointStore, EventJournal, EventProcessorFailure } from '@atolis-hq/eventing';
 import {
   EventProcessorHealthStatus,
   EventProcessorHost,
@@ -9,6 +9,29 @@ import {
   type EventingClock,
   type ProcessorRunSerialiser,
 } from '@atolis-hq/eventing';
+import { inspect } from 'node:util';
+
+/**
+ * Logs the full stack when a processor first fails or its failure changes;
+ * identical repeats log one short line only at each power-of-ten count so a
+ * poison event retried on backoff cannot flood the log.
+ */
+export function createProcessorFailureLogger(
+  write: (line: string) => void,
+): (error: EventProcessorFailure) => void {
+  const seen = new Map<string, { message: string; count: number }>();
+  return (error) => {
+    const previous = seen.get(error.consumer);
+    if (previous?.message !== error.message) {
+      seen.set(error.consumer, { message: error.message, count: 1 });
+      write(`${inspect(error, { depth: 8 })}\n`);
+      return;
+    }
+    previous.count += 1;
+    if (Number.isInteger(Math.log10(previous.count)))
+      write(`${error.message} (repeated ${previous.count} times; stack logged on first failure)\n`);
+  };
+}
 
 /**
  * Bootstrap's single registry for every deployed event processor. It owns
@@ -27,7 +50,10 @@ export class EventProcessorRuntime {
     clock: EventingClock,
     options: EventProcessorHostOptions = {},
   ) {
-    this.host = new EventProcessorHost(journal, checkpoints, serialiseRun, clock, options);
+    this.host = new EventProcessorHost(journal, checkpoints, serialiseRun, clock, {
+      onFailure: createProcessorFailureLogger((line) => process.stderr.write(line)),
+      ...options,
+    });
   }
 
   get processors(): readonly EventProcessor[] {
@@ -77,18 +103,33 @@ export class EventProcessorRuntime {
   ): Promise<number> {
     if (name.trim().length === 0) throw new Error('Event processor barrier name is required');
     for (const processor of processors) this.assertRegistered(processor);
-    const pending = (
-      await Promise.all(
-        processors.map(async (processor) => ({
-          processor,
-          checkpoint: await this.checkpoints.load(processor.consumer),
-        })),
-      )
-    ).filter(({ checkpoint }) => checkpoint < targetGlobalPosition);
-    const passes = await Promise.all(
-      pending.map(({ processor }) => this.host.runThrough(processor, targetGlobalPosition, signal)),
+    const results = await Promise.allSettled(
+      processors.map(async (processor) => {
+        try {
+          const checkpoint = await this.checkpoints.load(processor.consumer);
+          if (
+            checkpoint >= targetGlobalPosition &&
+            this.host.health(processor.consumer)?.status !== EventProcessorHealthStatus.Degraded
+          )
+            return { checkpoint, eventCount: 0, handledCount: 0 };
+        } catch {
+          // Let the host attribute and supervise storage failures.
+        }
+        return this.host.runThrough(processor, targetGlobalPosition, signal);
+      }),
     );
-    return passes.reduce((total, pass) => total + pass.eventCount, 0);
+    const failures = results.flatMap((result) =>
+      result.status !== 'fulfilled' ? [result.reason] : [],
+    );
+    if (failures.length > 0)
+      throw new AggregateError(
+        failures,
+        `${name}: ${failures.map((error: unknown) => (error instanceof Error ? error.message : String(error))).join('; ')}`,
+      );
+    return results.reduce(
+      (total, result) => total + (result.status === 'fulfilled' ? result.value.eventCount : 0),
+      0,
+    );
   }
 
   async health(): Promise<readonly EventProcessorHealth[]> {

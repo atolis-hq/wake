@@ -9,6 +9,7 @@ import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
 import {
   ApiCommandStatus,
+  ApiHealthCheckKind,
   fromWorkItemKey,
   presentBoardCard,
   presentResource,
@@ -434,6 +435,7 @@ function subscriptionHealthCheck(
   const consecutiveFailures = snapshot?.consecutiveFailures ?? 0;
   return {
     name,
+    kind: ApiHealthCheckKind.Processor,
     status:
       status === ActivationSchedulerSubscriptionStatus.Healthy
         ? ('ok' as const)

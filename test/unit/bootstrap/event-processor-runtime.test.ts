@@ -1,5 +1,6 @@
 import {
   EventProcessorCategory,
+  EventProcessorFailure,
   EventProcessorReplayPolicy,
   createEventData,
   defineEventProcessor,
@@ -10,7 +11,10 @@ import {
   createInMemoryProcessorRunSerialiser,
 } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
-import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
+import {
+  EventProcessorRuntime,
+  createProcessorFailureLogger,
+} from '../../../src/bootstrap/event-processor-runtime.js';
 import { type EntityRef } from '../../../src/kernel/index.js';
 
 const clock = { now: () => new Date('2026-08-30T00:00:00.000Z') };
@@ -134,6 +138,21 @@ it('freezes registration at start and does not partially register an invalid bat
   await expect(run.done).resolves.toBeUndefined();
 });
 
+it('logs a failing processor stack once and then only at power-of-ten repeats', () => {
+  const lines: string[] = [];
+  const log = createProcessorFailureLogger((line) => lines.push(line));
+  const failure = (message: string) =>
+    new EventProcessorFailure({ name: 'p', consumer: 'reactor:p' }, new Error(message));
+  for (let attempt = 0; attempt < 100; attempt += 1) log(failure('poison'));
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toContain('at ');
+  expect(lines[1]).toContain('repeated 10 times');
+  expect(lines[2]).toContain('repeated 100 times');
+  log(failure('different'));
+  expect(lines).toHaveLength(4);
+  expect(lines[3]).toContain('different');
+});
+
 function processor(consumer: string, name: string, handle: () => Promise<void>) {
   return defineEventProcessor({
     consumer,
@@ -174,3 +193,68 @@ async function eventually<Value>(
   }
   expect(await read()).toBe(expected);
 }
+
+it('settles sibling catch-up before reporting an attributable failure and retries in order', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  const checkpoints = new InMemoryCheckpointStore();
+  await appendFact(journal);
+  const diagnostics: Error[] = [];
+  const retries: number[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let failing = true;
+  const original = new Error('poison event');
+  const attempts: string[] = [];
+  const runtime = new EventProcessorRuntime(
+    journal,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+    clock,
+    {
+      onFailure: (error) => {
+        diagnostics.push(error);
+      },
+      retryBackoff: async (failures) => {
+        retries.push(failures);
+      },
+    },
+  );
+  const bad = processor('reactor:bad', 'bad', async () => {
+    attempts.push('test-event-one');
+    if (failing) throw original;
+  });
+  const good = processor('reactor:good', 'good', async () => {
+    await held;
+  });
+  runtime.register([bad, good]);
+  let settled = false;
+  const pass = runtime.catchUp('tick').catch((error: unknown) => {
+    settled = true;
+    return error;
+  });
+  await eventually(() => diagnostics.length, 1);
+  expect(settled).toBe(false);
+  release();
+  const failure = await pass;
+  expect(failure).toBeInstanceOf(AggregateError);
+  expect(String(failure)).toContain('bad (reactor:bad)');
+  expect(String(failure)).toContain('test-event-one at global position 1');
+  expect(diagnostics[0]?.cause).toBe(original);
+  expect(original.stack).toContain('poison event');
+  expect(await checkpoints.load(bad.consumer)).toBe(0);
+  expect(await checkpoints.load(good.consumer)).toBe(1);
+  expect(await runtime.health()).toContainEqual(
+    expect.objectContaining({ consumer: bad.consumer, status: 'degraded', consecutiveFailures: 1 }),
+  );
+  await expect(runtime.catchUp('retry')).rejects.toThrow('poison event');
+  failing = false;
+  await runtime.catchUp('recovery');
+  expect(retries).toEqual([1, 2]);
+  expect(attempts).toEqual(['test-event-one', 'test-event-one', 'test-event-one']);
+  expect(await checkpoints.load(bad.consumer)).toBe(1);
+  expect(await runtime.health()).toContainEqual(
+    expect.objectContaining({ consumer: bad.consumer, status: 'healthy', consecutiveFailures: 0 }),
+  );
+});

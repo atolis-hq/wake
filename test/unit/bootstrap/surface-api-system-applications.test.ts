@@ -194,6 +194,7 @@ it('surfaces durable activation scheduler subscription health', async () => {
   expect(response.data.status).toBe('degraded');
   expect(response.data.checks).toContainEqual({
     name: 'activation-scheduler',
+    kind: 'event-processor',
     status: 'degraded',
     detail: 'degraded at checkpoint 9 after 2 failures; last error Error: scheduler failed',
   });
@@ -330,11 +331,13 @@ it('surfaces every registered projection consumer and represents absent snapshot
   expect(response.data.status).toBe('degraded');
   expect(response.data.checks).toContainEqual({
     name: 'projection:work',
+    kind: 'event-processor',
     status: 'ok',
     detail: 'healthy at checkpoint 12 after 0 failures',
   });
   expect(response.data.checks).toContainEqual({
     name: 'projection:board',
+    kind: 'event-processor',
     status: 'degraded',
     detail: 'starting at checkpoint 0 after 0 failures',
   });

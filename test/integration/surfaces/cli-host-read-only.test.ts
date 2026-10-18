@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -8,19 +8,29 @@ import YAML from 'yaml';
 
 const execute = promisify(execFile);
 
-it.each([false, true])(
-  'runs host management and reads with unwritable runtime state (triggers: %s)',
-  async (triggers) => {
+it.each([
+  { triggers: false, writable: false },
+  { triggers: true, writable: false },
+  { triggers: true, writable: true },
+])(
+  'leaves runtime state unchanged (triggers: $triggers, writable: $writable)',
+  async ({ triggers, writable }) => {
     const home = await mkdtemp(join(tmpdir(), 'wake-host-read-only-'));
     const state = join(home, '.wake');
     const locks = join(state, 'locks');
     const bin = join(home, 'bin');
     const calls = join(home, 'logs', 'docker-calls');
-    // Root can bypass mode bits. Use an unprivileged child in root-owned CI containers.
-    const identity = process.getuid?.() === 0 ? { uid: 65534, gid: 65534 } : {};
+    // The writable case exercises root-like write capability under every CI user.
+    // Permission-denial cases drop privileges when the test process is root.
+    const identity = runtimeCommandIdentity(writable);
     try {
       await chmod(home, 0o755);
       await mkdir(locks, { recursive: true });
+      await mkdir(join(state, 'preserved', 'nested'), { recursive: true });
+      await writeFile(
+        join(state, 'preserved', 'nested', 'opaque.bin'),
+        Buffer.from([0, 255, 10, 128]),
+      );
       await mkdir(bin);
       await mkdir(join(home, 'logs'), { mode: 0o777 });
       await chmod(join(home, 'logs'), 0o777);
@@ -67,8 +77,10 @@ it.each([false, true])(
         failure: 'test failure',
       });
       await writeFile(join(state, 'update-maintenance.json'), lease);
-      await chmod(locks, 0o555);
-      await chmod(state, 0o555);
+      if (!writable) {
+        await chmod(locks, 0o555);
+        await chmod(state, 0o555);
+      }
       const options = {
         ...identity,
         env: { ...process.env, PATH: bin + ':' + process.env.PATH },
@@ -78,12 +90,14 @@ it.each([false, true])(
         process.execPath,
         [
           '-e',
-          `require('node:fs').mkdir(${JSON.stringify(join(locks, 'probe'))}, error => process.exit(error?.code === 'EACCES' ? 0 : 1))`,
+          `require('node:fs').mkdir(${JSON.stringify(join(locks, 'probe'))}, error => process.exit(${writable ? '!error' : "error?.code === 'EACCES'"} ? 0 : 1))`,
         ],
         options,
       );
-      const cli = async (arguments_: string[]) =>
-        execute(
+      if (writable) await rm(join(locks, 'probe'), { recursive: true });
+      const cli = async (arguments_: string[]) => {
+        const before = await snapshotRuntimeTree(state);
+        const result = await execute(
           process.execPath,
           [
             resolve('node_modules/tsx/dist/cli.mjs'),
@@ -94,6 +108,9 @@ it.each([false, true])(
           ],
           { ...options, cwd: home },
         );
+        expect(await snapshotRuntimeTree(state), arguments_.join(' ')).toEqual(before);
+        return result;
+      };
       for (const action of ['up', 'down', 'update', 'logs', 'exec']) {
         await cli([
           'sandbox',
@@ -104,6 +121,9 @@ it.each([false, true])(
         ]);
       }
       const doctor = await cli(['doctor', '--wake-root', home]);
+      expect(JSON.parse(doctor.stdout).notices).toContainEqual(
+        expect.stringContaining('Processor health unavailable'),
+      );
       expect(JSON.parse(doctor.stdout)).toMatchObject({ journal: 'ok', checkpoints: 'ok' });
       expect(JSON.parse(doctor.stdout).notices).toContain(
         'Workflow "inspect" stage "start": declared outcome "blocked" has no route.',
@@ -117,24 +137,9 @@ it.each([false, true])(
         projections: 'ok',
         checkpoints: 'ok',
       });
-      expect(
-        (
-          await execute(
-            process.execPath,
-            [
-              resolve('node_modules/tsx/dist/cli.mjs'),
-              '--tsconfig',
-              resolve('tsconfig.source.json'),
-              resolve('src/main.ts'),
-              'audit',
-              'missing-work',
-            ],
-            { ...options, cwd: home },
-          )
-        ).stdout,
-      ).toBe('');
+      expect((await cli(['audit', 'missing-work'])).stdout).toBe('');
       expect(await readdir(locks)).toEqual([]);
-      expect(await readdir(state)).toEqual(['locks', 'update-maintenance.json']);
+      expect(await readdir(state)).toEqual(['locks', 'preserved', 'update-maintenance.json']);
       expect(await readFile(join(state, 'update-maintenance.json'), 'utf8')).toBe(lease);
       const dockerCalls = await readFile(calls, 'utf8');
       expect(dockerCalls).toContain('wake doctor --wake-root /wake');
@@ -182,7 +187,7 @@ it.each([false, true])(
         'maintenance clear',
       );
       expect(await readFile(join(state, 'update-maintenance.json'), 'utf8')).toBe(lease);
-      if (triggers) {
+      if (triggers && !writable) {
         for (const arguments_ of [
           ['tick'],
           ['doctor', '--rebuild-projections'],
@@ -200,3 +205,39 @@ it.each([false, true])(
   },
   120_000,
 );
+
+function runtimeCommandIdentity(writable: boolean) {
+  return !writable && process.getuid?.() === 0 ? { uid: 65534, gid: 65534 } : {};
+}
+
+interface RuntimeTreeEntry {
+  readonly path: string;
+  readonly mode: number;
+  readonly uid: number;
+  readonly gid: number;
+  readonly size: number;
+  readonly mtimeMs: number;
+  readonly ctimeMs: number;
+  readonly contents?: string;
+}
+
+/** Excludes access times, which ordinary reads can update. */
+async function snapshotRuntimeTree(root: string, path = '.'): Promise<RuntimeTreeEntry[]> {
+  const absolute = join(root, path);
+  const metadata = await stat(absolute);
+  const entry: RuntimeTreeEntry = {
+    path,
+    mode: metadata.mode,
+    uid: metadata.uid,
+    gid: metadata.gid,
+    size: metadata.size,
+    mtimeMs: metadata.mtimeMs,
+    ctimeMs: metadata.ctimeMs,
+    ...(metadata.isDirectory() ? {} : { contents: (await readFile(absolute)).toString('base64') }),
+  };
+  const descendants: RuntimeTreeEntry[] = [];
+  if (metadata.isDirectory())
+    for (const name of (await readdir(absolute)).sort())
+      descendants.push(...(await snapshotRuntimeTree(root, join(path, name))));
+  return [entry, ...descendants];
+}
