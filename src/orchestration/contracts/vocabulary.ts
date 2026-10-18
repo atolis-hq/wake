@@ -63,3 +63,5 @@ export const ConversationSurfaceCapability = defineClosedVocabulary({
 } as const);
 
 export type ConversationSurfaceCapability = ValueOf<typeof ConversationSurfaceCapability>;
+
+export const DelegationOutputKind = defineClosedVocabulary({ Change: 'change' } as const);

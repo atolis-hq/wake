@@ -1,8 +1,9 @@
 /* eslint-disable max-lines */
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
 import { activationId } from '../../activities/index.js';
+import { WorkspaceMode } from '../../execution/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
-import type { DelegationArtifacts } from '../contracts/delegation-ports.js';
+import type { DelegationArtifacts, DelegationRepositories } from '../contracts/delegation-ports.js';
 import type {
   DelegatedAssignment,
   DelegationCaller,
@@ -34,7 +35,7 @@ import {
 import {
   assertWithinRootLimits,
   buildReservation,
-  sameDelegation,
+  matchesAssignments,
   type ReservationParent,
 } from './delegation-reservation.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
@@ -50,6 +51,7 @@ const defaultLimits: DelegationLimits = { maxDepth: 1, maxDescendants: 8 };
 export class DelegatedWork {
   private readonly ledger: DelegationLedger;
   private readonly artifacts: DelegationArtifacts;
+  private readonly repositories: DelegationRepositories | undefined;
   private readonly runHasEnded: (runId: string) => Promise<boolean>;
 
   constructor(
@@ -60,12 +62,20 @@ export class DelegatedWork {
     private readonly workflows: StartWorkflow,
     dependencies: {
       readonly artifacts: DelegationArtifacts;
+      readonly repositories?: DelegationRepositories | undefined;
       readonly runHasEnded: (runId: string) => Promise<boolean>;
     },
   ) {
     this.ledger = new DelegationLedger(repository);
     this.artifacts = dependencies.artifacts;
+    this.repositories = dependencies.repositories;
     this.runHasEnded = dependencies.runHasEnded;
+  }
+
+  async repositoryFor(workItemId: string) {
+    return (await this.ledger.reservations())
+      .flatMap((entry) => entry.children)
+      .find((child) => child.workItemId === workItemId)?.repository;
   }
 
   async contextWorkItems(parent: WorkflowInstanceView): Promise<ReadonlySet<string>> {
@@ -100,7 +110,17 @@ export class DelegatedWork {
     const artifacts = this.artifacts;
     const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     const identity = await this.parentIdentity(parent);
-    let reservation = buildReservation(identity.parent, caller, cohortId, assignments, limits);
+    const prior = (await this.ledger.reservations()).find(
+      (entry) =>
+        entry.rootWorkItemId === identity.parent.rootWorkItemId && entry.cohortId === cohortId,
+    );
+    if (prior !== undefined) {
+      assertReplay(prior, caller, assignments);
+      await this.reconcile(context);
+      return prior;
+    }
+    const pinned = await this.pinAssignments(parent, assignments);
+    let reservation = buildReservation(identity.parent, caller, cohortId, pinned, limits);
     for (let attempt = 0; attempt < 8; attempt++) {
       const { events: rootFacts, sequence } = await this.repository.history(identity.root);
       const events = await this.ledger.events();
@@ -111,10 +131,10 @@ export class DelegatedWork {
         maxDepth: all[0]?.maxDepth ?? limits.maxDepth,
         maxDescendants: all[0]?.maxDescendants ?? limits.maxDescendants,
       };
-      reservation = buildReservation(identity.parent, caller, cohortId, assignments, rootLimits);
+      reservation = buildReservation(identity.parent, caller, cohortId, pinned, rootLimits);
       const prior = all.find((entry) => entry.cohortId === cohortId);
       if (prior !== undefined) {
-        if (!sameDelegation(prior, reservation)) throw new Error('Delegation replay conflict');
+        assertReplay(prior, caller, assignments);
         await this.reconcile(context);
         return prior;
       }
@@ -132,6 +152,23 @@ export class DelegatedWork {
       }
     }
     throw new Error('Delegation reservation contention exceeded retry limit');
+  }
+
+  private async pinAssignments(
+    parent: WorkflowInstanceView,
+    assignments: readonly DelegatedAssignment[],
+  ) {
+    return Promise.all(
+      assignments.map(async (assignment) => {
+        if (assignment.repository === undefined) return assignment;
+        if (this.repositories === undefined)
+          throw new Error('Delegation repository resolver unavailable');
+        return {
+          ...assignment,
+          repository: await this.repositories.resolve(parent, assignment.repository),
+        };
+      }),
+    );
   }
 
   async reconcile(context: CommandContext): Promise<void> {
@@ -258,6 +295,15 @@ export class DelegatedWork {
     if (current.fingerprint !== child.workflowFingerprint)
       throw new Error('Delegation workflow fingerprint must match current configuration');
     const definition = current.definition;
+    if (
+      child.repository === undefined &&
+      Object.values(definition.stages).some(
+        (stage) =>
+          stage.execution?.workspace === WorkspaceMode.Branch ||
+          stage.execution?.workspace === WorkspaceMode.ReadOnly,
+      )
+    )
+      throw new Error('Workspace-using child workflows require an explicit repository assignment');
     await this.definitions.register(
       child.workflowName,
       child.workflowFingerprint,
@@ -601,4 +647,17 @@ export class DelegatedWork {
       }
     }
   }
+}
+
+function assertReplay(
+  prior: DelegationReservation,
+  caller: DelegationCaller,
+  assignments: readonly DelegatedAssignment[],
+): void {
+  if (
+    prior.parentWorkflowInstanceId !== caller.workflowInstanceId ||
+    prior.activationId !== caller.activationId ||
+    !matchesAssignments(prior, assignments)
+  )
+    throw new Error('Delegation replay conflict');
 }

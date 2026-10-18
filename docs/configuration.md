@@ -763,7 +763,7 @@ accepts the following provider-specific fields in addition to `enabled`:
 
 | Field | Type / default | Explanation |
 | --- | --- | --- |
-| `events` | list; default `[]` | Synthetic inbound observations. Each requires `key` and `title`; optional fields are `kind` (`issue` or `pull-request`), `revision`, `branch`, `baseRevision`, `checks` (`unknown`, `pending`, `passing`, or `failing`), `acceptedReview`, `reviewActorId`, `reviewActorKind` (`human` or `bot`), `reviewerId`, `changedFiles`, `watchEvent: fake.review-requested`, and `eligible`. |
+| `events` | list; default `[]` | Synthetic inbound observations. Each requires `key` and `title`; optional fields are `kind` (`issue` or `pull-request`), `revision`, `branch`, `baseBranch` (logical PR target), `baseRevision`, `checks` (`unknown`, `pending`, `passing`, or `failing`), `acceptedReview`, `reviewActorId`, `reviewActorKind` (`human` or `bot`), `reviewerId`, `changedFiles`, `watchEvent: fake.review-requested`, and `eligible`. |
 | `deliveryEffects` | string-to-string mapping; default `{}` | Deterministic outbound delivery effects keyed by fixture identity. |
 | `effectsFile` | non-empty string; optional | JSON fixture file supplying delivery effects; resolved relative to the Wake home. |
 | `connectivityError` | non-empty string; optional | Test hook that makes provider connectivity validation fail with this message. |

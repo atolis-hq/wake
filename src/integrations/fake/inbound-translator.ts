@@ -38,6 +38,7 @@ const evidenceSchema = z
     kind: z.enum(['issue', 'pull-request']).optional(),
     revision: z.string().min(1).optional(),
     branch: z.string().min(1).optional(),
+    baseBranch: z.string().min(1).optional(),
     baseRevision: z.string().min(1).optional(),
     checks: z.enum(['unknown', 'pending', 'passing', 'failing']).optional(),
     acceptedReview: z.boolean().optional(),

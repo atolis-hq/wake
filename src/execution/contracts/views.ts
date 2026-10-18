@@ -7,6 +7,7 @@ import type {
 } from '../../activities/index.js';
 import type { RunId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
+import type { RepositoryAssignment } from './repository-assignment.js';
 import type { ExecutionFailure } from './results.js';
 import type { AgentRunResponse } from './runner.js';
 import type { WorkspaceMode } from './vocabulary.js';
@@ -19,6 +20,7 @@ export interface RunView {
     readonly contextScope: string;
     readonly revisionId: string | null;
   };
+  readonly repositoryAssignment?: RepositoryAssignment | undefined;
   readonly runId: RunId;
   readonly activationId: ActivationId;
   readonly activity: ActivityName;
@@ -42,12 +44,15 @@ export interface RunView {
       }
     | undefined;
   readonly finishedAt?: string;
+  readonly workspaceRevision?: string | undefined;
   readonly outcome?: ActivityOutcome;
   readonly failure?: ExecutionFailure;
   readonly workspace?: {
     readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
     readonly path: string;
     readonly branch?: string | undefined;
+    readonly repositoryResourceId?: string | undefined;
+    readonly checkoutRevision?: string | undefined;
   };
   readonly lease?: Lease;
   readonly externalExecution?: ExternalExecutionReference;

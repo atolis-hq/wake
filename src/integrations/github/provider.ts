@@ -7,6 +7,7 @@ import {
   resourceId,
   resourceKind,
 } from '../../resources/index.js';
+import { matchesArtifactSource } from '../application/artifact-source.js';
 import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
 import {
   AdapterHealthStatus,
@@ -204,7 +205,18 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         if (parsed === null) return ArtifactVerificationResult.NotFound;
         try {
           const pullRequest = await client.getPullRequest(parsed.owner, parsed.repo, parsed.number);
-          if (pullRequest.head.ref !== context.workspaceBranch)
+          if (
+            !matchesArtifactSource(
+              externalKey,
+              {
+                repository: parsed.owner + '/' + parsed.repo,
+                branch: pullRequest.head.ref,
+                revision: pullRequest.head.sha,
+                base: pullRequest.base.ref,
+              },
+              context,
+            )
+          )
             return ArtifactVerificationResult.NotFound;
           return {
             kind,

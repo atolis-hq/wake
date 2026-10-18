@@ -113,7 +113,12 @@ export interface ProviderInstance {
   verifyArtifact(
     kind: ResourceKind,
     externalKey: ExternalResourceKey,
-    context: { readonly workspaceBranch: string },
+    context: {
+      readonly workspaceBranch: string;
+      readonly repository?: ExternalResourceKey;
+      readonly workspaceRevision?: string;
+      readonly pullRequestBase?: string;
+    },
   ): Promise<VerifiedArtifact | ArtifactVerificationResult>;
   // Optional live reachability probe a caller (e.g. doctor diagnostics) can invoke
   // generically; resolves when the external system is reachable, rejects otherwise.

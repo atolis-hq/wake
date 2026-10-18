@@ -10,6 +10,13 @@ Workflow transitions, provider policy, or global selection.
 ## Invariants
 Workspaces are optional; attempts never decide workflow state.
 Run events are tied to Run streams; activation claim events are tied to activation streams.
+Delegated execution selects the recorded Repository Resource explicitly. New
+writable branches start at the assignment's pinned source commit; the logical
+PR base is separate. Existing branch workspaces retain their branch and dirty
+state. Run preparation records the assignment, Run start records the checkout,
+and successful completion records the resulting HEAD. Read-only reviews in the
+same orchestration group use that implementation HEAD, including watch children.
+
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

@@ -34,15 +34,21 @@ export function createDelegationArtifacts(input: {
     ) => input.contexts.registerChild(args[0], input.accepted, args[1]),
     async qualifyingOutputs(
       child: { readonly workItemId: ArtifactRevisionReference['workItemId'] },
-      outputs: readonly { readonly name: string; readonly path: string }[],
+      outputs: readonly (
+        | { readonly name: string; readonly path: string }
+        | { readonly name: string; readonly kind: string }
+      )[],
     ) {
       const published = await input.artifacts.latestPublished(child.workItemId, (activationId) =>
         input.accepted(activationId, child.workItemId),
       );
-      const selected = outputs.map((output) => ({
-        name: output.name,
-        revision: published.find((revision) => revision.path === output.path),
-      }));
+      if (outputs.some((output) => !('path' in output))) return null;
+      const selected = outputs
+        .filter((output) => 'path' in output)
+        .map((output) => ({
+          name: output.name,
+          revision: published.find((revision) => revision.path === output.path),
+        }));
       const references = [];
       for (const entry of selected) {
         if (entry.revision === undefined) return null;

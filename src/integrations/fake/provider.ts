@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { PullRequestCheckState, ReviewActorKind } from '../../activities/index.js';
-import { BuiltInResourceCapability } from '../../resources/index.js';
+import { BuiltInResourceCapability, BuiltInResourceKind } from '../../resources/index.js';
+import { matchesArtifactSource } from '../application/artifact-source.js';
 import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
 import type { ProviderDefinition } from '../contracts/provider.js';
 import { DurableFakeDeliveryProvider } from './durable-delivery-provider.js';
@@ -19,6 +20,7 @@ const configSchema = z
             kind: z.enum(['issue', 'pull-request']).optional(),
             revision: z.string().min(1).optional(),
             branch: z.string().min(1).optional(),
+            baseBranch: z.string().min(1).optional(),
             baseRevision: z.string().min(1).optional(),
             checks: z
               .enum([
@@ -72,10 +74,22 @@ export const fakeProviderDefinition: ProviderDefinition<z.output<typeof configSc
         ...(config.effectsFile === undefined ? {} : { effectsFile: config.effectsFile }),
       }),
       verifyArtifact: async (kind, externalKey, context) => {
+        if (kind !== BuiltInResourceKind.PullRequest) return ArtifactVerificationResult.NotFound;
         const evidence = config.events.find((event) => event.key === externalKey.key);
         if (evidence === undefined || (evidence.kind ?? 'issue') !== 'pull-request')
           return ArtifactVerificationResult.NotFound;
-        if (kind !== 'pull-request' || evidence.branch !== context.workspaceBranch)
+        if (
+          !matchesArtifactSource(
+            externalKey,
+            {
+              repository: externalKey.key.split('#')[0]!,
+              branch: evidence.branch ?? '',
+              revision: evidence.revision,
+              base: evidence.baseBranch,
+            },
+            context,
+          )
+        )
           return ArtifactVerificationResult.NotFound;
         return {
           kind,

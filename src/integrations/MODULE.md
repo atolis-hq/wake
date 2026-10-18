@@ -22,6 +22,11 @@ durable delivery. Provider processors have stable consumers and use bounded
 poll watermarks; delivery reconciliation remains separate from incremental
 processor handling.
 
+Reported child PRs are verified against the producing Run's selected repository,
+branch, resulting HEAD and logical PR base. Verification never transfers primary
+ownership. Ambiguous verification retains the existing bounded reconciliation
+path; confirmed mismatches cannot register a qualifying output.
+
 ## Public contracts
 
 `index.ts` is the only public entry.

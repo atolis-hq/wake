@@ -48,9 +48,14 @@ interface ArtifactRegistrationDependencies {
   readonly providers: readonly ProviderInstance[];
   readonly maxAmbiguityReconciliationAttempts?: number;
   readonly runs: {
-    list(
-      activationId?: string,
-    ): Promise<readonly { readonly workspace?: { readonly branch?: string | undefined } }[]>;
+    list(activationId?: string): Promise<
+      readonly {
+        readonly repositoryAssignment?:
+          { readonly resourceId: string; readonly pullRequestBase: string } | undefined;
+        readonly workspaceRevision?: string | undefined;
+        readonly workspace?: { readonly branch?: string | undefined };
+      }[]
+    >;
   };
 }
 
@@ -153,12 +158,15 @@ export class ArtifactRegistrationReactor {
       (candidate) => candidate.adapter === record.artifact.externalKey.adapter,
     );
     if (provider === undefined) return;
+    const source = await this.verificationSource(record.activationId, branch);
+    if (source === null) {
+      await this.recordUnresolved(provider, record, ArtifactVerificationResult.NotFound, attempt);
+      return;
+    }
     const verified = await provider.verifyArtifact(
       record.artifact.kind,
       record.artifact.externalKey,
-      {
-        workspaceBranch: branch,
-      },
+      source,
     );
     if (typeof verified === 'string') {
       await this.recordUnresolved(provider, record, verified, attempt);
@@ -167,24 +175,43 @@ export class ArtifactRegistrationReactor {
     await this.registerVerified(record, verified, workItemId);
   }
 
+  private async verificationSource(activationId: string, branch: string) {
+    const run = (await this.dependencies.runs.list(activationId)).at(-1);
+    const assignment = run?.repositoryAssignment;
+    const repository =
+      assignment === undefined
+        ? undefined
+        : await this.dependencies.resources.get(resourceId(assignment.resourceId));
+    if (repository === null) return null;
+    if (assignment !== undefined && run?.workspaceRevision === undefined) {
+      return null;
+    }
+    return {
+      workspaceBranch: branch,
+      ...(repository === undefined ? {} : { repository: repository.externalKey }),
+      ...(run?.workspaceRevision === undefined ? {} : { workspaceRevision: run.workspaceRevision }),
+      ...(assignment === undefined ? {} : { pullRequestBase: assignment.pullRequestBase }),
+    };
+  }
+
   private async registerVerified(
     record: ArtifactRecord,
     verified: Exclude<Awaited<ReturnType<ProviderInstance['verifyArtifact']>>, string>,
     workItemId: string,
   ): Promise<void> {
     const existing = await this.dependencies.resources.findByExternalKey(verified.externalKey);
-    const resource =
-      existing ??
-      (await this.dependencies.resources.discover(
-        {
-          resourceId: resourceId(this.dependencies.ids.next(ResourceStreamKind.Resource)),
-          kind: verified.kind,
-          externalKey: verified.externalKey,
-          capabilities: verified.capabilities,
-          ...(verified.revision === undefined ? {} : { revision: verified.revision }),
-        },
-        context(record.causationId, record.correlationId, record.occurredAt),
-      ));
+    const resource = await this.dependencies.resources.discover(
+      {
+        resourceId:
+          existing?.resourceId ??
+          resourceId(this.dependencies.ids.next(ResourceStreamKind.Resource)),
+        kind: verified.kind,
+        externalKey: verified.externalKey,
+        capabilities: verified.capabilities,
+        ...(verified.revision === undefined ? {} : { revision: verified.revision }),
+      },
+      context(record.causationId, record.correlationId, record.occurredAt),
+    );
     try {
       await this.dependencies.resources.correlate(
         resource.resourceId,

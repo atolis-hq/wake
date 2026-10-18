@@ -1,6 +1,7 @@
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { RunId } from './identifiers.js';
+import type { RepositoryAssignment } from './repository-assignment.js';
 import type { RunView } from './views.js';
 import type { WorkspaceMode } from './vocabulary.js';
 
@@ -12,6 +13,7 @@ export interface WorkspaceRequest {
   readonly repositoryResource: ResourceView;
   /** Git checkout target, independent of the resource observation revision. */
   readonly checkoutRevision?: string;
+  readonly assignment?: RepositoryAssignment;
 }
 
 export interface WorkspaceLease {
@@ -20,7 +22,11 @@ export interface WorkspaceLease {
   /** Branch actually checked out for this lease, when the provider can attest it. */
   readonly branch?: string | undefined;
   readonly mode: WorkspaceRequest['mode'];
+  readonly repositoryResourceId?: string;
+  readonly checkoutRevision?: string;
+  readonly assignment?: RepositoryAssignment;
   /** Ends this Run's use of the workspace; workspace disposal is WorkItem-scoped recovery. */
+  readRevision?(): Promise<string>;
   release(): Promise<void>;
 }
 
