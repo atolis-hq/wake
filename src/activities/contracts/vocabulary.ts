@@ -50,6 +50,7 @@ export const ActivityFailureCode = defineClosedVocabulary({
   InvalidAgentResult: 'invalid-agent-result',
   AmbiguousRunnerResult: 'ambiguous-runner-result',
   RunnerFailed: 'runner-failed',
+  RunnerAuthenticationRequired: 'runner-authentication-required',
   RunnerQuotaExceeded: 'runner-quota-exceeded',
 } as const);
 
@@ -99,3 +100,5 @@ export const AgentResultStatus = {
 } as const;
 
 export type AgentResultStatus = ValueOf<typeof AgentResultStatus>;
+
+export const ClaudeAuthenticationFailureKind = 'claude-authentication-required';
