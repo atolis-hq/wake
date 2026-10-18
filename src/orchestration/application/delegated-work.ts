@@ -25,6 +25,7 @@ import {
   delegationDraft,
   delegationEventId,
   DelegationLedger,
+  isJoined,
   isSettled,
   reservationsOf,
   reservedEvent,
@@ -176,14 +177,20 @@ export class DelegatedWork {
   ): Promise<readonly DelegationReservation[]> {
     const capacity = [];
     for (const reservation of reservations) {
-      if (!isSettled(events, reservation)) {
+      // Only a failed cohort releases capacity, and only for children that have terminated;
+      // joined and unsettled cohorts keep every reservation so the root bound stays durable.
+      if (isJoined(events, reservation) || !isSettled(events, reservation)) {
         capacity.push(reservation);
         continue;
       }
       const children = [];
       for (const child of reservation.children) {
         const view = (await this.repository.load(child.workflowInstanceId)).view;
-        if (view?.status === WorkflowStatus.Active || view?.status === WorkflowStatus.Waiting)
+        if (
+          view?.status === WorkflowStatus.Active ||
+          view?.status === WorkflowStatus.Waiting ||
+          view?.status === WorkflowStatus.Blocked
+        )
           children.push(child);
       }
       capacity.push({ ...reservation, children });
@@ -317,6 +324,12 @@ export class DelegatedWork {
       )
         return false;
       if (loaded.view.delegationWait?.cohortId === reservation.cohortId) return true;
+      // The reservation commits on the root stream, so the parent's delegating activation is
+      // re-validated here under the parent's own sequence guard before any child can start.
+      if (loaded.view.pendingActivation?.activationId !== reservation.activationId) {
+        await this.fail(reservation, 'Delegating activation is no longer current', context);
+        return false;
+      }
       try {
         await this.repository.append(id, loaded.sequence, [
           delegationDraft(

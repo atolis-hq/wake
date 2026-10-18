@@ -48,7 +48,11 @@ class FakeDelegationArtifacts implements DelegationArtifacts {
   readonly grants = new Map<string, string>();
   readonly published = new Set<string>();
 
-  async validateInputs(): Promise<void> {}
+  onValidate: (() => Promise<void>) | undefined;
+
+  async validateInputs(): Promise<void> {
+    await this.onValidate?.();
+  }
 
   async registerChild(grant: Parameters<DelegationArtifacts['registerChild']>[0]): Promise<void> {
     if (this.registrationUnavailable || this.unavailableChildren.has(grant.childWorkItemId))
@@ -1188,4 +1192,101 @@ it('folds a nested reservation fence before wait registration and rebuilds it af
   expect((await restarted.service.get(child.workflowInstanceId))!.delegationWait?.cohortId).toBe(
     'nested-fence',
   );
+});
+
+it('keeps the root descendant bound across joined cohorts', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const first = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint)],
+    context('reserve'),
+    { maxDepth: 1, maxDescendants: 1 },
+  );
+  fixture.artifacts.published.add(first.children[0]!.workItemId);
+  await complete(fixture, first.children[0]!.workflowInstanceId);
+  await fixture.service.reconcileChildCompletions(context('join'));
+  expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(1);
+  const resumed = (await fixture.service.get(caller.workflowInstanceId))!;
+  await expect(
+    fixture.service['delegatedWork'].reserve(
+      { ...caller, activationId: resumed.pendingActivation!.activationId, runId: 'run-2' },
+      'cohort-2',
+      [assignment(fingerprint, 'again')],
+      context('reserve-2'),
+    ),
+  ).rejects.toThrow('reservation limit exceeded');
+});
+
+it('still counts a blocked child of a failed cohort against the root bound', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const top = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'a'), assignment(fingerprint, 'b')],
+    context('reserve'),
+    { maxDepth: 1, maxDescendants: 2 },
+  );
+  await fixture.service.block(
+    top.children[1]!.workflowInstanceId,
+    'workflow-definition-unavailable',
+    context('block'),
+  );
+  await complete(fixture, top.children[0]!.workflowInstanceId, 'failed');
+  await fixture.service.reconcileChildCompletions(context('fail'));
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(1);
+  const { status: _status, ...original } = (await fixture.service.get(caller.workflowInstanceId))!
+    .pendingActivation!;
+  await appendFact(fixture, 'parent-1', {
+    eventType: OrchestrationEventType.ActivityRequested,
+    payload: { ...original, activationId: activationId('parent-1:activity:2'), ordinal: 2 },
+  });
+  await expect(
+    fixture.service['delegatedWork'].reserve(
+      { ...caller, activationId: activationId('parent-1:activity:2'), runId: 'run-2' },
+      'cohort-2',
+      [assignment(fingerprint, 'c'), assignment(fingerprint, 'd')],
+      context('reserve-2'),
+    ),
+  ).rejects.toThrow('reservation limit exceeded');
+});
+
+it('fails a reservation whose parent activation changed before the commit, starting no child', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const top = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint)],
+    context('reserve'),
+    { maxDepth: 2, maxDescendants: 4 },
+  );
+  const midId = top.children[0]!.workflowInstanceId;
+  const mid = (await fixture.service.get(midId))!;
+  const { status: _status, ...original } = mid.pendingActivation!;
+  // The non-root parent changes after validation but before the root-stream commit.
+  fixture.artifacts.onValidate = async () => {
+    fixture.artifacts.onValidate = undefined;
+    await appendFact(fixture, midId, {
+      eventType: OrchestrationEventType.ActivityRequested,
+      payload: { ...original, activationId: activationId(`${midId}:activity:2`), ordinal: 2 },
+    });
+  };
+  const grants = fixture.artifacts.grants.size;
+  const nested = await fixture.service['delegatedWork'].reserve(
+    {
+      workflowInstanceId: midId,
+      activationId: mid.pendingActivation!.activationId,
+      runId: 'run-2',
+    },
+    'cohort-2',
+    [assignment(fingerprint, 'nested')],
+    context('reserve-nested'),
+  );
+  expect(await count(fixture, OrchestrationEventType.DelegationWaitStarted)).toBe(1);
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(1);
+  expect(await fixture.service.listPendingActivations(nested.children[0]!.workItemId)).toEqual([]);
+  expect(fixture.artifacts.grants.size).toBe(grants);
 });
