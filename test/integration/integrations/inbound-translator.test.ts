@@ -1109,6 +1109,51 @@ describe('InboundTranslator', () => {
     });
   });
 
+  it('keeps successful command receipts quiet on initial handling and replay after work is frozen', async () => {
+    const { world, workflow } = await blockedIssueWorkflow();
+    const conversations = createConversationService(world.journal);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      conversations,
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(
+        world,
+        '/changes Please continue.',
+        12,
+        {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Maintain,
+        },
+        'maintainer',
+      ),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    const publish = vi.fn(async () => {});
+    const reactor = createConversationCommandReactor(world.orchestration, {
+      conversations,
+      publish,
+    });
+    await processInbound(reactor, world.journal, world.checkpoints);
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('active');
+    const history = await conversations.forWorkItem(workflow.workItemId);
+    expect(history?.entries.at(-1)?.body).toBe('Command applied.');
+    expect(publish).not.toHaveBeenCalled();
+    await world.work.freeze(workflow.workItemId, {
+      commandId: 'freeze-before-receipt-replay',
+      correlationId: 'freeze-before-receipt-replay' as never,
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'operator', id: 'maintainer' },
+    });
+    const beforeReplay = await world.orchestration.get(workflow.workflowInstanceId);
+    await processInbound(reactor, world.journal, new InMemoryCheckpointStore());
+    expect(await world.orchestration.get(workflow.workflowInstanceId)).toEqual(beforeReplay);
+    expect(await conversations.forWorkItem(workflow.workItemId)).toEqual(history);
+    expect(publish).not.toHaveBeenCalled();
+    expect(await world.events(DeliveryIntentEventType.ReplyPublishRequested)).toHaveLength(0);
+  });
+
   it('preserves a successful continuation receipt after work is frozen without reactivating it', async () => {
     const { world, workflow } = await blockedIssueWorkflow();
     const context = {

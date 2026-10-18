@@ -705,9 +705,10 @@ Use /changes followed by instructions to continue an eligible blocked agent stag
 /restart remain failed-stage recovery (restart requests a fresh session); /extend explicitly
 extends an exhausted watch-group budget. Continuation does not revive deleted, closed, or frozen
 work, bypass watch authority, or reset retry/review budgets. Rejected and inapplicable commands
-produce actionable conversation feedback. Verified work-control or review actors also receive a
-durable reply to the originating resource when a primary workflow activation exists. Untrusted
-command actors cannot cause public bot replies.
+produce actionable conversation feedback. For these commands, verified work-control or review
+actors also receive a durable reply to the originating resource when a primary workflow activation
+exists. Successful commands retain an internal durable conversation receipt and produce no public
+reply, including on receipt replay. Untrusted command actors cannot cause public bot replies.
 A command unavailable to its surface, or issued by an unauthorized actor, remains a durable,
 immutable conversation entry and has no workflow effect.
 `match.stage` and `match.outcome` are independently optional facets, each accepting one value or a
