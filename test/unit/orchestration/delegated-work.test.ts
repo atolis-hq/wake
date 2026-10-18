@@ -22,9 +22,7 @@ import {
   signalName,
   TransitionTargetKind,
   workflowInstanceStream,
-  type DelegatedAssignment,
   type DelegationArtifacts,
-  type DelegationCaller,
   type WorkflowInstanceView,
   type WorkflowOrchestrationEventData,
 } from '../../../src/orchestration/index.js';
@@ -113,9 +111,14 @@ function build(
     parent: compileWorkflow('parent', stage('plan'), activities, names),
     child: compileWorkflow('child', stage('child-work'), activities, names),
   };
-  const service = createOrchestrationService(journal, work, definitions);
-  service.delegatedWork.setArtifacts(artifacts);
-  service.delegatedWork.setRunCompletion(async (id) => !activeRuns.has(id));
+  const service = createOrchestrationService(
+    journal,
+    work,
+    definitions,
+    undefined,
+    undefined,
+    () => ({ artifacts, runHasEnded: async (id) => !activeRuns.has(id) }),
+  );
   return { journal, work, service, artifacts, definitions, activeRuns, activities };
 }
 
@@ -180,7 +183,7 @@ async function count(fixture: Fixture, type: string) {
 it('registers distinct children, fences the parent and replays identically (DC-03, DC-06, DC-31)', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  const reservation = await fixture.service.delegatedWork.reserve(
+  const reservation = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint, 'a'), assignment(fingerprint, 'b')],
@@ -200,7 +203,7 @@ it('registers distinct children, fences the parent and replays identically (DC-0
   expect(await fixture.service.listPendingActivations(a!.workItemId)).toHaveLength(1);
 
   const before = (await fixture.journal.readAll(0)).length;
-  const replay = await fixture.service.delegatedWork.reserve(
+  const replay = await fixture.service['delegatedWork'].reserve(
     { ...caller, runId: 'recovered-run' },
     'cohort-1',
     [assignment(fingerprint, 'a'), assignment(fingerprint, 'b')],
@@ -209,7 +212,7 @@ it('registers distinct children, fences the parent and replays identically (DC-0
   expect(replay).toEqual(reservation);
   expect((await fixture.journal.readAll(0)).length).toBe(before);
   await expect(
-    fixture.service.delegatedWork.reserve(
+    fixture.service['delegatedWork'].reserve(
       caller,
       'cohort-1',
       [assignment(fingerprint, 'c')],
@@ -221,7 +224,7 @@ it('registers distinct children, fences the parent and replays identically (DC-0
 it('ignores the parent ordinary success while delegated and joins once on exact results (DC-09, DC-28)', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  const reservation = await fixture.service.delegatedWork.reserve(
+  const reservation = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -245,14 +248,14 @@ it('ignores the parent ordinary success while delegated and joins once on exact 
   expect(resumed.delegationWait).toBeUndefined();
   expect(resumed.pendingActivation?.input).toEqual({});
   expect(
-    await fixture.service.delegatedWork.results(caller.workflowInstanceId, 'cohort-1'),
+    await fixture.service['delegatedWork'].results(caller.workflowInstanceId, 'cohort-1'),
   ).toMatchObject([{ childWorkItemId: child.workItemId }]);
 });
 
 it('does not join when a required child fails', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  const reservation = await fixture.service.delegatedWork.reserve(
+  const reservation = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint, 'a'), assignment(fingerprint, 'b')],
@@ -272,14 +275,14 @@ it('recovers partial registration without starting any child (DC-22)', async () 
   const first = build(journal);
   const { caller, fingerprint } = await startParent(first);
   journal.failBefore = OrchestrationEventType.DelegationRegistered;
-  await first.service.delegatedWork.reserve(
+  await first.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
     context('reserve'),
   );
   expect(await count(first, OrchestrationEventType.DelegationReconciliationFailed)).toBe(1);
-  expect(await first.service.delegatedWork.fences(caller.workflowInstanceId)).toBe(true);
+  expect(await first.service['delegationGate'].fenced(caller.workflowInstanceId)).toBe(true);
   expect(await count(first, OrchestrationEventType.InstanceStarted)).toBe(2);
 
   const restarted = build(journal, first.artifacts);
@@ -293,7 +296,7 @@ it('keeps root identity for nested delegation and enforces durable limits (DC-08
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
   const limits = { maxDepth: 2, maxDescendants: 2 };
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -302,7 +305,7 @@ it('keeps root identity for nested delegation and enforces durable limits (DC-08
   );
   const child = top.children[0]!;
   const childView = (await fixture.service.get(child.workflowInstanceId))!;
-  const nested = await fixture.service.delegatedWork.reserve(
+  const nested = await fixture.service['delegatedWork'].reserve(
     {
       workflowInstanceId: child.workflowInstanceId,
       activationId: childView.pendingActivation!.activationId,
@@ -320,7 +323,7 @@ it('keeps root identity for nested delegation and enforces durable limits (DC-08
   });
   // The shared root budget survives: a third descendant cannot be reserved through any ancestor.
   await expect(
-    fixture.service.delegatedWork.reserve(
+    fixture.service['delegatedWork'].reserve(
       {
         workflowInstanceId: nested.children[0]!.workflowInstanceId,
         activationId: (await fixture.service.get(nested.children[0]!.workflowInstanceId))!
@@ -338,7 +341,7 @@ it('keeps root identity for nested delegation and enforces durable limits (DC-08
 it('defaults to depth one so a child cannot delegate further', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -346,7 +349,7 @@ it('defaults to depth one so a child cannot delegate further', async () => {
   );
   const child = top.children[0]!;
   await expect(
-    fixture.service.delegatedWork.reserve(
+    fixture.service['delegatedWork'].reserve(
       {
         workflowInstanceId: child.workflowInstanceId,
         activationId: (await fixture.service.get(child.workflowInstanceId))!.pendingActivation!
@@ -387,7 +390,7 @@ it.each(['blocked', 'superseded', 'completed', 'definition-unavailable'])(
   async (state) => {
     const fixture = build();
     const { caller, fingerprint } = await startParent(fixture);
-    const reservation = await fixture.service.delegatedWork.reserve(
+    const reservation = await fixture.service['delegatedWork'].reserve(
       caller,
       'cohort-1',
       [assignment(fingerprint)],
@@ -421,7 +424,7 @@ it('fences new retry activations, quota/execution retries, signals and timeout e
   const { caller, fingerprint } = await startParent(fixture);
   const { status: _status, ...original } = (await fixture.service.get(caller.workflowInstanceId))!
     .pendingActivation!;
-  await fixture.service.delegatedWork.reserve(
+  await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -514,7 +517,7 @@ it('isolates a broken cohort while unrelated outcomes, later cohorts and watch c
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
   fixture.artifacts.registrationUnavailable = true;
-  const broken = await fixture.service.delegatedWork.reserve(
+  const broken = await fixture.service['delegatedWork'].reserve(
     caller,
     'broken',
     [assignment(fingerprint)],
@@ -523,7 +526,7 @@ it('isolates a broken cohort while unrelated outcomes, later cohorts and watch c
   fixture.artifacts.registrationUnavailable = false;
   fixture.artifacts.unavailableChildren.add(broken.children[0]!.workItemId);
   const probe = (await fixture.service.get(workflowInstanceId('probe')))!;
-  const good = await fixture.service.delegatedWork.reserve(
+  const good = await fixture.service['delegatedWork'].reserve(
     {
       workflowInstanceId: probe.workflowInstanceId,
       activationId: probe.pendingActivation!.activationId,
@@ -564,7 +567,7 @@ it.each(['failed', 'missing-output'])(
   async (failure) => {
     const fixture = build();
     const { caller, fingerprint } = await startParent(fixture);
-    const reservation = await fixture.service.delegatedWork.reserve(
+    const reservation = await fixture.service['delegatedWork'].reserve(
       caller,
       'cohort-1',
       [assignment(fingerprint, 'a'), assignment(fingerprint, 'b')],
@@ -576,7 +579,7 @@ it.each(['failed', 'missing-output'])(
     await restarted.service.reconcileChildCompletions(context('restart'));
     await restarted.service.reconcileChildCompletions(context('duplicate'));
     expect((await restarted.service.get(caller.workflowInstanceId))!.status).toBe('blocked');
-    expect(await restarted.service.delegatedWork.fences(caller.workflowInstanceId)).toBe(false);
+    expect(await restarted.service['delegationGate'].fenced(caller.workflowInstanceId)).toBe(false);
     expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(1);
     expect(
       await restarted.service.listPendingActivations(reservation.children[1]!.workItemId),
@@ -601,7 +604,7 @@ it('preserves supplemental, follow-on and watch-driven activation identity with 
       watchDriven: true,
     },
   });
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     { ...caller, activationId: activationId('parent-1:activity:2') },
     'cohort-1',
     [assignment(fingerprint)],
@@ -625,7 +628,7 @@ it('releases failed child capacity while retaining reservations for running sibl
   const { caller, fingerprint } = await startParent(fixture);
   const { status: _status, ...original } = (await fixture.service.get(caller.workflowInstanceId))!
     .pendingActivation!;
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'first',
     [assignment(fingerprint, 'a'), assignment(fingerprint, 'b')],
@@ -639,14 +642,14 @@ it('releases failed child capacity while retaining reservations for running sibl
   });
   const retry = { ...caller, activationId: activationId('parent-1:activity:2'), runId: 'new-run' };
   await expect(
-    fixture.service.delegatedWork.reserve(
+    fixture.service['delegatedWork'].reserve(
       retry,
       'too-many',
       [assignment(fingerprint, 'c'), assignment(fingerprint, 'd')],
       context('too-many'),
     ),
   ).rejects.toThrow('reservation limit exceeded');
-  const later = await fixture.service.delegatedWork.reserve(
+  const later = await fixture.service['delegatedWork'].reserve(
     retry,
     'later',
     [assignment(fingerprint, 'c')],
@@ -663,7 +666,7 @@ it.each(['Grant store unavailable', ''])(
     fixture.artifacts.failureMessage = message;
     const { caller, fingerprint } = await startParent(fixture);
     fixture.artifacts.registrationUnavailable = true;
-    await fixture.service.delegatedWork.reserve(
+    await fixture.service['delegatedWork'].reserve(
       caller,
       'cohort-1',
       [assignment(fingerprint)],
@@ -682,7 +685,7 @@ it('isolates a failing diagnostic append from later cohorts, watch reconciliatio
   const { caller, fingerprint } = await startParent(fixture);
   fixture.artifacts.registrationUnavailable = true;
   fixture.journal.failAlwaysBefore.add(OrchestrationEventType.DelegationReconciliationFailed);
-  const broken = await fixture.service.delegatedWork.reserve(
+  const broken = await fixture.service['delegatedWork'].reserve(
     caller,
     'broken',
     [assignment(fingerprint)],
@@ -691,7 +694,7 @@ it('isolates a failing diagnostic append from later cohorts, watch reconciliatio
   fixture.artifacts.registrationUnavailable = false;
   fixture.artifacts.unavailableChildren.add(broken.children[0]!.workItemId);
   const probe = (await fixture.service.get(workflowInstanceId('probe')))!;
-  const good = await fixture.service.delegatedWork.reserve(
+  const good = await fixture.service['delegatedWork'].reserve(
     {
       workflowInstanceId: probe.workflowInstanceId,
       activationId: probe.pendingActivation!.activationId,
@@ -727,14 +730,14 @@ it('isolates a failing diagnostic append from later cohorts, watch reconciliatio
 it('keeps selected results isolated when independent roots reuse a cohort name', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  const first = await fixture.service.delegatedWork.reserve(
+  const first = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
     context('first'),
   );
   const probe = (await fixture.service.get(workflowInstanceId('probe')))!;
-  const second = await fixture.service.delegatedWork.reserve(
+  const second = await fixture.service['delegatedWork'].reserve(
     {
       workflowInstanceId: probe.workflowInstanceId,
       activationId: probe.pendingActivation!.activationId,
@@ -749,7 +752,7 @@ it('keeps selected results isolated when independent roots reuse a cohort name',
     await complete(fixture, reservation.children[0]!.workflowInstanceId);
   }
   for (const reservation of [first, second]) {
-    const results = await fixture.service.delegatedWork.results(
+    const results = await fixture.service['delegatedWork'].results(
       reservation.parentWorkflowInstanceId,
       'cohort-1',
     );
@@ -761,7 +764,7 @@ it('keeps selected results isolated when independent roots reuse a cohort name',
 it('keeps a blocked child joinable after an operator retry and restart', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -790,7 +793,7 @@ it('keeps a blocked child joinable after an operator retry and restart', async (
 it('keeps a definition-unavailable child blocked without failing the cohort', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -810,7 +813,7 @@ it('keeps a definition-unavailable child blocked without failing the cohort', as
 it('qualifies a configured custom terminal success outcome with its exact outputs', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -822,20 +825,19 @@ it('qualifies a configured custom terminal success outcome with its exact output
   expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
 });
 
-it('fails loudly on missing adapters only when durable delegation needs reconciliation', async () => {
+it('isolates unavailable adapters while recording durable diagnostics', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
   const unwired = createOrchestrationService(fixture.journal, fixture.work, fixture.definitions);
   await unwired.reconcileChildCompletions(context('ordinary'));
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
     context('reserve'),
   );
-  await expect(unwired.reconcileChildCompletions(context('unwired'))).rejects.toThrow(
-    'Delegation adapters unavailable',
-  );
+  await expect(unwired.reconcileChildCompletions(context('unwired'))).resolves.toBeUndefined();
+  expect(await count(fixture, OrchestrationEventType.DelegationReconciliationFailed)).toBe(1);
   fixture.artifacts.published.add(top.children[0]!.workItemId);
   await complete(fixture, top.children[0]!.workflowInstanceId);
   await unwired.reconcileChildCompletions(context('settled'));
@@ -869,7 +871,7 @@ it.each(['closed', 'deleted', 'unknown-workflow'])(
 it('reconciles an existing delegated child after its WorkItem closes without weakening public start validation', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -889,7 +891,7 @@ it('waits for the delegating Run to end before requesting continuation, includin
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
   fixture.activeRuns.add(caller.runId);
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -911,7 +913,7 @@ it('does not start unstarted siblings after observing terminal cohort failure', 
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
   fixture.journal.failBefore = OrchestrationEventType.InstanceStarted;
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint, 'a'), assignment(fingerprint, 'b')],
@@ -936,7 +938,7 @@ it('does not start unstarted siblings after observing terminal cohort failure', 
 it('does not silently acknowledge a stale or different outcome while an exact delegating activation is held', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
-  await fixture.service.delegatedWork.reserve(
+  await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -980,7 +982,7 @@ it('reserves with a fresh root stream even when it contains a fact the orchestra
       payload: {},
     }),
   ]);
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -1005,7 +1007,7 @@ it('bounds reservation retries under persistent root contention', async () => {
   const fixture = build(journal);
   const { caller, fingerprint } = await startParent(fixture);
   await expect(
-    fixture.service.delegatedWork.reserve(
+    fixture.service['delegatedWork'].reserve(
       caller,
       'cohort-1',
       [assignment(fingerprint)],
@@ -1020,7 +1022,7 @@ it('rejects historical assignment fingerprints while recovering an already commi
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
   fixture.artifacts.registrationUnavailable = true;
-  const top = await fixture.service.delegatedWork.reserve(
+  const top = await fixture.service['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -1041,15 +1043,21 @@ it('rejects historical assignment fingerprints while recovering an already commi
     fixture.activities,
     ['parent', 'child'],
   );
-  const restarted = createOrchestrationService(fixture.journal, fixture.work, {
-    ...fixture.definitions,
-    child,
-  });
-  restarted.delegatedWork.setArtifacts(fixture.artifacts);
-  restarted.delegatedWork.setRunCompletion(async () => true);
+  const restarted = createOrchestrationService(
+    fixture.journal,
+    fixture.work,
+    {
+      ...fixture.definitions,
+      child,
+    },
+    undefined,
+    undefined,
+    () => ({ artifacts: fixture.artifacts, runHasEnded: async () => true }),
+  );
+
   const probe = (await restarted.get(workflowInstanceId('probe')))!;
   await expect(
-    restarted.delegatedWork.reserve(
+    restarted['delegatedWork'].reserve(
       {
         workflowInstanceId: probe.workflowInstanceId,
         activationId: probe.pendingActivation!.activationId,
@@ -1061,7 +1069,7 @@ it('rejects historical assignment fingerprints while recovering an already commi
     ),
   ).rejects.toThrow('fingerprint must match current');
   fixture.artifacts.registrationUnavailable = false;
-  await restarted.delegatedWork.reserve(
+  await restarted['delegatedWork'].reserve(
     caller,
     'cohort-1',
     [assignment(fingerprint)],
@@ -1070,4 +1078,114 @@ it('rejects historical assignment fingerprints while recovering an already commi
   expect(
     (await restarted.get(top.children[0]!.workflowInstanceId))!.workflowDefinitionFingerprint,
   ).toBe(fingerprint);
+});
+
+import type {
+  DelegatedAssignment,
+  DelegationCaller,
+} from '../../../src/orchestration/contracts/delegation.js';
+
+it.each(['cancel', 'close', 'delete'] as const)(
+  'settles a cohort when its registered child is %s before startup',
+  async (action) => {
+    const fixture = build();
+    const { caller, fingerprint } = await startParent(fixture);
+    fixture.artifacts.registrationUnavailable = true;
+    const reservation = await fixture.service['delegatedWork'].reserve(
+      caller,
+      'terminal-before-start',
+      [assignment(fingerprint)],
+      context('reserve'),
+    );
+    const child = reservation.children[0]!;
+    expect(await fixture.service.get(child.workflowInstanceId)).toBeNull();
+    if (action === 'delete') await fixture.work.delete(child.workItemId, context(action));
+    else await fixture.work[action](child.workItemId, 'Operator stopped work', context(action));
+    fixture.artifacts.registrationUnavailable = false;
+    const restarted = build(fixture.journal, fixture.artifacts);
+    await restarted.service.reconcileChildCompletions(context('recover'));
+    expect(await fixture.service.get(child.workflowInstanceId)).toBeNull();
+    expect((await fixture.service.get(caller.workflowInstanceId))!.status).toBe('blocked');
+    expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(1);
+    expect(await restarted.service['delegationGate'].fenced(caller.workflowInstanceId)).toBe(false);
+  },
+);
+
+it('deduplicates a changing storage error by stable cohort reason', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  fixture.artifacts.registrationUnavailable = true;
+  await fixture.service['delegatedWork'].reserve(
+    caller,
+    'changing-error',
+    [assignment(fingerprint)],
+    context('reserve'),
+  );
+  for (let pass = 0; pass < 4; pass++) {
+    fixture.artifacts.failureMessage = `Missing /tmp/run-${pass}/artifact at ${Date.now()}`;
+    await fixture.service.reconcileChildCompletions(context('pass-' + pass));
+  }
+  expect(await count(fixture, OrchestrationEventType.DelegationReconciliationFailed)).toBe(1);
+});
+
+it('retries missing outputs once across restart before deciding terminal failure', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'late-outputs',
+    [assignment(fingerprint)],
+    context('reserve'),
+  );
+  const child = reservation.children[0]!;
+  await complete(fixture, child.workflowInstanceId);
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
+  fixture.artifacts.published.add(child.workItemId);
+  const restarted = build(fixture.journal, fixture.artifacts);
+  await restarted.service.reconcileChildCompletions(context('visible-now'));
+  expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(1);
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
+});
+
+it('folds a nested reservation fence before wait registration and rebuilds it after restart', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const top = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'top-fence',
+    [assignment(fingerprint)],
+    context('top'),
+    { maxDepth: 2, maxDescendants: 3 },
+  );
+  const child = (await fixture.service.get(top.children[0]!.workflowInstanceId))!;
+  fixture.journal.failBefore = OrchestrationEventType.DelegationWaitStarted;
+  await fixture.service['delegatedWork'].reserve(
+    {
+      workflowInstanceId: child.workflowInstanceId,
+      activationId: child.pendingActivation!.activationId,
+      runId: 'nested',
+    },
+    'nested-fence',
+    [assignment(fingerprint)],
+    context('nested'),
+  );
+  const restarted = build(fixture.journal, fixture.artifacts);
+  const view = (await restarted.service.get(child.workflowInstanceId))!;
+  expect(view.delegationWait).toBeUndefined();
+  expect(view.delegationFence).toEqual({
+    cohortId: 'nested-fence',
+    activationId: child.pendingActivation!.activationId,
+  });
+  expect(await restarted.service.listPendingActivations(child.workItemId)).toEqual([]);
+  await expect(
+    restarted.service.waitForSignal(
+      child.workflowInstanceId,
+      { signalKind: signalName('approval') },
+      context('wait'),
+    ),
+  ).rejects.toBeInstanceOf(DelegationPendingError);
+  await restarted.service.reconcileChildCompletions(context('recover'));
+  expect((await restarted.service.get(child.workflowInstanceId))!.delegationWait?.cohortId).toBe(
+    'nested-fence',
+  );
 });

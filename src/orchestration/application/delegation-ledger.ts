@@ -1,20 +1,15 @@
 import {
-  cachedJournalView,
   EventSourceKind,
   WrongExpectedSequenceError,
-  type CachedJournalView,
   type CommandContext,
-  type EventJournal,
 } from '@atolis-hq/eventing';
 import type { DelegationReservation, DelegationResult } from '../contracts/delegation.js';
-import { selectWorkflowOrchestrationEvent } from '../contracts/event-decoder.js';
 import {
   OrchestrationEventType,
   type WorkflowOrchestrationEvent,
   type WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
 import { workflowEventData } from '../domain/decision-events.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 
@@ -49,51 +44,14 @@ export function delegationDraft(
 
 /** Read side and idempotent append helpers over the journal-owned delegation facts. */
 export class DelegationLedger {
-  private fenceSnapshot:
-    | { events: readonly WorkflowOrchestrationEvent[]; ids: ReadonlySet<WorkflowInstanceId> }
-    | undefined;
-
-  private readonly present: CachedJournalView<boolean>;
-
-  private readonly view: CachedJournalView<readonly WorkflowOrchestrationEvent[]>;
-
-  constructor(
-    private readonly journal: EventJournal,
-    private readonly repository: OrchestrationRepository,
-  ) {
-    this.present = cachedJournalView(journal, (events) =>
-      events.some((entry) => entry.event.eventType === OrchestrationEventType.DelegationReserved),
-    );
-    this.view = cachedJournalView(journal, (events) =>
-      events.flatMap((event) => {
-        const owned = selectWorkflowOrchestrationEvent(event);
-        return owned === null ? [] : [owned];
-      }),
-    );
-  }
+  constructor(private readonly repository: OrchestrationRepository) {}
 
   events(): Promise<readonly WorkflowOrchestrationEvent[]> {
-    return this.view.get();
+    return this.repository.events();
   }
 
   async reservations(): Promise<readonly DelegationReservation[]> {
-    if (!(await this.present.get())) return [];
     return reservationsOf(await this.events());
-  }
-
-  async fences(id: WorkflowInstanceId): Promise<boolean> {
-    if (!(await this.present.get())) return false;
-    const events = await this.events();
-    if (this.fenceSnapshot?.events !== events)
-      this.fenceSnapshot = {
-        events,
-        ids: new Set(
-          reservationsOf(events)
-            .filter((entry) => !isSettled(events, entry))
-            .map((entry) => entry.parentWorkflowInstanceId),
-        ),
-      };
-    return this.fenceSnapshot.ids.has(id);
   }
 
   /** Appends once per key, retrying optimistic-concurrency conflicts against fresh stream state. */
@@ -104,10 +62,10 @@ export class DelegationLedger {
     input: DelegationDraft,
   ): Promise<void> {
     for (;;) {
-      const events = await this.journal.readStream(workflowInstanceStream(id));
+      const { events, sequence } = await this.repository.history(id);
       if (events.some((event) => event.event.eventId === delegationEventId(id, key))) return;
       try {
-        await this.repository.append(id, events.length, [delegationDraft(context, key, input, id)]);
+        await this.repository.append(id, sequence, [delegationDraft(context, key, input, id)]);
         return;
       } catch (error) {
         if (!(error instanceof WrongExpectedSequenceError)) throw error;

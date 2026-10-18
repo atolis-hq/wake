@@ -13,6 +13,7 @@ import {
   FileArtifactStore,
   OperatorInstructionsService,
   createArtifactService,
+  createDelegationArtifacts,
 } from '../artifacts/index.js';
 import {
   DispatchPolicy,
@@ -74,7 +75,6 @@ import { createBuiltInActivityRegistry } from './activity-registry.js';
 import { createArtifactMcpProvisioner } from './artifact-mcp.js';
 import { createArtifactTriggerContext } from './artifact-trigger-context.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
-import { createDelegationArtifacts } from './delegation-artifacts.js';
 import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime, composeProviders } from './integration-runtime.js';
@@ -246,9 +246,22 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
     definitions,
     projections,
     createAgentActivityClassifier(activities),
-  );
-  orchestration.delegatedWork.setArtifacts(
-    createDelegationArtifacts({ artifacts, contexts: artifactContexts, orchestration }),
+    (queries) => ({
+      artifacts: createDelegationArtifacts({
+        artifacts,
+        contexts: artifactContexts,
+        accepted: queries.isActivationAccepted,
+      }),
+      runHasEnded: async (runId) => {
+        const run = (await execution.list()).find((entry) => entry.runId === runId);
+        return (
+          run !== undefined &&
+          !isActiveRunStatus(run.status) &&
+          run.status !== RunStatus.Ambiguous &&
+          !execution.isLocallyActive(runId)
+        );
+      },
+    }),
   );
   const workspaces = new GitWorkspaceProvider(
     paths.workspacesRoot,
@@ -325,15 +338,6 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
         }
       : {}),
     workspaces,
-  });
-  orchestration.delegatedWork.setRunCompletion(async (runId) => {
-    const run = (await execution.list()).find((entry) => entry.runId === runId);
-    return (
-      run !== undefined &&
-      !isActiveRunStatus(run.status) &&
-      run.status !== RunStatus.Ambiguous &&
-      !execution.isLocallyActive(runId)
-    );
   });
   orchestration.setWatchChildCancellation({
     cancelSupersededWatchChildren: (workflowInstanceIds) =>

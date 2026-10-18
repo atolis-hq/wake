@@ -75,8 +75,6 @@ const itemCreatedSchema = objectiveSchema.extend({
       parentWorkItemId: brandedStringSchema(workItemId),
       rootWorkItemId: brandedStringSchema(workItemId),
       ancestors: z.array(brandedStringSchema(workItemId)).min(1).readonly(),
-      assignmentId: z.string().min(1),
-      criteria: z.array(z.string().trim().min(1)).min(1).readonly(),
     })
     .strict()
     .optional(),

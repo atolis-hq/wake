@@ -8,6 +8,10 @@ Artifact identifiers, revision facts, projections, storage ports, access policy,
 Workflow transitions, runner invocation, provider publication, Git workspaces, or UI delivery.
 ## Invariants
 Artifact bytes are separate from Git workspaces; only the owning producer may write agent artifacts; journal facts are authoritative.
+Delegation adapters validate accepted exact context references, register immutable
+per-child grants and select named published output revisions using an injected
+accepted-activation query. Workflow completion and hierarchy eligibility remain
+Orchestration policy; Bootstrap only wires these ports.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

@@ -66,6 +66,6 @@ export * from './application/work-completion-summary.js';
 
 export type { WorkflowCompileDiagnostic } from './domain/compile-diagnostics.js';
 
-export * from './application/delegated-work.js';
+export type { DelegationArtifacts } from './contracts/delegation-ports.js';
 
-export * from './contracts/delegation.js';
+export { DelegationPendingError } from './contracts/delegation.js';

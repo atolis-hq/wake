@@ -1,13 +1,7 @@
-import {
-  cachedJournalView,
-  WrongExpectedSequenceError,
-  type CachedJournalView,
-  type CommandContext,
-  type EventJournal,
-} from '@atolis-hq/eventing';
+import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
 import type { TransitionTarget } from '../contracts/config.js';
 import { DelegationPendingError } from '../contracts/delegation.js';
-import { selectWorkflowOrchestrationEvent, signalSchema } from '../contracts/event-decoder.js';
+import { signalSchema } from '../contracts/event-decoder.js';
 import {
   OrchestrationEventType,
   ResourceTransitionSignal,
@@ -15,17 +9,14 @@ import {
   type OrchestrationSignal,
 } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { DelegationLedger } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 
 /** Retains authority-bearing inputs while delegation owns advancement; ordinary wait validation replays them. */
 export class DeferredSignals {
-  private readonly present: CachedJournalView<boolean>;
   private readonly ledger: DelegationLedger;
   constructor(
-    private readonly journal: EventJournal,
     private readonly repository: OrchestrationRepository,
     private readonly deliver: (
       id: WorkflowInstanceId,
@@ -40,10 +31,7 @@ export class DeferredSignals {
     ) => Promise<WorkflowInstanceView | null>,
     private readonly fenced: (id: WorkflowInstanceId) => Promise<boolean>,
   ) {
-    this.ledger = new DelegationLedger(journal, repository);
-    this.present = cachedJournalView(journal, (events) =>
-      events.some((entry) => entry.event.eventType === OrchestrationEventType.SignalDeferred),
-    );
+    this.ledger = new DelegationLedger(repository);
   }
 
   async accept(id: WorkflowInstanceId, signal: OrchestrationSignal, context: CommandContext) {
@@ -108,8 +96,14 @@ export class DeferredSignals {
     return view;
   }
 
+  private async hasDeferred(): Promise<boolean> {
+    return (await this.repository.events()).some(
+      (entry) => entry.event.eventType === OrchestrationEventType.SignalDeferred,
+    );
+  }
+
   async reconcile(context: CommandContext): Promise<void> {
-    if (!(await this.present.get())) return;
+    if (!(await this.hasDeferred())) return;
     for (const loaded of await this.repository.list()) {
       if (loaded.view !== null)
         await this.reconcileWorkflow(loaded.view.workflowInstanceId, context);
@@ -120,10 +114,9 @@ export class DeferredSignals {
     id: WorkflowInstanceId,
     context: CommandContext,
   ): Promise<WorkflowInstanceView> {
-    if ((await this.present.get()) && !(await this.fenced(id))) {
-      const events = await this.journal.readStream(workflowInstanceStream(id));
-      for (const raw of events) {
-        const event = selectWorkflowOrchestrationEvent(raw);
+    if ((await this.hasDeferred()) && !(await this.fenced(id))) {
+      const { events } = await this.repository.history(id);
+      for (const event of events) {
         if (event?.event.eventType !== OrchestrationEventType.SignalDeferred) continue;
         const deferred = event.event.payload;
         const loaded = await this.repository.loadRequired(id);

@@ -37,7 +37,6 @@ import {
   workflowInstanceId,
   workflowInstanceStream,
   workflowName,
-  type DelegatedAssignment,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import { BuiltInResourceKind } from '../../../src/resources/index.js';
@@ -93,7 +92,13 @@ async function fixture(simulateCompletedRuns = true, runner?: Runner) {
       checkpoints: new InMemoryCheckpointStore(),
       ...(runner === undefined ? {} : { decorateRunner: () => runner }),
     });
-    if (simulateCompletedRuns) root.orchestration.delegatedWork.setRunCompletion(async () => true);
+    if (simulateCompletedRuns)
+      vi.spyOn(
+        root.orchestration['delegatedWork'] as unknown as {
+          endedRun(id: string): Promise<boolean>;
+        },
+        'endedRun',
+      ).mockResolvedValue(true);
     return root;
   };
   return { root: await restart(), restart, journal };
@@ -158,6 +163,24 @@ it('production composition rejects unrelated accepted and draft context, accepts
   const seed = await start(f.root, 'parent');
   const accepted = await publish(f.root, seed, 'parent-seed');
   const parent = await complete(f.root, seed);
+  expect(
+    await f.root.orchestration.isActivationAccepted(
+      seed.pendingActivation!.activationId,
+      seed.workItemId,
+    ),
+  ).toBe(true);
+  expect(
+    await f.root.orchestration.isActivationAccepted(
+      seed.pendingActivation!.activationId,
+      workId('another'),
+    ),
+  ).toBe(false);
+  expect(
+    await f.root.orchestration.isActivationAccepted(
+      parent.pendingActivation!.activationId,
+      parent.workItemId,
+    ),
+  ).toBe(false);
   const outsider = await start(f.root, 'outsider', 'child');
   const unrelated = await publish(f.root, outsider, 'unrelated');
   await complete(f.root, outsider);
@@ -168,7 +191,7 @@ it('production composition rejects unrelated accepted and draft context, accepts
     runId: 'parent-run',
   };
   await expect(
-    f.root.orchestration.delegatedWork.reserve(
+    f.root.orchestration['delegatedWork'].reserve(
       caller,
       'bad',
       [assignment(fingerprint, [unrelated])],
@@ -177,14 +200,14 @@ it('production composition rejects unrelated accepted and draft context, accepts
   ).rejects.toThrow('outside the parent hierarchy');
   const draft = await publish(f.root, parent, 'draft-parent');
   await expect(
-    f.root.orchestration.delegatedWork.reserve(
+    f.root.orchestration['delegatedWork'].reserve(
       caller,
       'draft',
       [assignment(fingerprint, [draft])],
       context('draft'),
     ),
   ).rejects.toThrow('accepted artifact revisions');
-  const top = await f.root.orchestration.delegatedWork.reserve(
+  const top = await f.root.orchestration['delegatedWork'].reserve(
     caller,
     'top',
     [assignment(fingerprint, [accepted])],
@@ -192,12 +215,17 @@ it('production composition rejects unrelated accepted and draft context, accepts
     { maxDepth: 2, maxDescendants: 3 },
   );
   const child = (await f.root.orchestration.get(top.children[0]!.workflowInstanceId))!;
+  expect((await f.root.work.get(child.workItemId))!.delegation).toEqual({
+    parentWorkItemId: parent.workItemId,
+    rootWorkItemId: parent.workItemId,
+    ancestors: [parent.workItemId],
+  });
   const nestedCaller = {
     workflowInstanceId: child.workflowInstanceId,
     activationId: child.pendingActivation!.activationId,
     runId: 'nested-run',
   };
-  const nested = await f.root.orchestration.delegatedWork.reserve(
+  const nested = await f.root.orchestration['delegatedWork'].reserve(
     nestedCaller,
     'nested',
     [assignment(fingerprint, [accepted])],
@@ -213,7 +241,7 @@ it('production composition rejects unrelated accepted and draft context, accepts
   const restarted = await f.restart();
   await restarted.orchestration.reconcileChildCompletions(context('restart'));
   expect(
-    await restarted.orchestration.delegatedWork.results(parent.workflowInstanceId, 'top'),
+    await restarted.orchestration.joinedDelegationResults(parent.workflowInstanceId, 'top'),
   ).toMatchObject([
     {
       childWorkItemId: child.workItemId,
@@ -223,7 +251,7 @@ it('production composition rejects unrelated accepted and draft context, accepts
   const resumedParent = (await restarted.orchestration.get(parent.workflowInstanceId))!;
   expect(resumedParent.pendingActivation!.input).toEqual(parent.pendingActivation!.input);
   // Accepted child findings are usable in a later cohort, with a new immutable grant.
-  const next = await restarted.orchestration.delegatedWork.reserve(
+  const next = await restarted.orchestration['delegatedWork'].reserve(
     { ...caller, activationId: resumedParent.pendingActivation!.activationId, runId: 'later-run' },
     'later',
     [assignment(fingerprint, [{ workItemId: child.workItemId, revisionId: 'child-result' }])],
@@ -240,9 +268,9 @@ it.each(['failure', 'quota'])(
     const seed = await start(f.root, 'dispatch-parent');
     const parent = await complete(f.root, seed);
     const probe = await start(f.root, 'probe', 'child');
-    let top: Awaited<ReturnType<typeof f.root.orchestration.delegatedWork.reserve>> | undefined;
+    let top: DelegationReservation | undefined;
     runner.scripts.push(async (request) => {
-      top = await f.root.orchestration.delegatedWork.reserve(
+      top = await f.root.orchestration['delegatedWork'].reserve(
         {
           workflowInstanceId: parent.workflowInstanceId,
           activationId: parent.pendingActivation!.activationId,
@@ -314,9 +342,9 @@ it.each(['failure', 'quota'])(
     const child = (await service.get(top!.children[0]!.workflowInstanceId))!;
     await publish(f.root, child, 'dispatch-result');
     await complete(f.root, child);
-    expect(await service.delegatedWork.results(parent.workflowInstanceId, 'dispatch')).toHaveLength(
-      1,
-    );
+    expect(
+      await service['delegatedWork'].results(parent.workflowInstanceId, 'dispatch'),
+    ).toHaveLength(1);
   },
 );
 
@@ -328,7 +356,7 @@ it('production Run liveness prevents a continuation and second Run while the del
   const entered = deferred<void>();
   const release = deferred<void>();
   runner.scripts.push(async (request) => {
-    const top = await f.root.orchestration.delegatedWork.reserve(
+    const top = await f.root.orchestration['delegatedWork'].reserve(
       {
         workflowInstanceId: parent.workflowInstanceId,
         activationId: parent.pendingActivation!.activationId,
@@ -357,7 +385,7 @@ it('production Run liveness prevents a continuation and second Run while the del
     await entered.promise;
     await f.root.orchestration.reconcileChildCompletions(context('still-active'));
     expect(
-      await f.root.orchestration.delegatedWork.results(parent.workflowInstanceId, 'live'),
+      await f.root.orchestration.joinedDelegationResults(parent.workflowInstanceId, 'live'),
     ).toHaveLength(0);
     expect(await f.root.orchestration.listPendingActivations(parent.workItemId)).toHaveLength(0);
     await f.root.advanceOnce({ workItemId: parent.workItemId, maxProgress: 1 });
@@ -369,7 +397,7 @@ it('production Run liveness prevents a continuation and second Run while the del
   const restarted = await f.restart();
   await restarted.orchestration.reconcileChildCompletions(context('run-ended'));
   expect(
-    await restarted.orchestration.delegatedWork.results(parent.workflowInstanceId, 'live'),
+    await restarted.orchestration.joinedDelegationResults(parent.workflowInstanceId, 'live'),
   ).toHaveLength(1);
   expect(await restarted.orchestration.listPendingActivations(parent.workItemId)).toHaveLength(1);
 });
@@ -436,7 +464,7 @@ it.each(['review', 'watch'])(
     const f = await fixture();
     const parent = await complete(f.root, await start(f.root, 'signal-parent'));
     const probe = await start(f.root, 'probe', 'child');
-    const top = await f.root.orchestration.delegatedWork.reserve(
+    const top = await f.root.orchestration['delegatedWork'].reserve(
       {
         workflowInstanceId: parent.workflowInstanceId,
         activationId: parent.pendingActivation!.activationId,
@@ -559,7 +587,7 @@ it('retains a fenced resource transition and applies it only to the original rev
   const f = await fixture();
   const parent = await complete(f.root, await start(f.root, 'resource-parent'));
   const probe = await start(f.root, 'probe', 'child');
-  const top = await f.root.orchestration.delegatedWork.reserve(
+  const top = await f.root.orchestration['delegatedWork'].reserve(
     {
       workflowInstanceId: parent.workflowInstanceId,
       activationId: parent.pendingActivation!.activationId,
@@ -610,3 +638,8 @@ function deferred<Value>() {
   });
   return { promise, resolve };
 }
+
+import type {
+  DelegatedAssignment,
+  DelegationReservation,
+} from '../../../src/orchestration/contracts/delegation.js';

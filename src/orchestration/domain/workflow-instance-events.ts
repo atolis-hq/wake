@@ -47,6 +47,7 @@ export type MutableWorkflowInstance = {
   triggerId?: string;
   causalCycleId?: string;
   requestId?: string;
+  delegationFence?: WorkflowInstanceView['delegationFence'];
   delegationWait?: WorkflowInstanceView['delegationWait'];
   status: WorkflowInstanceView['status'];
   blockReason?: string;
@@ -241,6 +242,7 @@ function applyDelegationFact(
 ): void {
   if (event.eventType === OrchestrationEventType.DelegationJoined) {
     delete state.delegationWait;
+    delete state.delegationFence;
     return;
   }
   state.delegationWait = event.payload;
@@ -256,9 +258,18 @@ function applyCoordinationFact(state: MutableWorkflowInstance, event: Coordinati
     case OrchestrationEventType.ChildStarted:
     case OrchestrationEventType.GroupBudgetExhausted:
     case OrchestrationEventType.DelegationFailed:
+      delete state.delegationFence;
+      return;
     case OrchestrationEventType.DelegationReconciliationFailed:
     case OrchestrationEventType.SignalDeferred:
+      return;
     case OrchestrationEventType.DelegationReserved:
+      if (event.payload.parentWorkflowInstanceId === state.workflowInstanceId)
+        state.delegationFence = {
+          cohortId: event.payload.cohortId,
+          activationId: event.payload.activationId,
+        };
+      return;
     case OrchestrationEventType.DelegationRegistered:
     case OrchestrationEventType.DelegationResultSelected:
       return;
@@ -368,6 +379,7 @@ export function immutableWorkflowInstanceView(
     ...(state.triggerId === undefined ? {} : { triggerId: state.triggerId }),
     ...(state.causalCycleId === undefined ? {} : { causalCycleId: state.causalCycleId }),
     ...(state.requestId === undefined ? {} : { requestId: state.requestId }),
+    ...(state.delegationFence === undefined ? {} : { delegationFence: state.delegationFence }),
     ...(state.delegationWait === undefined ? {} : { delegationWait: state.delegationWait }),
     status: state.status,
     ...(state.blockReason === undefined ? {} : { blockReason: state.blockReason }),

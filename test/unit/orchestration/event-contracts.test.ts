@@ -536,3 +536,29 @@ function decodingCause(decode: () => unknown): unknown {
   }
   throw new Error('Expected event decoding to fail');
 }
+
+it('owns the exact delegation-reference wire shape independently of Artifacts', () => {
+  const fact = eventEnvelope(
+    OrchestrationEventType.DelegationReserved,
+    delegationReservation,
+    workflow,
+  );
+  expect(decodeOrchestrationEvent(fact).event.payload).toEqual(delegationReservation);
+  const child = delegationReservation.children[0]!;
+  const invalid = eventEnvelope(
+    OrchestrationEventType.DelegationReserved,
+    {
+      ...delegationReservation,
+      children: [
+        {
+          ...child,
+          context: [
+            { workItemId: child.workItemId, revisionId: 'exact', artifactStoragePath: '/draft' },
+          ],
+        },
+      ],
+    },
+    workflow,
+  );
+  expect(() => decodeOrchestrationEvent(invalid)).toThrow();
+});

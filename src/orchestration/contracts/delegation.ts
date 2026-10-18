@@ -1,9 +1,17 @@
 import { z } from 'zod';
 import { activationId } from '../../activities/index.js';
-import { artifactRevisionReferenceSchema } from '../../artifacts/index.js';
 import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId } from '../../work/index.js';
 import { workflowInstanceId, workflowName } from './identifiers.js';
+
+export const delegationRevisionReferenceSchema = z
+  .object({
+    workItemId: brandedStringSchema(workItemId),
+    revisionId: z.string().min(1),
+  })
+  .strict();
+
+export type DelegationRevisionReference = z.infer<typeof delegationRevisionReferenceSchema>;
 
 export const delegatedAssignmentSchema = z
   .object({
@@ -12,7 +20,7 @@ export const delegatedAssignmentSchema = z
     criteria: z.array(z.string().trim().min(1)).min(1),
     workflowName: brandedStringSchema(workflowName),
     workflowFingerprint: z.string().min(1),
-    context: z.array(artifactRevisionReferenceSchema),
+    context: z.array(delegationRevisionReferenceSchema),
     outputs: z
       .array(z.object({ name: z.string().min(1), path: z.string().min(1) }).strict())
       .min(1),
@@ -54,7 +62,9 @@ export const delegationResultSchema = z
     childWorkItemId: brandedStringSchema(workItemId),
     outputs: z
       .array(
-        z.object({ name: z.string().min(1), reference: artifactRevisionReferenceSchema }).strict(),
+        z
+          .object({ name: z.string().min(1), reference: delegationRevisionReferenceSchema })
+          .strict(),
       )
       .min(1),
   })

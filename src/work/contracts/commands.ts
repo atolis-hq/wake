@@ -23,6 +23,4 @@ export interface WorkDelegation {
   readonly parentWorkItemId: WorkItemId;
   readonly rootWorkItemId: WorkItemId;
   readonly ancestors: readonly WorkItemId[];
-  readonly assignmentId: string;
-  readonly criteria: readonly string[];
 }

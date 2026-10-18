@@ -1,5 +1,8 @@
+import type { DelegationArtifacts } from '../contracts/delegation-ports.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
+import { DelegationGate } from './delegation-gate.js';
+import { expireTimedOutWaits } from './expire-timed-out-waits.js';
 import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 /* eslint-disable max-lines */
@@ -58,7 +61,9 @@ import { continuesWaitingForSameWatchGate } from './watch-child-transitions.js';
 import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
 export class OrchestrationService {
-  readonly delegatedWork: DelegatedWork;
+  private readonly delegationGate: DelegationGate;
+  private readonly delegatedWork: DelegatedWork;
+  private readonly repository: OrchestrationRepository;
   private readonly deferredSignals: DeferredSignals;
   private readonly startWorkflow: StartWorkflow;
   private readonly acceptActivityOutcome: AcceptActivityOutcome;
@@ -79,39 +84,47 @@ export class OrchestrationService {
     definitions: Readonly<Record<string, CompiledWorkflow>>,
     projections?: ProjectionStore,
     isAgentActivity?: AgentActivityClassifier,
+    delegation?: DelegationDependenciesFactory,
   ) {
     this.projections = projections;
     this.journal = journal;
     this.work = work;
     const repository = new OrchestrationRepository(journal);
+    this.repository = repository;
+    this.delegationGate = new DelegationGate(repository);
+    const dependencies = delegation?.({
+      isActivationAccepted: (id, item) => this.isActivationAccepted(id, item),
+    });
     this.claims = new CoordinationClaims(journal);
     this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
     this.startWorkflow = new StartWorkflow(repository, this.claims, work, this.definitions);
     this.delegatedWork = new DelegatedWork(
-      journal,
       repository,
       work,
       this.claims,
       this.definitions,
       this.startWorkflow,
+      {
+        artifacts: dependencies?.artifacts ?? unavailableArtifacts,
+        runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
+      },
     );
     this.advanceWorkflow = new AdvanceWorkflow(
       repository,
       this.startWorkflow,
-      (command, context) => this.acceptActivityOutcome.execute(command, context),
+      (command, context) => this.acceptOutcome(command, context),
       isAgentActivity,
-      (id) => this.delegatedWork.fences(id),
     );
-    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work, (id) =>
-      this.delegatedWork.fences(id),
-    );
+    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.deferredSignals = new DeferredSignals(
-      journal,
       repository,
-      (id, signal, context) => this.acceptWorkflowSignal.execute(id, signal, context),
+      (id, signal, context) =>
+        this.delegationGate.run(id, () => this.acceptWorkflowSignal.execute(id, signal, context)),
       (id, target, evidenceId, context) =>
-        this.advanceWorkflow.applyResourceTransition(id, target, evidenceId, context),
-      (id) => this.delegatedWork.fences(id),
+        this.delegationGate.run(id, () =>
+          this.advanceWorkflow.applyResourceTransition(id, target, evidenceId, context),
+        ),
+      (id) => this.delegationGate.fenced(id),
     );
     this.childWorkflows = new RequestChild(
       repository,
@@ -128,9 +141,20 @@ export class OrchestrationService {
         await this.childWorkflows.reconcileChildCompletions(context);
         await this.deferredSignals.reconcile(context);
       },
-      (id) => this.delegatedWork.fences(id),
-      (id, activationId) => this.delegatedWork.holdsActivation(id, activationId),
     );
+  }
+
+  async isActivationAccepted(id: string, item?: string): Promise<boolean> {
+    return (await this.repository.list()).some(
+      ({ view }) =>
+        view !== null &&
+        (item === undefined || view.workItemId === item) &&
+        view.acceptedOutcomes.some((accepted) => accepted === id),
+    );
+  }
+
+  joinedDelegationResults(id: WorkflowInstanceId, cohortId: string) {
+    return this.delegatedWork.results(id, cohortId);
   }
 
   start(command: StartWorkflowInstance, context: CommandContext) {
@@ -157,7 +181,15 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, () =>
-      this.acceptActivityOutcome.execute(command, context),
+      this.delegationGate.outcome(
+        command.workflowInstanceId,
+        command.activationId,
+        () => this.acceptActivityOutcome.execute(command, context),
+        async () => {
+          await this.reconcileChildCompletions(context);
+          return (await this.repository.loadRequired(command.workflowInstanceId)).view;
+        },
+      ),
     );
   }
 
@@ -167,7 +199,9 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, async () => {
-      await this.acceptWorkflowSignal.wait(workflowInstanceId, expectation, context);
+      await this.delegationGate.run(workflowInstanceId, () =>
+        this.acceptWorkflowSignal.wait(workflowInstanceId, expectation, context),
+      );
       return this.deferredSignals.reconcileWorkflow(workflowInstanceId, context);
     });
   }
@@ -197,7 +231,9 @@ export class OrchestrationService {
     request: SupplementalActivityRequest,
     context: CommandContext,
   ) {
-    return this.advanceWorkflow.requestSupplementalActivity(workflowInstanceId, request, context);
+    return this.delegationGate.run(workflowInstanceId, () =>
+      this.advanceWorkflow.requestSupplementalActivity(workflowInstanceId, request, context),
+    );
   }
 
   async applyConversationCommand(
@@ -341,7 +377,9 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.resolveExecutionFailure(workflowInstanceId, input, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.resolveExecutionFailure(workflowInstanceId, input, context),
+      ),
     );
   }
 
@@ -356,19 +394,25 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.retryRunnerQuotaFailure(workflowInstanceId, input, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.retryRunnerQuotaFailure(workflowInstanceId, input, context),
+      ),
     );
   }
 
   retryBlockedFailedStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context),
+      ),
     );
   }
 
   restartBlockedFailedStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.restartBlockedFailedStage(workflowInstanceId, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.restartBlockedFailedStage(workflowInstanceId, context),
+      ),
     );
   }
 
@@ -391,7 +435,9 @@ export class OrchestrationService {
     )
       return current;
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context),
+      ),
     );
   }
 
@@ -471,20 +517,19 @@ export class OrchestrationService {
 
   async listPendingActivations(workItemId?: string) {
     const entries = await this.advanceWorkflow.listPendingActivations(workItemId);
-    const allowed = await Promise.all(
-      entries.map(
-        async (entry) => !(await this.delegatedWork.fences(entry.workflow.workflowInstanceId)),
-      ),
-    );
-    return entries.filter((_, index) => allowed[index]);
+    return entries.filter((entry) => this.delegationGate.allows(entry.workflow));
   }
 
   listWaiting(signalKind?: SignalName) {
     return this.advanceWorkflow.listWaiting(signalKind);
   }
 
-  expireTimedOutWaits(context: CommandContext) {
-    return this.advanceWorkflow.expireTimedOutWaits(context);
+  async expireTimedOutWaits(context: CommandContext) {
+    return expireTimedOutWaits(
+      this.repository,
+      context,
+      await this.delegationGate.availableInstances(),
+    );
   }
 
   listAll() {
@@ -646,7 +691,8 @@ export const createOrchestrationService = (
   definitions: Readonly<Record<string, CompiledWorkflow>>,
   projections?: ProjectionStore,
   isAgentActivity?: AgentActivityClassifier,
-) => new OrchestrationService(journal, work, definitions, projections, isAgentActivity);
+  delegation?: DelegationDependenciesFactory,
+) => new OrchestrationService(journal, work, definitions, projections, isAgentActivity, delegation);
 
 function isWorkControllable(work: WorkItemView | null): boolean {
   return work !== null && !work.deleted && !work.frozen && work.state === WorkStatus.Open;
@@ -670,3 +716,18 @@ function isReviewConversationCommand(command: string): boolean {
     command === ConversationBuiltInCommand.Changes
   );
 }
+
+/** Immutable dependencies are resolved once; callbacks may refer to services composed later. */
+type DelegationDependenciesFactory = (queries: {
+  isActivationAccepted: (activationId: string, workItemId?: string) => Promise<boolean>;
+}) => { artifacts: DelegationArtifacts; runHasEnded: (runId: string) => Promise<boolean> };
+
+async function unavailableRunCompletion(): Promise<never> {
+  throw new Error('Delegation adapters unavailable');
+}
+
+const unavailableArtifacts: DelegationArtifacts = {
+  validateInputs: unavailableRunCompletion,
+  registerChild: unavailableRunCompletion,
+  qualifyingOutputs: unavailableRunCompletion,
+};

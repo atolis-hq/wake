@@ -1,6 +1,5 @@
 import type { CommandContext } from '@atolis-hq/eventing';
 import type { WorkService } from '../../work/index.js';
-import { DelegationPendingError } from '../contracts/delegation.js';
 import type { OrchestrationSignal, SignalExpectation } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import {
@@ -16,7 +15,6 @@ export class AcceptSignal {
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
     private readonly work: WorkService,
-    private readonly fenced: (id: WorkflowInstanceId) => Promise<boolean> = async () => false,
   ) {}
 
   async wait(
@@ -25,7 +23,6 @@ export class AcceptSignal {
     context: CommandContext,
   ) {
     const loaded = await this.repository.loadRequired(workflowInstanceId);
-    if (await this.fenced(workflowInstanceId)) throw new DelegationPendingError(workflowInstanceId);
     const decision = decideSignalWait(loaded.view, expectation, {
       occurredAt: context.occurredAt,
       causationId: context.commandId,
@@ -41,7 +38,6 @@ export class AcceptSignal {
     context: CommandContext & { readonly expectedSequence?: number },
   ) {
     const loaded = await this.repository.loadRequired(workflowInstanceId);
-    if (await this.fenced(workflowInstanceId)) throw new DelegationPendingError(workflowInstanceId);
     if (context.expectedSequence !== undefined && context.expectedSequence !== loaded.sequence)
       return loaded.view;
     const expiry = expireTimedOutAwait(loaded.view, {

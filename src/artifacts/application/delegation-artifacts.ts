@@ -1,28 +1,20 @@
-import type { ArtifactContextService, ArtifactService } from '../artifacts/index.js';
-import type { DelegationArtifacts, OrchestrationService } from '../orchestration/index.js';
+import type { ArtifactRevisionReference } from '../contracts/context.js';
+import type { ArtifactContextService } from './artifact-context-service.js';
+import type { ArtifactService } from './artifact-service.js';
 
 /** Binds delegation to Artifacts grants and accepted exact revisions; children never see the join. */
 export function createDelegationArtifacts(input: {
   readonly artifacts: ArtifactService;
   readonly contexts: ArtifactContextService;
-  readonly orchestration: OrchestrationService;
-}): DelegationArtifacts {
-  const acceptance = async () => {
-    const workflows = await input.orchestration.listAll();
-    return async (activationId: string, workItemId?: string) =>
-      workflows.some(
-        (workflow) =>
-          (workItemId === undefined || workflow.workItemId === workItemId) &&
-          workflow.acceptedOutcomes.some((outcome) => outcome === activationId),
-      );
-  };
+  readonly accepted: (activationId: string, workItemId?: string) => Promise<boolean>;
+}) {
   return {
-    async validateInputs(parent, references) {
-      const allowed = await input.orchestration.delegatedWork.contextWorkItems(parent);
-      const accepted = await acceptance();
+    async validateInputs(
+      _parent: { readonly workItemId: string },
+      references: readonly ArtifactRevisionReference[],
+    ) {
+      const accepted = input.accepted;
       for (const reference of references) {
-        if (!allowed.has(reference.workItemId))
-          throw new Error('Delegation context is outside the parent hierarchy');
         const revision = (await input.artifacts.get(reference.workItemId))?.revisions.find(
           (candidate) => candidate.revisionId === reference.revisionId,
         );
@@ -34,10 +26,19 @@ export function createDelegationArtifacts(input: {
           throw new Error('Delegation context must reference accepted artifact revisions');
       }
     },
-    registerChild: async (grant, context) =>
-      input.contexts.registerChild(grant, await acceptance(), context),
-    async qualifyingOutputs(child, outputs) {
-      const published = await input.artifacts.latestPublished(child.workItemId, await acceptance());
+    registerChild: async (
+      ...args: [
+        Parameters<ArtifactContextService['registerChild']>[0],
+        Parameters<ArtifactContextService['registerChild']>[2],
+      ]
+    ) => input.contexts.registerChild(args[0], input.accepted, args[1]),
+    async qualifyingOutputs(
+      child: { readonly workItemId: ArtifactRevisionReference['workItemId'] },
+      outputs: readonly { readonly name: string; readonly path: string }[],
+    ) {
+      const published = await input.artifacts.latestPublished(child.workItemId, (activationId) =>
+        input.accepted(activationId, child.workItemId),
+      );
       const selected = outputs.map((output) => ({
         name: output.name,
         revision: published.find((revision) => revision.path === output.path),

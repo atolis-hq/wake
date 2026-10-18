@@ -1,16 +1,15 @@
 import type { CommandContext } from '@atolis-hq/eventing';
-import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import { expireTimedOutAwait } from '../domain/interpreter.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 
 export async function expireTimedOutWaits(
   repository: OrchestrationRepository,
   context: CommandContext,
-  fenced: (id: WorkflowInstanceId) => Promise<boolean> = async () => false,
+  instances?: Awaited<ReturnType<OrchestrationRepository['list']>>,
 ) {
   const expired = [];
-  for (const loaded of await repository.list()) {
-    if (loaded.view === null || (await fenced(loaded.view.workflowInstanceId))) continue;
+  for (const loaded of instances ?? (await repository.list())) {
+    if (loaded.view === null) continue;
     const decision = expireTimedOutAwait(loaded.view, {
       occurredAt: context.occurredAt,
       causationId: context.commandId,
