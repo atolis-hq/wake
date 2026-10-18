@@ -31,10 +31,16 @@ it('reads authenticated live health without changing auth or runtime state', asy
             { name: 'journal', status: 'ok' },
             {
               name: 'projection:delivery',
+              kind: 'event-processor',
               status: 'degraded',
               detail: 'event poison at global position 4',
             },
-            { name: 'activation-scheduler', status: 'ok', detail: 'healthy' },
+            {
+              name: 'activation-scheduler',
+              kind: 'event-processor',
+              status: 'ok',
+              detail: 'healthy',
+            },
           ],
         },
       }),

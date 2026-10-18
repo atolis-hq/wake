@@ -1,4 +1,4 @@
-import type { CheckpointStore, EventJournal } from '@atolis-hq/eventing';
+import type { CheckpointStore, EventJournal, EventProcessorFailure } from '@atolis-hq/eventing';
 import {
   EventProcessorHealthStatus,
   EventProcessorHost,
@@ -10,6 +10,28 @@ import {
   type ProcessorRunSerialiser,
 } from '@atolis-hq/eventing';
 import { inspect } from 'node:util';
+
+/**
+ * Logs the full stack when a processor first fails or its failure changes;
+ * identical repeats log one short line only at each power-of-ten count so a
+ * poison event retried on backoff cannot flood the log.
+ */
+export function createProcessorFailureLogger(
+  write: (line: string) => void,
+): (error: EventProcessorFailure) => void {
+  const seen = new Map<string, { message: string; count: number }>();
+  return (error) => {
+    const previous = seen.get(error.consumer);
+    if (previous?.message !== error.message) {
+      seen.set(error.consumer, { message: error.message, count: 1 });
+      write(`${inspect(error, { depth: 8 })}\n`);
+      return;
+    }
+    previous.count += 1;
+    if (Number.isInteger(Math.log10(previous.count)))
+      write(`${error.message} (repeated ${previous.count} times; stack logged on first failure)\n`);
+  };
+}
 
 /**
  * Bootstrap's single registry for every deployed event processor. It owns
@@ -29,7 +51,7 @@ export class EventProcessorRuntime {
     options: EventProcessorHostOptions = {},
   ) {
     this.host = new EventProcessorHost(journal, checkpoints, serialiseRun, clock, {
-      onFailure: (error) => process.stderr.write(`${inspect(error, { depth: 8 })}\n`),
+      onFailure: createProcessorFailureLogger((line) => process.stderr.write(line)),
       ...options,
     });
   }

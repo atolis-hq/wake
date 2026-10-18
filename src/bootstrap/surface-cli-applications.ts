@@ -1,4 +1,9 @@
-import { EventActorKind, JOURNAL_CHANGE_FALLBACK_MS, correlationId } from '@atolis-hq/eventing';
+import {
+  EventActorKind,
+  EventProcessorFailure,
+  JOURNAL_CHANGE_FALLBACK_MS,
+  correlationId,
+} from '@atolis-hq/eventing';
 import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import type { FastifyInstance } from 'fastify';
 import { execFile as nodeExecFile, spawn } from 'node:child_process';
@@ -168,7 +173,13 @@ export function createSurfaceCliApplications(
   const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
   const runnerIdleWait = createRunnerIdleWait(root, root.config.controlPlane?.resident);
   const reportResidentError = (label: 'intake' | 'runner') => async (error: unknown) => {
-    process.stderr.write(`Wake ${label} tick failed: ${inspect(error, { depth: 8 })}\n`);
+    // Processor failures were already logged with their stack by the runtime.
+    const attributed =
+      error instanceof AggregateError &&
+      error.errors.every((cause) => cause instanceof EventProcessorFailure);
+    process.stderr.write(
+      `Wake ${label} tick failed: ${attributed ? error.message : inspect(error, { depth: 8 })}\n`,
+    );
   };
   // Intake owns provider polling, so only its resident loop backs off
   // exponentially when idle. The runner loop owns triggers, reconciliation,

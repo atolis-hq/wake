@@ -22,6 +22,8 @@ export * from './runtime/clock.js';
 
 export * from './runtime/event-processor-host.js';
 
+export * from './runtime/processor-failure.js';
+
 export * from './runtime/processor-health.js';
 
 export * from './runtime/processor-run-serialiser.js';

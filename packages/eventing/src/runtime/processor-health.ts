@@ -1,6 +1,7 @@
 import type { EventJournal } from '../store/event-journal.js';
 import { type EventProcessor } from '../subscriptions/event-processor.js';
 import type { EventingClock } from './clock.js';
+import { EventProcessorFailure } from './processor-failure.js';
 
 const maximumErrorLength = 1_000;
 
@@ -125,6 +126,12 @@ export class ProcessorHealthRegistry {
 }
 
 function boundedError(error: unknown): { readonly name: string; readonly message: string } {
+  // Keep the attributed message but report the original error class.
+  if (error instanceof EventProcessorFailure && error.cause instanceof Error)
+    return {
+      name: error.cause.name.slice(0, maximumErrorLength),
+      message: error.message.slice(0, maximumErrorLength),
+    };
   if (error instanceof Error)
     return {
       name: error.name.slice(0, maximumErrorLength),

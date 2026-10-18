@@ -541,9 +541,10 @@ it('publishes a healthy head and bounds both error name and message', async () =
   await retryObserved.promise;
   expect(host.health('bounded-error')).toMatchObject({ head: 1, status: 'degraded' });
   expect(host.health('bounded-error')?.lastError).toMatchObject({
-    name: 'EventProcessorFailure',
-    message: expect.stringContaining('Processor'),
+    name: 'n'.repeat(1_000),
+    message: expect.stringMatching(/^Processor .*bounded-error/),
   });
+  expect(host.health('bounded-error')?.lastError?.message).toHaveLength(1_000);
   run.abort();
   holdRetry.resolve();
   await run.done;

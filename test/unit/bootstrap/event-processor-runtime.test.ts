@@ -1,5 +1,6 @@
 import {
   EventProcessorCategory,
+  EventProcessorFailure,
   EventProcessorReplayPolicy,
   createEventData,
   defineEventProcessor,
@@ -10,7 +11,10 @@ import {
   createInMemoryProcessorRunSerialiser,
 } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
-import { EventProcessorRuntime } from '../../../src/bootstrap/event-processor-runtime.js';
+import {
+  EventProcessorRuntime,
+  createProcessorFailureLogger,
+} from '../../../src/bootstrap/event-processor-runtime.js';
 import { type EntityRef } from '../../../src/kernel/index.js';
 
 const clock = { now: () => new Date('2026-08-30T00:00:00.000Z') };
@@ -132,6 +136,21 @@ it('freezes registration at start and does not partially register an invalid bat
   expect(() => runtime.register([duplicate])).toThrow(/started/i);
   run.abort();
   await expect(run.done).resolves.toBeUndefined();
+});
+
+it('logs a failing processor stack once and then only at power-of-ten repeats', () => {
+  const lines: string[] = [];
+  const log = createProcessorFailureLogger((line) => lines.push(line));
+  const failure = (message: string) =>
+    new EventProcessorFailure({ name: 'p', consumer: 'reactor:p' }, new Error(message));
+  for (let attempt = 0; attempt < 100; attempt += 1) log(failure('poison'));
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toContain('at ');
+  expect(lines[1]).toContain('repeated 10 times');
+  expect(lines[2]).toContain('repeated 100 times');
+  log(failure('different'));
+  expect(lines).toHaveLength(4);
+  expect(lines[3]).toContain('different');
 });
 
 function processor(consumer: string, name: string, handle: () => Promise<void>) {

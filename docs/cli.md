@@ -113,5 +113,10 @@ Processor failures preserve the durable checkpoint and retry in journal order
 with capped exponential backoff. Resident processors run independently. One-shot
 catch-up waits for all sibling passes before reporting failures. The health API
 and UI report degraded processors with their latest attributed error; runtime
-failure logs include the original cause and stack. Batch failures report the
-consumer without inventing a specific event id.
+failure logs include the original cause and stack the first time a processor
+fails or its failure changes; identical repeats log a short line only at each
+power-of-ten count. The health `lastError` keeps the original error class and an
+attributed, length-bounded message. Processor entries in the health API carry
+`kind: "event-processor"`, which doctor uses to select them. Batch failures report the
+consumer without inventing a specific event id. One-shot `tick` still skips
+triggers, maintenance and delivery when fact catch-up fails.

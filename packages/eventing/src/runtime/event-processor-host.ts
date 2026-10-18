@@ -1,8 +1,8 @@
-import type { EventEnvelope } from '../contracts/events.js';
 import type { CheckpointStore } from '../store/checkpoint-store.js';
 import type { EventJournal } from '../store/event-journal.js';
 import { type EventProcessor } from '../subscriptions/event-processor.js';
 import type { EventingClock } from './clock.js';
+import { EventProcessorFailure } from './processor-failure.js';
 import {
   EventProcessorHealthStatus,
   ProcessorHealthRegistry,
@@ -305,20 +305,5 @@ function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void
 export class EventProcessorRunAbortedError extends Error {
   constructor() {
     super('Event processor run aborted');
-  }
-}
-
-/** Preserves the original stack as cause and attributes only known event context. */
-export class EventProcessorFailure extends Error {
-  constructor(
-    processor: Pick<EventProcessor, 'name' | 'consumer'>,
-    cause: unknown,
-    event?: EventEnvelope,
-  ) {
-    super(
-      `Processor ${processor.name} (${processor.consumer}) failed${event === undefined ? '' : ` on event ${event.event.eventId} at global position ${event.globalPosition}`}: ${cause instanceof Error ? cause.message : String(cause)}`,
-      { cause },
-    );
-    this.name = 'EventProcessorFailure';
   }
 }
