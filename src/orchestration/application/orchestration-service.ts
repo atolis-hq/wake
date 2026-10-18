@@ -98,8 +98,11 @@ export class OrchestrationService {
       this.startWorkflow,
       (command, context) => this.acceptActivityOutcome.execute(command, context),
       isAgentActivity,
+      (id) => this.delegatedWork.fences(id),
     );
-    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
+    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work, (id) =>
+      this.delegatedWork.fences(id),
+    );
     this.childWorkflows = new RequestChild(
       repository,
       this.claims,
@@ -114,7 +117,7 @@ export class OrchestrationService {
         await this.delegatedWork.reconcile(context);
         await this.childWorkflows.reconcileChildCompletions(context);
       },
-      (id, activationId) => this.delegatedWork.fences(id, activationId),
+      (id) => this.delegatedWork.fences(id),
     );
   }
 
@@ -457,11 +460,7 @@ export class OrchestrationService {
     const entries = await this.advanceWorkflow.listPendingActivations(workItemId);
     const allowed = await Promise.all(
       entries.map(
-        async (entry) =>
-          !(await this.delegatedWork.fences(
-            entry.workflow.workflowInstanceId,
-            entry.activation.activationId,
-          )),
+        async (entry) => !(await this.delegatedWork.fences(entry.workflow.workflowInstanceId)),
       ),
     );
     return entries.filter((_, index) => allowed[index]);

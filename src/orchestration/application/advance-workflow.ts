@@ -51,6 +51,7 @@ export class AdvanceWorkflow {
     private readonly workflows: StartWorkflow,
     private readonly acceptOutcome: AcceptActivityOutcome['execute'],
     private readonly isAgentActivity: AgentActivityClassifier = () => true,
+    private readonly fenced: (id: WorkflowInstanceId) => Promise<boolean> = async () => false,
   ) {}
 
   async requestSupplementalActivity(
@@ -59,6 +60,7 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const loaded = await this.repository.loadRequired(id);
+    if (await this.fenced(id)) return loaded.view;
     const definition = await this.workflows.definitionForOperation(
       loaded.view,
       loaded.sequence,
@@ -142,7 +144,7 @@ export class AdvanceWorkflow {
   }
 
   async expireTimedOutWaits(context: CommandContext) {
-    return expireTimedOutWaits(this.repository, context);
+    return expireTimedOutWaits(this.repository, context, this.fenced);
   }
 
   resolveExecutionFailure(
@@ -150,7 +152,11 @@ export class AdvanceWorkflow {
     input: ExecutionFailureInput,
     context: CommandContext,
   ) {
-    return resolveExecutionFailure(this.repository, this.acceptOutcome, id, input, context);
+    return this.fenced(id).then((fenced) =>
+      fenced
+        ? this.get(id)
+        : resolveExecutionFailure(this.repository, this.acceptOutcome, id, input, context),
+    );
   }
 
   async retryRunnerQuotaFailure(
@@ -164,7 +170,7 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const loaded = await this.repository.load(id);
-    if (loaded.view === null) return null;
+    if (loaded.view === null || (await this.fenced(id))) return loaded.view;
     // The retry re-requests the interrupted Activation, not a stage lookup, but
     // the definition must still be resolvable for the retried Activation's own
     // outcome to be routable later; an unavailable definition blocks here.
@@ -203,6 +209,7 @@ export class AdvanceWorkflow {
     const loaded = await this.repository.load(id);
     if (loaded.view === null)
       throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');
+    if (await this.fenced(id)) return loaded.view;
     if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return loaded.view;
     const definition = await this.workflows.definitionForOperation(
       loaded.view,
@@ -301,7 +308,11 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const { repository, workflows } = this;
-    return acceptResourceTransition(repository, workflows, id, target, evidenceId, context);
+    return this.fenced(id).then((fenced) =>
+      fenced
+        ? this.get(id)
+        : acceptResourceTransition(repository, workflows, id, target, evidenceId, context),
+    );
   }
 
   // One shared load per live instance, reused for both the watch match and

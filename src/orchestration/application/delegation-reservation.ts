@@ -60,6 +60,9 @@ export function buildReservation(
 export function sameDelegation(a: DelegationReservation, b: DelegationReservation): boolean {
   const content = (reservation: DelegationReservation) => ({
     ...reservation,
+    runId: undefined,
+    maxDepth: undefined,
+    maxDescendants: undefined,
     children: reservation.children.map(
       ({ workItemId: _w, workflowInstanceId: _i, grantId: _g, ...assignment }) => assignment,
     ),
@@ -74,11 +77,6 @@ export function assertWithinRootLimits(
   limits: DelegationLimits,
 ): void {
   const rootLimits = existing[0] ?? limits;
-  if (
-    limits.maxDepth !== rootLimits.maxDepth ||
-    limits.maxDescendants !== rootLimits.maxDescendants
-  )
-    throw new Error('Nested delegation cannot change root limits');
   const reserved = existing.reduce((count, entry) => count + entry.children.length, 0);
   if (
     reservation.ancestors.length > rootLimits.maxDepth ||

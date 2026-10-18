@@ -291,6 +291,14 @@ const groupBudgetGrantedEnvelope = childGroupEnvelope(
     });
 });
 const eventSchemas = {
+  [OrchestrationEventType.DelegationFailed]: workflowEnvelope(
+    OrchestrationEventType.DelegationFailed,
+    z.object({ cohortId: z.string().min(1), reason: z.string().min(1) }).strict(),
+  ),
+  [OrchestrationEventType.DelegationReconciliationFailed]: workflowEnvelope(
+    OrchestrationEventType.DelegationReconciliationFailed,
+    z.object({ cohortId: z.string().min(1), reason: z.string().min(1) }).strict(),
+  ),
   [OrchestrationEventType.DelegationReserved]: workflowEnvelope(
     OrchestrationEventType.DelegationReserved,
     delegationReservationSchema,

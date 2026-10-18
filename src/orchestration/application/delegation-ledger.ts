@@ -49,12 +49,21 @@ export function delegationDraft(
 
 /** Read side and idempotent append helpers over the journal-owned delegation facts. */
 export class DelegationLedger {
+  private fenceSnapshot:
+    | { events: readonly WorkflowOrchestrationEvent[]; ids: ReadonlySet<WorkflowInstanceId> }
+    | undefined;
+
+  private readonly present: CachedJournalView<boolean>;
+
   private readonly view: CachedJournalView<readonly WorkflowOrchestrationEvent[]>;
 
   constructor(
     private readonly journal: EventJournal,
     private readonly repository: OrchestrationRepository,
   ) {
+    this.present = cachedJournalView(journal, (events) =>
+      events.some((entry) => entry.event.eventType === OrchestrationEventType.DelegationReserved),
+    );
     this.view = cachedJournalView(journal, (events) =>
       events.flatMap((event) => {
         const owned = selectWorkflowOrchestrationEvent(event);
@@ -68,17 +77,23 @@ export class DelegationLedger {
   }
 
   async reservations(): Promise<readonly DelegationReservation[]> {
+    if (!(await this.present.get())) return [];
     return reservationsOf(await this.events());
   }
 
-  async fences(id: WorkflowInstanceId, activationId?: string): Promise<boolean> {
+  async fences(id: WorkflowInstanceId): Promise<boolean> {
+    if (!(await this.present.get())) return false;
     const events = await this.events();
-    return reservationsOf(events).some(
-      (entry) =>
-        entry.parentWorkflowInstanceId === id &&
-        (activationId === undefined || entry.activationId === activationId) &&
-        !isJoined(events, entry),
-    );
+    if (this.fenceSnapshot?.events !== events)
+      this.fenceSnapshot = {
+        events,
+        ids: new Set(
+          reservationsOf(events)
+            .filter((entry) => !isSettled(events, entry))
+            .map((entry) => entry.parentWorkflowInstanceId),
+        ),
+      };
+    return this.fenceSnapshot.ids.has(id);
   }
 
   /** Appends once per key, retrying optimistic-concurrency conflicts against fresh stream state. */
@@ -120,6 +135,21 @@ export function isJoined(
       event.stream.id === reservation.parentWorkflowInstanceId &&
       event.event.eventType === OrchestrationEventType.DelegationJoined &&
       event.event.payload.cohortId === reservation.cohortId,
+  );
+}
+
+export function isSettled(
+  events: readonly WorkflowOrchestrationEvent[],
+  reservation: DelegationReservation,
+): boolean {
+  return (
+    isJoined(events, reservation) ||
+    events.some(
+      (entry) =>
+        entry.stream.id === reservation.parentWorkflowInstanceId &&
+        entry.event.eventType === OrchestrationEventType.DelegationFailed &&
+        entry.event.payload.cohortId === reservation.cohortId,
+    )
   );
 }
 

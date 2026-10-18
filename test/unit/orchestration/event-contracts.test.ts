@@ -87,6 +87,16 @@ const delegationReservation = {
 } as const;
 
 const delegationSamples = [
+  eventEnvelope(
+    OrchestrationEventType.DelegationFailed,
+    { cohortId: 'cohort-1', reason: 'Child failed' },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DelegationReconciliationFailed,
+    { cohortId: 'cohort-1', reason: 'Storage unavailable' },
+    workflow,
+  ),
   eventEnvelope(OrchestrationEventType.DelegationReserved, delegationReservation, workflow),
   eventEnvelope(OrchestrationEventType.DelegationRegistered, { cohortId: 'cohort-1' }, workflow),
   eventEnvelope(OrchestrationEventType.DelegationResultSelected, delegationResult, workflow),

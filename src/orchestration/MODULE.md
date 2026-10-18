@@ -40,10 +40,15 @@ own primary workflow, separate from same-WorkItem watch children. A
 commit point (identities, pinned workflow fingerprints, root-wide depth and
 descendant limits). Wait, WorkItem, claim, artifact grant, child start, result
 selection and join are reconciled idempotently from it. The parent is fenced
-from ordinary advancement until `delegation-joined`; a child qualifies only when
+from ordinary advancement until `delegation-joined` or terminal `delegation-failed`; a child qualifies only when
 its workflow completed with a `done` outcome and every named output resolves to
 an accepted exact artifact revision. Production exposure is deferred to the
-delegation controls work; Bootstrap supplies the Artifacts adapter.
+delegation controls work; Bootstrap supplies the Artifacts adapter. Reconciliation
+faults are recorded per cohort and retried without stalling unrelated work.
+A terminal child without qualifying outputs blocks the parent and settles the
+cohort. Settled cohorts release descendant capacity. Continuation preserves the
+delegating activation's typed input and identity flags; exact results are read
+through the joined-results query rather than added to activity input schemas.
 
 ## Public contracts
 

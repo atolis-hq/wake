@@ -38,6 +38,8 @@ export const OrchestrationEventType = {
   DelegationResultSelected: 'orchestration.delegation-result-selected',
   DelegationWaitStarted: 'orchestration.delegation-wait-started',
   DelegationJoined: 'orchestration.delegation-joined',
+  DelegationFailed: 'orchestration.delegation-failed',
+  DelegationReconciliationFailed: 'orchestration.delegation-reconciliation-failed',
   WorkflowDefinitionRegistered: 'orchestration.workflow-definition-registered',
   InstanceStarted: 'orchestration.instance-started',
   StageEntered: 'orchestration.stage-entered',
@@ -69,6 +71,14 @@ export const OrchestrationEventType = {
 } as const;
 
 export interface OrchestrationEventPayloads {
+  readonly [OrchestrationEventType.DelegationFailed]: {
+    readonly cohortId: string;
+    readonly reason: string;
+  };
+  readonly [OrchestrationEventType.DelegationReconciliationFailed]: {
+    readonly cohortId: string;
+    readonly reason: string;
+  };
   readonly [OrchestrationEventType.DelegationReserved]: DelegationReservation;
   readonly [OrchestrationEventType.DelegationRegistered]: { readonly cohortId: string };
   readonly [OrchestrationEventType.DelegationResultSelected]: DelegationResult;

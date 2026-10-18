@@ -7,15 +7,22 @@ export function createDelegationArtifacts(input: {
   readonly contexts: ArtifactContextService;
   readonly orchestration: OrchestrationService;
 }): DelegationArtifacts {
-  const accepted = async (activationId: string, workItemId?: string) =>
-    (await input.orchestration.listAll()).some(
-      (workflow) =>
-        (workItemId === undefined || workflow.workItemId === workItemId) &&
-        workflow.acceptedOutcomes.some((outcome) => outcome === activationId),
-    );
+  const acceptance = async () => {
+    const workflows = await input.orchestration.listAll();
+    return async (activationId: string, workItemId?: string) =>
+      workflows.some(
+        (workflow) =>
+          (workItemId === undefined || workflow.workItemId === workItemId) &&
+          workflow.acceptedOutcomes.some((outcome) => outcome === activationId),
+      );
+  };
   return {
-    async validateInputs(_parent, references) {
+    async validateInputs(parent, references) {
+      const allowed = await input.orchestration.delegatedWork.contextWorkItems(parent);
+      const accepted = await acceptance();
       for (const reference of references) {
+        if (!allowed.has(reference.workItemId))
+          throw new Error('Delegation context is outside the parent hierarchy');
         const revision = (await input.artifacts.get(reference.workItemId))?.revisions.find(
           (candidate) => candidate.revisionId === reference.revisionId,
         );
@@ -27,9 +34,10 @@ export function createDelegationArtifacts(input: {
           throw new Error('Delegation context must reference accepted artifact revisions');
       }
     },
-    registerChild: (grant, context) => input.contexts.registerChild(grant, accepted, context),
+    registerChild: async (grant, context) =>
+      input.contexts.registerChild(grant, await acceptance(), context),
     async qualifyingOutputs(child, outputs) {
-      const published = await input.artifacts.latestPublished(child.workItemId, accepted);
+      const published = await input.artifacts.latestPublished(child.workItemId, await acceptance());
       const selected = outputs.map((output) => ({
         name: output.name,
         revision: published.find((revision) => revision.path === output.path),

@@ -210,11 +210,13 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       state.retryCounts[event.payload.retryKey] = event.payload.count;
       return;
     case OrchestrationEventType.InstanceCompleted:
+      delete state.delegationWait;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceCompleted]!;
       delete state.pendingActivation;
       delete state.waitingFor;
       return;
     case OrchestrationEventType.InstanceBlocked:
+      delete state.delegationWait;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceBlocked]!;
       state.blockReason = event.payload.reason;
       return;
@@ -222,6 +224,7 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       state.operatorRetryCommandIds.push(event.payload.commandId);
       return;
     case OrchestrationEventType.InstanceSuperseded:
+      delete state.delegationWait;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceSuperseded]!;
       return;
     default:
@@ -252,6 +255,8 @@ function applyCoordinationFact(state: MutableWorkflowInstance, event: Coordinati
     case OrchestrationEventType.ChildRequested:
     case OrchestrationEventType.ChildStarted:
     case OrchestrationEventType.GroupBudgetExhausted:
+    case OrchestrationEventType.DelegationFailed:
+    case OrchestrationEventType.DelegationReconciliationFailed:
     case OrchestrationEventType.DelegationReserved:
     case OrchestrationEventType.DelegationRegistered:
     case OrchestrationEventType.DelegationResultSelected:

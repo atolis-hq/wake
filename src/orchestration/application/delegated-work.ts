@@ -4,7 +4,7 @@ import {
   type CommandContext,
   type EventJournal,
 } from '@atolis-hq/eventing';
-import { ActivityOutcomeKind } from '../../activities/index.js';
+import { activationId, ActivityOutcomeKind } from '../../activities/index.js';
 import type { ArtifactDelegationGrant, ArtifactRevisionReference } from '../../artifacts/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type {
@@ -14,6 +14,7 @@ import type {
   DelegationReservation,
   DelegationResult,
 } from '../contracts/delegation.js';
+import { selectWorkflowOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import {
   orchestrationGroupId,
@@ -23,13 +24,13 @@ import {
 import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
-import { activation, nextOrdinal } from '../domain/decision-events.js';
+import { nextOrdinal } from '../domain/decision-events.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import {
-  DelegationLedger,
   delegationDraft,
   delegationEventId,
-  isJoined,
+  DelegationLedger,
+  isSettled,
   reservationsOf,
   reservedEvent,
   selectedResults,
@@ -82,8 +83,30 @@ export class DelegatedWork {
     this.artifacts = artifacts;
   }
 
-  fences(id: WorkflowInstanceId, activationId?: string): Promise<boolean> {
-    return this.ledger.fences(id, activationId);
+  fences(id: WorkflowInstanceId): Promise<boolean> {
+    return this.ledger.fences(id);
+  }
+
+  async contextWorkItems(parent: WorkflowInstanceView): Promise<ReadonlySet<string>> {
+    const item = await this.work.get(parent.workItemId);
+    const allowed = new Set<string>([parent.workItemId, ...(item?.delegation?.ancestors ?? [])]);
+    for (const reservation of await this.ledger.reservations())
+      if (reservation.parentWorkItemId === parent.workItemId)
+        for (const child of reservation.children) allowed.add(child.workItemId);
+    return allowed;
+  }
+
+  async results(id: WorkflowInstanceId, cohortId: string): Promise<readonly DelegationResult[]> {
+    const events = await this.ledger.events();
+    const joined = events.find(
+      (entry) =>
+        entry.stream.id === id &&
+        entry.event.eventType === OrchestrationEventType.DelegationJoined &&
+        entry.event.payload.cohortId === cohortId,
+    );
+    return joined?.event.eventType === OrchestrationEventType.DelegationJoined
+      ? joined.event.payload.results
+      : [];
   }
 
   async reserve(
@@ -96,19 +119,29 @@ export class DelegatedWork {
     const artifacts = this.requireArtifacts();
     const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     const identity = await this.parentIdentity(parent);
-    const reservation = buildReservation(identity.parent, caller, cohortId, assignments, limits);
+    let reservation = buildReservation(identity.parent, caller, cohortId, assignments, limits);
     for (;;) {
       const events = await this.ledger.events();
       const all = reservationsOf(events).filter(
         (entry) => entry.rootWorkItemId === reservation.rootWorkItemId,
       );
+      const rootLimits = {
+        maxDepth: all[0]?.maxDepth ?? limits.maxDepth,
+        maxDescendants: all[0]?.maxDescendants ?? limits.maxDescendants,
+      };
+      reservation = buildReservation(identity.parent, caller, cohortId, assignments, rootLimits);
       const prior = all.find((entry) => entry.cohortId === cohortId);
       if (prior !== undefined) {
         if (!sameDelegation(prior, reservation)) throw new Error('Delegation replay conflict');
         await this.reconcile(context);
         return prior;
       }
-      await this.assertReservable(caller, all, reservation, limits);
+      await this.assertReservable(
+        caller,
+        await this.capacityReservations(all, events),
+        reservation,
+        rootLimits,
+      );
       for (const child of reservation.children)
         await this.prepareChild(artifacts, parent, child, context);
       if (await this.commit(identity.root, events, reservation, context)) break;
@@ -119,8 +152,46 @@ export class DelegatedWork {
 
   async reconcile(context: CommandContext): Promise<void> {
     if (this.artifacts === undefined) return;
-    for (const reservation of await this.ledger.reservations())
-      await this.reconcileReservation(this.artifacts, reservation, context);
+    for (const reservation of await this.ledger.reservations()) {
+      try {
+        await this.reconcileReservation(this.artifacts, reservation, context);
+      } catch (error) {
+        // Registration faults remain retryable, but cannot interrupt other cohorts or watch children.
+        await this.ledger.appendOnce(
+          reservation.parentWorkflowInstanceId,
+          context,
+          `reconcile-failed:${reservation.cohortId}:${context.commandId}`,
+          {
+            eventType: OrchestrationEventType.DelegationReconciliationFailed,
+            payload: {
+              cohortId: reservation.cohortId,
+              reason: error instanceof Error ? error.message : 'Delegation reconciliation failed',
+            },
+          },
+        );
+      }
+    }
+  }
+
+  private async capacityReservations(
+    reservations: readonly DelegationReservation[],
+    events: Awaited<ReturnType<DelegationLedger['events']>>,
+  ): Promise<readonly DelegationReservation[]> {
+    const capacity = [];
+    for (const reservation of reservations) {
+      if (!isSettled(events, reservation)) {
+        capacity.push(reservation);
+        continue;
+      }
+      const children = [];
+      for (const child of reservation.children) {
+        const view = (await this.repository.load(child.workflowInstanceId)).view;
+        if (view?.status === WorkflowStatus.Active || view?.status === WorkflowStatus.Waiting)
+          children.push(child);
+      }
+      capacity.push({ ...reservation, children });
+    }
+    return capacity;
   }
 
   private requireArtifacts(): DelegationArtifacts {
@@ -232,22 +303,95 @@ export class DelegatedWork {
     reservation: DelegationReservation,
     context: CommandContext,
   ): Promise<void> {
-    if (isJoined(await this.ledger.events(), reservation)) return;
-    await this.ledger.appendOnce(
-      reservation.parentWorkflowInstanceId,
-      context,
-      `wait:${reservation.cohortId}`,
-      {
-        eventType: OrchestrationEventType.DelegationWaitStarted,
-        payload: { cohortId: reservation.cohortId, activationId: reservation.activationId },
-      },
-    );
+    if (isSettled(await this.ledger.events(), reservation)) return;
+    const parent = (await this.repository.loadRequired(reservation.parentWorkflowInstanceId)).view;
+    if (parent.status !== WorkflowStatus.Active && parent.status !== WorkflowStatus.Waiting) {
+      await this.fail(reservation, 'Delegating parent is no longer active or waiting', context);
+      return;
+    }
+    if (!(await this.ensureWait(reservation, context))) return;
     const root = await this.registerChildren(artifacts, reservation, context);
     for (const child of reservation.children)
       await this.advanceChild(artifacts, root, reservation, child, context);
     const results = selectedResults(await this.ledger.events(), reservation.cohortId);
     if (reservation.children.every((c) => results.some((r) => r.childWorkItemId === c.workItemId)))
       await this.join(reservation, results, context);
+  }
+
+  private async ensureWait(
+    reservation: DelegationReservation,
+    context: CommandContext,
+  ): Promise<boolean> {
+    const id = reservation.parentWorkflowInstanceId;
+    for (;;) {
+      const loaded = await this.repository.loadRequired(id);
+      if (
+        loaded.view.status !== WorkflowStatus.Active &&
+        loaded.view.status !== WorkflowStatus.Waiting
+      )
+        return false;
+      if (loaded.view.delegationWait?.cohortId === reservation.cohortId) return true;
+      try {
+        await this.repository.append(id, loaded.sequence, [
+          delegationDraft(
+            context,
+            `wait:${reservation.cohortId}`,
+            {
+              eventType: OrchestrationEventType.DelegationWaitStarted,
+              payload: { cohortId: reservation.cohortId, activationId: reservation.activationId },
+            },
+            id,
+          ),
+        ]);
+        return true;
+      } catch (error) {
+        if (!(error instanceof WrongExpectedSequenceError)) throw error;
+      }
+    }
+  }
+
+  private async fail(
+    reservation: DelegationReservation,
+    reason: string,
+    context: CommandContext,
+  ): Promise<void> {
+    const id = reservation.parentWorkflowInstanceId;
+    for (;;) {
+      const loaded = await this.repository.loadRequired(id);
+      if (isSettled(await this.ledger.events(), reservation)) return;
+      const drafts = [
+        delegationDraft(
+          context,
+          `failed:${reservation.cohortId}`,
+          {
+            eventType: OrchestrationEventType.DelegationFailed,
+            payload: { cohortId: reservation.cohortId, reason },
+          },
+          id,
+        ),
+      ];
+      if (
+        loaded.view.status === WorkflowStatus.Active ||
+        loaded.view.status === WorkflowStatus.Waiting
+      )
+        drafts.push(
+          delegationDraft(
+            context,
+            `block:${reservation.cohortId}`,
+            {
+              eventType: OrchestrationEventType.InstanceBlocked,
+              payload: { reason },
+            },
+            id,
+          ),
+        );
+      try {
+        await this.repository.append(id, loaded.sequence, drafts);
+        return;
+      } catch (error) {
+        if (!(error instanceof WrongExpectedSequenceError)) throw error;
+      }
+    }
   }
 
   /** WorkItem, primary claim and artifact grant are each idempotent; none starts a workflow. */
@@ -319,14 +463,26 @@ export class DelegatedWork {
     );
     // Accepted activation alone never qualifies: the workflow must complete successfully.
     if (
-      workflow.status !== WorkflowStatus.Completed ||
-      workflow.lastOutcome?.kind !== ActivityOutcomeKind.Done
-    )
+      workflow.status === WorkflowStatus.Blocked ||
+      workflow.status === WorkflowStatus.Superseded ||
+      (workflow.status === WorkflowStatus.Completed &&
+        workflow.lastOutcome?.kind !== ActivityOutcomeKind.Done)
+    ) {
+      await this.fail(reservation, `Child ${child.workItemId} terminated without success`, context);
       return;
+    }
+    if (workflow.status !== WorkflowStatus.Completed) return;
     const selected = selectedResults(await this.ledger.events(), reservation.cohortId);
     if (selected.some((result) => result.childWorkItemId === child.workItemId)) return;
     const outputs = await artifacts.qualifyingOutputs(workflow, child.outputs);
-    if (outputs === null) return;
+    if (outputs === null) {
+      await this.fail(
+        reservation,
+        `Child ${child.workItemId} completed without required outputs`,
+        context,
+      );
+      return;
+    }
     const satisfied =
       outputs.length === child.outputs.length &&
       child.outputs.every(
@@ -336,7 +492,10 @@ export class DelegatedWork {
               output.name === required.name && output.reference.workItemId === child.workItemId,
           ).length === 1,
       );
-    if (!satisfied) throw new Error('Invalid qualifying output contract');
+    if (!satisfied) {
+      await this.fail(reservation, 'Invalid qualifying output contract', context);
+      return;
+    }
     await this.ledger.appendOnce(root, context, `result:${child.grantId}`, {
       eventType: OrchestrationEventType.DelegationResultSelected,
       payload: { cohortId: reservation.cohortId, childWorkItemId: child.workItemId, outputs },
@@ -355,12 +514,22 @@ export class DelegatedWork {
       const joinId = delegationEventId(parentId, `join:${reservation.cohortId}`);
       const events = await this.journal.readStream(workflowInstanceStream(parentId));
       if (events.some((event) => event.event.eventId === joinId)) return;
-      if (loaded.view.delegationWait?.cohortId !== reservation.cohortId)
-        throw new Error('Delegation wait changed');
-      const definition = await this.workflows.definitionFor(loaded.view);
-      const stage = definition.stages[loaded.view.currentStage];
-      if (stage === undefined) throw new Error('Missing delegation continuation stage');
-      const base = typeof stage.with === 'object' && stage.with !== null ? stage.with : {};
+      if (
+        loaded.view.status !== WorkflowStatus.Waiting ||
+        loaded.view.delegationWait?.cohortId !== reservation.cohortId ||
+        isSettled(await this.ledger.events(), reservation)
+      )
+        return;
+      const original = events
+        .map(selectWorkflowOrchestrationEvent)
+        .find(
+          (entry) =>
+            entry?.event.eventType === OrchestrationEventType.ActivityRequested &&
+            entry.event.payload.activationId === reservation.activationId,
+        );
+      if (original?.event.eventType !== OrchestrationEventType.ActivityRequested)
+        throw new Error('Missing delegating activation');
+      const requested = original.event.payload;
       const drafts = [
         delegationDraft(
           context,
@@ -376,17 +545,12 @@ export class DelegatedWork {
           `continue:${reservation.cohortId}`,
           {
             eventType: OrchestrationEventType.ActivityRequested,
-            payload: activation(
-              loaded.view.workflowInstanceId,
-              nextOrdinal(loaded.view),
-              stage.activity,
-              { ...base, delegation: { cohortId: reservation.cohortId, results } },
-              {
-                stage: loaded.view.currentStage,
-                execution: stage.execution,
-                sessionPolicy: 'fresh',
-              },
-            ),
+            payload: {
+              ...requested,
+              activationId: activationId(`${parentId}:activity:${nextOrdinal(loaded.view)}`),
+              ordinal: nextOrdinal(loaded.view),
+              sessionPolicy: 'fresh',
+            },
           },
           parentId,
         ),
