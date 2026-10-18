@@ -1,3 +1,8 @@
+import type { DelegationArtifacts } from '../contracts/delegation-ports.js';
+import { DeferredSignals } from './deferred-signals.js';
+import { DelegatedWork } from './delegated-work.js';
+import { DelegationGate } from './delegation-gate.js';
+import { expireTimedOutWaits } from './expire-timed-out-waits.js';
 import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 /* eslint-disable max-lines */
@@ -56,6 +61,10 @@ import { continuesWaitingForSameWatchGate } from './watch-child-transitions.js';
 import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
 export class OrchestrationService {
+  private readonly delegationGate: DelegationGate;
+  private readonly delegatedWork: DelegatedWork;
+  private readonly repository: OrchestrationRepository;
+  private readonly deferredSignals: DeferredSignals;
   private readonly startWorkflow: StartWorkflow;
   private readonly acceptActivityOutcome: AcceptActivityOutcome;
   private readonly acceptWorkflowSignal: AcceptSignal;
@@ -75,21 +84,48 @@ export class OrchestrationService {
     definitions: Readonly<Record<string, CompiledWorkflow>>,
     projections?: ProjectionStore,
     isAgentActivity?: AgentActivityClassifier,
+    delegation?: DelegationDependenciesFactory,
   ) {
     this.projections = projections;
     this.journal = journal;
     this.work = work;
     const repository = new OrchestrationRepository(journal);
+    this.repository = repository;
+    this.delegationGate = new DelegationGate(repository);
+    const dependencies = delegation?.({
+      isActivationAccepted: (id, item) => this.isActivationAccepted(id, item),
+    });
     this.claims = new CoordinationClaims(journal);
     this.definitions = new WorkflowDefinitionRegistry(journal, projections, definitions);
     this.startWorkflow = new StartWorkflow(repository, this.claims, work, this.definitions);
+    this.delegatedWork = new DelegatedWork(
+      repository,
+      work,
+      this.claims,
+      this.definitions,
+      this.startWorkflow,
+      {
+        artifacts: dependencies?.artifacts ?? unavailableArtifacts,
+        runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
+      },
+    );
     this.advanceWorkflow = new AdvanceWorkflow(
       repository,
       this.startWorkflow,
-      (command, context) => this.acceptActivityOutcome.execute(command, context),
+      (command, context) => this.acceptOutcome(command, context),
       isAgentActivity,
     );
     this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
+    this.deferredSignals = new DeferredSignals(
+      repository,
+      (id, signal, context) =>
+        this.delegationGate.run(id, () => this.acceptWorkflowSignal.execute(id, signal, context)),
+      (id, target, evidenceId, context) =>
+        this.delegationGate.run(id, () =>
+          this.advanceWorkflow.applyResourceTransition(id, target, evidenceId, context),
+        ),
+      (id) => this.delegationGate.fenced(id),
+    );
     this.childWorkflows = new RequestChild(
       repository,
       this.claims,
@@ -100,8 +136,25 @@ export class OrchestrationService {
     this.acceptActivityOutcome = new AcceptActivityOutcome(
       repository,
       this.startWorkflow,
-      (context) => this.childWorkflows.reconcileChildCompletions(context),
+      async (context) => {
+        await this.delegatedWork.reconcile(context);
+        await this.childWorkflows.reconcileChildCompletions(context);
+        await this.deferredSignals.reconcile(context);
+      },
     );
+  }
+
+  async isActivationAccepted(id: string, item?: string): Promise<boolean> {
+    return (await this.repository.list()).some(
+      ({ view }) =>
+        view !== null &&
+        (item === undefined || view.workItemId === item) &&
+        view.acceptedOutcomes.some((accepted) => accepted === id),
+    );
+  }
+
+  joinedDelegationResults(id: WorkflowInstanceId, cohortId: string) {
+    return this.delegatedWork.results(id, cohortId);
   }
 
   start(command: StartWorkflowInstance, context: CommandContext) {
@@ -128,7 +181,15 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, () =>
-      this.acceptActivityOutcome.execute(command, context),
+      this.delegationGate.outcome(
+        command.workflowInstanceId,
+        command.activationId,
+        () => this.acceptActivityOutcome.execute(command, context),
+        async () => {
+          await this.reconcileChildCompletions(context);
+          return (await this.repository.loadRequired(command.workflowInstanceId)).view;
+        },
+      ),
     );
   }
 
@@ -137,9 +198,12 @@ export class OrchestrationService {
     expectation: SignalExpectation,
     context: CommandContext,
   ) {
-    return this.transitionWatchChildren(context, () =>
-      this.acceptWorkflowSignal.wait(workflowInstanceId, expectation, context),
-    );
+    return this.transitionWatchChildren(context, async () => {
+      await this.delegationGate.run(workflowInstanceId, () =>
+        this.acceptWorkflowSignal.wait(workflowInstanceId, expectation, context),
+      );
+      return this.deferredSignals.reconcileWorkflow(workflowInstanceId, context);
+    });
   }
 
   acceptSignal(
@@ -149,7 +213,7 @@ export class OrchestrationService {
   ) {
     return this.coordinateAcceptSignal(() =>
       this.transitionWatchChildren(context, () =>
-        this.acceptWorkflowSignal.execute(workflowInstanceId, signal, context),
+        this.deferredSignals.accept(workflowInstanceId, signal, context),
       ),
     );
   }
@@ -167,7 +231,9 @@ export class OrchestrationService {
     request: SupplementalActivityRequest,
     context: CommandContext,
   ) {
-    return this.advanceWorkflow.requestSupplementalActivity(workflowInstanceId, request, context);
+    return this.delegationGate.run(workflowInstanceId, () =>
+      this.advanceWorkflow.requestSupplementalActivity(workflowInstanceId, request, context),
+    );
   }
 
   async applyConversationCommand(
@@ -311,7 +377,9 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.resolveExecutionFailure(workflowInstanceId, input, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.resolveExecutionFailure(workflowInstanceId, input, context),
+      ),
     );
   }
 
@@ -326,19 +394,25 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.retryRunnerQuotaFailure(workflowInstanceId, input, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.retryRunnerQuotaFailure(workflowInstanceId, input, context),
+      ),
     );
   }
 
   retryBlockedFailedStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context),
+      ),
     );
   }
 
   restartBlockedFailedStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.restartBlockedFailedStage(workflowInstanceId, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.restartBlockedFailedStage(workflowInstanceId, context),
+      ),
     );
   }
 
@@ -361,7 +435,9 @@ export class OrchestrationService {
     )
       return current;
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context),
+      this.delegationGate.run(workflowInstanceId, () =>
+        this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context),
+      ),
     );
   }
 
@@ -439,16 +515,21 @@ export class OrchestrationService {
     return this.childWorkflows.getPrimaryWorkflowInstanceId(workItemId);
   }
 
-  listPendingActivations(workItemId?: string) {
-    return this.advanceWorkflow.listPendingActivations(workItemId);
+  async listPendingActivations(workItemId?: string) {
+    const entries = await this.advanceWorkflow.listPendingActivations(workItemId);
+    return entries.filter((entry) => this.delegationGate.allows(entry.workflow));
   }
 
   listWaiting(signalKind?: SignalName) {
     return this.advanceWorkflow.listWaiting(signalKind);
   }
 
-  expireTimedOutWaits(context: CommandContext) {
-    return this.advanceWorkflow.expireTimedOutWaits(context);
+  async expireTimedOutWaits(context: CommandContext) {
+    return expireTimedOutWaits(
+      this.repository,
+      context,
+      await this.delegationGate.availableInstances(),
+    );
   }
 
   listAll() {
@@ -497,10 +578,12 @@ export class OrchestrationService {
     );
   }
 
-  reconcileChildCompletions(context: CommandContext) {
-    return this.transitionWatchChildren(context, () =>
-      this.childWorkflows.reconcileChildCompletions(context),
-    );
+  async reconcileChildCompletions(context: CommandContext) {
+    await this.delegatedWork.reconcile(context);
+    return this.transitionWatchChildren(context, async () => {
+      await this.childWorkflows.reconcileChildCompletions(context);
+      await this.deferredSignals.reconcile(context);
+    });
   }
 
   private async transitionWatchChildren<Result>(
@@ -572,7 +655,7 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     return this.transitionWatchChildren(context, () =>
-      this.advanceWorkflow.applyResourceTransition(workflowInstanceId, target, evidenceId, context),
+      this.deferredSignals.applyTransition(workflowInstanceId, target, evidenceId, context),
     );
   }
 }
@@ -608,7 +691,8 @@ export const createOrchestrationService = (
   definitions: Readonly<Record<string, CompiledWorkflow>>,
   projections?: ProjectionStore,
   isAgentActivity?: AgentActivityClassifier,
-) => new OrchestrationService(journal, work, definitions, projections, isAgentActivity);
+  delegation?: DelegationDependenciesFactory,
+) => new OrchestrationService(journal, work, definitions, projections, isAgentActivity, delegation);
 
 function isWorkControllable(work: WorkItemView | null): boolean {
   return work !== null && !work.deleted && !work.frozen && work.state === WorkStatus.Open;
@@ -632,3 +716,18 @@ function isReviewConversationCommand(command: string): boolean {
     command === ConversationBuiltInCommand.Changes
   );
 }
+
+/** Immutable dependencies are resolved once; callbacks may refer to services composed later. */
+type DelegationDependenciesFactory = (queries: {
+  isActivationAccepted: (activationId: string, workItemId?: string) => Promise<boolean>;
+}) => { artifacts: DelegationArtifacts; runHasEnded: (runId: string) => Promise<boolean> };
+
+async function unavailableRunCompletion(): Promise<never> {
+  throw new Error('Delegation adapters unavailable');
+}
+
+const unavailableArtifacts: DelegationArtifacts = {
+  validateInputs: unavailableRunCompletion,
+  registerChild: unavailableRunCompletion,
+  qualifyingOutputs: unavailableRunCompletion,
+};

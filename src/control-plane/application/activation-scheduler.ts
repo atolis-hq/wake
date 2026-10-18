@@ -1,8 +1,17 @@
+import { createInProcessSerialiser } from './in-process-scheduler-serialiser.js';
+
+import {
+  isRunnerQuotaOutcome,
+  reportUnappliedRunnerQuotaRetry,
+  runnerQuotaMessage,
+} from './runner-quota-outcome.js';
+
 /* eslint-disable complexity, max-lines-per-function */
 import { correlationId, EventActorKind } from '@atolis-hq/eventing';
 import { ExecutionFailureCode, RunStatus } from '../../execution/index.js';
 import { type Clock } from '../../kernel/index.js';
 import {
+  DelegationPendingError,
   isAmbiguityResolutionBlock,
   WorkflowStatus,
   type WorkflowInstanceView,
@@ -21,10 +30,7 @@ import type {
 import {
   advancementWasDurablyApplied,
   blockIsolatedWorkflow,
-  isRunnerQuotaOutcome,
-  reportUnappliedRunnerQuotaRetry,
   runDispatchLoop,
-  runnerQuotaMessage,
 } from './advance-once-dispatch.js';
 import {
   findUnresolvedSucceededTerminal,
@@ -57,6 +63,19 @@ export function createActivationScheduler(
     occurredAt: clock.now().toISOString(),
     actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
   });
+  const dispatchContext = {
+    orchestration,
+    execution,
+    resources,
+    dispatchPolicy,
+    maxConcurrentRuns,
+    maxOpenWorkItems: dependencies.maxOpenWorkItems ?? null,
+    work: dependencies.work,
+    maxDispatches,
+    runnerIneligibility,
+    isDispatchPaused,
+    commandContext: context,
+  };
   const maintain = async (): Promise<MaintenanceResult> => {
     if (await isDispatchPaused()) return { kind: 'paused' };
     if (workspaceRecovery !== undefined) {
@@ -203,6 +222,21 @@ export function createActivationScheduler(
           reason: recovery.run.failure?.message ?? 'execution failed',
         };
       } catch (error) {
+        if (error instanceof DelegationPendingError) {
+          const result = await runDispatchLoop(
+            pending.filter(
+              (item) =>
+                item.workflow.workflowInstanceId !== recovery.item.workflow.workflowInstanceId,
+            ),
+            dispatchContext,
+          );
+          return result.kind === 'no-work' || result.kind === WorkflowStatus.Waiting
+            ? {
+                kind: WorkflowStatus.Waiting,
+                workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+              }
+            : result;
+        }
         if (
           await advancementWasDurablyApplied(
             orchestration,
@@ -222,19 +256,7 @@ export function createActivationScheduler(
             (item) =>
               item.workflow.workflowInstanceId !== recovery.item.workflow.workflowInstanceId,
           ),
-          {
-            orchestration,
-            execution,
-            resources,
-            dispatchPolicy,
-            maxConcurrentRuns,
-            maxOpenWorkItems: dependencies.maxOpenWorkItems ?? null,
-            work: dependencies.work,
-            maxDispatches,
-            runnerIneligibility,
-            isDispatchPaused,
-            commandContext: context,
-          },
+          dispatchContext,
         );
         return result.kind === 'progressed'
           ? result
@@ -245,19 +267,7 @@ export function createActivationScheduler(
             };
       }
     }
-    const result = await runDispatchLoop(pending, {
-      orchestration,
-      execution,
-      resources,
-      dispatchPolicy,
-      maxConcurrentRuns,
-      maxOpenWorkItems: dependencies.maxOpenWorkItems ?? null,
-      work: dependencies.work,
-      maxDispatches,
-      runnerIneligibility,
-      isDispatchPaused,
-      commandContext: context,
-    });
+    const result = await runDispatchLoop(pending, dispatchContext);
     if (
       expired.length === 0 ||
       (result.kind !== 'no-work' && result.kind !== WorkflowStatus.Waiting)
@@ -281,23 +291,4 @@ export function createActivationScheduler(
     maintain: (signal) => serialise(maintain, signal),
     dispatch: (options, signal) => serialise(() => dispatch(options), signal),
   };
-}
-
-function createInProcessSerialiser() {
-  let prior: Promise<void> = Promise.resolve();
-  return async <Value>(operation: () => Promise<Value>, signal?: AbortSignal): Promise<Value> => {
-    const current = prior.then(async () => {
-      throwIfAborted(signal);
-      return operation();
-    });
-    prior = current.then(
-      () => undefined,
-      () => undefined,
-    );
-    return current;
-  };
-}
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw signal.reason ?? new Error('Activation scheduler run aborted');
 }

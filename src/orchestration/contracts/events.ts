@@ -14,6 +14,7 @@ import type {
   StageConfig,
   TransitionTarget,
 } from './config.js';
+import type { DelegationReservation, DelegationResult } from './delegation.js';
 import type {
   CommandName,
   OrchestrationGroupId,
@@ -32,6 +33,13 @@ import type {
 } from './streams.js';
 
 export const OrchestrationEventType = {
+  DelegationReserved: 'orchestration.delegation-reserved',
+  DelegationRegistered: 'orchestration.delegation-registered',
+  DelegationResultSelected: 'orchestration.delegation-result-selected',
+  DelegationWaitStarted: 'orchestration.delegation-wait-started',
+  DelegationJoined: 'orchestration.delegation-joined',
+  DelegationFailed: 'orchestration.delegation-failed',
+  DelegationReconciliationFailed: 'orchestration.delegation-reconciliation-failed',
   WorkflowDefinitionRegistered: 'orchestration.workflow-definition-registered',
   InstanceStarted: 'orchestration.instance-started',
   StageEntered: 'orchestration.stage-entered',
@@ -43,6 +51,7 @@ export const OrchestrationEventType = {
   ActivityWaiting: 'orchestration.activity-waiting',
   SignalWaitStarted: 'orchestration.signal-wait-started',
   SignalAccepted: 'orchestration.signal-accepted',
+  SignalDeferred: 'orchestration.signal-deferred',
   SupplementalActivityQueued: 'orchestration.supplemental-activity-queued',
   SupplementalActivityDequeued: 'orchestration.supplemental-activity-dequeued',
   RepeatCounted: 'orchestration.repeat-counted',
@@ -62,7 +71,36 @@ export const OrchestrationEventType = {
   GroupBudgetGranted: 'orchestration.group-budget-granted',
 } as const;
 
+export interface DeferredWorkflowSignal {
+  readonly stage: StageName;
+  readonly intentEventId?: string;
+  readonly resourceId?: string;
+  readonly revision?: string;
+  readonly signal: OrchestrationSignal;
+  readonly target?: TransitionTarget;
+}
+
 export interface OrchestrationEventPayloads {
+  readonly [OrchestrationEventType.SignalDeferred]: DeferredWorkflowSignal;
+  readonly [OrchestrationEventType.DelegationFailed]: {
+    readonly cohortId: string;
+    readonly reason: string;
+  };
+  readonly [OrchestrationEventType.DelegationReconciliationFailed]: {
+    readonly cohortId: string;
+    readonly reason: string;
+  };
+  readonly [OrchestrationEventType.DelegationReserved]: DelegationReservation;
+  readonly [OrchestrationEventType.DelegationRegistered]: { readonly cohortId: string };
+  readonly [OrchestrationEventType.DelegationResultSelected]: DelegationResult;
+  readonly [OrchestrationEventType.DelegationWaitStarted]: {
+    readonly cohortId: string;
+    readonly activationId: ActivationId;
+  };
+  readonly [OrchestrationEventType.DelegationJoined]: {
+    readonly cohortId: string;
+    readonly results: readonly DelegationResult[];
+  };
   readonly [OrchestrationEventType.InstanceStarted]:
     | {
         readonly workItemId: WorkItemId;

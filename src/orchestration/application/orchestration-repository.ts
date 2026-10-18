@@ -7,6 +7,7 @@ import type {
   WorkflowOrchestrationEvent,
   WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import { workflowInstanceId } from '../contracts/identifiers.js';
 import { isWorkflowInstanceStream, workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -17,21 +18,58 @@ type ListedInstance = { readonly sequence: number; readonly view: WorkflowInstan
 type JournalEvent = Awaited<ReturnType<EventJournal['readAll']>>[number];
 
 export class OrchestrationRepository {
-  private readonly listed: CachedJournalView<readonly ListedInstance[]>;
+  private readonly listed: CachedJournalView<{
+    instances: readonly ListedInstance[];
+    events: readonly WorkflowOrchestrationEvent[];
+    inherited: ReadonlyMap<string, readonly WorkflowOrchestrationEvent[]>;
+  }>;
 
   constructor(private readonly journal: EventJournal) {
-    this.listed = cachedJournalView(journal, (events) => deriveList(events));
+    this.listed = cachedJournalView(journal, (events) => {
+      const owned = events.flatMap((entry) => {
+        const decoded = selectWorkflowOrchestrationEvent(entry);
+        return decoded === null ? [] : [decoded];
+      });
+      return {
+        instances: deriveList(events, owned),
+        events: owned,
+        inherited: inheritedReservations(owned),
+      };
+    });
   }
 
   async load(id: string) {
-    const events = await this.journal.readStream(workflowInstanceStream(workflowInstanceId(id)));
-    const owned = events
-      .map(selectWorkflowOrchestrationEvent)
-      .filter(
-        (event): event is WorkflowOrchestrationEvent =>
-          event !== null && isWorkflowInstanceStream(event.stream),
+    const { events: own, sequence } = await this.history(id);
+    const inherited = ((await this.listed.get()).inherited.get(id) ?? []).filter((entry) => {
+      const fact = entry.event;
+      if (
+        entry.stream.id === id ||
+        fact.eventType !== OrchestrationEventType.DelegationReserved ||
+        fact.payload.parentWorkflowInstanceId !== id
+      )
+        return false;
+      const cohortId = fact.payload.cohortId;
+      return !own.some(
+        (event) =>
+          (event.event.eventType === OrchestrationEventType.DelegationJoined ||
+            event.event.eventType === OrchestrationEventType.DelegationFailed) &&
+          event.event.payload.cohortId === cohortId,
       );
-    return { sequence: events.length, view: foldWorkflowInstance(owned) };
+    });
+    return { sequence, view: foldWorkflowInstance([...own, ...inherited]) };
+  }
+
+  events(): Promise<readonly WorkflowOrchestrationEvent[]> {
+    return this.listed.get().then((snapshot) => snapshot.events);
+  }
+
+  async history(id: string) {
+    const raw = await this.journal.readStream(workflowInstanceStream(workflowInstanceId(id)));
+    const events = raw.flatMap((entry) => {
+      const owned = selectWorkflowOrchestrationEvent(entry);
+      return owned === null ? [] : [owned];
+    });
+    return { sequence: raw.length, events };
   }
 
   async loadRequired(id: string) {
@@ -64,7 +102,7 @@ export class OrchestrationRepository {
   }
 
   async list(): Promise<readonly ListedInstance[]> {
-    return this.listed.get();
+    return (await this.listed.get()).instances;
   }
 }
 
@@ -76,7 +114,10 @@ function isWorkflowEvent(
 
 // `sequence` counts every event on the stream, matching readStream, while the
 // fold sees only owned orchestration events — exactly what load() computes.
-function deriveList(events: readonly JournalEvent[]): readonly ListedInstance[] {
+function deriveList(
+  events: readonly JournalEvent[],
+  owned: readonly WorkflowOrchestrationEvent[],
+): readonly ListedInstance[] {
   const streams = new Map<string, JournalEvent[]>();
   for (const event of events) {
     if (!isWorkflowInstanceStream(event.stream)) continue;
@@ -84,15 +125,35 @@ function deriveList(events: readonly JournalEvent[]): readonly ListedInstance[] 
     if (existing === undefined) streams.set(event.stream.id, [event]);
     else existing.push(event);
   }
+  const grouped = new Map<string, WorkflowOrchestrationEvent[]>();
+  const add = (id: string, event: WorkflowOrchestrationEvent) => {
+    const group = grouped.get(id);
+    if (group === undefined) grouped.set(id, [event]);
+    else group.push(event);
+  };
+  for (const event of owned) {
+    add(event.stream.id, event);
+    if (
+      event.event.eventType === OrchestrationEventType.DelegationReserved &&
+      event.event.payload.parentWorkflowInstanceId !== event.stream.id
+    )
+      add(event.event.payload.parentWorkflowInstanceId, event);
+  }
   return [...streams.values()].map((streamEvents) => ({
     sequence: streamEvents.length,
-    view: foldWorkflowInstance(
-      streamEvents
-        .map(selectWorkflowOrchestrationEvent)
-        .filter(
-          (event): event is WorkflowOrchestrationEvent =>
-            event !== null && isWorkflowInstanceStream(event.stream),
-        ),
-    ),
+    view: foldWorkflowInstance(grouped.get(streamEvents[0]!.stream.id) ?? []),
   }));
+}
+
+function inheritedReservations(events: readonly WorkflowOrchestrationEvent[]) {
+  const inherited = new Map<string, WorkflowOrchestrationEvent[]>();
+  for (const entry of events) {
+    if (entry.event.eventType !== OrchestrationEventType.DelegationReserved) continue;
+    const id = entry.event.payload.parentWorkflowInstanceId;
+    if (entry.stream.id === id) continue;
+    const prior = inherited.get(id);
+    if (prior === undefined) inherited.set(id, [entry]);
+    else prior.push(entry);
+  }
+  return inherited;
 }

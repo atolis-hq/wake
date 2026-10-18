@@ -32,6 +32,24 @@ export interface WorkService {
   get(workItemId: WorkItemId): Promise<WorkItemView | null>;
 }
 
+/** Delegated ancestry is derived from the validated parent, never trusted from the command. */
+async function assertDelegationAncestry(
+  repository: WorkRepository,
+  command: CreateWorkItem,
+): Promise<void> {
+  const delegation = command.delegation;
+  if (delegation === undefined) return;
+  const parent = (await repository.load(delegation.parentWorkItemId)).view;
+  if (parent === null) throw new Error('Delegation parent does not exist');
+  const ancestors = [...(parent.delegation?.ancestors ?? []), parent.workItemId];
+  if (
+    ancestors.includes(command.workItemId) ||
+    !isDeepStrictEqual(ancestors, delegation.ancestors) ||
+    delegation.rootWorkItemId !== (parent.delegation?.rootWorkItemId ?? parent.workItemId)
+  )
+    throw new Error('Invalid delegation ancestry');
+}
+
 export function createWorkService(journal: EventJournal): WorkService {
   const repository = new WorkRepository(journal);
   const change = (
@@ -45,10 +63,12 @@ export function createWorkService(journal: EventJournal): WorkService {
   return {
     async create(command, context) {
       const loaded = await repository.load(command.workItemId);
+      await assertDelegationAncestry(repository, command);
       const draft = workDraft(context, {
         eventType: WorkEventType.ItemCreated,
         payload: {
           objective: command.objective,
+          ...(command.delegation === undefined ? {} : { delegation: command.delegation }),
           ...(command.tags === undefined ? {} : { tags: command.tags }),
         },
       });

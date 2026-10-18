@@ -37,3 +37,5 @@ export * from './contracts/context.js';
 export * from './application/operator-instructions-service.js';
 
 export * from './application/operator-instructions-projection.js';
+
+export { createDelegationArtifacts } from './application/delegation-artifacts.js';

@@ -34,6 +34,44 @@ compiled costs count removed activities conservatively as agent steps.
 Resource-transition origin remains explicit even on a watch-verdict channel;
 quota re-requests preserve that activation origin without counting a retry.
 
+Delegated work (`DelegatedWork`) starts independent child WorkItems with their
+own primary workflow, separate from same-WorkItem watch children. A
+`delegation-reserved` event on the root's primary workflow stream is the single
+commit point (identities, pinned workflow fingerprints, root-wide depth and
+descendant limits). Wait, WorkItem, claim, artifact grant, child start, result
+selection and join are reconciled idempotently from it. The parent is fenced
+from ordinary advancement until `delegation-joined` or terminal `delegation-failed`; a child qualifies only when
+its workflow reached configured terminal completion without a failure outcome and every named output resolves to
+an accepted exact artifact revision. Production exposure is deferred to the
+delegation controls work. Bootstrap wires an Artifacts-owned adapter through an immutable
+Orchestration-owned port; Orchestration has no dependency on Artifacts or its schemas.
+The public surface exposes the port, accepted-activation and joined-results queries,
+and the retryable error, while registration and reconciliation stay internal.
+Work owns only validated generic ancestry; assignments and criteria stay in
+Orchestration reservations. OrchestrationRepository is the delegation journal
+reader. Its fold routes root reservations to the owning parent and records the
+fence immediately, including nested parents before wait registration. A single
+admission gate protects ordinary outcomes, signals, retries, resource transitions,
+dispatch and wait expiry. Reconciliation
+faults are recorded once per cohort and stable reason code and retried without stalling
+unrelated work, even if recording the diagnostic fails. Unavailable adapters produce isolated durable diagnostics when delegation needs
+reconciliation; unrelated workflows keep advancing. Signals, approvals,
+resource transitions are durably deferred while fenced and replayed through
+normal authority checks when the same stage, intent and resource revision wait
+exists. Execution retries reject with a retryable `DelegationPendingError`;
+the scheduler retains their durable Runs without blocking the parent.
+Only the exact reserving activation's outcome may be held. Join waits for the
+reserving Run to end before continuation. New assignments must select a current
+configured workflow fingerprint; committed reservations recover the pinned one.
+Reservation contention retries are bounded and use fresh root-stream sequences.
+Blocked children remain recoverable and keep the cohort waiting.
+Cancelled, closed or deleted child work before workflow completion settles the
+cohort as failed. A completed child without visible outputs gets one subsequent
+reconciliation command to make them visible, with the first observation persisted
+across restart; missing outputs after that block the parent and settle the cohort. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the
+delegating activation's typed input and identity flags; exact results are read
+through the joined-results query rather than added to activity input schemas.
+
 ## Public contracts
 
 `index.ts` is the only public entry. `OrchestrationService` is a compatibility

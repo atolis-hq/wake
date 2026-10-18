@@ -13,6 +13,7 @@ import {
   FileArtifactStore,
   OperatorInstructionsService,
   createArtifactService,
+  createDelegationArtifacts,
 } from '../artifacts/index.js';
 import {
   DispatchPolicy,
@@ -34,10 +35,12 @@ import {
   ExecutionCancellationReason,
   GitWorkspaceProvider,
   RecoveryService,
+  RunStatus,
   TranscriptStore,
   createExecutionService,
   createLocalProcessInspector,
   createRunnerMemoryProfileDecorator,
+  isActiveRunStatus,
   type FakeScenarioResolver,
   type Runner,
 } from '../execution/index.js';
@@ -243,6 +246,22 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
     definitions,
     projections,
     createAgentActivityClassifier(activities),
+    (queries) => ({
+      artifacts: createDelegationArtifacts({
+        artifacts,
+        contexts: artifactContexts,
+        accepted: queries.isActivationAccepted,
+      }),
+      runHasEnded: async (runId) => {
+        const run = (await execution.list()).find((entry) => entry.runId === runId);
+        return (
+          run !== undefined &&
+          !isActiveRunStatus(run.status) &&
+          run.status !== RunStatus.Ambiguous &&
+          !execution.isLocallyActive(runId)
+        );
+      },
+    }),
   );
   const workspaces = new GitWorkspaceProvider(
     paths.workspacesRoot,

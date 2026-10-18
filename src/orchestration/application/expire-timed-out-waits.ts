@@ -5,9 +5,10 @@ import type { OrchestrationRepository } from './orchestration-repository.js';
 export async function expireTimedOutWaits(
   repository: OrchestrationRepository,
   context: CommandContext,
+  instances?: Awaited<ReturnType<OrchestrationRepository['list']>>,
 ) {
   const expired = [];
-  for (const loaded of await repository.list()) {
+  for (const loaded of instances ?? (await repository.list())) {
     if (loaded.view === null) continue;
     const decision = expireTimedOutAwait(loaded.view, {
       occurredAt: context.occurredAt,

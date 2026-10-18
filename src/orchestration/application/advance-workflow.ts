@@ -17,7 +17,6 @@ import {
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
 import type { AcceptActivityOutcome } from './accept-activity-outcome.js';
 import { appendWithIntentRecovery } from './durable-append.js';
-import { expireTimedOutWaits } from './expire-timed-out-waits.js';
 import { attributeOperatorRetry } from './operator-retry-attribution.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import {
@@ -139,10 +138,6 @@ export class AdvanceWorkflow {
     });
     await this.repository.append(id, loaded.sequence, [event]);
     return (await this.repository.load(id)).view;
-  }
-
-  async expireTimedOutWaits(context: CommandContext) {
-    return expireTimedOutWaits(this.repository, context);
   }
 
   resolveExecutionFailure(

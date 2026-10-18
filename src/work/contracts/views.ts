@@ -1,4 +1,4 @@
-import type { LinkWorkItems } from './commands.js';
+import type { LinkWorkItems, WorkDelegation } from './commands.js';
 import type { WorkItemId } from './identifiers.js';
 import type { WorkStatus } from './vocabulary.js';
 
@@ -13,6 +13,7 @@ export interface RelatedWorkItemView {
 export interface WorkItemView {
   readonly workItemId: WorkItemId;
   readonly objective: string;
+  readonly delegation?: WorkDelegation;
   readonly state: WorkState;
   readonly tags: readonly string[];
   // Operator consent for `auto` acceptance authority; capability is declared by the workflow route.

@@ -12,7 +12,12 @@ export const orchestrationProjection: ProjectionDefinition<WorkflowInstanceProje
   select(event) {
     const owned = selectWorkflowOrchestrationEvent(event);
     return owned !== null && isWorkflowInstanceStream(owned.stream)
-      ? { key: owned.stream.id }
+      ? {
+          key:
+            owned.event.eventType === OrchestrationEventType.DelegationReserved
+              ? owned.event.payload.parentWorkflowInstanceId
+              : owned.stream.id,
+        }
       : null;
   },
   initial: () => null,

@@ -22,6 +22,7 @@ export const orchestrationStatusTransitions: Readonly<
   Partial<Record<WorkflowFact['eventType'], WorkflowInstanceView['status']>>
 > = {
   [OrchestrationEventType.ActivityRequested]: WorkflowStatus.Active,
+  [OrchestrationEventType.DelegationWaitStarted]: WorkflowStatus.Waiting,
   [OrchestrationEventType.ActivityWaiting]: WorkflowStatus.Waiting,
   [OrchestrationEventType.SignalWaitStarted]: WorkflowStatus.Waiting,
   [OrchestrationEventType.SignalAccepted]: WorkflowStatus.Active,
@@ -46,6 +47,8 @@ export type MutableWorkflowInstance = {
   triggerId?: string;
   causalCycleId?: string;
   requestId?: string;
+  delegationFence?: WorkflowInstanceView['delegationFence'];
+  delegationWait?: WorkflowInstanceView['delegationWait'];
   status: WorkflowInstanceView['status'];
   blockReason?: string;
   currentStage: WorkflowInstanceView['currentStage'];
@@ -208,11 +211,13 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       state.retryCounts[event.payload.retryKey] = event.payload.count;
       return;
     case OrchestrationEventType.InstanceCompleted:
+      delete state.delegationWait;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceCompleted]!;
       delete state.pendingActivation;
       delete state.waitingFor;
       return;
     case OrchestrationEventType.InstanceBlocked:
+      delete state.delegationWait;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceBlocked]!;
       state.blockReason = event.payload.reason;
       return;
@@ -220,6 +225,7 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       state.operatorRetryCommandIds.push(event.payload.commandId);
       return;
     case OrchestrationEventType.InstanceSuperseded:
+      delete state.delegationWait;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceSuperseded]!;
       return;
     default:
@@ -227,13 +233,49 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
   }
 }
 
+function applyDelegationFact(
+  state: MutableWorkflowInstance,
+  event: FactsOf<
+    | typeof OrchestrationEventType.DelegationWaitStarted
+    | typeof OrchestrationEventType.DelegationJoined
+  >,
+): void {
+  if (event.eventType === OrchestrationEventType.DelegationJoined) {
+    delete state.delegationWait;
+    delete state.delegationFence;
+    return;
+  }
+  state.delegationWait = event.payload;
+  state.status = WorkflowStatus.Waiting;
+}
+
+// Exhaustive dispatch over the closed coordination event set.
+// eslint-disable-next-line complexity
 function applyCoordinationFact(state: MutableWorkflowInstance, event: CoordinationFact): void {
   switch (event.eventType) {
     case OrchestrationEventType.InstanceStarted:
     case OrchestrationEventType.ChildRequested:
     case OrchestrationEventType.ChildStarted:
     case OrchestrationEventType.GroupBudgetExhausted:
+    case OrchestrationEventType.DelegationFailed:
+      delete state.delegationFence;
       return;
+    case OrchestrationEventType.DelegationReconciliationFailed:
+    case OrchestrationEventType.SignalDeferred:
+      return;
+    case OrchestrationEventType.DelegationReserved:
+      if (event.payload.parentWorkflowInstanceId === state.workflowInstanceId)
+        state.delegationFence = {
+          cohortId: event.payload.cohortId,
+          activationId: event.payload.activationId,
+        };
+      return;
+    case OrchestrationEventType.DelegationRegistered:
+    case OrchestrationEventType.DelegationResultSelected:
+      return;
+    case OrchestrationEventType.DelegationWaitStarted:
+    case OrchestrationEventType.DelegationJoined:
+      return applyDelegationFact(state, event);
     case OrchestrationEventType.ChildCompleted:
       state.childCompletionRecorded = true;
       return;
@@ -317,6 +359,8 @@ function applyActivityRequested(
   };
 }
 
+// One optional-field projection per view property; branching mirrors the view shape.
+// eslint-disable-next-line complexity
 export function immutableWorkflowInstanceView(
   state: MutableWorkflowInstance,
 ): WorkflowInstanceView {
@@ -335,6 +379,8 @@ export function immutableWorkflowInstanceView(
     ...(state.triggerId === undefined ? {} : { triggerId: state.triggerId }),
     ...(state.causalCycleId === undefined ? {} : { causalCycleId: state.causalCycleId }),
     ...(state.requestId === undefined ? {} : { requestId: state.requestId }),
+    ...(state.delegationFence === undefined ? {} : { delegationFence: state.delegationFence }),
+    ...(state.delegationWait === undefined ? {} : { delegationWait: state.delegationWait }),
     status: state.status,
     ...(state.blockReason === undefined ? {} : { blockReason: state.blockReason }),
     currentStage: state.currentStage,

@@ -1,4 +1,11 @@
+/* eslint-disable max-lines */
 import { z } from 'zod';
+import {
+  delegationJoinSchema,
+  delegationReservationSchema,
+  delegationResultSchema,
+  delegationWaitSchema,
+} from './delegation.js';
 
 import { eventDataSchema, eventEnvelopeSchema, type EventEnvelope } from '@atolis-hq/eventing';
 import {
@@ -284,6 +291,34 @@ const groupBudgetGrantedEnvelope = childGroupEnvelope(
     });
 });
 const eventSchemas = {
+  [OrchestrationEventType.DelegationFailed]: workflowEnvelope(
+    OrchestrationEventType.DelegationFailed,
+    z.object({ cohortId: z.string().min(1), reason: z.string().min(1) }).strict(),
+  ),
+  [OrchestrationEventType.DelegationReconciliationFailed]: workflowEnvelope(
+    OrchestrationEventType.DelegationReconciliationFailed,
+    z.object({ cohortId: z.string().min(1), reason: z.string().min(1) }).strict(),
+  ),
+  [OrchestrationEventType.DelegationReserved]: workflowEnvelope(
+    OrchestrationEventType.DelegationReserved,
+    delegationReservationSchema,
+  ),
+  [OrchestrationEventType.DelegationRegistered]: workflowEnvelope(
+    OrchestrationEventType.DelegationRegistered,
+    z.object({ cohortId: z.string().min(1) }).strict(),
+  ),
+  [OrchestrationEventType.DelegationResultSelected]: workflowEnvelope(
+    OrchestrationEventType.DelegationResultSelected,
+    delegationResultSchema,
+  ),
+  [OrchestrationEventType.DelegationWaitStarted]: workflowEnvelope(
+    OrchestrationEventType.DelegationWaitStarted,
+    delegationWaitSchema,
+  ),
+  [OrchestrationEventType.DelegationJoined]: workflowEnvelope(
+    OrchestrationEventType.DelegationJoined,
+    delegationJoinSchema,
+  ),
   [OrchestrationEventType.InstanceStarted]: workflowEnvelope(
     OrchestrationEventType.InstanceStarted,
     z.union([
@@ -374,6 +409,19 @@ const eventSchemas = {
   [OrchestrationEventType.SignalWaitStarted]: workflowEnvelope(
     OrchestrationEventType.SignalWaitStarted,
     expectationSchema,
+  ),
+  [OrchestrationEventType.SignalDeferred]: workflowEnvelope(
+    OrchestrationEventType.SignalDeferred,
+    z
+      .object({
+        stage: brandedStringSchema(stageName),
+        intentEventId: z.string().optional(),
+        resourceId: z.string().optional(),
+        revision: z.string().optional(),
+        signal: signalSchema,
+        target: transitionTargetSchema.optional(),
+      })
+      .strict(),
   ),
   [OrchestrationEventType.SignalAccepted]: workflowEnvelope(
     OrchestrationEventType.SignalAccepted,

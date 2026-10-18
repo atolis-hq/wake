@@ -55,6 +55,68 @@ const signal = {
   providerEventId: 'provider-1',
 } as const;
 
+const delegationResult = {
+  cohortId: 'cohort-1',
+  childWorkItemId: workId('2'),
+  outputs: [{ name: 'findings', reference: { workItemId: workId('2'), revisionId: 'revision-1' } }],
+} as const;
+const delegationReservation = {
+  cohortId: 'cohort-1',
+  parentWorkflowInstanceId: workflowInstanceId('workflow-1'),
+  parentWorkItemId: workId('1'),
+  rootWorkItemId: workId('1'),
+  activationId: activationId('workflow-1:activity:1'),
+  runId: 'run-1',
+  ancestors: [workId('1')],
+  maxDepth: 1,
+  maxDescendants: 8,
+  children: [
+    {
+      assignmentId: 'investigate',
+      objective: 'Investigate',
+      criteria: ['Findings published'],
+      workflowName: workflowName('child'),
+      workflowFingerprint: 'fingerprint-1',
+      context: [],
+      outputs: [{ name: 'findings', path: 'findings.md' }],
+      workItemId: workId('2'),
+      workflowInstanceId: workflowInstanceId('delegated:child'),
+      grantId: 'child-1',
+    },
+  ],
+} as const;
+
+const delegationSamples = [
+  eventEnvelope(
+    OrchestrationEventType.SignalDeferred,
+    { stage: stageName('implement'), signal },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DelegationFailed,
+    { cohortId: 'cohort-1', reason: 'Child failed' },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DelegationReconciliationFailed,
+    { cohortId: 'cohort-1', reason: 'Storage unavailable' },
+    workflow,
+  ),
+  eventEnvelope(OrchestrationEventType.DelegationReserved, delegationReservation, workflow),
+  eventEnvelope(OrchestrationEventType.DelegationRegistered, { cohortId: 'cohort-1' }, workflow),
+  eventEnvelope(OrchestrationEventType.DelegationResultSelected, delegationResult, workflow),
+  eventEnvelope(
+    OrchestrationEventType.DelegationWaitStarted,
+    { cohortId: 'cohort-1', activationId: activationId('workflow-1:activity:1') },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DelegationJoined,
+    { cohortId: 'cohort-1', results: [delegationResult] },
+    workflow,
+  ),
+];
+
 const samples = [
   eventEnvelope(
     OrchestrationEventType.InstanceStarted,
@@ -271,9 +333,9 @@ it('types decoded and draft ActivityWaiting outcomes with the Orchestration bran
 
 describe('Orchestration event contract', () => {
   it('decodes every declared event with its exact payload and permitted stream', () => {
-    expect(samples.map((event) => decodeOrchestrationEvent(event))).toHaveLength(
-      Object.keys(OrchestrationEventType).length,
-    );
+    expect(
+      [...samples, ...delegationSamples].map((event) => decodeOrchestrationEvent(event)),
+    ).toHaveLength(Object.keys(OrchestrationEventType).length);
   });
 
   it('rejects unknown and malformed owned events', () => {
@@ -474,3 +536,29 @@ function decodingCause(decode: () => unknown): unknown {
   }
   throw new Error('Expected event decoding to fail');
 }
+
+it('owns the exact delegation-reference wire shape independently of Artifacts', () => {
+  const fact = eventEnvelope(
+    OrchestrationEventType.DelegationReserved,
+    delegationReservation,
+    workflow,
+  );
+  expect(decodeOrchestrationEvent(fact).event.payload).toEqual(delegationReservation);
+  const child = delegationReservation.children[0]!;
+  const invalid = eventEnvelope(
+    OrchestrationEventType.DelegationReserved,
+    {
+      ...delegationReservation,
+      children: [
+        {
+          ...child,
+          context: [
+            { workItemId: child.workItemId, revisionId: 'exact', artifactStoragePath: '/draft' },
+          ],
+        },
+      ],
+    },
+    workflow,
+  );
+  expect(() => decodeOrchestrationEvent(invalid)).toThrow();
+});
