@@ -1,9 +1,21 @@
 # Spec: triggered delivery oversight
 
-**Status:** proposed, ready for review; behavior is not implemented by this document.
+**Status:** original design substantially implemented; see the dated implementation reconciliation below. Remaining delegated-work integration is proposed.
 **Date:** 2026-10-12.
 **Implementation baseline:** `d58d99154cd936b95b461c320e45b39a1b4423da`.
 **Scope:** explicit event/cron-triggered workflows, typed eligibility gates, artifact context scopes across runs, GitHub backlog assignment and guarded intake.
+
+## Implementation reconciliation, 2026-10-18
+
+Reviewed `origin/main` at `25ef4657d2f1eda6e66b0282d09672cc053d6d89`. The O1-O5 sections below retain their original design/slicing context; do not treat them as unimplemented prerequisites for child work. Current contracts and [configuration reference](../configuration.md) govern existing behavior.
+
+- Explicit event/cron triggers, durable claims/coalescing/recovery, pause/resume, diagnostics/Triggers UI, named artifact contexts and the configured `triage-assign` oversight flow are implemented. Later additions include durable manual Run now, operator standing instructions and open-work capacity limits. Oversight selection/assignment is agent activity through scoped `gh` commands; it is not a deterministic backlog planner.
+- `when.capacityAvailable` now checks both Run and open-work headroom, pause and entry-pool eligibility. `maxOpenWorkItems` is implemented and defaults to unlimited. The original references below to WIP as future work describe the baseline, not current main.
+- Trigger pause now clears automatic pending sources while retaining manual requests. Run now may explicitly start a paused trigger without resuming it or bypassing execution controls. These later manual-source semantics refine the original pause description below.
+- Artifact `contextScope` is additive to local ownership. Successful selected exports and accepted `memory.md` publication, stale-pointer receipts, trusted membership and original revision provenance are implemented. `share: true` without a trusted named scope is currently a no-op, retaining the local artifact. Operator `instructions.md` has separate trusted provenance and a captured per-Run snapshot; agent artifacts cannot establish that authority.
+- Trusted directional `ArtifactDelegationGrant` registration and parent/child reference reads exist with unit coverage. Production MCP provisioning currently binds trigger context, not independent delegated work: grant registration/provisioning still needs the validated child-work path. No hierarchy, dependency scheduling, independent-child join or general draft recovery is supplied merely by setting `contextScope`.
+
+The refined [delegated child work spec](delegated-child-work.md) defines that path and replaces its original D1-D9 sequence. Reuse the grants rather than rebuilding O4. Delegation must not implicitly enroll children in a trigger's named scope or inherit trusted instructions. Root delivery identity must prevent WIP deadlock and preserve trigger-origin self-source suppression across descendants. Agents continue to decide decomposition, create PRs, assess results and choose repairs; Wake prepares the work, validates facts and enforces configured constraints.
 
 ## 1. Intended outcome and recommendation
 
@@ -57,7 +69,7 @@ controlPlane:
           - execution.run-succeeded
           - execution.run-failed
           - execution.run-cancelled
-        cron: "*/5 * * * *"
+        cron: '*/5 * * * *'
       when:
         capacityAvailable: true
       workflow: delivery-oversight
