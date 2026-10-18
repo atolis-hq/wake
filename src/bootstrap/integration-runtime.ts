@@ -8,7 +8,6 @@ import {
   type ProcessorStateStore,
   type ProjectionStore,
 } from '@atolis-hq/eventing';
-import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
@@ -59,7 +58,6 @@ import {
   DeliveryOutcomeReactor,
   DeliveryService,
   IntegrationStreamKind,
-  PollService,
   ProviderRegistry,
   deliveryProjectionDefinitions,
   fakeProviderDefinition,
@@ -98,6 +96,7 @@ import { decodeCanonicalEvent } from './canonical-events.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import type { EventProcessorRuntime } from './event-processor-runtime.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
+import { createPollCoordinator, type PollCoordinator } from './poll-coordinator.js';
 import {
   createRuntimeProjectionSubscriptions,
   type RuntimeProjectionSubscriptions,
@@ -406,16 +405,17 @@ export async function composeIntegrationRuntime(
   // Inbound translation reads durable provider facts through its own services,
   // so it has no projection freshness dependency that could hold shutdown or
   // unrelated resident work behind a blocked projection consumer.
+  const pollCoordinator = createPollCoordinator({
+    journal: input.journal,
+    wakeRoot: input.wakeRoot,
+  });
   const intakePipeline = createIntakePipeline({
     isPaused: input.isPaused,
     poll: async (signal) => {
       return observeMemory(memoryProfile, 'intake.poll', async () => {
         let appended = 0;
         for (const provider of providers)
-          appended += await withFileLock(
-            join(input.wakeRoot, '.wake', 'locks', `poll-${provider.adapter}.lock`),
-            async () => (await new PollService(input.journal, provider).pollOnce(signal)).appended,
-          );
+          appended += (await pollCoordinator.poll(provider, signal)).appended;
         return appended;
       });
     },
@@ -470,6 +470,7 @@ export async function composeIntegrationRuntime(
     providers,
     input.journal,
     input.wakeRoot,
+    pollCoordinator,
   );
   return {
     triggers,
@@ -499,23 +500,15 @@ export function createImmediatePollRequester(
   providers: readonly ProviderInstance[],
   journal: EventJournal,
   wakeRoot: string,
+  coordinator: PollCoordinator = createPollCoordinator({ journal, wakeRoot }),
 ): (adapter: string) => void {
-  const immediatePolls = new Map<string, Promise<void>>();
   return (adapter: string) => {
-    if (immediatePolls.has(adapter)) return;
     const provider = providers.find((candidate) => candidate.adapter === adapter);
     if (provider === undefined) return;
-    const run = withFileLock(
-      join(wakeRoot, '.wake', 'locks', `poll-${provider.adapter}.lock`),
-      async () => {
-        await new PollService(journal, provider).pollOnce(new AbortController().signal, {
-          bypassInterval: true,
-        });
-      },
-    )
-      .catch((error) => console.error(`Webhook polling ${adapter} failed`, error))
-      .finally(() => immediatePolls.delete(adapter));
-    immediatePolls.set(adapter, run);
+    // Joins any in-flight poll, so a webhook burst never queues behind intake.
+    coordinator
+      .poll(provider, new AbortController().signal, { bypassInterval: true })
+      .catch((error) => console.error(`Webhook polling ${adapter} failed`, error));
   };
 }
 

@@ -3,6 +3,8 @@ export interface AdapterHealth {
   readonly detail?: string;
   readonly successCount: number;
   readonly failureCount: number;
+  /** Epoch milliseconds of the latest success; absent until one happens. */
+  readonly lastSuccessAt?: number;
 }
 
 export interface AdapterHealthTracker {
@@ -28,10 +30,12 @@ export function createAdapterHealthTracker(
   let failureCount = 0;
   let consecutiveFailures = 0;
   let degradedDetail: string | undefined;
+  let lastSuccessAt: number | undefined;
 
   return {
     recordSuccess() {
       successCount += 1;
+      lastSuccessAt = now();
       consecutiveFailures = 0;
       degradedDetail = undefined;
     },
@@ -57,6 +61,7 @@ export function createAdapterHealthTracker(
         ...(degradedDetail === undefined ? {} : { detail: degradedDetail }),
         successCount,
         failureCount,
+        ...(lastSuccessAt === undefined ? {} : { lastSuccessAt }),
       };
     },
   };

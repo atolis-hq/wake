@@ -86,6 +86,8 @@ export interface AdapterHealthCheck {
   readonly detail?: string;
   readonly successCount: number;
   readonly failureCount: number;
+  /** Epoch milliseconds of the latest success, for adapters that derive stall from it. */
+  readonly lastSuccessAt?: number;
 }
 
 // A command/action an adapter recognizes from its channel (e.g. a GitHub
@@ -119,6 +121,8 @@ export interface ProviderInstance {
   // Optional in-memory health signal tracked from real traffic, synchronous and
   // cheap to call on every health check — no I/O, no stored per-call history.
   readonly health?: () => readonly AdapterHealthCheck[];
+  /** Lets the poll runner report whole-poll failures (lock contention, timeouts) as health. */
+  readonly recordPollFailure?: (error: unknown) => void;
   // Optional list of commands this adapter recognizes, built-in plus any
   // configuration-defined additions. Synchronous and cheap, like health().
   readonly commands?: () => readonly AdapterCommand[];
