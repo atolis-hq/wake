@@ -4,7 +4,8 @@ import {
   type CommandContext,
   type EventJournal,
 } from '@atolis-hq/eventing';
-import { activationId, ActivityOutcomeKind } from '../../activities/index.js';
+import { createHash } from 'node:crypto';
+import { activationId } from '../../activities/index.js';
 import type { ArtifactDelegationGrant, ArtifactRevisionReference } from '../../artifacts/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type {
@@ -25,6 +26,7 @@ import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
 import { nextOrdinal } from '../domain/decision-events.js';
+import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import {
   delegationDraft,
@@ -151,24 +153,38 @@ export class DelegatedWork {
   }
 
   async reconcile(context: CommandContext): Promise<void> {
-    if (this.artifacts === undefined) return;
-    for (const reservation of await this.ledger.reservations()) {
+    const all = await this.ledger.reservations();
+    if (all.length === 0) return;
+    const events = await this.ledger.events();
+    const reservations = all.filter((reservation) => !isSettled(events, reservation));
+    if (reservations.length === 0) return;
+    const artifacts = this.requireArtifacts();
+    for (const reservation of reservations) {
       try {
-        await this.reconcileReservation(this.artifacts, reservation, context);
+        await this.reconcileReservation(artifacts, reservation, context);
       } catch (error) {
         // Registration faults remain retryable, but cannot interrupt other cohorts or watch children.
-        await this.ledger.appendOnce(
-          reservation.parentWorkflowInstanceId,
-          context,
-          `reconcile-failed:${reservation.cohortId}:${context.commandId}`,
-          {
-            eventType: OrchestrationEventType.DelegationReconciliationFailed,
-            payload: {
-              cohortId: reservation.cohortId,
-              reason: error instanceof Error ? error.message : 'Delegation reconciliation failed',
+        const reason =
+          error instanceof Error && error.message.length > 0
+            ? error.message
+            : 'Delegation reconciliation failed';
+        const digest = createHash('sha256').update(reason).digest('hex');
+        try {
+          await this.ledger.appendOnce(
+            reservation.parentWorkflowInstanceId,
+            context,
+            `reconcile-failed:${reservation.cohortId}:${digest}`,
+            {
+              eventType: OrchestrationEventType.DelegationReconciliationFailed,
+              payload: { cohortId: reservation.cohortId, reason },
             },
-          },
-        );
+          );
+        } catch (diagnosticError) {
+          console.warn(
+            `Delegation ${reservation.cohortId} diagnostic could not be persisted`,
+            diagnosticError,
+          );
+        }
       }
     }
   }
@@ -313,7 +329,7 @@ export class DelegatedWork {
     const root = await this.registerChildren(artifacts, reservation, context);
     for (const child of reservation.children)
       await this.advanceChild(artifacts, root, reservation, child, context);
-    const results = selectedResults(await this.ledger.events(), reservation.cohortId);
+    const results = selectedResults(await this.ledger.events(), reservation);
     if (reservation.children.every((c) => results.some((r) => r.childWorkItemId === c.workItemId)))
       await this.join(reservation, results, context);
   }
@@ -451,28 +467,29 @@ export class DelegatedWork {
     child: DelegationReservation['children'][number],
     context: CommandContext,
   ): Promise<void> {
-    const workflow = await this.workflows.execute(
-      {
-        workflowInstanceId: child.workflowInstanceId,
-        workItemId: child.workItemId,
-        workflowName: child.workflowName,
-        workflowDefinitionFingerprint: child.workflowFingerprint,
-        orchestrationGroupId: orchestrationGroupId(`primary:${child.workItemId}`),
-      },
-      { ...context, commandId: `delegation-start:${child.grantId}` },
-    );
+    const existing = await this.repository.load(child.workflowInstanceId);
+    const workflow =
+      existing.view ??
+      (await this.workflows.execute(
+        {
+          workflowInstanceId: child.workflowInstanceId,
+          workItemId: child.workItemId,
+          workflowName: child.workflowName,
+          workflowDefinitionFingerprint: child.workflowFingerprint,
+          orchestrationGroupId: orchestrationGroupId(`primary:${child.workItemId}`),
+        },
+        { ...context, commandId: `delegation-start:${child.grantId}` },
+      ));
     // Accepted activation alone never qualifies: the workflow must complete successfully.
     if (
-      workflow.status === WorkflowStatus.Blocked ||
       workflow.status === WorkflowStatus.Superseded ||
-      (workflow.status === WorkflowStatus.Completed &&
-        workflow.lastOutcome?.kind !== ActivityOutcomeKind.Done)
+      (workflow.status === WorkflowStatus.Completed && !isSuccessfulWorkflowCompletion(workflow))
     ) {
       await this.fail(reservation, `Child ${child.workItemId} terminated without success`, context);
       return;
     }
     if (workflow.status !== WorkflowStatus.Completed) return;
-    const selected = selectedResults(await this.ledger.events(), reservation.cohortId);
+    const selected = selectedResults(await this.ledger.events(), reservation);
     if (selected.some((result) => result.childWorkItemId === child.workItemId)) return;
     const outputs = await artifacts.qualifyingOutputs(workflow, child.outputs);
     if (outputs === null) {

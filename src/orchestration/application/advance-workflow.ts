@@ -1,6 +1,7 @@
 import { EventSourceKind, type CommandContext } from '@atolis-hq/eventing';
 import type { ActivationId, selectActivityEvent } from '../../activities/index.js';
 import type { TransitionTarget } from '../contracts/config.js';
+import { DelegationPendingError } from '../contracts/delegation.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { commandName, type SignalName, type WorkflowInstanceId } from '../contracts/identifiers.js';
@@ -60,7 +61,7 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const loaded = await this.repository.loadRequired(id);
-    if (await this.fenced(id)) return loaded.view;
+    if (await this.fenced(id)) throw new DelegationPendingError(id);
     const definition = await this.workflows.definitionForOperation(
       loaded.view,
       loaded.sequence,
@@ -152,11 +153,10 @@ export class AdvanceWorkflow {
     input: ExecutionFailureInput,
     context: CommandContext,
   ) {
-    return this.fenced(id).then((fenced) =>
-      fenced
-        ? this.get(id)
-        : resolveExecutionFailure(this.repository, this.acceptOutcome, id, input, context),
-    );
+    return this.fenced(id).then((fenced) => {
+      if (fenced) throw new DelegationPendingError(id);
+      return resolveExecutionFailure(this.repository, this.acceptOutcome, id, input, context);
+    });
   }
 
   async retryRunnerQuotaFailure(
@@ -170,7 +170,8 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const loaded = await this.repository.load(id);
-    if (loaded.view === null || (await this.fenced(id))) return loaded.view;
+    if (await this.fenced(id)) throw new DelegationPendingError(id);
+    if (loaded.view === null) return null;
     // The retry re-requests the interrupted Activation, not a stage lookup, but
     // the definition must still be resolvable for the retried Activation's own
     // outcome to be routable later; an unavailable definition blocks here.
@@ -209,7 +210,7 @@ export class AdvanceWorkflow {
     const loaded = await this.repository.load(id);
     if (loaded.view === null)
       throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');
-    if (await this.fenced(id)) return loaded.view;
+    if (await this.fenced(id)) throw new DelegationPendingError(id);
     if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return loaded.view;
     const definition = await this.workflows.definitionForOperation(
       loaded.view,
@@ -238,6 +239,7 @@ export class AdvanceWorkflow {
 
   async resumeBlockedStageForChanges(id: WorkflowInstanceId, context: CommandContext) {
     const loaded = await this.repository.load(id);
+    if (await this.fenced(id)) throw new DelegationPendingError(id);
     if (loaded.view === null) return null;
     if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return loaded.view;
     const definition = await this.workflows.definitionForOperation(
@@ -308,11 +310,10 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const { repository, workflows } = this;
-    return this.fenced(id).then((fenced) =>
-      fenced
-        ? this.get(id)
-        : acceptResourceTransition(repository, workflows, id, target, evidenceId, context),
-    );
+    return this.fenced(id).then((fenced) => {
+      if (fenced) throw new DelegationPendingError(id);
+      return acceptResourceTransition(repository, workflows, id, target, evidenceId, context);
+    });
   }
 
   // One shared load per live instance, reused for both the watch match and

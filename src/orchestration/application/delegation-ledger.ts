@@ -155,11 +155,13 @@ export function isSettled(
 
 export function selectedResults(
   events: readonly WorkflowOrchestrationEvent[],
-  cohortId: string,
+  reservation: DelegationReservation,
 ): readonly DelegationResult[] {
+  const children = new Set(reservation.children.map((child) => child.workItemId));
   return events.flatMap((event) =>
     event.event.eventType === OrchestrationEventType.DelegationResultSelected &&
-    event.event.payload.cohortId === cohortId
+    event.event.payload.cohortId === reservation.cohortId &&
+    children.has(event.event.payload.childWorkItemId)
       ? [event.event.payload]
       : [],
   );

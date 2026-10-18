@@ -41,12 +41,17 @@ commit point (identities, pinned workflow fingerprints, root-wide depth and
 descendant limits). Wait, WorkItem, claim, artifact grant, child start, result
 selection and join are reconciled idempotently from it. The parent is fenced
 from ordinary advancement until `delegation-joined` or terminal `delegation-failed`; a child qualifies only when
-its workflow completed with a `done` outcome and every named output resolves to
+its workflow reached configured terminal completion without a failure outcome and every named output resolves to
 an accepted exact artifact revision. Production exposure is deferred to the
 delegation controls work; Bootstrap supplies the Artifacts adapter. Reconciliation
-faults are recorded per cohort and retried without stalling unrelated work.
+faults are recorded once per cohort and reason and retried without stalling
+unrelated work, even if recording the diagnostic fails. Missing adapters fail
+explicitly when durable delegation needs reconciliation. Signals, approvals,
+resource transitions and execution retries reject with a retryable
+`DelegationPendingError` while fenced, so their callers retain the input.
+Blocked children remain recoverable and keep the cohort waiting.
 A terminal child without qualifying outputs blocks the parent and settles the
-cohort. Settled cohorts release descendant capacity. Continuation preserves the
+cohort. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the
 delegating activation's typed input and identity flags; exact results are read
 through the joined-results query rather than added to activity input schemas.
 

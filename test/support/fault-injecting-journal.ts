@@ -3,6 +3,7 @@ import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 
 /** One-shot storage faults and barriers around real durable appends. */
 export class FaultInjectingJournal extends InMemoryEventJournal {
+  readonly failAlwaysBefore = new Set<string>();
   failBefore: string | undefined;
   failAfter: string | undefined;
   beforeAppend:
@@ -17,6 +18,8 @@ export class FaultInjectingJournal extends InMemoryEventJournal {
       barrier.reached();
       await barrier.release;
     }
+    if (types.some((type) => this.failAlwaysBefore.has(type)))
+      throw new Error('Injected persistent storage failure before append');
     if (this.failBefore !== undefined && types.includes(this.failBefore)) {
       this.failBefore = undefined;
       throw new Error('Injected storage failure before append');

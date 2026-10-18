@@ -81,3 +81,11 @@ export interface DelegationCaller {
   readonly activationId: ReturnType<typeof activationId>;
   readonly runId: string;
 }
+
+/** Retryable rejection: callers retain their signal or execution evidence until the cohort settles. */
+export class DelegationPendingError extends Error {
+  constructor(id: string) {
+    super(`Workflow ${id} has an outstanding delegation; retry after it settles`);
+    this.name = 'DelegationPendingError';
+  }
+}
