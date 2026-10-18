@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inspectCodexTranscript } from '../../../src/execution/index.js';
+import { humanInputRequiredMarker, inspectCodexTranscript } from '../../../src/execution/index.js';
 
 describe('Codex Stop hook WAIT_BACKGROUND protocol', () => {
   it('blocks an exact final WAIT_BACKGROUND status', () => {
@@ -20,6 +20,34 @@ describe('Codex Stop hook WAIT_BACKGROUND protocol', () => {
   it('does not block an earlier WAIT_BACKGROUND status after a normal final response', () => {
     expect(
       inspectCodexTranscript(`${transcript('WAIT_BACKGROUND')}\n${transcript('DONE')}`),
+    ).toEqual({});
+  });
+
+  it.each(['BLOCKED', 'NEEDS_CLARIFICATION'])(
+    'rejects a terminal %s status without a concrete human action',
+    (status) => {
+      expect(
+        inspectCodexTranscript(transcript(`The integration test is still missing.\n\n${status}`)),
+      ).toEqual({
+        decision: 'block',
+        reason: expect.stringContaining(humanInputRequiredMarker),
+      });
+    },
+  );
+
+  it('allows a blocked status with a concrete human action', () => {
+    expect(
+      inspectCodexTranscript(
+        transcript(
+          `The required product behavior is not specified.\n${humanInputRequiredMarker} Choose whether valid deliveries return 200 or 202.\nBLOCKED`,
+        ),
+      ),
+    ).toEqual({});
+  });
+
+  it('does not treat a non-terminal blocked word as a result', () => {
+    expect(
+      inspectCodexTranscript(transcript('A prior run was BLOCKED, but this work is done.')),
     ).toEqual({});
   });
 });
