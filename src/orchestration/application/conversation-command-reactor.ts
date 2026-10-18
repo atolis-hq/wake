@@ -114,7 +114,8 @@ async function applyExternalCommand(
   );
   // A recorded receipt fixes the result even if publication retries after the workflow changes.
   if (prior !== undefined && feedback !== undefined) {
-    if (canPublish) await feedback.publish(event, prior.body, context);
+    if (canPublish && prior.body !== 'Command applied.')
+      await feedback.publish(event, prior.body, context);
     return;
   }
   const result = await orchestration.applyConversationCommandWithFeedback(
@@ -133,5 +134,5 @@ async function applyExternalCommand(
     },
     context,
   );
-  if (canPublish) await feedback.publish(event, body, context);
+  if (canPublish && !result.applied) await feedback.publish(event, body, context);
 }
