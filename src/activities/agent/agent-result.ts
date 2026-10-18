@@ -17,7 +17,11 @@ const structuredResult = <Status extends string>(status: Status) =>
 
 const blockedReason = z
   .object({
-    reason: z.literal(ActivityFailureCode.AmbiguousRunnerResult),
+    reason: z.enum([
+      ActivityFailureCode.AmbiguousRunnerResult,
+      ActivityFailureCode.RunnerAuthenticationRequired,
+    ]),
+    message: z.string().optional(),
   })
   .strict();
 

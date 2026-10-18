@@ -8,6 +8,7 @@ import {
   ActivityFailureCode,
   ActivityOutcomeKind,
   ActivityRunnerTransportStatus,
+  ClaudeAuthenticationFailureKind,
 } from '../contracts/vocabulary.js';
 import { translateAgentResult, type AgentActivityOutcome } from './agent-result.js';
 
@@ -437,6 +438,17 @@ function agentOutcome(
     return {
       kind: ActivityOutcomeKind.Blocked,
       data: { reason: ActivityFailureCode.AmbiguousRunnerResult },
+    };
+  if (
+    result.transport !== ActivityRunnerTransportStatus.Succeeded &&
+    result.failure?.kind === ClaudeAuthenticationFailureKind
+  )
+    return {
+      kind: ActivityOutcomeKind.Blocked,
+      data: {
+        reason: ActivityFailureCode.RunnerAuthenticationRequired,
+        message: result.failure.message,
+      },
     };
   if (result.transport !== ActivityRunnerTransportStatus.Succeeded)
     return {

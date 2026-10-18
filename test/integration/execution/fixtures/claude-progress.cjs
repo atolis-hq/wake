@@ -17,7 +17,16 @@ const final = () =>
       total_cost_usd: 0.02,
     }),
   );
-if (mode === 'plain-error') {
+if (mode === 'auth-error') {
+  process.stdout.write(
+    JSON.stringify({
+      is_error: true,
+      terminal_reason: 'api_error',
+      result: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+    }),
+    () => process.exit(1),
+  );
+} else if (mode === 'plain-error') {
   process.stdout.write('Provider rate limit exceeded\n', () => process.exit(1));
 } else if (mode === 'oversized') {
   process.stdout.write(

@@ -1,5 +1,6 @@
 import {
   AgentResultStatus,
+  ClaudeAuthenticationFailureKind,
   parseAgentStatusMarker,
   translateAgentResult,
 } from '../../activities/index.js';
@@ -13,7 +14,9 @@ export function parseAgentRunnerResponse(result: AgentRunnerResult): AgentRunRes
       ? AgentResultStatus.Blocked
       : result.transport === RunStatus.Succeeded
         ? parsed.outcome
-        : AgentResultStatus.Failed;
+        : result.failure?.kind === ClaudeAuthenticationFailureKind
+          ? AgentResultStatus.Blocked
+          : AgentResultStatus.Failed;
   return {
     outcome,
     displayBody:

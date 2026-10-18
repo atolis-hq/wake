@@ -1,4 +1,7 @@
-import { ExternalExecutionKind } from '../../../activities/index.js';
+import {
+  ClaudeAuthenticationFailureKind,
+  ExternalExecutionKind,
+} from '../../../activities/index.js';
 import type {
   AgentRunnerResult,
   Runner,
@@ -51,13 +54,23 @@ export function parseClaudeOutput(
 const claudeQuotaPattern =
   /rate limit|quota|credit balance|spend limit|usage limit|session limit|too many requests|\b429\b/i;
 
+const claudeAuthenticationPattern =
+  /authenticate|authentication|unauthorized|oauth.*(?:expired|refresh)|session expired|not logged in|please (?:log|sign) in|invalid api key/i;
+
 export function classifyClaudeFailure(input: {
   readonly stdout: string;
   readonly stderr: string;
 }): { readonly kind: string; readonly message: string } | undefined {
-  // Prefer stderr — a CLI's own diagnostic stream — over stdout, which on a
-  // failed run can carry the agent's own generated text; only fall back to
-  // stdout when stderr is empty.
+  const structured = parseRecord(input.stdout);
+  if (structured?.is_error === true && typeof structured.result === 'string') {
+    const message = structured.result.trim();
+    if (claudeAuthenticationPattern.test(message))
+      return { kind: ClaudeAuthenticationFailureKind, message };
+    if (claudeQuotaPattern.test(message))
+      return { kind: ProviderQuotaExceededFailureKind, message };
+    return undefined;
+  }
+  // Preserve plain CLI diagnostics, preferring stderr over stdout.
   const text = input.stderr.trim().length > 0 ? input.stderr : input.stdout;
   if (!claudeQuotaPattern.test(text)) return undefined;
   return { kind: ProviderQuotaExceededFailureKind, message: text.trim() };
