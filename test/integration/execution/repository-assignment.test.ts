@@ -128,3 +128,37 @@ it('keeps the clone default for a new branch when no repository assignment pins 
   expect(await git(lease.path, 'rev-parse', 'HEAD')).toBe(head);
   await lease.release();
 });
+
+it('reuses a direct workflow workspace when the work item moves from an issue to its PR resource', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-direct-reuse-'));
+  roots.push(root);
+  const path = await repository(root, 'direct');
+  const resolver = { cloneLocator: async () => path };
+  const provider = new GitWorkspaceProvider(join(root, 'workspaces'), resolver, workspaceLocks);
+  const resource = (name: string) => ({
+    resourceId: resId(name),
+    kind: BuiltInResourceKind.Repository,
+    externalKey: { adapter: 'fake', key: name },
+    capabilities: [],
+  });
+  for (const mode of ['branch', 'read-only'] as const) {
+    const request = {
+      signal: new AbortController().signal,
+      workItemId: workId('direct-reuse'),
+      mode,
+    };
+    const issue = await provider.acquire({
+      ...request,
+      runId: runId(`issue-${mode}`),
+      repositoryResource: resource('issue'),
+    });
+    await issue.release();
+    const pullRequest = await provider.acquire({
+      ...request,
+      runId: runId(`pr-${mode}`),
+      repositoryResource: resource('pull-request'),
+    });
+    expect(pullRequest.path).toBe(issue.path);
+    await pullRequest.release();
+  }
+});

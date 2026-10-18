@@ -672,8 +672,11 @@ function assertAssignment(
   previousMarker: WorkspaceOwnershipMarker | null,
   request: WorkspaceRequest,
 ): void {
+  // Direct workflows legitimately move from an issue to its PR resource in one clone, so
+  // resource identity is only binding for assignment-bound workspaces.
   if (
     previousMarker !== null &&
+    (previousMarker.assignment !== undefined || request.assignment !== undefined) &&
     previousMarker.repositoryResourceId !== request.repositoryResource.resourceId
   )
     throw new Error('Workspace belongs to a different Repository Resource');
