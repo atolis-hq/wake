@@ -68,11 +68,9 @@ function reportedChange(runs: readonly RunView[], name: string) {
 
 async function verifiedChange(
   input: OutputDependencies,
-  latest: NonNullable<ReturnType<typeof reportedChange>>,
+  report: NonNullable<ReturnType<typeof reportedChange>>['report'],
+  source: NonNullable<ReturnType<typeof runSource>>,
 ) {
-  const { run, report } = latest;
-  const source = runSource(run);
-  if (source === undefined) return null;
   const { assignment, branch, revision } = source;
   const repository = await input.resources.get(resourceId(assignment.resourceId));
   const provider = (await input.providers()).find(
@@ -98,7 +96,7 @@ async function verifiedChange(
   if (
     resource === null ||
     resource.kind !== BuiltInResourceKind.PullRequest ||
-    resource.revision !== revision ||
+    verified.revision !== revision ||
     resource.primaryCorrelationConflict !== undefined
   )
     return null;
@@ -118,16 +116,13 @@ async function qualifyingChange(
   );
   const latest = reportedChange(runs, output.name);
   if (latest === undefined) return null;
-  const { run } = latest;
-  const source = runSource(run);
-  if (source === undefined) return null;
+  // Judge the PR against the latest implementation head so a revision run need not
+  // repeat the report; the provider must confirm the PR now points there.
+  const run = runs.filter((entry) => entry.workspace?.mode === WorkspaceMode.Branch).at(-1);
+  const source = run === undefined ? undefined : runSource(run);
+  if (run === undefined || source === undefined) return null;
   const { assignment, branch, revision } = source;
-  if (
-    runs.filter((entry) => entry.workspace?.mode === WorkspaceMode.Branch).at(-1)
-      ?.workspaceRevision !== revision
-  )
-    return null;
-  const resource = await verifiedChange(input, latest);
+  const resource = await verifiedChange(input, latest.report, source);
   if (resource === null) return null;
   if (!(await hasOutputAuthority(input, child, output, resource.resourceId, revision))) return null;
   return {

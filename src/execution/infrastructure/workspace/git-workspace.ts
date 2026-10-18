@@ -181,7 +181,8 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
         {
           path,
           branch,
-          revision: request.checkoutRevision,
+          // Only repository assignments pin a new branch; direct workflows keep the clone default.
+          revision: request.assignment === undefined ? undefined : request.checkoutRevision,
           initialRevision,
           existing: existingWorkspace,
         },

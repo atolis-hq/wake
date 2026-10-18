@@ -171,6 +171,7 @@ export async function runDispatchLoop(
           : { kind: WorkflowStatus.Waiting, workflowInstanceId: waiting.workflowInstanceId };
       break;
     }
+    // Recheck at the dispatch boundary so maintenance cannot race a selected activation.
     if (await ctx.isDispatchPaused()) {
       stopReason = { kind: 'paused' };
       break;

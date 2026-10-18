@@ -200,6 +200,7 @@ export class ArtifactRegistrationReactor {
     workItemId: string,
   ): Promise<void> {
     const existing = await this.dependencies.resources.findByExternalKey(verified.externalKey);
+    // Re-discover an existing resource so a re-report records its newly verified head.
     const resource = await this.dependencies.resources.discover(
       {
         resourceId:

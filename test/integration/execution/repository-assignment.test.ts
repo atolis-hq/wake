@@ -101,3 +101,30 @@ it('pins two repository sources, survives branch movement and restart, and prese
     }),
   ).rejects.toThrow('source missing is unavailable');
 });
+
+it('keeps the clone default for a new branch when no repository assignment pins a source', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-direct-branch-'));
+  roots.push(root);
+  const path = await repository(root, 'direct');
+  const first = await git(path, 'rev-parse', 'HEAD');
+  await writeFile(join(path, 'file'), 'later');
+  await git(path, 'commit', '-am', 'later');
+  const head = await git(path, 'rev-parse', 'HEAD');
+  const resolver = { cloneLocator: async () => path };
+  const provider = new GitWorkspaceProvider(join(root, 'workspaces'), resolver, workspaceLocks);
+  const lease = await provider.acquire({
+    runId: runId('run-direct'),
+    signal: new AbortController().signal,
+    workItemId: workId('direct'),
+    mode: 'branch' as const,
+    repositoryResource: {
+      resourceId: resId('direct'),
+      kind: BuiltInResourceKind.Repository,
+      externalKey: { adapter: 'fake', key: 'direct' },
+      capabilities: [],
+    },
+    checkoutRevision: first,
+  });
+  expect(await git(lease.path, 'rev-parse', 'HEAD')).toBe(head);
+  await lease.release();
+});
