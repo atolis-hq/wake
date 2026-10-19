@@ -1,11 +1,18 @@
 import { z } from 'zod';
-import { reportedArtifactSchema, type PullRequestService } from '../../activities/index.js';
+import {
+  decidePullRequestOutputAuthority,
+  PullRequestState,
+  reportedArtifactSchema,
+  type PullRequestService,
+} from '../../activities/index.js';
 import { RunStatus, WorkspaceMode, type RunView } from '../../execution/index.js';
 import type {
   DelegationArtifacts,
   DelegationOutputKind,
+  DelegationPrerequisite,
   WorkflowInstanceView,
 } from '../../orchestration/index.js';
+import { DelegationPrerequisiteCondition as Condition } from '../../orchestration/index.js';
 import {
   BuiltInResourceKind,
   ResourceCorrelationProvenance,
@@ -35,6 +42,16 @@ interface OutputDependencies {
 export function createDelegationOutputs(input: OutputDependencies): DelegationArtifacts {
   return {
     ...input.artifacts,
+    async prerequisiteOutput(child, output, condition) {
+      if (
+        'path' in output &&
+        (condition === Condition.AcceptedOutput || condition === Condition.DeliveryReady)
+      ) {
+        return (await input.artifacts.qualifyingOutputs(child, [output]))?.[0] ?? null;
+      }
+      if (!('kind' in output)) return null;
+      return qualifyingChange(input, child, output, condition);
+    },
     async qualifyingOutputs(child, outputs) {
       const artifacts = outputs.filter((output) => 'path' in output);
       const references =
@@ -107,6 +124,7 @@ async function qualifyingChange(
   input: OutputDependencies,
   child: WorkflowInstanceView,
   output: ChangeOutput,
+  condition?: DelegationPrerequisite['condition'],
 ) {
   const runs = (await input.runs()).filter(
     (run) =>
@@ -124,7 +142,15 @@ async function qualifyingChange(
   const { assignment, branch, revision } = source;
   const resource = await verifiedChange(input, latest.report, source);
   if (resource === null) return null;
-  if (!(await hasOutputAuthority(input, child, output, resource.resourceId, revision))) return null;
+  const observed = await qualifyingObservation(
+    input,
+    child,
+    output,
+    resource.resourceId,
+    revision,
+    condition,
+  );
+  if (observed === null) return null;
   return {
     name: output.name,
     reference: {
@@ -135,8 +161,43 @@ async function qualifyingChange(
       branch,
       pullRequestBase: assignment.pullRequestBase,
       runId: run.runId,
+      ...(condition === undefined ? {} : { baseRevision: observed.baseRevision }),
     },
   };
+}
+
+async function qualifyingObservation(
+  input: OutputDependencies,
+  child: WorkflowInstanceView,
+  output: ChangeOutput,
+  id: Parameters<PullRequestService['get']>[0],
+  revision: string,
+  condition: DelegationPrerequisite['condition'] | undefined,
+) {
+  const owner = await input.resources.primaryCorrelation(id);
+  if (
+    owner?.workItemId !== child.workItemId ||
+    owner.role !== ResourceCorrelationRole.Primary ||
+    owner.provenance !== ResourceCorrelationProvenance.AgentReported
+  )
+    return null;
+  const observed = await input.pullRequests.get(id);
+  if (observed === null || observed.headRevision !== revision) return null;
+  if (condition === Condition.MergedChange) {
+    if (observed.state !== PullRequestState.Merged) return null;
+  } else if (
+    !(await hasOutputAuthority(
+      input,
+      child,
+      condition === Condition.PushedChange
+        ? { ...output, requireReview: false, requireChecks: false }
+        : output,
+      id,
+      revision,
+    ))
+  )
+    return null;
+  return observed;
 }
 
 async function hasOutputAuthority(
@@ -153,11 +214,19 @@ async function hasOutputAuthority(
     owner.provenance !== ResourceCorrelationProvenance.AgentReported
   )
     return false;
-  const authority = await input.pullRequests.decideAuthority(child.workItemId, {
+  const options = {
     target: { resourceId: id },
     requireAcceptedReview: output.requireReview ?? true,
     requireChecks: output.requireChecks ?? true,
-  });
+  };
+  const observed = await input.pullRequests.get(id);
+  const authority =
+    observed?.state === PullRequestState.Merged
+      ? decidePullRequestOutputAuthority(
+          await input.pullRequests.authorityInput(child.workItemId),
+          options,
+        )
+      : await input.pullRequests.decideAuthority(child.workItemId, options);
   if (!authority.allowed || authority.revision !== revision) return false;
   return true;
 }

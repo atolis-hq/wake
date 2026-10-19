@@ -3,7 +3,23 @@ import { activationId } from '../../activities/index.js';
 import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId } from '../../work/index.js';
 import { workflowInstanceId, workflowName } from './identifiers.js';
-import { DelegationOutputKind } from './vocabulary.js';
+import {
+  DelegationOutputKind,
+  DelegationPrerequisiteCondition,
+  type DelegationConflictCode,
+} from './vocabulary.js';
+
+export const delegationPrerequisiteSchema = z
+  .object({
+    cohortId: z.string().min(1).optional(),
+    assignmentId: z.string().min(1),
+    output: z.string().min(1),
+    condition: z.enum(DelegationPrerequisiteCondition),
+    useAsBase: z.boolean().optional(),
+  })
+  .strict();
+
+export type DelegationPrerequisite = z.infer<typeof delegationPrerequisiteSchema>;
 
 export const delegationRevisionReferenceSchema = z
   .object({
@@ -38,6 +54,7 @@ export const delegatedAssignmentSchema = z
     workflowFingerprint: z.string().min(1),
     context: z.array(delegationRevisionReferenceSchema),
     repository: repositoryAssignmentRequestSchema.optional(),
+    prerequisites: z.array(delegationPrerequisiteSchema).optional(),
     outputs: z
       .array(
         z.union([
@@ -59,6 +76,7 @@ export const delegatedAssignmentSchema = z
 export const delegationSubmissionSchema = z
   .object({
     cohortId: z.string().min(1),
+    expectedPlanRevision: z.number().int().nonnegative().optional(),
     assignments: z.array(delegatedAssignmentSchema.omit({ workflowFingerprint: true })).min(1),
   })
   .strict();
@@ -70,6 +88,7 @@ export type DelegatedAssignment = z.infer<typeof delegatedAssignmentSchema>;
 export const delegationReservationSchema = z
   .object({
     cohortId: z.string().min(1),
+    planRevision: z.number().int().positive().optional(),
     parentWorkflowInstanceId: brandedStringSchema(workflowInstanceId),
     parentWorkItemId: brandedStringSchema(workItemId),
     rootWorkItemId: brandedStringSchema(workItemId),
@@ -92,6 +111,7 @@ export const delegationReservationSchema = z
             workItemId: brandedStringSchema(workItemId),
             workflowInstanceId: brandedStringSchema(workflowInstanceId),
             grantId: z.string().min(1),
+            prerequisiteWorkItemIds: z.array(brandedStringSchema(workItemId)).optional(),
           })
           .strict(),
       )
@@ -121,6 +141,7 @@ export const delegationResultSchema = z
                   branch: z.string().min(1),
                   pullRequestBase: z.string().min(1),
                   runId: z.string().min(1),
+                  baseRevision: z.string().min(1).optional(),
                 })
                 .strict(),
             ]),
@@ -132,6 +153,31 @@ export const delegationResultSchema = z
   .strict();
 
 export type DelegationResult = z.infer<typeof delegationResultSchema>;
+
+export const delegationInputsSchema = z
+  .object({
+    childWorkItemId: brandedStringSchema(workItemId),
+    consumed: z.array(delegationResultSchema.shape.outputs.element),
+    repository: repositoryAssignmentRequestSchema
+      .extend({
+        sourceRevision: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type DelegationInputs = z.infer<typeof delegationInputsSchema>;
+
+export class DelegationConflictError extends Error {
+  constructor(
+    readonly code: DelegationConflictCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'DelegationConflictError';
+  }
+}
 
 export const delegationWaitSchema = z
   .object({ cohortId: z.string().min(1), activationId: brandedStringSchema(activationId) })

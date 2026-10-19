@@ -75,6 +75,7 @@ export class OrchestrationService {
   private readonly delegationCommands: DelegationCommands;
   private readonly delegationGate: DelegationGate;
   private readonly delegatedWork: DelegatedWork;
+  private readonly prerequisiteReason = (id: string) => this.delegatedWork.prerequisites.reason(id);
   private readonly repository: OrchestrationRepository;
   private readonly deferredSignals: DeferredSignals;
   private readonly startWorkflow: StartWorkflow;
@@ -103,7 +104,11 @@ export class OrchestrationService {
     this.work = work;
     const repository = new OrchestrationRepository(journal);
     this.repository = repository;
-    this.delegationGate = new DelegationGate(repository, work);
+    this.delegationGate = new DelegationGate(
+      repository,
+      work,
+      delegation === undefined ? undefined : this.prerequisiteReason,
+    );
     const dependencies = delegation?.({
       isActivationAccepted: (id, item) => this.isActivationAccepted(id, item),
     });

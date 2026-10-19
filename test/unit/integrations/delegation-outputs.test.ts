@@ -66,6 +66,7 @@ function outputs(runs: unknown[], providerHead: string) {
       }),
     },
     pullRequests: {
+      get: async () => ({ headRevision: providerHead, baseRevision: 'base-1', state: 'open' }),
       decideAuthority: async () => ({ allowed: true, revision: providerHead }),
     },
     runs: async () => runs,
@@ -97,4 +98,55 @@ describe('createDelegationOutputs', () => {
     const { qualify } = outputs([run('a1', 'head-1', true), run('a2', 'head-2', false)], 'head-1');
     expect(await qualify()).toBeNull();
   });
+});
+
+it('distinguishes pushed, delivery-ready and actual merged change prerequisites', async () => {
+  let state = 'open';
+  let reviewed = false;
+  let head = 'head-1';
+  const service = createDelegationOutputs({
+    artifacts: { qualifyingOutputs: async () => [] },
+    resources: {
+      get: async () => repository,
+      findByExternalKey: async () => pullRequest,
+      primaryCorrelation: async () => ({
+        workItemId: 'child',
+        role: ResourceCorrelationRole.Primary,
+        provenance: ResourceCorrelationProvenance.AgentReported,
+      }),
+    },
+    pullRequests: {
+      get: async () => ({ state, headRevision: head, baseRevision: 'base-1' }),
+      decideAuthority: async (_work: string, options: { requireAcceptedReview: boolean }) => ({
+        allowed: state === 'open' && (!options.requireAcceptedReview || reviewed),
+        revision: head,
+      }),
+    },
+    runs: async () => [run('a1', 'head-1', true)],
+    providers: async () => [
+      {
+        adapter: 'fake',
+        verifyArtifact: async () => ({ externalKey: pullRequest.externalKey, revision: head }),
+      },
+    ],
+  } as never);
+  const select = (condition: 'pushed-change' | 'delivery-ready' | 'merged-change') =>
+    service.prerequisiteOutput!(
+      child as never,
+      { ...output, requireReview: true } as never,
+      condition,
+    );
+  expect(await select('pushed-change')).toMatchObject({
+    reference: { revision: 'head-1', baseRevision: 'base-1' },
+  });
+  expect(await select('delivery-ready')).toBeNull();
+  expect(await select('merged-change')).toBeNull();
+  reviewed = true;
+  expect(await select('delivery-ready')).not.toBeNull();
+  state = 'closed';
+  expect(await select('merged-change')).toBeNull();
+  state = 'merged';
+  expect(await select('merged-change')).not.toBeNull();
+  head = 'different-head';
+  expect(await select('merged-change')).toBeNull();
 });

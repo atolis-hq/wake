@@ -65,3 +65,24 @@ export const ConversationSurfaceCapability = defineClosedVocabulary({
 export type ConversationSurfaceCapability = ValueOf<typeof ConversationSurfaceCapability>;
 
 export const DelegationOutputKind = defineClosedVocabulary({ Change: 'change' } as const);
+
+export const DelegationPrerequisiteCondition = defineClosedVocabulary({
+  AcceptedOutput: 'accepted-output',
+  PushedChange: 'pushed-change',
+  DeliveryReady: 'delivery-ready',
+  MergedChange: 'merged-change',
+} as const);
+
+export const DelegationConflictCode = defineClosedVocabulary({
+  SelfDependency: 'self-dependency',
+  MissingTarget: 'missing-target',
+  MissingOutput: 'missing-output',
+  OutputKind: 'output-kind',
+  CrossRepositoryBase: 'cross-repository-base',
+  CrossRepositoryChange: 'cross-repository-change',
+  MultipleBases: 'multiple-bases',
+  WaitCycle: 'wait-cycle',
+  StalePlan: 'stale-plan',
+} as const);
+
+export type DelegationConflictCode = ValueOf<typeof DelegationConflictCode>;

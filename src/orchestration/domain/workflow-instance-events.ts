@@ -271,6 +271,9 @@ function applyCoordinationFact(state: MutableWorkflowInstance, event: Coordinati
         };
       return;
     case OrchestrationEventType.DelegationRegistered:
+    case OrchestrationEventType.DelegationInputsResolved:
+    case OrchestrationEventType.DelegationPrerequisiteBlocked:
+    case OrchestrationEventType.DelegationChildBlocked:
     case OrchestrationEventType.DelegationResultSelected:
       return;
     case OrchestrationEventType.DelegationWaitStarted:

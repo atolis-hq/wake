@@ -20,7 +20,9 @@ defineScenario(
     title: 'a delegated tree finishes across restart with one open-work slot and one Run slot',
     given: ['a real filesystem home and production composition with a permanent scripted runner'],
     when: ['a Run submits child work and the host restarts while the parent waits'],
-    then: ['the child and parent complete before an unrelated root can start'],
+    then: [
+      'queued dependent children and their parent complete before an unrelated root can start',
+    ],
   },
   async () => {
     const home = await mkdtemp(join(tmpdir(), 'wake-delivery-capacity-'));
@@ -89,6 +91,7 @@ defineScenario(
         },
         context('start-unrelated'),
       );
+      let dependentId: ReturnType<typeof workflowInstanceId> | undefined;
       let childId: ReturnType<typeof workflowInstanceId> | undefined;
       runner.scripts.push(async (request) => {
         const reservation = await root.orchestration.submitDelegation(
@@ -108,11 +111,24 @@ defineScenario(
                 context: [],
                 outputs: [{ name: 'findings', path: 'findings.md' }],
               },
+              {
+                assignmentId: 'consume',
+                objective: 'Consume exact findings',
+                criteria: ['Publish assessment'],
+                workflowName: workflowName('child'),
+                context: [],
+                outputs: [{ name: 'assessment', path: 'assessment.md' }],
+                prerequisites: [
+                  { assignmentId: 'inspect', output: 'findings', condition: 'accepted-output' },
+                ],
+              },
             ],
           },
           context('submit'),
         );
         childId = reservation.children[0]!.workflowInstanceId;
+        dependentId = reservation.children[1]!.workflowInstanceId;
+        expect(await root.orchestration.get(dependentId)).toBeNull();
         return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
       });
       await root.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
@@ -153,10 +169,34 @@ defineScenario(
         );
         return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
       });
+      runner.scripts.push(async (request) => {
+        const dependent = (await root.orchestration.get(dependentId!))!;
+        const receipt = (await root.orchestration.deliveryTree(parentWork))[0]!.children[1]!
+          .consumedInputs!;
+        expect(receipt.consumed[0]!.reference).toEqual({
+          workItemId: child.workItemId,
+          revisionId: 'findings',
+        });
+        await root.artifacts.stageRevision(
+          {
+            revisionId: 'assessment',
+            path: 'assessment.md',
+            bytes: new TextEncoder().encode('Assessment'),
+          },
+          {
+            workItemId: dependent.workItemId,
+            producer: dependent.workflowInstanceId + '/inspect',
+            activationId: dependent.pendingActivation!.activationId,
+            runId: request.runId,
+          },
+          context('assessment'),
+        );
+        return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
+      });
       runner.scripts.push(async () => {
         expect(
           await root.orchestration.joinedDelegationResults(parent.workflowInstanceId, 'delivery'),
-        ).toHaveLength(1);
+        ).toHaveLength(2);
         return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
       });
       for (let pass = 0; pass < 12; pass++) {
@@ -176,7 +216,8 @@ defineScenario(
       }
       expect((await root.orchestration.get(childId!))!.status).toBe('completed');
       expect((await root.orchestration.get(parent.workflowInstanceId))!.status).toBe('completed');
-      expect(runner.requests).toHaveLength(3);
+      expect((await root.orchestration.get(dependentId!))!.status).toBe('completed');
+      expect(runner.requests).toHaveLength(4);
     } finally {
       await rm(home, { recursive: true, force: true });
     }

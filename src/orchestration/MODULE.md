@@ -64,10 +64,13 @@ reserving Run to end before continuation. New assignments must select a current
 configured workflow fingerprint; committed reservations recover the pinned one.
 Reservation contention retries are bounded and use fresh root-stream sequences.
 Blocked children remain recoverable and keep the cohort waiting.
-Cancelled, closed or deleted child work before workflow completion settles the
-cohort as failed. A completed child without visible outputs gets one subsequent
+In batches without prerequisites, cancelled, closed or deleted child work before
+workflow completion settles the cohort as failed. Queued batches retain durable
+child blockers while unrelated siblings can finish; every required child still
+gates the join. A completed child without visible outputs gets one subsequent
 reconciliation command to make them visible, with the first observation persisted
-across restart; missing outputs after that block the parent and settle the cohort. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the
+across restart; missing outputs after that settle an independent batch as failed or retain a
+child blocker in a queued batch. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the
 delegating activation's typed input and identity flags; exact results are read
 through the joined-results query rather than added to activity input schemas.
 
@@ -131,3 +134,14 @@ runtime and let Eventing own checkpoint and retry mechanics.
 E2E-ORCH-001, E2E-ORCH-RETRY-001, E2E-ORCH-RETRY-003, E2E-ORCH-WAIT-001,
 E2E-ORCH-COMMAND-001, E2E-ORCH-CHILD-001, E2E-ORCH-WATCH-RECOVERY-001,
 E2E-ORCH-WATCH-CLOSED-WORK-001, E2E-ORCH-LOOP-001.
+
+Queued prerequisites select explicit named outputs through immutable resolved
+child identities. The root reservation sequence guards expected plan revisions
+and explicit plus implicit join/merge wait cycles. Consumption receipts pin
+accepted artifact revisions or provider-verified change heads and observed bases
+before child start; a same-repository base selection overrides only that child's
+execution assignment. Live eligibility revalidates those receipts for dispatch,
+outcomes and joins, including after restart; affected downstream results and
+joined parent continuation are held for agent assessment without erasing history
+or choosing Git repairs. Cross-repository prerequisites carry accepted context,
+never Git ancestry. Independent children remain eligible while others wait.

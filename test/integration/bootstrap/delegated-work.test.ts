@@ -773,6 +773,25 @@ it('run-scoped production commands reject escalation and finish a tree with one 
         arguments: { ...command, runId: 'forged' },
       });
       expect(rejected.isError).toBe(true);
+      const cycle = await client.callTool({
+        name: 'wake_delegation_submit',
+        arguments: {
+          ...command,
+          expectedPlanRevision: 0,
+          assignments: [
+            {
+              ...command.assignments[0]!,
+              prerequisites: [
+                { assignmentId: 'findings', output: 'findings', condition: 'accepted-output' },
+              ],
+            },
+          ],
+        },
+      });
+      expect(cycle.isError).toBe(true);
+      expect(JSON.parse((cycle.content as { text: string }[])[0]!.text)).toMatchObject({
+        code: 'self-dependency',
+      });
       const submitted = await client.callTool({
         name: 'wake_delegation_submit',
         arguments: command,

@@ -14,7 +14,7 @@ import type {
   StageConfig,
   TransitionTarget,
 } from './config.js';
-import type { DelegationReservation, DelegationResult } from './delegation.js';
+import type { DelegationInputs, DelegationReservation, DelegationResult } from './delegation.js';
 import type {
   CommandName,
   OrchestrationGroupId,
@@ -34,6 +34,9 @@ import type {
 
 export const OrchestrationEventType = {
   DelegationReserved: 'orchestration.delegation-reserved',
+  DelegationInputsResolved: 'orchestration.delegation-inputs-resolved',
+  DelegationChildBlocked: 'orchestration.delegation-child-blocked',
+  DelegationPrerequisiteBlocked: 'orchestration.delegation-prerequisite-blocked',
   DelegationRegistered: 'orchestration.delegation-registered',
   DelegationResultSelected: 'orchestration.delegation-result-selected',
   DelegationWaitStarted: 'orchestration.delegation-wait-started',
@@ -81,6 +84,15 @@ export interface DeferredWorkflowSignal {
 }
 
 export interface OrchestrationEventPayloads {
+  readonly [OrchestrationEventType.DelegationChildBlocked]: {
+    readonly childWorkItemId: WorkItemId;
+    readonly reason: string;
+  };
+  readonly [OrchestrationEventType.DelegationInputsResolved]: DelegationInputs;
+  readonly [OrchestrationEventType.DelegationPrerequisiteBlocked]: {
+    readonly childWorkItemId: WorkItemId;
+    readonly reason: string;
+  };
   readonly [OrchestrationEventType.SignalDeferred]: DeferredWorkflowSignal;
   readonly [OrchestrationEventType.DelegationFailed]: {
     readonly cohortId: string;

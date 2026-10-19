@@ -10,6 +10,7 @@ export class DelegationGate {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly work: WorkService,
+    private readonly prerequisiteReason?: (id: string) => Promise<string | undefined>,
   ) {}
 
   /** Standalone work keeps existing freeze semantics; only delegated trees and fenced parents are held. */
@@ -25,7 +26,10 @@ export class DelegationGate {
 
   /** Commit-boundary check for one instance; batches use `filterAvailable`. */
   async unavailable(view: WorkflowInstanceView): Promise<boolean> {
-    return this.heldBy(await this.work.deliverySnapshot(), view);
+    return (
+      this.heldBy(await this.work.deliverySnapshot(), view) ||
+      (await this.prerequisiteReason?.(view.workItemId)) !== undefined
+    );
   }
 
   allows(view: WorkflowInstanceView): boolean {
@@ -48,11 +52,16 @@ export class DelegationGate {
     const snapshot = views.some(([, view]) => this.allows(view))
       ? await this.work.deliverySnapshot()
       : undefined;
-    return new Set(
-      views
-        .filter(([, view]) => !this.allows(view) || this.heldBy(snapshot!, view))
-        .map(([id]) => id),
+    const held = await Promise.all(
+      views.map(async ([id, view]) =>
+        !this.allows(view) ||
+        this.heldBy(snapshot!, view) ||
+        (await this.prerequisiteReason?.(view.workItemId)) !== undefined
+          ? id
+          : undefined,
+      ),
     );
+    return new Set(held.filter((id): id is WorkflowInstanceId => id !== undefined));
   }
 
   async run<T>(id: WorkflowInstanceId, operation: () => Promise<T>): Promise<T> {
@@ -88,6 +97,13 @@ export class DelegationGate {
     });
     if (unfenced.length === 0) return [];
     const snapshot = await this.work.deliverySnapshot();
-    return unfenced.filter((item) => !this.heldBy(snapshot, viewOf(item)!));
+    const ready = await Promise.all(
+      unfenced.map(
+        async (item) =>
+          !this.heldBy(snapshot, viewOf(item)!) &&
+          (await this.prerequisiteReason?.(viewOf(item)!.workItemId)) === undefined,
+      ),
+    );
+    return unfenced.filter((_item, index) => ready[index]);
   }
 }
