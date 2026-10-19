@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DelegationCommands } from '../../../src/orchestration/application/delegation-commands.js';
+import { snapshotOf } from '../../support/delivery-snapshot.js';
 
 const repositories = ['repo-a', 'repo-b'];
 
@@ -18,7 +19,10 @@ function commands(
   const delegation = { workflows: ['child'], maxDepth: 1, maxDescendants: 4, ...policy };
   const subject = new DelegationCommands(
     { loadRequired: async () => ({ view: parent }) } as never,
-    { get: async () => ({ state: 'open' }) } as never,
+    {
+      get: async () => ({ state: 'open' }),
+      deliverySnapshot: async () => snapshotOf(() => ({ state: 'open' })),
+    } as never,
     { definitionFor: async () => ({ delegation }) } as never,
     { currentDefinition: () => ({ fingerprint: 'fp' }) } as never,
     { reserve, repositoryScope: async () => inherited, inspect: async () => [] } as never,

@@ -125,11 +125,8 @@ export async function createArtifactMcpServerForSession(
       caller: async () => {
         await sessions.read(path, token);
         if (root.journal === undefined) throw new Error('Delegation journal is unavailable');
-        const run = (
-          await new RunRepository(root.journal).load(executionRunId(descriptor.runId), {
-            fresh: true,
-          })
-        ).view;
+        const run = (await new RunRepository(root.journal).load(executionRunId(descriptor.runId)))
+          .view;
         if (run === null || run.activationId !== descriptor.activationId)
           throw new Error('Delegation Run is unavailable');
         const parent = await root.orchestration.get(workflowInstanceId(run.workflowInstanceId));
@@ -238,7 +235,7 @@ async function instructionsForRun(
   const prior =
     input.journal === undefined
       ? undefined
-      : (await input.journal.readStream(runStream(executionRunId(runId)), { fresh: true }))
+      : (await input.journal.readStream(runStream(executionRunId(runId))))
           .flatMap((envelope) => {
             const event = selectRunExecutionEvent(envelope);
             return event?.event.eventType === ExecutionEventType.RunOperatorInstructionsCaptured

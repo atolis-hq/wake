@@ -4,7 +4,7 @@ import type { DelegationAuthority } from '../contracts/delegation-ports.js';
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
 import { activationId } from '../../activities/index.js';
 import { WorkspaceMode } from '../../execution/index.js';
-import { readDeliveryAvailability, WorkStatus, type WorkService } from '../../work/index.js';
+import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { DelegationArtifacts, DelegationRepositories } from '../contracts/delegation-ports.js';
 import type {
   DelegatedAssignment,
@@ -287,7 +287,7 @@ export class DelegatedWork {
   private async parentIdentity(
     parent: WorkflowInstanceView,
   ): Promise<{ parent: ReservationParent; root: WorkflowInstanceId }> {
-    const availability = await readDeliveryAvailability(parent.workItemId, this.work);
+    const availability = await this.deliveryAvailability(parent.workItemId);
     if (availability.reason !== undefined) throw new Error(availability.reason);
     const item = await this.work.get(parent.workItemId);
     if (item === null || item.state !== WorkStatus.Open || item.frozen || item.deleted)
@@ -314,7 +314,7 @@ export class DelegatedWork {
     reservation: DelegationReservation,
     limits: DelegationLimits,
   ): Promise<void> {
-    const availability = await readDeliveryAvailability(reservation.parentWorkItemId, this.work);
+    const availability = await this.deliveryAvailability(reservation.parentWorkItemId);
     if (availability.reason !== undefined) throw new Error(availability.reason);
     const current = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     if (
@@ -394,9 +394,7 @@ export class DelegatedWork {
     context: CommandContext,
   ): Promise<void> {
     if (isSettled(await this.ledger.events(), reservation)) return;
-    if (
-      (await readDeliveryAvailability(reservation.parentWorkItemId, this.work)).reason !== undefined
-    )
+    if ((await this.deliveryAvailability(reservation.parentWorkItemId)).reason !== undefined)
       return;
     const parent = (await this.repository.loadRequired(reservation.parentWorkflowInstanceId)).view;
     if (parent.status !== WorkflowStatus.Active && parent.status !== WorkflowStatus.Waiting) {
@@ -551,9 +549,7 @@ export class DelegatedWork {
     child: DelegationReservation['children'][number],
     context: CommandContext,
   ): Promise<void> {
-    if (
-      (await readDeliveryAvailability(reservation.parentWorkItemId, this.work)).reason !== undefined
-    )
+    if ((await this.deliveryAvailability(reservation.parentWorkItemId)).reason !== undefined)
       return;
     const existing = await this.repository.load(child.workflowInstanceId);
     if (await this.childWorkTerminated(child.workItemId, existing.view)) {
@@ -648,10 +644,15 @@ export class DelegatedWork {
     return this.runHasEnded(id);
   }
 
+  /** Commit-boundary read: observes appends from other hosts, then answers from memory. */
+  private async deliveryAvailability(id: string) {
+    return (await this.work.deliverySnapshot()).availability(id);
+  }
+
   private async canJoin(reservation: DelegationReservation): Promise<boolean> {
     return (
       (await this.endedRun(reservation.runId)) &&
-      (await readDeliveryAvailability(reservation.parentWorkItemId, this.work)).reason === undefined
+      (await this.deliveryAvailability(reservation.parentWorkItemId)).reason === undefined
     );
   }
 

@@ -97,6 +97,13 @@ event-type-to-stream ownership at compile time and validate it again while
 decoding persisted data. A selector returns `null` for another namespace and
 rejects malformed data in its own namespace.
 
+The journal is multi-writer by design: the resident, `wake mcp serve` (spawned per
+agent run by the agent CLI), and CLI commands such as `tick`, `smoke`,
+`correlate` and `run resolve` all append to the same directory, and several must
+work with no resident running. The cross-process append lock is the only
+serialisation point, and every journal read observes all appends committed before
+it, so no component needs a freshness option.
+
 Filesystem storage preserves the established flat JSONL record through the
 Eventing filesystem package codec, while the in-memory adapter keeps the nested
 envelope model. The journal needs no migration for that storage compatibility

@@ -9,22 +9,21 @@ export interface DeliveryWorkState {
   readonly delegation?: WorkDelegation;
 }
 
+export interface DeliveryAvailability {
+  readonly rootWorkItemId: string;
+  readonly reason?: string;
+}
+
 /** Ancestry comes from Work's validated creation facts, never descriptive links. */
-export async function readDeliveryAvailability(
+export function deliveryAvailability(
   id: string,
-  work: {
-    get(id: WorkItemId, options?: { readonly fresh?: boolean }): Promise<DeliveryWorkState | null>;
-  },
-): Promise<{ readonly rootWorkItemId: string; readonly reason?: string }> {
-  const item = await work.get(id as WorkItemId, { fresh: true });
+  lookup: (id: WorkItemId) => DeliveryWorkState | null,
+): DeliveryAvailability {
+  const item = lookup(id as WorkItemId);
   const rootWorkItemId = item?.delegation?.rootWorkItemId ?? id;
   for (const [key, member] of [
     [id, item],
-    ...(await Promise.all(
-      (item?.delegation?.ancestors ?? []).map(
-        async (ancestor) => [ancestor, await work.get(ancestor, { fresh: true })] as const,
-      ),
-    )),
+    ...(item?.delegation?.ancestors ?? []).map((ancestor) => [ancestor, lookup(ancestor)] as const),
   ] as const) {
     if (unavailable(member))
       return { rootWorkItemId, reason: `Delivery work ${key} is unavailable` };

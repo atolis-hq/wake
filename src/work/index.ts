@@ -22,4 +22,6 @@ export * from './contracts/vocabulary.js';
 
 export * from './domain/work-item.js';
 
-export * from './application/delivery-availability.js';
+export * from './domain/delivery-availability.js';
+
+export * from './application/work-index.js';

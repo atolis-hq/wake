@@ -51,7 +51,7 @@ function serializeJournalAppends(journal: EventJournal): EventJournal {
       );
       return appended;
     },
-    readStream: (stream, options) => journal.readStream(stream, options),
+    readStream: (stream) => journal.readStream(stream),
     ...(journal.scanAll === undefined
       ? {}
       : { scanAll: (signal?: AbortSignal) => journal.scanAll!(signal) }),

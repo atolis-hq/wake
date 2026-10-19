@@ -130,6 +130,8 @@ export function createActivationScheduler(
       if (await isDispatchPaused()) return { kind: 'paused' };
     }
     const rawPending = await orchestration.listPendingActivations(options.workItemId);
+    const delivery =
+      rawPending.length === 0 ? undefined : await dependencies.work?.deliverySnapshot();
     const pending = (
       await Promise.all(
         rawPending.map(async (candidate) => {
@@ -138,7 +140,7 @@ export function createActivationScheduler(
             Date.parse(candidate.activation.notBefore) > clock.now().getTime()
           )
             return null;
-          const work = await dependencies.work?.get(candidate.workflow.workItemId);
+          const work = delivery?.get(candidate.workflow.workItemId);
           return work?.frozen || work?.deleted ? null : candidate;
         }),
       )

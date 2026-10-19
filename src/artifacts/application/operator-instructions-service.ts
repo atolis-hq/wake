@@ -88,7 +88,7 @@ export class OperatorInstructionsService {
     if (bytes.byteLength > this.config.maxWriteBytes)
       throw new Error(`Operator instructions exceed ${this.config.maxWriteBytes} byte limit`);
     const stream = artifactContextStream(input.contextScope);
-    const events = await this.journal.readStream(stream, { fresh: true });
+    const events = await this.journal.readStream(stream);
     const revisions = this.selectRevisions(events);
     const existing = revisions.find((item) => item.revisionId === input.revisionId);
     if (existing !== undefined) {
@@ -136,9 +136,7 @@ export class OperatorInstructionsService {
 
   private async revisions(contextScope: string) {
     artifactSharedContextNameSchema.parse(contextScope);
-    return this.selectRevisions(
-      await this.journal.readStream(artifactContextStream(contextScope), { fresh: true }),
-    );
+    return this.selectRevisions(await this.journal.readStream(artifactContextStream(contextScope)));
   }
 
   private selectRevisions(

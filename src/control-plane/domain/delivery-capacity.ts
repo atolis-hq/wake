@@ -1,14 +1,13 @@
 import type { RunView } from '../../execution/index.js';
 import { isActiveRunStatus } from '../../execution/index.js';
 import { WorkflowStatus, type WorkflowInstanceView } from '../../orchestration/index.js';
-import { readDeliveryAvailability, type WorkItemId } from '../../work/index.js';
-import type { WorkAvailability } from './open-work-policy.js';
+import type { DeliverySnapshot, WorkItemId } from '../../work/index.js';
 
 /** A waiting workflow is not a Run; every actual Run, including watches, counts. */
 export async function deliveryCapacity(
   workflows: readonly WorkflowInstanceView[],
   runs: readonly RunView[],
-  work: { get(id: string): Promise<WorkAvailability | null> } | undefined,
+  work: DeliverySnapshot | undefined,
   runLimit: ((id: WorkItemId) => Promise<number | undefined>) | undefined,
 ): Promise<{
   roots: ReadonlyMap<string, string>;
@@ -27,14 +26,11 @@ export async function deliveryCapacity(
   );
   const roots = new Map<string, string>();
   const unavailable = new Set<string>();
-  await Promise.all(
-    [...new Set(live.map((workflow) => workflow.workItemId))].map(async (id) => {
-      const delivery =
-        work === undefined ? { rootWorkItemId: id } : await readDeliveryAvailability(id, work);
-      roots.set(id, delivery.rootWorkItemId);
-      if (delivery.reason !== undefined) unavailable.add(id);
-    }),
-  );
+  for (const id of new Set(live.map((workflow) => workflow.workItemId))) {
+    const delivery = work === undefined ? { rootWorkItemId: id } : work.availability(id);
+    roots.set(id, delivery.rootWorkItemId);
+    if (delivery.reason !== undefined) unavailable.add(id);
+  }
   const full = new Set<string>();
   // A root without an active Run cannot be at a positive limit.
   await Promise.all(

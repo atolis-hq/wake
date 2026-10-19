@@ -25,6 +25,7 @@ import type {
 } from '../../../src/orchestration/index.js';
 import { BuiltInResourceKind } from '../../../src/resources/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
+import { snapshotOf } from '../../support/delivery-snapshot.js';
 import { resId, workId } from '../../support/identities.js';
 
 function candidate(id = 'one') {
@@ -494,6 +495,8 @@ describe('ActivationScheduler', () => {
         },
         work: {
           get: async (id) => ({ state: id === reclaimed ? 'closed' : 'open' }),
+          deliverySnapshot: async () =>
+            snapshotOf((id) => ({ state: id === reclaimed ? 'closed' : 'open' })),
         },
         workspaceRecovery: {
           recover: async (_runs, hooks) => {

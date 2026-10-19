@@ -4,6 +4,7 @@ import type {
   DelegationRepositories,
 } from '../contracts/delegation-ports.js';
 import type { DelegationCaller, DelegationSubmission } from '../contracts/delegation.js';
+import { expireTimedOutAwait } from '../domain/interpreter.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
 import { DelegationCommands } from './delegation-commands.js';
@@ -145,7 +146,7 @@ export class OrchestrationService {
         this.delegationGate.run(id, () =>
           this.advanceWorkflow.applyResourceTransition(id, target, evidenceId, context),
         ),
-      (id) => this.delegationGate.fenced(id),
+      (ids) => this.delegationGate.fencedAmong(ids),
     );
     this.childWorkflows = new RequestChild(
       repository,
@@ -586,14 +587,7 @@ export class OrchestrationService {
 
   async listPendingActivations(workItemId?: string) {
     const entries = await this.advanceWorkflow.listPendingActivations(workItemId);
-    const available = await Promise.all(
-      entries.map(
-        async (entry) =>
-          this.delegationGate.allows(entry.workflow) &&
-          !(await this.delegationGate.unavailable(entry.workflow)),
-      ),
-    );
-    return entries.filter((_, index) => available[index]);
+    return this.delegationGate.filterAvailable(entries, (entry) => entry.workflow);
   }
 
   listWaiting(signalKind?: SignalName) {
@@ -601,10 +595,19 @@ export class OrchestrationService {
   }
 
   async expireTimedOutWaits(context: CommandContext) {
+    // Only instances whose await has actually timed out need the gate, which is almost never any.
+    const due = (await this.repository.list()).filter(
+      ({ view }) =>
+        view !== null &&
+        expireTimedOutAwait(view, {
+          occurredAt: context.occurredAt,
+          causationId: context.commandId,
+        }).kind !== 'ignored',
+    );
     return expireTimedOutWaits(
       this.repository,
       context,
-      await this.delegationGate.availableInstances(),
+      await this.delegationGate.filterAvailable(due, ({ view }) => view),
     );
   }
 

@@ -21,13 +21,10 @@ import type {
 } from '../../orchestration/index.js';
 import { DelegationPendingError, WorkflowStatus } from '../../orchestration/index.js';
 import { type ResourceService } from '../../resources/index.js';
+import type { WorkService } from '../../work/index.js';
 import type { AdvanceResult, DispatchedRun } from '../contracts/views.js';
 import { neutralDispatchPriority, type DispatchPolicy } from '../domain/dispatch-policy.js';
-import {
-  canDispatchWorkItem,
-  readOpenWorkItemIds,
-  type WorkAvailability,
-} from '../domain/open-work-policy.js';
+import { canDispatchWorkItem, readOpenWorkItemIds } from '../domain/open-work-policy.js';
 import type { ExecutionPort, OrchestrationPort } from './activation-scheduler-ports.js';
 import { isExecutionFailureTerminal } from './execution-reconciliation.js';
 
@@ -39,7 +36,7 @@ export interface DispatchLoopContext {
   readonly maxConcurrentRuns: number;
   readonly maxDispatches: number;
   readonly maxOpenWorkItems: number | null;
-  readonly work: { get(id: string): Promise<WorkAvailability | null> } | undefined;
+  readonly work: Pick<WorkService, 'deliverySnapshot'> | undefined;
   readonly runnerIneligibility: () => Promise<ReadonlySet<string>>;
   readonly isDispatchPaused: () => Promise<boolean>;
   readonly commandContext: (cause: string) => CommandContext;
@@ -113,23 +110,25 @@ export async function runDispatchLoop(
       break;
     }
     const inventory = (await ctx.orchestration.listAll?.()) ?? pending.map((item) => item.workflow);
+    // One synchronisation with Work per pass; every item is then answered from memory.
+    const delivery = await ctx.work?.deliverySnapshot();
     const capacity = await deliveryCapacity(
       inventory,
       allRuns,
-      ctx.work,
+      delivery,
       ctx.orchestration.deliveryRunLimit?.bind(ctx.orchestration),
     );
     // Legacy test ports may omit listAll; production supplies the journal-backed inventory.
     const open =
       ctx.maxOpenWorkItems === null
         ? new Set<string>()
-        : await readOpenWorkItemIds(
+        : readOpenWorkItemIds(
             inventory.map((workflow) =>
               startedWorkflowIds.has(workflow.workflowInstanceId)
                 ? { ...workflow, hasStartedActivation: true }
                 : workflow,
             ),
-            ctx.work,
+            delivery,
           );
     const selectedCandidate = ctx.dispatchPolicy.select(
       pending

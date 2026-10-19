@@ -32,4 +32,4 @@ nor Node filesystem APIs.
 Define portable contracts and runtime capabilities here. Put a concrete storage
 adapter in its own package and compose it in the consuming application.
 
-Journal stream reads accept an optional fresh-read request for decisions that must observe already committed cross-host writes. In-memory adapters are inherently fresh; caching adapters must bypass their freshness window when requested.
+Every journal read (`readStream`, `readAll`, `latestGlobalPosition`) must observe all appends committed before the call, including appends by other processes sharing the storage; adapters may cache only what they can prove is unchanged. `cachedJournalView` and `foldedJournalView` key their values by the last position actually read.

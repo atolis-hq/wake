@@ -283,7 +283,10 @@ export async function composeIntegrationRuntime(
     return (
       limit === null ||
       hasOpenWorkCapacity(
-        await readOpenWorkItemIds(await input.orchestration.listAll(), input.work),
+        readOpenWorkItemIds(
+          await input.orchestration.listAll(),
+          await input.work.deliverySnapshot(),
+        ),
         limit,
       )
     );

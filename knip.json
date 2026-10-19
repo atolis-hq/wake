@@ -6,6 +6,8 @@
       "entry": [
         "src/*/index.ts",
         "test/**/*.test.ts",
+        "test/stress/**/*.stress.ts",
+        "test/stress/support/delegation-gate-fanout.ts",
         "test/integration/surfaces/fixtures/wait-forever-fixture.ts",
         "test/support/workspace-lock-child.ts"
       ],

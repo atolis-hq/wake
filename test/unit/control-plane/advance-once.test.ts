@@ -23,6 +23,7 @@ import {
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import { TestWorld } from '../../e2e/support/world.js';
+import { snapshotOf } from '../../support/delivery-snapshot.js';
 
 async function world() {
   const result = new TestWorld();
@@ -247,7 +248,10 @@ describe('advanceOnce', () => {
       { now: () => new Date('2026-08-11T00:00:00.000Z') },
       {
         ids: { next: () => 'command-00000000000000000000000001' } as never,
-        work: { get: async () => ({ state: 'open', deleted: false }) },
+        work: {
+          get: async () => ({ state: 'open', deleted: false }),
+          deliverySnapshot: async () => snapshotOf(() => ({ state: 'open', deleted: false })),
+        },
         workspaceRecovery: {
           recover: async (_runs, options) => {
             retained = await options?.retainWorkItem?.(workItemId as never);
@@ -289,7 +293,10 @@ describe('advanceOnce', () => {
       {
         ids: { next: () => 'command-00000000000000000000000001' } as never,
         isDispatchPaused: async () => paused,
-        work: { get: async () => ({ state: 'closed', deleted: false }) },
+        work: {
+          get: async () => ({ state: 'closed', deleted: false }),
+          deliverySnapshot: async () => snapshotOf(() => ({ state: 'closed', deleted: false })),
+        },
         workspaceRecovery: {
           recover: async () => {
             paused = true;

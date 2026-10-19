@@ -3,18 +3,14 @@ import type { JournalChangeSignal } from '../subscriptions/journal-change-signal
 
 export class WrongExpectedSequenceError extends Error {}
 
-export interface JournalReadOptions {
-  /** Observe committed appends from other hosts without using a bounded freshness cache. */
-  readonly fresh?: boolean;
-}
-
 export interface EventJournal {
   appendToStream(
     stream: StreamRef,
     expectedSequence: number,
     events: readonly EventData[],
   ): Promise<readonly EventEnvelope[]>;
-  readStream(stream: StreamRef, options?: JournalReadOptions): Promise<readonly EventEnvelope[]>;
+  /** Every read observes all appends committed before the call, including by other processes. */
+  readStream(stream: StreamRef): Promise<readonly EventEnvelope[]>;
   /** Optional bounded, cancellable snapshot reader for adapters with a streaming source. */
   scanAll?(signal?: AbortSignal): AsyncIterable<EventEnvelope>;
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;

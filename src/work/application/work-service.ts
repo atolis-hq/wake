@@ -3,7 +3,6 @@ import {
   WrongExpectedSequenceError,
   type CommandContext,
   type EventJournal,
-  type JournalReadOptions,
 } from '@atolis-hq/eventing';
 import { isDeepStrictEqual } from 'node:util';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
@@ -17,6 +16,7 @@ import {
 import type { WorkItemId } from '../contracts/identifiers.js';
 import type { WorkItemView } from '../contracts/views.js';
 import { WorkStatus } from '../contracts/vocabulary.js';
+import { WorkIndex, type DeliverySnapshot } from './work-index.js';
 import { WorkRepository } from './work-repository.js';
 
 export interface WorkService {
@@ -30,7 +30,9 @@ export interface WorkService {
   freeze(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
   unfreeze(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
   delete(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
-  get(workItemId: WorkItemId, options?: JournalReadOptions): Promise<WorkItemView | null>;
+  get(workItemId: WorkItemId): Promise<WorkItemView | null>;
+  /** One synchronisation with the journal, then in-memory delivery answers for any number of items. */
+  deliverySnapshot(): Promise<DeliverySnapshot>;
 }
 
 /** Delegated ancestry is derived from the validated parent, never trusted from the command. */
@@ -53,6 +55,7 @@ async function assertDelegationAncestry(
 
 export function createWorkService(journal: EventJournal): WorkService {
   const repository = new WorkRepository(journal);
+  const index = new WorkIndex(journal);
   const change = (
     workItemId: WorkItemId,
     context: CommandContext,
@@ -125,9 +128,10 @@ export function createWorkService(journal: EventJournal): WorkService {
     delete(workItemId, context) {
       return setDeleted(repository, change, workItemId, context);
     },
-    async get(workItemId, options) {
-      return (await repository.load(workItemId, options)).view;
+    async get(workItemId) {
+      return (await repository.load(workItemId)).view;
     },
+    deliverySnapshot: () => index.snapshot(),
   };
 }
 
