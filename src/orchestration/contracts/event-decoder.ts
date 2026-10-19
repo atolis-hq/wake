@@ -1,6 +1,9 @@
 /* eslint-disable max-lines */
 import { z } from 'zod';
 import {
+  delegationAttentionRequestSchema,
+  delegationAttentionResolvedSchema,
+  delegationAttentionResponseSchema,
   delegationInputsSchema,
   delegationJoinSchema,
   delegationReservationSchema,
@@ -307,6 +310,18 @@ const eventSchemas = {
     z
       .object({ childWorkItemId: brandedStringSchema(workItemId), reason: z.string().min(1) })
       .strict(),
+  ),
+  [OrchestrationEventType.DelegationAttentionRequested]: workflowEnvelope(
+    OrchestrationEventType.DelegationAttentionRequested,
+    delegationAttentionRequestSchema,
+  ),
+  [OrchestrationEventType.DelegationAttentionResponded]: workflowEnvelope(
+    OrchestrationEventType.DelegationAttentionResponded,
+    delegationAttentionResponseSchema,
+  ),
+  [OrchestrationEventType.DelegationAttentionResolved]: workflowEnvelope(
+    OrchestrationEventType.DelegationAttentionResolved,
+    delegationAttentionResolvedSchema,
   ),
   [OrchestrationEventType.DelegationFailed]: workflowEnvelope(
     OrchestrationEventType.DelegationFailed,

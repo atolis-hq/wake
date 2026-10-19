@@ -697,7 +697,21 @@ delegation:
 
 Omission disables agent delegation. The Run-scoped tools
 wake_delegation_submit and wake_delegation_inspect submit and inspect work
-through the current agent Run. Submission accepts a stable cohortId and
+through the current agent Run.
+
+When a required child fails, is cancelled, exhausts its retries, consumes a
+changed input or asks for assignment clarification while siblings are still
+running, Wake resumes the delegating stage once with an attention activation
+(the same activity, with a fresh session). `wake_delegation_inspect` returns
+`attention`: the revision and the coalesced blockers, each with a blockerId and
+kind (`failed` or `assignment-context`). End the activity normally to leave
+the cohort waiting; attention never satisfies the join and does not reset the
+root or workflow limits. Use `wake_delegation_respond` with childWorkItemId,
+blockerId, expectedRevision and exact accepted artifact revisions to answer an
+`assignment-context` blocker; only that child resumes. Terminal failures need
+replacement work in a new cohort, and review, consent or approval gates cannot
+be answered through this channel. Each blocker is assessed once, and a delegating
+activity that is not an agent records one operator diagnostic instead. Submission accepts a stable cohortId and
 assignments with assignmentId, objective, criteria, workflowName, exact
 artifact context references and named outputs (name and path). Wake pins each
 current workflow definition. Caller, Run, activation and reservation limits

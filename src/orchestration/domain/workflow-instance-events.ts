@@ -49,6 +49,7 @@ export type MutableWorkflowInstance = {
   requestId?: string;
   delegationFence?: WorkflowInstanceView['delegationFence'];
   delegationWait?: WorkflowInstanceView['delegationWait'];
+  delegationAttention?: WorkflowInstanceView['delegationAttention'];
   status: WorkflowInstanceView['status'];
   blockReason?: string;
   currentStage: WorkflowInstanceView['currentStage'];
@@ -212,12 +213,14 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       return;
     case OrchestrationEventType.InstanceCompleted:
       delete state.delegationWait;
+      delete state.delegationAttention;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceCompleted]!;
       delete state.pendingActivation;
       delete state.waitingFor;
       return;
     case OrchestrationEventType.InstanceBlocked:
       delete state.delegationWait;
+      delete state.delegationAttention;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceBlocked]!;
       state.blockReason = event.payload.reason;
       return;
@@ -226,6 +229,7 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       return;
     case OrchestrationEventType.InstanceSuperseded:
       delete state.delegationWait;
+      delete state.delegationAttention;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceSuperseded]!;
       return;
     default:
@@ -242,6 +246,7 @@ function applyDelegationFact(
 ): void {
   if (event.eventType === OrchestrationEventType.DelegationJoined) {
     delete state.delegationWait;
+    delete state.delegationAttention;
     delete state.delegationFence;
     return;
   }
@@ -259,6 +264,24 @@ function applyCoordinationFact(state: MutableWorkflowInstance, event: Coordinati
     case OrchestrationEventType.GroupBudgetExhausted:
     case OrchestrationEventType.DelegationFailed:
       delete state.delegationFence;
+      delete state.delegationAttention;
+      return;
+    case OrchestrationEventType.DelegationAttentionRequested:
+      state.delegationAttention = {
+        cohortId: event.payload.cohortId,
+        attentionKey: event.payload.attentionKey,
+        activationId: event.payload.activationId,
+      };
+      return;
+    case OrchestrationEventType.DelegationAttentionResolved:
+      // The assessment is not an outcome route: the unresolved cohort wait is simply restored.
+      if (state.delegationAttention?.attentionKey !== event.payload.attentionKey) return;
+      delete state.delegationAttention;
+      state.acceptedOutcomes.push(event.payload.activationId);
+      updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Completed);
+      if (state.delegationWait !== undefined) state.status = WorkflowStatus.Waiting;
+      return;
+    case OrchestrationEventType.DelegationAttentionResponded:
       return;
     case OrchestrationEventType.DelegationReconciliationFailed:
     case OrchestrationEventType.SignalDeferred:
@@ -384,6 +407,9 @@ export function immutableWorkflowInstanceView(
     ...(state.requestId === undefined ? {} : { requestId: state.requestId }),
     ...(state.delegationFence === undefined ? {} : { delegationFence: state.delegationFence }),
     ...(state.delegationWait === undefined ? {} : { delegationWait: state.delegationWait }),
+    ...(state.delegationAttention === undefined
+      ? {}
+      : { delegationAttention: state.delegationAttention }),
     status: state.status,
     ...(state.blockReason === undefined ? {} : { blockReason: state.blockReason }),
     currentStage: state.currentStage,

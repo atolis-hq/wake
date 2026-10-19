@@ -99,10 +99,10 @@ orchestration:
       }),
     );
     const advertised = await client.listTools();
-    expect(advertised.tools).toHaveLength(8);
+    expect(advertised.tools).toHaveLength(9);
     for (const tool of advertised.tools)
       expect(tool.name).toMatch(
-        /^wake_(artifacts_[a-z]+|context_instructions_read|delegation_(submit|inspect))$/,
+        /^wake_(artifacts_[a-z]+|context_instructions_read|delegation_(submit|inspect|respond))$/,
       );
     const write = await client.callTool({
       name: 'wake_artifacts_write',

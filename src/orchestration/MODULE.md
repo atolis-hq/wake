@@ -69,7 +69,20 @@ queued cohort then settles as failed and atomically requests a fresh parent
 assessment activation after the reserving Run ends. Affected unfinished child
 workflows are superseded. The agent may explicitly submit a replacement batch
 under normal authority and limits, with new immutable receipts and fresh outputs.
-Live attention before independent siblings finish is deferred. Batches without
+Live parent attention coalesces the unresolved reasons (recorded child blockers and children
+blocked on an agent clarification) into one assessment activation at the delegating stage,
+keyed by cohort revision and blocker identities. `delegationAttention` on the parent view
+suspends the cohort wait, so attention and the successful join share the parent's single
+activation: a join completing meanwhile stays pending in the journal and proceeds when the
+assessment ends, and a blocker arriving meanwhile waits for the next one. Each blocker is
+raised once; a still-blocked member stays visible and is never polled. A fully terminal
+batch keeps the ordinary unsuccessful continuation. The attention outcome never takes
+ordinary routing: it only restores the wait. A reply (`respondToDelegationAttention`)
+names the child, blocker and assignment revision, is bound to the attention activation's
+Run, and resumes only a child blocked for assignment context; terminal failures and
+human-only gates are rejected, exact accepted references are granted through the
+Artifacts port, and budgets are untouched. A delegating activity that is not an agent
+records one operator diagnostic instead of an attention activation. Batches without
 prerequisites retain their existing terminal-failure behavior. A completed child
 without visible outputs gets one subsequent reconciliation command to make them
 visible; its first observation survives restart. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the

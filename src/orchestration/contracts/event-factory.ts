@@ -13,7 +13,7 @@ export type OrchestrationEventDataInput = {
 }[keyof OrchestrationEventPayloads];
 
 // Exhaustive dispatch preserves the closed event-to-payload mapping.
-// eslint-disable-next-line complexity
+// eslint-disable-next-line complexity, max-lines-per-function
 export function createOrchestrationEventData(
   input: OrchestrationEventDataInput,
 ): OrchestrationEventData {
@@ -25,6 +25,12 @@ export function createOrchestrationEventData(
       return createEventData(input);
     case OrchestrationEventType.DelegationFailed:
     case OrchestrationEventType.DelegationReconciliationFailed:
+      return createEventData(input);
+    case OrchestrationEventType.DelegationAttentionRequested:
+      return createEventData(input);
+    case OrchestrationEventType.DelegationAttentionResponded:
+      return createEventData(input);
+    case OrchestrationEventType.DelegationAttentionResolved:
       return createEventData(input);
     case OrchestrationEventType.DelegationReserved:
       return createEventData(input);

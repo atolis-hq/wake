@@ -801,6 +801,20 @@ it('run-scoped production commands reject escalation and finish a tree with one 
       reservation = JSON.parse(content[0]!.text) as DelegationReservation;
       const inspected = await client.callTool({ name: 'wake_delegation_inspect', arguments: {} });
       expect(inspected.isError).not.toBe(true);
+      // A reply is only accepted for an open attention request bound to this activation.
+      const unsolicited = await client.callTool({
+        name: 'wake_delegation_respond',
+        arguments: {
+          childWorkItemId: reservation.children[0]!.workItemId,
+          blockerId: 'none',
+          expectedRevision: 1,
+          references: [],
+        },
+      });
+      expect(unsolicited.isError).toBe(true);
+      expect(JSON.parse((unsolicited.content as { text: string }[])[0]!.text)).toMatchObject({
+        code: 'no-attention',
+      });
     } finally {
       await client.close();
       await server.close();
@@ -987,6 +1001,24 @@ it('settles a hard queued-child failure after independent work drains, and prese
   await complete(f.root, child);
   const root = await f.restart();
   await root.orchestration.reconcileChildCompletions(context('restart-failed'));
+  // The failure is put to the parent once, surviving restart, before the cohort settles.
+  const attending = (await root.orchestration.get(parent.workflowInstanceId))!;
+  expect(attending.delegationAttention).toBeDefined();
+  expect((await root.orchestration.deliveryTree(parent.workItemId))[0]!.settled).toBe(false);
+  await root.orchestration.reconcileChildCompletions(context('restart-failed-again'));
+  expect(
+    (await f.journal.readAll(0)).filter(
+      (entry) => entry.event.eventType === OrchestrationEventType.DelegationAttentionRequested,
+    ),
+  ).toHaveLength(1);
+  await root.orchestration.acceptOutcome(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: attending.delegationAttention!.activationId,
+      outcome: { kind: 'done' },
+    },
+    context('attention-done'),
+  );
   const tree = await root.orchestration.deliveryTree(parent.workItemId);
   expect(tree[0]!.settled).toBe(true);
   expect(tree[0]!.failureReason).toContain('inspect blockers');

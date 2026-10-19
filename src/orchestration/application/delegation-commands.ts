@@ -2,7 +2,9 @@ import type { CommandContext } from '@atolis-hq/eventing';
 import type { WorkService } from '../../work/index.js';
 import type { DelegationAuthority } from '../contracts/delegation-ports.js';
 import {
+  delegationAttentionReplySchema,
   delegationSubmissionSchema,
+  type DelegationAttentionReply,
   type DelegationCaller,
   type DelegationSubmission,
 } from '../contracts/delegation.js';
@@ -87,6 +89,26 @@ export class DelegationCommands {
     );
   }
 
+  /** Run-bound reply to a coalesced attention request; authority is the caller's own activation. */
+  async respond(
+    caller: DelegationCaller,
+    input: DelegationAttentionReply,
+    context: CommandContext,
+  ) {
+    const reply = delegationAttentionReplySchema.parse(input);
+    const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
+    await this.authority.assertCaller(caller, parent);
+    const availability = (await this.work.deliverySnapshot()).availability(parent.workItemId);
+    if (availability.reason !== undefined) throw new Error(availability.reason);
+    await this.delegated.attention.respond(caller, reply, context);
+    return this.attentionView(caller.workflowInstanceId);
+  }
+
+  private async attentionView(id: DelegationCaller['workflowInstanceId']) {
+    const parent = (await this.repository.loadRequired(id)).view;
+    return this.delegated.attention.current(parent);
+  }
+
   async inspect(caller: DelegationCaller, context: CommandContext) {
     const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     await this.authority.assertCaller(caller, parent);
@@ -98,6 +120,8 @@ export class DelegationCommands {
       repositories:
         policy === undefined ? [] : (await this.scopeFor(parent, policy, context)).permitted,
       planRevision: tree.length,
+      // The open coalesced assessment for this activation, if any; replies name its blockers.
+      attention: await this.delegated.attention.current(parent),
       tree,
     };
   }

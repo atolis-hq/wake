@@ -3,7 +3,11 @@ import type {
   DelegationAuthority,
   DelegationRepositories,
 } from '../contracts/delegation-ports.js';
-import type { DelegationCaller, DelegationSubmission } from '../contracts/delegation.js';
+import type {
+  DelegationAttentionReply,
+  DelegationCaller,
+  DelegationSubmission,
+} from '../contracts/delegation.js';
 import { expireTimedOutAwait } from '../domain/interpreter.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
@@ -79,6 +83,9 @@ export class OrchestrationService {
   private readonly prerequisiteReasons = (ids: readonly string[], snapshot?: DeliverySnapshot) =>
     this.delegatedWork.prerequisites.reasons(ids, snapshot);
 
+  private readonly resumeClarification = (id: WorkflowInstanceId, context: CommandContext) =>
+    this.advanceWorkflow.resumeNeedsClarificationStage(id, context);
+
   private readonly repository: OrchestrationRepository;
   private readonly deferredSignals: DeferredSignals;
   private readonly startWorkflow: StartWorkflow;
@@ -94,6 +101,8 @@ export class OrchestrationService {
   private readonly definitions: WorkflowDefinitionRegistry;
   private readonly work: WorkService;
 
+  // Composition root for the module's services; splitting it would only scatter the wiring.
+  // eslint-disable-next-line max-lines-per-function
   constructor(
     journal: EventJournal,
     work: WorkService,
@@ -129,6 +138,8 @@ export class OrchestrationService {
         artifacts: dependencies?.artifacts ?? unavailableArtifacts,
         repositories: dependencies?.repositories,
         runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
+        supportsAttention: isAgentActivity,
+        resumeChild: this.resumeClarification,
       },
     );
     this.delegationCommands = new DelegationCommands(
@@ -263,8 +274,26 @@ export class OrchestrationService {
           return (await this.repository.loadRequired(command.workflowInstanceId)).view;
         },
         async (view) => view,
+        async () => {
+          // Ending the assessment restores the wait; a join that completed meanwhile then proceeds.
+          await this.delegatedWork.attention.resolve(
+            command.workflowInstanceId,
+            command.activationId,
+            context,
+          );
+          await this.delegatedWork.reconcile(context);
+          return (await this.repository.loadRequired(command.workflowInstanceId)).view;
+        },
       ),
     );
+  }
+
+  respondToDelegationAttention(
+    caller: DelegationCaller,
+    reply: DelegationAttentionReply,
+    context: CommandContext,
+  ) {
+    return this.delegationCommands.respond(caller, reply, context);
   }
 
   waitForSignal(

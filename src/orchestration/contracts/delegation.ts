@@ -4,8 +4,10 @@ import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId } from '../../work/index.js';
 import { workflowInstanceId, workflowName } from './identifiers.js';
 import {
+  DelegationBlockerKind,
   DelegationOutputKind,
   DelegationPrerequisiteCondition,
+  type DelegationAttentionRejection,
   type DelegationConflictCode,
 } from './vocabulary.js';
 
@@ -177,6 +179,67 @@ export class DelegationConflictError extends Error {
   ) {
     super(message);
     this.name = 'DelegationConflictError';
+  }
+}
+
+export const delegationAttentionBlockerSchema = z
+  .object({
+    blockerId: z.string().min(1),
+    childWorkItemId: brandedStringSchema(workItemId),
+    kind: z.enum(DelegationBlockerKind),
+    reason: z.string().min(1),
+  })
+  .strict();
+
+export type DelegationAttentionBlocker = z.infer<typeof delegationAttentionBlockerSchema>;
+
+/** One coalesced assessment of the unresolved reasons, keyed by cohort revision and blockers. */
+export const delegationAttentionRequestSchema = z
+  .object({
+    cohortId: z.string().min(1),
+    attentionKey: z.string().min(1),
+    activationId: brandedStringSchema(activationId),
+    revision: z.number().int().positive(),
+    blockers: z.array(delegationAttentionBlockerSchema).min(1),
+  })
+  .strict();
+
+export type DelegationAttentionRequest = z.infer<typeof delegationAttentionRequestSchema>;
+
+/** Names the child, blocker and assignment revision; context references are exact revisions. */
+export const delegationAttentionReplySchema = z
+  .object({
+    childWorkItemId: brandedStringSchema(workItemId),
+    blockerId: z.string().min(1),
+    expectedRevision: z.number().int().positive(),
+    references: z.array(delegationRevisionReferenceSchema),
+  })
+  .strict();
+
+export type DelegationAttentionReply = z.infer<typeof delegationAttentionReplySchema>;
+
+export const delegationAttentionResponseSchema = delegationAttentionReplySchema
+  .extend({ cohortId: z.string().min(1), attentionKey: z.string().min(1) })
+  .strict();
+
+export type DelegationAttentionResponse = z.infer<typeof delegationAttentionResponseSchema>;
+
+export const delegationAttentionResolvedSchema = z
+  .object({
+    cohortId: z.string().min(1),
+    attentionKey: z.string().min(1),
+    activationId: brandedStringSchema(activationId),
+  })
+  .strict();
+
+/** Rejected replies never resume work; the code names the boundary that refused them. */
+export class DelegationAttentionError extends Error {
+  constructor(
+    readonly code: DelegationAttentionRejection,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'DelegationAttentionError';
   }
 }
 

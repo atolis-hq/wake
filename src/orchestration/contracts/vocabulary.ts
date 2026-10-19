@@ -73,6 +73,27 @@ export const DelegationPrerequisiteCondition = defineClosedVocabulary({
   MergedChange: 'merged-change',
 } as const);
 
+export const DelegationBlockerKind = defineClosedVocabulary({
+  /** Terminal failure, cancellation, exhausted budget or a changed consumed input. */
+  Failed: 'failed',
+  /** A child workflow blocked for assignment clarification the parent may answer. */
+  Context: 'assignment-context',
+} as const);
+
+export type DelegationBlockerKind = ValueOf<typeof DelegationBlockerKind>;
+
+export const DelegationAttentionRejection = defineClosedVocabulary({
+  NoAttention: 'no-attention',
+  StaleAttention: 'stale-attention',
+  UnknownBlocker: 'unknown-blocker',
+  NotAnswerable: 'not-answerable',
+  StaleRevision: 'stale-revision',
+  NotBlocked: 'not-blocked',
+  Duplicate: 'duplicate',
+} as const);
+
+export type DelegationAttentionRejection = ValueOf<typeof DelegationAttentionRejection>;
+
 export const DelegationConflictCode = defineClosedVocabulary({
   SelfDependency: 'self-dependency',
   MissingTarget: 'missing-target',
