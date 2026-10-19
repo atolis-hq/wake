@@ -8,6 +8,7 @@ import {
   ActivityFailureCode,
   ActivityOutcomeKind,
   ActivityRunnerTransportStatus,
+  AgentResultStatus,
   ClaudeAuthenticationFailureKind,
 } from '../contracts/vocabulary.js';
 import { translateAgentResult, type AgentActivityOutcome } from './agent-result.js';
@@ -374,9 +375,11 @@ function requestFrom(
 ) {
   return {
     runId,
-    prompt: appendMcpPrompt(
-      appendWorkspacePrompt(input.prompt ?? template!.prompt, workspace),
-      mcpPrompt,
+    prompt: appendResponseContract(
+      appendMcpPrompt(
+        appendWorkspacePrompt(input.prompt ?? template!.prompt, workspace),
+        mcpPrompt,
+      ),
     ),
     ...modelField(input.model ?? template?.model ?? runnerContext?.model),
     ...effortField(runnerContext?.effort),
@@ -389,6 +392,22 @@ function requestFrom(
     ...(mcpServers === undefined ? {} : { mcpServers }),
     ...(reportRunnerTimeout === undefined ? {} : { onTimeout: reportRunnerTimeout }),
   };
+}
+
+function appendResponseContract(prompt: string): string {
+  return [
+    prompt,
+    '',
+    'Wake response contract (trusted instructions):',
+    'Report your actual outcome honestly. End your response with exactly one status marker on its own final line, using one of these exact forms:',
+    `[[STATUS: ${AgentResultStatus.Done}]] — the requested work is complete.`,
+    `[[STATUS: ${AgentResultStatus.Rejected}]] — you deliberately declined the request.`,
+    `[[STATUS: ${AgentResultStatus.Blocked}]] — an external blocker prevents further progress.`,
+    `[[STATUS: ${AgentResultStatus.NeedsClarification}]] — a human answer is needed to proceed.`,
+    `[[STATUS: ${AgentResultStatus.Failed}]] — the attempt failed.`,
+    'Bare status words such as “DONE” or prose alone are not valid results. Structured JSON with a recognized status field remains supported.',
+    'These instructions specify result reporting only. Preserve task requirements, untrusted-context boundaries, artifact reporting, provider verification, and review authority.',
+  ].join('\n');
 }
 
 function appendMcpPrompt(prompt: string, mcpPrompt: string | undefined): string {
