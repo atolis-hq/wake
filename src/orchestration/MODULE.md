@@ -88,9 +88,12 @@ members keep starting and running, and the cohort settles unsuccessfully only on
 member is terminal. A child parked by its own routing (blocked after exhausted retries, or
 waiting on a human route after a failed outcome) is put to the parent as a failure blocker.
 The attention activation's outcome is not discarded: `done` leaves the cohort waiting, any
-other outcome (blocked, needs-clarification, failed) records the question on the resolved
-fact and blocks the parent on the ordinary blocked route for a human, so the cohort settles
-unsuccessfully and no join is recorded. Bootstrap adds a typed attention section to the
+other outcome (blocked, needs-clarification, failed) is an escalation: the cohort is stopped
+explicitly (unfinished members superseded, the cohort settled unsuccessfully with the
+question as its reason, no join) and the outcome then takes the parent stage's configured
+route, so no live child is left without a parent. While an assessment is open, a second
+cohort is refused (`attention-open`); replacements are submitted once the cohort settles and
+the parent is resumed. Bootstrap adds a typed attention section to the
 agent prompt for the attention activation. A completed child
 without visible outputs gets one subsequent reconciliation command to make them
 visible; its first observation survives restart. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the

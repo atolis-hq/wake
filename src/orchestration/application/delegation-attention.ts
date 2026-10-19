@@ -281,16 +281,19 @@ export class DelegationAttention {
           parentId,
         ),
       ];
-      // Escalation parks the parent on the ordinary blocked route for a human; the cohort
-      // then settles unsuccessfully and no join is ever recorded.
+      // Escalation settles the cohort unsuccessfully in the same append (no join is ever
+      // recorded); the caller then applies the parent's configured route to the outcome.
       if (escalation !== undefined)
         drafts.push(
           delegationDraft(
             context,
-            `attention-escalated:${key}`,
+            `failed:${attention.cohortId}`,
             {
-              eventType: OrchestrationEventType.InstanceBlocked,
-              payload: { reason: `Delegation attention escalated: ${escalation}` },
+              eventType: OrchestrationEventType.DelegationFailed,
+              payload: {
+                cohortId: attention.cohortId,
+                reason: `Escalated to a human: ${escalation}`,
+              },
             },
             parentId,
           ),

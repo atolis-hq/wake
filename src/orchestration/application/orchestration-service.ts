@@ -278,19 +278,41 @@ export class OrchestrationService {
           return (await this.repository.loadRequired(command.workflowInstanceId)).view;
         },
         async (view) => view,
-        async () => {
-          // Ending the assessment restores the wait; a join that completed meanwhile then proceeds.
-          await this.delegatedWork.attention.resolve(
-            command.workflowInstanceId,
-            command.activationId,
-            context,
-            attentionEscalation(command.outcome),
-          );
-          await this.delegatedWork.reconcile(context);
-          return (await this.repository.loadRequired(command.workflowInstanceId)).view;
-        },
+        () => this.endAttention(command, context),
       ),
     );
+  }
+
+  /**
+   * `done` restores the cohort wait (a join that completed meanwhile then proceeds). Any other
+   * outcome is a question for a human: the cohort is stopped and settled explicitly, then the
+   * outcome takes the parent stage's configured route, so no live child is left unowned.
+   */
+  private async endAttention(
+    command: {
+      workflowInstanceId: WorkflowInstanceId;
+      activationId: ActivationId;
+      outcome: ActivityOutcome;
+    },
+    context: CommandContext,
+  ) {
+    const escalation = attentionEscalation(command.outcome);
+    if (escalation === undefined) {
+      await this.delegatedWork.attention.resolve(
+        command.workflowInstanceId,
+        command.activationId,
+        context,
+      );
+      await this.delegatedWork.reconcile(context);
+      return (await this.repository.loadRequired(command.workflowInstanceId)).view;
+    }
+    await this.delegatedWork.escalate(
+      command.workflowInstanceId,
+      command.activationId,
+      escalation,
+      context,
+    );
+    return this.acceptActivityOutcome.execute(command, context);
   }
 
   /** The open attention request when `activationId` is the attention activation, else null. */

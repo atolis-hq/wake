@@ -1038,8 +1038,14 @@ it('answers an assignment-context blocker through production composition, replay
     context('ctx-escalate'),
   );
   const escalated = (await root.orchestration.get(parent.workflowInstanceId))!;
+  // The cohort stops with its members (none is left running unowned) and the parent follows
+  // its configured route, which here has no `blocked` target.
   expect(escalated.status).toBe('blocked');
-  expect(escalated.blockReason).toContain('Which API version is intended?');
+  expect((await root.orchestration.get(steady!.workflowInstanceId))!.status).toBe('superseded');
+  expect((await root.orchestration.get(asker!.workflowInstanceId))!.status).toBe('superseded');
+  const tree = (await root.orchestration.deliveryTree(parent.workItemId))[0]!;
+  expect(tree.settled).toBe(true);
+  expect(tree.failureReason).toContain('Which API version is intended?');
   expect(
     (await f.journal.readAll(0)).filter(
       (entry) => entry.event.eventType === OrchestrationEventType.DelegationJoined,

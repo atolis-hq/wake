@@ -104,6 +104,8 @@ class FakeDelegationArtifacts implements DelegationArtifacts {
   }
 }
 
+// One permanent fixture factory; each option selects a fake workflow shape.
+// eslint-disable-next-line complexity
 function build(
   journal = new FaultInjectingJournal(new FakeClock()),
   artifacts = new FakeDelegationArtifacts(),
@@ -115,6 +117,8 @@ function build(
     readonly isAgent?: (activity: ReturnType<typeof activityName>) => boolean;
     /** Leaves `failed` unrouted so a failing child parks as blocked, like exhausted retries. */
     readonly unroutedFailure?: boolean;
+    /** Makes the parent an agent stage with no `blocked` route. */
+    readonly unroutedParentBlock?: boolean;
   },
 ) {
   const agentChild = agent !== undefined;
@@ -158,7 +162,24 @@ function build(
   });
   const names = ['parent', 'child'];
   const definitions = {
-    parent: compileWorkflow('parent', stage('plan'), activities, names),
+    parent: compileWorkflow(
+      'parent',
+      // An agent parent without a blocked route blocks for a human, like an unconfigured route.
+      agent?.unroutedParentBlock === true
+        ? {
+            stages: {
+              work: {
+                activity: 'agent',
+                with: {},
+                on: { done: { then: 'done' }, failed: { then: 'done' } },
+                requiresApproval: false,
+              },
+            },
+          }
+        : stage('plan'),
+      activities,
+      names,
+    ),
     child: compileWorkflow(
       'child',
       // An agent stage without a blocked route blocks the workflow when it asks for clarification.
@@ -716,7 +737,7 @@ it('releases failed child capacity only once the cohort settles, retaining runni
   );
   await complete(fixture, top.children[0]!.workflowInstanceId, 'failed');
   const attending = await attentionCaller(fixture, caller);
-  // The unsettled cohort still holds both reservations, and the sibling keeps running.
+  // No second cohort can start while the first is unresolved, and the sibling keeps running.
   await expect(
     fixture.service['delegatedWork'].reserve(
       attending,
@@ -724,7 +745,7 @@ it('releases failed child capacity only once the cohort settles, retaining runni
       [assignment(fingerprint, 'c')],
       context('early'),
     ),
-  ).rejects.toThrow('reservation limit exceeded');
+  ).rejects.toMatchObject({ code: 'attention-open' });
   expect(await fixture.service.listPendingActivations(top.children[1]!.workItemId)).toHaveLength(1);
   fixture.artifacts.published.add(top.children[1]!.workItemId);
   await complete(fixture, top.children[1]!.workflowInstanceId);
@@ -1334,7 +1355,8 @@ it('still counts a blocked child of a failed cohort against the root bound', asy
   );
   await complete(fixture, top.children[0]!.workflowInstanceId, 'failed');
   await fixture.service.reconcileChildCompletions(context('fail'));
-  // The blocked member keeps the cohort unsettled, so every reservation still counts.
+  // The blocked member keeps the cohort unsettled, so every reservation still counts and the
+  // open assessment cannot start a second cohort.
   expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
   expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(1);
   await expect(
@@ -1344,7 +1366,8 @@ it('still counts a blocked child of a failed cohort against the root bound', asy
       [assignment(fingerprint, 'c'), assignment(fingerprint, 'd')],
       context('reserve-2'),
     ),
-  ).rejects.toThrow('reservation limit exceeded');
+  ).rejects.toMatchObject({ code: 'attention-open' });
+  expect(await count(fixture, OrchestrationEventType.DelegationReserved)).toBe(1);
 });
 
 it('fails a reservation whose parent activation changed before the commit, starting no child', async () => {
@@ -2389,15 +2412,18 @@ it.each([
   ['blocked', { message: 'Which API version?' }, 'Which API version?'],
   ['failed', { reason: 'runner-failed' }, 'runner-failed'],
 ] as const)(
-  'escalates a %s parent assessment to the blocked route without joining or resetting budgets',
+  'escalates a %s parent assessment: stops the cohort, then follows the parent configured route',
   async (kind, data, expected) => {
-    const fixture = attentionBuild();
+    const fixture = build(undefined, undefined, undefined, undefined, false, {
+      unroutedParentBlock: true,
+    });
     const { caller, fingerprint } = await startParent(fixture);
     const reservation = await fixture.service['delegatedWork'].reserve(
       caller,
       'cohort-1',
       [assignment(fingerprint, 'a'), assignment(fingerprint, 'b')],
       context('reserve'),
+      { maxDepth: 1, maxDescendants: 2 },
     );
     await complete(fixture, reservation.children[0]!.workflowInstanceId, 'failed');
     const parent = await parentOf(fixture);
@@ -2409,13 +2435,49 @@ it.each([
       },
       context('escalate'),
     );
-    const escalated = await parentOf(fixture);
-    expect(escalated.status).toBe('blocked');
-    expect(escalated.blockReason).toContain('Delegation attention escalated');
-    expect(escalated.blockReason).toContain(expected);
+    // The running sibling is cancelled with the cohort, so no live child lacks a parent.
+    for (const child of reservation.children)
+      expect((await fixture.service.get(child.workflowInstanceId))!.status).not.toBe('active');
+    expect((await fixture.service.get(reservation.children[1]!.workflowInstanceId))!.status).toBe(
+      'superseded',
+    );
+    const tree = (await fixture.service.deliveryTree(workId('1')))[0]!;
+    expect(tree.settled).toBe(true);
+    expect(tree.failureReason).toContain(`Escalated to a human: ${kind}: ${expected}`);
     expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(0);
     expect(await count(fixture, OrchestrationEventType.DelegationReserved)).toBe(1);
     expect(await count(fixture, OrchestrationEventType.DelegationAttentionResolved)).toBe(1);
+    const routed = await parentOf(fixture);
+    if (kind === 'failed') {
+      expect(routed.status).toBe('completed'); // the configured `failed` route
+      return;
+    }
+    // The configured route has no `blocked` target: the parent waits for a human, not a replay.
+    expect(routed.status).toBe('blocked');
+    expect(routed.delegationAttention).toBeUndefined();
+    await fixture.service.resumeBlockedStageForChanges(parent.workflowInstanceId, context('human'));
+    const resumed = await parentOf(fixture);
+    expect(resumed.status).toBe('active');
+    expect(resumed.pendingActivation!.activationId).not.toBe(
+      parent.pendingActivation!.activationId,
+    );
+    // The resumed parent submits replacement work under the original, unreset limits.
+    const next = { ...caller, activationId: resumed.pendingActivation!.activationId, runId: 'r2' };
+    await expect(
+      fixture.service['delegatedWork'].reserve(
+        next,
+        'too-many',
+        [assignment(fingerprint, 'c'), assignment(fingerprint, 'd'), assignment(fingerprint, 'e')],
+        context('too-many'),
+      ),
+    ).rejects.toThrow('reservation limit exceeded');
+    const replacement = await fixture.service['delegatedWork'].reserve(
+      next,
+      'replacement',
+      [assignment(fingerprint, 'c')],
+      context('replacement'),
+    );
+    expect(replacement.maxDescendants).toBe(2);
   },
 );
 

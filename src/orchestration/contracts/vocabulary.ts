@@ -104,6 +104,7 @@ export const DelegationConflictCode = defineClosedVocabulary({
   MultipleBases: 'multiple-bases',
   WaitCycle: 'wait-cycle',
   StalePlan: 'stale-plan',
+  AttentionOpen: 'attention-open',
 } as const);
 
 export type DelegationConflictCode = ValueOf<typeof DelegationConflictCode>;

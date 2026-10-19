@@ -383,6 +383,13 @@ export class DelegatedWork {
     const availability = await this.deliveryAvailability(reservation.parentWorkItemId);
     if (availability.reason !== undefined) throw new Error(availability.reason);
     const current = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
+    // One unresolved cohort per parent: a second cohort cannot share the waiting parent, so
+    // replacements are submitted once the cohort settles and the parent is resumed.
+    if (current.delegationAttention !== undefined)
+      throw new DelegationConflictError(
+        DelegationConflictCode.AttentionOpen,
+        'Submit replacement work after the cohort settles; an open attention assessment cannot start a second cohort',
+      );
     if (
       current.pendingActivation?.activationId !== caller.activationId ||
       current.status !== WorkflowStatus.Active
@@ -532,6 +539,33 @@ export class DelegatedWork {
         (child) => failed.has(child.workItemId) || selected.has(child.workItemId),
       )
     );
+  }
+
+  /**
+   * Escalation to a human stops the cohort explicitly: the assessment ends without restoring the
+   * wait, unfinished members are superseded and the cohort settles unsuccessfully, so no live
+   * child is left without a parent. The caller then applies the parent's configured route.
+   */
+  async escalate(
+    parentId: WorkflowInstanceId,
+    attentionActivation: string,
+    escalation: string,
+    context: CommandContext,
+  ): Promise<void> {
+    const parent = (await this.repository.loadRequired(parentId)).view;
+    const attention = parent.delegationAttention;
+    if (attention === undefined || attention.activationId !== attentionActivation) return;
+    const reservation = (await this.ledger.reservations()).find(
+      (entry) =>
+        entry.parentWorkflowInstanceId === parentId && entry.cohortId === attention.cohortId,
+    );
+    if (reservation === undefined) return;
+    await this.abandon(
+      reservation,
+      new Set(reservation.children.map((c) => c.workItemId)),
+      context,
+    );
+    await this.attention.resolve(parentId, attentionActivation, context, escalation);
   }
 
   private async abandon(

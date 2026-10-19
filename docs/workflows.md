@@ -711,8 +711,11 @@ blockerId, expectedRevision and exact accepted artifact revisions to answer an
 `assignment-context` blocker; only that child resumes. Terminal failures need
 replacement work in a new cohort, and review, consent or approval gates cannot
 be answered through this channel. To hand human questions over, batch them all
-into one `blocked` or needs-clarification outcome: the parent then blocks on the
-ordinary route with your text, and the delivery is never counted as successful.
+into one `blocked` or needs-clarification outcome: the cohort is stopped (unfinished
+children are cancelled, nothing is joined, and the settled cohort records your text),
+and the parent stage follows its configured route for that outcome. Wake refuses
+wake_delegation_submit while an assessment is open (`attention-open`); submit
+replacement work once the cohort settles and the stage is resumed.
 Wake adds the blockers to the activation's prompt. Each blocker is assessed once, and a delegating
 activity that is not an agent records one operator diagnostic instead. Submission accepts a stable cohortId and
 assignments with assignmentId, objective, criteria, workflowName, exact
