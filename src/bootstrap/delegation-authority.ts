@@ -33,7 +33,7 @@ export function createDelegationAuthority(
   };
   return {
     async assertCaller(caller, parent) {
-      const run = (await runs.load(runId(caller.runId), { fresh: true })).view;
+      const run = (await runs.load(runId(caller.runId))).view;
       if (
         run === null ||
         !isActiveRunStatus(run.status) ||

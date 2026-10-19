@@ -1,6 +1,7 @@
 import {
   cachedJournalView,
   createEventData,
+  foldedJournalView,
   JOURNAL_CHANGE_FALLBACK_MS,
   type StreamRef,
 } from '@atolis-hq/eventing';
@@ -140,4 +141,78 @@ it('starts the fallback window after a slow derivation completes', async () => {
   await view.get();
 
   expect(derive).toHaveBeenCalledTimes(1);
+});
+
+it('keys the cache by the position it actually read, never by one sampled before the read', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await journal.appendToStream(stream, 0, [draft('event-1')]);
+  // The journal moves between sampling the position and reading: the cache must
+  // hold the older value under the position it was derived from, not the sample.
+  const realLatest = journal.latestGlobalPosition.bind(journal);
+  let lie = true;
+  vi.spyOn(journal, 'latestGlobalPosition').mockImplementation(async () => {
+    const position = await realLatest();
+    return lie ? position + 1 : position;
+  });
+  const realReadAll = journal.readAll.bind(journal);
+  vi.spyOn(journal, 'readAll').mockImplementation(async (after, limit) => {
+    const events = await realReadAll(after, limit);
+    return events.slice(0, 1);
+  });
+  const view = cachedJournalView(journal, (events) => events.length);
+
+  expect(await view.get()).toBe(1);
+  lie = false;
+  await journal.appendToStream(stream, 1, [draft('event-2')]);
+  vi.mocked(journal.readAll).mockImplementation(realReadAll);
+  expect(await view.get()).toBe(2);
+});
+
+it('shares one derivation between callers that find the journal at the same position', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await journal.appendToStream(stream, 0, [draft('event-1')]);
+  const derive = vi.fn(async (events: readonly unknown[]) => events.length);
+  const view = cachedJournalView(journal, derive);
+
+  const values = await Promise.all(Array.from({ length: 50 }, () => view.get()));
+
+  expect(values.every((value) => value === 1)).toBe(true);
+  expect(derive).toHaveBeenCalledTimes(1);
+});
+
+it('folds each event exactly once and in order, however many callers ask at once', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await journal.appendToStream(stream, 0, [draft('event-1'), draft('event-2')]);
+  const extend = vi.fn(
+    (value: readonly string[], events: readonly { event: { eventId: string } }[]) => [
+      ...value,
+      ...events.map((event) => event.event.eventId),
+    ],
+  );
+  const view = foldedJournalView<readonly string[]>(journal, { initial: [], extend });
+
+  const first = await Promise.all(Array.from({ length: 20 }, () => view.get()));
+  expect(first.every((value) => value.join() === 'event-1,event-2')).toBe(true);
+
+  await journal.appendToStream(stream, 2, [draft('event-3')]);
+  const [a, b] = await Promise.all([view.get(), view.get()]);
+
+  expect(a.join()).toBe('event-1,event-2,event-3');
+  expect(b).toBe(a);
+  expect(extend.mock.calls.map(([, events]) => events.length)).toEqual([2, 1]);
+});
+
+it('returns the held value without reading when nothing new landed', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  await journal.appendToStream(stream, 0, [draft('event-1')]);
+  const view = foldedJournalView(journal, {
+    initial: 0,
+    extend: (value, events) => value + events.length,
+  });
+  expect(await view.get()).toBe(1);
+  const readAll = vi.spyOn(journal, 'readAll');
+
+  expect(await view.get()).toBe(1);
+
+  expect(readAll).not.toHaveBeenCalled();
 });

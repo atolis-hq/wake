@@ -29,7 +29,9 @@ export class DeferredSignals {
       evidenceId: string,
       context: CommandContext,
     ) => Promise<WorkflowInstanceView | null>,
-    private readonly fenced: (id: WorkflowInstanceId) => Promise<boolean>,
+    private readonly fencedAmong: (
+      ids: readonly WorkflowInstanceId[],
+    ) => Promise<ReadonlySet<WorkflowInstanceId>>,
   ) {
     this.ledger = new DelegationLedger(repository);
   }
@@ -108,46 +110,56 @@ export class DeferredSignals {
     for (const entry of await this.repository.events())
       if (entry.event.eventType === OrchestrationEventType.SignalDeferred)
         deferred.add(entry.stream.id);
-    for (const id of deferred) await this.reconcileWorkflow(id as WorkflowInstanceId, context);
+    const ids = [...deferred] as WorkflowInstanceId[];
+    if (ids.length === 0) return;
+    const fenced = await this.fencedAmong(ids);
+    for (const id of ids) if (!fenced.has(id)) await this.replay(id, context);
   }
 
   async reconcileWorkflow(
     id: WorkflowInstanceId,
     context: CommandContext,
   ): Promise<WorkflowInstanceView> {
-    if ((await this.hasDeferred()) && !(await this.fenced(id))) {
-      const { events } = await this.repository.history(id);
-      for (const event of events) {
-        if (event?.event.eventType !== OrchestrationEventType.SignalDeferred) continue;
-        const deferred = event.event.payload;
-        const loaded = await this.repository.loadRequired(id);
-        const view = loaded.view;
-        if (!matchesDeferredWait(view, deferred)) continue;
-        const deliveryContext = {
-          ...context,
-          commandId: `replay:${event.event.eventId}`,
-          expectedSequence: loaded.sequence,
-          correlationId: event.event.correlationId,
-          actor: event.event.actor,
-        };
-        try {
-          if (deferred.target === undefined)
-            await this.deliver(id, deferred.signal, deliveryContext);
-          else
-            await this.transition(
-              id,
-              deferred.target,
-              deferred.signal.providerEventId,
-              deliveryContext,
-            );
-        } catch (error) {
-          if (
-            !(error instanceof DelegationPendingError) &&
-            !(error instanceof WrongExpectedSequenceError)
-          )
-            throw error;
-          break;
-        }
+    if ((await this.hasDeferred()) && !(await this.fencedAmong([id])).has(id))
+      return this.replay(id, context);
+    return (await this.repository.loadRequired(id)).view;
+  }
+
+  /** Replays the deferred signals of one unfenced workflow that are still awaited. */
+  private async replay(
+    id: WorkflowInstanceId,
+    context: CommandContext,
+  ): Promise<WorkflowInstanceView> {
+    const { events } = await this.repository.history(id);
+    for (const event of events) {
+      if (event?.event.eventType !== OrchestrationEventType.SignalDeferred) continue;
+      const deferred = event.event.payload;
+      const loaded = await this.repository.loadRequired(id);
+      const view = loaded.view;
+      if (!matchesDeferredWait(view, deferred)) continue;
+      const deliveryContext = {
+        ...context,
+        commandId: `replay:${event.event.eventId}`,
+        expectedSequence: loaded.sequence,
+        correlationId: event.event.correlationId,
+        actor: event.event.actor,
+      };
+      try {
+        if (deferred.target === undefined) await this.deliver(id, deferred.signal, deliveryContext);
+        else
+          await this.transition(
+            id,
+            deferred.target,
+            deferred.signal.providerEventId,
+            deliveryContext,
+          );
+      } catch (error) {
+        if (
+          !(error instanceof DelegationPendingError) &&
+          !(error instanceof WrongExpectedSequenceError)
+        )
+          throw error;
+        break;
       }
     }
     return (await this.repository.loadRequired(id)).view;

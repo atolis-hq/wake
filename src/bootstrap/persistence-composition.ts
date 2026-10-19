@@ -51,12 +51,12 @@ function serializeJournalAppends(journal: EventJournal): EventJournal {
       );
       return appended;
     },
-    readStream: (stream, options) => journal.readStream(stream, options),
+    readStream: (stream) => journal.readStream(stream),
     ...(journal.scanAll === undefined
       ? {}
       : { scanAll: (signal?: AbortSignal) => journal.scanAll!(signal) }),
     readAll: (afterGlobalPosition, limit) => journal.readAll(afterGlobalPosition, limit),
-    latestGlobalPosition: (options) => journal.latestGlobalPosition(options),
+    latestGlobalPosition: () => journal.latestGlobalPosition(),
     waitForEventsAfter: (afterGlobalPosition, signal, fallbackMs) =>
       journal.waitForEventsAfter(afterGlobalPosition, signal, fallbackMs),
     changeSignal: journal.changeSignal,

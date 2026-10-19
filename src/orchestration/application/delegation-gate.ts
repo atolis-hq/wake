@@ -14,6 +14,7 @@ export class DelegationGate {
 
   /** Standalone work keeps existing freeze semantics; only delegated trees and fenced parents are held. */
   private heldBy(snapshot: DeliverySnapshot, view: WorkflowInstanceView): boolean {
+    if (snapshot.invalid(view.workItemId)) return true;
     if (
       snapshot.get(view.workItemId)?.delegation === undefined &&
       view.delegationFence === undefined
@@ -34,6 +35,24 @@ export class DelegationGate {
   async fenced(id: WorkflowInstanceId): Promise<boolean> {
     const view = (await this.repository.load(id)).view;
     return view !== null && (!this.allows(view) || (await this.unavailable(view)));
+  }
+
+  /** The subset of `ids` whose workflow is fenced or held, against one Work synchronisation. */
+  async fencedAmong(ids: readonly WorkflowInstanceId[]): Promise<ReadonlySet<WorkflowInstanceId>> {
+    const loaded = await Promise.all(
+      ids.map(async (id) => [id, (await this.repository.load(id)).view] as const),
+    );
+    const views = loaded.filter(
+      (entry): entry is readonly [WorkflowInstanceId, WorkflowInstanceView] => entry[1] !== null,
+    );
+    const snapshot = views.some(([, view]) => this.allows(view))
+      ? await this.work.deliverySnapshot()
+      : undefined;
+    return new Set(
+      views
+        .filter(([, view]) => !this.allows(view) || this.heldBy(snapshot!, view))
+        .map(([id]) => id),
+    );
   }
 
   async run<T>(id: WorkflowInstanceId, operation: () => Promise<T>): Promise<T> {

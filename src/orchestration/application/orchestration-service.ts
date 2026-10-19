@@ -146,7 +146,7 @@ export class OrchestrationService {
         this.delegationGate.run(id, () =>
           this.advanceWorkflow.applyResourceTransition(id, target, evidenceId, context),
         ),
-      (id) => this.delegationGate.fenced(id),
+      (ids) => this.delegationGate.fencedAmong(ids),
     );
     this.childWorkflows = new RequestChild(
       repository,

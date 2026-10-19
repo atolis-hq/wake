@@ -46,7 +46,7 @@ unless `--wake-root` is supplied.
 | `npm run test:integration` | Exercise composed services and durable infrastructure boundaries. |
 | `npm run test:e2e` | Exercise serial, non-live end-to-end scenarios. |
 | `npm run test:e2e:live` | Run live-provider E2E scenarios only when the required external setup is available. |
-| `npm run test:stress` | Run resource-exhaustion regressions (small-heap child processes). Slow and never part of the default suites; run on purpose. |
+| `npm run test:stress` | Run resource-exhaustion regressions (small-heap child processes). Slow, selected only by its own config (`*.stress.ts` under `test/stress`), and never part of the default suites; run on purpose. |
 | `npm run test:architecture` | Run architecture-focused tests. |
 | `npm run test:web` / `npm run build:web` | Test or build the web surface after web/API/view-model changes. |
 | `npm run build` | Type-check and embed the source version. |

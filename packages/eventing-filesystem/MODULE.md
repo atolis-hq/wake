@@ -36,4 +36,19 @@ are fresh-only: this adapter neither reads nor migrates prior projection paths.
 Keep Node filesystem detail behind Eventing ports. Do not add domain knowledge,
 Wake path discovery, or a new persistence service here.
 
-The journal’s optional fresh read request (stream reads and `latestGlobalPosition`) checks current segment fingerprints instead of the bounded read cache. Concurrent fresh requests share one follow-up listing that begins after the earliest of them was made, so any number of them cost at most two directory listings and none can be answered by a listing that predates its call. Operator documents and other immediate cross-host decisions can opt into this through Eventing’s public port.
+The journal is multi-writer: several processes (the resident, `wake mcp serve`
+per agent run, and CLI commands) append to one directory, serialised only by the
+cross-process append lock. Every read reflects every append committed before the
+call, including appends by other processes; there is no validity window and no
+caller-selected freshness mode.
+
+Segments are immutable. Each is published by atomic rename to a name that is
+never reused, and nothing rewrites or deletes one, so a segment seen once is
+never stat'ed again. A listing is one directory stat, one `readdir` and a stat of
+only the names not seen before; an unchanged directory is recognised from its own
+stamp once that stamp is older than timestamp granularity, and a younger stamp is
+always re-listed. Concurrent reads share one follow-up listing that begins after
+the call, so any number of them cost at most two listings and none can be
+answered by a listing that predates its call. `fs.watch` only wakes
+`waitForEventsAfter`; correctness never depends on it. Local filesystems and
+same-kernel bind mounts are supported; NFS-style negative lookup caching is not.

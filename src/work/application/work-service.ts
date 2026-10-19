@@ -3,7 +3,6 @@ import {
   WrongExpectedSequenceError,
   type CommandContext,
   type EventJournal,
-  type JournalReadOptions,
 } from '@atolis-hq/eventing';
 import { isDeepStrictEqual } from 'node:util';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
@@ -31,7 +30,7 @@ export interface WorkService {
   freeze(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
   unfreeze(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
   delete(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
-  get(workItemId: WorkItemId, options?: JournalReadOptions): Promise<WorkItemView | null>;
+  get(workItemId: WorkItemId): Promise<WorkItemView | null>;
   /** One synchronisation with the journal, then in-memory delivery answers for any number of items. */
   deliverySnapshot(): Promise<DeliverySnapshot>;
 }
@@ -129,8 +128,8 @@ export function createWorkService(journal: EventJournal): WorkService {
     delete(workItemId, context) {
       return setDeleted(repository, change, workItemId, context);
     },
-    async get(workItemId, options) {
-      return (await repository.load(workItemId, options)).view;
+    async get(workItemId) {
+      return (await repository.load(workItemId)).view;
     },
     deliverySnapshot: () => index.snapshot(),
   };

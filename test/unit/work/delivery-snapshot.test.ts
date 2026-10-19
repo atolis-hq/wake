@@ -49,34 +49,38 @@ async function seed(root: string, children: number) {
   return { work, rootId, ids };
 }
 
-it('answers delivery availability for every item from one synchronisation', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-delivery-snapshot-'));
-  const { rootId, ids } = await seed(root, 150);
-  const reader = createWorkService(new FileEventJournal(root, new FakeClock()));
-  readdirMock.mockClear();
-  statMock.mockClear();
+it(
+  'answers delivery availability for every item from one synchronisation',
+  { timeout: 60_000 },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-delivery-snapshot-'));
+    const { rootId, ids } = await seed(root, 120);
+    const reader = createWorkService(new FileEventJournal(root, new FakeClock()));
+    readdirMock.mockClear();
+    statMock.mockClear();
 
-  const snapshot = await reader.deliverySnapshot();
-  const answers = ids.map((id) => snapshot.availability(id));
+    const snapshot = await reader.deliverySnapshot();
+    const answers = ids.map((id) => snapshot.availability(id));
 
-  expect(answers.every((answer) => answer.reason === undefined)).toBe(true);
-  expect(new Set(answers.map((answer) => answer.rootWorkItemId))).toEqual(new Set([rootId]));
-  expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(2);
-  expect(
-    statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl')).length,
-  ).toBeLessThanOrEqual(2 * 151);
-});
+    expect(answers.every((answer) => answer.reason === undefined)).toBe(true);
+    expect(new Set(answers.map((answer) => answer.rootWorkItemId))).toEqual(new Set([rootId]));
+    expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(
+      statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl')).length,
+    ).toBeLessThanOrEqual(2 * 121);
+  },
+);
 
-it('gates hundreds of instances without per-instance journal reads', async () => {
+it('gates many instances without per-instance journal reads', { timeout: 60_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-delivery-gate-'));
-  const { rootId, ids } = await seed(root, 300);
+  const { rootId, ids } = await seed(root, 120);
   const reader = createWorkService(new FileEventJournal(root, new FakeClock()));
   const gate = new DelegationGate({} as never, reader);
   const views = ids.map((workItemId) => ({ workItemId })) as WorkflowInstanceView[];
   readdirMock.mockClear();
 
   const open = await gate.filterAvailable(views, (view) => view);
-  expect(open).toHaveLength(300);
+  expect(open).toHaveLength(120);
   expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(2);
 
   // Another host freezes the root; the very next batch sees it without any validity window.

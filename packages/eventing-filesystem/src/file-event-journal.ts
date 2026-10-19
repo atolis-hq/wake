@@ -4,7 +4,6 @@ import type {
   EventingClock,
   EventJournal,
   JournalChangeSignal,
-  JournalReadOptions,
   StreamRef,
 } from '@atolis-hq/eventing';
 import { decodeEventEnvelope, WrongExpectedSequenceError, yieldScan } from '@atolis-hq/eventing';
@@ -12,7 +11,6 @@ import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
 import { createReadStream, watch } from 'node:fs';
 import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { performance } from 'node:perf_hooks';
 import { writeFileAtomically } from './atomic-write.js';
 import { decodeEventRecord, encodeEventRecord } from './event-record-codec.js';
 import { withFileLock } from './file-lock.js';
@@ -30,24 +28,23 @@ export type FileEventJournalWatcherFactory = (
 
 export interface FileEventJournalOptions {
   readonly watcherFactory?: FileEventJournalWatcherFactory;
-  readonly validationNow?: () => number;
 }
 
 const createFileSystemWatcher: FileEventJournalWatcherFactory = async (directory, notify) =>
   watch(directory, { persistent: false }, notify);
 
-const entryValidationTtlMs = 30_000;
+// A directory timestamp only proves "unchanged" once it is older than the
+// filesystem's timestamp granularity, otherwise a second change inside the same
+// tick would leave it identical. Younger stamps are re-listed, never trusted.
+const unchangedStampMinAgeMs = 2_500;
+const statBatchSize = 256;
 
 export class FileEventJournal implements EventJournal {
-  private readonly validationNow: () => number;
-
   constructor(
     private readonly root: string,
     private readonly clock: EventingClock,
     private readonly options: FileEventJournalOptions = {},
-  ) {
-    this.validationNow = options.validationNow ?? (() => performance.now());
-  }
+  ) {}
 
   private readonly changeSignalSource = new InProcessJournalChangeSignal();
   private changeWatcher: FileEventJournalWatcher | undefined;
@@ -79,12 +76,19 @@ export class FileEventJournal implements EventJournal {
     { readonly entries: readonly FileStat[]; readonly run: Promise<EventEnvelope[]> } | undefined;
 
   private scanGeneration = 0;
-  private validatedEntries:
-    { readonly entries: readonly FileStat[]; readonly expiresAt: number } | undefined;
+  // Segments are immutable: each is published by atomic rename to a name that is
+  // never reused, and nothing rewrites or deletes one. A segment seen once is
+  // therefore never stat'ed again, and a listing costs a directory stat, one
+  // readdir and a stat of the names not seen before. There is no validity
+  // window: every read reflects every append committed before it was called,
+  // including appends by other processes sharing the directory.
+  private readonly knownSegments = new Map<string, FileStat>();
+  private latestEntries: readonly FileStat[] = [];
+  private listing: { readonly stamp: DirectoryStamp; readonly startedAtMs: number } | undefined;
 
-  private inFlightEntryRefresh: Promise<readonly FileStat[]> | undefined;
-  private queuedFreshRefresh: Promise<readonly FileStat[]> | undefined;
-  private entryValidationGeneration = 0;
+  private runningListing: Promise<readonly FileStat[]> | undefined;
+  private queuedListing: Promise<readonly FileStat[]> | undefined;
+  private temporariesReclaimed = false;
 
   async appendToStream(
     stream: StreamRef,
@@ -95,7 +99,10 @@ export class FileEventJournal implements EventJournal {
     return withFileLock(
       join(this.root, 'locks', 'event-journal.lock'),
       async () => {
-        await reclaimStaleSegmentTemps(join(this.root, 'events'));
+        if (!this.temporariesReclaimed) {
+          await reclaimStaleSegmentTemps(join(this.root, 'events'));
+          this.temporariesReclaimed = true;
+        }
         const current = await this.scan();
         const streamEvents = this.cachedEventsForStream(stream);
         if (streamEvents.length !== expectedSequence)
@@ -152,9 +159,9 @@ export class FileEventJournal implements EventJournal {
   // the entire history. A missing or stale manifest degrades to scan()'s
   // full parse rather than to incorrect data. The next successful append
   // rebuilds the derived manifest.
-  async readStream(stream: StreamRef, options: JournalReadOptions = {}) {
+  async readStream(stream: StreamRef) {
     const streamKey = key(stream);
-    const entries = await this.readEntriesForRead(options);
+    const entries = await this.currentEntries();
     if (this.cached !== undefined) {
       if (sameEntries(this.cached.entries, entries))
         return this.cached.eventsByStream.get(streamKey) ?? [];
@@ -183,7 +190,7 @@ export class FileEventJournal implements EventJournal {
   /** Live readers bypass the full-history cache and stop at captured segment sizes. */
   async *scanAll(signal?: AbortSignal): AsyncIterable<EventEnvelope> {
     signal?.throwIfAborted();
-    const entries = await this.readCurrentEntries();
+    const entries = await this.currentEntries();
     let position = 0;
     for (const entry of entries) {
       let lineNumber = 0;
@@ -248,7 +255,7 @@ export class FileEventJournal implements EventJournal {
   }
 
   async readAll(after: number, limit = Number.POSITIVE_INFINITY) {
-    const entries = await this.readEntriesForRead();
+    const entries = await this.currentEntries();
     if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
       return this.cached.events.filter((event) => event.globalPosition > after).slice(0, limit);
     const manifest = await this.loadManifest();
@@ -275,7 +282,7 @@ export class FileEventJournal implements EventJournal {
   async readLatest(beforeGlobalPosition?: number, limit = Number.POSITIVE_INFINITY) {
     if (beforeGlobalPosition !== undefined && beforeGlobalPosition <= 0) return [];
     if (limit <= 0) return [];
-    const events = await this.scan(await this.readEntriesForRead());
+    const events = await this.scan(await this.currentEntries());
     const before = beforeGlobalPosition ?? events.length + 1;
     return events
       .slice(0, before - 1)
@@ -283,8 +290,8 @@ export class FileEventJournal implements EventJournal {
       .reverse();
   }
 
-  async latestGlobalPosition(options: JournalReadOptions = {}): Promise<number> {
-    const events = await this.scan(await this.readEntriesForRead(options));
+  async latestGlobalPosition(): Promise<number> {
+    const events = await this.scan(await this.currentEntries());
     return events.at(-1)?.globalPosition ?? 0;
   }
 
@@ -319,10 +326,7 @@ export class FileEventJournal implements EventJournal {
       await mkdir(directory, { recursive: true });
       const watcher = await (this.options.watcherFactory ?? createFileSystemWatcher)(
         directory,
-        () => {
-          this.invalidateValidatedEntries();
-          this.changeSignalSource.notify();
-        },
+        () => this.changeSignalSource.notify(),
       );
       watcher.unref();
       watcher.once('error', () => {
@@ -388,7 +392,8 @@ export class FileEventJournal implements EventJournal {
         ];
     const events = [...priorEvents, ...newEnvelopes];
     this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
-    this.rememberValidatedEntries(entries, true);
+    this.knownSegments.set(file, updatedEntry);
+    this.latestEntries = entries;
   }
 
   private manifestPath(): string {
@@ -422,7 +427,7 @@ export class FileEventJournal implements EventJournal {
   }
 
   private async scan(precomputedEntries?: readonly FileStat[]): Promise<EventEnvelope[]> {
-    const entries = precomputedEntries ?? (await this.readCurrentEntries());
+    const entries = precomputedEntries ?? (await this.currentEntries());
     const inFlight = this.inFlightScan;
     if (inFlight !== undefined && sameEntries(inFlight.entries, entries)) return inFlight.run;
     const generation = ++this.scanGeneration;
@@ -433,83 +438,85 @@ export class FileEventJournal implements EventJournal {
     return run;
   }
 
-  private async readCurrentEntries(): Promise<FileStat[]> {
-    const directory = join(this.root, 'events');
-    let files: string[];
-    try {
-      files = (await readdir(directory))
-        .filter((file) => /^\d{4}-\d{2}-\d{2}(?:~\d{20})?\.jsonl$/.test(file))
-        .sort();
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-      throw error;
-    }
-    return Promise.all(
-      files.map(async (file): Promise<FileStat> => {
-        const info = await stat(join(directory, file));
-        return { file, size: info.size, mtimeMs: info.mtimeMs };
-      }),
-    );
-  }
-
-  private async readEntriesForRead(options: JournalReadOptions = {}): Promise<readonly FileStat[]> {
-    if (options.fresh === true) return this.readFreshEntries();
-    const now = this.validationNow();
-    if (this.validatedEntries !== undefined && this.validatedEntries.expiresAt > now)
-      return this.validatedEntries.entries;
-    if (this.inFlightEntryRefresh !== undefined) return this.inFlightEntryRefresh;
-    return this.startEntryRefresh();
-  }
-
-  private startEntryRefresh(): Promise<readonly FileStat[]> {
-    const generation = this.entryValidationGeneration;
-    const refresh = this.readCurrentEntries()
-      .then((entries) => {
-        if (generation === this.entryValidationGeneration) this.rememberValidatedEntries(entries);
-        return entries;
-      })
-      .finally(() => {
-        if (this.inFlightEntryRefresh === refresh) this.inFlightEntryRefresh = undefined;
-      });
-    this.inFlightEntryRefresh = refresh;
-    return refresh;
-  }
-
-  // A fresh read must observe every append committed before it was called, so
-  // it cannot reuse the validity window or a listing that was already running
-  // (that one may have read the directory before the append). Every fresh
-  // call that arrives while a listing runs shares a single follow-up listing,
-  // so any number of concurrent fresh reads cost at most two listings.
-  private readFreshEntries(): Promise<readonly FileStat[]> {
-    if (this.queuedFreshRefresh !== undefined) return this.queuedFreshRefresh;
-    const running = this.inFlightEntryRefresh;
-    if (running === undefined) return this.startEntryRefresh();
+  // Resolves with a listing that reflects every append committed before the
+  // call. A listing already running may have read the directory before the
+  // call, so it cannot answer it; every caller arriving while one runs shares a
+  // single follow-up listing. Any number of concurrent reads cost at most two.
+  private currentEntries(): Promise<readonly FileStat[]> {
+    if (this.queuedListing !== undefined) return this.queuedListing;
+    const running = this.runningListing;
+    if (running === undefined) return this.startListing();
     const queued = running
       .catch(() => undefined)
       .then(() => {
-        this.queuedFreshRefresh = undefined;
-        return this.startEntryRefresh();
+        this.queuedListing = undefined;
+        return this.startListing();
       });
-    this.queuedFreshRefresh = queued;
+    this.queuedListing = queued;
     return queued;
   }
 
-  private rememberValidatedEntries(
-    entries: readonly FileStat[],
-    replacesInFlightRefresh = false,
-  ): void {
-    this.entryValidationGeneration += 1;
-    this.validatedEntries = {
-      entries,
-      expiresAt: this.validationNow() + entryValidationTtlMs,
-    };
-    if (replacesInFlightRefresh) this.inFlightEntryRefresh = undefined;
+  private startListing(): Promise<readonly FileStat[]> {
+    const run = this.listSegments().finally(() => {
+      if (this.runningListing === run) this.runningListing = undefined;
+    });
+    this.runningListing = run;
+    return run;
   }
 
-  private invalidateValidatedEntries(): void {
-    this.entryValidationGeneration += 1;
-    this.validatedEntries = undefined;
-    this.inFlightEntryRefresh = undefined;
+  private async listSegments(): Promise<readonly FileStat[]> {
+    const directory = join(this.root, 'events');
+    const startedAtMs = Date.now();
+    let stamp: DirectoryStamp;
+    try {
+      const info = await stat(directory);
+      stamp = { mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, ino: info.ino };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      this.knownSegments.clear();
+      this.listing = undefined;
+      this.latestEntries = [];
+      return [];
+    }
+    const previous = this.listing;
+    if (
+      previous !== undefined &&
+      sameStamp(previous.stamp, stamp) &&
+      previous.startedAtMs - stamp.mtimeMs > unchangedStampMinAgeMs
+    )
+      return this.latestEntries;
+    // The stamp is taken before the listing so a change during it cannot be hidden.
+    const names = (await readdir(directory)).filter(
+      (name) => this.knownSegments.has(name) || segmentName.test(name),
+    );
+    const present = new Set(names);
+    let removed = false;
+    for (const name of this.knownSegments.keys())
+      if (!present.has(name)) {
+        this.knownSegments.delete(name);
+        removed = true;
+      }
+    const unseen = names.filter((name) => !this.knownSegments.has(name)).sort();
+    for (let index = 0; index < unseen.length; index += statBatchSize)
+      await Promise.all(
+        unseen.slice(index, index + statBatchSize).map(async (file) => {
+          try {
+            const info = await stat(join(directory, file));
+            this.knownSegments.set(file, { file, size: info.size, mtimeMs: info.mtimeMs });
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+        }),
+      );
+    this.listing = { stamp, startedAtMs };
+    const added = unseen.flatMap((file) => this.knownSegments.get(file) ?? []);
+    const last = this.latestEntries.at(-1);
+    if (!removed && added.length === 0) return this.latestEntries;
+    this.latestEntries =
+      !removed && (last === undefined || added[0]!.file > last.file)
+        ? [...this.latestEntries, ...added]
+        : [...this.knownSegments.values()].sort((a, b) => (a.file < b.file ? -1 : 1));
+    return this.latestEntries;
   }
 
   // Reads exactly the indexed JSONL records. Byte offsets make tail reads and
@@ -616,6 +623,18 @@ export class FileEventJournal implements EventJournal {
   }
 }
 
+interface DirectoryStamp {
+  readonly mtimeMs: number;
+  readonly ctimeMs: number;
+  readonly ino: number;
+}
+
+const segmentName = /^\d{4}-\d{2}-\d{2}(?:~\d{20})?\.jsonl$/;
+
+function sameStamp(a: DirectoryStamp, b: DirectoryStamp): boolean {
+  return a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs && a.ino === b.ino;
+}
+
 interface FileStat {
   readonly file: string;
   readonly size: number;
@@ -700,13 +719,14 @@ function isCompleteIndex(index: PersistedIndex, entries: readonly FileStat[]): b
 
 function sameEntries(a: readonly FileStat[], b: readonly FileStat[]): boolean {
   return (
-    a.length === b.length &&
-    a.every((entry, index) => {
-      const other = b[index]!;
-      return (
-        entry.file === other.file && entry.size === other.size && entry.mtimeMs === other.mtimeMs
-      );
-    })
+    a === b ||
+    (a.length === b.length &&
+      a.every((entry, index) => {
+        const other = b[index]!;
+        return (
+          entry.file === other.file && entry.size === other.size && entry.mtimeMs === other.mtimeMs
+        );
+      }))
   );
 }
 
