@@ -1,6 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WorkflowDiagram } from '../src/features/workflow-diagram/model.js';
 import { WorkflowDiagramView } from '../src/features/workflow-diagram/workflow-diagram.js';
 
@@ -384,5 +384,78 @@ describe('WorkflowDiagramView', () => {
     expect(screen.getByText('PR merge')).toBeTruthy();
 
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
+  });
+
+  describe('parallel stage geometry', () => {
+    const child = (id: string) => ({
+      id,
+      label: id,
+      kind: 'activity' as const,
+      status: 'active' as const,
+      runCount: 2,
+      totalDurationMs: 1000,
+      activeRuns: [{ runId: `run-${id}`, activity: id, startedAt: '2026-08-22T17:58:00.000Z' }],
+    });
+    const diagram: WorkflowDiagram = {
+      id: 'factory',
+      label: 'Factory',
+      direction: 'left-to-right',
+      stages: [
+        { id: 'review', label: 'Review', runCount: 1, children: [child('review-a')] },
+        { id: 'implement', label: 'Implement', runCount: 2, children: [child('impl-a')] },
+        { id: 'revise', label: 'Revise', runCount: 1, children: [child('rev-a')] },
+        { id: 'ship', label: 'Ship', children: [] },
+      ],
+      transitions: [
+        { from: 'review', to: 'implement', label: 'approved', fromChildId: 'review-a' },
+        { from: 'review', to: 'revise', label: 'changes', fromChildId: 'review-a' },
+        { from: 'implement', to: 'ship', label: 'finished', fromChildId: 'impl-a' },
+        { from: 'review', to: 'ship', label: 'skip', fromChildId: 'review-a' },
+      ],
+    };
+    // jsdom has no layout, so stub cards far taller than ELK's height estimate.
+    const renderedHeight = 420;
+
+    it('does not overlap stacked stage cards at rendered size and routes edges to them', async () => {
+      const spy = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: HTMLElement) {
+          const isStage = this.getAttribute('aria-label')?.startsWith('Stage ') === true;
+          const left = Number.parseFloat(this.style.left || '0');
+          const top = Number.parseFloat(this.style.top || '0');
+          return new DOMRect(left, top, isStage ? 264 : 0, isStage ? renderedHeight : 0);
+        });
+      try {
+        render(<WorkflowDiagramView diagram={diagram} />);
+        const implement = screen.getByRole('group', { name: 'Stage implement' });
+        const revise = screen.getByRole('group', { name: 'Stage revise' });
+        const ship = screen.getByRole('group', { name: 'Stage ship' });
+        const px = (value: string) => Number.parseFloat(value);
+        await vi.waitFor(() => {
+          expect(Math.abs(px(implement.style.top) - px(revise.style.top))).toBeGreaterThanOrEqual(
+            renderedHeight,
+          );
+        });
+        expect(implement.style.left).toBe(revise.style.left);
+
+        const region = screen.getByRole('region', { name: 'Workflow Factory' });
+        const paths = region.querySelectorAll('path[marker-end]');
+        expect(paths).toHaveLength(4);
+        const ends = Array.from(paths, (path) => {
+          const numbers = path
+            .getAttribute('d')!
+            .match(/-?\d+(?:\.\d+)?/g)!
+            .map(Number);
+          return { x: numbers.at(-2)!, y: numbers.at(-1)! };
+        });
+        // Transitions end on the left edge of their target card, 16px below its top.
+        expect(ends[0]).toEqual({ x: px(implement.style.left), y: px(implement.style.top) + 16 });
+        expect(ends[1]).toEqual({ x: px(revise.style.left), y: px(revise.style.top) + 16 });
+        expect(ends[2]).toEqual({ x: px(ship.style.left), y: px(ship.style.top) + 16 });
+        expect(ends[3]).toEqual(ends[2]);
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 });

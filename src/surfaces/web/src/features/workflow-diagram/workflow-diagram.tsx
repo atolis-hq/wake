@@ -39,7 +39,11 @@ interface DiagramAnchor {
   readonly bottom: number;
 }
 
-function useDiagramLayout(diagram: WorkflowDiagram, direction: WorkflowDiagramLayoutDirection) {
+function useDiagramLayout(
+  diagram: WorkflowDiagram,
+  direction: WorkflowDiagramLayoutDirection,
+  measuredHeights: ReadonlyMap<string, number>,
+) {
   const [layout, setLayout] = useState<WorkflowDiagramLayout>(fallbackLayout);
   useEffect(() => {
     if (direction === 'DOWN') {
@@ -47,13 +51,13 @@ function useDiagramLayout(diagram: WorkflowDiagram, direction: WorkflowDiagramLa
       return;
     }
     let current = true;
-    void layoutWorkflowDiagram(diagram, direction).then((next) => {
+    void layoutWorkflowDiagram(diagram, direction, measuredHeights).then((next) => {
       if (current) setLayout(next);
     });
     return () => {
       current = false;
     };
-  }, [diagram, direction]);
+  }, [diagram, direction, measuredHeights]);
   return layout;
 }
 
@@ -376,8 +380,25 @@ function edgeLabelPoint(points: readonly { readonly x: number; readonly y: numbe
 
 export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDiagram }) {
   const direction = useLayoutDirection();
-  const layout = useDiagramLayout(diagram, direction);
+  const [measuredHeights, setMeasuredHeights] = useState<ReadonlyMap<string, number>>(new Map());
+  const layout = useDiagramLayout(diagram, direction, measuredHeights);
   const { anchors, canvasRef, stageRef } = useDiagramAnchors(layout);
+  // Re-run the layout with rendered card heights so stacked stages never overlap.
+  useEffect(() => {
+    if (direction !== 'RIGHT') return;
+    const next = new Map<string, number>();
+    for (const stage of diagram.stages) {
+      const anchor = anchors.get(stage.id);
+      if (anchor === undefined) continue;
+      const rendered = Math.ceil(anchor.bottom - anchor.top);
+      if (rendered > 0) next.set(stage.id, rendered);
+    }
+    setMeasuredHeights((current) =>
+      current.size === next.size && [...next].every(([id, h]) => current.get(id) === h)
+        ? current
+        : next,
+    );
+  }, [anchors, diagram, direction]);
   const dragRef = useRef<
     { readonly pointerId: number; readonly startX: number; readonly scrollLeft: number } | undefined
   >(undefined);

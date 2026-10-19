@@ -54,6 +54,8 @@ function stageHeight(childCount: number): number {
 export async function layoutWorkflowDiagram(
   diagram: WorkflowDiagram,
   direction: WorkflowDiagramLayoutDirection,
+  // Rendered stage heights; cards grow past the estimate (totals, metrics, active runs).
+  measuredHeights: ReadonlyMap<string, number> = new Map(),
 ): Promise<WorkflowDiagramLayout> {
   const graph = await elk.layout({
     id: diagram.id,
@@ -66,7 +68,7 @@ export async function layoutWorkflowDiagram(
     children: diagram.stages.map((stage) => ({
       id: stage.id,
       width: stageWidth,
-      height: stageHeight(stage.children.length),
+      height: Math.max(stageHeight(stage.children.length), measuredHeights.get(stage.id) ?? 0),
     })),
     edges: diagram.transitions.map((transition, index) => ({
       id: `${transition.from}-${transition.to}-${index}`,
@@ -78,9 +80,8 @@ export async function layoutWorkflowDiagram(
   const nodes = (graph.children ?? []).map((node) => ({
     id: node.id,
     x: node.x ?? 0,
-    // The desktop visual is a single left-to-right workflow lane. Child-card
-    // routes may vary vertically, but stage cards always retain a shared top.
-    y: direction === 'RIGHT' ? 0 : (node.y ?? 0),
+    // Parallel stages share a layer, so ELK's vertical placement keeps them apart.
+    y: node.y ?? 0,
     width: node.width ?? stageWidth,
     height: node.height ?? stageHeight(0),
   }));
