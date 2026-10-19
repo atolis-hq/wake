@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
+import { ActivityOutcomeKind } from '../../activities/index.js';
 import {
   DelegationAttentionError,
+  type DelegationAttentionBlocker,
   type DelegationAttentionReply,
   type DelegationAttentionRequest,
   type DelegationAttentionResponse,
@@ -34,6 +36,55 @@ export function contextBlockerId(child: Child, view: WorkflowInstanceView): stri
     return undefined;
   const pending = view.pendingActivation;
   return pending === undefined ? undefined : `${child.grantId}:context:${pending.activationId}`;
+}
+
+/**
+ * A child parked by its own routing: blocked (for example retries exhausted) or waiting on a
+ * human route after a failed outcome. Identified by the activation it is parked on.
+ */
+export function parkedBlockerId(child: Child, view: WorkflowInstanceView): string | undefined {
+  const pending = view.pendingActivation;
+  if (pending === undefined) return undefined;
+  const parked =
+    view.status === WorkflowStatus.Blocked ||
+    (view.status === WorkflowStatus.Waiting &&
+      view.waitingFor !== undefined &&
+      view.lastOutcome?.kind === ActivityOutcomeKind.Failed);
+  return parked ? `${child.grantId}:parked:${pending.activationId}` : undefined;
+}
+
+/** The unresolved reason for one member, from its recorded blocker or its live workflow state. */
+export function blockerOf(
+  child: Child,
+  recorded: string | undefined,
+  view: WorkflowInstanceView | null,
+): DelegationAttentionBlocker | undefined {
+  const base = { childWorkItemId: child.workItemId };
+  if (recorded !== undefined)
+    return {
+      ...base,
+      blockerId: failedBlockerId(child),
+      kind: DelegationBlockerKind.Failed,
+      reason: recorded,
+    };
+  if (view === null) return undefined;
+  const context = contextBlockerId(child, view);
+  if (context !== undefined)
+    return {
+      ...base,
+      blockerId: context,
+      kind: DelegationBlockerKind.Context,
+      reason: view.blockReason ?? 'Child needs assignment clarification',
+    };
+  const parked = parkedBlockerId(child, view);
+  return parked === undefined
+    ? undefined
+    : {
+        ...base,
+        blockerId: parked,
+        kind: DelegationBlockerKind.Failed,
+        reason: view.blockReason ?? 'Child is parked after a failed outcome',
+      };
 }
 
 /** Blockers already put to a parent assessment; each is raised once, never polled. */

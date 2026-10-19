@@ -963,6 +963,90 @@ it('omission of workflow delegation policy rejects requests from an otherwise va
   expect(await f.root.orchestration.deliveryTree(parent.workItemId)).toEqual([]);
 });
 
+it('answers an assignment-context blocker through production composition, replays across restart, and escalates a human question', async () => {
+  const f = await fixture();
+  const seed = await start(f.root, 'ctx-parent');
+  const accepted = await publish(f.root, seed, 'ctx-seed');
+  const parent = await complete(f.root, seed);
+  const probe = await start(f.root, 'ctx-probe', 'child');
+  const reserved = await f.root.orchestration['delegatedWork'].reserve(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      runId: 'delegating-run',
+    },
+    'ctx',
+    [
+      { ...assignment(probe.workflowDefinitionFingerprint!, []), assignmentId: 'asker' },
+      { ...assignment(probe.workflowDefinitionFingerprint!, []), assignmentId: 'steady' },
+    ],
+    context('ctx-reserve'),
+    { maxDepth: 1, maxDescendants: 2 },
+  );
+  const [asker, steady] = reserved.children;
+  const askerView = (await f.root.orchestration.get(asker!.workflowInstanceId))!;
+  await f.root.orchestration.acceptOutcome(
+    {
+      workflowInstanceId: askerView.workflowInstanceId,
+      activationId: askerView.pendingActivation!.activationId,
+      outcome: { kind: 'blocked', data: { status: 'NEEDS_CLARIFICATION' } },
+    },
+    context('ctx-clarify'),
+  );
+  await f.root.orchestration.reconcileChildCompletions(context('ctx-reconcile'));
+  const attending = (await f.root.orchestration.get(parent.workflowInstanceId))!;
+  const caller = {
+    workflowInstanceId: parent.workflowInstanceId,
+    activationId: attending.delegationAttention!.activationId,
+    runId: 'attention-run',
+  };
+  const open = await f.root.orchestration.openDelegationAttention(
+    parent.workflowInstanceId,
+    caller.activationId,
+  );
+  const reply = {
+    childWorkItemId: asker!.workItemId,
+    blockerId: open!.blockers[0]!.blockerId,
+    expectedRevision: open!.revision,
+    references: [accepted],
+  };
+  const delegated = () =>
+    f.journal
+      .readAll(0)
+      .then(
+        (events) =>
+          events.filter((entry) => entry.event.eventType === 'artifact-context.delegated').length,
+      );
+  const before = await delegated();
+  await f.root.orchestration['delegatedWork'].attention.respond(
+    caller,
+    reply,
+    context('ctx-reply'),
+  );
+  const root = await f.restart();
+  await root.orchestration['delegatedWork'].attention.respond(caller, reply, context('ctx-replay'));
+  expect(await delegated()).toBe(before + 1);
+  expect((await root.orchestration.get(asker!.workflowInstanceId))!.status).toBe('active');
+  expect((await root.orchestration.get(steady!.workflowInstanceId))!.status).toBe('active');
+  // The parent hands a question to a human: the parent blocks and no join is ever recorded.
+  await root.orchestration.acceptOutcome(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: caller.activationId,
+      outcome: { kind: 'blocked', data: { message: 'Which API version is intended?' } },
+    },
+    context('ctx-escalate'),
+  );
+  const escalated = (await root.orchestration.get(parent.workflowInstanceId))!;
+  expect(escalated.status).toBe('blocked');
+  expect(escalated.blockReason).toContain('Which API version is intended?');
+  expect(
+    (await f.journal.readAll(0)).filter(
+      (entry) => entry.event.eventType === OrchestrationEventType.DelegationJoined,
+    ),
+  ).toHaveLength(0);
+});
+
 it('settles a hard queued-child failure after independent work drains, and preserves the assessment across restart', async () => {
   const f = await fixture();
   const parent = await complete(f.root, await start(f.root, 'failed-queue-parent'));

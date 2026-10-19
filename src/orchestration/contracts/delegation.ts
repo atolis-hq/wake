@@ -229,6 +229,7 @@ export const delegationAttentionResolvedSchema = z
     cohortId: z.string().min(1),
     attentionKey: z.string().min(1),
     activationId: brandedStringSchema(activationId),
+    escalation: z.string().min(1).optional(),
   })
   .strict();
 

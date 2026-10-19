@@ -82,8 +82,16 @@ names the child, blocker and assignment revision, is bound to the attention acti
 Run, and resumes only a child blocked for assignment context; terminal failures and
 human-only gates are rejected, exact accepted references are granted through the
 Artifacts port, and budgets are untouched. A delegating activity that is not an agent
-records one operator diagnostic instead of an attention activation. Batches without
-prerequisites retain their existing terminal-failure behavior. A completed child
+records one operator diagnostic instead of an attention activation. This applies to every
+cohort, with or without prerequisites: a failed member is a durable blocker, independent
+members keep starting and running, and the cohort settles unsuccessfully only once every
+member is terminal. A child parked by its own routing (blocked after exhausted retries, or
+waiting on a human route after a failed outcome) is put to the parent as a failure blocker.
+The attention activation's outcome is not discarded: `done` leaves the cohort waiting, any
+other outcome (blocked, needs-clarification, failed) records the question on the resolved
+fact and blocks the parent on the ordinary blocked route for a human, so the cohort settles
+unsuccessfully and no join is recorded. Bootstrap adds a typed attention section to the
+agent prompt for the attention activation. A completed child
 without visible outputs gets one subsequent reconciliation command to make them
 visible; its first observation survives restart. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the
 delegating activation's typed input and identity flags; exact results are read

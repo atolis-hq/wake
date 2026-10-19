@@ -805,10 +805,8 @@ export class DelegatedWork {
     reason: string,
     context: CommandContext,
   ): Promise<void> {
-    if (!reservation.children.some((entry) => (entry.prerequisites?.length ?? 0) > 0)) {
-      await this.fail(reservation, reason, context);
-      return;
-    }
+    // Every cohort keeps independent members running: the failure is a durable blocker the
+    // parent assesses, and the cohort settles unsuccessfully only once all members are terminal.
     await this.ledger.appendOnce(
       reservation.parentWorkflowInstanceId,
       context,

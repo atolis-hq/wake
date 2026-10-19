@@ -10,19 +10,15 @@ import type {
 import { OrchestrationEventType, type WorkflowOrchestrationEvent } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import {
-  DelegationAttentionRejection,
-  DelegationBlockerKind,
-  WorkflowStatus,
-} from '../contracts/vocabulary.js';
+import { DelegationAttentionRejection, WorkflowStatus } from '../contracts/vocabulary.js';
 import { nextOrdinal } from '../domain/decision-events.js';
 import {
   assertReplyAllowed,
   assessedBlockers,
   attentionKeyOf,
+  blockerOf,
   contextBlockerId,
   digest,
-  failedBlockerId,
   reject,
   type OpenAttention,
 } from './delegation-attention-state.js';
@@ -67,21 +63,8 @@ export class DelegationAttention {
       )[0];
       const view =
         recorded === undefined ? (await this.repository.load(child.workflowInstanceId)).view : null;
-      const id = view === null ? undefined : contextBlockerId(child, view);
-      if (recorded !== undefined)
-        blockers.push({
-          blockerId: failedBlockerId(child),
-          childWorkItemId: child.workItemId,
-          kind: DelegationBlockerKind.Failed,
-          reason: recorded,
-        });
-      else if (id !== undefined)
-        blockers.push({
-          blockerId: id,
-          childWorkItemId: child.workItemId,
-          kind: DelegationBlockerKind.Context,
-          reason: view?.blockReason ?? 'Child needs assignment clarification',
-        });
+      const blocker = blockerOf(child, recorded, view);
+      if (blocker !== undefined) blockers.push(blocker);
     }
     return blockers;
   }
@@ -235,7 +218,10 @@ export class DelegationAttention {
       throw reject(DelegationAttentionRejection.UnknownBlocker, 'Unknown delegated child');
     const allowed = await this.dependencies.contextWorkItems(parent);
     if (reply.references.some((reference) => !allowed.has(reference.workItemId)))
-      throw new Error('Delegation context is outside the parent hierarchy');
+      throw reject(
+        DelegationAttentionRejection.OutsideHierarchy,
+        'Delegation context is outside the parent hierarchy',
+      );
     const childView = (await this.repository.load(child.workflowInstanceId)).view;
     const stillBlocked =
       childView !== null && contextBlockerId(child, childView) === reply.blockerId;
@@ -271,28 +257,46 @@ export class DelegationAttention {
     parentId: WorkflowInstanceId,
     attentionActivation: string,
     context: CommandContext,
+    escalation?: string,
   ): Promise<WorkflowInstanceView> {
     for (;;) {
       const loaded = await this.repository.loadRequired(parentId);
       const attention = loaded.view.delegationAttention;
       if (attention === undefined || attention.activationId !== attentionActivation)
         return loaded.view;
-      try {
-        await this.repository.append(parentId, loaded.sequence, [
+      const key = digest(attention.attentionKey);
+      const drafts = [
+        delegationDraft(
+          context,
+          `attention-resolved:${key}`,
+          {
+            eventType: OrchestrationEventType.DelegationAttentionResolved,
+            payload: {
+              cohortId: attention.cohortId,
+              attentionKey: attention.attentionKey,
+              activationId: attention.activationId,
+              ...(escalation === undefined ? {} : { escalation }),
+            },
+          },
+          parentId,
+        ),
+      ];
+      // Escalation parks the parent on the ordinary blocked route for a human; the cohort
+      // then settles unsuccessfully and no join is ever recorded.
+      if (escalation !== undefined)
+        drafts.push(
           delegationDraft(
             context,
-            `attention-resolved:${digest(attention.attentionKey)}`,
+            `attention-escalated:${key}`,
             {
-              eventType: OrchestrationEventType.DelegationAttentionResolved,
-              payload: {
-                cohortId: attention.cohortId,
-                attentionKey: attention.attentionKey,
-                activationId: attention.activationId,
-              },
+              eventType: OrchestrationEventType.InstanceBlocked,
+              payload: { reason: `Delegation attention escalated: ${escalation}` },
             },
             parentId,
           ),
-        ]);
+        );
+      try {
+        await this.repository.append(parentId, loaded.sequence, drafts);
         return (await this.repository.loadRequired(parentId)).view;
       } catch (error) {
         if (!(error instanceof WrongExpectedSequenceError)) throw error;

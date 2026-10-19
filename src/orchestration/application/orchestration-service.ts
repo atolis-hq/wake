@@ -18,7 +18,11 @@ import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 /* eslint-disable max-lines */
 import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
-import { type ActivationId, type ActivityOutcome } from '../../activities/index.js';
+import {
+  ActivityOutcomeKind,
+  type ActivationId,
+  type ActivityOutcome,
+} from '../../activities/index.js';
 import type { ExecutionFailureCode } from '../../execution/index.js';
 import {
   WorkStatus,
@@ -280,12 +284,20 @@ export class OrchestrationService {
             command.workflowInstanceId,
             command.activationId,
             context,
+            attentionEscalation(command.outcome),
           );
           await this.delegatedWork.reconcile(context);
           return (await this.repository.loadRequired(command.workflowInstanceId)).view;
         },
       ),
     );
+  }
+
+  /** The open attention request when `activationId` is the attention activation, else null. */
+  async openDelegationAttention(id: WorkflowInstanceId, activationId: ActivationId) {
+    const view = (await this.repository.load(id)).view;
+    if (view?.delegationAttention?.activationId !== activationId) return null;
+    return this.delegatedWork.attention.current(view);
   }
 
   respondToDelegationAttention(
@@ -810,6 +822,20 @@ export const createOrchestrationService = (
   isAgentActivity?: AgentActivityClassifier,
   delegation?: DelegationDependenciesFactory,
 ) => new OrchestrationService(journal, work, definitions, projections, isAgentActivity, delegation);
+
+/** Anything but a plain `done` hands the question to a human; the text is kept for the operator. */
+function attentionEscalation(outcome: ActivityOutcome): string | undefined {
+  if (outcome.kind === ActivityOutcomeKind.Done) return undefined;
+  const data = outcome.data;
+  if (typeof data === 'string' && data.length > 0) return `${outcome.kind}: ${data}`;
+  if (typeof data === 'object' && data !== null) {
+    for (const key of ['message', 'question', 'reason', 'status']) {
+      const text: unknown = Reflect.get(data, key);
+      if (typeof text === 'string' && text.length > 0) return `${outcome.kind}: ${text}`;
+    }
+  }
+  return `${outcome.kind} outcome from the parent assessment`;
+}
 
 function isWorkControllable(work: WorkItemView | null): boolean {
   return work !== null && !work.deleted && !work.frozen && work.state === WorkStatus.Open;

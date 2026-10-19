@@ -84,7 +84,7 @@ export type DelegationBlockerKind = ValueOf<typeof DelegationBlockerKind>;
 
 export const DelegationAttentionRejection = defineClosedVocabulary({
   NoAttention: 'no-attention',
-  StaleAttention: 'stale-attention',
+  OutsideHierarchy: 'outside-hierarchy',
   UnknownBlocker: 'unknown-blocker',
   NotAnswerable: 'not-answerable',
   StaleRevision: 'stale-revision',

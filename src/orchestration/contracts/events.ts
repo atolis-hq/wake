@@ -109,6 +109,8 @@ export interface OrchestrationEventPayloads {
     readonly cohortId: string;
     readonly attentionKey: string;
     readonly activationId: ActivationId;
+    /** Present when the parent escalated instead of leaving the cohort waiting. */
+    readonly escalation?: string;
   };
   readonly [OrchestrationEventType.DelegationFailed]: {
     readonly cohortId: string;

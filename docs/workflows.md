@@ -710,7 +710,10 @@ root or workflow limits. Use `wake_delegation_respond` with childWorkItemId,
 blockerId, expectedRevision and exact accepted artifact revisions to answer an
 `assignment-context` blocker; only that child resumes. Terminal failures need
 replacement work in a new cohort, and review, consent or approval gates cannot
-be answered through this channel. Each blocker is assessed once, and a delegating
+be answered through this channel. To hand human questions over, batch them all
+into one `blocked` or needs-clarification outcome: the parent then blocks on the
+ordinary route with your text, and the delivery is never counted as successful.
+Wake adds the blockers to the activation's prompt. Each blocker is assessed once, and a delegating
 activity that is not an agent records one operator diagnostic instead. Submission accepts a stable cohortId and
 assignments with assignmentId, objective, criteria, workflowName, exact
 artifact context references and named outputs (name and path). Wake pins each
