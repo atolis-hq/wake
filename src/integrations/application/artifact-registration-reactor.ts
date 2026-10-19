@@ -183,14 +183,14 @@ export class ArtifactRegistrationReactor {
         ? undefined
         : await this.dependencies.resources.get(resourceId(assignment.resourceId));
     if (repository === null) return null;
-    if (assignment !== undefined && run?.workspaceRevision === undefined) {
-      return null;
-    }
+    // Direct workflows keep branch-only verification; head and base are exact only for assignments.
+    if (assignment === undefined) return { workspaceBranch: branch };
+    if (repository === undefined || run?.workspaceRevision === undefined) return null;
     return {
       workspaceBranch: branch,
-      ...(repository === undefined ? {} : { repository: repository.externalKey }),
-      ...(run?.workspaceRevision === undefined ? {} : { workspaceRevision: run.workspaceRevision }),
-      ...(assignment === undefined ? {} : { pullRequestBase: assignment.pullRequestBase }),
+      repository: repository.externalKey,
+      workspaceRevision: run.workspaceRevision,
+      pullRequestBase: assignment.pullRequestBase,
     };
   }
 

@@ -83,6 +83,9 @@ that creates or authorizes one; the composed fixtures create and correlate them
 through the public Resources port. Creating and narrowing repository authority
 belongs to the policy/capacity story (#962), which must supply the permitted
 set without turning it into an implicit checkout selection.
+A child workflow with a branch or read-only stage now requires a repository
+assignment (no first-repository fallback); this tightens delivery 01 behaviour.
+Direct workflows are unchanged: artifact verification checks the branch only.
 Named outputs retain artifact references or exact change provenance. This slice
 supports one change output per child, reported through a named reportedArtifacts
 entry; a later revision run need not repeat it, because the provider must
