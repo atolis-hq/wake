@@ -109,8 +109,10 @@ export interface OrchestrationEventPayloads {
     readonly cohortId: string;
     readonly attentionKey: string;
     readonly activationId: ActivationId;
-    /** Present when the parent escalated instead of leaving the cohort waiting. */
+    /** The batched human question, published through the ordinary accepted-outcome route. */
     readonly escalation?: string;
+    /** The assessment run itself failed; the cohort is untouched and may be re-assessed. */
+    readonly assessmentFailure?: string;
   };
   readonly [OrchestrationEventType.DelegationFailed]: {
     readonly cohortId: string;

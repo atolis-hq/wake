@@ -1028,28 +1028,35 @@ it('answers an assignment-context blocker through production composition, replay
   expect(await delegated()).toBe(before + 1);
   expect((await root.orchestration.get(asker!.workflowInstanceId))!.status).toBe('active');
   expect((await root.orchestration.get(steady!.workflowInstanceId))!.status).toBe('active');
-  // The parent hands a question to a human: the parent blocks and no join is ever recorded.
+  // The parent hands a question to a human: it is published as an accepted outcome while the
+  // cohort stays tracked, so no child is cancelled or joined early.
   await root.orchestration.acceptOutcome(
     {
       workflowInstanceId: parent.workflowInstanceId,
       activationId: caller.activationId,
-      outcome: { kind: 'blocked', data: { message: 'Which API version is intended?' } },
+      outcome: {
+        kind: 'blocked',
+        data: { status: 'NEEDS_CLARIFICATION', question: 'Which API version is intended?' },
+      },
     },
     context('ctx-escalate'),
   );
-  const escalated = (await root.orchestration.get(parent.workflowInstanceId))!;
-  // The cohort stops with its members (none is left running unowned) and the parent follows
-  // its configured route, which here has no `blocked` target.
-  expect(escalated.status).toBe('blocked');
-  expect((await root.orchestration.get(steady!.workflowInstanceId))!.status).toBe('superseded');
-  expect((await root.orchestration.get(asker!.workflowInstanceId))!.status).toBe('superseded');
+  const waiting = (await root.orchestration.get(parent.workflowInstanceId))!;
+  expect(waiting.status).toBe('waiting');
+  expect(waiting.delegationWait?.cohortId).toBe('ctx');
+  expect((await root.orchestration.get(steady!.workflowInstanceId))!.status).toBe('active');
   const tree = (await root.orchestration.deliveryTree(parent.workItemId))[0]!;
-  expect(tree.settled).toBe(true);
-  expect(tree.failureReason).toContain('Which API version is intended?');
+  expect(tree.settled).toBe(false);
+  const events = await f.journal.readAll(0);
   expect(
-    (await f.journal.readAll(0)).filter(
-      (entry) => entry.event.eventType === OrchestrationEventType.DelegationJoined,
+    events.filter(
+      (entry) =>
+        entry.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted &&
+        (entry.event.payload as { activationId?: string }).activationId === caller.activationId,
     ),
+  ).toHaveLength(1);
+  expect(
+    events.filter((entry) => entry.event.eventType === OrchestrationEventType.DelegationJoined),
   ).toHaveLength(0);
 });
 

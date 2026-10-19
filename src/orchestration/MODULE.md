@@ -87,13 +87,15 @@ cohort, with or without prerequisites: a failed member is a durable blocker, ind
 members keep starting and running, and the cohort settles unsuccessfully only once every
 member is terminal. A child parked by its own routing (blocked after exhausted retries, or
 waiting on a human route after a failed outcome) is put to the parent as a failure blocker.
-The attention activation's outcome is not discarded: `done` leaves the cohort waiting, any
-other outcome (blocked, needs-clarification, failed) is an escalation: the cohort is stopped
-explicitly (unfinished members superseded, the cohort settled unsuccessfully with the
-question as its reason, no join) and the outcome then takes the parent stage's configured
-route, so no live child is left without a parent. While an assessment is open, a second
-cohort is refused (`attention-open`); replacements are submitted once the cohort settles and
-the parent is resumed. Bootstrap adds a typed attention section to the
+The attention activation's outcome never settles or cancels the cohort: every ending restores
+the cohort wait, so independent members keep running and their results stay joinable. A
+structured blocked or needs-clarification result is a batched human question: it is also
+recorded as an accepted outcome, which the existing publication route delivers to a human,
+and its text is kept on the resolved fact. A failed, rejected or infrastructure-blocked
+assessment run (runner failure, authentication, invalid result) records the failure and a
+diagnostic, and re-raises the same blockers up to three times. While an assessment is open, a
+second cohort is refused (`attention-open`); replacements are submitted once the cohort
+settles and the parent is resumed. Bootstrap adds a typed attention section to the
 agent prompt for the attention activation. A completed child
 without visible outputs gets one subsequent reconciliation command to make them
 visible; its first observation survives restart. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the

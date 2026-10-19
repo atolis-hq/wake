@@ -20,6 +20,8 @@ import {
   contextBlockerId,
   digest,
   reject,
+  resolutionDrafts,
+  type AttentionVerdict,
   type OpenAttention,
 } from './delegation-attention-state.js';
 import { delegationDraft, isSettled, type DelegationLedger } from './delegation-ledger.js';
@@ -140,7 +142,7 @@ export class DelegationAttention {
       await this.repository.append(id, loaded.sequence, [
         delegationDraft(
           context,
-          `attention:${keyId}`,
+          `attention:${keyId}:${ordinal}`,
           {
             eventType: OrchestrationEventType.DelegationAttentionRequested,
             payload: {
@@ -155,7 +157,7 @@ export class DelegationAttention {
         ),
         delegationDraft(
           context,
-          `attention-activity:${keyId}`,
+          `attention-activity:${keyId}:${ordinal}`,
           {
             eventType: OrchestrationEventType.ActivityRequested,
             payload: {
@@ -257,49 +259,19 @@ export class DelegationAttention {
     parentId: WorkflowInstanceId,
     attentionActivation: string,
     context: CommandContext,
-    escalation?: string,
+    verdict: AttentionVerdict = {},
   ): Promise<WorkflowInstanceView> {
     for (;;) {
       const loaded = await this.repository.loadRequired(parentId);
       const attention = loaded.view.delegationAttention;
       if (attention === undefined || attention.activationId !== attentionActivation)
         return loaded.view;
-      const key = digest(attention.attentionKey);
-      const drafts = [
-        delegationDraft(
-          context,
-          `attention-resolved:${key}`,
-          {
-            eventType: OrchestrationEventType.DelegationAttentionResolved,
-            payload: {
-              cohortId: attention.cohortId,
-              attentionKey: attention.attentionKey,
-              activationId: attention.activationId,
-              ...(escalation === undefined ? {} : { escalation }),
-            },
-          },
-          parentId,
-        ),
-      ];
-      // Escalation settles the cohort unsuccessfully in the same append (no join is ever
-      // recorded); the caller then applies the parent's configured route to the outcome.
-      if (escalation !== undefined)
-        drafts.push(
-          delegationDraft(
-            context,
-            `failed:${attention.cohortId}`,
-            {
-              eventType: OrchestrationEventType.DelegationFailed,
-              payload: {
-                cohortId: attention.cohortId,
-                reason: `Escalated to a human: ${escalation}`,
-              },
-            },
-            parentId,
-          ),
-        );
       try {
-        await this.repository.append(parentId, loaded.sequence, drafts);
+        await this.repository.append(
+          parentId,
+          loaded.sequence,
+          resolutionDrafts(context, parentId, attention, verdict),
+        );
         return (await this.repository.loadRequired(parentId)).view;
       } catch (error) {
         if (!(error instanceof WrongExpectedSequenceError)) throw error;

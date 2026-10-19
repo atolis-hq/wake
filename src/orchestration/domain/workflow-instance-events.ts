@@ -277,9 +277,8 @@ function applyCoordinationFact(state: MutableWorkflowInstance, event: Coordinati
       // The assessment is not an outcome route: the unresolved cohort wait is simply restored.
       if (state.delegationAttention?.attentionKey !== event.payload.attentionKey) return;
       delete state.delegationAttention;
-      // An escalation leaves the activation pending: its outcome is routed by the stage config.
-      if (event.payload.escalation !== undefined) return;
-      state.acceptedOutcomes.push(event.payload.activationId);
+      if (!state.acceptedOutcomes.includes(event.payload.activationId))
+        state.acceptedOutcomes.push(event.payload.activationId);
       updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Completed);
       if (state.delegationWait !== undefined) state.status = WorkflowStatus.Waiting;
       return;

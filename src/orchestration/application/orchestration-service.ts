@@ -18,11 +18,7 @@ import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 /* eslint-disable max-lines */
 import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
-import {
-  ActivityOutcomeKind,
-  type ActivationId,
-  type ActivityOutcome,
-} from '../../activities/index.js';
+import { type ActivationId, type ActivityOutcome } from '../../activities/index.js';
 import type { ExecutionFailureCode } from '../../execution/index.js';
 import {
   WorkStatus,
@@ -71,6 +67,7 @@ import {
   type ConversationCommandResult,
 } from './conversation-command.js';
 import { CoordinationClaims } from './coordination-claims.js';
+import { attentionVerdict } from './delegation-attention-state.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { workflowsByWorkItemProjection } from './orchestration-projection.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
@@ -284,9 +281,11 @@ export class OrchestrationService {
   }
 
   /**
-   * `done` restores the cohort wait (a join that completed meanwhile then proceeds). Any other
-   * outcome is a question for a human: the cohort is stopped and settled explicitly, then the
-   * outcome takes the parent stage's configured route, so no live child is left unowned.
+   * Every ending restores the cohort wait, so independent members keep running and their
+   * results stay joinable (a join that completed meanwhile then proceeds). A structured
+   * human question is also recorded as an accepted outcome, which the ordinary publication
+   * route delivers to a human; a failed assessment run is recorded and re-raised a bounded
+   * number of times. The cohort is never settled or cancelled by the assessment itself.
    */
   private async endAttention(
     command: {
@@ -296,23 +295,14 @@ export class OrchestrationService {
     },
     context: CommandContext,
   ) {
-    const escalation = attentionEscalation(command.outcome);
-    if (escalation === undefined) {
-      await this.delegatedWork.attention.resolve(
-        command.workflowInstanceId,
-        command.activationId,
-        context,
-      );
-      await this.delegatedWork.reconcile(context);
-      return (await this.repository.loadRequired(command.workflowInstanceId)).view;
-    }
-    await this.delegatedWork.escalate(
+    await this.delegatedWork.attention.resolve(
       command.workflowInstanceId,
       command.activationId,
-      escalation,
       context,
+      attentionVerdict(command.outcome),
     );
-    return this.acceptActivityOutcome.execute(command, context);
+    await this.delegatedWork.reconcile(context);
+    return (await this.repository.loadRequired(command.workflowInstanceId)).view;
   }
 
   /** The open attention request when `activationId` is the attention activation, else null. */
@@ -844,20 +834,6 @@ export const createOrchestrationService = (
   isAgentActivity?: AgentActivityClassifier,
   delegation?: DelegationDependenciesFactory,
 ) => new OrchestrationService(journal, work, definitions, projections, isAgentActivity, delegation);
-
-/** Anything but a plain `done` hands the question to a human; the text is kept for the operator. */
-function attentionEscalation(outcome: ActivityOutcome): string | undefined {
-  if (outcome.kind === ActivityOutcomeKind.Done) return undefined;
-  const data = outcome.data;
-  if (typeof data === 'string' && data.length > 0) return `${outcome.kind}: ${data}`;
-  if (typeof data === 'object' && data !== null) {
-    for (const key of ['message', 'question', 'reason', 'status']) {
-      const text: unknown = Reflect.get(data, key);
-      if (typeof text === 'string' && text.length > 0) return `${outcome.kind}: ${text}`;
-    }
-  }
-  return `${outcome.kind} outcome from the parent assessment`;
-}
 
 function isWorkControllable(work: WorkItemView | null): boolean {
   return work !== null && !work.deleted && !work.frozen && work.state === WorkStatus.Open;

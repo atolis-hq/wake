@@ -104,8 +104,6 @@ class FakeDelegationArtifacts implements DelegationArtifacts {
   }
 }
 
-// One permanent fixture factory; each option selects a fake workflow shape.
-// eslint-disable-next-line complexity
 function build(
   journal = new FaultInjectingJournal(new FakeClock()),
   artifacts = new FakeDelegationArtifacts(),
@@ -117,8 +115,6 @@ function build(
     readonly isAgent?: (activity: ReturnType<typeof activityName>) => boolean;
     /** Leaves `failed` unrouted so a failing child parks as blocked, like exhausted retries. */
     readonly unroutedFailure?: boolean;
-    /** Makes the parent an agent stage with no `blocked` route. */
-    readonly unroutedParentBlock?: boolean;
   },
 ) {
   const agentChild = agent !== undefined;
@@ -162,24 +158,7 @@ function build(
   });
   const names = ['parent', 'child'];
   const definitions = {
-    parent: compileWorkflow(
-      'parent',
-      // An agent parent without a blocked route blocks for a human, like an unconfigured route.
-      agent?.unroutedParentBlock === true
-        ? {
-            stages: {
-              work: {
-                activity: 'agent',
-                with: {},
-                on: { done: { then: 'done' }, failed: { then: 'done' } },
-                requiresApproval: false,
-              },
-            },
-          }
-        : stage('plan'),
-      activities,
-      names,
-    ),
+    parent: compileWorkflow('parent', stage('plan'), activities, names),
     child: compileWorkflow(
       'child',
       // An agent stage without a blocked route blocks the workflow when it asks for clarification.
@@ -2407,79 +2386,114 @@ it('escalates once when the delegating activity cannot assess attention', async 
   expect((await parentOf(fixture)).status).toBe('waiting');
 });
 
-it.each([
-  ['blocked', { status: 'NEEDS_CLARIFICATION', message: 'Which API?' }, 'Which API?'],
-  ['blocked', { message: 'Which API version?' }, 'Which API version?'],
-  ['failed', { reason: 'runner-failed' }, 'runner-failed'],
-] as const)(
-  'escalates a %s parent assessment: stops the cohort, then follows the parent configured route',
-  async (kind, data, expected) => {
-    const fixture = build(undefined, undefined, undefined, undefined, false, {
-      unroutedParentBlock: true,
-    });
-    const { caller, fingerprint } = await startParent(fixture);
-    const reservation = await fixture.service['delegatedWork'].reserve(
-      caller,
-      'cohort-1',
-      [assignment(fingerprint, 'a'), assignment(fingerprint, 'b')],
-      context('reserve'),
-      { maxDepth: 1, maxDescendants: 2 },
-    );
-    await complete(fixture, reservation.children[0]!.workflowInstanceId, 'failed');
+it('keeps the cohort tracked when the parent escalates a human question, and its results stay joinable', async () => {
+  const fixture = attentionBuild();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'x'), assignment(fingerprint, 'y')],
+    context('reserve'),
+  );
+  const [x, y] = reservation.children;
+  await clarify(fixture, x!.workflowInstanceId);
+  const parent = await parentOf(fixture);
+  const attentionId = parent.delegationAttention!.activationId;
+  await fixture.service.acceptOutcome(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: attentionId,
+      outcome: {
+        kind: 'blocked',
+        data: { status: 'NEEDS_CLARIFICATION', question: 'Which API version is intended?' },
+      },
+    },
+    context('escalate'),
+  );
+  // The question is an ordinary accepted outcome (published to a human by the existing route).
+  const accepted = (await fixture.journal.readAll(0)).filter(
+    (entry) =>
+      entry.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted &&
+      (entry.event.payload as { activationId?: string }).activationId === attentionId,
+  );
+  expect(accepted).toHaveLength(1);
+  const resolved = (await fixture.journal.readAll(0)).filter(
+    (entry) => entry.event.eventType === OrchestrationEventType.DelegationAttentionResolved,
+  );
+  expect(resolved[0]!.event.payload).toMatchObject({
+    escalation: 'Which API version is intended?',
+  });
+  // Nothing is settled, cancelled or joined: the parent waits and the independent child runs on.
+  const waiting = await parentOf(fixture);
+  expect(waiting.status).toBe('waiting');
+  expect(waiting.delegationWait?.cohortId).toBe('cohort-1');
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
+  expect((await fixture.service.get(y!.workflowInstanceId))!.status).toBe('active');
+  expect((await fixture.service.get(x!.workflowInstanceId))!.status).toBe('blocked');
+  // A sibling finishing after the escalation keeps its result; the human answer then resumes
+  // the asking child and the whole cohort joins once, with both results.
+  fixture.artifacts.published.add(y!.workItemId);
+  await complete(fixture, y!.workflowInstanceId);
+  expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(0);
+  await fixture.service.resumeNeedsClarificationStage(x!.workflowInstanceId, context('answer'));
+  fixture.artifacts.published.add(x!.workItemId);
+  await complete(fixture, x!.workflowInstanceId);
+  expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(1);
+  expect(
+    await fixture.service.joinedDelegationResults(caller.workflowInstanceId, 'cohort-1'),
+  ).toHaveLength(2);
+  expect(await count(fixture, OrchestrationEventType.DelegationReserved)).toBe(1);
+});
+
+it('treats a failed assessment run as retryable without settling or cancelling the cohort', async () => {
+  const fixture = attentionBuild();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'x'), assignment(fingerprint, 'y')],
+    context('reserve'),
+  );
+  const [x, y] = reservation.children;
+  await clarify(fixture, x!.workflowInstanceId);
+  const failures = [
+    { kind: 'failed', data: { reason: 'runner-failed' } },
+    { kind: 'blocked', data: { reason: 'runner-authentication-required' } },
+    { kind: 'failed', data: { reason: 'invalid-agent-result' } },
+  ];
+  for (const [index, outcome] of failures.entries()) {
     const parent = await parentOf(fixture);
+    expect(parent.delegationAttention).toBeDefined();
     await fixture.service.acceptOutcome(
       {
         workflowInstanceId: parent.workflowInstanceId,
         activationId: parent.delegationAttention!.activationId,
-        outcome: { kind, data } as never,
+        outcome: outcome as never,
       },
-      context('escalate'),
+      context(`assessment-${index}`),
     );
-    // The running sibling is cancelled with the cohort, so no live child lacks a parent.
-    for (const child of reservation.children)
-      expect((await fixture.service.get(child.workflowInstanceId))!.status).not.toBe('active');
-    expect((await fixture.service.get(reservation.children[1]!.workflowInstanceId))!.status).toBe(
-      'superseded',
-    );
-    const tree = (await fixture.service.deliveryTree(workId('1')))[0]!;
-    expect(tree.settled).toBe(true);
-    expect(tree.failureReason).toContain(`Escalated to a human: ${kind}: ${expected}`);
-    expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(0);
-    expect(await count(fixture, OrchestrationEventType.DelegationReserved)).toBe(1);
-    expect(await count(fixture, OrchestrationEventType.DelegationAttentionResolved)).toBe(1);
-    const routed = await parentOf(fixture);
-    if (kind === 'failed') {
-      expect(routed.status).toBe('completed'); // the configured `failed` route
-      return;
-    }
-    // The configured route has no `blocked` target: the parent waits for a human, not a replay.
-    expect(routed.status).toBe('blocked');
-    expect(routed.delegationAttention).toBeUndefined();
-    await fixture.service.resumeBlockedStageForChanges(parent.workflowInstanceId, context('human'));
-    const resumed = await parentOf(fixture);
-    expect(resumed.status).toBe('active');
-    expect(resumed.pendingActivation!.activationId).not.toBe(
-      parent.pendingActivation!.activationId,
-    );
-    // The resumed parent submits replacement work under the original, unreset limits.
-    const next = { ...caller, activationId: resumed.pendingActivation!.activationId, runId: 'r2' };
-    await expect(
-      fixture.service['delegatedWork'].reserve(
-        next,
-        'too-many',
-        [assignment(fingerprint, 'c'), assignment(fingerprint, 'd'), assignment(fingerprint, 'e')],
-        context('too-many'),
-      ),
-    ).rejects.toThrow('reservation limit exceeded');
-    const replacement = await fixture.service['delegatedWork'].reserve(
-      next,
-      'replacement',
-      [assignment(fingerprint, 'c')],
-      context('replacement'),
-    );
-    expect(replacement.maxDescendants).toBe(2);
-  },
-);
+    // Siblings keep running and the cohort is neither failed nor joined.
+    expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
+    expect((await fixture.service.get(y!.workflowInstanceId))!.status).toBe('active');
+  }
+  // Failures are bounded and visible: no fourth assessment is requested for the same blockers.
+  expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(3);
+  expect((await parentOf(fixture)).status).toBe('waiting');
+  expect(
+    (await fixture.journal.readAll(0)).filter(
+      (entry) =>
+        entry.event.eventType === OrchestrationEventType.DelegationReconciliationFailed &&
+        JSON.stringify(entry.event.payload).includes('assessment failed'),
+    ),
+  ).toHaveLength(3);
+  // The cohort is still joinable once the child is answered by other means.
+  await fixture.service.resumeNeedsClarificationStage(x!.workflowInstanceId, context('answer'));
+  fixture.artifacts.published.add(x!.workItemId);
+  fixture.artifacts.published.add(y!.workItemId);
+  await complete(fixture, x!.workflowInstanceId);
+  await complete(fixture, y!.workflowInstanceId);
+  expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(1);
+});
 
 it('puts a child parked by exhausted retries to the parent in an ordinary cohort (DC-32)', async () => {
   const fixture = build(undefined, undefined, undefined, undefined, false, {

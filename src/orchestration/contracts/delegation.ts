@@ -230,6 +230,7 @@ export const delegationAttentionResolvedSchema = z
     attentionKey: z.string().min(1),
     activationId: brandedStringSchema(activationId),
     escalation: z.string().min(1).optional(),
+    assessmentFailure: z.string().min(1).optional(),
   })
   .strict();
 

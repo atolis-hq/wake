@@ -1,5 +1,7 @@
+import type { CommandContext } from '@atolis-hq/eventing';
 import { createHash } from 'node:crypto';
-import { ActivityOutcomeKind } from '../../activities/index.js';
+import { z } from 'zod';
+import { ActivityOutcomeKind, type ActivityOutcome } from '../../activities/index.js';
 import {
   DelegationAttentionError,
   type DelegationAttentionBlocker,
@@ -9,7 +11,9 @@ import {
   type DelegationCaller,
   type DelegationReservation,
 } from '../contracts/delegation.js';
+import type { WorkflowOrchestrationEventData } from '../contracts/events.js';
 import { OrchestrationEventType, type WorkflowOrchestrationEvent } from '../contracts/events.js';
+import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   DelegationAttentionRejection,
@@ -17,6 +21,7 @@ import {
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import { isNeedsClarificationResumeEligible } from '../domain/interpreter.js';
+import { delegationDraft } from './delegation-ledger.js';
 
 type Child = DelegationReservation['children'][number];
 
@@ -87,6 +92,106 @@ export function blockerOf(
       };
 }
 
+export const MaxAssessmentAttempts = 3;
+
+const structuredBlockSchema = z
+  .object({
+    status: z.string().min(1),
+    message: z.string().optional(),
+    question: z.string().optional(),
+  })
+  .passthrough();
+const failureDataSchema = z
+  .object({ reason: z.string().optional(), message: z.string().optional() })
+  .passthrough();
+
+/**
+ * A structured blocked/needs-clarification result is a human question. A failed, rejected or
+ * infrastructure-blocked run (runner failure, authentication, ambiguous result) is only a failed
+ * assessment: it must never cancel or settle the cohort.
+ */
+export function attentionVerdict(outcome: ActivityOutcome): AttentionVerdict {
+  if (outcome.kind === ActivityOutcomeKind.Done) return {};
+  const question =
+    outcome.kind === ActivityOutcomeKind.Blocked
+      ? structuredBlockSchema.safeParse(outcome.data)
+      : null;
+  if (question?.success === true)
+    return {
+      escalation: question.data.question ?? question.data.message ?? question.data.status,
+      outcome,
+    };
+  const detail = failureDataSchema.safeParse(outcome.data);
+  return {
+    failure:
+      (detail.success ? (detail.data.reason ?? detail.data.message) : undefined) ?? outcome.kind,
+  };
+}
+
+/** How the parent's assessment ended; only a human question or a failed run is more than `done`. */
+export interface AttentionVerdict {
+  /** The batched human question, published as an ordinary accepted agent outcome. */
+  readonly escalation?: string;
+  /** The assessment run itself failed (runner, transport or invalid result). */
+  readonly failure?: string;
+  readonly outcome?: ActivityOutcome;
+}
+
+/** Resolution never settles the cohort: it restores the wait, with the outcome when it asks a human. */
+export function resolutionDrafts(
+  context: CommandContext,
+  parentId: WorkflowInstanceId,
+  attention: NonNullable<WorkflowInstanceView['delegationAttention']>,
+  verdict: AttentionVerdict,
+): WorkflowOrchestrationEventData[] {
+  const drafts: WorkflowOrchestrationEventData[] = [];
+  if (verdict.escalation !== undefined && verdict.outcome !== undefined)
+    drafts.push(
+      delegationDraft(
+        context,
+        `attention-outcome:${attention.activationId}`,
+        {
+          eventType: OrchestrationEventType.ActivityOutcomeAccepted,
+          payload: { activationId: attention.activationId, outcome: verdict.outcome },
+        },
+        parentId,
+      ),
+    );
+  drafts.push(
+    delegationDraft(
+      context,
+      `attention-resolved:${attention.activationId}`,
+      {
+        eventType: OrchestrationEventType.DelegationAttentionResolved,
+        payload: {
+          cohortId: attention.cohortId,
+          attentionKey: attention.attentionKey,
+          activationId: attention.activationId,
+          ...(verdict.escalation === undefined ? {} : { escalation: verdict.escalation }),
+          ...(verdict.failure === undefined ? {} : { assessmentFailure: verdict.failure }),
+        },
+      },
+      parentId,
+    ),
+  );
+  if (verdict.failure !== undefined)
+    drafts.push(
+      delegationDraft(
+        context,
+        `attention-failed:${attention.activationId}`,
+        {
+          eventType: OrchestrationEventType.DelegationReconciliationFailed,
+          payload: {
+            cohortId: attention.cohortId,
+            reason: `Parent attention assessment failed (${verdict.failure}); the cohort is unchanged`,
+          },
+        },
+        parentId,
+      ),
+    );
+  return drafts;
+}
+
 /** Blockers already put to a parent assessment; each is raised once, never polled. */
 export function assessedBlockers(
   events: readonly WorkflowOrchestrationEvent[],
@@ -98,13 +203,19 @@ export function assessedBlockers(
       'cohortId' in event.payload &&
       event.payload.cohortId === reservation.cohortId,
   );
-  const resolved = new Set(
-    ours.flatMap(({ event }) =>
-      event.eventType === OrchestrationEventType.DelegationAttentionResolved
-        ? [event.payload.attentionKey]
-        : [],
-    ),
-  );
+  // A failed assessment run leaves its blockers unassessed so a later pass re-raises them, but
+  // only a bounded number of times: repeated failures stay visible as diagnostics, never a loop.
+  const failures = new Map<string, number>();
+  const resolved = new Set<string>();
+  for (const { event } of ours) {
+    if (event.eventType !== OrchestrationEventType.DelegationAttentionResolved) continue;
+    const key = event.payload.attentionKey;
+    if (event.payload.assessmentFailure === undefined) resolved.add(key);
+    else {
+      failures.set(key, (failures.get(key) ?? 0) + 1);
+      if ((failures.get(key) ?? 0) >= MaxAssessmentAttempts) resolved.add(key);
+    }
+  }
   return new Set(
     ours.flatMap(({ event }) =>
       event.eventType === OrchestrationEventType.DelegationAttentionRequested &&
