@@ -60,7 +60,9 @@ component's responsibility.
   transport `succeeded` with captured standard output as `output`, unless its
   concrete adapter recognises a valid vendor result and replaces it with that
   result's generic output. Unrecognised or malformed successful stdout stays
-  raw. On any other exit, the runner MUST report transport `failed`
+  raw, except for Claude: it takes its last `result` event as authoritative
+  (output, session id, usage) and, when exit 0 carries no usable final result,
+  fails with kind `claude-no-final-result` rather than publishing the envelope. On any other exit, the runner MUST report transport `failed`
   with failure kind `process-exit` and a message drawn from standard error,
   or the exit code when standard error is empty.
 - Aborting the request's signal (from a cancellation request) MUST kill the
