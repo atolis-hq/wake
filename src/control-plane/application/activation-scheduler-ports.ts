@@ -12,7 +12,7 @@ import type {
   WorkflowInstanceView,
 } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
-import type { WorkStatus } from '../../work/index.js';
+import type { WorkDelegation, WorkItemId, WorkStatus } from '../../work/index.js';
 import type { DispatchPolicy } from '../domain/dispatch-policy.js';
 
 export interface OrchestrationPort {
@@ -29,6 +29,7 @@ export interface OrchestrationPort {
   get?(workflowInstanceId: string): Promise<WorkflowInstanceView | null>;
   expireTimedOutWaits?(context: CommandContext): Promise<readonly WorkflowInstanceView[]>;
   listAll?(): Promise<readonly WorkflowInstanceView[]>;
+  deliveryRunLimit?(id: WorkItemId): Promise<number | undefined>;
   validateActivationDispatch?(
     workflowInstanceId: string,
     context: CommandContext,
@@ -102,6 +103,7 @@ export interface ActivationSchedulerDependencies {
   readonly work?: {
     get(workItemId: string): Promise<{
       readonly state: WorkStatus;
+      readonly delegation?: WorkDelegation;
       readonly frozen?: boolean;
       readonly deleted?: boolean;
     } | null>;

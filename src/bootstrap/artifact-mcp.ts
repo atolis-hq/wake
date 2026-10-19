@@ -1,6 +1,7 @@
 import type { EventJournal } from '@atolis-hq/eventing';
 import { correlationId, EventActorKind, type CommandContext } from '@atolis-hq/eventing';
 import { randomUUID } from 'node:crypto';
+import { activationId as toActivationId } from '../activities/index.js';
 import type { FileArtifactMcpSessionStore } from '../artifacts/index.js';
 import {
   createArtifactMcpServer,
@@ -12,12 +13,15 @@ import {
 import {
   ExecutionEventType,
   runId as executionRunId,
+  RunRepository,
   runStream,
   selectRunExecutionEvent,
   WakeMcpServerName,
   type ExecutionDependencies,
 } from '../execution/index.js';
 import type { OrchestrationService } from '../orchestration/index.js';
+import { workflowInstanceId } from '../orchestration/index.js';
+import { registerDelegationTools } from '../surfaces/index.js';
 
 const sessionLifetimeMs = 2 * 60 * 60 * 1000;
 
@@ -114,10 +118,35 @@ export async function createArtifactMcpServerForSession(
       await sessions.read(path, token);
     },
   });
+  if (root.journal !== undefined)
+    registerDelegationTools(server, {
+      orchestration: root.orchestration,
+      commandContext: () => commandContext(options.now(), descriptor),
+      caller: async () => {
+        await sessions.read(path, token);
+        if (root.journal === undefined) throw new Error('Delegation journal is unavailable');
+        const run = (
+          await new RunRepository(root.journal).load(executionRunId(descriptor.runId), {
+            fresh: true,
+          })
+        ).view;
+        if (run === null || run.activationId !== descriptor.activationId)
+          throw new Error('Delegation Run is unavailable');
+        const parent = await root.orchestration.get(workflowInstanceId(run.workflowInstanceId));
+        if (parent?.workItemId !== descriptor.workItemId)
+          throw new Error('Delegation parent does not match session');
+        return {
+          workflowInstanceId: parent.workflowInstanceId,
+          activationId: toActivationId(descriptor.activationId),
+          runId: descriptor.runId,
+        };
+      },
+    });
   return server;
 }
 
 interface ArtifactMcpRoot {
+  readonly journal?: EventJournal;
   readonly artifacts: ArtifactService;
   readonly orchestration: OrchestrationService;
 }

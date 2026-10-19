@@ -409,7 +409,7 @@ or tombstoning of the producer path.
 | Field | Type / default | Explanation |
 | --- | --- | --- |
 | `controlPlane.maxDispatches` | positive integer; default `1` | Per-call burst cap: the maximum number of new Runs a single `advanceOnce` call will start, independent of and bounded by `maxConcurrentRuns`. `advanceOnce` fills open capacity within one call up to this cap rather than dispatching a single Run per call. |
-| `controlPlane.maxOpenWorkItems` | positive integer or `null`; default `null` | Maximum distinct open work items. Open means at least one workflow has started an activation and not all workflows are terminal (currently completed or superseded). Blocked and waiting items count; frozen/deleted items and items that have never started do not. Children share their parent’s work item. At capacity, new items are skipped before dispatch ordering; existing open items continue through stages, retries, children, and signal resumptions. Capacity is rechecked after each dispatch. `null` means unlimited. |
+| `controlPlane.maxOpenWorkItems` | positive integer or `null`; default `null` | Maximum distinct open work items. Open means at least one workflow has started an activation and not all workflows are terminal (currently completed or superseded). Blocked and waiting items count; frozen/deleted items and items that have never started do not. Same-WorkItem watch children share the item. Validated delegated WorkItems count once under their delivery root while required workflows remain live. At capacity, new items are skipped before dispatch ordering; existing open items continue through stages, retries, children, and signal resumptions. Capacity is rechecked after each dispatch. `null` means unlimited. |
 | `controlPlane.maxConcurrentRuns` | positive integer; default `1` | Maximum Runs that may be `started` system-wide. `advanceOnce` stops dispatching, and additional advancement calls return `no-work`, until capacity is available. |
 | `controlPlane.triggers` | list; default `[]` | Independent workflow invocations. Each entry is described below. |
 | `controlPlane.resident.pollBackoffMs` | positive integer; default `1000` | Exponential backoff base for intake's idle-or-erroring poll cadence and the runner's error-retry cadence — courtesy toward a rate-limited external API. Unrelated to journal consumption, which waits on a change signal instead of polling. |
@@ -889,3 +889,20 @@ name the new work item; coalesced results name the active work item they wait
 behind. A completed manual start records a `started` request fact, so the latest
 request fact agrees with the command response; bounded latest
 skip diagnostics remain operational processor state.
+
+### Workflow delegation policy
+
+orchestration.workflows.&lt;name&gt;.delegation is optional; omission disables
+agent requests. Its required keys are workflows (nonempty list of configured
+workflow names), maxDepth, maxDescendants, and maxConcurrentRuns (positive
+integers). Optional repositories is a nonempty list of Repository Resource IDs
+narrowing inherited assignment authority. A root with no correlated Repository Resource
+defaults to the repository of its provider-observed primary Issue. See [delegated delivery controls](workflows.md#delegated-delivery-controls)
+for submission, recovery and lifecycle semantics.
+
+Delegation validates `repository.resourceId` against the inherited scope and both
+parent and root workflow repository policies. `repositoryResourceIds` may narrow
+that scope further; its validated effective scope is persisted on the reservation
+for nested requests. Omitting `repository` never selects a checkout. Legacy
+reservations without a permission scope retain only their explicit selected
+repository, if any.

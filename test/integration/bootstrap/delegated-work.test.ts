@@ -1,11 +1,16 @@
 import { correlationId } from '@atolis-hq/eventing';
 import { InMemoryCheckpointStore, InMemoryProjectionStore } from '@atolis-hq/eventing/memory';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
+import { FileArtifactMcpSessionStore } from '../../../src/artifacts/index.js';
+import { createArtifactMcpServerForSession } from '../../../src/bootstrap/artifact-mcp.js';
 import {
   createCompositionRoot,
+  createSurfaceApplications,
   parseRootConfig,
   type CompositionRoot,
 } from '../../../src/bootstrap/index.js';
@@ -17,6 +22,7 @@ import {
   RunStatus,
   type Runner,
 } from '../../../src/execution/index.js';
+import { admitObservedWork } from '../../../src/integrations/application/work-admission.js';
 import { integrationStream } from '../../../src/integrations/contracts/streams.js';
 import { applyReviewSignal } from '../../../src/integrations/github/application/inbound-review-signals.js';
 import { applyWatchGateVerdictSignal } from '../../../src/integrations/github/application/inbound-watch-gate-signals.js';
@@ -40,6 +46,7 @@ import {
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import { BuiltInResourceKind } from '../../../src/resources/index.js';
+import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { SequentialIds } from '../../e2e/support/world.js';
 import { FaultInjectingJournal } from '../../support/fault-injecting-journal.js';
 import { resId, workId } from '../../support/identities.js';
@@ -56,7 +63,7 @@ const context = (commandId: string) => ({
   actor: { kind: 'system' as const, id: 'test' },
 });
 
-async function fixture(simulateCompletedRuns = true, runner?: Runner) {
+async function fixture(simulateCompletedRuns = true, runner?: Runner, controls = false) {
   const home = await mkdtemp(join(tmpdir(), 'wake-delegation-'));
   homes.push(home);
   const journal = new FaultInjectingJournal({ now: () => new Date() });
@@ -73,11 +80,25 @@ async function fixture(simulateCompletedRuns = true, runner?: Runner) {
       runnerPools: { standard: ['fake'] },
       defaultRunnerPool: 'standard',
     },
-    controlPlane: { maxConcurrentRuns: 2, maxDispatches: 1 },
+    controlPlane: {
+      maxConcurrentRuns: controls ? 1 : 2,
+      maxDispatches: 1,
+      ...(controls ? { maxOpenWorkItems: 1 } : {}),
+    },
     orchestration: {
       default: 'parent',
       workflows: {
         parent: {
+          ...(controls
+            ? {
+                delegation: {
+                  workflows: ['child'],
+                  maxDepth: 2,
+                  maxDescendants: 2,
+                  maxConcurrentRuns: 1,
+                },
+              }
+            : {}),
           stages: { seed: { ...agent, on: { done: { then: 'delegate' } } }, delegate: agent },
         },
         child: { stages: { work: agent } },
@@ -643,3 +664,268 @@ import type {
   DelegatedAssignment,
   DelegationReservation,
 } from '../../../src/orchestration/contracts/delegation.js';
+
+it('run-scoped production commands reject escalation and finish a tree with one WIP and Run slot (DC-05, DC-26)', async () => {
+  const runner = new ScriptedDelegationRunner();
+  const f = await fixture(false, runner, true);
+  // Normal intake admission of a provider-observed GitHub Issue; nothing seeds repository authority.
+  const intakeWork = workId('controlled-parent');
+  await admitObservedWork(
+    {
+      work: f.root.work,
+      resources: f.root.resources,
+      orchestration: f.root.orchestration,
+      routing: { select: () => workflowName('parent') },
+    },
+    {
+      adapter: 'github' as never,
+      resourceId: resId('controlled-issue'),
+      workItemId: intakeWork,
+      kind: BuiltInResourceKind.Issue,
+      externalKey: { adapter: 'github' as never, key: 'atolis-hq/wake#9001' },
+      capabilities: [],
+      objective: 'controlled-parent',
+      tags: [],
+    },
+    context('intake'),
+  );
+  const parent = await complete(
+    f.root,
+    (await f.root.orchestration.get(workflowInstanceId('primary:' + intakeWork)))!,
+  );
+  const unrelated = await start(f.root, 'unrelated', 'child');
+  let repositoryId: string | undefined;
+  let caller: Parameters<typeof f.root.orchestration.submitDelegation>[0] | undefined;
+  let childId: ReturnType<typeof workflowInstanceId> | undefined;
+  runner.scripts.push(async (request) => {
+    caller = {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      runId: request.runId,
+    };
+    const command = {
+      cohortId: 'controlled',
+      assignments: [
+        {
+          assignmentId: 'findings',
+          objective: 'Investigate',
+          criteria: ['Findings'],
+          workflowName: workflowName('child'),
+          context: [],
+          outputs: [{ name: 'findings', path: 'findings.md' }],
+        },
+      ],
+    };
+    await expect(
+      f.root.orchestration.submitDelegation(
+        { ...caller, workflowInstanceId: unrelated.workflowInstanceId },
+        command,
+        context('wrong-parent'),
+      ),
+    ).rejects.toThrow('capability');
+    await expect(
+      f.root.orchestration.submitDelegation(
+        caller,
+        {
+          ...command,
+          assignments: [{ ...command.assignments[0]!, workflowName: workflowName('parent') }],
+        },
+        context('wrong-workflow'),
+      ),
+    ).rejects.toThrow('not allowed');
+    await expect(
+      f.root.orchestration.submitDelegation(
+        caller,
+        {
+          ...command,
+          assignments: [
+            { ...command.assignments[0]!, repositoryResourceIds: ['unrelated-repository'] },
+          ],
+        },
+        context('wrong-repository'),
+      ),
+    ).rejects.toThrow('authority');
+    const mcp = request.mcpServers!.find((server) => server.name === 'wake')!;
+    const sessionPath = mcp.args![mcp.args!.indexOf('--session') + 1]!;
+    const server = await createArtifactMcpServerForSession(
+      f.root,
+      new FileArtifactMcpSessionStore('/unused'),
+      sessionPath,
+      mcp.env!.WAKE_MCP_TOKEN!,
+      { now: () => new Date().toISOString(), nextId: () => 'mcp-revision' },
+    );
+    const client = new Client({ name: 'delegation-test', version: '1' });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await Promise.all([client.connect(ct), server.connect(st)]);
+    let reservation: DelegationReservation;
+    try {
+      const scope = await client.callTool({ name: 'wake_delegation_inspect', arguments: {} });
+      const scoped = JSON.parse((scope.content as { type: string; text: string }[])[0]!.text) as {
+        repositories: string[];
+      };
+      expect(scoped.repositories).toHaveLength(1);
+      repositoryId = scoped.repositories[0];
+      const bound = (await f.root.resources.get(repositoryId as never))!;
+      expect(bound.kind).toBe(BuiltInResourceKind.Repository);
+      expect(bound.externalKey).toEqual({ adapter: 'github', key: 'atolis-hq/wake' });
+      const rejected = await client.callTool({
+        name: 'wake_delegation_submit',
+        arguments: { ...command, runId: 'forged' },
+      });
+      expect(rejected.isError).toBe(true);
+      const submitted = await client.callTool({
+        name: 'wake_delegation_submit',
+        arguments: command,
+      });
+      expect(submitted.isError).not.toBe(true);
+      const content = submitted.content as { type: string; text: string }[];
+      reservation = JSON.parse(content[0]!.text) as DelegationReservation;
+      const inspected = await client.callTool({ name: 'wake_delegation_inspect', arguments: {} });
+      expect(inspected.isError).not.toBe(true);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+
+    childId = reservation.children[0]!.workflowInstanceId;
+    expect(
+      (await f.root.orchestration.inspectDelegation(caller, context('inspect'))).tree,
+    ).toHaveLength(1);
+    expect(
+      await f.root.orchestration.submitDelegation(caller, command, context('controlled-replay')),
+    ).toEqual(reservation);
+    return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
+  });
+  await f.root.advanceOnce({ maxProgress: 1, workItemId: parent.workItemId });
+  const parentRun = (await f.root.execution.list()).find(
+    (run) => run.activationId === parent.pendingActivation!.activationId,
+  )!;
+  const ended = await terminalRun(f.root, parentRun.runId);
+  expect(ended.failure).toBeUndefined();
+  expect(childId).toBeDefined();
+  await expect(
+    f.root.orchestration.inspectDelegation(caller!, context('inspect-stale')),
+  ).rejects.toThrow('stale');
+  const restarted = await f.restart();
+  const child = (await restarted.orchestration.get(childId!))!;
+  // The permitted repository set must not become an implicit checkout target.
+  expect(
+    (await restarted.resources.correlationsForWork(child.workItemId)).map(
+      (entry) => entry.resourceId,
+    ),
+  ).not.toContain(repositoryId);
+  const detail = await (
+    await createSurfaceApplications(restarted)
+  ).api.work.detail(toWorkItemKey(parent.workItemId));
+  expect(detail?.data.delegation?.children[0]).toMatchObject({
+    workflowName: 'child',
+    status: 'active',
+    workItemKey: toWorkItemKey(child.workItemId),
+  });
+  runner.scripts.push(async () => {
+    await publish(restarted, child, 'controlled-findings');
+    return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
+  });
+  await restarted.advanceOnce({ maxProgress: 1 });
+  const childRun = (await restarted.execution.list()).find(
+    (run) => run.workflowInstanceId === childId,
+  )!;
+  expect(childRun).toBeDefined();
+  expect(
+    (await restarted.execution.list()).some(
+      (run) => run.workflowInstanceId === unrelated.workflowInstanceId,
+    ),
+  ).toBe(false);
+  await terminalRun(restarted, childRun.runId);
+  for (let pass = 0; pass < 4; pass++) {
+    if ((await restarted.orchestration.get(parent.workflowInstanceId))!.status === 'completed')
+      break;
+    await restarted.advanceOnce({ maxProgress: 1 });
+    for (const run of await restarted.execution.list()) await terminalRun(restarted, run.runId);
+  }
+  expect((await restarted.orchestration.get(parent.workflowInstanceId))!.status).toBe('completed');
+});
+
+it.each(['freeze', 'cancel'] as const)(
+  'ancestor %s blocks late descendant outcomes and reservations after restart (DC-19)',
+  async (action) => {
+    const f = await fixture();
+    const parent = await complete(f.root, await start(f.root, 'barrier-parent'));
+    const probe = await start(f.root, 'probe', 'child');
+    const reservation = await f.root.orchestration['delegatedWork'].reserve(
+      {
+        workflowInstanceId: parent.workflowInstanceId,
+        activationId: parent.pendingActivation!.activationId,
+        runId: 'parent-run',
+      },
+      'barrier',
+      [assignment(probe.workflowDefinitionFingerprint!, [])],
+      context('barrier-reserve'),
+      { maxDepth: 2, maxDescendants: 4 },
+    );
+    const child = (await f.root.orchestration.get(reservation.children[0]!.workflowInstanceId))!;
+    if (action === 'freeze') await f.root.work.freeze(parent.workItemId, context('freeze'));
+    else await f.root.work.cancel(parent.workItemId, 'operator stop', context('cancel'));
+    const root = await f.restart();
+    await expect(complete(root, child)).rejects.toThrow('outstanding delegation');
+    await expect(
+      root.orchestration['delegatedWork'].reserve(
+        {
+          workflowInstanceId: child.workflowInstanceId,
+          activationId: child.pendingActivation!.activationId,
+          runId: 'late-child',
+        },
+        'late',
+        [assignment(probe.workflowDefinitionFingerprint!, [])],
+        context('late'),
+      ),
+    ).rejects.toThrow('unavailable');
+    expect(await root.orchestration.listPendingActivations(child.workItemId)).toHaveLength(0);
+    expect(
+      await root.orchestration.validateActivationDispatch(
+        child.workflowInstanceId,
+        context('late-dispatch'),
+      ),
+    ).toBe(false);
+    await root.orchestration.reconcileChildCompletions(context('barrier-recover'));
+    expect(
+      await root.orchestration.joinedDelegationResults(parent.workflowInstanceId, 'barrier'),
+    ).toHaveLength(0);
+  },
+);
+
+it('omission of workflow delegation policy rejects requests from an otherwise valid Run', async () => {
+  const runner = new ScriptedDelegationRunner();
+  const f = await fixture(false, runner);
+  const parent = await complete(f.root, await start(f.root, 'disabled-parent'));
+  runner.scripts.push(async (request) => {
+    await expect(
+      f.root.orchestration.submitDelegation(
+        {
+          workflowInstanceId: parent.workflowInstanceId,
+          activationId: parent.pendingActivation!.activationId,
+          runId: request.runId,
+        },
+        {
+          cohortId: 'disabled',
+          assignments: [
+            {
+              assignmentId: 'child',
+              objective: 'Investigate',
+              criteria: ['Findings'],
+              workflowName: workflowName('child'),
+              context: [],
+              outputs: [{ name: 'findings', path: 'findings.md' }],
+            },
+          ],
+        },
+        context('disabled-submit'),
+      ),
+    ).rejects.toThrow('disabled');
+    return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
+  });
+  await f.root.advanceOnce({ workItemId: parent.workItemId, maxProgress: 1 });
+  const run = (await f.root.execution.list())[0]!;
+  expect((await terminalRun(f.root, run.runId)).failure).toBeUndefined();
+  expect(await f.root.orchestration.deliveryTree(parent.workItemId)).toEqual([]);
+});

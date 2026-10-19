@@ -21,3 +21,5 @@ export * from './contracts/views.js';
 export * from './contracts/vocabulary.js';
 
 export * from './domain/work-item.js';
+
+export * from './application/delivery-availability.js';

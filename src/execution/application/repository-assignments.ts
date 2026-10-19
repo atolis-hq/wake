@@ -10,6 +10,7 @@ export function createRepositoryAssignments(
   resources: ResourceService,
   resolveSource: (request: RepositoryAssignmentRequest) => Promise<RepositoryAssignment>,
   inherited: (workItemId: string) => Promise<{ readonly resourceId: string } | undefined>,
+  permitted?: (workItemId: string) => Promise<readonly string[] | undefined>,
 ) {
   return {
     async resolve(
@@ -23,10 +24,13 @@ export function createRepositoryAssignments(
         );
       const correlations = await resources.correlationsForWork(parent.workItemId);
       const scope = await inherited(parent.workItemId);
+      const authority = await permitted?.(parent.workItemId);
       if (
-        scope === undefined
-          ? !correlations.some((entry) => entry.resourceId === repository.resourceId)
-          : scope.resourceId !== repository.resourceId
+        authority !== undefined
+          ? !authority.includes(repository.resourceId)
+          : scope === undefined
+            ? !correlations.some((entry) => entry.resourceId === repository.resourceId)
+            : scope.resourceId !== repository.resourceId
       )
         throw new Error(
           `Repository ${request.resourceId} is outside the parent assignment; explicitly authorize the repository before delegating`,

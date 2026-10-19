@@ -1,4 +1,4 @@
-import type { EventJournal } from '@atolis-hq/eventing';
+import type { EventJournal, JournalReadOptions } from '@atolis-hq/eventing';
 import {
   decodeWorkEvent,
   selectWorkEvent,
@@ -19,8 +19,8 @@ export interface LoadedWorkItem {
 export class WorkRepository {
   constructor(private readonly journal: EventJournal) {}
 
-  async load(workItemId: WorkItemId): Promise<LoadedWorkItem> {
-    const events = await this.journal.readStream(workItemStream(workItemId));
+  async load(workItemId: WorkItemId, options?: JournalReadOptions): Promise<LoadedWorkItem> {
+    const events = await this.journal.readStream(workItemStream(workItemId), options);
     const owned = events.map(selectWorkEvent).filter((event) => event !== null);
     return { sequence: events.length, events: owned, view: foldWorkItem(owned) };
   }

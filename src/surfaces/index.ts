@@ -101,3 +101,5 @@ export * from './web-host/asset-source.js';
 export * from './web-host/packaged-assets.js';
 
 export * from './api/presenters/merge-policy-block.js';
+
+export { registerDelegationTools } from './mcp/delegation.js';

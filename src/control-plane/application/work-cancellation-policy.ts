@@ -6,6 +6,7 @@ import type { WorkItemId, WorkItemView } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 
 interface WorkPort {
+  get?(id: WorkItemId): Promise<WorkItemView | null>;
   close(workItemId: WorkItemId, reason: string, context: CommandContext): Promise<WorkItemView>;
   cancel(workItemId: WorkItemId, reason: string, context: CommandContext): Promise<WorkItemView>;
 }
@@ -41,9 +42,17 @@ export function createWorkCancellationPolicy(
   ): Promise<WorkItemView> {
     const context = commandContext(clock, ids, workItemId);
     const concluded = await workAction(context);
-    const workflows = (await orchestration.listAll()).filter(
-      (workflow) => workflow.workItemId === workItemId,
+    const all = await orchestration.listAll();
+    const descendants = await Promise.all(
+      all.map(async (workflow) => ({ workflow, work: await work.get?.(workflow.workItemId) })),
     );
+    const workflows = descendants
+      .filter(
+        (entry) =>
+          entry.workflow.workItemId === workItemId ||
+          entry.work?.delegation?.ancestors.includes(workItemId),
+      )
+      .map((entry) => entry.workflow);
     await execution.cancelActive(
       workflows.map((workflow) => workflow.workflowInstanceId),
       executionReason,

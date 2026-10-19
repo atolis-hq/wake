@@ -2,6 +2,7 @@ import type { CommandContext } from '@atolis-hq/eventing';
 import type { RepositoryAssignment } from '../../execution/index.js';
 import type {
   DelegatedAssignment,
+  DelegationCaller,
   DelegationReservation,
   DelegationResult,
   DelegationRevisionReference,
@@ -28,6 +29,16 @@ export interface DelegationArtifacts {
     child: WorkflowInstanceView,
     outputs: DelegatedAssignment['outputs'],
   ): Promise<DelegationResult['outputs'] | null>;
+}
+
+export interface DelegationAuthority {
+  assertCaller(caller: DelegationCaller, parent: WorkflowInstanceView): Promise<void>;
+  repositories(parent: WorkflowInstanceView): Promise<readonly string[]>;
+  /**
+   * Records the root's default repository scope from trusted provider identity when no
+   * Repository Resource is yet correlated. Agent input never reaches this binding.
+   */
+  bindRepositoryScope?(root: WorkflowInstanceView, context: CommandContext): Promise<void>;
 }
 
 /** Resolves only repositories already authorized by the parent's resource scope. */

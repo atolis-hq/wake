@@ -33,6 +33,7 @@ function detailClient(
   conversationEntries: readonly Record<string, unknown>[] = [],
   artifacts: readonly Record<string, unknown>[] = [],
   canContinue = false,
+  delegation?: import('../../api/contracts/work.js').WorkDetailResponse['delegation'],
 ) {
   const work = {
     workItemKey: 'wk_a',
@@ -107,6 +108,7 @@ function detailClient(
           ? {
               data: {
                 work,
+                ...(delegation === undefined ? {} : { delegation }),
                 resources: [
                   {
                     resourceId: 'resource-1',
@@ -1430,3 +1432,62 @@ it.each(['/approved', '/accepted', '/changes Please revise.'])(
     ).toMatchObject({ body, continuation: false });
   },
 );
+
+it('shows delivery ancestry, child status, repository links and blockers', async () => {
+  const client = detailClient(null, undefined, [], undefined, 'DONE', false, [], [], false, {
+    rootWorkItemKey: 'wk_root',
+    parentWorkItemKey: 'wk_parent',
+    children: [
+      {
+        workItemKey: 'wk_child',
+        parentWorkItemKey: 'wk_a',
+        objective: 'Investigate child',
+        workflowName: 'investigation',
+        status: 'blocked',
+        cohortId: 'cohort',
+        blockReason: 'Waiting for assignment evidence',
+        resources: [
+          {
+            resourceId: 'repository-1',
+            adapter: 'github',
+            kind: 'repository',
+            locatorLabel: 'repository atolis-hq/wake',
+            title: 'Wake repository',
+            externalUrl: 'https://github.com/atolis-hq/wake',
+            capabilities: [],
+          },
+        ],
+      },
+    ],
+  });
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    render(
+      <QueryClientProvider client={cache}>
+        <ApiClientContext.Provider value={client}>
+          <MemoryRouter initialEntries={['/work/wk_a']}>
+            <Routes>
+              <Route path="/work/:workItemKey" element={<WorkDetail />} />
+            </Routes>
+          </MemoryRouter>
+        </ApiClientContext.Provider>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole('heading', { name: 'Delivery tree' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Investigate child' }).getAttribute('href')).toBe(
+      '/work/wk_child',
+    );
+    expect(screen.getByRole('link', { name: 'View delivery root' }).getAttribute('href')).toBe(
+      '/work/wk_root',
+    );
+    expect(screen.getByRole('link', { name: 'View parent' }).getAttribute('href')).toBe(
+      '/work/wk_parent',
+    );
+    expect(screen.getByText('Waiting for assignment evidence')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Wake repository' }).getAttribute('href')).toBe(
+      'https://github.com/atolis-hq/wake',
+    );
+  } finally {
+    cache.clear();
+  }
+});

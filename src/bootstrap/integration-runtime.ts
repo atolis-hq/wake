@@ -91,7 +91,7 @@ import {
   type createResourceLookup,
   type createResourceService,
 } from '../resources/index.js';
-import { isWorkItemStream, type createWorkService } from '../work/index.js';
+import { isWorkItemStream, workItemId, type createWorkService } from '../work/index.js';
 import { decodeCanonicalEvent } from './canonical-events.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 import type { EventProcessorRuntime } from './event-processor-runtime.js';
@@ -212,7 +212,9 @@ export async function composeIntegrationRuntime(
       ).flatMap(({ value }) => (value === null ? [] : [value]));
     },
     invocationScope: async (item) => {
-      const claim = (await input.journal.readStream(triggerInvocationStream(item)))
+      const work = await input.work.get(workItemId(item));
+      const origin = work?.delegation?.rootWorkItemId ?? item;
+      const claim = (await input.journal.readStream(triggerInvocationStream(origin)))
         .map(selectControlEvent)
         .find((event) => event?.event.eventType === ControlEventType.TriggerInvocationClaimed);
       return claim?.event.eventType === ControlEventType.TriggerInvocationClaimed

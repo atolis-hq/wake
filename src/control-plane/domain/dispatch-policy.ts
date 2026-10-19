@@ -42,3 +42,10 @@ export class DispatchPolicy {
       .slice(0, this.options.maxDispatches);
   }
 }
+
+// Ports without priority rank neutrally and fall back to oldest-first.
+export const neutralDispatchPriority: DispatchPriority = {
+  remainingAgentSteps: 0,
+  watchDriven: false,
+  retried: false,
+};

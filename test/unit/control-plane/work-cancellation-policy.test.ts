@@ -133,3 +133,50 @@ describe('createWorkCancellationPolicy', () => {
     expect(orchestration.blocked).toEqual([]);
   });
 });
+
+it('cancels every descendant Run and watch while leaving unrelated roots alone', async () => {
+  const parent = workId('parent');
+  const child = workId('child');
+  const other = workId('other');
+  const work = {
+    ...fakeWorkPort(),
+    async get(id: WorkItemId) {
+      return {
+        workItemId: id,
+        objective: 'Delivery work',
+        tags: [],
+        autoApprovalGranted: false,
+        relatedWorkItems: [],
+        state: 'open',
+        ...(id === child
+          ? {
+              delegation: { parentWorkItemId: parent, rootWorkItemId: parent, ancestors: [parent] },
+            }
+          : {}),
+      } satisfies WorkItemView;
+    },
+  };
+  const orchestration = fakeOrchestrationPort([
+    { workflowInstanceId: 'parent', workItemId: parent },
+    { workflowInstanceId: 'child', workItemId: child },
+    { workflowInstanceId: 'child-watch', workItemId: child },
+    { workflowInstanceId: 'other', workItemId: other },
+  ]);
+  const execution = fakeExecutionPort();
+  const policy = createWorkCancellationPolicy(
+    work,
+    orchestration,
+    execution,
+    new FakeClock(),
+    new SequentialIds(),
+  );
+  await policy.cancelWork(parent, 'stop delivery');
+  expect(execution.cancelled).toEqual([
+    { workflowInstanceIds: ['parent', 'child', 'child-watch'], reason: 'work-cancelled' },
+  ]);
+  expect(orchestration.blocked.map((entry) => entry.workflowInstanceId)).toEqual([
+    'parent',
+    'child',
+    'child-watch',
+  ]);
+});
