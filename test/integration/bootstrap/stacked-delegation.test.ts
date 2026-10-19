@@ -299,6 +299,19 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
         { ...mergeOriginal, state: 'merged' },
         context('provider-merged'),
       );
+      await git(paths.a, 'branch', '-D', childOf('a1').workItemId);
+      // After joining, the agent can merge both stacks bottom-up and delete their branches.
+      for (const id of ['a2', 'a3', 'b1', 'b2', 'b3']) {
+        const resource = (await root.resources.findByExternalKey({
+          adapter: 'fake',
+          key: 'org/' + id[0] + '#' + id[1],
+        }))!;
+        const observed = (await root.pullRequests.get(resource.resourceId))!;
+        await git(id[0] === 'a' ? paths.a : paths.b, 'merge', '--ff-only', heads.get(id)!);
+        await git(id[0] === 'a' ? paths.a : paths.b, 'branch', '-D', childOf(id).workItemId);
+        await root.pullRequests.observe({ ...observed, state: 'merged' }, context('merge-' + id));
+        await root.orchestration.reconcileChildCompletions(context('post-join-' + id));
+      }
       const merged = await root.orchestration.submitDelegation(
         caller,
         command,
@@ -307,7 +320,7 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
       const consumer = merged.children[0]!;
       expect(await root.orchestration.get(consumer.workflowInstanceId)).not.toBeNull();
       expect(await root.orchestration.repositoryAssignment(consumer.workItemId)).toMatchObject({
-        sourceRevision: heads.get('a1'),
+        sourceRevision: heads.get('a3'),
       });
       expect(
         (await root.orchestration.deliveryTree(parentWork))[1]!.children[0]!.consumedInputs!
@@ -392,20 +405,21 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
         key: `org/${child.assignmentId[0]}#${child.assignmentId[1]}`,
       });
       expect(resource).not.toBeNull();
-      await root.pullRequests.observe(
-        {
-          resourceId: resource!.resourceId,
-          workItemId: child.workItemId,
-          state: 'open',
-          headRevision: heads.get(child.assignmentId)!,
-          baseRevision:
-            baseOf(child.assignmentId) === undefined
-              ? sources.get(child.assignmentId[0]!)!
-              : heads.get(baseOf(child.assignmentId)!)!,
-          checks: 'passing',
-        },
-        context('observe-' + child.assignmentId),
-      );
+      if ((await root.pullRequests.get(resource!.resourceId))?.state !== 'merged')
+        await root.pullRequests.observe(
+          {
+            resourceId: resource!.resourceId,
+            workItemId: child.workItemId,
+            state: 'open',
+            headRevision: heads.get(child.assignmentId)!,
+            baseRevision:
+              baseOf(child.assignmentId) === undefined
+                ? sources.get(child.assignmentId[0]!)!
+                : heads.get(baseOf(child.assignmentId)!)!,
+            checks: 'passing',
+          },
+          context('observe-' + child.assignmentId),
+        );
       await root.orchestration.reconcileChildCompletions(
         context('reconcile-' + child.assignmentId),
       );
@@ -472,9 +486,9 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
     );
     root = await open();
     const movedBase = (await root.orchestration.deliveryTree(parentWork))[0]!.children;
-    expect(movedBase.find((child) => child.assignmentId === 'a2')!.prerequisiteBlocker).toContain(
-      'base changed',
-    );
+    expect(
+      movedBase.find((child) => child.assignmentId === 'a2')!.prerequisiteBlocker,
+    ).toBeUndefined();
     expect(
       movedBase.find((child) => child.assignmentId === 'b3')!.prerequisiteBlocker,
     ).toBeUndefined();
@@ -493,7 +507,7 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
         key: `org/${child.assignmentId[0]}#${child.assignmentId[1]}`,
       });
       expect((await root.pullRequests.get(resource!.resourceId))!.state).toBe(
-        mergedConsumerCreated && child.assignmentId === 'a1' ? 'merged' : 'open',
+        mergedConsumerCreated ? 'merged' : 'open',
       );
     }
     await root.advanceOnce({ workItemId: parentWork, maxProgress: 1 });

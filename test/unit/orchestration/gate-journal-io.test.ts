@@ -35,10 +35,10 @@ const context = (seed: string) => ({
 
 // A tick runs the gate over every workflow instance. Its journal I/O must not
 // grow with the number of instances, however large the history is.
-it(
-  'gates every pending activation and timed-out wait without per-instance journal reads',
+it.each([false, true])(
+  'gates pending activations and waits without per-instance journal reads (delegation=%s)',
   { timeout: 120_000 },
-  async () => {
+  async (delegation) => {
     const root = await mkdtemp(join(tmpdir(), 'wake-gate-io-'));
     const journal = new FileEventJournal(root, new FakeClock());
     const registry = new ActivityRegistry();
@@ -86,9 +86,23 @@ it(
       );
     }
     const reader = new FileEventJournal(root, new FakeClock());
-    const readerService = createOrchestrationService(reader, createWorkService(reader), {
-      default: definition,
-    });
+    const readerService = createOrchestrationService(
+      reader,
+      createWorkService(reader),
+      { default: definition },
+      undefined,
+      undefined,
+      delegation
+        ? () => ({
+            artifacts: {
+              validateInputs: async () => {},
+              registerChild: async () => {},
+              qualifyingOutputs: async () => null,
+            },
+            runHasEnded: async () => true,
+          })
+        : undefined,
+    );
     const segments = (await readdir(join(root, 'events'))).filter((name) =>
       name.endsWith('.jsonl'),
     ).length;

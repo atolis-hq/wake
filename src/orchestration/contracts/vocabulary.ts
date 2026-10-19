@@ -86,3 +86,14 @@ export const DelegationConflictCode = defineClosedVocabulary({
 } as const);
 
 export type DelegationConflictCode = ValueOf<typeof DelegationConflictCode>;
+
+export const PrerequisiteBlockCode = defineClosedVocabulary({
+  Waiting: 'prerequisite-waiting',
+  Changed: 'prerequisite-changed',
+  Failed: 'prerequisite-failed',
+  Unavailable: 'prerequisite-unavailable',
+  Cycle: 'prerequisite-cycle',
+  Blocked: 'prerequisite-blocked',
+} as const);
+
+export type PrerequisiteBlockCode = ValueOf<typeof PrerequisiteBlockCode>;

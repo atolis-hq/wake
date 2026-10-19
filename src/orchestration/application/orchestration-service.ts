@@ -18,6 +18,7 @@ import { type ActivationId, type ActivityOutcome } from '../../activities/index.
 import type { ExecutionFailureCode } from '../../execution/index.js';
 import {
   WorkStatus,
+  type DeliverySnapshot,
   type WorkItemId,
   type WorkItemView,
   type WorkService,
@@ -75,7 +76,9 @@ export class OrchestrationService {
   private readonly delegationCommands: DelegationCommands;
   private readonly delegationGate: DelegationGate;
   private readonly delegatedWork: DelegatedWork;
-  private readonly prerequisiteReason = (id: string) => this.delegatedWork.prerequisites.reason(id);
+  private readonly prerequisiteReasons = (ids: readonly string[], snapshot?: DeliverySnapshot) =>
+    this.delegatedWork.prerequisites.reasons(ids, snapshot);
+
   private readonly repository: OrchestrationRepository;
   private readonly deferredSignals: DeferredSignals;
   private readonly startWorkflow: StartWorkflow;
@@ -107,7 +110,7 @@ export class OrchestrationService {
     this.delegationGate = new DelegationGate(
       repository,
       work,
-      delegation === undefined ? undefined : this.prerequisiteReason,
+      delegation === undefined ? undefined : this.prerequisiteReasons,
     );
     const dependencies = delegation?.({
       isActivationAccepted: (id, item) => this.isActivationAccepted(id, item),
@@ -259,6 +262,7 @@ export class OrchestrationService {
           await this.reconcileChildCompletions(context);
           return (await this.repository.loadRequired(command.workflowInstanceId)).view;
         },
+        async (view) => view,
       ),
     );
   }

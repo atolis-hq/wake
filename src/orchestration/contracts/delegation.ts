@@ -142,6 +142,7 @@ export const delegationResultSchema = z
                   pullRequestBase: z.string().min(1),
                   runId: z.string().min(1),
                   baseRevision: z.string().min(1).optional(),
+                  merged: z.literal(true).optional(),
                 })
                 .strict(),
             ]),

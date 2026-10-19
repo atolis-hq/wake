@@ -59,6 +59,10 @@ export class OrchestrationRepository {
     return { sequence, view: foldWorkflowInstance([...own, ...inherited]) };
   }
 
+  snapshot() {
+    return this.listed.get();
+  }
+
   events(): Promise<readonly WorkflowOrchestrationEvent[]> {
     return this.listed.get().then((snapshot) => snapshot.events);
   }

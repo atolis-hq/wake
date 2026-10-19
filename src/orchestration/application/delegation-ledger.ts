@@ -138,3 +138,21 @@ export function reservedEvent(
   if (found === undefined) throw new Error('Missing delegation reservation');
   return found;
 }
+
+/** Terminal membership is indexed once for a reconciliation pass, independent of history size. */
+export function unsettledReservations(
+  events: readonly WorkflowOrchestrationEvent[],
+): readonly DelegationReservation[] {
+  const settled = new Set(
+    events.flatMap(({ event, stream }) =>
+      event.eventType === OrchestrationEventType.DelegationJoined ||
+      event.eventType === OrchestrationEventType.DelegationFailed
+        ? [JSON.stringify([stream.id, event.payload.cohortId])]
+        : [],
+    ),
+  );
+  return reservationsOf(events).filter(
+    (reservation) =>
+      !settled.has(JSON.stringify([reservation.parentWorkflowInstanceId, reservation.cohortId])),
+  );
+}

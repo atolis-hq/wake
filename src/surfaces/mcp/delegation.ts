@@ -20,7 +20,7 @@ export function registerDelegationTools(
     'wake_delegation_submit',
     {
       description:
-        'Submit child work with optional queued named-output prerequisites under this workflow delegation policy. Use expectedPlanRevision from inspection; useAsBase selects only a same-repository upstream change. End the current activity normally after submission; Wake waits and resumes it with joined results.',
+        'Submit child work with optional queued named-output prerequisites under this workflow delegation policy. Use expectedPlanRevision from inspection; useAsBase selects only a same-repository upstream change. End the current activity normally after submission; Wake waits and resumes it with joined results or terminal failure facts. Inspect failureReason and blockers before submitting replacement assignments in a new cohort; existing receipts remain immutable.',
       inputSchema: delegationSubmissionSchema,
     },
     async (command) => {

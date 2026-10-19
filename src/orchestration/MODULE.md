@@ -63,14 +63,16 @@ Only the exact reserving activation's outcome may be held. Join waits for the
 reserving Run to end before continuation. New assignments must select a current
 configured workflow fingerprint; committed reservations recover the pinned one.
 Reservation contention retries are bounded and use fresh root-stream sequences.
-Blocked children remain recoverable and keep the cohort waiting.
-In batches without prerequisites, cancelled, closed or deleted child work before
-workflow completion settles the cohort as failed. Queued batches retain durable
-child blockers while unrelated siblings can finish; every required child still
-gates the join. A completed child without visible outputs gets one subsequent
-reconciliation command to make them visible, with the first observation persisted
-across restart; missing outputs after that settle an independent batch as failed or retain a
-child blocker in a queued batch. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the
+Unavailable prerequisites remain retryable. Hard child failures and changed
+consumed inputs retain durable blockers while independent siblings finish. A
+queued cohort then settles as failed and atomically requests a fresh parent
+assessment activation after the reserving Run ends. Affected unfinished child
+workflows are superseded. The agent may explicitly submit a replacement batch
+under normal authority and limits, with new immutable receipts and fresh outputs.
+Live attention before independent siblings finish is deferred. Batches without
+prerequisites retain their existing terminal-failure behavior. A completed child
+without visible outputs gets one subsequent reconciliation command to make them
+visible; its first observation survives restart. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the
 delegating activation's typed input and identity flags; exact results are read
 through the joined-results query rather than added to activity input schemas.
 
@@ -138,10 +140,14 @@ E2E-ORCH-WATCH-CLOSED-WORK-001, E2E-ORCH-LOOP-001.
 Queued prerequisites select explicit named outputs through immutable resolved
 child identities. The root reservation sequence guards expected plan revisions
 and explicit plus implicit join/merge wait cycles. Consumption receipts pin
-accepted artifact revisions or provider-verified change heads and observed bases
+accepted artifact revisions or provider-verified change heads and source assignments
 before child start; a same-repository base selection overrides only that child's
 execution assignment. Live eligibility revalidates those receipts for dispatch,
-outcomes and joins, including after restart; affected downstream results and
-joined parent continuation are held for agent assessment without erasing history
-or choosing Git repairs. Cross-repository prerequisites carry accepted context,
+outcomes and joins, including after restart; affected downstream evidence is ineligible without erasing history or choosing
+Git repairs. A successful join does not impose a live blanket hold on its parent
+while the agent merges the stack. Upstream PR target movement is not movement of
+the consumed head; a verified merge preserves already consumed heads after branch
+deletion. Admission batches share one journal/Work snapshot and memoize provider
+and Git verification within the pass. Reconciliation skips settled cohorts;
+prerequisite diagnostics use stable reason-code identities. Cross-repository prerequisites carry accepted context,
 never Git ancestry. Independent children remain eligible while others wait.

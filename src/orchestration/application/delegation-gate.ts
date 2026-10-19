@@ -4,13 +4,17 @@ import { DelegationPendingError } from '../contracts/delegation.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import type { PrerequisiteAdmission } from './prerequisite-readiness.js';
 
 /** One admission policy for ordinary advancement while a committed cohort owns the parent. */
 export class DelegationGate {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly work: WorkService,
-    private readonly prerequisiteReason?: (id: string) => Promise<string | undefined>,
+    private readonly prerequisiteReasons?: (
+      ids: readonly string[],
+      snapshot?: DeliverySnapshot,
+    ) => Promise<ReadonlyMap<string, PrerequisiteAdmission>>,
   ) {}
 
   /** Standalone work keeps existing freeze semantics; only delegated trees and fenced parents are held. */
@@ -26,9 +30,11 @@ export class DelegationGate {
 
   /** Commit-boundary check for one instance; batches use `filterAvailable`. */
   async unavailable(view: WorkflowInstanceView): Promise<boolean> {
+    const snapshot = await this.work.deliverySnapshot();
     return (
-      this.heldBy(await this.work.deliverySnapshot(), view) ||
-      (await this.prerequisiteReason?.(view.workItemId)) !== undefined
+      this.heldBy(snapshot, view) ||
+      (await this.prerequisiteReasons?.([view.workItemId], snapshot))?.get(view.workItemId)
+        ?.reason !== undefined
     );
   }
 
@@ -43,25 +49,30 @@ export class DelegationGate {
 
   /** The subset of `ids` whose workflow is fenced or held, against one Work synchronisation. */
   async fencedAmong(ids: readonly WorkflowInstanceId[]): Promise<ReadonlySet<WorkflowInstanceId>> {
-    const loaded = await Promise.all(
-      ids.map(async (id) => [id, (await this.repository.load(id)).view] as const),
-    );
-    const views = loaded.filter(
-      (entry): entry is readonly [WorkflowInstanceId, WorkflowInstanceView] => entry[1] !== null,
+    if (ids.length === 0) return new Set<WorkflowInstanceId>();
+    const requested = new Set(ids);
+    const views = (await this.repository.list()).flatMap(({ view }) =>
+      view !== null && requested.has(view.workflowInstanceId)
+        ? [[view.workflowInstanceId, view] as const]
+        : [],
     );
     const snapshot = views.some(([, view]) => this.allows(view))
       ? await this.work.deliverySnapshot()
       : undefined;
-    const held = await Promise.all(
-      views.map(async ([id, view]) =>
-        !this.allows(view) ||
-        this.heldBy(snapshot!, view) ||
-        (await this.prerequisiteReason?.(view.workItemId)) !== undefined
-          ? id
-          : undefined,
-      ),
+    const reasons = await this.prerequisiteReasons?.(
+      views.filter(([, view]) => this.allows(view)).map(([, view]) => view.workItemId),
+      snapshot,
     );
-    return new Set(held.filter((id): id is WorkflowInstanceId => id !== undefined));
+    return new Set(
+      views
+        .filter(
+          ([, view]) =>
+            !this.allows(view) ||
+            this.heldBy(snapshot!, view) ||
+            reasons?.get(view.workItemId)?.reason !== undefined,
+        )
+        .map(([id]) => id),
+    );
   }
 
   async run<T>(id: WorkflowInstanceId, operation: () => Promise<T>): Promise<T> {
@@ -74,10 +85,16 @@ export class DelegationGate {
     activationId: ActivationId,
     operation: () => Promise<T>,
     held: () => Promise<T>,
+    historical: (view: WorkflowInstanceView) => Promise<T>,
   ): Promise<T> {
     const view = (await this.repository.load(id)).view;
-    if (view !== null && (await this.unavailable(view))) throw new DelegationPendingError(id);
-    if (view === null || this.allows(view)) return operation();
+    if (view === null) return operation();
+    const snapshot = await this.work.deliverySnapshot();
+    if (this.heldBy(snapshot, view)) throw new DelegationPendingError(id);
+    const admission = (await this.prerequisiteReasons?.([view.workItemId]))?.get(view.workItemId);
+    if (admission?.abandoned === true) return historical(view);
+    if (admission?.reason !== undefined) throw new DelegationPendingError(id);
+    if (this.allows(view)) return operation();
     if (view.delegationFence?.activationId !== activationId) throw new DelegationPendingError(id);
     return held();
   }
@@ -97,13 +114,14 @@ export class DelegationGate {
     });
     if (unfenced.length === 0) return [];
     const snapshot = await this.work.deliverySnapshot();
-    const ready = await Promise.all(
-      unfenced.map(
-        async (item) =>
-          !this.heldBy(snapshot, viewOf(item)!) &&
-          (await this.prerequisiteReason?.(viewOf(item)!.workItemId)) === undefined,
-      ),
+    const reasons = await this.prerequisiteReasons?.(
+      unfenced.map((item) => viewOf(item)!.workItemId),
+      snapshot,
     );
-    return unfenced.filter((_item, index) => ready[index]);
+    return unfenced.filter(
+      (item) =>
+        !this.heldBy(snapshot, viewOf(item)!) &&
+        reasons?.get(viewOf(item)!.workItemId)?.reason === undefined,
+    );
   }
 }

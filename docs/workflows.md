@@ -781,17 +781,36 @@ commit; the child PR's logical base is that upstream branch. Agents create and
 maintain the PRs and perform all Git operations. Cross-repository Git bases are
 rejected; cross-repository contracts use selected accepted artifact revisions.
 
-Independent children start while dependencies remain queued. In batches declaring
-prerequisites, failed upstream children retain durable blockers while unrelated
-siblings can finish; the parent remains fenced for assessment. Batches without
-prerequisites retain their existing terminal-failure behavior. Selected inputs
-are immutable journal receipts; accepted artifact inputs receive explicit
-read-only grants. Inspection exposes `consumedInputs` and `prerequisiteBlocker`;
-work detail displays the blocker. Readiness is rechecked after restart, before
-dispatch, when accepting outcomes and before joining. Changed consumed outputs,
-upstream branch heads or observed PR bases hold affected downstream evidence
-and parent continuation for agent assessment. Historical evidence is retained;
-Wake does not choose a rebase or repair.
+Independent children start while dependencies remain queued. Selected inputs are
+immutable journal receipts; accepted artifact inputs receive explicit read-only
+grants. Inspection exposes `consumedInputs`, `prerequisiteBlocker` and a terminal
+cohort's `failureReason`; work detail displays each child's blocker.
+
+Readiness is checked after restart, before dispatch, when accepting outcomes and
+before joining. A changed consumed output or upstream head makes affected
+assignments ineligible. Failed upstream children and their dependents retain
+durable blockers while unrelated siblings finish. Once that work finishes and
+the reserving Run ends, Wake records a terminal failed cohort and resumes the
+parent stage for assessment, without reporting a successful join. Unfinished
+affected workflows are superseded; late Run outcomes cannot qualify them.
+Batches without prerequisites retain their existing terminal-failure behavior.
+Transient verification failures remain retryable and use bounded diagnostics.
+
+The parent agent inspects the failure and explicitly submits replacement work
+under a new cohort and assignment identity, using the current plan revision.
+Normal Run authority, workflow/repository policy and delivery limits still
+apply. Replacement assignments pin current verified inputs and require fresh
+outputs; old receipts, results and grants remain in the journal. Wake never
+chooses a rebase, replacement stack or semantic repair. Attention while
+independent work is still running is outside this slice.
+
+Successful joins are historical consumption boundaries, not permanent holds on
+the parent's later merge phase. Agents can merge a joined stack bottom-up and
+delete its branches. Reuse of an upstream output by new work still verifies its
+current evidence. Only the upstream head and selected branch matter to the
+consumed Git base; unrelated movement of that PR's own target branch does not
+invalidate downstream evidence. A provider-confirmed merge at the consumed head
+preserves an existing receipt even if the source branch is deleted.
 
 Self-dependencies, missing targets/outputs, explicit cycles and implicit join
 cycles are rejected with typed conflicts. A child cannot await its ancestor's
