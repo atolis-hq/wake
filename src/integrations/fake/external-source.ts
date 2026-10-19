@@ -23,6 +23,7 @@ export interface FakeWorkEvidence {
   readonly tags?: readonly string[] | undefined;
   readonly kind?: 'issue' | 'pull-request' | undefined;
   readonly revision?: string | undefined;
+  readonly baseBranch?: string | undefined;
   readonly baseRevision?: string | undefined;
   readonly checks?:
     | typeof PullRequestCheckState.Unknown

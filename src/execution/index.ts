@@ -69,3 +69,9 @@ export * from './infrastructure/workspace/git-workspace.js';
 export * from './application/run-reports.js';
 
 export { createLocalProcessInspector } from './infrastructure/local-process-inspector.js';
+
+export { resolveGitSource } from './infrastructure/workspace/git-source.js';
+
+export * from './contracts/repository-assignment.js';
+
+export { createRepositoryAssignments } from './application/repository-assignments.js';

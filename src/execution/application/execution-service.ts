@@ -506,11 +506,20 @@ async function completeRun(
       ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
       ...(resumeStartedAt === undefined ? {} : { resumeStartedAt }),
       ...(usageBaseline === undefined ? {} : { usageBaseline }),
-      ...(lease === undefined ? {} : { workspace: { path: lease.path, mode: lease.mode } }),
+      ...(lease === undefined
+        ? {}
+        : {
+            workspace: {
+              path: lease.path,
+              mode: lease.mode,
+              checkoutRevision: lease.checkoutRevision,
+              repository: context.repositoryAssignment,
+            },
+          }),
       reportRunnerStarted,
     });
     await stopRenewal();
-    await settleRunSuccess(runtime, currentRunId, activation, context, outcome);
+    await settleRunSuccess(runtime, currentRunId, activation, context, outcome, lease);
   } catch (error) {
     try {
       await stopRenewal();
@@ -534,17 +543,20 @@ async function settleRunSuccess(
   activation: ExecutionActivation,
   context: ExecutionAttemptContext,
   outcome: ActivityOutcome,
+  lease?: WorkspaceLease,
 ): Promise<void> {
   if (await shutdownCancellationSucceeded(runtime, currentRunId)) {
     await confirmCancellation(runtime.repository, runtime.dependencies.clock, currentRunId);
     return;
   }
+  const workspaceRevision = await lease?.readRevision?.();
   await recordRunSuccess({
     dependencies: runLifecycleDependencies(runtime),
     runId: currentRunId,
     activation,
     context,
     outcome,
+    ...(workspaceRevision === undefined ? {} : { workspaceRevision }),
   });
 }
 
@@ -908,20 +920,35 @@ async function claimActivationForAttempt(
   });
 }
 
-function acquireAttemptWorkspace(
+async function acquireAttemptWorkspace(
   runtime: ExecutionRuntime,
   activation: ExecutionActivation,
   context: ExecutionAttemptContext,
   currentRunId: ReturnType<typeof runId>,
   signal?: AbortSignal,
 ) {
+  const previous =
+    context.repositoryAssignment === undefined
+      ? undefined
+      : (await runtime.repository.list())
+          .filter(
+            (run) =>
+              run.orchestrationGroupId === context.orchestrationGroupId &&
+              run.workspace?.mode === WorkspaceMode.Branch &&
+              run.status === RunStatus.Succeeded,
+          )
+          .at(-1);
   return acquireWorkspace(
     currentRunId,
     activation.execution?.workspace ?? WorkspaceMode.None,
     context.workItemId,
     context.resources,
     runtime.dependencies.workspaces,
-    signal,
+    {
+      signal,
+      assignment: context.repositoryAssignment,
+      reviewRevision: previous?.workspaceRevision,
+    },
   );
 }
 

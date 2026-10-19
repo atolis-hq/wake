@@ -107,15 +107,7 @@ export async function startRun(input: {
           payload: {
             ...runPreparationPayload(activation, context, attempt, runner),
             startedAt,
-            ...(lease === undefined
-              ? {}
-              : {
-                  workspace: {
-                    mode: lease.mode,
-                    path: lease.path,
-                    ...(lease.branch === undefined ? {} : { branch: lease.branch }),
-                  },
-                }),
+            ...workspacePayload(lease),
           },
         }),
       ]);
@@ -134,6 +126,9 @@ function runPreparationPayload(
   runner: ResolvedRunner,
 ): Omit<RunPreparationStartedPayload, 'startedAt'> {
   return {
+    ...(context.repositoryAssignment === undefined
+      ? {}
+      : { repositoryAssignment: context.repositoryAssignment }),
     activationId: activation.activationId,
     activity: activation.activity,
     ...(activation.stage === undefined ? {} : { stage: activation.stage }),
@@ -182,6 +177,7 @@ export async function recordRunSuccess(input: {
   readonly activation: ExecutionActivation;
   readonly context: ExecutionAttemptContext;
   readonly outcome: ActivityOutcome;
+  readonly workspaceRevision?: string;
 }): Promise<void> {
   const { dependencies, runId: currentRunId, activation, context, outcome } = input;
   const finishedAt = dependencies.clock.now().toISOString();
@@ -195,7 +191,13 @@ export async function recordRunSuccess(input: {
       occurredAt: finishedAt,
       correlationId: context.orchestrationGroupId,
       causationId: activation.activationId,
-      payload: { outcome, finishedAt },
+      payload: {
+        outcome,
+        finishedAt,
+        ...(input.workspaceRevision === undefined
+          ? {}
+          : { workspaceRevision: input.workspaceRevision }),
+      },
     }),
   ]);
 }
@@ -272,4 +274,24 @@ function requireRunEventData(event: ExecutionEventData): RunExecutionEventData {
     default:
       return event;
   }
+}
+
+function workspacePayload(lease: WorkspaceLease | undefined) {
+  return {
+    ...(lease === undefined
+      ? {}
+      : {
+          workspace: {
+            mode: lease.mode,
+            ...(lease.repositoryResourceId === undefined
+              ? {}
+              : { repositoryResourceId: lease.repositoryResourceId }),
+            ...(lease.checkoutRevision === undefined
+              ? {}
+              : { checkoutRevision: lease.checkoutRevision }),
+            path: lease.path,
+            ...(lease.branch === undefined ? {} : { branch: lease.branch }),
+          },
+        }),
+  };
 }

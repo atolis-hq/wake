@@ -10,6 +10,7 @@ import {
   type DelegationReservation,
 } from '../contracts/delegation.js';
 import { workflowInstanceId, type WorkflowInstanceId } from '../contracts/identifiers.js';
+import { DelegationOutputKind } from '../contracts/vocabulary.js';
 
 const ids = new UlidIdGenerator();
 
@@ -32,6 +33,19 @@ export function buildReservation(
   if (new Set(parsed.map((assignment) => assignment.assignmentId)).size !== parsed.length)
     throw new Error('Duplicate assignment identity');
   for (const assignment of parsed) {
+    if (
+      assignment.outputs.filter(
+        (output) => 'kind' in output && output.kind === DelegationOutputKind.Change,
+      ).length > 1
+    )
+      throw new Error('One change output per child is currently supported');
+    if (
+      assignment.outputs.some(
+        (output) => 'kind' in output && output.kind === DelegationOutputKind.Change,
+      ) &&
+      assignment.repository === undefined
+    )
+      throw new Error('Change outputs require an explicit repository assignment');
     if (new Set(assignment.outputs.map((output) => output.name)).size !== assignment.outputs.length)
       throw new Error('Duplicate named output');
   }
@@ -56,21 +70,6 @@ export function buildReservation(
   });
 }
 
-/** Identities are minted once and then committed, so replays compare the requested content only. */
-export function sameDelegation(a: DelegationReservation, b: DelegationReservation): boolean {
-  const content = (reservation: DelegationReservation) => ({
-    ...reservation,
-    runId: undefined,
-    maxConcurrentRuns: undefined,
-    maxDepth: undefined,
-    maxDescendants: undefined,
-    children: reservation.children.map(
-      ({ workItemId: _w, workflowInstanceId: _i, grantId: _g, ...assignment }) => assignment,
-    ),
-  });
-  return isDeepStrictEqual(content(a), content(b));
-}
-
 /** Bounds are fixed by the first reservation under a root so nesting cannot widen them. */
 export function assertWithinRootLimits(
   existing: readonly DelegationReservation[],
@@ -84,4 +83,48 @@ export function assertWithinRootLimits(
     reserved + reservation.children.length > rootLimits.maxDescendants
   )
     throw new Error('Delegation root reservation limit exceeded');
+}
+
+/** A replay of a branch request retains the originally resolved commit. */
+export function matchesAssignments(
+  reservation: DelegationReservation,
+  assignments: readonly DelegatedAssignment[],
+): boolean {
+  if (
+    assignments.some(
+      (assignment) =>
+        assignment.repository?.sourceRevision !== undefined &&
+        reservation.children.find((child) => child.assignmentId === assignment.assignmentId)
+          ?.repository?.sourceRevision !== assignment.repository.sourceRevision,
+    )
+  )
+    return false;
+  return isDeepStrictEqual(
+    reservation.children.map(
+      ({ workItemId: _w, workflowInstanceId: _i, grantId: _g, ...assignment }) => ({
+        ...assignment,
+        ...(assignment.repository === undefined
+          ? {}
+          : {
+              repository: {
+                ...assignment.repository,
+                sourceRevision: assignments.find(
+                  (entry) => entry.assignmentId === assignment.assignmentId,
+                )?.repository?.sourceRevision,
+              },
+            }),
+      }),
+    ),
+    assignments.map((assignment) => ({
+      ...delegatedAssignmentSchema.parse(assignment),
+      ...(assignment.repository === undefined
+        ? {}
+        : {
+            repository: {
+              ...assignment.repository,
+              sourceRevision: assignment.repository.sourceRevision,
+            },
+          }),
+    })),
+  );
 }

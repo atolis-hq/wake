@@ -267,3 +267,15 @@ its own beyond what it reads and writes through the Run repository.
   outcome normally.
 - Runner pool failover only moves within the pool resolved for one attempt;
   see the module specification's own exclusion.
+
+## Repository-bound execution
+
+- A delegated assignment MUST select its exact existing Repository Resource;
+  absence MUST fail without choosing a different correlated resource.
+- New writable branches MUST start at the recorded source commit. Reacquiring
+  a retained branch MUST preserve commits and dirty work, and MUST reject a
+  different recorded repository assignment.
+- Run preparation MUST retain the assignment; start MUST record the repository
+  and checkout revision; successful execution MUST record the resulting HEAD.
+- A read-only stage following implementation in the same orchestration group
+  MUST review that implementation HEAD rather than the original source pin.

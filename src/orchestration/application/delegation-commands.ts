@@ -41,9 +41,10 @@ export class DelegationCommands {
     const root = await this.rootFor(parent);
     const rootPolicy = (await this.workflows.definitionFor(root)).delegation;
     const rootRepositories = await this.authority.repositories(root);
-    const inherited = (await this.authority.repositories(parent)).filter((id) =>
-      rootRepositories.includes(id),
-    );
+    const inherited = (
+      (await this.delegated.repositoryScope(parent.workItemId)) ??
+      (await this.authority.repositories(parent))
+    ).filter((id) => rootRepositories.includes(id));
     const assignments = command.assignments.map((assignment) => {
       if (
         !policy.workflows.includes(assignment.workflowName) ||
@@ -52,11 +53,25 @@ export class DelegationCommands {
       )
         throw new Error('Delegation workflow is not allowed');
       // The permitted set only bounds explicit requests; it never selects a checkout target.
-      const repositories = assignment.repositoryResourceIds ?? [];
+      const permitted = inherited.filter(
+        (id) =>
+          (policy.repositories === undefined || policy.repositories.includes(id)) &&
+          (rootPolicy.repositories === undefined || rootPolicy.repositories.includes(id)),
+      );
+      const repositories = assignment.repositoryResourceIds ?? permitted;
+      const requested = [
+        ...repositories,
+        ...(assignment.repository === undefined ? [] : [assignment.repository.resourceId]),
+      ];
       if (
-        repositories.some(
+        assignment.repository !== undefined &&
+        !repositories.includes(assignment.repository.resourceId)
+      )
+        throw new Error('Delegation repository authority exceeded');
+      if (
+        requested.some(
           (id) =>
-            !inherited.includes(id) ||
+            !permitted.includes(id) ||
             (policy.repositories !== undefined && !policy.repositories.includes(id)) ||
             (rootPolicy.repositories !== undefined && !rootPolicy.repositories.includes(id)),
         )
@@ -64,7 +79,7 @@ export class DelegationCommands {
         throw new Error('Delegation repository authority exceeded');
       return {
         ...assignment,
-        ...(repositories.length === 0 ? {} : { repositoryResourceIds: repositories }),
+        repositoryResourceIds: repositories,
         workflowFingerprint: this.definitions.currentDefinition(assignment.workflowName)
           .fingerprint,
       };

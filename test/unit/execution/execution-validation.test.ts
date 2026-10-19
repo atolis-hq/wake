@@ -59,3 +59,45 @@ it('uses a correlated PR head instead of the earlier issue observation', async (
   expect(provider.requests[0]?.checkoutRevision).toBe('b'.repeat(40));
   expect(provider.requests[0]?.repositoryResource.resourceId).toBe(resId('pr'));
 });
+
+it('selects only the assigned repository and uses the implementation revision for review', async () => {
+  const provider = new FakeWorkspaceProvider();
+  const repositories = ['unrelated', 'selected'].map((id) => ({
+    resourceId: resId(id),
+    kind: BuiltInResourceKind.Repository,
+    externalKey: { adapter: 'github', key: 'owner/' + id },
+    capabilities: [],
+    revision: 'moving',
+  }));
+  const assignment = {
+    resourceId: resId('selected'),
+    sourceRef: 'main',
+    sourceRevision: 'a'.repeat(40),
+    pullRequestBase: 'integration',
+  };
+  await acquireWorkspace(runId('assigned'), 'branch', workId('assigned'), repositories, provider, {
+    assignment,
+  });
+  await acquireWorkspace(
+    runId('assigned-review'),
+    'read-only',
+    workId('assigned'),
+    repositories,
+    provider,
+    { assignment, reviewRevision: 'b'.repeat(40) },
+  );
+  expect(provider.requests.map((request) => request.repositoryResource.resourceId)).toEqual([
+    resId('selected'),
+    resId('selected'),
+  ]);
+  expect(provider.requests.map((request) => request.checkoutRevision)).toEqual([
+    'a'.repeat(40),
+    'b'.repeat(40),
+  ]);
+  await expect(
+    acquireWorkspace(runId('missing'), 'branch', workId('missing'), [repositories[0]!], provider, {
+      assignment,
+    }),
+  ).rejects.toThrow('Assigned Repository Resource');
+  expect(provider.requests).toHaveLength(2);
+});

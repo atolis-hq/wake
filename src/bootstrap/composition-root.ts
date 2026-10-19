@@ -39,9 +39,12 @@ import {
   TranscriptStore,
   createExecutionService,
   createLocalProcessInspector,
+  createRepositoryAssignments,
   createRunnerMemoryProfileDecorator,
   isActiveRunStatus,
+  resolveGitSource,
   type FakeScenarioResolver,
+  type RepositoryCloneResolver,
   type Runner,
 } from '../execution/index.js';
 import {
@@ -57,6 +60,7 @@ import type {
   ProviderCompositionFailure,
   ProviderInstance,
 } from '../integrations/index.js';
+import { createDelegationOutputs } from '../integrations/index.js';
 import { SystemClock, UlidIdGenerator, type Clock } from '../kernel/index.js';
 import {
   compileWorkflow,
@@ -116,6 +120,9 @@ export interface CompositionRootOptions {
     adapter: ExternalDeliveryAdapter,
     provider: ProviderInstance,
   ) => ExternalDeliveryAdapter;
+  readonly decorateRepositoryCloneResolver?: (
+    resolver: RepositoryCloneResolver,
+  ) => RepositoryCloneResolver;
   readonly decorateRunner?: (runner: Runner, name: string) => Runner;
   /** A real fake-provider adapter for deterministic composed integration evidence. */
   readonly fakeDeliveryProvider?: DurableFakeDeliveryProvider;
@@ -241,6 +248,8 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
       ),
     ]),
   );
+  const providerInstances = createProviderBinding();
+  const cloneResolver = createCloneResolver(resources, options);
   const orchestration = createOrchestrationService(
     journal,
     work,
@@ -249,10 +258,22 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
     createAgentActivityClassifier(activities),
     (queries) => ({
       authority: createDelegationAuthority(journal, resources, activities),
-      artifacts: createDelegationArtifacts({
-        artifacts,
-        contexts: artifactContexts,
-        accepted: queries.isActivationAccepted,
+      repositories: createRepositoryAssignments(
+        resources,
+        (request) => resolveGitSource(cloneResolver, request),
+        (id) => orchestration.repositoryAssignment(id),
+        (id) => orchestration.repositoryAuthority(id),
+      ),
+      artifacts: createDelegationOutputs({
+        providers: () => providerInstances.promise,
+        resources,
+        pullRequests,
+        runs: () => execution.list(),
+        artifacts: createDelegationArtifacts({
+          artifacts,
+          contexts: artifactContexts,
+          accepted: queries.isActivationAccepted,
+        }),
       }),
       runHasEnded: async (runId) => {
         const run = (await execution.list()).find((entry) => entry.runId === runId);
@@ -267,16 +288,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
   );
   const workspaces = new GitWorkspaceProvider(
     paths.workspacesRoot,
-    {
-      async cloneLocator(id) {
-        const resource = await resources.get(resourceId(id));
-        const match =
-          resource === null ? null : /^([^/]+\/[^#]+)#\d+$/.exec(resource.externalKey.key);
-        if (match === null)
-          throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
-        return 'https://github.com/' + match[1] + '.git';
-      },
-    },
+    cloneResolver,
     {
       tryAcquire: (path) =>
         acquireFileLock(path, {
@@ -363,6 +375,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
     runners: new Set(Object.values(config.execution.runnerPools).flat()),
   });
   return {
+    providerInstances,
     config,
     fakeScenarios,
     workflowNotices,
@@ -403,6 +416,7 @@ export async function createDiagnosticRoot(wakeRoot: string) {
     wakeRoot,
     providerDefinitions: [gitHubProviderDefinition],
   });
+  base.providerInstances.resolve(instances);
   return { ...base, providers: instances, providerFailures: failures };
 }
 
@@ -411,6 +425,7 @@ export async function createCompositionRoot(
   options: CompositionRootOptions = {},
 ): Promise<CompositionRoot> {
   const {
+    providerInstances,
     config,
     fakeScenarios,
     workflowNotices,
@@ -516,6 +531,7 @@ export async function createCompositionRoot(
       : { fakeDeliveryProvider: options.fakeDeliveryProvider }),
     providerDefinitions: [gitHubProviderDefinition],
   });
+  providerInstances.resolve(runtime.providers);
   processorRuntime.register([activationSchedulerSubscriber.processor, ...runtime.processors]);
   return {
     workflowNotices,
@@ -556,4 +572,29 @@ function githubAdapters(config: ResolvedWakeModulesConfig): readonly string[] {
   return Object.entries(config.integrations).flatMap(([adapter, integration]) =>
     integration.enabled && (integration.provider ?? adapter) === 'github' ? [adapter] : [],
   );
+}
+
+function createCloneResolver(
+  resources: ReturnType<typeof createResourceService>,
+  options: CompositionRootOptions,
+): RepositoryCloneResolver {
+  const defaultCloneResolver: RepositoryCloneResolver = {
+    async cloneLocator(id: string) {
+      const resource = await resources.get(resourceId(id));
+      // Repository, PR and issue keys resolve to one clone; the '#N' suffix is optional.
+      const repository = resource?.externalKey.key.replace(/#\d+$/, '');
+      if (repository === undefined || !/^[^/]+\/[^/#]+$/.test(repository))
+        throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
+      return 'https://github.com/' + repository + '.git';
+    },
+  };
+  return options.decorateRepositoryCloneResolver?.(defaultCloneResolver) ?? defaultCloneResolver;
+}
+
+function createProviderBinding() {
+  let bind!: (providers: readonly ProviderInstance[]) => void;
+  const promise = new Promise<readonly ProviderInstance[]>((resolve) => {
+    bind = resolve;
+  });
+  return { promise, resolve: bind };
 }

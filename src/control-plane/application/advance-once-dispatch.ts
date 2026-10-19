@@ -1,4 +1,5 @@
 import { deliveryCapacity } from '../domain/delivery-capacity.js';
+import { dispatchResources } from './dispatch-resources.js';
 import {
   isRunnerQuotaOutcome,
   reportUnappliedRunnerQuotaRetry,
@@ -19,7 +20,7 @@ import type {
   WorkflowInstanceView,
 } from '../../orchestration/index.js';
 import { DelegationPendingError, WorkflowStatus } from '../../orchestration/index.js';
-import type { ResourceService } from '../../resources/index.js';
+import { type ResourceService } from '../../resources/index.js';
 import type { AdvanceResult, DispatchedRun } from '../contracts/views.js';
 import { neutralDispatchPriority, type DispatchPolicy } from '../domain/dispatch-policy.js';
 import {
@@ -191,15 +192,20 @@ export async function runDispatchLoop(
         ctx.commandContext(selected.activation.activationId),
       );
       startedWorkflowIds.add(selected.workflow.workflowInstanceId);
-      const correlated = await ctx.resources.correlationsForWork(selected.workflow.workItemId);
-      const resourceViews = (
-        await Promise.all(correlated.map((entry) => ctx.resources.get(entry.resourceId)))
-      ).filter((resource) => resource !== null);
+      const repositoryAssignment = await ctx.orchestration.repositoryAssignment?.(
+        selected.workflow.workItemId,
+      );
+      const resourceViews = await dispatchResources(
+        ctx.resources,
+        selected.workflow.workItemId,
+        repositoryAssignment,
+      );
       const run = await ctx.execution.attempt(selected.activation, {
         workItemId: selected.workflow.workItemId,
         workflowInstanceId: selected.workflow.workflowInstanceId,
         orchestrationGroupId: selected.workflow.orchestrationGroupId,
         resources: resourceViews,
+        ...(repositoryAssignment === undefined ? {} : { repositoryAssignment }),
         sessionPolicy:
           selected.activation.sessionPolicy === 'fresh' ||
           selected.workflow.parentWorkflowInstanceId !== undefined
@@ -275,11 +281,7 @@ export async function runDispatchLoop(
         };
         continue;
       }
-      if (error instanceof ActivationClaimConflictError) {
-        stopReason = { kind: 'no-work' };
-        break;
-      }
-      if (error instanceof NoEligibleRunnerError) {
+      if (error instanceof ActivationClaimConflictError || error instanceof NoEligibleRunnerError) {
         stopReason = { kind: 'no-work' };
         break;
       }

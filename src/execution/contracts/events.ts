@@ -21,6 +21,7 @@ import {
 import { brandedStringSchema, offsetIsoTimestampSchema } from '../../kernel/index.js';
 import { runId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
+import { repositoryAssignmentSchema, type RepositoryAssignment } from './repository-assignment.js';
 import type { ExecutionFailure, RecordedRunnerResult, RecoveredRunResult } from './results.js';
 import { ExecutionStreamKind, type ActivationStreamRef, type RunStreamRef } from './streams.js';
 import {
@@ -37,6 +38,7 @@ export const runStartedPayloadSchema = z
     stage: z.string().min(1).optional(),
     workflowInstanceId: brandedStringSchema(activityWorkflowInstanceId),
     orchestrationGroupId: brandedStringSchema(activityOrchestrationGroupId),
+    repositoryAssignment: repositoryAssignmentSchema.optional(),
     attempt: z.number().int().positive(),
     startedAt: offsetIsoTimestampSchema,
     runner: z
@@ -54,6 +56,8 @@ export const runStartedPayloadSchema = z
         mode: z.enum([WorkspaceMode.ReadOnly, WorkspaceMode.Branch]),
         path: z.string().min(1),
         branch: z.string().min(1).optional(),
+        repositoryResourceId: z.string().min(1).optional(),
+        checkoutRevision: z.string().min(1).optional(),
       })
       .strict()
       .optional(),
@@ -67,6 +71,7 @@ export const runPreparationStartedPayloadSchema = z
     stage: z.string().min(1).optional(),
     workflowInstanceId: brandedStringSchema(activityWorkflowInstanceId),
     orchestrationGroupId: brandedStringSchema(activityOrchestrationGroupId),
+    repositoryAssignment: repositoryAssignmentSchema.optional(),
     attempt: z.number().int().positive(),
     startedAt: offsetIsoTimestampSchema,
     runner: z
@@ -153,6 +158,7 @@ export interface RunStartedPayload {
   readonly stage?: string | undefined;
   readonly workflowInstanceId: ActivityWorkflowInstanceId;
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
+  readonly repositoryAssignment?: RepositoryAssignment | undefined;
   readonly attempt: number;
   readonly startedAt: string;
   readonly runner?:
@@ -169,6 +175,8 @@ export interface RunStartedPayload {
         readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
         readonly path: string;
         readonly branch?: string | undefined;
+        readonly repositoryResourceId?: string | undefined;
+        readonly checkoutRevision?: string | undefined;
       }
     | undefined;
 }
@@ -179,6 +187,7 @@ export interface RunPreparationStartedPayload {
   readonly stage?: string | undefined;
   readonly workflowInstanceId: ActivityWorkflowInstanceId;
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
+  readonly repositoryAssignment?: RepositoryAssignment | undefined;
   readonly attempt: number;
   readonly startedAt: string;
   readonly runner?:
@@ -200,6 +209,7 @@ export interface RunExecutionEventPayloads {
   readonly [ExecutionEventType.RunPreparationStarted]: RunPreparationStartedPayload;
   readonly [ExecutionEventType.RunStarted]: RunStartedPayload;
   readonly [ExecutionEventType.RunSucceeded]: {
+    readonly workspaceRevision?: string | undefined;
     readonly outcome: ActivityOutcome;
     readonly finishedAt: string;
   };
@@ -300,6 +310,10 @@ const runEventSchema: z.ZodType<RunExecutionEvent> = eventEnvelopeSchema.extend(
       eventType: z.literal(ExecutionEventType.RunSucceeded),
       payload: z
         .object({
+          workspaceRevision: z
+            .string()
+            .regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i)
+            .optional(),
           outcome: z.object({ kind: z.string().min(1), data: z.unknown().optional() }).strict(),
           finishedAt: offsetIsoTimestampSchema,
         })

@@ -374,7 +374,10 @@ function requestFrom(
 ) {
   return {
     runId,
-    prompt: appendMcpPrompt(input.prompt ?? template!.prompt, mcpPrompt),
+    prompt: appendMcpPrompt(
+      appendWorkspacePrompt(input.prompt ?? template!.prompt, workspace),
+      mcpPrompt,
+    ),
     ...modelField(input.model ?? template?.model ?? runnerContext?.model),
     ...effortField(runnerContext?.effort),
     allowedTools: input.allowedTools ?? template?.allowedTools ?? [],
@@ -470,4 +473,20 @@ function agentOutcome(
 
 function parseOutput(output: string): unknown {
   return output;
+}
+
+function appendWorkspacePrompt(
+  prompt: string,
+  workspace: ActivityExecutionContext['workspace'],
+): string {
+  if (workspace?.repository === undefined) return prompt;
+  return (
+    prompt +
+    '\n\nWake repository assignment (recorded execution provenance):\n' +
+    JSON.stringify({
+      ...workspace.repository,
+      checkoutRevision: workspace.checkoutRevision,
+    }) +
+    '\nCreate any PR against the recorded pullRequestBase. Report named change outputs using reportedArtifacts with name, kind, and externalKey.'
+  );
 }

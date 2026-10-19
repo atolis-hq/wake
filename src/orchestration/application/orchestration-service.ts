@@ -1,4 +1,8 @@
-import type { DelegationArtifacts, DelegationAuthority } from '../contracts/delegation-ports.js';
+import type {
+  DelegationArtifacts,
+  DelegationAuthority,
+  DelegationRepositories,
+} from '../contracts/delegation-ports.js';
 import type { DelegationCaller, DelegationSubmission } from '../contracts/delegation.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
@@ -114,6 +118,7 @@ export class OrchestrationService {
       {
         authority: dependencies?.authority,
         artifacts: dependencies?.artifacts ?? unavailableArtifacts,
+        repositories: dependencies?.repositories,
         runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
       },
     );
@@ -158,6 +163,14 @@ export class OrchestrationService {
         await this.deferredSignals.reconcile(context);
       },
     );
+  }
+
+  repositoryAuthority(workItemId: string) {
+    return this.delegatedWork.repositoryScope(workItemId);
+  }
+
+  repositoryAssignment(workItemId: string) {
+    return this.delegatedWork.repositoryFor(workItemId);
   }
 
   async isActivationAccepted(id: string, item?: string): Promise<boolean> {
@@ -786,6 +799,7 @@ type DelegationDependenciesFactory = (queries: {
 }) => {
   artifacts: DelegationArtifacts;
   authority?: DelegationAuthority;
+  repositories?: DelegationRepositories;
   runHasEnded: (runId: string) => Promise<boolean>;
 };
 
