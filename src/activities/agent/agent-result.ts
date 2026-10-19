@@ -7,6 +7,7 @@ import {
 
 export const reportedArtifactSchema = z
   .object({
+    name: z.string().min(1).optional(),
     kind: z.string().min(1),
     externalKey: z.object({ adapter: z.string().min(1), key: z.string().min(1) }).strict(),
   })

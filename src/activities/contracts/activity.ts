@@ -131,7 +131,19 @@ export interface ActivityExecutionContext {
     readonly cacheWrite?: number;
   };
   /** Isolated workspace leased by Execution for this invocation, when requested. */
-  readonly workspace?: { readonly path: string; readonly mode: ActivityWorkspaceMode };
+  readonly workspace?: {
+    readonly path: string;
+    readonly mode: ActivityWorkspaceMode;
+    readonly checkoutRevision?: string | undefined;
+    readonly repository?:
+      | {
+          readonly resourceId: string;
+          readonly sourceRef: string;
+          readonly sourceRevision: string;
+          readonly pullRequestBase: string;
+        }
+      | undefined;
+  };
   readonly runner?: AgentRunnerPort;
   readonly mcpServers?: readonly {
     readonly name: string;

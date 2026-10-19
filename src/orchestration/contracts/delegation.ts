@@ -3,6 +3,7 @@ import { activationId } from '../../activities/index.js';
 import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId } from '../../work/index.js';
 import { workflowInstanceId, workflowName } from './identifiers.js';
+import { DelegationOutputKind } from './vocabulary.js';
 
 export const delegationRevisionReferenceSchema = z
   .object({
@@ -13,6 +14,20 @@ export const delegationRevisionReferenceSchema = z
 
 export type DelegationRevisionReference = z.infer<typeof delegationRevisionReferenceSchema>;
 
+export const repositoryAssignmentRequestSchema = z
+  .object({
+    resourceId: z.string().min(1),
+    sourceRef: z.string().trim().min(1),
+    sourceRevision: z
+      .string()
+      .regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i)
+      .optional(),
+    pullRequestBase: z.string().trim().min(1),
+  })
+  .strict();
+
+export type RepositoryAssignmentRequest = z.infer<typeof repositoryAssignmentRequestSchema>;
+
 export const delegatedAssignmentSchema = z
   .object({
     assignmentId: z.string().min(1),
@@ -21,8 +36,21 @@ export const delegatedAssignmentSchema = z
     workflowName: brandedStringSchema(workflowName),
     workflowFingerprint: z.string().min(1),
     context: z.array(delegationRevisionReferenceSchema),
+    repository: repositoryAssignmentRequestSchema.optional(),
     outputs: z
-      .array(z.object({ name: z.string().min(1), path: z.string().min(1) }).strict())
+      .array(
+        z.union([
+          z.object({ name: z.string().min(1), path: z.string().min(1) }).strict(),
+          z
+            .object({
+              name: z.string().min(1),
+              kind: z.literal(DelegationOutputKind.Change),
+              requireReview: z.boolean().optional(),
+              requireChecks: z.boolean().optional(),
+            })
+            .strict(),
+        ]),
+      )
       .min(1),
   })
   .strict();
@@ -44,6 +72,12 @@ export const delegationReservationSchema = z
       .array(
         delegatedAssignmentSchema
           .extend({
+            repository: repositoryAssignmentRequestSchema
+              .extend({
+                sourceRevision: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i),
+              })
+              .strict()
+              .optional(),
             workItemId: brandedStringSchema(workItemId),
             workflowInstanceId: brandedStringSchema(workflowInstanceId),
             grantId: z.string().min(1),
@@ -63,7 +97,23 @@ export const delegationResultSchema = z
     outputs: z
       .array(
         z
-          .object({ name: z.string().min(1), reference: delegationRevisionReferenceSchema })
+          .object({
+            name: z.string().min(1),
+            reference: z.union([
+              delegationRevisionReferenceSchema,
+              z
+                .object({
+                  workItemId: brandedStringSchema(workItemId),
+                  resourceId: z.string().min(1),
+                  repositoryResourceId: z.string().min(1),
+                  revision: z.string().min(1),
+                  branch: z.string().min(1),
+                  pullRequestBase: z.string().min(1),
+                  runId: z.string().min(1),
+                })
+                .strict(),
+            ]),
+          })
           .strict(),
       )
       .min(1),

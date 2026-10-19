@@ -1,9 +1,11 @@
 import type { CommandContext } from '@atolis-hq/eventing';
+import type { RepositoryAssignment } from '../../execution/index.js';
 import type {
   DelegatedAssignment,
   DelegationReservation,
   DelegationResult,
   DelegationRevisionReference,
+  RepositoryAssignmentRequest,
 } from './delegation.js';
 import type { WorkflowInstanceView } from './views.js';
 
@@ -26,4 +28,12 @@ export interface DelegationArtifacts {
     child: WorkflowInstanceView,
     outputs: DelegatedAssignment['outputs'],
   ): Promise<DelegationResult['outputs'] | null>;
+}
+
+/** Resolves only repositories already authorized by the parent's resource scope. */
+export interface DelegationRepositories {
+  resolve(
+    parent: WorkflowInstanceView,
+    request: RepositoryAssignmentRequest,
+  ): Promise<RepositoryAssignment>;
 }

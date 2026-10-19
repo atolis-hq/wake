@@ -1,4 +1,5 @@
 import { EventActorKind } from '@atolis-hq/eventing';
+import { isDeepStrictEqual } from 'node:util';
 import { ExecutionEventType, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
 import { ExecutionFailureCode, isActiveRunStatus, RunStatus } from '../contracts/vocabulary.js';
@@ -19,6 +20,9 @@ export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
   const startedFromPreparation =
     creationEvent.eventType === ExecutionEventType.RunPreparationStarted;
   const state: RunView = {
+    ...(creationEvent.payload.repositoryAssignment === undefined
+      ? {}
+      : { repositoryAssignment: creationEvent.payload.repositoryAssignment }),
     runId: creation.stream.id,
     activationId: creationEvent.payload.activationId,
     activity: creationEvent.payload.activity,
@@ -125,6 +129,8 @@ function validateRunStart(
     'orchestrationGroupId',
   );
   validateRunStartField(state.runId, state.attempt, event.payload.attempt, 'attempt');
+  if (!isDeepStrictEqual(state.repositoryAssignment, event.payload.repositoryAssignment))
+    throw invalidRunStream(state.runId, 'RunStarted contradicts repository assignment');
   if (!sameRunner(state.runner, event.payload.runner))
     throw invalidRunStream(state.runId, 'RunStarted contradicts RunPreparationStarted runner');
 }
@@ -171,6 +177,9 @@ function applyTerminalEvent(
       status: RunStatus.Succeeded,
       finishedAt: event.payload.finishedAt,
       outcome: event.payload.outcome,
+      ...(event.payload.workspaceRevision === undefined
+        ? {}
+        : { workspaceRevision: event.payload.workspaceRevision }),
       escalated: false,
     });
     return;

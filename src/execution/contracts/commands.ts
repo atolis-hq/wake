@@ -6,6 +6,7 @@ import type {
 } from '../../activities/index.js';
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
+import type { RepositoryAssignment } from './repository-assignment.js';
 import type { WorkspaceMode } from './vocabulary.js';
 
 export interface ExecutionActivation {
@@ -29,6 +30,7 @@ export interface ExecutionAttemptContext {
   readonly workflowInstanceId: ActivityWorkflowInstanceId;
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly resources: readonly ResourceView[];
+  readonly repositoryAssignment?: RepositoryAssignment;
   readonly owner?: string;
   /** Runner names currently quota-paused; unset means none. */
   readonly ineligibleRunners?: ReadonlySet<string>;

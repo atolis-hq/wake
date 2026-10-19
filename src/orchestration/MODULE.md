@@ -72,6 +72,29 @@ across restart; missing outputs after that block the parent and settle the cohor
 delegating activation's typed input and identity flags; exact results are read
 through the joined-results query rather than added to activity input schemas.
 
+Repository-bound assignments record an existing Repository Resource, requested
+source ref, resolved source commit and logical PR base in the reservation.
+Replaying a branch request retains its original pin, including across restart.
+Execution validates the parent's explicit repository correlations (or the
+inherited assignment for a nested child); the configured provider catalogue
+never grants repository authority. Non-code assignments remain repository-free.
+This slice consumes existing Repository Resources and adds no production path
+that creates or authorizes one; the composed fixtures create and correlate them
+through the public Resources port. Creating and narrowing repository authority
+belongs to the policy/capacity story (#962), which must supply the permitted
+set without turning it into an implicit checkout selection.
+A child workflow with a branch or read-only stage now requires a repository
+assignment (no first-repository fallback); this tightens delivery 01 behaviour.
+Direct workflows are unchanged: artifact verification checks the branch only.
+Named outputs retain artifact references or exact change provenance. This slice
+supports one change output per child, reported through a named reportedArtifacts
+entry; a later revision run need not repeat it, because the provider must
+confirm the PR now points at the latest implementation head. Qualification
+checks provider identity, head, branch, base, original
+child ownership and the output's review/check requirements (both default true).
+Successful terminal routing can therefore join an open reviewed PR without a
+merge or parent issue closure. General multi-change joins remain deferred.
+
 ## Public contracts
 
 `index.ts` is the only public entry. `OrchestrationService` is a compatibility

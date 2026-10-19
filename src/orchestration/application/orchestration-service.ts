@@ -1,4 +1,4 @@
-import type { DelegationArtifacts } from '../contracts/delegation-ports.js';
+import type { DelegationArtifacts, DelegationRepositories } from '../contracts/delegation-ports.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
 import { DelegationGate } from './delegation-gate.js';
@@ -106,6 +106,7 @@ export class OrchestrationService {
       this.startWorkflow,
       {
         artifacts: dependencies?.artifacts ?? unavailableArtifacts,
+        repositories: dependencies?.repositories,
         runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
       },
     );
@@ -142,6 +143,10 @@ export class OrchestrationService {
         await this.deferredSignals.reconcile(context);
       },
     );
+  }
+
+  repositoryAssignment(workItemId: string) {
+    return this.delegatedWork.repositoryFor(workItemId);
   }
 
   async isActivationAccepted(id: string, item?: string): Promise<boolean> {
@@ -720,7 +725,11 @@ function isReviewConversationCommand(command: string): boolean {
 /** Immutable dependencies are resolved once; callbacks may refer to services composed later. */
 type DelegationDependenciesFactory = (queries: {
   isActivationAccepted: (activationId: string, workItemId?: string) => Promise<boolean>;
-}) => { artifacts: DelegationArtifacts; runHasEnded: (runId: string) => Promise<boolean> };
+}) => {
+  artifacts: DelegationArtifacts;
+  repositories?: DelegationRepositories;
+  runHasEnded: (runId: string) => Promise<boolean>;
+};
 
 async function unavailableRunCompletion(): Promise<never> {
   throw new Error('Delegation adapters unavailable');

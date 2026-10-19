@@ -139,6 +139,83 @@ describe('ArtifactRegistrationReactor', () => {
     ]);
   });
 
+  it('verifies a direct workflow by branch only, ignoring the local workspace revision', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const host = new EventProcessorHost(
+      journal,
+      new InMemoryCheckpointStore(),
+      createInMemoryProcessorRunSerialiser(),
+      new FakeClock(),
+    );
+    const { resources } = createTestResourceServices(journal);
+    const workflow = workflowInstanceId('workflow-direct');
+    await journal.appendToStream(workflowInstanceStream(workflow), 0, [
+      draft(
+        'orchestration.instance-started',
+        {
+          workItemId: workId('direct-work'),
+          workflowName: 'default',
+          orchestrationGroupId: 'group-1',
+          entry: 'implement',
+        },
+        workflow,
+      ),
+      draft(
+        'orchestration.activity-outcome-accepted',
+        {
+          activationId: activationId('activation-direct'),
+          outcome: {
+            kind: ActivityOutcomeKind.Done,
+            data: {
+              status: 'DONE',
+              reportedArtifacts: [
+                { kind: 'pull-request', externalKey: { adapter: 'fake', key: 'repo#43' } },
+              ],
+            },
+          },
+        },
+        workflow,
+      ),
+    ]);
+    const seen: unknown[] = [];
+    const reactor = new ArtifactRegistrationReactor({
+      journal,
+      resources,
+      ids: { next: () => 'resource-00000000000000000000000001' },
+      runs: {
+        async list() {
+          return [
+            {
+              workspace: { mode: 'branch' as const, path: '/tmp', branch: 'wake/direct' },
+              workspaceRevision: 'local-head',
+            },
+          ] as never;
+        },
+      },
+      providers: [
+        {
+          adapter: 'fake' as never,
+          provider: 'fake',
+          eventTypes: [],
+          source: {} as never,
+          delivery: {} as never,
+          inbound: {} as never,
+          async verifyArtifact(kind, externalKey, context) {
+            seen.push(context);
+            return { kind, externalKey, capabilities: [], revision: 'pushed-head' };
+          },
+        },
+      ],
+    });
+
+    await host.runOnce(reactor.processor);
+
+    expect(seen).toEqual([{ workspaceBranch: 'wake/direct' }]);
+    await expect(
+      resources.findByExternalKey({ adapter: 'fake', key: 'repo#43' }),
+    ).resolves.toMatchObject({ revision: 'pushed-head' });
+  });
+
   it('correlates a PR declared in a raw agent report with the originating WorkItem', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const checkpoints = new InMemoryCheckpointStore();

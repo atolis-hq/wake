@@ -2,6 +2,7 @@ import { ActivityResourceCardinality, type ResourceRequirement } from '../../act
 import { BuiltInResourceKind, type ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { RunId } from '../contracts/identifiers.js';
+import type { RepositoryAssignment } from '../contracts/repository-assignment.js';
 import { WorkspaceMode } from '../contracts/vocabulary.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
 
@@ -11,32 +12,48 @@ export async function acquireWorkspace(
   workItemId: WorkItemId,
   resources: readonly ResourceView[],
   provider?: WorkspaceProvider,
-  signal: AbortSignal = new AbortController().signal,
+  options: {
+    readonly signal?: AbortSignal | undefined;
+    readonly assignment?: RepositoryAssignment | undefined;
+    readonly reviewRevision?: string | undefined;
+  } = {},
 ): Promise<WorkspaceLease | undefined> {
+  const { signal = new AbortController().signal, assignment, reviewRevision } = options;
   if (mode === WorkspaceMode.None) return undefined;
   if (provider === undefined) throw new Error('Workspace provider is required');
-  const repositoryResource =
-    resources.find((resource) => resource.kind === BuiltInResourceKind.Repository) ??
-    resources.find((resource) => resource.kind === BuiltInResourceKind.PullRequest) ??
-    resources.find((resource) => resource.kind === BuiltInResourceKind.Issue);
+  const repositoryResource = selectWorkspaceResource(resources, assignment);
   if (repositoryResource === undefined) throw new Error('Repository Resource is required');
   signal.throwIfAborted();
-  const revision = repositoryResource.revision;
-  const checkoutRevision =
-    repositoryResource.kind === BuiltInResourceKind.Repository ||
-    (repositoryResource.kind === BuiltInResourceKind.PullRequest &&
-      revision !== undefined &&
-      /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(revision))
-      ? revision
-      : undefined;
+  const checkoutRevision = checkoutTarget(repositoryResource, mode, assignment, reviewRevision);
   return provider.acquire({
     runId,
     signal,
     mode,
     workItemId,
     repositoryResource,
+    ...(assignment === undefined ? {} : { assignment }),
     ...(checkoutRevision === undefined ? {} : { checkoutRevision }),
   });
+}
+
+function checkoutTarget(
+  resource: ResourceView,
+  mode: string,
+  assignment: RepositoryAssignment | undefined,
+  reviewRevision: string | undefined,
+) {
+  if (assignment !== undefined)
+    return mode === WorkspaceMode.ReadOnly
+      ? (reviewRevision ?? assignment.sourceRevision)
+      : assignment.sourceRevision;
+  if (resource.kind === BuiltInResourceKind.Repository) return resource.revision;
+  if (
+    resource.kind === BuiltInResourceKind.PullRequest &&
+    resource.revision !== undefined &&
+    /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(resource.revision)
+  )
+    return resource.revision;
+  return undefined;
 }
 
 export function validateResourceRequirements(
@@ -54,4 +71,23 @@ export function validateResourceRequirements(
     if (requirement.cardinality === ActivityResourceCardinality.ZeroOrOne && count > 1)
       throw new Error(`Activity allows at most one ${requirement.capability} Resource`);
   }
+}
+
+function selectWorkspaceResource(
+  resources: readonly ResourceView[],
+  assignment: RepositoryAssignment | undefined,
+) {
+  const repositoryResource =
+    assignment === undefined
+      ? (resources.find((resource) => resource.kind === BuiltInResourceKind.Repository) ??
+        resources.find((resource) => resource.kind === BuiltInResourceKind.PullRequest) ??
+        resources.find((resource) => resource.kind === BuiltInResourceKind.Issue))
+      : resources.find(
+          (resource) =>
+            resource.resourceId === assignment.resourceId &&
+            resource.kind === BuiltInResourceKind.Repository,
+        );
+  if (assignment !== undefined && repositoryResource === undefined)
+    throw new Error('Assigned Repository Resource ' + assignment.resourceId + ' is unavailable');
+  return repositoryResource;
 }

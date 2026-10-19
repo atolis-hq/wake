@@ -23,6 +23,7 @@ import {
   TransitionTargetKind,
   workflowInstanceStream,
   type DelegationArtifacts,
+  type DelegationRepositories,
   type WorkflowInstanceView,
   type WorkflowOrchestrationEventData,
 } from '../../../src/orchestration/index.js';
@@ -77,6 +78,7 @@ function build(
   journal = new FaultInjectingJournal(new FakeClock()),
   artifacts = new FakeDelegationArtifacts(),
   activeRuns = new Set<string>(),
+  repositories?: DelegationRepositories,
 ) {
   const work = createWorkService(journal);
   const activities = new ActivityRegistry();
@@ -121,7 +123,11 @@ function build(
     definitions,
     undefined,
     undefined,
-    () => ({ artifacts, runHasEnded: async (id) => !activeRuns.has(id) }),
+    () => ({
+      artifacts,
+      ...(repositories === undefined ? {} : { repositories }),
+      runHasEnded: async (id) => !activeRuns.has(id),
+    }),
   );
   return { journal, work, service, artifacts, definitions, activeRuns, activities };
 }
@@ -1289,4 +1295,42 @@ it('fails a reservation whose parent activation changed before the commit, start
   expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(1);
   expect(await fixture.service.listPendingActivations(nested.children[0]!.workItemId)).toEqual([]);
   expect(fixture.artifacts.grants.size).toBe(grants);
+});
+
+it('replays the recorded source after branch movement and rejects an explicit conflicting revision (DC-11, DC-21)', async () => {
+  const resolve = vi.fn(async (_parent, request) => ({
+    ...request,
+    sourceRevision: 'a'.repeat(40),
+  }));
+  const fixture = build(undefined, undefined, undefined, { resolve });
+  const { caller, fingerprint } = await startParent(fixture);
+  const input = [
+    {
+      ...assignment(fingerprint),
+      repository: { resourceId: 'repository', sourceRef: 'main', pullRequestBase: 'integration' },
+    },
+  ];
+  const reserved = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'pinned',
+    input,
+    context('pin'),
+  );
+  resolve.mockImplementation(async (_parent, request) => ({
+    ...request,
+    sourceRevision: 'b'.repeat(40),
+  }));
+  const restarted = build(fixture.journal, fixture.artifacts, fixture.activeRuns, { resolve });
+  expect(
+    await restarted.service['delegatedWork'].reserve(caller, 'pinned', input, context('replay')),
+  ).toEqual(reserved);
+  expect(resolve).toHaveBeenCalledTimes(1);
+  await expect(
+    restarted.service['delegatedWork'].reserve(
+      caller,
+      'pinned',
+      [{ ...input[0]!, repository: { ...input[0]!.repository, sourceRevision: 'b'.repeat(40) } }],
+      context('conflict'),
+    ),
+  ).rejects.toThrow('replay conflict');
 });

@@ -14,8 +14,12 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { promisify } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
 import type { WorkItemId } from '../../../work/index.js';
+import {
+  repositoryAssignmentSchema,
+  type RepositoryAssignment,
+} from '../../contracts/repository-assignment.js';
 import type { RunView } from '../../contracts/views.js';
 import { isActiveRunStatus, RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
 import type {
@@ -93,6 +97,10 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
         workspaceId: name,
         path,
         mode: request.mode,
+        readRevision: () => readCheckoutRevision(path, this.git, signal),
+        repositoryResourceId: request.repositoryResource.resourceId,
+        checkoutRevision: await readCheckoutRevision(path, this.git, signal),
+        ...(request.assignment === undefined ? {} : { assignment: request.assignment }),
         ...(branch === undefined ? {} : { branch }),
         release: async () => {
           if (released) return;
@@ -125,6 +133,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
   ): Promise<string | undefined> {
     const { signal } = request;
     const previousMarker = await readMarker(markerPath);
+    assertAssignment(previousMarker, request);
     if (await exists(join(this.markerRoot, `${name}.lock`), signal))
       throw new Error('Legacy workspace lock requires recovery before acquisition');
     let initialRevision = previousMarker?.initialRevision;
@@ -141,6 +150,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
           workspaceId: name,
           path,
           checkoutReady,
+          ...(request.assignment === undefined ? {} : { assignment: request.assignment }),
           ...(initialRevision === undefined ? {} : { initialRevision }),
         },
         signal,
@@ -167,8 +177,16 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
       initialRevision = await readCheckoutRevision(path, this.git, signal);
     const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
     if (branch !== undefined) {
-      await this.git(
-        ['-C', path, 'switch', ...(existingWorkspace ? [] : ['--create']), branch],
+      initialRevision = await initializeBranch(
+        {
+          path,
+          branch,
+          // Only repository assignments pin a new branch; direct workflows keep the clone default.
+          revision: request.assignment === undefined ? undefined : request.checkoutRevision,
+          initialRevision,
+          existing: existingWorkspace,
+        },
+        this.git,
         signal,
       );
     }
@@ -438,6 +456,7 @@ interface WorkspaceOwnershipMarker {
   readonly mode: string;
   readonly workspaceId: string;
   readonly path: string;
+  readonly assignment?: RepositoryAssignment;
   readonly initialRevision?: string;
   readonly checkoutReady?: boolean;
 }
@@ -468,6 +487,8 @@ function isOwnershipMarker(value: unknown): value is WorkspaceOwnershipMarker {
 
 function hasValidCheckoutState(marker: Record<string, unknown>): boolean {
   return (
+    (marker.assignment === undefined ||
+      repositoryAssignmentSchema.safeParse(marker.assignment).success) &&
     (marker.initialRevision === undefined || typeof marker.initialRevision === 'string') &&
     (marker.checkoutReady === undefined || typeof marker.checkoutReady === 'boolean')
   );
@@ -645,4 +666,59 @@ function slug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
+}
+
+function assertAssignment(
+  previousMarker: WorkspaceOwnershipMarker | null,
+  request: WorkspaceRequest,
+): void {
+  // Direct workflows legitimately move from an issue to its PR resource in one clone, so
+  // resource identity is only binding for assignment-bound workspaces.
+  if (
+    previousMarker !== null &&
+    (previousMarker.assignment !== undefined || request.assignment !== undefined) &&
+    previousMarker.repositoryResourceId !== request.repositoryResource.resourceId
+  )
+    throw new Error('Workspace belongs to a different Repository Resource');
+  if (
+    previousMarker?.assignment !== undefined &&
+    !isDeepStrictEqual(previousMarker.assignment, request.assignment)
+  )
+    throw new Error(
+      'Workspace repository assignment changed; reconcile the existing branch before retrying',
+    );
+}
+
+async function initializeBranch(
+  input: {
+    path: string;
+    branch: string;
+    revision: string | undefined;
+    initialRevision: string;
+    existing: boolean;
+  },
+  git: GitRunner,
+  signal: AbortSignal,
+): Promise<string> {
+  const { path, branch, revision, existing } = input;
+  let { initialRevision } = input;
+  if (!existing && revision !== undefined) {
+    await git(['-C', path, 'fetch', 'origin', revision], signal);
+    const fetched = await readGitRevision(path, 'FETCH_HEAD^{commit}', git, signal);
+    if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(revision) && fetched !== revision)
+      throw new Error('Fetched source differs from the pinned checkout revision');
+    initialRevision = fetched;
+  }
+  await git(
+    [
+      '-C',
+      path,
+      'switch',
+      ...(existing ? [] : ['--create']),
+      branch,
+      ...(!existing && revision !== undefined ? [initialRevision] : []),
+    ],
+    signal,
+  );
+  return initialRevision;
 }

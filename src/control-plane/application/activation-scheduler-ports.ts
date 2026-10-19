@@ -1,5 +1,10 @@
 import type { CommandContext } from '@atolis-hq/eventing';
-import type { ExecutionFailureCode, RunView, WorkspaceRecovery } from '../../execution/index.js';
+import type {
+  ExecutionFailureCode,
+  RepositoryAssignment,
+  RunView,
+  WorkspaceRecovery,
+} from '../../execution/index.js';
 import type { IdGenerator } from '../../kernel/index.js';
 import type {
   ActivityActivationView,
@@ -20,6 +25,7 @@ export interface OrchestrationPort {
     }[]
   >;
   listWaiting(): Promise<readonly (WorkflowInstanceView | null)[]>;
+  repositoryAssignment?(workItemId: string): Promise<RepositoryAssignment | undefined>;
   get?(workflowInstanceId: string): Promise<WorkflowInstanceView | null>;
   expireTimedOutWaits?(context: CommandContext): Promise<readonly WorkflowInstanceView[]>;
   listAll?(): Promise<readonly WorkflowInstanceView[]>;
@@ -75,6 +81,7 @@ export interface ExecutionPort {
       workItemId: WorkflowInstanceView['workItemId'];
       workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
       orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
+      repositoryAssignment?: RepositoryAssignment;
       resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];
       ineligibleRunners?: ReadonlySet<string>;
       sessionPolicy?: 'fresh' | 'resume-stage';
