@@ -1,21 +1,25 @@
-import {
-  ClaudeAuthenticationFailureKind,
-  ExternalExecutionKind,
-} from '../../../activities/index.js';
+import { ExternalExecutionKind } from '../../../activities/index.js';
 import type {
   AgentRunnerResult,
   Runner,
   RunnerExecution,
   RunnerRequest,
 } from '../../contracts/runner.js';
-import { ProviderQuotaExceededFailureKind, WakeMcpServerName } from '../../contracts/runner.js';
+import { WakeMcpServerName } from '../../contracts/runner.js';
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
 import {
   runProcess,
   type ProcessStdoutDecoder,
   type ProcessTimeouts,
 } from '../process-execution.js';
+import {
+  classifyClaudeFailure,
+  ClaudeNoFinalResultFailureKind,
+  parseClaudeOutput,
+} from './claude-output.js';
 import { createClaudeStreamDecoder } from './claude-stream.js';
+
+export { classifyClaudeFailure, ClaudeNoFinalResultFailureKind, parseClaudeOutput };
 
 export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
   return cliRunner(
@@ -26,91 +30,16 @@ export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
       ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
       ...(options.model === undefined ? {} : { defaultModel: options.model }),
       parseSuccessfulOutput: parseClaudeOutput,
+      unparsedSuccessFailure: {
+        kind: ClaudeNoFinalResultFailureKind,
+        message: 'Claude exited successfully without a usable final result event',
+      },
       createStdoutDecoder: createClaudeStreamDecoder,
       classifyFailure: classifyClaudeFailure,
       supportsSessionResume: true,
       supportsEphemeralMcp: true,
     },
   );
-}
-
-export function parseClaudeOutput(
-  stdout: string,
-  _request?: RunnerRequest,
-): Partial<AgentRunnerResult> {
-  const value = parseRecord(stdout);
-  if (value === undefined || typeof value.result !== 'string') return {};
-  return {
-    output: value.result,
-    ...(typeof value.session_id === 'string' ? { sessionId: value.session_id } : {}),
-    ...claudeUsage(value),
-  };
-}
-
-// Deliberately narrow: only genuine provider usage/rate-limit phrasing.
-// Auth/login failures (unauthorized, authentication, permission denied, api
-// key) are NOT included here — they are a different failure class and must
-// not be paused-and-retried as if they were transient.
-const claudeQuotaPattern =
-  /rate limit|quota|credit balance|spend limit|usage limit|session limit|too many requests|\b429\b/i;
-
-const claudeAuthenticationPattern =
-  /authenticate|authentication|unauthorized|oauth.*(?:expired|refresh)|session expired|not logged in|please (?:log|sign) in|invalid api key/i;
-
-export function classifyClaudeFailure(input: {
-  readonly stdout: string;
-  readonly stderr: string;
-}): { readonly kind: string; readonly message: string } | undefined {
-  const structured = parseRecord(input.stdout);
-  if (structured?.is_error === true && typeof structured.result === 'string') {
-    const message = structured.result.trim();
-    if (claudeAuthenticationPattern.test(message))
-      return { kind: ClaudeAuthenticationFailureKind, message };
-    if (claudeQuotaPattern.test(message))
-      return { kind: ProviderQuotaExceededFailureKind, message };
-    return undefined;
-  }
-  // Preserve plain CLI diagnostics, preferring stderr over stdout.
-  const text = input.stderr.trim().length > 0 ? input.stderr : input.stdout;
-  if (!claudeQuotaPattern.test(text)) return undefined;
-  return { kind: ProviderQuotaExceededFailureKind, message: text.trim() };
-}
-
-function claudeUsage(value: Record<string, unknown>): Partial<AgentRunnerResult> {
-  const usage = record(value.usage);
-  const input = usage === undefined ? undefined : numeric(usage.input_tokens);
-  const output = usage === undefined ? undefined : numeric(usage.output_tokens);
-  if (usage === undefined || input === undefined || output === undefined) return {};
-  const cacheRead = numeric(usage.cache_read_input_tokens);
-  const cacheWrite = numeric(usage.cache_creation_input_tokens);
-  const costUsd = numeric(value.total_cost_usd);
-  return {
-    tokenUsage: {
-      input,
-      output,
-      ...(cacheRead === undefined ? {} : { cacheRead }),
-      ...(cacheWrite === undefined ? {} : { cacheWrite }),
-      ...(costUsd === undefined ? {} : { costUsd }),
-    },
-  };
-}
-
-function parseRecord(stdout: string): Record<string, unknown> | undefined {
-  try {
-    return record(JSON.parse(stdout) as unknown);
-  } catch {
-    return undefined;
-  }
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function numeric(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 export function claudeCommandArgs(
@@ -178,6 +107,8 @@ export function cliRunner(
     readonly defaultModel?: string;
     readonly supportsSessionResume?: boolean;
     readonly supportsEphemeralMcp?: boolean;
+    // When set, a successful exit whose parser yields no output fails instead of publishing raw stdout.
+    readonly unparsedSuccessFailure?: { readonly kind: string; readonly message: string };
     readonly parseSuccessfulOutput?: (
       stdout: string,
       request: RunnerRequest,
@@ -211,24 +142,36 @@ export function cliRunner(
           id: process.identity ?? request.runId,
           startedAt: new Date().toISOString(),
         },
-        result: process.result.then((value): AgentRunnerResult =>
-          value.exitCode === 0 && !value.timedOut
-            ? {
-                transport: RunStatus.Succeeded,
-                output: value.stdout,
-                runner: name,
-                ...((request.model ?? options.defaultModel) === undefined
-                  ? {}
-                  : { model: request.model ?? options.defaultModel }),
-                ...parseSuccessfulOutput(value.stdout, request, options.parseSuccessfulOutput),
-              }
-            : {
-                transport: RunStatus.Failed,
-                output: value.stdout,
-                runner: name,
-                failure: failureFor(value, options),
-              },
-        ),
+        result: process.result.then((value): AgentRunnerResult => {
+          if (value.exitCode !== 0 || value.timedOut)
+            return {
+              transport: RunStatus.Failed,
+              output: value.stdout,
+              runner: name,
+              failure: failureFor(value, options),
+            };
+          const parsed = parseSuccessfulOutput(
+            value.stdout,
+            request,
+            options.parseSuccessfulOutput,
+          );
+          if (options.unparsedSuccessFailure !== undefined && parsed.output === undefined)
+            return {
+              transport: RunStatus.Failed,
+              output: '',
+              runner: name,
+              failure: options.unparsedSuccessFailure,
+            };
+          return {
+            transport: RunStatus.Succeeded,
+            output: value.stdout,
+            runner: name,
+            ...((request.model ?? options.defaultModel) === undefined
+              ? {}
+              : { model: request.model ?? options.defaultModel }),
+            ...parsed,
+          };
+        }),
         cancel: process.cancel,
       };
     },
