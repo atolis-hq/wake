@@ -257,7 +257,10 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
     projections,
     createAgentActivityClassifier(activities),
     (queries) => ({
-      authority: createDelegationAuthority(journal, resources, activities),
+      authority: createDelegationAuthority(journal, resources, activities, {
+        ids,
+        repositoryIdentity: resolveResourceRepositoryIdentity,
+      }),
       repositories: createRepositoryAssignments(
         resources,
         (request) => resolveGitSource(cloneResolver, request),

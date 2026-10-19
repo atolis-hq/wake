@@ -40,13 +40,19 @@ export function registerDelegationTools(
   server.registerTool(
     'wake_delegation_inspect',
     {
-      description: 'Inspect this delivery tree, child workflows, results and blockers.',
+      description:
+        'Inspect this delivery tree, child workflows, results and blockers, and the Repository Resource IDs an explicit repository selection may name.',
     },
     async () => ({
       content: [
         {
           type: 'text',
-          text: JSON.stringify(await input.orchestration.inspectDelegation(await input.caller())),
+          text: JSON.stringify(
+            await input.orchestration.inspectDelegation(
+              await input.caller(),
+              input.commandContext(),
+            ),
+          ),
         },
       ],
     }),

@@ -896,7 +896,8 @@ orchestration.workflows.&lt;name&gt;.delegation is optional; omission disables
 agent requests. Its required keys are workflows (nonempty list of configured
 workflow names), maxDepth, maxDescendants, and maxConcurrentRuns (positive
 integers). Optional repositories is a nonempty list of Repository Resource IDs
-narrowing inherited assignment authority. See [delegated delivery controls](workflows.md#delegated-delivery-controls)
+narrowing inherited assignment authority. A root with no correlated Repository Resource
+defaults to the repository of its provider-observed primary Issue. See [delegated delivery controls](workflows.md#delegated-delivery-controls)
 for submission, recovery and lifecycle semantics.
 
 Delegation validates `repository.resourceId` against the inherited scope and both

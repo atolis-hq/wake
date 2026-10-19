@@ -3,7 +3,11 @@ import { DelegationCommands } from '../../../src/orchestration/application/deleg
 
 const repositories = ['repo-a', 'repo-b'];
 
-function commands(policy: { repositories?: string[] } = {}, inherited?: string[]) {
+function commands(
+  policy: { repositories?: string[] } = {},
+  inherited?: string[],
+  bindRepositoryScope = vi.fn(async (..._args: unknown[]) => undefined),
+) {
   const parent = {
     workItemId: 'item',
     workflowInstanceId: 'parent',
@@ -17,8 +21,12 @@ function commands(policy: { repositories?: string[] } = {}, inherited?: string[]
     { get: async () => ({ state: 'open' }) } as never,
     { definitionFor: async () => ({ delegation }) } as never,
     { currentDefinition: () => ({ fingerprint: 'fp' }) } as never,
-    { reserve, repositoryScope: async () => inherited } as never,
-    { assertCaller: async () => undefined, repositories: async () => repositories } as never,
+    { reserve, repositoryScope: async () => inherited, inspect: async () => [] } as never,
+    {
+      assertCaller: async () => undefined,
+      repositories: async () => repositories,
+      bindRepositoryScope,
+    } as never,
   );
   const caller = { workflowInstanceId: 'parent', activationId: 'act', runId: 'run' } as never;
   const assignment = {
@@ -35,10 +43,19 @@ function commands(policy: { repositories?: string[] } = {}, inherited?: string[]
       { cohortId: 'cohort', assignments: [{ ...assignment, ...extra }] } as never,
       {} as never,
     );
-  return { submit, reserve };
+  const inspect = () => subject.inspect(caller, {} as never);
+  return { submit, reserve, inspect, bindRepositoryScope };
 }
 
 describe('delegation repository authority', () => {
+  it('binds the root scope before reading it, for submit and inspect', async () => {
+    const { submit, inspect, bindRepositoryScope } = commands({ repositories: ['repo-a'] });
+    await submit();
+    expect(bindRepositoryScope).toHaveBeenCalledOnce();
+    expect((await inspect()).repositories).toEqual(['repo-a']);
+    expect(bindRepositoryScope).toHaveBeenCalledTimes(2);
+  });
+
   it('never selects a repository from the permitted set when the assignment omits one', async () => {
     const { submit, reserve } = commands();
     await submit();

@@ -186,8 +186,8 @@ export class OrchestrationService {
     return this.delegationCommands.submit(caller, input, context);
   }
 
-  inspectDelegation(caller: DelegationCaller) {
-    return this.delegationCommands.inspect(caller);
+  inspectDelegation(caller: DelegationCaller, context: CommandContext) {
+    return this.delegationCommands.inspect(caller, context);
   }
 
   deliveryTree(id: WorkItemId) {

@@ -77,11 +77,14 @@ Replaying a branch request retains its original pin, including across restart.
 Execution validates the parent's explicit repository correlations (or the
 inherited assignment for a nested child); the configured provider catalogue
 never grants repository authority. Non-code assignments remain repository-free.
-This slice consumes existing Repository Resources and adds no production path
-that creates or authorizes one; the composed fixtures create and correlate them
-through the public Resources port. Creating and narrowing repository authority
-belongs to the policy/capacity story (#962), which must supply the permitted
-set without turning it into an implicit checkout selection.
+A root's default scope is bound at its first delegation request (or inspection) by the
+Bootstrap authority adapter: when no Repository Resource is correlated to the root, the
+repository named by the provider-observed primary Issue (via the existing repository
+identity resolver) is found or discovered as a Repository Resource and correlated to the
+root as `secondary`/`provider-observed`. A Repository Resource already correlated to the
+root is the explicit scope and suppresses this default.
+Agent arguments and issue prose never establish authority, and the permitted set is never
+a checkout selection.
 A child workflow with a branch or read-only stage now requires a repository
 assignment (no first-repository fallback); this tightens delivery 01 behaviour.
 Direct workflows are unchanged: artifact verification checks the branch only.

@@ -38,13 +38,7 @@ export class DelegationCommands {
     if (availability.reason !== undefined) throw new Error(availability.reason);
     const policy = (await this.workflows.definitionFor(parent)).delegation;
     if (policy === undefined) throw new Error('Workflow delegation is disabled');
-    const root = await this.rootFor(parent);
-    const rootPolicy = (await this.workflows.definitionFor(root)).delegation;
-    const rootRepositories = await this.authority.repositories(root);
-    const inherited = (
-      (await this.delegated.repositoryScope(parent.workItemId)) ??
-      (await this.authority.repositories(parent))
-    ).filter((id) => rootRepositories.includes(id));
+    const { rootPolicy, permitted } = await this.scopeFor(parent, policy, context);
     const assignments = command.assignments.map((assignment) => {
       if (
         !policy.workflows.includes(assignment.workflowName) ||
@@ -53,11 +47,6 @@ export class DelegationCommands {
       )
         throw new Error('Delegation workflow is not allowed');
       // The permitted set only bounds explicit requests; it never selects a checkout target.
-      const permitted = inherited.filter(
-        (id) =>
-          (policy.repositories === undefined || policy.repositories.includes(id)) &&
-          (rootPolicy.repositories === undefined || rootPolicy.repositories.includes(id)),
-      );
       const repositories = assignment.repositoryResourceIds ?? permitted;
       const requested = [
         ...repositories,
@@ -91,13 +80,39 @@ export class DelegationCommands {
     });
   }
 
-  async inspect(caller: DelegationCaller) {
+  async inspect(caller: DelegationCaller, context: CommandContext) {
     const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     await this.authority.assertCaller(caller, parent);
+    const policy = (await this.workflows.definitionFor(parent)).delegation;
     return {
-      policy: (await this.workflows.definitionFor(parent)).delegation ?? null,
+      policy: policy ?? null,
+      // Resource IDs an explicit repository selection may name; empty when none is authorized.
+      repositories:
+        policy === undefined ? [] : (await this.scopeFor(parent, policy, context)).permitted,
       tree: await this.delegated.inspect(parent.workItemId),
     };
+  }
+
+  /** Effective repository scope: the parent's inherited scope bounded by parent and root policy. */
+  private async scopeFor(
+    parent: WorkflowInstanceView,
+    policy: { readonly repositories?: readonly string[] | undefined },
+    context: CommandContext,
+  ) {
+    const root = await this.rootFor(parent);
+    const rootPolicy = (await this.workflows.definitionFor(root)).delegation;
+    await this.authority.bindRepositoryScope?.(root, context);
+    const rootRepositories = await this.authority.repositories(root);
+    const inherited = (
+      (await this.delegated.repositoryScope(parent.workItemId)) ??
+      (await this.authority.repositories(parent))
+    ).filter((id) => rootRepositories.includes(id));
+    const permitted = inherited.filter(
+      (id) =>
+        (policy.repositories === undefined || policy.repositories.includes(id)) &&
+        (rootPolicy?.repositories === undefined || rootPolicy.repositories.includes(id)),
+    );
+    return { rootPolicy, permitted };
   }
 
   private async rootFor(parent: WorkflowInstanceView) {

@@ -22,6 +22,7 @@ import {
   RunStatus,
   type Runner,
 } from '../../../src/execution/index.js';
+import { admitObservedWork } from '../../../src/integrations/application/work-admission.js';
 import { integrationStream } from '../../../src/integrations/contracts/streams.js';
 import { applyReviewSignal } from '../../../src/integrations/github/application/inbound-review-signals.js';
 import { applyWatchGateVerdictSignal } from '../../../src/integrations/github/application/inbound-watch-gate-signals.js';
@@ -667,23 +668,33 @@ import type {
 it('run-scoped production commands reject escalation and finish a tree with one WIP and Run slot (DC-05, DC-26)', async () => {
   const runner = new ScriptedDelegationRunner();
   const f = await fixture(false, runner, true);
-  const parent = await complete(f.root, await start(f.root, 'controlled-parent'));
-  const unrelated = await start(f.root, 'unrelated', 'child');
-  const repository = await f.root.resources.discover(
+  // Normal intake admission of a provider-observed GitHub Issue; nothing seeds repository authority.
+  const intakeWork = workId('controlled-parent');
+  await admitObservedWork(
     {
-      resourceId: resId('allowed-repository'),
-      kind: BuiltInResourceKind.Repository,
-      externalKey: { adapter: 'test', key: 'allowed-repository' },
-      capabilities: [],
+      work: f.root.work,
+      resources: f.root.resources,
+      orchestration: f.root.orchestration,
+      routing: { select: () => workflowName('parent') },
     },
-    context('repository'),
+    {
+      adapter: 'github' as never,
+      resourceId: resId('controlled-issue'),
+      workItemId: intakeWork,
+      kind: BuiltInResourceKind.Issue,
+      externalKey: { adapter: 'github' as never, key: 'atolis-hq/wake#9001' },
+      capabilities: [],
+      objective: 'controlled-parent',
+      tags: [],
+    },
+    context('intake'),
   );
-  await f.root.resources.correlate(
-    repository.resourceId,
-    parent.workItemId,
-    'secondary',
-    context('repository-authority'),
+  const parent = await complete(
+    f.root,
+    (await f.root.orchestration.get(workflowInstanceId('primary:' + intakeWork)))!,
   );
+  const unrelated = await start(f.root, 'unrelated', 'child');
+  let repositoryId: string | undefined;
   let caller: Parameters<typeof f.root.orchestration.submitDelegation>[0] | undefined;
   let childId: ReturnType<typeof workflowInstanceId> | undefined;
   runner.scripts.push(async (request) => {
@@ -748,6 +759,15 @@ it('run-scoped production commands reject escalation and finish a tree with one 
     await Promise.all([client.connect(ct), server.connect(st)]);
     let reservation: DelegationReservation;
     try {
+      const scope = await client.callTool({ name: 'wake_delegation_inspect', arguments: {} });
+      const scoped = JSON.parse((scope.content as { type: string; text: string }[])[0]!.text) as {
+        repositories: string[];
+      };
+      expect(scoped.repositories).toHaveLength(1);
+      repositoryId = scoped.repositories[0];
+      const bound = (await f.root.resources.get(repositoryId as never))!;
+      expect(bound.kind).toBe(BuiltInResourceKind.Repository);
+      expect(bound.externalKey).toEqual({ adapter: 'github', key: 'atolis-hq/wake' });
       const rejected = await client.callTool({
         name: 'wake_delegation_submit',
         arguments: { ...command, runId: 'forged' },
@@ -768,7 +788,9 @@ it('run-scoped production commands reject escalation and finish a tree with one 
     }
 
     childId = reservation.children[0]!.workflowInstanceId;
-    expect((await f.root.orchestration.inspectDelegation(caller)).tree).toHaveLength(1);
+    expect(
+      (await f.root.orchestration.inspectDelegation(caller, context('inspect'))).tree,
+    ).toHaveLength(1);
     expect(
       await f.root.orchestration.submitDelegation(caller, command, context('controlled-replay')),
     ).toEqual(reservation);
@@ -781,7 +803,9 @@ it('run-scoped production commands reject escalation and finish a tree with one 
   const ended = await terminalRun(f.root, parentRun.runId);
   expect(ended.failure).toBeUndefined();
   expect(childId).toBeDefined();
-  await expect(f.root.orchestration.inspectDelegation(caller!)).rejects.toThrow('stale');
+  await expect(
+    f.root.orchestration.inspectDelegation(caller!, context('inspect-stale')),
+  ).rejects.toThrow('stale');
   const restarted = await f.restart();
   const child = (await restarted.orchestration.get(childId!))!;
   // The permitted repository set must not become an implicit checkout target.
@@ -789,7 +813,7 @@ it('run-scoped production commands reject escalation and finish a tree with one 
     (await restarted.resources.correlationsForWork(child.workItemId)).map(
       (entry) => entry.resourceId,
     ),
-  ).not.toContain(repository.resourceId);
+  ).not.toContain(repositoryId);
   const detail = await (
     await createSurfaceApplications(restarted)
   ).api.work.detail(toWorkItemKey(parent.workItemId));

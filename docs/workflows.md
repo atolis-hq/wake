@@ -704,7 +704,16 @@ current workflow definition. Caller, Run, activation and reservation limits
 are server-owned; agents cannot supply them.
 
 Optional repositoryResourceIds narrow the invoking assignment's permitted scope;
-for a root this scope comes from correlated Repository Resources. Omission
+for a root this scope comes from correlated Repository Resources. When a root has none,
+its first delegation request (or `wake_delegation_inspect`) binds the repository the
+provider observed its primary Issue in: Wake finds or creates that Repository Resource
+and correlates it to the root as `secondary` with `provider-observed` provenance.
+A Repository Resource already correlated to the root through the Resources port
+suppresses that default. There is no operator command to correlate additional
+repositories yet; `wake correlate` records a primary correlation and is not suitable. `wake_delegation_inspect` lists the Repository Resource IDs an explicit
+selection may name. Agent arguments and issue prose never establish repository
+authority, and only Issue roots from a provider with a repository identity (GitHub)
+are bound. Omission
 inherits the validated scope, persisted on the child reservation for nested
 requests. An explicit repository.resourceId must belong to that scope. Omitting
 repository selects no checkout and links none; the permitted set never selects
