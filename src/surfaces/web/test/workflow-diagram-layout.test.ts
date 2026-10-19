@@ -25,4 +25,30 @@ describe('layoutWorkflowDiagram', () => {
     ]);
     expect(layout.edges[0]!.points.length).toBeGreaterThan(1);
   });
+
+  it('stacks parallel stages vertically without overlap on desktop', async () => {
+    const layout = await layoutWorkflowDiagram(
+      {
+        id: 'factory',
+        label: 'Factory',
+        direction: 'left-to-right',
+        stages: [
+          { id: 'review', label: 'Review', children: [] },
+          { id: 'implement', label: 'Implement', children: [] },
+          { id: 'revise', label: 'Revise', children: [] },
+        ],
+        transitions: [
+          { from: 'review', to: 'implement', label: 'approved' },
+          { from: 'review', to: 'revise', label: 'changes' },
+        ],
+      },
+      'RIGHT',
+    );
+
+    const implement = layout.nodes.find((node) => node.id === 'implement')!;
+    const revise = layout.nodes.find((node) => node.id === 'revise')!;
+    expect(revise.x).toBe(implement.x);
+    const [upper, lower] = implement.y < revise.y ? [implement, revise] : [revise, implement];
+    expect(lower.y).toBeGreaterThanOrEqual(upper.y + upper.height);
+  });
 });
