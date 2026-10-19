@@ -93,7 +93,13 @@ export function createGitHubWebhook(
         const expected = `sha256=${createHmac('sha256', saved.secret).update(body).digest('hex')}`;
         if (!safeEqual(signature, expected)) return 401;
         if (!events.has(event)) return 404;
-        if (saved.diagnosis === undefined) health.recordSuccess(`${owner}/${repo}`, 'webhook');
+        // A signed delivery proves ingress works, even if auto-provisioning failed
+        // earlier (e.g. a manually configured hook), so it supersedes that diagnosis.
+        if (saved.diagnosis !== undefined) {
+          const { diagnosis: _diagnosis, ...rest } = saved;
+          await state.save(owner, repo, rest);
+        }
+        health.recordSuccess(`${owner}/${repo}`, 'webhook');
         trigger();
         return 202;
       });
