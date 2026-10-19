@@ -47,7 +47,7 @@ describe('Claude stream framing', () => {
       });
       const final = JSON.stringify({ type: 'result', result: 'done' });
       const decoded = decoder.push(Buffer.from('"}\n' + final + '\n'));
-      expect(decoded.output.toString()).toBe(final);
+      expect(decoded.output.toString()).toBe(final + '\n');
       expect(decoded.activity).toBe(true);
     },
   );
@@ -85,7 +85,7 @@ describe('Claude stream framing', () => {
     const final = JSON.stringify({ type: 'result', result: 'done' });
     expect(
       decoder.push(Buffer.from('Preliminary warning\n' + final + '\n')).output.toString(),
-    ).toBe(final);
+    ).toBe(final + '\n');
     expect(decoder.finish()).toEqual(Buffer.alloc(0));
   });
 

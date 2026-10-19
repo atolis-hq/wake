@@ -7,6 +7,13 @@ function isProgress(type: unknown): boolean {
   return type === 'assistant' || type === 'user' || type === 'stream_event';
 }
 
+// Kept result lines are newline-terminated so several results stay line-delimited.
+function terminated(line: Buffer): Buffer {
+  return line.length === 0 || line[line.length - 1] === 10
+    ? line
+    : Buffer.concat([line, Buffer.from('\n')]);
+}
+
 function decode(line: Buffer) {
   try {
     const value = JSON.parse(line.toString('utf8')) as unknown;
@@ -15,7 +22,10 @@ function decode(line: Buffer) {
     const event = value as Record<string, unknown>;
     const final =
       event.type === 'result' || (event.type === undefined && typeof event.result === 'string');
-    return { output: final ? line : Buffer.alloc(0), activity: final || isProgress(event.type) };
+    return {
+      output: final ? terminated(line) : Buffer.alloc(0),
+      activity: final || isProgress(event.type),
+    };
   } catch {
     return { output: Buffer.alloc(0), activity: false, diagnostic: line };
   }

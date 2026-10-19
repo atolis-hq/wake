@@ -153,6 +153,50 @@ describe('GitHub webhooks', () => {
     await expect(webhook.setupInstructions()).resolves.toEqual([setup]);
   });
 
+  it('treats a verified delivery as recovery from a failed provisioning attempt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const health = createGitHubAdapterHealthRegistry([repository]);
+    const webhook = createGitHubWebhook(
+      adapterId('github'),
+      gitHubConfigSchema.parse({
+        enabled: true,
+        repositories: [repository],
+        webhooks: { enabled: true },
+      }),
+      'https://wake.example',
+      root,
+      {
+        getHook: vi.fn(),
+        createHook: vi.fn().mockRejectedValue(Object.assign(new Error('denied'), { status: 403 })),
+        updateHook: vi.fn(),
+      },
+      health,
+    );
+    try {
+      await webhook.provision();
+      expect(health.snapshotAll().find((check) => check.channel === 'webhook')?.status).not.toBe(
+        'ok',
+      );
+      const [setup] = await webhook.setupInstructions();
+      const body = Buffer.from(JSON.stringify({ repository: { full_name: 'atolis-hq/wake' } }));
+      const signature = `sha256=${createHmac('sha256', setup!.secret).update(body).digest('hex')}`;
+      await expect(
+        webhook.receive(
+          body,
+          { 'x-hub-signature-256': signature, 'x-github-event': 'issues' },
+          vi.fn(),
+        ),
+      ).resolves.toBe(202);
+      expect(health.snapshotAll().find((check) => check.channel === 'webhook')).toMatchObject({
+        status: 'ok',
+        successCount: 1,
+      });
+      await expect(webhook.diagnostics!()).resolves.toEqual([]);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
   it('updates the existing managed hook when the public URL changes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
     const hooks = {
