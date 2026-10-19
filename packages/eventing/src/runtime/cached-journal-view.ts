@@ -37,7 +37,9 @@ export function cachedJournalView<Value>(
       const run = (async () => {
         const events = await journal.readAll(0);
         const value = await derive(events);
-        cache = { position: events.at(-1)?.globalPosition ?? 0, value };
+        const position = events.at(-1)?.globalPosition ?? 0;
+        // An older derivation finishing late must not replace a newer one.
+        if (cache === undefined || position >= cache.position) cache = { position, value };
         return value;
       })().finally(() => {
         if (inFlight?.run === run) inFlight = undefined;

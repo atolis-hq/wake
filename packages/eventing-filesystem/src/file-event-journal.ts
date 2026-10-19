@@ -54,14 +54,10 @@ export class FileEventJournal implements EventJournal {
     return this.changeSignalSource;
   }
 
-  private cached:
-    | {
-        readonly entries: readonly FileStat[];
-        readonly events: EventEnvelope[];
-        readonly eventsByStream: ReadonlyMap<string, readonly EventEnvelope[]>;
-        readonly segments: readonly SegmentInfo[];
-      }
-    | undefined;
+  // The most complete snapshot seen so far. Readers never build on it after an
+  // await: a scan returns its own snapshot, because a slower scan of older
+  // entries may finish after a newer one and must not be mistaken for it.
+  private cached: JournalSnapshot | undefined;
 
   // Every read (readStream/readAll/readLatest/latestGlobalPosition) reaches
   // scan(), and the resident host's tick loop calls those many times a
@@ -73,9 +69,8 @@ export class FileEventJournal implements EventJournal {
   // only for the same segment fingerprints keeps that protection without
   // letting an append reuse a scan from before another process wrote.
   private inFlightScan:
-    { readonly entries: readonly FileStat[]; readonly run: Promise<EventEnvelope[]> } | undefined;
+    { readonly entries: readonly FileStat[]; readonly run: Promise<JournalSnapshot> } | undefined;
 
-  private scanGeneration = 0;
   // Segments are immutable: each is published by atomic rename to a name that is
   // never reused, and nothing rewrites or deletes one. A segment seen once is
   // therefore never stat'ed again, and a listing costs a directory stat, one
@@ -103,8 +98,9 @@ export class FileEventJournal implements EventJournal {
           await reclaimStaleSegmentTemps(join(this.root, 'events'));
           this.temporariesReclaimed = true;
         }
-        const current = await this.scan();
-        const streamEvents = this.cachedEventsForStream(stream);
+        const snapshot = await this.scan();
+        const current = snapshot.events;
+        const streamEvents = snapshot.eventsByStream.get(key(stream)) ?? [];
         if (streamEvents.length !== expectedSequence)
           throw new WrongExpectedSequenceError(
             `Expected sequence ${expectedSequence} for ${key(stream)}, actual ${streamEvents.length}`,
@@ -125,11 +121,11 @@ export class FileEventJournal implements EventJournal {
           join(directory, file),
           finalizedEnvelopes.map(encodeEventRecord).join('\n') + '\n',
         );
-        await this.extendCache(file, current, finalizedEnvelopes);
+        const next = await this.extendCache(file, snapshot, finalizedEnvelopes);
         // The manifest is derived data. The event append is authoritative, so
         // an index-write failure must not turn a successfully recorded event
         // into a failed append.
-        await this.persistManifest().catch(() => undefined);
+        await this.persistManifest(next).catch(() => undefined);
         this.changeSignalSource.notify();
         return finalizedEnvelopes;
       },
@@ -162,11 +158,10 @@ export class FileEventJournal implements EventJournal {
   async readStream(stream: StreamRef) {
     const streamKey = key(stream);
     const entries = await this.currentEntries();
-    if (this.cached !== undefined) {
-      if (sameEntries(this.cached.entries, entries))
-        return this.cached.eventsByStream.get(streamKey) ?? [];
-      await this.scan(entries);
-      return this.cachedEventsForStream(stream);
+    const warm = this.cached;
+    if (warm !== undefined) {
+      const snapshot = sameEntries(warm.entries, entries) ? warm : await this.scan(entries);
+      return snapshot.eventsByStream.get(streamKey) ?? [];
     }
     const manifest = await this.loadManifest();
     if (manifest !== undefined && isCompleteIndex(manifest, entries)) {
@@ -184,7 +179,7 @@ export class FileEventJournal implements EventJournal {
         // authority and retains the original read semantics.
       }
     }
-    return (await this.scan(entries)).filter((event) => key(event.stream) === streamKey);
+    return (await this.scan(entries)).events.filter((event) => key(event.stream) === streamKey);
   }
 
   /** Live readers bypass the full-history cache and stop at captured segment sizes. */
@@ -256,8 +251,9 @@ export class FileEventJournal implements EventJournal {
 
   async readAll(after: number, limit = Number.POSITIVE_INFINITY) {
     const entries = await this.currentEntries();
-    if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
-      return this.cached.events.filter((event) => event.globalPosition > after).slice(0, limit);
+    const warm = this.cached;
+    if (warm !== undefined && sameEntries(warm.entries, entries))
+      return warm.events.filter((event) => event.globalPosition > after).slice(0, limit);
     const manifest = await this.loadManifest();
     if (manifest !== undefined && isCompleteIndex(manifest, entries)) {
       try {
@@ -274,7 +270,7 @@ export class FileEventJournal implements EventJournal {
         // See readStream(): never let a derived index change journal reads.
       }
     }
-    return (await this.scan(entries))
+    return (await this.scan(entries)).events
       .filter((event) => event.globalPosition > after)
       .slice(0, limit);
   }
@@ -282,7 +278,7 @@ export class FileEventJournal implements EventJournal {
   async readLatest(beforeGlobalPosition?: number, limit = Number.POSITIVE_INFINITY) {
     if (beforeGlobalPosition !== undefined && beforeGlobalPosition <= 0) return [];
     if (limit <= 0) return [];
-    const events = await this.scan(await this.currentEntries());
+    const { events } = await this.scan(await this.currentEntries());
     const before = beforeGlobalPosition ?? events.length + 1;
     return events
       .slice(0, before - 1)
@@ -291,7 +287,7 @@ export class FileEventJournal implements EventJournal {
   }
 
   async latestGlobalPosition(): Promise<number> {
-    const events = await this.scan(await this.currentEntries());
+    const { events } = await this.scan(await this.currentEntries());
     return events.at(-1)?.globalPosition ?? 0;
   }
 
@@ -347,16 +343,17 @@ export class FileEventJournal implements EventJournal {
   // same journal — falls through to scan()'s full re-read.
   private async extendCache(
     file: string,
-    priorEvents: readonly EventEnvelope[],
+    prior: JournalSnapshot,
     newEnvelopes: readonly EventEnvelope[],
-  ): Promise<void> {
+  ): Promise<JournalSnapshot> {
+    const priorEvents = prior.events;
     const info = await stat(join(this.root, 'events', file));
     const updatedEntry: FileStat = { file, size: info.size, mtimeMs: info.mtimeMs };
-    const priorEntries = this.cached?.entries ?? [];
+    const priorEntries = prior.entries;
     const entries = priorEntries.some((entry) => entry.file === file)
       ? priorEntries.map((entry) => (entry.file === file ? updatedEntry : entry))
       : [...priorEntries, updatedEntry];
-    const priorSegments = this.cached?.segments ?? [];
+    const priorSegments = prior.segments;
     const existingSegment = priorSegments.find((segment) => segment.file === file);
     let offset = existingSegment?.size ?? 0;
     const indexedEvents = newEnvelopes.map((event) => {
@@ -391,26 +388,29 @@ export class FileEventJournal implements EventJournal {
           },
         ];
     const events = [...priorEvents, ...newEnvelopes];
-    this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
+    const next = { entries, events, eventsByStream: indexEventsByStream(events), segments };
+    this.adopt(next);
     this.knownSegments.set(file, updatedEntry);
-    this.latestEntries = entries;
+    if (entries.length >= this.latestEntries.length) this.latestEntries = entries;
+    return next;
+  }
+
+  // Journals only grow, so the snapshot with more events is the newer one.
+  private adopt(snapshot: JournalSnapshot): void {
+    if (this.cached === undefined || snapshot.events.length >= this.cached.events.length)
+      this.cached = snapshot;
   }
 
   private manifestPath(): string {
     return join(this.root, 'events', 'index-manifest.json');
   }
 
-  private cachedEventsForStream(stream: StreamRef): readonly EventEnvelope[] {
-    return this.cached?.eventsByStream.get(key(stream)) ?? [];
-  }
-
   // Persisted alongside the segments, so any reader of the same on-disk
   // journal — not just this instance — can skip straight to the segments
   // that can hold what it's looking for on a cold cache. appendToStream() extends its
   // contents from the concrete envelopes it has just written while locked.
-  private async persistManifest(): Promise<void> {
-    if (this.cached === undefined) return;
-    const manifest: PersistedIndex = { segments: this.cached.segments };
+  private async persistManifest(snapshot: JournalSnapshot): Promise<void> {
+    const manifest: PersistedIndex = { segments: snapshot.segments };
     await writeFileAtomically(this.manifestPath(), JSON.stringify(manifest));
   }
 
@@ -426,12 +426,11 @@ export class FileEventJournal implements EventJournal {
     }
   }
 
-  private async scan(precomputedEntries?: readonly FileStat[]): Promise<EventEnvelope[]> {
+  private async scan(precomputedEntries?: readonly FileStat[]): Promise<JournalSnapshot> {
     const entries = precomputedEntries ?? (await this.currentEntries());
     const inFlight = this.inFlightScan;
     if (inFlight !== undefined && sameEntries(inFlight.entries, entries)) return inFlight.run;
-    const generation = ++this.scanGeneration;
-    const run = this.scanUncoalesced(entries, generation).finally(() => {
+    const run = this.scanUncoalesced(entries).finally(() => {
       if (this.inFlightScan?.run === run) this.inFlightScan = undefined;
     });
     this.inFlightScan = { entries, run };
@@ -482,7 +481,8 @@ export class FileEventJournal implements EventJournal {
     if (
       previous !== undefined &&
       sameStamp(previous.stamp, stamp) &&
-      previous.startedAtMs - stamp.mtimeMs > unchangedStampMinAgeMs
+      previous.startedAtMs - Math.max(stamp.mtimeMs, stamp.ctimeMs) > unchangedStampMinAgeMs &&
+      this.latestEntries.length === this.knownSegments.size
     )
       return this.latestEntries;
     // The stamp is taken before the listing so a change during it cannot be hidden.
@@ -511,9 +511,11 @@ export class FileEventJournal implements EventJournal {
     this.listing = { stamp, startedAtMs };
     const added = unseen.flatMap((file) => this.knownSegments.get(file) ?? []);
     const last = this.latestEntries.at(-1);
-    if (!removed && added.length === 0) return this.latestEntries;
+    const consistent = this.latestEntries.length + added.length === this.knownSegments.size;
+    if (!removed && added.length === 0 && consistent) return this.latestEntries;
+    // Anything inconsistent with what has been seen is rebuilt from it, never patched.
     this.latestEntries =
-      !removed && (last === undefined || added[0]!.file > last.file)
+      !removed && consistent && (last === undefined || added[0]!.file > last.file)
         ? [...this.latestEntries, ...added]
         : [...this.knownSegments.values()].sort((a, b) => (a.file < b.file ? -1 : 1));
     return this.latestEntries;
@@ -571,16 +573,21 @@ export class FileEventJournal implements EventJournal {
     }
   }
 
-  private async scanUncoalesced(
-    entries: readonly FileStat[],
-    generation: number,
-  ): Promise<EventEnvelope[]> {
+  private async scanUncoalesced(entries: readonly FileStat[]): Promise<JournalSnapshot> {
     const directory = join(this.root, 'events');
-    if (this.cached !== undefined && sameEntries(this.cached.entries, entries))
-      return this.cached.events;
-    const events: EventEnvelope[] = [];
-    const segments: SegmentInfo[] = [];
-    for (const entry of entries) {
+    const warm = this.cached;
+    if (warm !== undefined && sameEntries(warm.entries, entries)) return warm;
+    // Segments are immutable, so when the cached segments are an unchanged
+    // prefix of the listing only the segments after it need reading. A foreign
+    // append then costs one segment, not a re-parse of the whole history.
+    const prefix = warm;
+    const reuse =
+      prefix !== undefined &&
+      prefix.entries.length <= entries.length &&
+      sameEntries(prefix.entries, entries.slice(0, prefix.entries.length));
+    const events: EventEnvelope[] = reuse ? [...prefix.events] : [];
+    const segments: SegmentInfo[] = reuse ? [...prefix.segments] : [];
+    for (const entry of reuse ? entries.slice(prefix.entries.length) : entries) {
       const { file } = entry;
       const raw = await readFile(join(directory, file), 'utf8');
       if (raw.length > 0 && !raw.endsWith('\n'))
@@ -617,10 +624,17 @@ export class FileEventJournal implements EventJournal {
         events: indexedEvents,
       });
     }
-    if (generation === this.scanGeneration)
-      this.cached = { entries, events, eventsByStream: indexEventsByStream(events), segments };
-    return events;
+    const snapshot = { entries, events, eventsByStream: indexEventsByStream(events), segments };
+    this.adopt(snapshot);
+    return snapshot;
   }
+}
+
+interface JournalSnapshot {
+  readonly entries: readonly FileStat[];
+  readonly events: EventEnvelope[];
+  readonly eventsByStream: ReadonlyMap<string, readonly EventEnvelope[]>;
+  readonly segments: readonly SegmentInfo[];
 }
 
 interface DirectoryStamp {

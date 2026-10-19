@@ -728,6 +728,82 @@ it('observes another instance’s append on the next read with no watcher and no
   expect((await reader.readAll(2)).map((event) => event.event.eventId)).toEqual(['event-3']);
 });
 
+it('reads only the new segment when another instance appends to a warmed journal', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-incremental-foreign-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  for (let index = 0; index < 30; index += 1)
+    await writer.appendToStream(stream, index, [journalDraft(`event-${index}`)]);
+  const reader = new FileEventJournal(root, clock);
+  expect(await reader.latestGlobalPosition()).toBe(30);
+
+  await writer.appendToStream(stream, 30, [journalDraft('event-30')]);
+  readFileMock.mockClear();
+
+  expect(await reader.latestGlobalPosition()).toBe(31);
+  expect((await reader.readStream(stream)).map((event) => event.event.eventId).at(-1)).toBe(
+    'event-30',
+  );
+  expect(readFileMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(
+    1,
+  );
+});
+
+it('is not misled by a slower scan of older entries finishing after a newer one', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-scan-race-'));
+  const clock = new FakeClock();
+  const a: EntityRef<'test', 'a'> = { kind: 'test', id: 'a' };
+  const b: EntityRef<'test', 'b'> = { kind: 'test', id: 'b' };
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const reader = new FileEventJournal(root, clock);
+  const other = new FileEventJournal(root, clock);
+  await reader.appendToStream(a, 0, [journalDraft('a-1')]);
+  await other.appendToStream(b, 0, [journalDraft('b-1')]);
+
+  // Stand in for slow I/O: the first read lists two segments, then stalls while a
+  // later append lists three and starts a slower full scan.
+  const slow = reader as unknown as {
+    loadManifest(): Promise<unknown>;
+    scanUncoalesced(entries: readonly unknown[]): Promise<unknown>;
+  };
+  const loadManifest = slow.loadManifest.bind(reader);
+  let stallManifest = true;
+  slow.loadManifest = async () => {
+    if (!stallManifest) return loadManifest();
+    stallManifest = false;
+    await sleep(50);
+    return undefined;
+  };
+  const scan = slow.scanUncoalesced.bind(reader);
+  slow.scanUncoalesced = async (entries) => {
+    if (entries.length === 3) await sleep(200);
+    return scan(entries);
+  };
+
+  const older = reader.readAll(0);
+  await sleep(5);
+  await other.appendToStream(a, 1, [journalDraft('a-2')]);
+  const stale = reader.appendToStream(a, 1, [journalDraft('a-3')]);
+  await older;
+
+  // The append was built on a listing that predates a-2: it must be rejected, not committed.
+  await expect(stale).rejects.toThrow('Expected sequence 1');
+  expect((await reader.readAll(0)).map((event) => event.globalPosition)).toEqual([1, 2, 3]);
+  const sequences = (await new FileEventJournal(root, clock).readStream(a)).map(
+    (event) => event.sequence,
+  );
+  expect(sequences).toEqual([1, 2]);
+
+  // The instance is not left with a lagging view: later appends by either side work.
+  await other.appendToStream(a, 2, [journalDraft('a-4')]);
+  expect((await reader.readAll(0)).map((event) => event.globalPosition)).toEqual([1, 2, 3, 4]);
+  await reader.appendToStream(a, 3, [journalDraft('a-5')]);
+  expect(
+    (await new FileEventJournal(root, clock).readAll(0)).map((event) => event.globalPosition),
+  ).toEqual([1, 2, 3, 4, 5]);
+});
+
 it('retries a listing after its first attempt rejects', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-listing-retry-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
