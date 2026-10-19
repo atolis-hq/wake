@@ -68,7 +68,6 @@ import {
   createOrchestrationService,
 } from '../orchestration/index.js';
 import {
-  BuiltInResourceKind,
   createResourceLookup,
   createResourceService,
   resourceId,
@@ -579,9 +578,8 @@ function createCloneResolver(
   const defaultCloneResolver: RepositoryCloneResolver = {
     async cloneLocator(id: string) {
       const resource = await resources.get(resourceId(id));
-      const key = resource?.externalKey.key;
-      const repository =
-        resource?.kind === BuiltInResourceKind.Repository ? key : key?.replace(/#\d+$/, '');
+      // Repository, PR and issue keys resolve to one clone; the '#N' suffix is optional.
+      const repository = resource?.externalKey.key.replace(/#\d+$/, '');
       if (repository === undefined || !/^[^/]+\/[^/#]+$/.test(repository))
         throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
       return 'https://github.com/' + repository + '.git';
