@@ -3,6 +3,7 @@ import type { RepositoryAssignment } from '../../execution/index.js';
 import type {
   DelegatedAssignment,
   DelegationCaller,
+  DelegationPrerequisite,
   DelegationReservation,
   DelegationResult,
   DelegationRevisionReference,
@@ -12,6 +13,11 @@ import type { WorkflowInstanceView } from './views.js';
 
 /** Trusted Bootstrap adapters; no provider, Run or session authority is supplied by assignments. */
 export interface DelegationArtifacts {
+  prerequisiteOutput?(
+    child: WorkflowInstanceView,
+    output: DelegatedAssignment['outputs'][number],
+    condition: DelegationPrerequisite['condition'],
+  ): Promise<DelegationResult['outputs'][number] | null>;
   validateInputs(
     parent: WorkflowInstanceView,
     references: readonly DelegationRevisionReference[],

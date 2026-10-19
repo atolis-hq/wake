@@ -773,6 +773,25 @@ it('run-scoped production commands reject escalation and finish a tree with one 
         arguments: { ...command, runId: 'forged' },
       });
       expect(rejected.isError).toBe(true);
+      const cycle = await client.callTool({
+        name: 'wake_delegation_submit',
+        arguments: {
+          ...command,
+          expectedPlanRevision: 0,
+          assignments: [
+            {
+              ...command.assignments[0]!,
+              prerequisites: [
+                { assignmentId: 'findings', output: 'findings', condition: 'accepted-output' },
+              ],
+            },
+          ],
+        },
+      });
+      expect(cycle.isError).toBe(true);
+      expect(JSON.parse((cycle.content as { text: string }[])[0]!.text)).toMatchObject({
+        code: 'self-dependency',
+      });
       const submitted = await client.callTool({
         name: 'wake_delegation_submit',
         arguments: command,
@@ -928,4 +947,62 @@ it('omission of workflow delegation policy rejects requests from an otherwise va
   const run = (await f.root.execution.list())[0]!;
   expect((await terminalRun(f.root, run.runId)).failure).toBeUndefined();
   expect(await f.root.orchestration.deliveryTree(parent.workItemId)).toEqual([]);
+});
+
+it('settles a hard queued-child failure after independent work drains, and preserves the assessment across restart', async () => {
+  const f = await fixture();
+  const parent = await complete(f.root, await start(f.root, 'failed-queue-parent'));
+  const probe = await start(f.root, 'failure-probe', 'child');
+  const a = { ...assignment(probe.workflowDefinitionFingerprint!, []), assignmentId: 'source' };
+  const batch = await f.root.orchestration['delegatedWork'].reserve(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      runId: 'delegating-run',
+    },
+    'failure-queue',
+    [
+      a,
+      {
+        ...a,
+        assignmentId: 'dependent',
+        prerequisites: [
+          { assignmentId: 'source', output: 'findings', condition: 'accepted-output' },
+        ],
+      },
+      { ...a, assignmentId: 'independent' },
+    ],
+    context('queued-failure'),
+    { maxDepth: 1, maxDescendants: 3 },
+  );
+  const [source, dependent, independent] = batch.children;
+  await f.root.work.delete(source!.workItemId, context('delete-upstream'));
+  await f.root.orchestration.reconcileChildCompletions(context('upstream-unavailable'));
+  expect(await f.root.orchestration.get(dependent!.workflowInstanceId)).toBeNull();
+  expect(await f.root.orchestration.listPendingActivations(independent!.workItemId)).toHaveLength(
+    1,
+  );
+  const child = (await f.root.orchestration.get(independent!.workflowInstanceId))!;
+  await publish(f.root, child, 'independent-result');
+  await complete(f.root, child);
+  const root = await f.restart();
+  await root.orchestration.reconcileChildCompletions(context('restart-failed'));
+  const tree = await root.orchestration.deliveryTree(parent.workItemId);
+  expect(tree[0]!.settled).toBe(true);
+  expect(tree[0]!.failureReason).toContain('inspect blockers');
+  expect(
+    await root.orchestration.joinedDelegationResults(parent.workflowInstanceId, 'failure-queue'),
+  ).toEqual([]);
+  expect(await root.orchestration.listPendingActivations(parent.workItemId)).toHaveLength(1);
+  const detail = await (
+    await createSurfaceApplications(root)
+  ).api.work.detail(toWorkItemKey(parent.workItemId));
+  expect(
+    detail!.data.delegation!.children.find(
+      (entry) => entry.workItemKey === toWorkItemKey(dependent!.workItemId),
+    )!.blockReason,
+  ).toBeDefined();
+  const before = (await f.journal.readAll(0)).length;
+  await root.orchestration.reconcileChildCompletions(context('duplicate-terminal'));
+  expect((await f.journal.readAll(0)).length).toBe(before);
 });

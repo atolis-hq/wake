@@ -22,12 +22,32 @@ export function decidePullRequestAuthority(
     requireChecks: true,
   },
 ): PullRequestAuthorityDecision {
+  return decideAuthority(input, options, false);
+}
+
+/** Qualifies an existing output without authorizing another approval or merge. */
+export function decidePullRequestOutputAuthority(
+  input: PullRequestAuthorityInput,
+  options: PullRequestAuthorityOptions,
+): PullRequestAuthorityDecision {
+  return decideAuthority(input, options, true);
+}
+
+function decideAuthority(
+  input: PullRequestAuthorityInput,
+  options: PullRequestAuthorityOptions,
+  allowMerged: boolean,
+): PullRequestAuthorityDecision {
   if (input.work === null) return denied(PullRequestDenialCode.MissingResource);
   const resource = selectResource(input, input.work.workItemId, options.target);
   if (isDenial(resource)) return resource;
   const pullRequest = selectPullRequest(input, resource, input.work.workItemId);
   if (isDenial(pullRequest)) return pullRequest;
-  if (pullRequest.state !== PullRequestState.Open) return denied(PullRequestDenialCode.Closed);
+  if (
+    pullRequest.state !== PullRequestState.Open &&
+    !(allowMerged && pullRequest.state === PullRequestState.Merged)
+  )
+    return denied(PullRequestDenialCode.Closed);
   const authority = finalizeAuthority(input, resource, pullRequest, options);
   if (authority !== null) return authority;
   return { allowed: true, resourceId: pullRequest.resourceId, revision: pullRequest.headRevision };

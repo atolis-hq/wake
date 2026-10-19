@@ -738,3 +738,83 @@ Trigger descendants suppress their root's self-source events without inheriting
 named shared context or operator instructions. Work detail shows delivery
 parent/root links, child workflows, status, resources and blockers; existing
 freeze controls stop dispatch for the selected subtree.
+
+### Queued prerequisites and Git stacks
+
+Assignments may declare `prerequisites`. Each entry selects an `assignmentId`,
+its named `output`, and a `condition`. Omit `cohortId` for another assignment in
+the submitted batch, or name an earlier cohort in the same delivery for
+incremental work. These declarations do not edit earlier assignments. Inspection
+returns `planRevision`; pass it as `expectedPlanRevision` to reject a submission
+based on an outdated plan. Replaying the same committed cohort returns its
+original child identities and pins.
+
+The conditions are:
+
+- `accepted-output`: an exact accepted named artifact, usable before the
+  upstream workflow completes. Cross-repository handoffs use this condition.
+- `pushed-change`: a named PR with provider-verified repository, branch, head,
+  logical base and original child ownership. Review and checks are not required
+  by this condition; the upstream's own output requirements still govern its
+  eventual delivery-ready result.
+- `delivery-ready`: successful configured workflow completion and the named
+  output's acceptance, including required review/check authority for changes.
+- `merged-change`: actual provider-observed merge at the verified upstream
+  head. Issue closure and workflow completion never substitute for merge.
+
+For example, an assignment can declare:
+
+```yaml
+prerequisites:
+  - assignmentId: api
+    output: change
+    condition: pushed-change
+    useAsBase: true
+  - assignmentId: contract
+    output: schema
+    condition: accepted-output
+```
+
+`useAsBase` selects at most one same-repository change. Before starting the
+child, Wake verifies the pushed source and records its repository, branch and
+commit; the child PR's logical base is that upstream branch. Agents create and
+maintain the PRs and perform all Git operations. Cross-repository Git bases are
+rejected; cross-repository contracts use selected accepted artifact revisions.
+
+Independent children start while dependencies remain queued. Selected inputs are
+immutable journal receipts; accepted artifact inputs receive explicit read-only
+grants. Inspection exposes `consumedInputs`, `prerequisiteBlocker` and a terminal
+cohort's `failureReason`; work detail displays each child's blocker.
+
+Readiness is checked after restart, before dispatch, when accepting outcomes and
+before joining. A changed consumed output or upstream head makes affected
+assignments ineligible. Failed upstream children and their dependents retain
+durable blockers while unrelated siblings finish. Once that work finishes and
+the reserving Run ends, Wake records a terminal failed cohort and resumes the
+parent stage for assessment, without reporting a successful join. Unfinished
+affected workflows are superseded; late Run outcomes cannot qualify them.
+Batches without prerequisites retain their existing terminal-failure behavior.
+Transient verification failures remain retryable and use bounded diagnostics.
+
+The parent agent inspects the failure and explicitly submits replacement work
+under a new cohort and assignment identity, using the current plan revision.
+Normal Run authority, workflow/repository policy and delivery limits still
+apply. Replacement assignments pin current verified inputs and require fresh
+outputs; old receipts, results and grants remain in the journal. Wake never
+chooses a rebase, replacement stack or semantic repair. Attention while
+independent work is still running is outside this slice.
+
+Successful joins are historical consumption boundaries, not permanent holds on
+the parent's later merge phase. Agents can merge a joined stack bottom-up and
+delete its branches. Reuse of an upstream output by new work still verifies its
+current evidence. Only the upstream head and selected branch matter to the
+consumed Git base; unrelated movement of that PR's own target branch does not
+invalidate downstream evidence. A provider-confirmed merge at the consumed head
+preserves an existing receipt even if the source branch is deleted.
+
+Self-dependencies, missing targets/outputs, explicit cycles and implicit join
+cycles are rejected with typed conflicts. A child cannot await its ancestor's
+future result; previously accepted ancestor context remains usable through
+`context`. A merge prerequisite cannot wait on a child whose parent must first
+join the same cohort to perform that merge. Use an upstream workflow with its
+own configured `pr.merge` lane, or consume already merged work incrementally.

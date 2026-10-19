@@ -1445,7 +1445,7 @@ it('shows delivery ancestry, child status, repository links and blockers', async
         workflowName: 'investigation',
         status: 'blocked',
         cohortId: 'cohort',
-        blockReason: 'Waiting for assignment evidence',
+        blockReason: 'Upstream branch moved; agent assessment required',
         resources: [
           {
             resourceId: 'repository-1',
@@ -1483,7 +1483,7 @@ it('shows delivery ancestry, child status, repository links and blockers', async
     expect(screen.getByRole('link', { name: 'View parent' }).getAttribute('href')).toBe(
       '/work/wk_parent',
     );
-    expect(screen.getByText('Waiting for assignment evidence')).toBeTruthy();
+    expect(screen.getByText('Upstream branch moved; agent assessment required')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Wake repository' }).getAttribute('href')).toBe(
       'https://github.com/atolis-hq/wake',
     );

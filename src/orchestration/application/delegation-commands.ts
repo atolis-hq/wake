@@ -73,23 +73,32 @@ export class DelegationCommands {
           .fingerprint,
       };
     });
-    return this.delegated.reserve(caller, command.cohortId, assignments, context, {
-      maxDepth: policy.maxDepth,
-      maxDescendants: policy.maxDescendants,
-      maxConcurrentRuns: policy.maxConcurrentRuns,
-    });
+    return this.delegated.reserve(
+      caller,
+      command.cohortId,
+      assignments,
+      context,
+      {
+        maxDepth: policy.maxDepth,
+        maxDescendants: policy.maxDescendants,
+        maxConcurrentRuns: policy.maxConcurrentRuns,
+      },
+      command.expectedPlanRevision,
+    );
   }
 
   async inspect(caller: DelegationCaller, context: CommandContext) {
     const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     await this.authority.assertCaller(caller, parent);
     const policy = (await this.workflows.definitionFor(parent)).delegation;
+    const tree = await this.delegated.inspect(parent.workItemId);
     return {
       policy: policy ?? null,
       // Resource IDs an explicit repository selection may name; empty when none is authorized.
       repositories:
         policy === undefined ? [] : (await this.scopeFor(parent, policy, context)).permitted,
-      tree: await this.delegated.inspect(parent.workItemId),
+      planRevision: tree.length,
+      tree,
     };
   }
 

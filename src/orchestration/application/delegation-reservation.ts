@@ -101,7 +101,13 @@ export function matchesAssignments(
     return false;
   return isDeepStrictEqual(
     reservation.children.map(
-      ({ workItemId: _w, workflowInstanceId: _i, grantId: _g, ...assignment }) => ({
+      ({
+        workItemId: _w,
+        workflowInstanceId: _i,
+        grantId: _g,
+        prerequisiteWorkItemIds: _p,
+        ...assignment
+      }) => ({
         ...assignment,
         ...(assignment.repository === undefined
           ? {}

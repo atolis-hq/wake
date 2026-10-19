@@ -1,6 +1,7 @@
 /* eslint-disable max-lines */
 import { z } from 'zod';
 import {
+  delegationInputsSchema,
   delegationJoinSchema,
   delegationReservationSchema,
   delegationResultSchema,
@@ -291,6 +292,22 @@ const groupBudgetGrantedEnvelope = childGroupEnvelope(
     });
 });
 const eventSchemas = {
+  [OrchestrationEventType.DelegationChildBlocked]: workflowEnvelope(
+    OrchestrationEventType.DelegationChildBlocked,
+    z
+      .object({ childWorkItemId: brandedStringSchema(workItemId), reason: z.string().min(1) })
+      .strict(),
+  ),
+  [OrchestrationEventType.DelegationInputsResolved]: workflowEnvelope(
+    OrchestrationEventType.DelegationInputsResolved,
+    delegationInputsSchema,
+  ),
+  [OrchestrationEventType.DelegationPrerequisiteBlocked]: workflowEnvelope(
+    OrchestrationEventType.DelegationPrerequisiteBlocked,
+    z
+      .object({ childWorkItemId: brandedStringSchema(workItemId), reason: z.string().min(1) })
+      .strict(),
+  ),
   [OrchestrationEventType.DelegationFailed]: workflowEnvelope(
     OrchestrationEventType.DelegationFailed,
     z.object({ cohortId: z.string().min(1), reason: z.string().min(1) }).strict(),

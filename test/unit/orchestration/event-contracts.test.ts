@@ -88,6 +88,21 @@ const delegationReservation = {
 
 const delegationSamples = [
   eventEnvelope(
+    OrchestrationEventType.DelegationChildBlocked,
+    { childWorkItemId: workId('2'), reason: 'Upstream workflow failed' },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DelegationInputsResolved,
+    { childWorkItemId: workId('2'), consumed: delegationResult.outputs },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DelegationPrerequisiteBlocked,
+    { childWorkItemId: workId('2'), reason: 'Upstream branch moved' },
+    workflow,
+  ),
+  eventEnvelope(
     OrchestrationEventType.SignalDeferred,
     { stage: stageName('implement'), signal },
     workflow,

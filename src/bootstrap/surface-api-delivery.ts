@@ -32,8 +32,12 @@ export async function presentDelivery(
               workflowName: child.workflowName,
               status: child.workflow?.status ?? 'registration-pending',
               cohortId: cohort.cohortId,
-              ...((availability.reason ?? child.workflow?.blockReason)
-                ? { blockReason: (availability.reason ?? child.workflow?.blockReason)! }
+              ...((availability.reason ?? child.prerequisiteBlocker ?? child.workflow?.blockReason)
+                ? {
+                    blockReason: (availability.reason ??
+                      child.prerequisiteBlocker ??
+                      child.workflow?.blockReason)!,
+                  }
                 : {}),
               resources: resources
                 .filter((entry) => entry !== null)

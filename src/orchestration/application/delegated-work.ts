@@ -13,6 +13,7 @@ import type {
   DelegationReservation,
   DelegationResult,
 } from '../contracts/delegation.js';
+import { DelegationConflictError } from '../contracts/delegation.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import {
   orchestrationGroupId,
@@ -20,7 +21,11 @@ import {
   type WorkflowInstanceId,
 } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { WorkflowStatus } from '../contracts/vocabulary.js';
+import {
+  DelegationConflictCode,
+  DelegationPrerequisiteCondition,
+  WorkflowStatus,
+} from '../contracts/vocabulary.js';
 import { nextOrdinal } from '../domain/decision-events.js';
 import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
 import type { CoordinationClaims } from './coordination-claims.js';
@@ -33,14 +38,18 @@ import {
   reservationsOf,
   reservedEvent,
   selectedResults,
+  unsettledReservations,
 } from './delegation-ledger.js';
+import { DelegationPrerequisites } from './delegation-prerequisites.js';
 import {
   assertWithinRootLimits,
   buildReservation,
   matchesAssignments,
   type ReservationParent,
 } from './delegation-reservation.js';
+import { resolvePrerequisites } from './delegation-wait-graph.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import type { PrerequisiteReadiness } from './prerequisite-readiness.js';
 import type { StartWorkflow } from './start-workflow.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
@@ -52,6 +61,7 @@ const defaultLimits: DelegationLimits = { maxDepth: 1, maxDescendants: 8 };
  */
 export class DelegatedWork {
   private readonly ledger: DelegationLedger;
+  readonly prerequisites: DelegationPrerequisites;
   private readonly artifacts: DelegationArtifacts;
   private readonly repositories: DelegationRepositories | undefined;
   private readonly runHasEnded: (runId: string) => Promise<boolean>;
@@ -71,6 +81,13 @@ export class DelegatedWork {
   ) {
     this.ledger = new DelegationLedger(repository);
     this.artifacts = dependencies.artifacts;
+    this.prerequisites = new DelegationPrerequisites(
+      repository,
+      this.ledger,
+      dependencies.artifacts,
+      dependencies.repositories,
+      work,
+    );
     this.repositories = dependencies.repositories;
     this.runHasEnded = dependencies.runHasEnded;
   }
@@ -80,15 +97,26 @@ export class DelegatedWork {
     const root = item?.delegation?.rootWorkItemId ?? id;
     const events = await this.ledger.events();
     const reservations = reservationsOf(events).filter((entry) => entry.rootWorkItemId === root);
+    const read = await this.prerequisites.read();
     return Promise.all(
       reservations.map(async (reservation) => ({
         ...reservation,
         settled: isSettled(events, reservation),
+        failureReason: events.flatMap(({ event, stream }) =>
+          stream.id === reservation.parentWorkflowInstanceId &&
+          event.eventType === OrchestrationEventType.DelegationFailed &&
+          event.payload.cohortId === reservation.cohortId
+            ? [event.payload.reason]
+            : [],
+        )[0],
         children: await Promise.all(
           reservation.children.map(async (child) => ({
             ...child,
             work: await this.work.get(child.workItemId),
-            workflow: (await this.repository.load(child.workflowInstanceId)).view,
+            prerequisiteBlocker:
+              (await read.reason(child.workItemId)) ?? childBlocker(events, child.workItemId),
+            consumedInputs: read.inputs(child.workItemId),
+            workflow: read.workflow(child.workflowInstanceId) ?? null,
           })),
         ),
       })),
@@ -121,6 +149,8 @@ export class DelegatedWork {
   }
 
   async repositoryFor(workItemId: string) {
+    const inputs = await this.prerequisites.inputs(workItemId);
+    if (inputs?.repository !== undefined) return inputs.repository;
     return (await this.ledger.reservations())
       .flatMap((entry) => entry.children)
       .find((child) => child.workItemId === workItemId)?.repository;
@@ -154,6 +184,7 @@ export class DelegatedWork {
     assignments: readonly DelegatedAssignment[],
     context: CommandContext,
     limits: DelegationLimits = defaultLimits,
+    expectedPlanRevision?: number,
   ): Promise<DelegationReservation> {
     const artifacts = this.artifacts;
     const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
@@ -193,6 +224,27 @@ export class DelegatedWork {
         reservation,
         rootLimits,
       );
+      assertPlanRevision(expectedPlanRevision, all.length);
+      reservation = { ...reservation, planRevision: all.length + 1 };
+      reservation = await resolvePrerequisites(
+        reservation,
+        all,
+        this.ledger,
+        this.definitions,
+        async (target, name) => {
+          const view = (await this.repository.load(target.workflowInstanceId)).view;
+          const output = target.outputs.find((entry) => entry.name === name);
+          return (
+            view !== null &&
+            output !== undefined &&
+            (await artifacts.prerequisiteOutput?.(
+              view,
+              output,
+              DelegationPrerequisiteCondition.MergedChange,
+            )) != null
+          );
+        },
+      );
       for (const child of reservation.children)
         await this.prepareChild(artifacts, parent, child, context);
       if (await this.commit(identity.root, sequence, reservation, context)) {
@@ -221,10 +273,8 @@ export class DelegatedWork {
   }
 
   async reconcile(context: CommandContext): Promise<void> {
-    const all = await this.ledger.reservations();
-    if (all.length === 0) return;
     const events = await this.ledger.events();
-    const reservations = all.filter((reservation) => !isSettled(events, reservation));
+    const reservations = unsettledReservations(events);
     if (reservations.length === 0) return;
     const artifacts = this.artifacts;
     for (const reservation of reservations) {
@@ -403,13 +453,125 @@ export class DelegatedWork {
     }
     if (!(await this.ensureWait(reservation, context))) return;
     const root = await this.registerChildren(artifacts, reservation, context);
+    const read = await this.prerequisites.read();
     for (const child of reservation.children) {
-      if (isSettled(await this.ledger.events(), reservation)) break;
-      await this.advanceChild(artifacts, root, reservation, child, context);
+      const events = await this.ledger.events();
+      if (isSettled(events, reservation)) break;
+      if (childBlocker(events, child.workItemId) !== undefined) continue;
+      if (await this.preparePrerequisites(root, reservation, child, context, read))
+        await this.advanceChild(artifacts, root, reservation, child, context);
     }
+    if (await this.settleUnusable(reservation, context)) return;
     const results = selectedResults(await this.ledger.events(), reservation);
-    if (reservation.children.every((c) => results.some((r) => r.childWorkItemId === c.workItemId)))
+    if (await this.childrenQualified(reservation, results, context))
       await this.join(reservation, results, context);
+  }
+
+  private async settleUnusable(
+    reservation: DelegationReservation,
+    context: CommandContext,
+  ): Promise<boolean> {
+    const events = await this.ledger.events();
+    const failed = new Set(
+      events.flatMap(({ event }) =>
+        event.eventType === OrchestrationEventType.DelegationChildBlocked
+          ? [event.payload.childWorkItemId]
+          : [],
+      ),
+    );
+    const first = reservation.children.find((child) => failed.has(child.workItemId));
+    if (first === undefined) return false;
+    for (let pass = 0; pass < reservation.children.length; pass++)
+      for (const child of reservation.children)
+        if (child.prerequisiteWorkItemIds?.some((id) => failed.has(id)))
+          failed.add(child.workItemId);
+    const selected = new Set(
+      selectedResults(events, reservation).map((result) => result.childWorkItemId),
+    );
+    if (
+      reservation.children.every(
+        (child) => failed.has(child.workItemId) || selected.has(child.workItemId),
+      )
+    ) {
+      if (!(await this.canJoin(reservation))) return true;
+      await this.abandon(reservation, failed, context);
+      await this.join(
+        reservation,
+        [],
+        context,
+        'Delegated inputs or child failed; inspect blockers and submit replacement work',
+      );
+    }
+    return true;
+  }
+
+  private async abandon(
+    reservation: DelegationReservation,
+    failed: ReadonlySet<string>,
+    context: CommandContext,
+  ) {
+    for (const child of reservation.children) {
+      if (!failed.has(child.workItemId)) continue;
+      const view = (await this.repository.load(child.workflowInstanceId)).view;
+      if (
+        view === null ||
+        view.status === WorkflowStatus.Completed ||
+        view.status === WorkflowStatus.Superseded
+      )
+        continue;
+      await this.ledger.appendOnce(
+        child.workflowInstanceId,
+        context,
+        'abandoned:' + child.grantId,
+        { eventType: OrchestrationEventType.InstanceSuperseded, payload: {} },
+      );
+    }
+  }
+
+  private async preparePrerequisites(
+    root: WorkflowInstanceId,
+    reservation: DelegationReservation,
+    child: DelegationReservation['children'][number],
+    context: CommandContext,
+    read: PrerequisiteReadiness,
+  ): Promise<boolean> {
+    try {
+      return await this.prerequisites.prepare(reservation, child, context, read);
+    } catch (error) {
+      await this.ledger.appendOnce(root, context, 'child-unavailable:' + child.grantId, {
+        eventType: OrchestrationEventType.DelegationReconciliationFailed,
+        payload: {
+          cohortId: reservation.cohortId,
+          reason:
+            'Child ' +
+            child.assignmentId +
+            ': ' +
+            (error instanceof Error ? error.message : 'reconciliation unavailable'),
+        },
+      });
+      return false;
+    }
+  }
+
+  private async childrenQualified(
+    reservation: DelegationReservation,
+    results: readonly DelegationResult[],
+    context: CommandContext,
+  ): Promise<boolean> {
+    if (
+      !reservation.children.every((child) =>
+        results.some((result) => result.childWorkItemId === child.workItemId),
+      )
+    )
+      return false;
+    const read = await this.prerequisites.read();
+    return (
+      await Promise.all(
+        reservation.children.map((child) =>
+          this.prerequisites.check(reservation, child, context, read),
+        ),
+      )
+    ).every(Boolean);
   }
 
   private async ensureWait(
@@ -553,7 +715,7 @@ export class DelegatedWork {
       return;
     const existing = await this.repository.load(child.workflowInstanceId);
     if (await this.childWorkTerminated(child.workItemId, existing.view)) {
-      await this.fail(reservation, 'Delegated child work is no longer open', context);
+      await this.failChild(reservation, child, 'Delegated child work is no longer open', context);
       return;
     }
     const workflow =
@@ -573,7 +735,12 @@ export class DelegatedWork {
       workflow.status === WorkflowStatus.Superseded ||
       (workflow.status === WorkflowStatus.Completed && !isSuccessfulWorkflowCompletion(workflow))
     ) {
-      await this.fail(reservation, `Child ${child.workItemId} terminated without success`, context);
+      await this.failChild(
+        reservation,
+        child,
+        `Child ${child.workItemId} terminated without success`,
+        context,
+      );
       return;
     }
     if (workflow.status !== WorkflowStatus.Completed) return;
@@ -594,13 +761,34 @@ export class DelegatedWork {
           ).length === 1,
       );
     if (!satisfied) {
-      await this.fail(reservation, 'Invalid qualifying output contract', context);
+      await this.failChild(reservation, child, 'Invalid qualifying output contract', context);
       return;
     }
     await this.ledger.appendOnce(root, context, `result:${child.grantId}`, {
       eventType: OrchestrationEventType.DelegationResultSelected,
       payload: { cohortId: reservation.cohortId, childWorkItemId: child.workItemId, outputs },
     });
+  }
+
+  private async failChild(
+    reservation: DelegationReservation,
+    child: DelegationReservation['children'][number],
+    reason: string,
+    context: CommandContext,
+  ): Promise<void> {
+    if (!reservation.children.some((entry) => (entry.prerequisites?.length ?? 0) > 0)) {
+      await this.fail(reservation, reason, context);
+      return;
+    }
+    await this.ledger.appendOnce(
+      reservation.parentWorkflowInstanceId,
+      context,
+      'child-blocked:' + child.grantId,
+      {
+        eventType: OrchestrationEventType.DelegationChildBlocked,
+        payload: { childWorkItemId: child.workItemId, reason },
+      },
+    );
   }
 
   private async childWorkTerminated(
@@ -633,8 +821,9 @@ export class DelegatedWork {
       return;
     }
     if (observed.event.causationId !== context.commandId)
-      await this.fail(
+      await this.failChild(
         reservation,
+        child,
         `Child ${child.workItemId} completed without required outputs`,
         context,
       );
@@ -656,11 +845,12 @@ export class DelegatedWork {
     );
   }
 
-  /** Join and continuation commit together, so a duplicate trigger cannot resume the parent twice. */
+  /** Settlement and continuation commit together; failures request assessment without a successful join. */
   private async join(
     reservation: DelegationReservation,
     results: readonly DelegationResult[],
     context: CommandContext,
+    failureReason?: string,
   ): Promise<void> {
     if (!(await this.canJoin(reservation))) return;
     const parentId = reservation.parentWorkflowInstanceId;
@@ -684,15 +874,7 @@ export class DelegatedWork {
         throw new Error('Missing delegating activation');
       const requested = original.event.payload;
       const drafts = [
-        delegationDraft(
-          context,
-          `join:${reservation.cohortId}`,
-          {
-            eventType: OrchestrationEventType.DelegationJoined,
-            payload: { cohortId: reservation.cohortId, results },
-          },
-          parentId,
-        ),
+        settlementDraft(context, reservation, results, failureReason),
         delegationDraft(
           context,
           `continue:${reservation.cohortId}`,
@@ -737,4 +919,46 @@ function assertReplay(
     !matchesAssignments(prior, assignments)
   )
     throw new Error('Delegation replay conflict');
+}
+
+function assertPlanRevision(expected: number | undefined, actual: number): void {
+  if (expected !== undefined && expected !== actual)
+    throw new DelegationConflictError(
+      DelegationConflictCode.StalePlan,
+      'Delegation plan revision changed; inspect before submitting again',
+    );
+}
+
+function childBlocker(
+  events: Awaited<ReturnType<DelegationLedger['events']>>,
+  id: string,
+): string | undefined {
+  return events.flatMap(({ event }) =>
+    event.eventType === OrchestrationEventType.DelegationChildBlocked &&
+    event.payload.childWorkItemId === id
+      ? [event.payload.reason]
+      : [],
+  )[0];
+}
+
+function settlementDraft(
+  context: CommandContext,
+  reservation: DelegationReservation,
+  results: readonly DelegationResult[],
+  reason: string | undefined,
+) {
+  return delegationDraft(
+    context,
+    'join:' + reservation.cohortId,
+    reason === undefined
+      ? {
+          eventType: OrchestrationEventType.DelegationJoined,
+          payload: { cohortId: reservation.cohortId, results },
+        }
+      : {
+          eventType: OrchestrationEventType.DelegationFailed,
+          payload: { cohortId: reservation.cohortId, reason },
+        },
+    reservation.parentWorkflowInstanceId,
+  );
 }

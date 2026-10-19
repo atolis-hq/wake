@@ -55,3 +55,8 @@ constructs the host, serialiser, and complete registry.
 ## Scenarios
 
 E2E-WORK-002, E2E-PR-001, E2E-DELIVERY-001.
+
+Prerequisite outputs distinguish verified pushed changes, delivery-ready review
+and check authority, and actual provider-observed merge state at the exact head.
+They retain observed base revisions for selective downstream freshness checks;
+workflow or issue completion is never merge evidence.

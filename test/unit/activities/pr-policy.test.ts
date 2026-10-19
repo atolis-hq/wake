@@ -6,6 +6,7 @@ import { resId, workId } from '../../support/identities.js';
 
 import {
   decidePullRequestAuthority,
+  decidePullRequestOutputAuthority,
   type PullRequestAuthorityInput,
 } from '../../../src/activities/index.js';
 import {} from '../../../src/resources/index.js';
@@ -190,3 +191,36 @@ function withoutAcceptedReview(
     checks: pullRequest.checks,
   };
 }
+
+it('qualifies merged output evidence without reopening approval or merge authority', () => {
+  const input = authorityInput();
+  const merged = {
+    ...input,
+    pullRequests: input.pullRequests.map((pr) => ({ ...pr, state: 'merged' as const })),
+  };
+  const options = {
+    target: { resourceId: resource },
+    requireAcceptedReview: true,
+    requireChecks: true,
+  };
+  expect(decidePullRequestOutputAuthority(merged, options)).toMatchObject({
+    allowed: true,
+    revision: 'head-a',
+  });
+  expect(decidePullRequestAuthority(merged, options)).toMatchObject({
+    allowed: false,
+    reason: 'closed',
+  });
+  expect(
+    decidePullRequestOutputAuthority({ ...merged, acceptedSignals: [] }, options).allowed,
+  ).toBe(false);
+  expect(
+    decidePullRequestOutputAuthority(
+      {
+        ...merged,
+        pullRequests: merged.pullRequests.map((pr) => ({ ...pr, checks: 'failing' as const })),
+      },
+      options,
+    ).allowed,
+  ).toBe(false);
+});

@@ -18,8 +18,12 @@ export function createOrchestrationEventData(
   input: OrchestrationEventDataInput,
 ): OrchestrationEventData {
   switch (input.eventType) {
-    case OrchestrationEventType.DelegationFailed:
+    case OrchestrationEventType.DelegationInputsResolved:
       return createEventData(input);
+    case OrchestrationEventType.DelegationPrerequisiteBlocked:
+    case OrchestrationEventType.DelegationChildBlocked:
+      return createEventData(input);
+    case OrchestrationEventType.DelegationFailed:
     case OrchestrationEventType.DelegationReconciliationFailed:
       return createEventData(input);
     case OrchestrationEventType.DelegationReserved:
@@ -75,11 +79,8 @@ export function createOrchestrationEventData(
     case OrchestrationEventType.ChildRequested:
       return createEventData(input);
     case OrchestrationEventType.ChildStarted:
-      return createEventData(input);
     case OrchestrationEventType.ChildCompleted:
-      return createEventData(input);
     case OrchestrationEventType.ChildCompletionConsumed:
-      return createEventData(input);
     case OrchestrationEventType.CausalActivationRejected:
       return createEventData(input);
     case OrchestrationEventType.GroupBudgetExhausted:

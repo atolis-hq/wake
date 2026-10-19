@@ -10,11 +10,17 @@ export class ScriptedDelegationRunner implements Runner {
   readonly name = 'fake';
   readonly supportsEphemeralMcp = true;
   readonly scripts: ((request: RunnerRequest) => Promise<AgentRunnerResult>)[] = [];
+  scriptFor:
+    | ((
+        request: RunnerRequest,
+      ) => ((request: RunnerRequest) => Promise<AgentRunnerResult>) | undefined)
+    | undefined;
+
   readonly requests: RunnerRequest[] = [];
 
   async start(request: RunnerRequest) {
     this.requests.push(request);
-    const script = this.scripts.shift();
+    const script = this.scriptFor?.(request) ?? this.scripts.shift();
     return {
       result:
         script === undefined

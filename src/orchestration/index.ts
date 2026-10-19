@@ -68,7 +68,7 @@ export type { WorkflowCompileDiagnostic } from './domain/compile-diagnostics.js'
 
 export type { DelegationArtifacts, DelegationRepositories } from './contracts/delegation-ports.js';
 
-export { DelegationPendingError } from './contracts/delegation.js';
+export { DelegationConflictError, DelegationPendingError } from './contracts/delegation.js';
 
 export type { DelegationAuthority } from './contracts/delegation-ports.js';
 
@@ -76,6 +76,9 @@ export { delegationSubmissionSchema } from './contracts/delegation.js';
 
 export type {
   DelegationCaller,
+  DelegationInputs,
+  DelegationPrerequisite,
   DelegationReservation,
+  DelegationResult,
   DelegationSubmission,
 } from './contracts/delegation.js';

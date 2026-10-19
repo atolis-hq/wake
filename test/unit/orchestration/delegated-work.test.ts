@@ -7,7 +7,12 @@ import {
 } from '@atolis-hq/eventing';
 import { afterEach, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { activationId, activityName, ActivityRegistry } from '../../../src/activities/index.js';
+import {
+  activationId,
+  activityName,
+  ActivityRegistry,
+  pullRequestMergeInputSchema,
+} from '../../../src/activities/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -44,10 +49,26 @@ const context = (commandId: string): CommandContext => ({
 /** Permanent fake of the Bootstrap adapter: grants are immutable per id and outputs are opt-in. */
 class FakeDelegationArtifacts implements DelegationArtifacts {
   registrationUnavailable = false;
+  prerequisiteGrantsUnavailable = false;
   failureMessage = 'Grant store unavailable';
   readonly unavailableChildren = new Set<string>();
   readonly grants = new Map<string, string>();
   readonly published = new Set<string>();
+  readonly revisions = new Map<string, string>();
+  readonly merged = new Set<string>();
+  readonly changes = new Map<string, DelegationResult['outputs'][number]>();
+
+  async prerequisiteOutput(
+    child: WorkflowInstanceView,
+    output: DelegatedAssignment['outputs'][number],
+    condition?: string,
+  ): Promise<DelegationResult['outputs'][number] | null> {
+    if ('kind' in output) {
+      if (condition === 'merged-change' && !this.merged.has(child.workItemId)) return null;
+      return this.changes.get(child.workItemId) ?? null;
+    }
+    return (await this.qualifyingOutputs(child, [output]))?.[0] ?? null;
+  }
 
   onValidate: (() => Promise<void>) | undefined;
 
@@ -56,6 +77,8 @@ class FakeDelegationArtifacts implements DelegationArtifacts {
   }
 
   async registerChild(grant: Parameters<DelegationArtifacts['registerChild']>[0]): Promise<void> {
+    if (this.prerequisiteGrantsUnavailable && grant.delegationId.endsWith(':prerequisites'))
+      throw new Error('Prerequisite grants unavailable');
     if (this.registrationUnavailable || this.unavailableChildren.has(grant.childWorkItemId))
       throw new Error(this.failureMessage);
     const serialised = JSON.stringify(grant);
@@ -67,9 +90,16 @@ class FakeDelegationArtifacts implements DelegationArtifacts {
 
   async qualifyingOutputs(child: WorkflowInstanceView, outputs: DelegatedAssignment['outputs']) {
     if (!this.published.has(child.workItemId)) return null;
+    if (outputs.some((output) => 'kind' in output)) {
+      const changes = outputs.map(() => this.changes.get(child.workItemId));
+      return changes.every((change) => change !== undefined) ? changes : null;
+    }
     return outputs.map((output) => ({
       name: output.name,
-      reference: { workItemId: child.workItemId, revisionId: `revision-${output.name}` },
+      reference: {
+        workItemId: child.workItemId,
+        revisionId: this.revisions.get(child.workItemId) ?? `revision-${output.name}`,
+      },
     }));
   }
 }
@@ -79,13 +109,16 @@ function build(
   artifacts = new FakeDelegationArtifacts(),
   activeRuns = new Set<string>(),
   repositories?: DelegationRepositories,
+  merging = false,
 ) {
   const work = createWorkService(journal);
   const activities = new ActivityRegistry();
-  for (const name of ['plan', 'child-work']) {
+  for (const name of ['plan', 'child-work', 'pr.merge']) {
+    const inputSchema: z.ZodType<unknown> =
+      name === 'pr.merge' ? pullRequestMergeInputSchema : z.object({}).strict();
     activities.register({
       name: activityName(name),
-      inputSchema: z.object({}).strict(),
+      inputSchema,
       outcomeSchema: z.object({ kind: z.enum(['done', 'blocked', 'failed', 'found']) }).strict(),
       outcomeKinds: ['done', 'blocked', 'failed', 'found'],
       resources: [],
@@ -101,7 +134,10 @@ function build(
     stages: {
       work: {
         activity,
-        with: {},
+        with:
+          activity === 'pr.merge'
+            ? { target: 'primary', method: 'squash', requireChecks: true }
+            : {},
         on: {
           done: { then: 'done' },
           found: { then: 'done' },
@@ -115,7 +151,7 @@ function build(
   const names = ['parent', 'child'];
   const definitions = {
     parent: compileWorkflow('parent', stage('plan'), activities, names),
-    child: compileWorkflow('child', stage('child-work'), activities, names),
+    child: compileWorkflow('child', stage(merging ? 'pr.merge' : 'child-work'), activities, names),
   };
   const service = createOrchestrationService(
     journal,
@@ -1093,6 +1129,7 @@ it('rejects historical assignment fingerprints while recovering an already commi
 import type {
   DelegatedAssignment,
   DelegationCaller,
+  DelegationResult,
 } from '../../../src/orchestration/contracts/delegation.js';
 
 it.each(['cancel', 'close', 'delete'] as const)(
@@ -1333,4 +1370,652 @@ it('replays the recorded source after branch movement and rejects an explicit co
       context('conflict'),
     ),
   ).rejects.toThrow('replay conflict');
+});
+
+it('queues upfront prerequisites, preserves independent progress, pins exact context and recovers grants after restart (DC-02, DC-17)', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const assignments = [
+    assignment(fingerprint, 'a'),
+    {
+      ...assignment(fingerprint, 'b'),
+      prerequisites: [
+        { assignmentId: 'a', output: 'findings', condition: 'accepted-output' as const },
+      ],
+    },
+    assignment(fingerprint, 'independent'),
+  ];
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'queued',
+    assignments,
+    context('reserve'),
+  );
+  const [a, b, independent] = reservation.children;
+  expect(b!.prerequisiteWorkItemIds).toEqual([a!.workItemId]);
+  expect(await fixture.service.get(b!.workflowInstanceId)).toBeNull();
+  expect(await fixture.service.listPendingActivations(independent!.workItemId)).toHaveLength(1);
+  expect(
+    (await fixture.service.deliveryTree(workId('1')))[0]!.children[1]!.prerequisiteBlocker,
+  ).toContain('Waiting for');
+  fixture.artifacts.published.add(a!.workItemId);
+  const restarted = build(fixture.journal, fixture.artifacts);
+  await restarted.service.reconcileChildCompletions(context('ready'));
+  expect(await restarted.service.get(b!.workflowInstanceId)).not.toBeNull();
+  expect(await restarted.service.repositoryAssignment(b!.workItemId)).toBeUndefined();
+  const tree = (await restarted.service.deliveryTree(workId('1')))[0]!;
+  expect(tree.children[1]!.consumedInputs!.consumed[0]!.reference).toEqual({
+    workItemId: a!.workItemId,
+    revisionId: 'revision-findings',
+  });
+  expect(
+    [...fixture.artifacts.grants.values()].some(
+      (grant) => grant.includes(a!.workItemId) && grant.includes(b!.workItemId),
+    ),
+  ).toBe(true);
+  const before = await count(fixture, OrchestrationEventType.DelegationInputsResolved);
+  await restarted.service.reconcileChildCompletions(context('duplicate'));
+  expect(await count(fixture, OrchestrationEventType.DelegationInputsResolved)).toBe(before);
+  fixture.artifacts.revisions.set(a!.workItemId, 'changed');
+  expect(await restarted.service.listPendingActivations(b!.workItemId)).toHaveLength(0);
+  await expect(complete(restarted, b!.workflowInstanceId)).rejects.toThrow(DelegationPendingError);
+  expect(await restarted.service.listPendingActivations(independent!.workItemId)).toHaveLength(1);
+  await restarted.service.reconcileChildCompletions(context('stale'));
+  expect(
+    (await restarted.service.deliveryTree(workId('1')))[0]!.children[1]!.prerequisiteBlocker,
+  ).toContain('changed');
+});
+
+it.each([
+  ['self-dependency', 'a', 'findings'],
+  ['missing-target', 'missing', 'findings'],
+  ['missing-output', 'b', 'missing'],
+])('rejects %s without committing any reservation (DC-07)', async (code, target, output) => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  await expect(
+    fixture.service['delegatedWork'].reserve(
+      caller,
+      'invalid',
+      [
+        {
+          ...assignment(fingerprint, 'a'),
+          prerequisites: [{ assignmentId: target, output, condition: 'accepted-output' }],
+        },
+        assignment(fingerprint, 'b'),
+      ],
+      context('invalid'),
+    ),
+  ).rejects.toMatchObject({ name: 'DelegationConflictError', code });
+  expect(await count(fixture, OrchestrationEventType.DelegationReserved)).toBe(0);
+});
+
+it('rejects explicit cycles and stale expected plan revisions (DC-07)', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  await expect(
+    fixture.service['delegatedWork'].reserve(
+      caller,
+      'cycle',
+      ['a', 'b'].map((id, index) => ({
+        ...assignment(fingerprint, id),
+        prerequisites: [
+          {
+            assignmentId: index === 0 ? 'b' : 'a',
+            output: 'findings',
+            condition: 'accepted-output' as const,
+          },
+        ],
+      })),
+      context('cycle'),
+    ),
+  ).rejects.toMatchObject({ code: 'wait-cycle' });
+  await expect(
+    fixture.service['delegatedWork'].reserve(
+      caller,
+      'stale',
+      [assignment(fingerprint)],
+      context('stale'),
+      undefined,
+      1,
+    ),
+  ).rejects.toMatchObject({ code: 'stale-plan' });
+  expect(await count(fixture, OrchestrationEventType.DelegationReserved)).toBe(0);
+});
+
+it('rejects implicit ancestor joins even though explicit dependencies are acyclic (DC-35)', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const top = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'top-join',
+    [assignment(fingerprint, 'ancestor')],
+    context('top'),
+    { maxDepth: 3, maxDescendants: 8 },
+  );
+  const ancestor = top.children[0]!;
+  const view = (await fixture.service.get(ancestor.workflowInstanceId))!;
+  await expect(
+    fixture.service['delegatedWork'].reserve(
+      {
+        workflowInstanceId: view.workflowInstanceId,
+        activationId: view.pendingActivation!.activationId,
+        runId: 'nested-run',
+      },
+      'nested',
+      [
+        {
+          ...assignment(fingerprint, 'nested'),
+          prerequisites: [
+            {
+              cohortId: 'top-join',
+              assignmentId: 'ancestor',
+              output: 'findings',
+              condition: 'accepted-output',
+            },
+          ],
+        },
+      ],
+      context('nested'),
+      { maxDepth: 3, maxDescendants: 8 },
+    ),
+  ).rejects.toMatchObject({ code: 'wait-cycle' });
+});
+
+it('keeps accepted ancestor context usable without creating a future join prerequisite (DC-35)', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'accepted-context',
+    [
+      {
+        ...assignment(fingerprint),
+        context: [{ workItemId: workId('1'), revisionId: 'accepted-plan' }],
+      },
+    ],
+    context('context'),
+  );
+  expect(await fixture.service.get(reservation.children[0]!.workflowInstanceId)).not.toBeNull();
+});
+
+it('rejects merge-before-same-join for a delivery-ready child workflow (DC-35)', async () => {
+  const fixture = build(undefined, undefined, undefined, {
+    resolve: async (_parent, request) => ({ ...request, sourceRevision: 'a'.repeat(40) }),
+  });
+  const { caller, fingerprint } = await startParent(fixture);
+  const code = (id: string): DelegatedAssignment => ({
+    ...assignment(fingerprint, id),
+    repository: { resourceId: 'repo', sourceRef: 'main', pullRequestBase: 'main' },
+    outputs: [{ name: 'change', kind: 'change' }],
+  });
+  await expect(
+    fixture.service['delegatedWork'].reserve(
+      caller,
+      'merge-deadlock',
+      [
+        code('a'),
+        {
+          ...code('b'),
+          prerequisites: [{ assignmentId: 'a', output: 'change', condition: 'merged-change' }],
+        },
+      ],
+      context('merge-deadlock'),
+    ),
+  ).rejects.toMatchObject({ code: 'wait-cycle' });
+  expect(await count(fixture, OrchestrationEventType.DelegationReserved)).toBe(0);
+});
+
+it('queues actual-merge prerequisites when the upstream has its own configured merge lane (DC-12)', async () => {
+  const fixture = build(
+    undefined,
+    undefined,
+    undefined,
+    { resolve: async (_parent, request) => ({ ...request, sourceRevision: 'a'.repeat(40) }) },
+    true,
+  );
+  const { caller, fingerprint } = await startParent(fixture);
+  const code = (id: string): DelegatedAssignment => ({
+    ...assignment(fingerprint, id),
+    repository: { resourceId: 'repo', sourceRef: 'main', pullRequestBase: 'main' },
+    outputs: [{ name: 'change', kind: 'change' }],
+  });
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'own-merge',
+    [
+      code('a'),
+      {
+        ...code('b'),
+        prerequisites: [{ assignmentId: 'a', output: 'change', condition: 'merged-change' }],
+      },
+    ],
+    context('own-merge'),
+  );
+  const [a, b] = reservation.children;
+  fixture.artifacts.changes.set(a!.workItemId, {
+    name: 'change',
+    reference: {
+      workItemId: a!.workItemId,
+      resourceId: 'pr',
+      repositoryResourceId: 'repo',
+      revision: 'a'.repeat(40),
+      branch: a!.workItemId,
+      pullRequestBase: 'main',
+      runId: 'upstream-run',
+    },
+  });
+  await fixture.service.reconcileChildCompletions(context('not-yet-merged'));
+  expect(await fixture.service.get(b!.workflowInstanceId)).toBeNull();
+  fixture.artifacts.merged.add(a!.workItemId);
+  await fixture.service.reconcileChildCompletions(context('actual-merge'));
+  expect(await fixture.service.get(b!.workflowInstanceId)).not.toBeNull();
+});
+
+it('supports incremental delivery-ready artifact prerequisites without changing earlier reservations', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const first = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'first',
+    [assignment(fingerprint, 'contract')],
+    context('first'),
+  );
+  const upstream = first.children[0]!;
+  fixture.artifacts.published.add(upstream.workItemId);
+  await complete(fixture, upstream.workflowInstanceId);
+  await fixture.work.close(upstream.workItemId, 'Delivered', context('closed-completed-upstream'));
+  const parent = (await fixture.service.get(caller.workflowInstanceId))!;
+  const second = await fixture.service['delegatedWork'].reserve(
+    { ...caller, activationId: parent.pendingActivation!.activationId },
+    'second',
+    [
+      {
+        ...assignment(fingerprint, 'consume'),
+        prerequisites: [
+          {
+            cohortId: 'first',
+            assignmentId: 'contract',
+            output: 'findings',
+            condition: 'delivery-ready',
+          },
+        ],
+      },
+    ],
+    context('second'),
+    undefined,
+    1,
+  );
+  expect(second.planRevision).toBe(2);
+  expect(second.children[0]!.prerequisiteWorkItemIds).toEqual([upstream.workItemId]);
+  expect(await fixture.service.get(second.children[0]!.workflowInstanceId)).not.toBeNull();
+  expect(
+    (await fixture.service.deliveryTree(workId('1')))[0]!.children[0]!.prerequisites,
+  ).toBeUndefined();
+});
+
+it('recovers the exact pinned receipt when the prerequisite grant fails after commitment', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'grant-fault',
+    [
+      assignment(fingerprint, 'a'),
+      {
+        ...assignment(fingerprint, 'b'),
+        prerequisites: [{ assignmentId: 'a', output: 'findings', condition: 'accepted-output' }],
+      },
+    ],
+    context('reserve'),
+  );
+  const [a, b] = reservation.children;
+  fixture.artifacts.published.add(a!.workItemId);
+  fixture.artifacts.prerequisiteGrantsUnavailable = true;
+  await fixture.service.reconcileChildCompletions(context('grant-fault'));
+  expect(await count(fixture, OrchestrationEventType.DelegationInputsResolved)).toBe(1);
+  expect(await fixture.service.get(b!.workflowInstanceId)).toBeNull();
+  fixture.artifacts.prerequisiteGrantsUnavailable = false;
+  const restarted = build(fixture.journal, fixture.artifacts);
+  await restarted.service.reconcileChildCompletions(context('grant-recover'));
+  expect(await restarted.service.get(b!.workflowInstanceId)).not.toBeNull();
+  expect(await count(fixture, OrchestrationEventType.DelegationInputsResolved)).toBe(1);
+  expect(fixture.artifacts.grants.get(b!.grantId + ':prerequisites')).toContain(
+    'revision-findings',
+  );
+});
+
+it('rejects cross-repository Git bases before committing children', async () => {
+  const fixture = build(undefined, undefined, undefined, {
+    resolve: async (_parent, request) => ({ ...request, sourceRevision: 'a'.repeat(40) }),
+  });
+  const { caller, fingerprint } = await startParent(fixture);
+  const code = (id: string): DelegatedAssignment => ({
+    ...assignment(fingerprint, id),
+    repository: { resourceId: 'repo-' + id, sourceRef: 'main', pullRequestBase: 'main' },
+    outputs: [{ name: 'change', kind: 'change' }],
+  });
+  await expect(
+    fixture.service['delegatedWork'].reserve(
+      caller,
+      'foreign-base',
+      [
+        code('a'),
+        {
+          ...code('b'),
+          prerequisites: [
+            { assignmentId: 'a', output: 'change', condition: 'pushed-change', useAsBase: true },
+          ],
+        },
+      ],
+      context('foreign-base'),
+    ),
+  ).rejects.toMatchObject({ code: 'cross-repository-base' });
+  expect(await count(fixture, OrchestrationEventType.DelegationReserved)).toBe(0);
+});
+
+it('keeps unrelated queued-batch children progressing after an upstream fails', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'partial-failure',
+    [
+      assignment(fingerprint, 'a'),
+      {
+        ...assignment(fingerprint, 'dependent'),
+        prerequisites: [{ assignmentId: 'a', output: 'findings', condition: 'accepted-output' }],
+      },
+      assignment(fingerprint, 'independent'),
+    ],
+    context('partial-failure'),
+  );
+  const [a, dependent, independent] = reservation.children;
+  await complete(fixture, a!.workflowInstanceId, 'failed');
+  const restarted = build(fixture.journal, fixture.artifacts);
+  await restarted.service.reconcileChildCompletions(context('recover-failure'));
+  expect(await restarted.service.get(dependent!.workflowInstanceId)).toBeNull();
+  expect(await restarted.service.listPendingActivations(independent!.workItemId)).toHaveLength(1);
+  const tree = (await restarted.service.deliveryTree(workId('1')))[0]!;
+  expect(tree.children[0]!.prerequisiteBlocker).toContain('without success');
+  expect(tree.children[1]!.prerequisiteBlocker).toMatch(/failed|without success/);
+  fixture.artifacts.published.add(independent!.workItemId);
+  await complete(restarted, independent!.workflowInstanceId);
+  await restarted.service.reconcileChildCompletions(context('settle-failed'));
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(1);
+  expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(0);
+  expect((await restarted.service.get(caller.workflowInstanceId))!.status).toBe('active');
+  expect(await restarted.service.listPendingActivations(workId('1'))).toHaveLength(1);
+  await restarted.service.reconcileChildCompletions(context('duplicate-failure'));
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(1);
+});
+
+// A new batch is an agent decision, with fresh identities and evidence, never an implicit rebase.
+it('returns stale consumed inputs for agent assessment and accepts a forward revision in a replacement batch', async () => {
+  const fixture = build(undefined, undefined, new Set(['run-1']));
+  const { caller, fingerprint } = await startParent(fixture);
+  const batch = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'original',
+    [
+      assignment(fingerprint, 'upstream'),
+      {
+        ...assignment(fingerprint, 'consumer'),
+        prerequisites: [
+          { assignmentId: 'upstream', output: 'findings', condition: 'accepted-output' },
+        ],
+      },
+    ],
+    context('original'),
+  );
+  const [upstream, consumer] = batch.children;
+  fixture.artifacts.published.add(upstream!.workItemId);
+  await complete(fixture, upstream!.workflowInstanceId);
+  await fixture.service.reconcileChildCompletions(context('pin'));
+  fixture.artifacts.published.add(consumer!.workItemId);
+  await complete(fixture, consumer!.workflowInstanceId);
+  const original = (await fixture.service.deliveryTree(workId('1')))[0]!.children[1]!
+    .consumedInputs;
+  fixture.artifacts.revisions.set(upstream!.workItemId, 'revision-v2');
+  await fixture.service.reconcileChildCompletions(context('moved-forward'));
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
+  // The original parent Run must end before an assessment Run may be requested.
+  await complete(fixture, caller.workflowInstanceId);
+  fixture.activeRuns.clear();
+  const restarted = build(fixture.journal, fixture.artifacts);
+  await restarted.service.reconcileChildCompletions(context('assessment'));
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(1);
+  expect(
+    await restarted.service.joinedDelegationResults(caller.workflowInstanceId, 'original'),
+  ).toEqual([]);
+  const parent = (await restarted.service.get(caller.workflowInstanceId))!;
+  expect(parent.pendingActivation!.activationId).not.toBe(caller.activationId);
+  await expect(
+    restarted.service['delegatedWork'].reserve(
+      caller,
+      'unauthorized-replay',
+      [assignment(fingerprint, 'wrong-activation')],
+      context('old-caller'),
+    ),
+  ).rejects.toThrow('current active activation');
+  expect((await restarted.service.deliveryTree(workId('1')))[0]!.failureReason).toContain(
+    'inspect blockers',
+  );
+  const replacement = await restarted.service['delegatedWork'].reserve(
+    { ...caller, activationId: parent.pendingActivation!.activationId, runId: 'assessment-run' },
+    'replacement',
+    [
+      {
+        ...assignment(fingerprint, 'consumer-v2'),
+        prerequisites: [
+          {
+            cohortId: 'original',
+            assignmentId: 'upstream',
+            output: 'findings',
+            condition: 'accepted-output',
+          },
+        ],
+      },
+    ],
+    context('replacement'),
+    undefined,
+    1,
+  );
+  const child = replacement.children[0]!;
+  const tree = await restarted.service.deliveryTree(workId('1'));
+  expect(tree[0]!.children[1]!.consumedInputs).toEqual(original);
+  expect(tree[1]!.children[0]!.consumedInputs!.consumed[0]!.reference).toMatchObject({
+    revisionId: 'revision-v2',
+  });
+  expect(child.workItemId).not.toBe(consumer!.workItemId);
+  fixture.artifacts.published.add(child.workItemId);
+  await complete(restarted, child.workflowInstanceId);
+  expect(
+    await restarted.service.joinedDelegationResults(caller.workflowInstanceId, 'replacement'),
+  ).toHaveLength(1);
+  expect(await count(fixture, OrchestrationEventType.DelegationInputsResolved)).toBe(2);
+});
+
+it('deduplicates shared prerequisite verification within a gate pass and skips settled reconciliation', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const batch = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'fanout',
+    [
+      assignment(fingerprint, 'source'),
+      ...Array.from({ length: 6 }, (_, i) => ({
+        ...assignment(fingerprint, 'consumer-' + i),
+        prerequisites: [
+          { assignmentId: 'source', output: 'findings', condition: 'accepted-output' as const },
+        ],
+      })),
+    ],
+    context('fanout'),
+  );
+  fixture.artifacts.published.add(batch.children[0]!.workItemId);
+  await fixture.service.reconcileChildCompletions(context('start-consumers'));
+  const verification = vi.spyOn(fixture.artifacts, 'prerequisiteOutput');
+  const snapshots = vi.spyOn(fixture.service['repository'], 'snapshot');
+  await fixture.service.listPendingActivations();
+  expect(verification).toHaveBeenCalledTimes(1);
+  expect(snapshots).toHaveBeenCalledTimes(1);
+  for (const child of batch.children) {
+    fixture.artifacts.published.add(child.workItemId);
+    await complete(fixture, child.workflowInstanceId);
+  }
+  verification.mockClear();
+  await fixture.service.reconcileChildCompletions(context('settled-history'));
+  expect(verification).not.toHaveBeenCalled();
+});
+
+it('bounds prerequisite diagnostics when provider error messages keep changing', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const batch = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'unavailable',
+    [
+      assignment(fingerprint, 'source'),
+      {
+        ...assignment(fingerprint, 'consumer'),
+        prerequisites: [
+          { assignmentId: 'source', output: 'findings', condition: 'accepted-output' },
+        ],
+      },
+    ],
+    context('unavailable'),
+  );
+  fixture.artifacts.published.add(batch.children[0]!.workItemId);
+  await fixture.service.reconcileChildCompletions(context('pin'));
+  let n = 0;
+  vi.spyOn(fixture.artifacts, 'prerequisiteOutput').mockImplementation(async () => {
+    throw new Error('Remote request ' + n++ + ' failed');
+  });
+  for (let i = 0; i < 8; i++)
+    await fixture.service.reconcileChildCompletions(context('provider-' + i));
+  expect(await count(fixture, OrchestrationEventType.DelegationPrerequisiteBlocked)).toBe(1);
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
+});
+
+it('accepts a newer pushed head through an explicit replacement assignment without restoring the old branch', async () => {
+  let head = 'a'.repeat(40);
+  const resolve = vi.fn<DelegationRepositories['resolve']>(async (_parent, request) => ({
+    ...request,
+    sourceRevision:
+      request.sourceRevision ?? (request.sourceRef === 'main' ? '0'.repeat(40) : head),
+  }));
+  const fixture = build(undefined, undefined, new Set(['run-1']), { resolve });
+  const { caller, fingerprint } = await startParent(fixture);
+  const source = {
+    ...assignment(fingerprint, 'source'),
+    outputs: [{ name: 'change', kind: 'change' as const }],
+    repository: { resourceId: 'repo', sourceRef: 'main', pullRequestBase: 'main' },
+  };
+  const consumer = {
+    ...assignment(fingerprint, 'consumer'),
+    repository: source.repository,
+    prerequisites: [
+      {
+        assignmentId: 'source',
+        output: 'change',
+        condition: 'pushed-change' as const,
+        useAsBase: true,
+      },
+    ],
+  };
+  const batch = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'stack',
+    [source, consumer],
+    context('stack'),
+  );
+  const [a, b] = batch.children;
+  const change = {
+    name: 'change',
+    reference: {
+      workItemId: a!.workItemId,
+      resourceId: 'pr',
+      repositoryResourceId: 'repo',
+      revision: head,
+      branch: a!.workItemId,
+      pullRequestBase: 'main',
+      baseRevision: '0'.repeat(40),
+      runId: 'push-v1',
+    },
+  };
+  fixture.artifacts.changes.set(a!.workItemId, change);
+  fixture.artifacts.published.add(a!.workItemId);
+  await complete(fixture, a!.workflowInstanceId);
+  await fixture.service.reconcileChildCompletions(context('pin-v1'));
+  const oldReceipt = (await fixture.service.deliveryTree(workId('1')))[0]!.children[1]!
+    .consumedInputs;
+  expect((await fixture.service.repositoryAssignment(b!.workItemId))!.sourceRevision).toBe(head);
+  resolve.mockClear();
+  await fixture.service.listPendingActivations();
+  expect(resolve).toHaveBeenCalledTimes(1);
+  fixture.artifacts.changes.set(a!.workItemId, {
+    ...change,
+    reference: { ...change.reference, baseRevision: 'unrelated-main-merge' },
+  });
+  expect(await fixture.service.listPendingActivations(b!.workItemId)).toHaveLength(1);
+  fixture.artifacts.changes.set(a!.workItemId, {
+    ...change,
+    reference: { ...change.reference, merged: true },
+  });
+  const liveResolver = resolve.getMockImplementation()!;
+  resolve.mockImplementation(async () => {
+    throw new Error('Source branch deleted after merge');
+  });
+  resolve.mockClear();
+  expect(await fixture.service.listPendingActivations(b!.workItemId)).toHaveLength(1);
+  expect(resolve).not.toHaveBeenCalled();
+  resolve.mockImplementation(liveResolver);
+  head = 'b'.repeat(40);
+  fixture.artifacts.changes.set(a!.workItemId, {
+    ...change,
+    reference: { ...change.reference, revision: head, runId: 'push-v2' },
+  });
+  expect(await fixture.service.listPendingActivations(b!.workItemId)).toHaveLength(0);
+  await complete(fixture, caller.workflowInstanceId);
+  fixture.activeRuns.clear();
+  await fixture.service.reconcileChildCompletions(context('stale-stack'));
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(1);
+  // Late outcomes drain existing Runs without accepting stale results; Work fences still apply.
+  fixture.artifacts.published.add(b!.workItemId);
+  await fixture.work.freeze(workId('1'), context('freeze-history'));
+  await expect(complete(fixture, b!.workflowInstanceId)).rejects.toThrow(DelegationPendingError);
+  await fixture.work.unfreeze(workId('1'), context('unfreeze-history'));
+  await complete(fixture, b!.workflowInstanceId);
+  expect((await fixture.service.get(b!.workflowInstanceId))!.status).toBe('superseded');
+  expect(await fixture.service.joinedDelegationResults(caller.workflowInstanceId, 'stack')).toEqual(
+    [],
+  );
+  const parent = (await fixture.service.get(caller.workflowInstanceId))!;
+  const next = await fixture.service['delegatedWork'].reserve(
+    { ...caller, activationId: parent.pendingActivation!.activationId, runId: 'repair' },
+    'repair',
+    [
+      {
+        ...consumer,
+        assignmentId: 'consumer-v2',
+        prerequisites: [{ ...consumer.prerequisites[0]!, cohortId: 'stack' }],
+      },
+    ],
+    context('repair'),
+    undefined,
+    1,
+  );
+  const replacement = next.children[0]!;
+  expect((await fixture.service.repositoryAssignment(replacement.workItemId))!.sourceRevision).toBe(
+    head,
+  );
+  expect((await fixture.service.deliveryTree(workId('1')))[0]!.children[1]!.consumedInputs).toEqual(
+    oldReceipt,
+  );
+  fixture.artifacts.published.add(replacement.workItemId);
+  await complete(fixture, replacement.workflowInstanceId);
+  expect(
+    await fixture.service.joinedDelegationResults(caller.workflowInstanceId, 'repair'),
+  ).toHaveLength(1);
 });
