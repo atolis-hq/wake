@@ -54,6 +54,8 @@ function stageHeight(childCount: number): number {
 export async function layoutWorkflowDiagram(
   diagram: WorkflowDiagram,
   direction: WorkflowDiagramLayoutDirection,
+  // Rendered stage heights; cards grow past the estimate (totals, metrics, active runs).
+  measuredHeights: ReadonlyMap<string, number> = new Map(),
 ): Promise<WorkflowDiagramLayout> {
   const graph = await elk.layout({
     id: diagram.id,
@@ -66,7 +68,7 @@ export async function layoutWorkflowDiagram(
     children: diagram.stages.map((stage) => ({
       id: stage.id,
       width: stageWidth,
-      height: stageHeight(stage.children.length),
+      height: Math.max(stageHeight(stage.children.length), measuredHeights.get(stage.id) ?? 0),
     })),
     edges: diagram.transitions.map((transition, index) => ({
       id: `${transition.from}-${transition.to}-${index}`,
