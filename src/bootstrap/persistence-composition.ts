@@ -56,7 +56,7 @@ function serializeJournalAppends(journal: EventJournal): EventJournal {
       ? {}
       : { scanAll: (signal?: AbortSignal) => journal.scanAll!(signal) }),
     readAll: (afterGlobalPosition, limit) => journal.readAll(afterGlobalPosition, limit),
-    latestGlobalPosition: () => journal.latestGlobalPosition(),
+    latestGlobalPosition: (options) => journal.latestGlobalPosition(options),
     waitForEventsAfter: (afterGlobalPosition, signal, fallbackMs) =>
       journal.waitForEventsAfter(afterGlobalPosition, signal, fallbackMs),
     changeSignal: journal.changeSignal,

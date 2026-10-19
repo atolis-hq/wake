@@ -662,6 +662,58 @@ it('shares one entry validation refresh across concurrent journal reads', async 
   expect(statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(1);
 });
 
+it('answers any number of concurrent fresh reads with at most two entry listings', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-fresh-coalescing-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  for (let index = 0; index < 40; index += 1)
+    await writer.appendToStream(stream, index, [journalDraft(`event-${index}`)]);
+  const reader = new FileEventJournal(root, clock);
+  await reader.latestGlobalPosition();
+  readdirMock.mockClear();
+  statMock.mockClear();
+
+  const reads = await Promise.all(
+    Array.from({ length: 500 }, () => reader.readStream(stream, { fresh: true })),
+  );
+
+  expect(reads.every((events) => events.length === 40)).toBe(true);
+  expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(2);
+  expect(
+    statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl')).length,
+  ).toBeLessThanOrEqual(80);
+});
+
+it('does not satisfy a fresh read with a listing that began before its call', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-fresh-ordering-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clock = new FakeClock();
+  const writer = new FileEventJournal(root, clock);
+  await writer.appendToStream(stream, 0, [journalDraft('event-0')]);
+  const reader = new FileEventJournal(root, clock);
+  const originalReaddir = readdirMock.getMockImplementation();
+  if (originalReaddir === undefined) throw new Error('Expected readdir mock implementation');
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  readdirMock.mockClear();
+  // The listing is taken, then held open across an append by another host.
+  readdirMock.mockImplementationOnce(async (...args: Parameters<typeof originalReaddir>) => {
+    const listing = await originalReaddir(...args);
+    await held;
+    return listing;
+  });
+
+  const stale = reader.latestGlobalPosition();
+  await vi.waitFor(() => expect(readdirMock).toHaveBeenCalledOnce());
+  await writer.appendToStream(stream, 1, [journalDraft('event-1')]);
+  const fresh = reader.latestGlobalPosition({ fresh: true });
+  release();
+
+  expect(await stale).toBe(1);
+  expect(await fresh).toBe(2);
+});
+
 it('retries an entry validation refresh after its first attempt rejects', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-entry-refresh-retry-'));
   const originalReaddir = readdirMock.getMockImplementation();

@@ -103,11 +103,12 @@ export class DeferredSignals {
   }
 
   async reconcile(context: CommandContext): Promise<void> {
-    if (!(await this.hasDeferred())) return;
-    for (const loaded of await this.repository.list()) {
-      if (loaded.view !== null)
-        await this.reconcileWorkflow(loaded.view.workflowInstanceId, context);
-    }
+    // Only instances holding a deferred signal have anything to replay.
+    const deferred = new Set<string>();
+    for (const entry of await this.repository.events())
+      if (entry.event.eventType === OrchestrationEventType.SignalDeferred)
+        deferred.add(entry.stream.id);
+    for (const id of deferred) await this.reconcileWorkflow(id as WorkflowInstanceId, context);
   }
 
   async reconcileWorkflow(

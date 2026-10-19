@@ -1,5 +1,5 @@
 import type { ActivationId } from '../../activities/index.js';
-import { readDeliveryAvailability, type WorkService } from '../../work/index.js';
+import type { DeliverySnapshot, WorkService } from '../../work/index.js';
 import { DelegationPendingError } from '../contracts/delegation.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -12,11 +12,19 @@ export class DelegationGate {
     private readonly work: WorkService,
   ) {}
 
+  /** Standalone work keeps existing freeze semantics; only delegated trees and fenced parents are held. */
+  private heldBy(snapshot: DeliverySnapshot, view: WorkflowInstanceView): boolean {
+    if (
+      snapshot.get(view.workItemId)?.delegation === undefined &&
+      view.delegationFence === undefined
+    )
+      return false;
+    return snapshot.availability(view.workItemId).reason !== undefined;
+  }
+
+  /** Commit-boundary check for one instance; batches use `filterAvailable`. */
   async unavailable(view: WorkflowInstanceView): Promise<boolean> {
-    // Standalone work keeps existing freeze semantics; only delegated trees and fenced parents are held.
-    const item = await this.work.get(view.workItemId, { fresh: true });
-    if (item?.delegation === undefined && view.delegationFence === undefined) return false;
-    return (await readDeliveryAvailability(view.workItemId, this.work)).reason !== undefined;
+    return this.heldBy(await this.work.deliverySnapshot(), view);
   }
 
   allows(view: WorkflowInstanceView): boolean {
@@ -46,13 +54,21 @@ export class DelegationGate {
     return held();
   }
 
-  async availableInstances() {
-    const entries = await this.repository.list();
-    const available = await Promise.all(
-      entries.map(
-        async ({ view }) => view !== null && this.allows(view) && !(await this.unavailable(view)),
-      ),
-    );
-    return entries.filter((_, index) => available[index]);
+  /**
+   * Admits the items whose workflow may advance, against one synchronisation
+   * with Work however many items there are. Nothing is read when none are
+   * unfenced, so a quiet tick costs no storage round trip.
+   */
+  async filterAvailable<T>(
+    items: readonly T[],
+    viewOf: (item: T) => WorkflowInstanceView | null,
+  ): Promise<T[]> {
+    const unfenced = items.filter((item) => {
+      const view = viewOf(item);
+      return view !== null && this.allows(view);
+    });
+    if (unfenced.length === 0) return [];
+    const snapshot = await this.work.deliverySnapshot();
+    return unfenced.filter((item) => !this.heldBy(snapshot, viewOf(item)!));
   }
 }

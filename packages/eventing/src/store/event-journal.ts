@@ -4,7 +4,11 @@ import type { JournalChangeSignal } from '../subscriptions/journal-change-signal
 export class WrongExpectedSequenceError extends Error {}
 
 export interface JournalReadOptions {
-  /** Observe committed appends from other hosts without using a bounded freshness cache. */
+  /**
+   * Observe every append committed before the call, including from other hosts,
+   * without using a bounded freshness cache. Concurrent fresh reads share work,
+   * so this is safe to request once per batch but is still a storage round trip.
+   */
   readonly fresh?: boolean;
 }
 
@@ -22,7 +26,7 @@ export interface EventJournal {
   // Cheap enough to call on every tick: implementations must answer this
   // without re-reading or re-copying the full event history, so callers can
   // gate an expensive full-collection re-derivation on "did this move" first.
-  latestGlobalPosition(): Promise<number>;
+  latestGlobalPosition(options?: JournalReadOptions): Promise<number>;
   waitForEventsAfter(
     afterGlobalPosition: number,
     signal: AbortSignal,

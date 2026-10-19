@@ -83,6 +83,7 @@ export class FileEventJournal implements EventJournal {
     { readonly entries: readonly FileStat[]; readonly expiresAt: number } | undefined;
 
   private inFlightEntryRefresh: Promise<readonly FileStat[]> | undefined;
+  private queuedFreshRefresh: Promise<readonly FileStat[]> | undefined;
   private entryValidationGeneration = 0;
 
   async appendToStream(
@@ -153,8 +154,7 @@ export class FileEventJournal implements EventJournal {
   // rebuilds the derived manifest.
   async readStream(stream: StreamRef, options: JournalReadOptions = {}) {
     const streamKey = key(stream);
-    if (options.fresh === true) this.invalidateValidatedEntries();
-    const entries = await this.readEntriesForRead();
+    const entries = await this.readEntriesForRead(options);
     if (this.cached !== undefined) {
       if (sameEntries(this.cached.entries, entries))
         return this.cached.eventsByStream.get(streamKey) ?? [];
@@ -283,8 +283,8 @@ export class FileEventJournal implements EventJournal {
       .reverse();
   }
 
-  async latestGlobalPosition(): Promise<number> {
-    const events = await this.scan(await this.readEntriesForRead());
+  async latestGlobalPosition(options: JournalReadOptions = {}): Promise<number> {
+    const events = await this.scan(await this.readEntriesForRead(options));
     return events.at(-1)?.globalPosition ?? 0;
   }
 
@@ -452,11 +452,16 @@ export class FileEventJournal implements EventJournal {
     );
   }
 
-  private async readEntriesForRead(): Promise<readonly FileStat[]> {
+  private async readEntriesForRead(options: JournalReadOptions = {}): Promise<readonly FileStat[]> {
+    if (options.fresh === true) return this.readFreshEntries();
     const now = this.validationNow();
     if (this.validatedEntries !== undefined && this.validatedEntries.expiresAt > now)
       return this.validatedEntries.entries;
     if (this.inFlightEntryRefresh !== undefined) return this.inFlightEntryRefresh;
+    return this.startEntryRefresh();
+  }
+
+  private startEntryRefresh(): Promise<readonly FileStat[]> {
     const generation = this.entryValidationGeneration;
     const refresh = this.readCurrentEntries()
       .then((entries) => {
@@ -468,6 +473,25 @@ export class FileEventJournal implements EventJournal {
       });
     this.inFlightEntryRefresh = refresh;
     return refresh;
+  }
+
+  // A fresh read must observe every append committed before it was called, so
+  // it cannot reuse the validity window or a listing that was already running
+  // (that one may have read the directory before the append). Every fresh
+  // call that arrives while a listing runs shares a single follow-up listing,
+  // so any number of concurrent fresh reads cost at most two listings.
+  private readFreshEntries(): Promise<readonly FileStat[]> {
+    if (this.queuedFreshRefresh !== undefined) return this.queuedFreshRefresh;
+    const running = this.inFlightEntryRefresh;
+    if (running === undefined) return this.startEntryRefresh();
+    const queued = running
+      .catch(() => undefined)
+      .then(() => {
+        this.queuedFreshRefresh = undefined;
+        return this.startEntryRefresh();
+      });
+    this.queuedFreshRefresh = queued;
+    return queued;
   }
 
   private rememberValidatedEntries(

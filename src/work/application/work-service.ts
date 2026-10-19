@@ -17,6 +17,7 @@ import {
 import type { WorkItemId } from '../contracts/identifiers.js';
 import type { WorkItemView } from '../contracts/views.js';
 import { WorkStatus } from '../contracts/vocabulary.js';
+import { WorkIndex, type DeliverySnapshot } from './work-index.js';
 import { WorkRepository } from './work-repository.js';
 
 export interface WorkService {
@@ -31,6 +32,8 @@ export interface WorkService {
   unfreeze(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
   delete(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
   get(workItemId: WorkItemId, options?: JournalReadOptions): Promise<WorkItemView | null>;
+  /** One synchronisation with the journal, then in-memory delivery answers for any number of items. */
+  deliverySnapshot(): Promise<DeliverySnapshot>;
 }
 
 /** Delegated ancestry is derived from the validated parent, never trusted from the command. */
@@ -53,6 +56,7 @@ async function assertDelegationAncestry(
 
 export function createWorkService(journal: EventJournal): WorkService {
   const repository = new WorkRepository(journal);
+  const index = new WorkIndex(journal);
   const change = (
     workItemId: WorkItemId,
     context: CommandContext,
@@ -128,6 +132,7 @@ export function createWorkService(journal: EventJournal): WorkService {
     async get(workItemId, options) {
       return (await repository.load(workItemId, options)).view;
     },
+    deliverySnapshot: () => index.snapshot(),
   };
 }
 

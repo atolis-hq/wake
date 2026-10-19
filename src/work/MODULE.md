@@ -10,6 +10,7 @@ Workflow decisions, dispatch, providers, or execution.
 Identity is Wake-owned; lifecycle is not workflow position. Delegation hierarchy
 records only validated parent, root and ancestors. Assignment identity and criteria
 belong to Orchestration, not Work.
+Batch readers (dispatch, gating, capacity) take one `deliverySnapshot()`, a fresh synchronisation with the journal after which delivery availability is answered in memory; they must not read items one at a time with a fresh stream read.
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

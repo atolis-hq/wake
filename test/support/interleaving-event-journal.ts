@@ -3,6 +3,7 @@ import type {
   EventEnvelope,
   EventJournal,
   JournalChangeSignal,
+  JournalReadOptions,
 } from '@atolis-hq/eventing';
 import type { EntityRef } from '../../src/kernel/index.js';
 
@@ -37,8 +38,8 @@ export class InterleavingEventJournal implements EventJournal {
     return this.inner.appendToStream(stream, expectedSequence, events);
   }
 
-  readStream(stream: EntityRef): Promise<readonly EventEnvelope[]> {
-    return this.inner.readStream(stream);
+  readStream(stream: EntityRef, options?: JournalReadOptions): Promise<readonly EventEnvelope[]> {
+    return this.inner.readStream(stream, options);
   }
 
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]> {
@@ -50,8 +51,8 @@ export class InterleavingEventJournal implements EventJournal {
     return this.inner.readLatest(beforeGlobalPosition, limit);
   }
 
-  latestGlobalPosition(): Promise<number> {
-    return this.inner.latestGlobalPosition();
+  latestGlobalPosition(options?: JournalReadOptions): Promise<number> {
+    return this.inner.latestGlobalPosition(options);
   }
 
   waitForEventsAfter(

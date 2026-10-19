@@ -1,5 +1,5 @@
 import type { CommandContext } from '@atolis-hq/eventing';
-import { readDeliveryAvailability, type WorkService } from '../../work/index.js';
+import type { WorkService } from '../../work/index.js';
 import type { DelegationAuthority } from '../contracts/delegation-ports.js';
 import {
   delegationSubmissionSchema,
@@ -34,7 +34,7 @@ export class DelegationCommands {
       (parent.status !== WorkflowStatus.Active && parent.status !== WorkflowStatus.Waiting)
     )
       throw new Error('Delegation requires the current active activation');
-    const availability = await readDeliveryAvailability(parent.workItemId, this.work);
+    const availability = (await this.work.deliverySnapshot()).availability(parent.workItemId);
     if (availability.reason !== undefined) throw new Error(availability.reason);
     const policy = (await this.workflows.definitionFor(parent)).delegation;
     if (policy === undefined) throw new Error('Workflow delegation is disabled');

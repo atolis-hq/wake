@@ -19,6 +19,7 @@ import {
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import { TestWorld } from '../../e2e/support/world.js';
+import { snapshotOf } from '../../support/delivery-snapshot.js';
 
 function view(
   id: string,
@@ -56,7 +57,7 @@ describe('open work policy', () => {
 
   it('only checks work availability for started unfinished items', async () => {
     const lookedUp: string[] = [];
-    const open = await readOpenWorkItemIds(
+    const open = readOpenWorkItemIds(
       [
         view('done', WorkflowStatus.Completed),
         view('new', WorkflowStatus.Active, false),
@@ -65,12 +66,10 @@ describe('open work policy', () => {
         view('frozen', WorkflowStatus.Waiting),
         view('deleted', WorkflowStatus.Active),
       ],
-      {
-        async get(id) {
-          lookedUp.push(id);
-          return { frozen: id === 'frozen', deleted: id === 'deleted' };
-        },
-      },
+      snapshotOf((id) => {
+        lookedUp.push(id);
+        return { frozen: id === 'frozen', deleted: id === 'deleted' };
+      }),
     );
     expect(lookedUp).toEqual(['open', 'frozen', 'deleted']);
     expect([...open]).toEqual(['open']);
@@ -217,23 +216,21 @@ describe('open work policy', () => {
 it('counts validated delivery roots once while any descendant remains live (DC-26)', async () => {
   const root = 'work-root';
   const child = 'work-child';
-  const work = {
-    async get(id: string) {
-      return {
-        state: 'open',
-        ...(id === child
-          ? {
-              delegation: {
-                parentWorkItemId: root,
-                rootWorkItemId: root,
-                ancestors: [root],
-              } as never,
-            }
-          : {}),
-      };
-    },
-  };
-  const open = await readOpenWorkItemIds(
+  const work = snapshotOf((id: string) => {
+    return {
+      state: 'open',
+      ...(id === child
+        ? {
+            delegation: {
+              parentWorkItemId: root,
+              rootWorkItemId: root,
+              ancestors: [root],
+            } as never,
+          }
+        : {}),
+    };
+  });
+  const open = readOpenWorkItemIds(
     [view(root, WorkflowStatus.Completed), view(child, WorkflowStatus.Waiting)],
     work,
   );

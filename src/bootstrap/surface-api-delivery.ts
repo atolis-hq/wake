@@ -1,5 +1,5 @@
 import { presentResource, toWorkItemKey, type WorkDetailResponse } from '../surfaces/index.js';
-import { readDeliveryAvailability, type WorkItemView } from '../work/index.js';
+import type { WorkItemView } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 
 export async function presentDelivery(
@@ -9,6 +9,7 @@ export async function presentDelivery(
   if ((root as Partial<CompositionRoot>).orchestration?.deliveryTree === undefined) return {};
   const cohorts = await root.orchestration.deliveryTree(work.workItemId);
   if (cohorts.length === 0 && work.delegation === undefined) return {};
+  const delivery = await root.work.deliverySnapshot();
   return {
     delegation: {
       rootWorkItemKey: toWorkItemKey(work.delegation?.rootWorkItemId ?? work.workItemId),
@@ -18,7 +19,7 @@ export async function presentDelivery(
       children: await Promise.all(
         cohorts.flatMap((cohort) =>
           cohort.children.map(async (child) => {
-            const availability = await readDeliveryAvailability(child.workItemId, root.work);
+            const availability = delivery.availability(child.workItemId);
             const resources = await Promise.all(
               (await root.resources.correlationsForWork(child.workItemId)).map((entry) =>
                 root.resources.get(entry.resourceId),

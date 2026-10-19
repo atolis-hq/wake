@@ -54,6 +54,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:e2e:live": "vitest run --config vitest.live-e2e.config.ts",
+    "test:stress": "WAKE_STRESS=1 vitest run --config vitest.stress.config.ts",
     "lint:contracts": "node scripts/check-contract-vocabulary.mjs",
     "knip": "knip --config knip.json",
     "lint": "eslint --cache --cache-strategy content --cache-location node_modules/.cache/eslint/.eslintcache .",

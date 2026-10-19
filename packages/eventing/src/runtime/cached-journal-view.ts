@@ -1,10 +1,10 @@
 import type { EventEnvelope } from '../contracts/events.js';
-import type { EventJournal } from '../store/event-journal.js';
+import type { EventJournal, JournalReadOptions } from '../store/event-journal.js';
 
 export const JOURNAL_CHANGE_FALLBACK_MS = 30_000;
 
 export interface CachedJournalView<Value> {
-  get(): Promise<Value>;
+  get(options?: JournalReadOptions): Promise<Value>;
 }
 
 // Memoizes a full-journal derivation — a fold, decode, or index built from
@@ -22,8 +22,8 @@ export function cachedJournalView<Value>(
 ): CachedJournalView<Value> {
   let cache: { readonly position: number; readonly value: Value } | undefined;
   return {
-    async get(): Promise<Value> {
-      const position = await journal.latestGlobalPosition();
+    async get(options?: JournalReadOptions): Promise<Value> {
+      const position = await journal.latestGlobalPosition(options);
       if (cache !== undefined && cache.position === position) return cache.value;
       const value = await derive(await journal.readAll(0));
       // Keep the position sampled before the read. An append racing the read
