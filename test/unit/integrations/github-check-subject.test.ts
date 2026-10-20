@@ -1,35 +1,63 @@
 import { expect, it } from 'vitest';
 import type { GitHubPullRequestPayload } from '../../../src/integrations/github/contracts/payloads.js';
 import { verifiedCheckSubject } from '../../../src/integrations/github/infrastructure/pr-check-subject.js';
-import type { GitHubPullRequestSourceClient } from '../../../src/integrations/github/infrastructure/pr-source.js';
+import type {
+  CheckEvidence,
+  PullRequestEvidenceClient,
+} from '../../../src/integrations/github/infrastructure/pr-evidence.js';
 
 const pr = {
+  number: 7,
   head: { sha: 'head' },
   base: { sha: 'base' },
-  merge_commit_sha: 'merge',
+  merge_commit_sha: 'stale-merge',
 } as GitHubPullRequestPayload;
 
-function client(base = 'base'): GitHubPullRequestSourceClient {
+function evidence(): CheckEvidence {
   return {
-    listPullRequests: async () => [],
-    listPullRequestFiles: async () => [],
-    getCommit: async () => ({ sha: 'merge', parents: [{ sha: base }, { sha: 'head' }] }),
-    listCheckRunsForRef: async (_owner, _repo, ref) => [
+    available: true,
+    complete: true,
+    statuses: [],
+    checkRuns: [
       {
-        head_sha: ref,
+        id: 99,
+        head_sha: 'head',
+        check_suite: { id: 42 },
         status: 'completed',
         conclusion: 'success',
         started_at: '2026-10-20T00:05:00.000Z',
       },
     ],
-    getCombinedStatusForRef: async () => [],
   };
 }
 
-it('uses executions on the immutable commit with the exact selected base and head as parents', async () => {
-  expect(await verifiedCheckSubject(client(), 'owner', 'repo', pr, 100)).toEqual({
+function client(base = 'base'): PullRequestEvidenceClient {
+  return {
+    listPullRequestFiles: async () => [],
+    listCheckRunsForRef: async () => [],
+    getCombinedStatusForRef: async () => [],
+    checkExecution: async () => ({
+      sha: 'tested-merge',
+      parents: [{ sha: base }, { sha: 'head' }],
+    }),
+    workflowRunsForSuite: async () => [
+      {
+        id: 1,
+        check_suite_id: 42,
+        head_sha: 'head',
+        event: 'pull_request',
+        status: 'completed',
+        conclusion: 'success',
+        pull_requests: [{ number: 7, head: { sha: 'head' }, base: { sha: 'base' } }],
+      },
+    ],
+  };
+}
+
+it('qualifies ordinary Actions head-SHA checks from the execution subject even when the test merge is stale', async () => {
+  expect(await verifiedCheckSubject(client(), 'owner', 'repo', pr, evidence())).toEqual({
     checkEvidence: {
-      testedRevision: 'merge',
+      testedRevision: 'tested-merge',
       headRevision: 'head',
       baseRevision: 'base',
       startedAt: '2026-10-20T00:05:00.000Z',
@@ -37,7 +65,9 @@ it('uses executions on the immutable commit with the exact selected base and hea
   });
 });
 it('rejects an old-base execution even when it starts after maintenance', async () => {
-  expect(await verifiedCheckSubject(client('old-base'), 'owner', 'repo', pr, 100)).toEqual({});
+  expect(await verifiedCheckSubject(client('old-base'), 'owner', 'repo', pr, evidence())).toEqual(
+    {},
+  );
 });
 it.each([
   'missing',
@@ -48,25 +78,57 @@ it.each([
   'truncated',
   'status',
   'unavailable',
+  'target-event',
+  'wrong-suite',
+  'ambiguous',
 ])('fails closed for %s provenance', async (kind) => {
   const value = client();
-  if (kind === 'missing') delete value.getCommit;
+  const checks = evidence();
+  if (kind === 'missing') delete value.workflowRunsForSuite;
   if (kind === 'unavailable')
-    value.getCommit = async () => {
+    value.workflowRunsForSuite = async () => {
       throw new Error('offline');
     };
-  if (kind === 'status') value.getCombinedStatusForRef = async () => [{ state: 'success' }];
-  if (['wrong-head', 'pending', 'failing', 'undated'].includes(kind)) {
-    value.listCheckRunsForRef = async () => [
+  const check = checks.checkRuns[0]!;
+  const changed = {
+    ...checks,
+    complete: kind !== 'truncated',
+    statuses: kind === 'status' ? [{ state: 'success' }] : [],
+    checkRuns: [
       {
-        head_sha: kind === 'wrong-head' ? 'head' : 'merge',
+        ...check,
+        head_sha: kind === 'wrong-head' ? 'other' : 'head',
         status: kind === 'pending' ? 'in_progress' : 'completed',
         conclusion: kind === 'failing' ? 'failure' : 'success',
-        started_at: kind === 'undated' ? null : '2026-10-20T00:05:00.000Z',
+        started_at: kind === 'undated' ? null : check.started_at!,
       },
-    ];
+    ],
+  };
+  if (['target-event', 'wrong-suite', 'ambiguous'].includes(kind)) {
+    const [run] = await value.workflowRunsForSuite!('owner', 'repo', 42);
+    value.workflowRunsForSuite = async () =>
+      kind === 'ambiguous'
+        ? [run!, { ...run!, id: 2 }]
+        : [
+            {
+              ...run!,
+              event: kind === 'target-event' ? 'pull_request_target' : 'pull_request',
+              check_suite_id: kind === 'wrong-suite' ? 99 : 42,
+              pull_requests: run!.pull_requests ?? [],
+            },
+          ];
   }
-  expect(
-    await verifiedCheckSubject(value, 'owner', 'repo', pr, kind === 'truncated' ? 1 : 100),
-  ).toEqual({});
+  expect(await verifiedCheckSubject(value, 'owner', 'repo', pr, changed)).toEqual({});
 });
+
+it.each(['neutral', 'skipped'])(
+  'preserves normal Actions %s jobs alongside successful checks',
+  async (conclusion) => {
+    const checks = evidence();
+    const result = await verifiedCheckSubject(client(), 'owner', 'repo', pr, {
+      ...checks,
+      checkRuns: [...checks.checkRuns, { ...checks.checkRuns[0]!, conclusion }],
+    });
+    expect(result.checkEvidence).toMatchObject({ headRevision: 'head', baseRevision: 'base' });
+  },
+);

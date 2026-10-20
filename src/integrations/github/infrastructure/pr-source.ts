@@ -87,7 +87,7 @@ export async function pullRequestEventsFor(
         owner,
         repo,
         pullRequest,
-        input.maxResults,
+        evidence,
       );
       return {
         complete: evidence.complete && changedFiles.complete,

@@ -129,31 +129,58 @@ it('requires provider identity/base verification and a fresh trusted review afte
   );
   expect(await verification.verifyTarget(request)).toBe(false);
   let testedBase = 'b'.repeat(40);
-  let testedRevision = 'old-test-merge';
-  const checkClient = {
-    listPullRequests: async () => [],
-    listPullRequestFiles: async () => [],
-    getCommit: async () => ({
-      sha: testedRevision,
-      parents: [{ sha: testedBase }, { sha: observed.headRevision }],
-    }),
-    listCheckRunsForRef: async () => [
+  let suiteId = 42;
+  const checkEvidence = {
+    available: true,
+    complete: true,
+    statuses: [],
+    checkRuns: [
       {
-        head_sha: testedRevision,
+        id: 99,
+        head_sha: observed.headRevision,
+        check_suite: { id: 42 },
         status: 'completed',
         conclusion: 'success',
         started_at: '2026-10-20T00:02:30.000Z',
       },
     ],
-    getCombinedStatusForRef: async () => [],
   };
-  let providerPr = {
+  const checkClient = {
+    listPullRequestFiles: async () => [],
+    listCheckRunsForRef: async () => [],
+    getCombinedStatusForRef: async () => [],
+    checkExecution: async () => ({
+      sha: 'tested-merge',
+      parents: [{ sha: testedBase }, { sha: observed.headRevision }],
+    }),
+    workflowRunsForSuite: async () => [
+      {
+        id: 1,
+        check_suite_id: suiteId,
+        head_sha: observed.headRevision,
+        event: 'pull_request',
+        status: 'completed',
+        conclusion: 'success',
+        pull_requests: [
+          { number: 7, head: { sha: observed.headRevision }, base: { sha: observed.baseRevision } },
+        ],
+      },
+    ],
+  };
+  const providerPr = {
+    number: 7,
     head: { sha: observed.headRevision },
     base: { sha: observed.baseRevision },
-    merge_commit_sha: testedRevision,
+    merge_commit_sha: 'stale-test-merge',
   } as GitHubPullRequestPayload;
   const report = async (id: string) => {
-    const evidence = await verifiedCheckSubject(checkClient, 'owner', 'repo', providerPr, 100);
+    const evidence = await verifiedCheckSubject(
+      checkClient,
+      'owner',
+      'repo',
+      providerPr,
+      checkEvidence,
+    );
     await world.pullRequests.observe(
       { ...observed, checkEvidence: evidence.checkEvidence },
       context(id, '2026-10-20T00:03:00.000Z'),
@@ -165,8 +192,8 @@ it('requires provider identity/base verification and a fresh trusted review afte
   verification = restarted();
   expect(await verification.verifyTarget(request)).toBe(false);
   testedBase = observed.baseRevision;
-  testedRevision = 'maintained-test-merge';
-  providerPr = { ...providerPr, merge_commit_sha: testedRevision };
+  suiteId = 43;
+  checkEvidence.checkRuns[0]!.check_suite.id = suiteId;
   await report('verified-current-base-checks');
   expect(await verification.verifyTarget(request)).toBe(true);
   verification = restarted();

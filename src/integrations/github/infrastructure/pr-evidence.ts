@@ -1,4 +1,9 @@
-import type { GitHubCheckRunPayload, GitHubCommitStatusPayload } from '../contracts/payloads.js';
+import type {
+  GitHubCheckRunPayload,
+  GitHubCommitStatusPayload,
+  GitHubWorkflowRunPayload,
+} from '../contracts/payloads.js';
+import type { TestedCommit } from './check-execution.js';
 
 export interface CheckEvidence {
   readonly available: boolean;
@@ -13,11 +18,18 @@ export interface ChangedFiles {
 }
 
 export interface PullRequestEvidenceClient {
-  getCommit?(
+  checkExecution?(
     owner: string,
     repo: string,
-    ref: string,
-  ): Promise<{ readonly sha: string; readonly parents: readonly { readonly sha: string }[] }>;
+    runId: number,
+    attempt: number,
+    checkId: number,
+  ): Promise<TestedCommit | undefined>;
+  workflowRunsForSuite?(
+    owner: string,
+    repo: string,
+    suiteId: number,
+  ): Promise<readonly GitHubWorkflowRunPayload[]>;
   listCheckRunsForRef(
     owner: string,
     repo: string,

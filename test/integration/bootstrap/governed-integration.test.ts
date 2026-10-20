@@ -28,6 +28,8 @@ import {
   type AgentRunnerResult,
   type RunnerRequest,
 } from '../../../src/execution/index.js';
+import type { GitHubPullRequestPayload } from '../../../src/integrations/github/contracts/payloads.js';
+import { verifiedCheckSubject } from '../../../src/integrations/github/infrastructure/pr-check-subject.js';
 import {
   DeliveryIntentKind,
   DeliveryResultKind,
@@ -548,7 +550,7 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
             baseRevision: main,
             checks: 'passing',
             checkEvidence: {
-              testedRevision,
+              testedRevision: revision,
               headRevision: revision,
               baseRevision: main,
               startedAt: new Date().toISOString(),
@@ -619,15 +621,58 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
           maintenanceContext('maintain-' + id),
         );
         const checked = (await root.pullRequests.get(target.resourceId as never))!;
+        // Exercise the same Actions provenance join used by the production GitHub source.
+        const executionChecks = {
+          available: true,
+          complete: true,
+          statuses: [],
+          checkRuns: [
+            {
+              id: 99,
+              head_sha: revision,
+              check_suite: { id: 42 },
+              status: 'completed',
+              conclusion: 'success',
+              started_at: new Date().toISOString(),
+            },
+          ],
+        };
+        const executionSubject = await verifiedCheckSubject(
+          {
+            listPullRequestFiles: async () => [],
+            listCheckRunsForRef: async () => [],
+            getCombinedStatusForRef: async () => [],
+            checkExecution: async () => ({
+              sha: testedRevision,
+              parents: [{ sha: main }, { sha: revision }],
+            }),
+            workflowRunsForSuite: async () => [
+              {
+                id: 1,
+                check_suite_id: 42,
+                head_sha: revision,
+                event: 'pull_request',
+                status: 'completed',
+                conclusion: 'success',
+                pull_requests: [{ number: 7, head: { sha: revision }, base: { sha: main } }],
+              },
+            ],
+          },
+          'owner',
+          repo,
+          {
+            number: 7,
+            head: { sha: revision },
+            base: { sha: main },
+            merge_commit_sha: 'stale-test-merge',
+          } as GitHubPullRequestPayload,
+          executionChecks,
+        );
+        expect(executionSubject.checkEvidence).toBeDefined();
         await root.pullRequests.observe(
           {
             ...checked,
-            checkEvidence: {
-              testedRevision,
-              headRevision: revision,
-              baseRevision: main,
-              startedAt: new Date().toISOString(),
-            },
+            checkEvidence: executionSubject.checkEvidence,
           },
           maintenanceContext('checks-after-subject-' + id),
         );

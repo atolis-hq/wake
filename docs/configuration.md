@@ -927,6 +927,6 @@ Fake-provider PR events may supply `checkEvidence: { testedRevision, headRevisio
 `startedAt` is an ISO timestamp for the check execution, not the poll. The subject must match
 the observation. Maintained targets requiring checks cannot qualify without fresh evidence.
 
-For maintained subjects, check evidence must include `testedRevision`, the immutable execution
-commit verified by the provider against the subject head and base. Older evidence without
+For maintained subjects, check evidence must include `testedRevision`, the execution
+revision verified by the provider against the subject head and base. Older evidence without
 this provenance remains readable but cannot authorize integration.

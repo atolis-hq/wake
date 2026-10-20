@@ -3,6 +3,7 @@ import { MergeMethod, ProviderPermission, PullRequestState } from '../../../acti
 import type { GitHubIssueQueryFilters } from '../contracts/issue-query.js';
 import { GitHubOutboundAction } from '../contracts/vocabulary.js';
 import { createBoundedGitHubFetch } from './bounded-fetch.js';
+import { createCheckExecutionReader } from './check-execution.js';
 import {
   branch,
   findIssueCommentByMarker,
@@ -18,6 +19,7 @@ import {
   listReviews,
 } from './client-reads.js';
 import { createEtagCache } from './etag-cache.js';
+import { workflowRunsForSuite } from './workflow-run-evidence.js';
 
 /* eslint-disable max-lines */
 
@@ -177,10 +179,9 @@ function createGitHubReadClient(octokit: Octokit, cache: ReturnType<typeof creat
       }),
     getIssueLabels: (owner: string, repo: string, issueNumber: number) =>
       getIssueLabels(octokit, cache, owner, repo, issueNumber),
-    getCommit: async (owner: string, repo: string, ref: string) => {
-      const result = await octokit.rest.git.getCommit({ owner, repo, commit_sha: ref });
-      return { sha: result.data.sha, parents: result.data.parents.map(({ sha }) => ({ sha })) };
-    },
+    checkExecution: createCheckExecutionReader(octokit),
+    workflowRunsForSuite: (owner: string, repo: string, suiteId: number) =>
+      workflowRunsForSuite(octokit, cache, owner, repo, suiteId),
     getPullRequest: (owner: string, repo: string, pullNumber: number) =>
       getPullRequest(octokit, cache, owner, repo, pullNumber),
     listReviews: (

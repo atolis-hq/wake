@@ -937,8 +937,11 @@ subject, with every reported check or status started after the new maintenance s
 cannot satisfy this gate. Check evidence is journaled even when the aggregate state remains
 `passing`, and the same subject and execution-time rules apply after restart.
 
-GitHub establishes this provenance only from successful check runs on an immutable test-merge
-commit whose ordered parents match the selected base and head. Checks fetched only by source
-head SHA, legacy statuses, missing commit parents, and executions on an older test merge do
-not establish the tested base, regardless of their start times. Repositories requiring checks
-for maintained subjects must run checks on the PR test-merge commit.
+GitHub joins head-SHA checks to successful Actions `pull_request` runs by check suite.
+Linked PR metadata is mutable and is not execution provenance. For each successful job,
+Wake reads the full checkout commit from its Actions log and verifies that commit's
+ordered parents against the selected base and head. Skipped and neutral jobs retain their
+normal passing semantics. Missing, ambiguous, expired or unreadable checkout evidence
+cannot qualify. The current PR test-merge SHA is not used, so lazy recomputation cannot
+block base-only maintenance followed by a qualifying execution. Completed job logs and
+Git objects are cached; mutable workflow-run attempts are conditionally revalidated.
