@@ -36,6 +36,7 @@ import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
 import { runColumns } from '../runs/runs.js';
 import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
+import { DeliveryIntegration } from './delivery-integration.js';
 import { MarkdownArtifactViewer } from './markdown-artifact-viewer.js';
 
 const resourceIcons: Record<string, typeof GitHubIcon> = {
@@ -366,6 +367,9 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                       <li key={entry}>{entry}</li>
                     ))}
                   </ul>
+                  {query.data.data.delegation.qa.integration && (
+                    <DeliveryIntegration integration={query.data.data.delegation.qa.integration} />
+                  )}
                 </div>
               )}
               <p>

@@ -62,6 +62,8 @@ export const ActivityOutcomeKind = defineClosedVocabulary({
   Rejected: 'rejected',
   Blocked: 'blocked',
   Failed: 'failed',
+  /** A parent delivery has nothing left to integrate: every selected change is merged. */
+  Integrated: 'integrated',
 } as const);
 
 export type ActivityOutcomeKind = ValueOf<typeof ActivityOutcomeKind>;

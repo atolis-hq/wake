@@ -10,11 +10,14 @@ import type {
   ActivityInvocation,
 } from '../contracts/activity.js';
 import { ActivityEventType } from '../contracts/events.js';
-import { ActivityExecutionKind, BuiltInActivityName } from '../contracts/vocabulary.js';
+import {
+  ActivityExecutionKind,
+  ActivityResourceRole,
+  BuiltInActivityName,
+} from '../contracts/vocabulary.js';
 import {
   pullRequestOutcomeSchema,
   pullRequestTargetSchema,
-  resolvePrimaryCapability,
   selectedDenialAudit,
   selectionDenialAudit,
 } from './activity-support.js';
@@ -31,21 +34,40 @@ import {
   createJournalIntentAppender,
   type IntentAppender,
 } from './intent.js';
+import {
+  ParentActionKind,
+  parentDeliveryScopeSchema,
+  type ParentActionAuthorizer,
+} from './parent-scope.js';
+import { resolveActionResource, resolveParentTarget } from './parent-target.js';
 import { decidePullRequestAuthority } from './policy.js';
 
 const inputSchema: z.ZodType<PullRequestApproveInput> = z
-  .object({ target: pullRequestTargetSchema, body: z.string().optional() })
+  .object({
+    target: pullRequestTargetSchema,
+    body: z.string().optional(),
+    scope: parentDeliveryScopeSchema.optional(),
+  })
   .strict()
-  .transform((input): PullRequestApproveInput =>
-    input.body === undefined
-      ? { target: input.target }
-      : { target: input.target, body: input.body },
-  );
+  .superRefine((input, context) => {
+    if (input.scope !== undefined && input.target !== ActivityResourceRole.Primary)
+      context.addIssue({
+        code: 'custom',
+        path: ['target'],
+        message: 'A delivery scope selects its own target; it cannot be combined with target',
+      });
+  })
+  .transform((input): PullRequestApproveInput => ({
+    target: input.target,
+    ...(input.body === undefined ? {} : { body: input.body }),
+    ...(input.scope === undefined ? {} : { scope: input.scope }),
+  }));
 
 export function createPullRequestApproveActivity(
   journal: EventJournal,
   pullRequests: PullRequestService,
   appender: IntentAppender = createJournalIntentAppender(journal),
+  parentActions?: ParentActionAuthorizer,
 ): ActivityDefinition<
   typeof BuiltInActivityName.PullRequestApprove,
   PullRequestApproveInput,
@@ -60,12 +82,13 @@ export function createPullRequestApproveActivity(
       ActivityOutcomeKind.Done,
       ActivityOutcomeKind.Blocked,
       ActivityOutcomeKind.Failed,
+      ActivityOutcomeKind.Integrated,
     ],
     resources: [],
     executionKind: ActivityExecutionKind.Deterministic,
     handler: {
       execute: (invocation, context) =>
-        executeApproval(journal, pullRequests, appender, invocation, context),
+        executeApproval(journal, pullRequests, appender, parentActions, invocation, context),
     },
   };
 }
@@ -74,6 +97,7 @@ async function executeApproval(
   journal: EventJournal,
   pullRequests: PullRequestService,
   appender: IntentAppender,
+  parentActions: ParentActionAuthorizer | undefined,
   invocation: ActivityInvocation<PullRequestApproveInput>,
   context: ActivityExecutionContext,
 ): Promise<PullRequestActivityOutcome> {
@@ -84,11 +108,22 @@ async function executeApproval(
   );
   const prior = await readDecisionClaim(journal, invocation.activationId, 'approve');
   if (prior !== null) return completeDecisionClaim(journal, appender, prior);
-  const authority = await pullRequests.authorityInput(invocation.workItemId);
-  const resource = resolvePrimaryCapability(
-    invocation.resources,
+  const parentTarget = await resolveParentTarget(
+    parentActions,
+    invocation,
+    invocation.input.scope !== undefined,
+    ParentActionKind.Approve,
+  );
+  if (parentTarget.kind === 'fully-integrated')
+    return { kind: ActivityOutcomeKind.Integrated, data: { complete: true } };
+  const scoped = parentTarget.kind === 'target' ? parentTarget : undefined;
+  const authority = await pullRequests.authorityInput(
+    scoped?.context.ownerWorkItemId ?? invocation.workItemId,
+  );
+  const resource = resolveActionResource(
+    parentTarget,
     authority,
-    invocation.workItemId,
+    invocation,
     invocation.input.target,
     BuiltInResourceCapability.Approvable,
   );
@@ -132,6 +167,7 @@ async function executeApproval(
       resourceId: decision.resourceId,
       revision: decision.revision,
       body: invocation.input.body ?? null,
+      ...(scoped === undefined ? {} : { parent: scoped.context }),
     },
     command,
   );

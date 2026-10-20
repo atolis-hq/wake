@@ -30,6 +30,8 @@ export * from './pr/contracts.js';
 
 export * from './pr/merge-authority-gate.js';
 
+export * from './pr/parent-scope.js';
+
 export * from './pr/merge.js';
 
 export * from './pr/policy.js';

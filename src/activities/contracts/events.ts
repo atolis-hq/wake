@@ -8,6 +8,7 @@ import type { z } from 'zod';
 import { type ResourceId, type ResourceStreamRef } from '../../resources/index.js';
 import { type WorkItemId, type WorkItemStreamRef } from '../../work/index.js';
 import type { PullRequestActivityOutcome, PullRequestTarget } from '../pr/contracts.js';
+import type { ParentActionContext } from '../pr/parent-scope.js';
 import type {
   MergeMethod,
   PullRequestCheckState,
@@ -82,6 +83,8 @@ export interface PullRequestApproveRequestedPayload {
   readonly resourceId: ResourceId;
   readonly revision: string;
   readonly body: string | null;
+  /** Present when a parent delivery acts on a child-owned pull request. */
+  readonly parent?: ParentActionContext | undefined;
 }
 
 export interface PullRequestMergeRequestedPayload {
@@ -93,6 +96,8 @@ export interface PullRequestMergeRequestedPayload {
   readonly method: typeof MergeMethod.Merge | typeof MergeMethod.Squash | typeof MergeMethod.Rebase;
   readonly requireChecks: boolean;
   readonly autoMerge: boolean;
+  /** Present when a parent delivery acts on a child-owned pull request. */
+  readonly parent?: ParentActionContext | undefined;
 }
 
 type RequestedOutcome = Extract<

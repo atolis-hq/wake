@@ -14,6 +14,7 @@ const outcomeSentinels: Readonly<Record<ActivityOutcomeKind, string>> = {
   [ActivityOutcomeKind.Blocked]: 'BLOCKED',
   [ActivityOutcomeKind.Failed]: 'FAILED',
   [ActivityOutcomeKind.Waiting]: 'WAITING',
+  [ActivityOutcomeKind.Integrated]: 'INTEGRATED',
 };
 
 // The response preserves optional run facts without introducing a second view model.

@@ -15,6 +15,7 @@ import {
   workflowInstanceId,
   type OrchestrationService,
 } from '../../../orchestration/index.js';
+import { workItemId, type WorkItemId } from '../../../work/index.js';
 import { deliveryStream, IntegrationStreamKind } from '../../contracts/streams.js';
 import { createDeliveryEventData } from '../contracts/event-factory.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
@@ -39,6 +40,13 @@ export async function reconcileMergedDeliveries(input: {
   }
 }
 
+/** A parent delivery merges a pull request its child owns; the requester never becomes owner. */
+function owningWorkItem(payload: DeliveryIntentView['payload'], requester: WorkItemId): WorkItemId {
+  return 'ownerWorkItemId' in payload && payload.ownerWorkItemId !== undefined
+    ? workItemId(payload.ownerWorkItemId)
+    : requester;
+}
+
 /** Reconcile durable merged evidence only after the exact intent's wait exists. */
 export async function confirmMergedDelivery(
   intent: DeliveryIntentView,
@@ -54,10 +62,8 @@ export async function confirmMergedDelivery(
     return;
   const instance = await orchestration.get(workflowInstanceId(intent.workflowInstanceId));
   if (!isMatchingWait(instance, intent)) return;
-  const selected = selectPrimaryPullRequest(
-    await pullRequests.authorityInput(instance.workItemId),
-    instance.workItemId,
-  );
+  const owner = owningWorkItem(intent.payload, instance.workItemId);
+  const selected = selectPrimaryPullRequest(await pullRequests.authorityInput(owner), owner);
   if (
     selected?.pullRequest.resourceId !== intent.resourceId ||
     selected.pullRequest.state !== PullRequestState.Merged ||

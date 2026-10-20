@@ -153,6 +153,20 @@ export interface ActivityExecutionContext {
           }[];
         }
       | undefined;
+    /** Branch workspaces leased for pull requests this activation may retarget, rebase or repair. */
+    readonly maintenance?:
+      | {
+          readonly targets: readonly {
+            readonly childWorkItemId: string;
+            readonly outputName: string;
+            readonly resourceId: string;
+            readonly branch: string;
+            readonly revision: string;
+            readonly path: string;
+            readonly reason?: string | undefined;
+          }[];
+        }
+      | undefined;
     readonly repository?:
       | {
           readonly resourceId: string;

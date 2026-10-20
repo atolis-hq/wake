@@ -2,6 +2,7 @@ import type { CommandContext } from '@atolis-hq/eventing';
 import type {
   ExecutionCandidate,
   ExecutionFailureCode,
+  ExecutionMaintenance,
   RepositoryAssignment,
   RunView,
   WorkspaceRecovery,
@@ -27,6 +28,9 @@ export interface OrchestrationPort {
   >;
   listWaiting(): Promise<readonly (WorkflowInstanceView | null)[]>;
   deliveryQaPreparation?(workflowInstanceId: string): Promise<ExecutionCandidate | undefined>;
+  deliveryMaintenancePreparation?(
+    workflowInstanceId: string,
+  ): Promise<ExecutionMaintenance | undefined>;
   repositoryAssignment?(workItemId: string): Promise<RepositoryAssignment | undefined>;
   get?(workflowInstanceId: string): Promise<WorkflowInstanceView | null>;
   expireTimedOutWaits?(context: CommandContext): Promise<readonly WorkflowInstanceView[]>;
@@ -86,6 +90,7 @@ export interface ExecutionPort {
       orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
       repositoryAssignment?: RepositoryAssignment;
       candidate?: ExecutionCandidate;
+      maintenance?: ExecutionMaintenance;
       resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];
       ineligibleRunners?: ReadonlySet<string>;
       sessionPolicy?: 'fresh' | 'resume-stage';

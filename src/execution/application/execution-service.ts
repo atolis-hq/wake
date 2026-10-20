@@ -1,4 +1,5 @@
 import { acquireCandidateWorkspaces } from './candidate-workspaces.js';
+import { acquireMaintenanceWorkspaces } from './maintenance-workspaces.js';
 /* eslint-disable max-lines */
 
 import { type EventJournal } from '@atolis-hq/eventing';
@@ -919,6 +920,17 @@ async function acquireAttemptWorkspace(
   currentRunId: ReturnType<typeof runId>,
   signal?: AbortSignal,
 ) {
+  if (context.maintenance !== undefined)
+    return acquireMaintenanceWorkspaces(
+      {
+        runId: currentRunId,
+        resources: context.resources,
+        maintenance: context.maintenance,
+        runs: await runtime.repository.list(),
+        signal: signal ?? new AbortController().signal,
+      },
+      runtime.dependencies.workspaces,
+    );
   if (context.candidate !== undefined)
     return acquireCandidateWorkspaces(
       {
@@ -992,6 +1004,7 @@ function activityWorkspace(lease: WorkspaceLease | undefined, context: Execution
               lease.candidate === undefined
                 ? undefined
                 : { ...context.candidate!, ...lease.candidate },
+            maintenance: lease.maintenance,
           },
         }),
   };

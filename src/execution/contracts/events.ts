@@ -22,6 +22,7 @@ import { brandedStringSchema, offsetIsoTimestampSchema } from '../../kernel/inde
 import { preparedCandidateSchema, type PreparedCandidate } from './candidate.js';
 import { runId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
+import { preparedMaintenanceSchema, type PreparedMaintenance } from './maintenance.js';
 import { repositoryAssignmentSchema, type RepositoryAssignment } from './repository-assignment.js';
 import type { ExecutionFailure, RecordedRunnerResult, RecoveredRunResult } from './results.js';
 import { ExecutionStreamKind, type ActivationStreamRef, type RunStreamRef } from './streams.js';
@@ -60,6 +61,7 @@ export const runStartedPayloadSchema = z
         repositoryResourceId: z.string().min(1).optional(),
         checkoutRevision: z.string().min(1).optional(),
         candidate: preparedCandidateSchema.optional(),
+        maintenance: preparedMaintenanceSchema.optional(),
       })
       .strict()
       .optional(),
@@ -180,6 +182,7 @@ export interface RunStartedPayload {
         readonly repositoryResourceId?: string | undefined;
         readonly checkoutRevision?: string | undefined;
         readonly candidate?: PreparedCandidate | undefined;
+        readonly maintenance?: PreparedMaintenance | undefined;
       }
     | undefined;
 }

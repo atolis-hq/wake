@@ -60,3 +60,8 @@ Prerequisite outputs distinguish verified pushed changes, delivery-ready review
 and check authority, and actual provider-observed merge state at the exact head.
 They retain observed base revisions for selective downstream freshness checks;
 workflow or issue completion is never merge evidence.
+
+Governed integration reuses provider artifact verification for exact repository/branch/head/base
+identity and the target's own review/check authority. Maintained subjects need fresh trusted
+review evidence from the maintenance Run onward. Existing delivery intents/results reconcile
+child-owned merges to the requesting parent's wait without transferring correlation.

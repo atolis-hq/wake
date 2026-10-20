@@ -809,7 +809,7 @@ human. A replaced output makes its consumers stale until they are replaced too.
 
 `delegation.completion` is optional: `qa-approved` (default) lets the parent finish once the
 current candidate has a passing QA verdict without any merge; `merge-required` keeps the
-parent blocked until governed integration exists. These configured final gates apply to all
+parent incomplete until every selected change is provider-observed merged at its selected revision. These configured final gates apply to all
 completion paths, including accepted signals and resource transitions: missing, failing,
 blocked, historical-only or stale QA cannot complete the parent. Previously configured
 direct workflows without `delegation.qa` or explicit `delegation.completion` keep their
@@ -900,3 +900,31 @@ future result; previously accepted ancestor context remains usable through
 `context`. A merge prerequisite cannot wait on a child whose parent must first
 join the same cohort to perform that merge. Use an upstream workflow with its
 own configured `pr.merge` lane, or consume already merged work incrementally.
+
+### Governed child integration and stack maintenance
+
+A merge-required parent uses `pr.approve` or `pr.merge` with
+`scope: { delivery: next }`. Wake derives the next target from the current selected outputs,
+current passing candidate QA, repository and stack ordering. The activity outcome stays on the
+parent; the terminal child's workflow and PR primary ownership stay intact. Direct PR activities
+keep their primary-resource selection. A scoped action cannot name an arbitrary foreign PR.
+The target's consent, exact revision, review/check requirements and unavailable ancestors still
+apply. `integrated` means all selected changes have merged; route it to the final stage.
+A blocked merge can route to an agent maintenance stage, then back to candidate assembly and QA.
+
+Configure `delegation.maintenance.stage` to name an agent stage with workspace `none`.
+Wake supplies leased target branch workspaces in the prompt. The agent chooses the retarget,
+rebase or conflict repair and publishes it, then calls `wake_delivery_maintenance` with a unique
+maintenanceId, target (childWorkItemId/outputName), kind (rebase, retarget or resolve-conflicts),
+expectedRevision, resulting revision and pullRequestBase. The provider must confirm the exact
+repository, branch, head and base; the reporting Run must hold the prepared target lease.
+An unresolved earlier writer blocks another writer until reconciled.
+
+Maintenance records a new immutable subject and the actual producing Run. Earlier output, review,
+check and QA facts remain historical. Affected candidate evidence must be refreshed before another
+merge; unrelated outputs keep their evidence. Planned merges do not consume failed QA rounds.
+Unexplained base movement, including movement after another PR merged, is not proof of planned
+progress. Squash merges and stack retargets require explicit maintenance and refreshed QA.
+Existing durable delivery intents/results retain partial progress across restart; integration
+across repositories does not provide atomic rollback. Work detail API/web expose target states,
+maintenance reasons, affected evidence and maintenance history.

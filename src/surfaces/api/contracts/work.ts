@@ -21,7 +21,34 @@ export interface WorkItemResponse {
   readonly lastRunOutcome?: string;
 }
 
+/** Governed integration progress, derived from provider-observed state; never a separate record. */
+export interface DeliveryIntegrationResponse {
+  readonly complete: boolean;
+  readonly summary: string;
+  readonly targets: readonly {
+    /** The child that owns the pull request; integration never transfers ownership. */
+    readonly workItemKey: WorkItemKey;
+    readonly outputName: string;
+    readonly state: string;
+    readonly layer: number;
+    readonly baseMovement: string;
+    readonly evidenceAffected: boolean;
+    readonly maintenance?: string;
+    readonly detail?: string;
+  }[];
+  readonly maintenance: readonly {
+    readonly maintenanceId: string;
+    readonly workItemKey: WorkItemKey;
+    readonly outputName: string;
+    readonly kind: string;
+    readonly previousRevision: string;
+    readonly currentRevision: string;
+    readonly producerRunId: string;
+  }[];
+}
+
 export interface DeliveryQaResponse {
+  readonly integration?: DeliveryIntegrationResponse;
   readonly selectionRevision: number;
   readonly candidateId?: string;
   readonly repositories: readonly { readonly resourceId: string; readonly revision: string }[];

@@ -4,10 +4,13 @@ import { DeliveryCompletion, DeliveryRejection, QaVerdict } from '../contracts/v
 import {
   currentSelection,
   entryKey,
+  isChange,
+  outputKey,
   reject,
   requirements,
   type DeliveryFacts,
 } from './delivery-facts.js';
+import type { IntegrationOutcome } from './delivery-integration.js';
 import { staleEntries } from './delivery-selection.js';
 
 /** The exact repository and revision set QA must have checked. */
@@ -99,6 +102,7 @@ export interface CompletionDecision {
 export function completionDecision(
   state: DeliveryState,
   mode: DeliveryCompletion,
+  integration?: IntegrationOutcome,
 ): CompletionDecision {
   if (state.stale.length > 0)
     return {
@@ -111,12 +115,35 @@ export function completionDecision(
     return { complete: false, reason: 'The current candidate has no QA result' };
   if (state.qa.verdict !== QaVerdict.Pass)
     return { complete: false, reason: `QA verdict is ${state.qa.verdict}` };
-  if (mode === DeliveryCompletion.MergeRequired)
+  if (mode === DeliveryCompletion.MergeRequired && integration?.complete !== true)
     return {
       complete: false,
-      reason: 'Governed integration is required and its gates are not satisfied',
+      reason: `Governed integration is required and its gates are not satisfied: ${
+        integration?.summary ?? 'integration state is unavailable'
+      }`,
     };
   return { complete: true };
+}
+
+/** A maintained or replaced change makes any candidate built from its earlier subject historical. */
+function subjectsCurrent(
+  current: NonNullable<ReturnType<typeof currentSelection>>,
+  candidate: DeliveryCandidate,
+): boolean {
+  return (candidate.subjects ?? []).every((subject) => {
+    const entry = current.entries.find(
+      (item) =>
+        item.childWorkItemId === subject.childWorkItemId && item.output.name === subject.outputName,
+    );
+    return (
+      entry !== undefined &&
+      isChange(entry.output) &&
+      entry.output.reference.revision.toLowerCase() === subject.revision.toLowerCase() &&
+      entry.output.reference.pullRequestBase === subject.pullRequestBase &&
+      (entry.output.reference.baseRevision ?? '').toLowerCase() ===
+        (subject.baseRevision ?? '').toLowerCase()
+    );
+  });
 }
 
 function isCandidateCurrent(
@@ -130,6 +157,8 @@ function isCandidateCurrent(
     current !== undefined &&
     candidate.selectionRevision === current?.revision &&
     stale.length === 0 &&
+    subjectsCurrent(current, candidate) &&
+    legacySubjectsCurrent(facts, candidate) &&
     requirements(facts.reservations).every((requirement) =>
       current.entries.some(
         (entry) =>
@@ -137,4 +166,12 @@ function isCandidateCurrent(
       ),
     )
   );
+}
+
+function legacySubjectsCurrent(facts: DeliveryFacts, candidate: DeliveryCandidate): boolean {
+  if (candidate.subjects !== undefined) return true;
+  const contributions = new Set(
+    candidate.repositories.flatMap((repository) => repository.contributions.map(outputKey)),
+  );
+  return !facts.maintenance.some((item) => contributions.has(outputKey(item.target)));
 }

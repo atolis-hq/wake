@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { mergePolicyDetailsSchema } from '../pr/merge-policy-denial.js';
+import { parentActionContextSchema } from '../pr/parent-scope.js';
 
 import { eventDataSchema, eventEnvelopeSchema } from '@atolis-hq/eventing';
 import { brandedStringSchema } from '../../kernel/index.js';
@@ -105,6 +106,10 @@ const denialCodeSchema = z.enum([
   PullRequestDenialCode.TooManyFilesChanged,
   PullRequestDenialCode.BlockedPathChanged,
   PullRequestDenialCode.ChangedFilesUnavailable,
+  PullRequestDenialCode.OutsideDelivery,
+  PullRequestDenialCode.DeliveryNotReady,
+  PullRequestDenialCode.TargetHeld,
+  PullRequestDenialCode.MaintenanceRequired,
 ]);
 const denialSchema = z
   .object({
@@ -134,6 +139,7 @@ const approveRequestedSchema = z
     resourceId: resourceIdSchema,
     revision: z.string(),
     body: z.string().nullable(),
+    parent: parentActionContextSchema.optional(),
   })
   .strict();
 const mergeRequestedSchema = z
@@ -146,6 +152,7 @@ const mergeRequestedSchema = z
     method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),
     requireChecks: z.boolean(),
     autoMerge: z.boolean().default(false),
+    parent: parentActionContextSchema.optional(),
   })
   .strict();
 

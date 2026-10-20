@@ -237,6 +237,32 @@ describe('work detail', () => {
         rootWorkItemKey: 'wk_a',
         children: [],
         qa: {
+          integration: {
+            complete: false,
+            summary: '1/6 selected changes merged',
+            targets: [
+              {
+                workItemKey: 'child-2',
+                outputName: 'change',
+                state: 'maintenance-required',
+                layer: 1,
+                baseMovement: 'planned-progress',
+                evidenceAffected: true,
+                maintenance: 'retarget',
+              },
+            ],
+            maintenance: [
+              {
+                maintenanceId: 'm1',
+                workItemKey: 'child-1',
+                outputName: 'change',
+                kind: 'rebase',
+                previousRevision: 'old-head',
+                currentRevision: 'new-head',
+                producerRunId: 'parent-run',
+              },
+            ],
+          },
           selectionRevision: 2,
           candidateId: 'candidate-2',
           repositories: [{ resourceId: 'repo-a', revision: 'a'.repeat(40) }],
@@ -256,6 +282,9 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     expect(await screen.findByRole('heading', { name: 'Candidate QA' })).toBeTruthy();
+    expect(screen.getByText('1/6 selected changes merged')).toBeTruthy();
+    expect(screen.getByText(/child-2\/change: maintenance-required/)).toBeTruthy();
+    expect(screen.getByText(/old-head to new-head/)).toBeTruthy();
     expect(screen.getByText('Repair budget exhausted')).toBeTruthy();
     expect(screen.getByText('Integration test failed')).toBeTruthy();
     expect(screen.getByText('Stale: downstream')).toBeTruthy();

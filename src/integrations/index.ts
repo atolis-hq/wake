@@ -67,3 +67,5 @@ export * from './fake/provider.js';
 export * from './application/conversation-command-feedback.js';
 
 export { createDelegationOutputs } from './application/delegation-outputs.js';
+
+export * from './application/delivery-integration-verification.js';

@@ -77,6 +77,21 @@ export function planCandidate(
       candidateId: command.candidateId,
       selectionRevision: current.revision,
       repositories: repositories.sort((a, b) => a.resourceId.localeCompare(b.resourceId)),
+      subjects: current.entries.flatMap((entry) =>
+        isChange(entry.output)
+          ? [
+              {
+                childWorkItemId: entry.childWorkItemId,
+                outputName: entry.output.name,
+                revision: entry.output.reference.revision,
+                pullRequestBase: entry.output.reference.pullRequestBase,
+                ...(entry.output.reference.baseRevision === undefined
+                  ? {}
+                  : { baseRevision: entry.output.reference.baseRevision }),
+              },
+            ]
+          : [],
+      ),
       context: current.entries
         .filter((entry) => !isChange(entry.output))
         .map((entry) => ({

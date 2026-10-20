@@ -50,6 +50,7 @@ export const ActivityOutcomeKindValue: typeof ActivityOutcomeKind = defineClosed
   Rejected: 'rejected',
   Blocked: 'blocked',
   Failed: 'failed',
+  Integrated: 'integrated',
 } as const);
 
 const boardConditionShape = {

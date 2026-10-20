@@ -170,3 +170,34 @@ it('maps an open-attention submission conflict to a typed tool error', async () 
   expect(text(result)).toMatchObject({ code: 'attention-open' });
   await client.close();
 });
+
+it('binds maintenance reports to the session and rejects forged identities', async () => {
+  const maintain = vi.fn(async () => ({ replay: false }));
+  const client = await connect({ recordDeliveryMaintenance: maintain });
+  const command = {
+    maintenanceId: 'retarget-1',
+    target: { childWorkItemId: workId('2'), outputName: 'change' },
+    kind: 'retarget',
+    expectedRevision: 'a'.repeat(40),
+    revision: 'b'.repeat(40),
+    pullRequestBase: 'main',
+  };
+  expect(
+    (await client.callTool({ name: 'wake_delivery_maintenance', arguments: command })).isError,
+  ).not.toBe(true);
+  expect(maintain).toHaveBeenCalledWith(
+    caller,
+    command,
+    expect.objectContaining({ commandId: 'command' }),
+  );
+  expect(
+    (
+      await client.callTool({
+        name: 'wake_delivery_maintenance',
+        arguments: { ...command, runId: 'forged' },
+      })
+    ).isError,
+  ).toBe(true);
+  expect(maintain).toHaveBeenCalledTimes(1);
+  await client.close();
+});

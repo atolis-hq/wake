@@ -3,7 +3,12 @@ import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId } from '../../work/index.js';
 import { delegationResultSchema } from './delegation.js';
 import type { StageName } from './identifiers.js';
-import { CandidateSourceKind, QaVerdict, type DeliveryRejection } from './vocabulary.js';
+import {
+  CandidateSourceKind,
+  MaintenanceKind,
+  QaVerdict,
+  type DeliveryRejection,
+} from './vocabulary.js';
 
 const revision = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i);
 
@@ -116,6 +121,23 @@ export const deliveryCandidateSchema = z
     candidateId: z.string().min(1),
     selectionRevision: z.number().int().positive(),
     repositories: z.array(candidateRepositorySchema).min(1),
+    /**
+     * The exact change subjects this candidate was built from. Maintenance that replaces any of
+     * them makes the candidate, and QA of it, historical rather than current.
+     */
+    subjects: z
+      .array(
+        z
+          .object({
+            childWorkItemId: brandedStringSchema(workItemId),
+            outputName: z.string().min(1),
+            revision,
+            pullRequestBase: z.string().min(1),
+            baseRevision: z.string().min(1).optional(),
+          })
+          .strict(),
+      )
+      .optional(),
     /** Non-change outputs (plans, evidence) the candidate was selected with. */
     context: z.array(deliveryOutputKeySchema),
     criteria: z.array(z.string().min(1)),
@@ -158,6 +180,49 @@ export const deliveryQaSchema = deliveryQaCommandSchema
   .strict();
 
 export type DeliveryQa = z.infer<typeof deliveryQaSchema>;
+
+const subjectState = z
+  .object({
+    revision,
+    pullRequestBase: z.string().min(1),
+    baseRevision: z.string().min(1).optional(),
+  })
+  .strict();
+
+/** Agent input: what it did to one selected change, for Wake to verify against the provider. */
+export const deliveryMaintenanceCommandSchema = z
+  .object({
+    maintenanceId: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+    target: deliveryOutputKeySchema,
+    kind: z.enum(MaintenanceKind),
+    /** The head the agent started from; it must be the target's current subject. */
+    expectedRevision: revision,
+    /** The resulting head and pull request base the agent published. */
+    revision,
+    pullRequestBase: z.string().min(1),
+  })
+  .strict();
+
+export type DeliveryMaintenanceCommand = z.infer<typeof deliveryMaintenanceCommandSchema>;
+
+/**
+ * An immutable new subject for a selected change. The earlier subject, its reviews, checks and
+ * QA stay historical; the PR keeps its original owner and the producer is the maintaining Run.
+ */
+export const deliveryMaintenanceSchema = z
+  .object({
+    maintenanceId: z.string().min(1),
+    target: deliveryOutputKeySchema,
+    kind: z.enum(MaintenanceKind),
+    resourceId: z.string().min(1),
+    repositoryResourceId: z.string().min(1),
+    previous: subjectState,
+    current: subjectState.extend({ baseRevision: z.string().min(1).optional() }).strict(),
+    producer: z.object({ runId: z.string().min(1), activationId: z.string().min(1) }).strict(),
+  })
+  .strict();
+
+export type DeliveryMaintenance = z.infer<typeof deliveryMaintenanceSchema>;
 
 /** A final delivery gate can be reassessed through ordinary operator retry. */
 export interface DeliveryCompletionBlock {

@@ -182,7 +182,11 @@ async function setupApprovedPullRequest(
     resourceId: resource,
     kind: resourceKind('pull-request'),
     externalKey: { adapter: 'github', key: 'owner/repo#1' },
-    capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
+    capabilities: [
+      resourceCapability('reviewable'),
+      resourceCapability('revisioned'),
+      resourceCapability('mergeable'),
+    ],
   });
   await world.resources.correlate(resource, work, 'primary', command(world, 'correlate'));
   await world.pullRequests.observe(
@@ -257,3 +261,96 @@ function command(world: TestWorld, commandId: string) {
     actor: { kind: 'system' as const, id: 'test' },
   };
 }
+
+it.each(['owner', 'revision', 'unscoped'] as const)(
+  'denies scoped authority escalation: %s',
+  async (failure) => {
+    const world = new TestWorld();
+    const parent = await world.createWork({ objective: 'parent', workItemId: workId('parent') });
+    const child = await world.createWork({ objective: 'child', workItemId: workId('child') });
+    const resource = await setupApprovedPullRequest(world, child.workItemId);
+    const activity = createPullRequestMergeActivity(
+      world.journal,
+      world.pullRequests,
+      undefined,
+      failure === 'unscoped'
+        ? undefined
+        : {
+            authorize: async () => ({
+              kind: 'target',
+              resourceId: resource,
+              revision: failure === 'revision' ? 'wrong' : 'head-a',
+              context: {
+                requestingWorkItemId: parent.workItemId,
+                ownerWorkItemId: failure === 'owner' ? parent.workItemId : child.workItemId,
+                output: { childWorkItemId: child.workItemId, outputName: 'change' },
+                candidateId: 'candidate',
+                selectionRevision: 1,
+                qaId: 'qa',
+              },
+            }),
+          },
+    );
+    const call = invocation(parent.workItemId, {
+      target: 'primary',
+      method: 'squash',
+      requireChecks: true,
+    });
+    const outcome = await activity.handler.execute(
+      { ...call, input: { ...call.input, scope: { delivery: 'next' } } },
+      context(),
+    );
+    expect(outcome.kind).toBe('blocked');
+    expect(await world.events('pr.merge-requested')).toHaveLength(0);
+    expect(await world.resources.primaryCorrelation(resource)).toMatchObject({
+      workItemId: child.workItemId,
+    });
+  },
+);
+
+it('a scoped parent merge keeps its intent on the original child PR with the exact parent decision', async () => {
+  const world = new TestWorld();
+  const parent = await world.createWork({ objective: 'parent', workItemId: workId('parent') });
+  const child = await world.createWork({ objective: 'child', workItemId: workId('child') });
+  const resource = await setupApprovedPullRequest(world, child.workItemId);
+  const decision = {
+    requestingWorkItemId: parent.workItemId,
+    ownerWorkItemId: child.workItemId,
+    output: { childWorkItemId: child.workItemId, outputName: 'change' },
+    candidateId: 'candidate',
+    selectionRevision: 1,
+    qaId: 'qa',
+  };
+  const activity = createPullRequestMergeActivity(world.journal, world.pullRequests, undefined, {
+    authorize: async () => ({
+      kind: 'target',
+      resourceId: resource,
+      revision: 'head-a',
+      context: decision,
+    }),
+  });
+  const call = invocation(parent.workItemId, {
+    target: 'primary',
+    method: 'squash',
+    requireChecks: true,
+  });
+  expect(
+    (
+      await activity.handler.execute(
+        { ...call, input: { ...call.input, scope: { delivery: 'next' } } },
+        context(),
+      )
+    ).kind,
+  ).toBe('waiting');
+  expect(await world.events('pr.merge-requested')).toEqual([
+    expect.objectContaining({
+      event: expect.objectContaining({
+        payload: expect.objectContaining({
+          resourceId: resource,
+          revision: 'head-a',
+          parent: decision,
+        }),
+      }),
+    }),
+  ]);
+});

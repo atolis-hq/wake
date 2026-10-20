@@ -1,13 +1,14 @@
 import type { EventJournal } from '@atolis-hq/eventing';
 import {
   ActivityRegistry,
-  type AgentContextReader,
   agentActivityDefinition,
   createAgentActivity,
   createIssueCompleteActivity,
   createPullRequestApproveActivity,
   createPullRequestMergeActivity,
+  type AgentContextReader,
   type createPullRequestService,
+  type ParentActionAuthorizer,
 } from '../activities/index.js';
 import { loadPromptTemplate, renderPromptTemplate } from '../execution/index.js';
 import type { createResourceService } from '../resources/index.js';
@@ -19,6 +20,7 @@ export function createBuiltInActivityRegistry(
   resources: ReturnType<typeof createResourceService>,
   wakeRoot: string,
   contextReader: AgentContextReader,
+  parentActions?: ParentActionAuthorizer,
 ): ActivityRegistry {
   const activities = new ActivityRegistry();
   activities.register({
@@ -47,7 +49,11 @@ export function createBuiltInActivityRegistry(
   });
   activities.register(createStatusPublishActivity(journal));
   activities.register(createIssueCompleteActivity(journal, resources));
-  activities.register(createPullRequestApproveActivity(journal, pullRequests));
-  activities.register(createPullRequestMergeActivity(journal, pullRequests));
+  activities.register(
+    createPullRequestApproveActivity(journal, pullRequests, undefined, parentActions),
+  );
+  activities.register(
+    createPullRequestMergeActivity(journal, pullRequests, undefined, parentActions),
+  );
   return activities;
 }

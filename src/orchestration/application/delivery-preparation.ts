@@ -5,17 +5,22 @@ import type { DeliveryCompletionBlock } from '../contracts/delivery.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { CandidateSourceKind, DeliveryCompletion } from '../contracts/vocabulary.js';
-import { type DeliveryFacts } from '../domain/delivery-facts.js';
+import { currentSelection, type DeliveryFacts } from '../domain/delivery-facts.js';
 import { completionDecision, deliveryState } from '../domain/delivery-qa.js';
 import { readDeliveryFacts } from './delivery-facts-reader.js';
+import { DeliveryIntegrationReader } from './delivery-integration-reader.js';
 import { verifyCandidateSources } from './delivery-sources.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 
 export class DeliveryPreparation {
+  private readonly integration: DeliveryIntegrationReader;
+
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly dependencies: DeliveryDependencies,
-  ) {}
+  ) {
+    this.integration = new DeliveryIntegrationReader(dependencies);
+  }
 
   async completionBlock(id: string): Promise<DeliveryCompletionBlock | undefined> {
     const parent = (await this.repository.loadRequired(id)).view;
@@ -25,9 +30,11 @@ export class DeliveryPreparation {
       return undefined;
     const facts = await this.facts(parent);
     if (facts.reservations.length === 0) return undefined;
+    const mode = definition.delegation?.completion ?? DeliveryCompletion.QaApproved;
     const decision = completionDecision(
       deliveryState(facts),
-      definition.delegation?.completion ?? DeliveryCompletion.QaApproved,
+      mode,
+      mode === DeliveryCompletion.MergeRequired ? await this.integration.assess(facts) : undefined,
     );
     const retryStage = await this.delegatingStage(id, facts.reservations.at(-1)!);
     const blocked = (reason: string): DeliveryCompletionBlock => ({
@@ -66,7 +73,7 @@ export class DeliveryPreparation {
       candidateId: candidate.candidateId,
       selectionRevision: candidate.selectionRevision,
       criteria: candidate.criteria,
-      inputs: facts.selections.at(-1)!.entries.map((entry) => ({
+      inputs: currentSelection(facts)!.entries.map((entry) => ({
         workItemId: entry.output.reference.workItemId,
         outputName: entry.output.name,
         revision:

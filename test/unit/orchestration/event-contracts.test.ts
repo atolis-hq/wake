@@ -138,6 +138,20 @@ const deliverySamples = [
     },
     workflow,
   ),
+  eventEnvelope(
+    OrchestrationEventType.DeliveryMaintenanceRecorded,
+    {
+      maintenanceId: 'rebase-1',
+      target: { childWorkItemId: workId('2'), outputName: 'findings' },
+      kind: 'rebase',
+      resourceId: 'resource-1',
+      repositoryResourceId: 'repository-1',
+      previous: { revision: 'a'.repeat(40), pullRequestBase: 'stack-base' },
+      current: { revision: 'b'.repeat(40), pullRequestBase: 'main', baseRevision: 'c'.repeat(40) },
+      producer: { runId: 'run-1', activationId: 'activation-1' },
+    },
+    workflow,
+  ),
 ];
 
 const delegationSamples = [

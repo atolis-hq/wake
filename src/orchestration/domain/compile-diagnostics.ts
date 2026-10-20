@@ -1,4 +1,4 @@
-import type { ActivityRegistry } from '../../activities/index.js';
+import { ActivityOutcomeKind, type ActivityRegistry } from '../../activities/index.js';
 import type { CompiledStage } from '../contracts/config.js';
 import type { StageName } from '../contracts/identifiers.js';
 
@@ -9,6 +9,9 @@ export interface WorkflowCompileDiagnostic {
   readonly message: string;
 }
 
+const hasDeliveryScope = (stage: CompiledStage) =>
+  typeof stage.with === 'object' && stage.with !== null && 'scope' in stage.with;
+
 export function reportUnroutedOutcomes(
   workflow: string,
   stages: Readonly<Record<StageName, CompiledStage>>,
@@ -18,6 +21,8 @@ export function reportUnroutedOutcomes(
   for (const [stage, configured] of Object.entries(stages)) {
     for (const outcome of activities.describe(configured.activity).outcomeKinds) {
       if (Object.hasOwn(configured.on, outcome)) continue;
+      // Only a parent delivery scope can finish with nothing left to integrate.
+      if (outcome === ActivityOutcomeKind.Integrated && !hasDeliveryScope(configured)) continue;
       report({
         workflow,
         stage,

@@ -196,6 +196,12 @@ export const delegationPolicySchema = z
       .object({ stage: identifier, recipe: z.string().trim().min(1).optional() })
       .strict()
       .optional(),
+    /**
+     * The agent stage that retargets, rebases or repairs selected pull requests between planned
+     * merges. Wake leases each target's recorded branch workspace for it; the agent chooses the
+     * repair.
+     */
+    maintenance: z.object({ stage: identifier }).strict().optional(),
   })
   .strict();
 

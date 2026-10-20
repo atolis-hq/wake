@@ -7,6 +7,7 @@ import type {
 } from '../contracts/vocabulary.js';
 import type { ReviewActorKind, ReviewerAuthorizationEvidence } from '../review/contracts.js';
 import type { MergePolicyDetails } from './merge-policy-denial.js';
+import type { ParentDeliveryScope } from './parent-scope.js';
 import type {
   MergeMethod,
   PullRequestCheckState,
@@ -81,9 +82,12 @@ export interface PullRequestTargetInput {
 
 export interface PullRequestApproveInput extends PullRequestTargetInput {
   readonly body?: string;
+  /** Acts on the parent delivery's next planned child-owned pull request instead of the WorkItem's own. */
+  readonly scope?: ParentDeliveryScope | undefined;
 }
 
 export interface PullRequestMergeInput extends PullRequestTargetInput {
+  readonly scope?: ParentDeliveryScope | undefined;
   readonly method: MergeMethod;
   readonly requireChecks: boolean;
   readonly requireApproval?: boolean | undefined;
@@ -100,6 +104,10 @@ export type PullRequestActivityOutcome =
   | {
       readonly kind: typeof ActivityOutcomeKind.Done;
       readonly data: { readonly deliveryEventId: string };
+    }
+  | {
+      readonly kind: typeof ActivityOutcomeKind.Integrated;
+      readonly data: { readonly complete: true };
     }
   | {
       readonly kind: typeof ActivityOutcomeKind.Blocked;

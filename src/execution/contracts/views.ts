@@ -8,6 +8,7 @@ import type {
 import type { PreparedCandidate } from './candidate.js';
 import type { RunId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
+import type { PreparedMaintenance } from './maintenance.js';
 import type { RepositoryAssignment } from './repository-assignment.js';
 import type { ExecutionFailure } from './results.js';
 import type { AgentRunResponse } from './runner.js';
@@ -55,6 +56,7 @@ export interface RunView {
     readonly repositoryResourceId?: string | undefined;
     readonly checkoutRevision?: string | undefined;
     readonly candidate?: PreparedCandidate | undefined;
+    readonly maintenance?: PreparedMaintenance | undefined;
   };
   readonly lease?: Lease;
   readonly externalExecution?: ExternalExecutionReference;

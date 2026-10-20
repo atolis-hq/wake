@@ -51,6 +51,12 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
     .strict(),
   z
     .object({
+      kind: z.literal(ActivityOutcomeKind.Integrated),
+      data: z.object({ complete: z.literal(true) }).strict(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal(ActivityOutcomeKind.Blocked),
       data: z
         .object({
@@ -70,6 +76,10 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
             PullRequestDenialCode.TooManyFilesChanged,
             PullRequestDenialCode.BlockedPathChanged,
             PullRequestDenialCode.ChangedFilesUnavailable,
+            PullRequestDenialCode.OutsideDelivery,
+            PullRequestDenialCode.DeliveryNotReady,
+            PullRequestDenialCode.TargetHeld,
+            PullRequestDenialCode.MaintenanceRequired,
           ]),
         })
         .strict(),
@@ -87,7 +97,7 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
     .strict(),
 ]);
 
-interface CandidateAudit {
+export interface CandidateAudit {
   readonly resourceId: ResourceId;
   readonly revision: string | null;
 }

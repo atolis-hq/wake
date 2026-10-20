@@ -144,6 +144,12 @@ export const DeliveryRejection = defineClosedVocabulary({
   InvalidVerdict: 'invalid-verdict',
   /** An identity was reused for different content. */
   Conflict: 'identity-conflict',
+  /** Maintenance named a target that is not a selected, unmerged change. */
+  NotMaintainable: 'not-maintainable',
+  /** Maintenance did not start from the target's current subject, or the provider disagrees. */
+  MaintenanceMismatch: 'maintenance-mismatch',
+  /** An earlier writer of the target is unresolved; reconcile it before another writes. */
+  AmbiguousWriter: 'ambiguous-writer',
 } as const);
 
 export type DeliveryRejection = ValueOf<typeof DeliveryRejection>;
@@ -169,8 +175,53 @@ export type CandidateSourceKind = ValueOf<typeof CandidateSourceKind>;
 export const DeliveryCompletion = defineClosedVocabulary({
   /** The parent may finish once the current candidate has an effective QA pass. */
   QaApproved: 'qa-approved',
-  /** The parent additionally needs governed integration, which is not yet available. */
+  /** The parent additionally needs every selected change merged through governed integration. */
   MergeRequired: 'merge-required',
 } as const);
 
 export type DeliveryCompletion = ValueOf<typeof DeliveryCompletion>;
+
+/** What an agent did to a selected change so it can integrate; each records a new subject. */
+export const MaintenanceKind = defineClosedVocabulary({
+  Retarget: 'retarget',
+  Rebase: 'rebase',
+  Resolve: 'resolve-conflicts',
+} as const);
+
+export type MaintenanceKind = ValueOf<typeof MaintenanceKind>;
+
+/** Where a selected change stands in governed integration, derived from actual provider state. */
+export const IntegrationState = defineClosedVocabulary({
+  Merged: 'integrated',
+  Ready: 'ready-to-integrate',
+  AwaitingLowerLayer: 'awaiting-lower-layer',
+  MaintenanceRequired: 'maintenance-required',
+  Closed: 'closed-unmerged',
+  Held: 'held',
+  Unobserved: 'unobserved',
+} as const);
+
+export type IntegrationState = ValueOf<typeof IntegrationState>;
+
+export const MaintenanceReason = defineClosedVocabulary({
+  /** A lower layer merged, so the change still targets a branch that no longer carries the stack. */
+  Retarget: 'retarget',
+  Conflict: 'merge-conflict',
+  /** The provider head is not the recorded subject: another writer changed the branch. */
+  HeadMoved: 'head-moved',
+  /** The base moved for a reason outside the delivery, so the tested combination is unproven. */
+  BaseMoved: 'base-moved',
+} as const);
+
+export type MaintenanceReason = ValueOf<typeof MaintenanceReason>;
+
+/** How the integration base changed since the subject was recorded. */
+export const BaseMovement = defineClosedVocabulary({
+  None: 'none',
+  /** A selected change merged; the QA candidate already contained it. */
+  PlannedProgress: 'planned-progress',
+  /** Nothing in the delivery explains it; it is never credited as progress. */
+  Unrelated: 'unrelated',
+} as const);
+
+export type BaseMovement = ValueOf<typeof BaseMovement>;

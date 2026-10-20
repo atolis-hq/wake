@@ -134,7 +134,7 @@ environment, the candidate's recipe and no findings. Repair reuses the existing
 the root has no descendant capacity is marked exhausted and inspection returns its
 unresolved findings. The delegation policy's optional `completion` (`qa-approved`, the
 default, or `merge-required`) feeds `completion`: QA approval finishes the first and never
-the second, because governed integration is a later slice. Configured final QA gates
+the second, until all selected changes are provider-observed merged at their exact selected subjects. Configured final QA gates
 replace completion with an explicit block across every append path. `delegation.qa`
 names a configured read-only agent stage and optional environment/test recipe. Only its
 active Run with a durably prepared exact candidate may record QA; coordinating activations

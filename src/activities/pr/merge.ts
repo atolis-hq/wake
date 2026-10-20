@@ -3,8 +3,12 @@ import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import { readMergePolicyDenial } from './merge-policy-denial.js';
 import { MergeMethod } from './vocabulary.js';
 
-import type { EventJournal } from '@atolis-hq/eventing';
-import { BuiltInResourceCapability, resourceStream } from '../../resources/index.js';
+import type { CommandContext, EventJournal } from '@atolis-hq/eventing';
+import {
+  BuiltInResourceCapability,
+  resourceStream,
+  type ResourceId,
+} from '../../resources/index.js';
 import { workItemStream } from '../../work/index.js';
 import type {
   ActivityDefinition,
@@ -12,16 +16,24 @@ import type {
   ActivityInvocation,
 } from '../contracts/activity.js';
 import { ActivityEventType } from '../contracts/events.js';
-import { ActivityExecutionKind, BuiltInActivityName } from '../contracts/vocabulary.js';
+import {
+  ActivityExecutionKind,
+  ActivityResourceRole,
+  BuiltInActivityName,
+} from '../contracts/vocabulary.js';
 import {
   pullRequestOutcomeSchema,
   pullRequestTargetSchema,
-  resolvePrimaryCapability,
   selectedDenialAudit,
   selectionDenialAudit,
 } from './activity-support.js';
 import type { PullRequestService } from './application.js';
-import type { PullRequestActivityOutcome, PullRequestMergeInput } from './contracts.js';
+import type {
+  PullRequestActivityOutcome,
+  PullRequestAuthorityDecision,
+  PullRequestAuthorityInput,
+  PullRequestMergeInput,
+} from './contracts.js';
 import {
   claimAndCompleteDecision,
   completeDecisionClaim,
@@ -33,11 +45,18 @@ import {
   createJournalIntentAppender,
   type IntentAppender,
 } from './intent.js';
+import {
+  ParentActionKind,
+  parentDeliveryScopeSchema,
+  type ParentActionAuthorizer,
+} from './parent-scope.js';
+import { resolveActionResource, resolveParentTarget } from './parent-target.js';
 import { decidePullRequestAuthority } from './policy.js';
 
 export const pullRequestMergeInputSchema: z.ZodType<PullRequestMergeInput> = z
   .object({
     target: pullRequestTargetSchema,
+    scope: parentDeliveryScopeSchema.optional(),
     method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),
     requireChecks: z.boolean(),
     requireApproval: z.boolean().default(true),
@@ -53,12 +72,19 @@ export const pullRequestMergeInputSchema: z.ZodType<PullRequestMergeInput> = z
         path: ['requireApproval'],
         message: 'requireApproval may be false only when autoMerge is true',
       });
+    if (input.scope !== undefined && input.target !== ActivityResourceRole.Primary)
+      context.addIssue({
+        code: 'custom',
+        path: ['target'],
+        message: 'A delivery scope selects its own target; it cannot be combined with target',
+      });
   });
 
 export function createPullRequestMergeActivity(
   journal: EventJournal,
   pullRequests: PullRequestService,
   appender: IntentAppender = createJournalIntentAppender(journal),
+  parentActions?: ParentActionAuthorizer,
 ): ActivityDefinition<
   typeof BuiltInActivityName.PullRequestMerge,
   PullRequestMergeInput,
@@ -73,20 +99,59 @@ export function createPullRequestMergeActivity(
       ActivityOutcomeKind.Done,
       ActivityOutcomeKind.Blocked,
       ActivityOutcomeKind.Failed,
+      ActivityOutcomeKind.Integrated,
     ],
     resources: [],
     executionKind: ActivityExecutionKind.Deterministic,
     handler: {
       execute: (invocation, context) =>
-        executeMerge(journal, pullRequests, appender, invocation, context),
+        executeMerge(journal, pullRequests, appender, parentActions, invocation, context),
     },
   };
+}
+
+async function denyByAuthority(
+  { journal, appender }: { readonly journal: EventJournal; readonly appender: IntentAppender },
+  invocation: ActivityInvocation<PullRequestMergeInput>,
+  authority: PullRequestAuthorityInput,
+  resourceId: ResourceId,
+  decision: Extract<PullRequestAuthorityDecision, { readonly allowed: false }>,
+  command: CommandContext,
+): Promise<PullRequestActivityOutcome> {
+  const audit = selectedDenialAudit(authority, resourceId);
+  const policyDenial = readMergePolicyDenial({
+    kind: ActivityOutcomeKind.Blocked,
+    data: { reason: decision.reason },
+  });
+  const denial = mergeDenied(decision.reason, command, {
+    ...audit,
+    method: invocation.input.method,
+  });
+  return claimAndCompleteDecision(journal, appender, invocation.activationId, MergeMethod.Merge, {
+    decisionKind: 'denied',
+    outcome: {
+      kind: ActivityOutcomeKind.Blocked,
+      data: {
+        reason: decision.reason,
+        ...(policyDenial === null
+          ? {}
+          : {
+              resourceId,
+              ...(audit.revision === null ? {} : { revision: audit.revision }),
+            }),
+        ...(decision.policy === undefined ? {} : { policy: decision.policy }),
+      },
+    },
+    fact: denial,
+    factStream: resourceStream(resourceId),
+  });
 }
 
 async function executeMerge(
   journal: EventJournal,
   pullRequests: PullRequestService,
   appender: IntentAppender,
+  parentActions: ParentActionAuthorizer | undefined,
   invocation: ActivityInvocation<PullRequestMergeInput>,
   context: ActivityExecutionContext,
 ): Promise<PullRequestActivityOutcome> {
@@ -99,11 +164,22 @@ async function executeMerge(
   );
   const prior = await readDecisionClaim(journal, invocation.activationId, MergeMethod.Merge);
   if (prior !== null) return completeDecisionClaim(journal, appender, prior);
-  const authority = await pullRequests.authorityInput(invocation.workItemId);
-  const resource = resolvePrimaryCapability(
-    invocation.resources,
+  const parentTarget = await resolveParentTarget(
+    parentActions,
+    invocation,
+    invocation.input.scope !== undefined,
+    ParentActionKind.Merge,
+  );
+  if (parentTarget.kind === 'fully-integrated')
+    return { kind: ActivityOutcomeKind.Integrated, data: { complete: true } };
+  const scoped = parentTarget.kind === 'target' ? parentTarget : undefined;
+  const authority = await pullRequests.authorityInput(
+    scoped?.context.ownerWorkItemId ?? invocation.workItemId,
+  );
+  const resource = resolveActionResource(
+    parentTarget,
     authority,
-    invocation.workItemId,
+    invocation,
     invocation.input.target,
     BuiltInResourceCapability.Mergeable,
   );
@@ -132,36 +208,15 @@ async function executeMerge(
       blockedPaths: invocation.input.blockedPaths,
     },
   });
-  if (!decision.allowed) {
-    const factStream = resourceStream(resource.resourceId);
-    const audit = selectedDenialAudit(authority, resource.resourceId);
-    const policyDenial = readMergePolicyDenial({
-      kind: ActivityOutcomeKind.Blocked,
-      data: { reason: decision.reason },
-    });
-    const denial = mergeDenied(decision.reason, command, {
-      ...selectedDenialAudit(authority, resource.resourceId),
-      method: invocation.input.method,
-    });
-    return claimAndCompleteDecision(journal, appender, invocation.activationId, MergeMethod.Merge, {
-      decisionKind: 'denied',
-      outcome: {
-        kind: ActivityOutcomeKind.Blocked,
-        data: {
-          reason: decision.reason,
-          ...(policyDenial === null
-            ? {}
-            : {
-                resourceId: resource.resourceId,
-                ...(audit.revision === null ? {} : { revision: audit.revision }),
-              }),
-          ...(decision.policy === undefined ? {} : { policy: decision.policy }),
-        },
-      },
-      fact: denial,
-      factStream,
-    });
-  }
+  if (!decision.allowed)
+    return denyByAuthority(
+      { journal, appender },
+      invocation,
+      authority,
+      resource.resourceId,
+      decision,
+      command,
+    );
   const intent = deliveryIntentRequested(
     decision.resourceId,
     ActivityEventType.PrMergeRequested,
@@ -173,6 +228,7 @@ async function executeMerge(
       method: invocation.input.method,
       requireChecks: invocation.input.requireChecks,
       autoMerge,
+      ...(scoped === undefined ? {} : { parent: scoped.context }),
     },
     command,
   );

@@ -191,26 +191,26 @@ export async function runDispatchLoop(
         ctx.commandContext(selected.activation.activationId),
       );
       startedWorkflowIds.add(selected.workflow.workflowInstanceId);
-      const repositoryAssignment = await ctx.orchestration.repositoryAssignment?.(
-        selected.workflow.workItemId,
-      );
+      const { workItemId } = selected.workflow;
+      const repositoryAssignment = await ctx.orchestration.repositoryAssignment?.(workItemId);
       const resourceViews = await dispatchResources(
         ctx.resources,
-        selected.workflow.workItemId,
+        workItemId,
         repositoryAssignment,
       );
-      const candidate = await ctx.orchestration.deliveryQaPreparation?.(
-        selected.workflow.workflowInstanceId,
-      );
+      const instanceId = selected.workflow.workflowInstanceId;
+      const candidate = await ctx.orchestration.deliveryQaPreparation?.(instanceId);
+      const maintenance = await ctx.orchestration.deliveryMaintenancePreparation?.(instanceId);
       const run = await ctx.execution.attempt(selected.activation, {
-        workItemId: selected.workflow.workItemId,
-        workflowInstanceId: selected.workflow.workflowInstanceId,
+        workItemId,
+        workflowInstanceId: instanceId,
         orchestrationGroupId: selected.workflow.orchestrationGroupId,
         resources: resourceViews,
         ...(candidate === undefined ? {} : { candidate }),
+        ...(maintenance === undefined ? {} : { maintenance }),
         ...(repositoryAssignment === undefined ? {} : { repositoryAssignment }),
         sessionPolicy:
-          candidate !== undefined ||
+          (candidate ?? maintenance) !== undefined ||
           selected.activation.sessionPolicy === 'fresh' ||
           selected.workflow.parentWorkflowInstanceId !== undefined
             ? 'fresh'
