@@ -40,6 +40,10 @@ import {
 } from '../contracts/artifact-vocabulary.js';
 import type { ProviderInstance } from '../contracts/provider.js';
 import { integrationStream } from '../contracts/streams.js';
+import {
+  artifactVerificationSource,
+  type ArtifactSourceRun,
+} from './artifact-verification-source.js';
 
 interface ArtifactRegistrationDependencies {
   readonly journal: EventJournal;
@@ -48,18 +52,12 @@ interface ArtifactRegistrationDependencies {
   readonly providers: readonly ProviderInstance[];
   readonly maxAmbiguityReconciliationAttempts?: number;
   readonly runs: {
-    list(activationId?: string): Promise<
-      readonly {
-        readonly repositoryAssignment?:
-          { readonly resourceId: string; readonly pullRequestBase: string } | undefined;
-        readonly workspaceRevision?: string | undefined;
-        readonly workspace?: { readonly branch?: string | undefined };
-      }[]
-    >;
+    list(activationId?: string): Promise<readonly ArtifactSourceRun[]>;
   };
 }
 
 type ArtifactClaim = {
+  readonly name?: string | undefined;
   readonly kind: ResourceKind;
   readonly externalKey: { readonly adapter: string; readonly key: string };
 };
@@ -158,7 +156,12 @@ export class ArtifactRegistrationReactor {
       (candidate) => candidate.adapter === record.artifact.externalKey.adapter,
     );
     if (provider === undefined) return;
-    const source = await this.verificationSource(record.activationId, branch);
+    const source = await artifactVerificationSource(
+      (await this.dependencies.runs.list(record.activationId)).at(-1),
+      branch,
+      record.artifact.name,
+      this.dependencies.resources,
+    );
     if (source === null) {
       await this.recordUnresolved(provider, record, ArtifactVerificationResult.NotFound, attempt);
       return;
@@ -173,25 +176,6 @@ export class ArtifactRegistrationReactor {
       return;
     }
     await this.registerVerified(record, verified, workItemId);
-  }
-
-  private async verificationSource(activationId: string, branch: string) {
-    const run = (await this.dependencies.runs.list(activationId)).at(-1);
-    const assignment = run?.repositoryAssignment;
-    const repository =
-      assignment === undefined
-        ? undefined
-        : await this.dependencies.resources.get(resourceId(assignment.resourceId));
-    if (repository === null) return null;
-    // Direct workflows keep branch-only verification; head and base are exact only for assignments.
-    if (assignment === undefined) return { workspaceBranch: branch };
-    if (repository === undefined || run?.workspaceRevision === undefined) return null;
-    return {
-      workspaceBranch: branch,
-      repository: repository.externalKey,
-      workspaceRevision: run.workspaceRevision,
-      pullRequestBase: assignment.pullRequestBase,
-    };
   }
 
   private async registerVerified(
@@ -296,7 +280,13 @@ function reportedArtifacts(value: unknown): readonly ArtifactClaim[] {
     .map((artifact) => reportedArtifactSchema.safeParse(artifact))
     .flatMap((result) =>
       result.success
-        ? [{ kind: resourceKind(result.data.kind), externalKey: result.data.externalKey }]
+        ? [
+            {
+              ...(result.data.name === undefined ? {} : { name: result.data.name }),
+              kind: resourceKind(result.data.kind),
+              externalKey: result.data.externalKey,
+            },
+          ]
         : [],
     );
 }

@@ -1,4 +1,8 @@
 import { acquireCandidateWorkspaces } from './candidate-workspaces.js';
+import {
+  acquireChangeOutputWorkspaces,
+  needsChangeOutputWorkspaces,
+} from './change-output-workspaces.js';
 import { acquireMaintenanceWorkspaces } from './maintenance-workspaces.js';
 /* eslint-disable max-lines */
 
@@ -543,6 +547,7 @@ async function settleRunSuccess(
     return;
   }
   const workspaceRevision = await lease?.readRevision?.();
+  const changeOutputs = await lease?.readChangeOutputs?.();
   await recordRunSuccess({
     dependencies: runLifecycleDependencies(runtime),
     runId: currentRunId,
@@ -550,6 +555,7 @@ async function settleRunSuccess(
     context,
     outcome,
     ...(workspaceRevision === undefined ? {} : { workspaceRevision }),
+    ...(changeOutputs === undefined ? {} : { changeOutputs }),
   });
 }
 
@@ -920,6 +926,18 @@ async function acquireAttemptWorkspace(
   currentRunId: ReturnType<typeof runId>,
   signal?: AbortSignal,
 ) {
+  const runs = await runtime.repository.list();
+  if (needsChangeOutputWorkspaces(context, activation, runs))
+    return acquireChangeOutputWorkspaces(
+      {
+        runId: currentRunId,
+        context,
+        mode: activation.execution.workspace,
+        runs: await runtime.repository.list(),
+        signal: signal ?? new AbortController().signal,
+      },
+      runtime.dependencies.workspaces,
+    );
   if (context.maintenance !== undefined)
     return acquireMaintenanceWorkspaces(
       {
@@ -1005,6 +1023,7 @@ function activityWorkspace(lease: WorkspaceLease | undefined, context: Execution
                 ? undefined
                 : { ...context.candidate!, ...lease.candidate },
             maintenance: lease.maintenance,
+            changeOutputs: lease.changeOutputs,
           },
         }),
   };

@@ -32,6 +32,7 @@ import {
   type DeliveryFacts,
 } from '../domain/delivery-facts.js';
 import { targetRequirements } from '../domain/delivery-integration-policy.js';
+import { selectIntegrationTarget } from '../domain/delivery-integration-target.js';
 import { known, sameRevision, type IntegrationAssessment } from '../domain/delivery-integration.js';
 import { deliveryState } from '../domain/delivery-qa.js';
 import { readDeliveryFacts } from './delivery-facts-reader.js';
@@ -76,8 +77,9 @@ export class DeliveryIntegrationService {
       return denied(PullRequestDenialCode.DeliveryNotReady);
     const assessment = await this.reader.assess(facts);
     if (assessment.complete) return { kind: 'fully-integrated' };
-    const { next, blocking } = assessment;
-    if (next === null) return denied(blockReason(blocking));
+    const selected = selectIntegrationTarget(assessment, request.output);
+    if ('reason' in selected) return denied(selected.reason);
+    const next = selected.target;
     if (!(await this.verifySelected(facts, next.output, request.action)))
       return denied(PullRequestDenialCode.DeliveryNotReady);
     const context: ParentActionContext = {
@@ -311,20 +313,4 @@ function replayPlan(recorded: DeliveryMaintenance, command: DeliveryMaintenanceC
     result: { maintenance: recorded, replay: true },
     draft: undefined,
   } satisfies MaintenancePlan;
-}
-
-function blockReason(blocking: IntegrationAssessment['blocking']): PullRequestDenialCode {
-  switch (blocking?.state) {
-    case IntegrationState.Held:
-      return PullRequestDenialCode.TargetHeld;
-    case IntegrationState.MaintenanceRequired:
-    case IntegrationState.AwaitingLowerLayer:
-      return PullRequestDenialCode.MaintenanceRequired;
-    case IntegrationState.Closed:
-      return PullRequestDenialCode.Closed;
-    case IntegrationState.Unobserved:
-      return PullRequestDenialCode.MissingResource;
-    default:
-      return PullRequestDenialCode.DeliveryNotReady;
-  }
 }

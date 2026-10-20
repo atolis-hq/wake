@@ -21,6 +21,9 @@ Add named concrete Activities; no callback dumping ground.
 ## Scenarios
 E2E-ACTIVITY-001, E2E-PR-001, E2E-PR-002, E2E-PR-APPROVE-001.
 
+Scoped parent PR approve/merge activities accept explicit child/output targets when a
+child owns several selected PRs. Their default then rejects ambiguity.
+
 Scoped parent PR approve/merge activities derive the next child-owned target through a
 narrow authorization port. Exact revision, original primary owner, capability and target
 policy still gate the intent; the requesting parent retains the activity outcome.

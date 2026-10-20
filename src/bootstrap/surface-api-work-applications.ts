@@ -15,6 +15,7 @@ import {
   ApprovalAuthorityKind,
   conversationCommand,
   ConversationSurfaceCapability,
+  DelegationOutputKind,
   GroupBudgetExtensionIneligibleError,
   isGroupBudgetExtensionEligible,
   OperatorRetryIneligibleError,
@@ -94,7 +95,7 @@ export function createSurfaceWorkApplications(
       return {
         bytes: artifact.bytes,
         mediaType: safeMediaType(artifact.revision.mediaType),
-        filename: artifact.revision.path.split('/').at(-1) ?? 'artifact',
+        filename: artifact.revision.path.split('/').at(-1) ?? DelegationOutputKind.Artifact,
       };
     },
     async transcript(key, groupId) {

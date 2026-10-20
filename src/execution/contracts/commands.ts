@@ -34,6 +34,11 @@ export interface ExecutionAttemptContext {
   readonly workflowInstanceId: ActivityWorkflowInstanceId;
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly resources: readonly ResourceView[];
+  readonly changeOutputAssignments?: readonly {
+    name: string;
+    repository: RepositoryAssignment;
+    isolated?: boolean;
+  }[];
   readonly repositoryAssignment?: RepositoryAssignment;
   readonly owner?: string;
   /** Runner names currently quota-paused; unset means none. */

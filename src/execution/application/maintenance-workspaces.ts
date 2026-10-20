@@ -23,27 +23,12 @@ export async function acquireMaintenanceWorkspaces(
 ): Promise<WorkspaceLease> {
   if (provider === undefined) throw new Error('Maintenance needs a workspace provider');
   const maintenance = executionMaintenanceSchema.parse(request.maintenance);
-  const targets = [...maintenance.targets].sort((a, b) =>
-    a.childWorkItemId < b.childWorkItemId ? -1 : a.childWorkItemId === b.childWorkItemId ? 0 : 1,
+  const targets = [...maintenance.targets].sort(
+    (a, b) =>
+      a.childWorkItemId.localeCompare(b.childWorkItemId) ||
+      a.outputName.localeCompare(b.outputName),
   );
-  if (new Set(targets.map((entry) => entry.childWorkItemId)).size !== targets.length)
-    throw new Error('Duplicate maintenance target');
-  for (const target of targets) {
-    const unresolved = request.runs.find(
-      (run) =>
-        run.runId !== request.runId &&
-        run.status === RunStatus.Ambiguous &&
-        ((run.workspace?.branch === target.childWorkItemId &&
-          run.workspace?.mode === WorkspaceMode.Branch) ||
-          run.workspace?.maintenance?.targets.some(
-            (entry) => entry.childWorkItemId === target.childWorkItemId,
-          ) === true),
-    );
-    if (unresolved !== undefined)
-      throw new Error(
-        `Maintenance target ${target.childWorkItemId} has an unresolved earlier writer: Run ${unresolved.runId}`,
-      );
-  }
+  assertMaintenanceWriters(targets, request);
   const leases: WorkspaceLease[] = [];
   try {
     for (const target of targets) {
@@ -57,6 +42,7 @@ export async function acquireMaintenanceWorkspaces(
       const lease = await provider.acquire({
         runId: request.runId,
         workItemId: target.childWorkItemId as WorkItemId,
+        ...(target.branch === target.childWorkItemId ? {} : { outputName: target.outputName }),
         signal: request.signal,
         mode: WorkspaceMode.Branch,
         repositoryResource: resource,
@@ -102,4 +88,34 @@ async function releaseAll(leases: readonly WorkspaceLease[]): Promise<void> {
     }
   }
   if (failures.length > 0) throw new AggregateError(failures, 'Maintenance lease cleanup failed');
+}
+
+function assertMaintenanceWriters(
+  targets: ExecutionMaintenance['targets'],
+  request: Parameters<typeof acquireMaintenanceWorkspaces>[0],
+) {
+  if (
+    new Set(targets.map((entry) => JSON.stringify([entry.childWorkItemId, entry.outputName])))
+      .size !== targets.length
+  )
+    throw new Error('Duplicate maintenance target');
+  for (const target of targets) {
+    const unresolved = request.runs.find(
+      (run) =>
+        run.runId !== request.runId &&
+        run.status === RunStatus.Ambiguous &&
+        (((run.workspace?.branch === target.branch ||
+          run.workspace?.changeOutputs?.some((entry) => entry.branch === target.branch) === true) &&
+          run.workspace?.mode === WorkspaceMode.Branch) ||
+          run.workspace?.maintenance?.targets.some(
+            (entry) =>
+              entry.childWorkItemId === target.childWorkItemId &&
+              entry.outputName === target.outputName,
+          ) === true),
+    );
+    if (unresolved !== undefined)
+      throw new Error(
+        `Maintenance target ${target.childWorkItemId} has an unresolved earlier writer: Run ${unresolved.runId}`,
+      );
+  }
 }

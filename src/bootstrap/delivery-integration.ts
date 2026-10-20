@@ -34,7 +34,7 @@ export function createDeliveryIntegration(
     async assertMaintenanceWriter(request) {
       const all = await runs();
       const run = all.find((entry) => entry.runId === request.runId);
-      const leased = run?.workspace?.maintenance?.targets.some(
+      const leased = run?.workspace?.maintenance?.targets.find(
         (target) =>
           target.childWorkItemId === request.childWorkItemId &&
           target.resourceId === request.resourceId &&
@@ -46,7 +46,7 @@ export function createDeliveryIntegration(
         run.cancellation !== undefined ||
         run.activationId !== request.activationId ||
         run.workflowInstanceId !== request.workflowInstanceId ||
-        leased !== true
+        leased === undefined
       )
         throw new DeliveryRejectionError(
           DeliveryRejection.NotMaintainable,
@@ -57,10 +57,14 @@ export function createDeliveryIntegration(
         (entry) =>
           entry.runId !== request.runId &&
           entry.status === RunStatus.Ambiguous &&
-          ((entry.workspace?.branch === request.childWorkItemId &&
+          (((entry.workspace?.branch === leased.branch ||
+            entry.workspace?.changeOutputs?.some((output) => output.branch === leased.branch) ===
+              true) &&
             entry.workspace?.mode === WorkspaceMode.Branch) ||
             entry.workspace?.maintenance?.targets.some(
-              (target) => target.childWorkItemId === request.childWorkItemId,
+              (target) =>
+                target.childWorkItemId === request.childWorkItemId &&
+                target.outputName === leased.outputName,
             ) === true),
       );
       if (unresolved !== undefined)

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  ActivityOutcomeKind,
   decidePullRequestOutputAuthority,
   PullRequestState,
   reportedArtifactSchema,
@@ -53,14 +54,29 @@ export function createDelegationOutputs(input: OutputDependencies): DelegationAr
       return qualifyingChange(input, child, output, condition);
     },
     async qualifyingOutputs(child, outputs) {
-      const artifacts = outputs.filter((output) => 'path' in output);
-      const references =
-        artifacts.length === 0 ? [] : await input.artifacts.qualifyingOutputs(child, artifacts);
-      if (references === null) return null;
+      const references: NonNullable<Awaited<ReturnType<DelegationArtifacts['qualifyingOutputs']>>> =
+        [];
       for (const output of outputs) {
-        if (!('kind' in output)) continue;
+        if ('path' in output) {
+          const selected = await input.artifacts.qualifyingOutputs(child, [output]);
+          if (selected === null) {
+            if (output.required !== false) return null;
+          } else references.push(...selected);
+          continue;
+        }
         const change = await qualifyingChange(input, child, output);
-        if (change === null) return null;
+        if (change === null) {
+          if (output.required !== false) return null;
+          continue;
+        }
+        if (
+          references.some(
+            (entry) =>
+              'resourceId' in entry.reference &&
+              entry.reference.resourceId === change.reference.resourceId,
+          )
+        )
+          return null;
         references.push(change);
       }
       return references;
@@ -72,6 +88,11 @@ function reportedChange(runs: readonly RunView[], name: string) {
   return runs
     .flatMap((run) => {
       const data = reportsSchema.safeParse(run.outcome?.data);
+      if (
+        data.success &&
+        data.data.reportedArtifacts.filter((entry) => entry.name === name).length > 1
+      )
+        throw new Error('Duplicate named change report');
       return data.success
         ? data.data.reportedArtifacts
             .filter(
@@ -130,14 +151,21 @@ async function qualifyingChange(
     (run) =>
       run.workflowInstanceId === child.workflowInstanceId &&
       run.status === RunStatus.Succeeded &&
+      hasSuccessfulOutcome(run) &&
       child.acceptedOutcomes.includes(run.activationId),
   );
   const latest = reportedChange(runs, output.name);
   if (latest === undefined) return null;
-  // Judge the PR against the latest implementation head so a revision run need not
-  // repeat the report; the provider must confirm the PR now points there.
-  const run = runs.filter((entry) => entry.workspace?.mode === WorkspaceMode.Branch).at(-1);
-  const source = run === undefined ? undefined : runSource(run);
+  // A revision run may omit the report, but only this output's own branch may refresh it.
+  const run = runs
+    .filter(
+      (entry) =>
+        entry.workspace?.mode === WorkspaceMode.Branch &&
+        (latest.run.workspace?.changeOutputs === undefined ||
+          entry.changeOutputs?.some((source) => source.name === output.name) === true),
+    )
+    .at(-1);
+  const source = run === undefined ? undefined : runSource(run, output.name);
   if (run === undefined || source === undefined) return null;
   const { assignment, branch, revision } = source;
   const resource = await verifiedChange(input, latest.report, source);
@@ -232,10 +260,29 @@ async function hasOutputAuthority(
   return true;
 }
 
-function runSource(run: RunView) {
+function runSource(run: RunView, name?: string) {
+  if (run.workspace?.changeOutputs !== undefined) {
+    const output = run.changeOutputs?.find((entry) => entry.name === name);
+    return output === undefined
+      ? undefined
+      : {
+          assignment: output.repository,
+          branch: output.branch,
+          revision: output.revision,
+        };
+  }
   const assignment = run.repositoryAssignment;
   const branch = run.workspace?.branch;
   const revision = run.workspaceRevision;
   if (assignment === undefined || branch === undefined || revision === undefined) return undefined;
   return { assignment, branch, revision };
+}
+
+function hasSuccessfulOutcome(run: RunView): boolean {
+  return (
+    run.outcome !== undefined &&
+    run.outcome.kind !== ActivityOutcomeKind.Failed &&
+    run.outcome.kind !== ActivityOutcomeKind.Blocked &&
+    run.outcome.kind !== ActivityOutcomeKind.Rejected
+  );
 }

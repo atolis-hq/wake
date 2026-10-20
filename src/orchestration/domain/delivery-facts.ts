@@ -88,18 +88,23 @@ export interface Requirement {
 }
 
 /** Original required assignments: those not themselves declared as a replacement. */
-export function requirements(reservations: readonly DelegationReservation[]): Requirement[] {
+export function requirements(
+  reservations: readonly DelegationReservation[],
+  includeOptional = false,
+): Requirement[] {
   return reservations.flatMap((reservation) =>
     reservation.children
       .filter((child) => child.replaces === undefined)
       .flatMap((child) =>
-        child.outputs.map((output) => ({
-          cohortId: reservation.cohortId,
-          assignmentId: child.assignmentId,
-          outputName: output.name,
-          child,
-          criteria: child.criteria,
-        })),
+        child.outputs
+          .filter((output) => includeOptional || output.required !== false)
+          .map((output) => ({
+            cohortId: reservation.cohortId,
+            assignmentId: child.assignmentId,
+            outputName: output.name,
+            child,
+            criteria: child.criteria,
+          })),
       ),
   );
 }

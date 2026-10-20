@@ -6,6 +6,7 @@ import type {
   ActivityWorkflowInstanceId,
 } from '../../activities/index.js';
 import type { PreparedCandidate } from './candidate.js';
+import type { ChangeOutputWorkspace } from './change-output.js';
 import type { RunId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
 import type { PreparedMaintenance } from './maintenance.js';
@@ -46,6 +47,7 @@ export interface RunView {
       }
     | undefined;
   readonly finishedAt?: string;
+  readonly changeOutputs?: readonly ChangeOutputWorkspace[] | undefined;
   readonly workspaceRevision?: string | undefined;
   readonly outcome?: ActivityOutcome;
   readonly failure?: ExecutionFailure;
@@ -57,6 +59,7 @@ export interface RunView {
     readonly checkoutRevision?: string | undefined;
     readonly candidate?: PreparedCandidate | undefined;
     readonly maintenance?: PreparedMaintenance | undefined;
+    readonly changeOutputs?: readonly ChangeOutputWorkspace[] | undefined;
   };
   readonly lease?: Lease;
   readonly externalExecution?: ExternalExecutionReference;

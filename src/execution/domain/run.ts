@@ -177,6 +177,9 @@ function applyTerminalEvent(
       status: RunStatus.Succeeded,
       finishedAt: event.payload.finishedAt,
       outcome: event.payload.outcome,
+      ...(event.payload.changeOutputs === undefined
+        ? {}
+        : { changeOutputs: event.payload.changeOutputs }),
       ...(event.payload.workspaceRevision === undefined
         ? {}
         : { workspaceRevision: event.payload.workspaceRevision }),

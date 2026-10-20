@@ -45,6 +45,7 @@ export interface AgentRunResponse {
   readonly displayBody: string;
   readonly artifacts?:
     | readonly {
+        readonly name?: string | undefined;
         readonly kind: string;
         readonly externalKey: { readonly adapter: string; readonly key: string };
       }[]

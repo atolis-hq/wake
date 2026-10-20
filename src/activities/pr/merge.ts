@@ -167,7 +167,7 @@ async function executeMerge(
   const parentTarget = await resolveParentTarget(
     parentActions,
     invocation,
-    invocation.input.scope !== undefined,
+    invocation.input.scope,
     ParentActionKind.Merge,
   );
   if (parentTarget.kind === 'fully-integrated')

@@ -64,7 +64,10 @@ export const ConversationSurfaceCapability = defineClosedVocabulary({
 
 export type ConversationSurfaceCapability = ValueOf<typeof ConversationSurfaceCapability>;
 
-export const DelegationOutputKind = defineClosedVocabulary({ Change: 'change' } as const);
+export const DelegationOutputKind = defineClosedVocabulary({
+  Artifact: 'artifact',
+  Change: 'change',
+} as const);
 
 export const DelegationPrerequisiteCondition = defineClosedVocabulary({
   AcceptedOutput: 'accepted-output',

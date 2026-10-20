@@ -1,4 +1,5 @@
 import { ReportWindowId } from '../../../kernel/index.js';
+import { DelegationOutputKind } from '../../../orchestration/index.js';
 import type { ApiHttpResponse } from '../http-server.js';
 import type { ApiApplications, CollectionQuery } from './applications.js';
 import { collection, parseCollectionQuery } from './pagination.js';
@@ -186,7 +187,7 @@ async function readWorkArtifact(
   const revisionId = decodePathSegment(revisionSegment);
   if (key instanceof ApiPathError) return invalidPath(key.message);
   if (revisionId instanceof ApiPathError) return invalidPath(revisionId.message);
-  if (applications.work.artifact === undefined) return unavailable('artifact');
+  if (applications.work.artifact === undefined) return unavailable(DelegationOutputKind.Artifact);
   const artifact = await applications.work.artifact(key, revisionId);
   if (artifact === undefined) return found(undefined);
   return {

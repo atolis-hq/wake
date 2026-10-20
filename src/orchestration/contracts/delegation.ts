@@ -65,11 +65,19 @@ export const delegatedAssignmentSchema = z
     outputs: z
       .array(
         z.union([
-          z.object({ name: z.string().min(1), path: z.string().min(1) }).strict(),
+          z
+            .object({
+              name: z.string().min(1),
+              path: z.string().min(1),
+              required: z.boolean().optional(),
+            })
+            .strict(),
           z
             .object({
               name: z.string().min(1),
               kind: z.literal(DelegationOutputKind.Change),
+              required: z.boolean().optional(),
+              repository: repositoryAssignmentRequestSchema.optional(),
               requireReview: z.boolean().optional(),
               requireChecks: z.boolean().optional(),
             })
@@ -132,31 +140,29 @@ export const delegationResultSchema = z
   .object({
     cohortId: z.string().min(1),
     childWorkItemId: brandedStringSchema(workItemId),
-    outputs: z
-      .array(
-        z
-          .object({
-            name: z.string().min(1),
-            reference: z.union([
-              delegationRevisionReferenceSchema,
-              z
-                .object({
-                  workItemId: brandedStringSchema(workItemId),
-                  resourceId: z.string().min(1),
-                  repositoryResourceId: z.string().min(1),
-                  revision: z.string().min(1),
-                  branch: z.string().min(1),
-                  pullRequestBase: z.string().min(1),
-                  runId: z.string().min(1),
-                  baseRevision: z.string().min(1).optional(),
-                  merged: z.literal(true).optional(),
-                })
-                .strict(),
-            ]),
-          })
-          .strict(),
-      )
-      .min(1),
+    outputs: z.array(
+      z
+        .object({
+          name: z.string().min(1),
+          reference: z.union([
+            delegationRevisionReferenceSchema,
+            z
+              .object({
+                workItemId: brandedStringSchema(workItemId),
+                resourceId: z.string().min(1),
+                repositoryResourceId: z.string().min(1),
+                revision: z.string().min(1),
+                branch: z.string().min(1),
+                pullRequestBase: z.string().min(1),
+                runId: z.string().min(1),
+                baseRevision: z.string().min(1).optional(),
+                merged: z.literal(true).optional(),
+              })
+              .strict(),
+          ]),
+        })
+        .strict(),
+    ),
   })
   .strict();
 

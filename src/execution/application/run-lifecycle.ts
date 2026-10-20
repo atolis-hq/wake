@@ -1,6 +1,7 @@
 import { EventActorKind, EventSourceKind, WrongExpectedSequenceError } from '@atolis-hq/eventing';
 import type { ActivityOutcome } from '../../activities/index.js';
 import { type Clock } from '../../kernel/index.js';
+import type { ChangeOutputWorkspace } from '../contracts/change-output.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import { createExecutionEventData } from '../contracts/event-factory.js';
@@ -178,6 +179,7 @@ export async function recordRunSuccess(input: {
   readonly context: ExecutionAttemptContext;
   readonly outcome: ActivityOutcome;
   readonly workspaceRevision?: string;
+  readonly changeOutputs?: readonly ChangeOutputWorkspace[];
 }): Promise<void> {
   const { dependencies, runId: currentRunId, activation, context, outcome } = input;
   const finishedAt = dependencies.clock.now().toISOString();
@@ -194,6 +196,7 @@ export async function recordRunSuccess(input: {
       payload: {
         outcome,
         finishedAt,
+        ...(input.changeOutputs === undefined ? {} : { changeOutputs: input.changeOutputs }),
         ...(input.workspaceRevision === undefined
           ? {}
           : { workspaceRevision: input.workspaceRevision }),
@@ -290,6 +293,7 @@ function workspacePayload(lease: WorkspaceLease | undefined) {
               ? {}
               : { checkoutRevision: lease.checkoutRevision }),
             path: lease.path,
+            ...(lease.changeOutputs === undefined ? {} : { changeOutputs: lease.changeOutputs }),
             ...(lease.candidate === undefined ? {} : { candidate: lease.candidate }),
             ...(lease.maintenance === undefined ? {} : { maintenance: lease.maintenance }),
             ...(lease.branch === undefined ? {} : { branch: lease.branch }),

@@ -11,15 +11,27 @@ export const ParentActionKind = { Approve: 'approve', Merge: 'merge-pr' } as con
 export type ParentActionKind = (typeof ParentActionKind)[keyof typeof ParentActionKind];
 
 /**
- * Activity input that selects the delivery's next planned target instead of the invoking
- * WorkItem's own pull request. It names no target: Wake derives it from the parent's journal.
+ * Select a named output from the parent's durable selection. The child identity may be
+ * omitted only when the output name resolves uniquely across that selection.
  */
+export interface ParentOutputTarget {
+  readonly childWorkItemId?: string | undefined;
+  readonly outputName: string;
+}
+
 export interface ParentDeliveryScope {
   readonly delivery: 'next';
+  readonly output?: ParentOutputTarget | undefined;
 }
 
 export const parentDeliveryScopeSchema: z.ZodType<ParentDeliveryScope> = z
-  .object({ delivery: z.literal('next') })
+  .object({
+    delivery: z.literal('next'),
+    output: z
+      .object({ childWorkItemId: z.string().min(1).optional(), outputName: z.string().min(1) })
+      .strict()
+      .optional(),
+  })
   .strict();
 
 /**
@@ -52,6 +64,7 @@ export interface ParentActionRequest {
   readonly workflowInstanceId: string;
   readonly activationId: ActivationId;
   readonly action: ParentActionKind;
+  readonly output?: ParentOutputTarget | undefined;
 }
 
 export type ParentActionDecision =

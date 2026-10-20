@@ -501,6 +501,10 @@ function appendWorkspacePrompt(
   if (workspace?.candidate !== undefined)
     prompt +=
       '\n\nExact delivery candidate prepared by Wake:\n' + JSON.stringify(workspace.candidate);
+  if (workspace?.changeOutputs !== undefined)
+    prompt +=
+      '\n\nNamed change output workspaces (use each separate leased path and branch; report every PR with its exact output name):\n' +
+      JSON.stringify(workspace.changeOutputs);
   if (workspace?.maintenance !== undefined)
     prompt +=
       '\n\nPull requests Wake leased for maintenance (each path is the owning child branch workspace; ' +

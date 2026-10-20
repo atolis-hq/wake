@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   ApprovalAuthorityKind,
   ConversationSurfaceCapability,
+  DelegationOutputKind,
   DeliveryCompletion,
   WorkflowStatus,
 } from './vocabulary.js';
@@ -207,10 +208,18 @@ export const delegationPolicySchema = z
 
 export type DelegationPolicy = z.infer<typeof delegationPolicySchema>;
 
+export const workflowOutputSchema = z
+  .object({
+    kind: z.enum(DelegationOutputKind),
+    required: z.boolean().optional(),
+  })
+  .strict();
+
 export const workflowDefinitionConfigSchema = z
   .object({
     entry: identifier.optional(),
     delegation: delegationPolicySchema.optional(),
+    outputs: z.record(identifier, workflowOutputSchema).optional(),
     commands: z.record(commandName, supplementalCommandConfigSchema).optional(),
     watches: z.array(watchConfigSchema).readonly().optional(),
     stages: z
@@ -339,6 +348,7 @@ export interface CompiledWatch extends Omit<WatchConfig, 'workflow' | 'while' | 
 
 export interface CompiledWorkflow {
   readonly delegation?: DelegationPolicy;
+  readonly outputs?: Readonly<Record<string, z.infer<typeof workflowOutputSchema>>>;
   readonly remainingAgentSteps?: Readonly<Record<StageName, number>>;
   readonly name: WorkflowName;
   readonly entry: StageName;

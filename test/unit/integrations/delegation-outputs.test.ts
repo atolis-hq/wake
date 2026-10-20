@@ -150,3 +150,153 @@ it('distinguishes pushed, delivery-ready and actual merged change prerequisites'
   head = 'different-head';
   expect(await select('merged-change')).toBeNull();
 });
+
+describe('independent named change outputs (DC-17, DC-29)', () => {
+  function fixture() {
+    const names = ['api', 'web'];
+    const heads = new Map(names.map((name) => [name, name + '-head']));
+    const sources = names.map((name) => ({
+      name,
+      branch: name + '-branch',
+      path: '/' + name,
+      repository: { ...assignment, sourceRef: name + '-source', pullRequestBase: name + '-base' },
+      revision: name + '-head',
+    }));
+    const reports = names.map((name) => ({
+      name,
+      kind: BuiltInResourceKind.PullRequest,
+      externalKey: { adapter: 'fake', key: name },
+    }));
+    const runs = [
+      {
+        ...run('a1', 'shared-head', false),
+        workspace: { mode: 'branch', branch: 'api-branch', changeOutputs: sources },
+        changeOutputs: sources,
+        outcome: { kind: 'done', data: { reportedArtifacts: reports } },
+      },
+    ];
+    const verifyArtifact = vi.fn(async (_kind, key, source) => {
+      const expected = sources.find((entry) => entry.name === key.key);
+      return expected !== undefined &&
+        source.workspaceBranch === expected.branch &&
+        source.workspaceRevision === heads.get(key.key) &&
+        source.pullRequestBase === expected.repository.pullRequestBase
+        ? { externalKey: key, revision: heads.get(key.key) }
+        : 'not-found';
+    });
+    const decideAuthority = vi.fn(async (_owner, options) => ({
+      allowed: true,
+      revision: heads.get(options.target.resourceId),
+    }));
+    const service = createDelegationOutputs({
+      artifacts: { qualifyingOutputs: async () => [] },
+      resources: {
+        get: async () => repository,
+        findByExternalKey: async (key: { key: string }) => ({
+          ...pullRequest,
+          resourceId: key.key,
+          externalKey: key,
+        }),
+        primaryCorrelation: async () => ({
+          workItemId: 'child',
+          role: ResourceCorrelationRole.Primary,
+          provenance: ResourceCorrelationProvenance.AgentReported,
+        }),
+      },
+      pullRequests: {
+        get: async (id: string) => ({
+          headRevision: heads.get(id),
+          baseRevision: id + '-base-head',
+          state: 'open',
+        }),
+        decideAuthority,
+      },
+      runs: async () => runs,
+      providers: async () => [{ adapter: 'fake', verifyArtifact }],
+    } as never);
+    const outputs = names.map((name) => ({ ...output, name }));
+    return { heads, service, runs, sources, outputs, verifyArtifact, decideAuthority };
+  }
+
+  it('verifies each output against its own branch, source, base, head and explicit review resource', async () => {
+    const f = fixture();
+    expect(await f.service.qualifyingOutputs(child as never, f.outputs as never)).toMatchObject([
+      {
+        name: 'api',
+        reference: {
+          resourceId: 'api',
+          branch: 'api-branch',
+          revision: 'api-head',
+          pullRequestBase: 'api-base',
+        },
+      },
+      {
+        name: 'web',
+        reference: {
+          resourceId: 'web',
+          branch: 'web-branch',
+          revision: 'web-head',
+          pullRequestBase: 'web-base',
+        },
+      },
+    ]);
+    expect(f.decideAuthority.mock.calls.map((call) => call[1].target.resourceId)).toEqual([
+      'api',
+      'web',
+    ]);
+    f.heads.set('web', 'stale');
+    expect(await f.service.qualifyingOutputs(child as never, f.outputs as never)).toBeNull();
+    expect(
+      await f.service.prerequisiteOutput!(child as never, f.outputs[0] as never, 'pushed-change'),
+    ).toMatchObject({ name: 'api' });
+    expect(
+      await f.service.prerequisiteOutput!(child as never, f.outputs[1] as never, 'pushed-change'),
+    ).toBeNull();
+  });
+
+  it('does not borrow another output snapshot or a failed outcome to fill a missing output', async () => {
+    const f = fixture();
+    f.runs[0]!.changeOutputs = [f.sources[0]!];
+    expect(await f.service.qualifyingOutputs(child as never, f.outputs as never)).toBeNull();
+    f.runs[0]!.changeOutputs = f.sources;
+    for (const outcome of ['failed', 'blocked', 'rejected']) {
+      f.runs[0]!.outcome.kind = outcome;
+      expect(await f.service.qualifyingOutputs(child as never, f.outputs as never)).toBeNull();
+    }
+    f.runs[0]!.outcome.kind = 'found';
+    expect(await f.service.qualifyingOutputs(child as never, f.outputs as never)).not.toBeNull();
+  });
+
+  it('fails closed on duplicate names rather than choosing a reported PR', async () => {
+    const f = fixture();
+    f.runs[0]!.outcome.data.reportedArtifacts.push({
+      ...f.runs[0]!.outcome.data.reportedArtifacts[0]!,
+      externalKey: { adapter: 'fake', key: 'other' },
+    });
+    await expect(f.service.qualifyingOutputs(child as never, f.outputs as never)).rejects.toThrow(
+      'Duplicate named change report',
+    );
+  });
+});
+
+it('does not let a missing optional change waive a required change', async () => {
+  const f = outputs([run('a1', 'head-1', true)], 'head-1');
+  expect(await f.qualify()).not.toBeNull();
+  const service = createDelegationOutputs({
+    artifacts: { qualifyingOutputs: async () => null },
+    runs: async () => [],
+    providers: async () => [],
+  } as never);
+  expect(
+    await service.qualifyingOutputs(child as never, [
+      { name: 'optional', kind: 'change', required: false },
+      { name: 'required', kind: 'change' },
+    ]),
+  ).toBeNull();
+  expect(
+    await service.qualifyingOutputs(child as never, [
+      { name: 'optional', kind: 'change', required: false },
+      { name: 'notes', path: 'notes.md', required: false },
+    ]),
+  ).toEqual([]);
+});
