@@ -6,6 +6,7 @@ import {
   createEventData,
   createProjectionProcessor,
   projectionConsumer,
+  readCurrentProjection,
   type EventEnvelope,
   type StreamRef,
 } from '@atolis-hq/eventing';
@@ -213,6 +214,37 @@ it('rebuilds through an append that lands after a short read snapshot', async ()
   expect(await checkpoints.load('projection:rebuild-race-counts')).toBe(
     await journal.latestGlobalPosition(),
   );
+});
+
+it('reads a quiet key from the processor checkpoint, not by replaying history since the key last moved', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const projections = new InMemoryProjectionStore();
+  const checkpoints = new InMemoryCheckpointStore();
+  const definition = {
+    name: 'keyed-counts',
+    select: (event: EventEnvelope) => ({ key: event.stream.id }),
+    initial: () => 0,
+    project: (previous: number) => previous + 1,
+  };
+  const quiet: StreamRef<'counter', 'quiet'> = { kind: 'counter', id: 'quiet' };
+  const busy: StreamRef<'counter', 'busy'> = { kind: 'counter', id: 'busy' };
+  await appendCountedEvent(journal, quiet, 0, 'quiet-event');
+  for (let index = 0; index < 300; index += 1)
+    await appendCountedEvent(journal, busy, index, `busy-${index}`);
+  const processor = createProjectionProcessor(definition, projections);
+  await applyProcessorBatch(processor, await journal.readAll(0));
+  await checkpoints.save(projectionConsumer(definition), 301);
+  await appendCountedEvent(journal, quiet, 1, 'quiet-event-2');
+  const readAll = vi.spyOn(journal, 'readAll');
+
+  const value = await readCurrentProjection(
+    { journal, projections, checkpoints },
+    definition,
+    'quiet',
+  );
+
+  expect(value).toBe(2);
+  expect(readAll.mock.calls).toEqual([[301, 500]]);
 });
 
 function projectionDefinition(name: string) {

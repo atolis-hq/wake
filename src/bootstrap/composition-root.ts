@@ -216,7 +216,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
     clock.now().toISOString(),
   );
   const conversations = createConversationService(journal);
-  const lookup = createResourceLookup({ journal, projections });
+  const lookup = createResourceLookup({ journal, projections, checkpoints });
   const resources = createResourceService(journal, lookup);
   const pullRequests = createPullRequestService(journal, work, resources);
   const activities =

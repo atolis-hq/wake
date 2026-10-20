@@ -1,14 +1,13 @@
 import {
-  cachedJournalView,
   defineEventProcessor,
   EventActorKind,
   EventProcessorCategory,
   EventProcessorReplayPolicy,
   EventSourceKind,
-  type CachedJournalView,
-  type EventEnvelope,
+  foldedJournalView,
   type EventJournal,
   type EventProcessor,
+  type JournalView,
 } from '@atolis-hq/eventing';
 import { reportedArtifactSchema } from '../../activities/index.js';
 import { type IdGenerator } from '../../kernel/index.js';
@@ -28,11 +27,7 @@ import {
   type ResourceService,
 } from '../../resources/index.js';
 import { createArtifactEventData } from '../contracts/artifact-event-factory.js';
-import {
-  ArtifactEventType,
-  decodeArtifactEvent,
-  type ArtifactEvent,
-} from '../contracts/artifact-events.js';
+import { ArtifactEventType, type ArtifactEvent } from '../contracts/artifact-events.js';
 import {
   ArtifactVerificationResult,
   ArtifactVerificationStatus,
@@ -40,6 +35,7 @@ import {
 } from '../contracts/artifact-vocabulary.js';
 import type { ProviderInstance } from '../contracts/provider.js';
 import { integrationStream } from '../contracts/streams.js';
+import { extendLatestUnresolved } from './latest-unresolved-artifacts.js';
 
 interface ArtifactRegistrationDependencies {
   readonly journal: EventJournal;
@@ -74,11 +70,17 @@ type ArtifactRecord = {
 };
 
 export class ArtifactRegistrationReactor {
-  private readonly latestUnresolved: CachedJournalView<ReadonlyMap<string, ArtifactEvent>>;
+  private readonly latestUnresolved: JournalView<ReadonlyMap<string, ArtifactEvent>>;
   readonly processor: EventProcessor;
 
   constructor(private readonly dependencies: ArtifactRegistrationDependencies) {
-    this.latestUnresolved = cachedJournalView(dependencies.journal, deriveLatestUnresolved);
+    this.latestUnresolved = foldedJournalView<ReadonlyMap<string, ArtifactEvent>>(
+      dependencies.journal,
+      {
+        initial: new Map(),
+        extend: extendLatestUnresolved,
+      },
+    );
     this.processor = defineEventProcessor({
       consumer: 'reactor:artifact-registration',
       name: 'artifact-registration',
@@ -273,19 +275,6 @@ export class ArtifactRegistrationReactor {
       ? started.event.payload.workItemId
       : null;
   }
-}
-
-function deriveLatestUnresolved(
-  events: readonly EventEnvelope[],
-): ReadonlyMap<string, ArtifactEvent> {
-  const latest = new Map<string, ArtifactEvent>();
-  for (const event of events) {
-    if (event.event.eventType !== ArtifactEventType.VerificationUnresolved) continue;
-    const decoded = decodeArtifactEvent(event);
-    const key = `${decoded.event.causationId}:${decoded.event.payload.artifact.externalKey.adapter}:${decoded.event.payload.artifact.externalKey.key}`;
-    latest.set(key, decoded);
-  }
-  return latest;
 }
 
 function reportedArtifacts(value: unknown): readonly ArtifactClaim[] {

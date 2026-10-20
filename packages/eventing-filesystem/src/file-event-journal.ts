@@ -38,6 +38,10 @@ const createFileSystemWatcher: FileEventJournalWatcherFactory = async (directory
 // tick would leave it identical. Younger stamps are re-listed, never trusted.
 const unchangedStampMinAgeMs = 2_500;
 const statBatchSize = 256;
+// Reads may skip the directory listing while a probe for the next segment finds
+// nothing, but never for longer than this: a full listing still bounds how long
+// an unexpected change (a removed segment, an odd clock) can go unnoticed.
+const maxProbeOnlyMs = 5_000;
 
 export class FileEventJournal implements EventJournal {
   constructor(
@@ -84,6 +88,7 @@ export class FileEventJournal implements EventJournal {
   private runningListing: Promise<readonly FileStat[]> | undefined;
   private queuedListing: Promise<readonly FileStat[]> | undefined;
   private temporariesReclaimed = false;
+  private lastFullListingMs = 0;
 
   async appendToStream(
     stream: StreamRef,
@@ -98,7 +103,8 @@ export class FileEventJournal implements EventJournal {
           await reclaimStaleSegmentTemps(join(this.root, 'events'));
           this.temporariesReclaimed = true;
         }
-        const snapshot = await this.scan();
+        // Positions are assigned from this snapshot, so it must come from a full listing.
+        const snapshot = await this.scan(await this.currentEntries({ exhaustive: true }));
         const current = snapshot.events;
         const streamEvents = snapshot.eventsByStream.get(key(stream)) ?? [];
         if (streamEvents.length !== expectedSequence)
@@ -441,30 +447,69 @@ export class FileEventJournal implements EventJournal {
   // call. A listing already running may have read the directory before the
   // call, so it cannot answer it; every caller arriving while one runs shares a
   // single follow-up listing. Any number of concurrent reads cost at most two.
-  private currentEntries(): Promise<readonly FileStat[]> {
+  private currentEntries(
+    options: { readonly exhaustive?: boolean } = {},
+  ): Promise<readonly FileStat[]> {
+    if (options.exhaustive === true) {
+      const running = this.runningListing;
+      return (running === undefined ? Promise.resolve() : running.then(noop, noop)).then(() =>
+        this.startListing(true),
+      );
+    }
     if (this.queuedListing !== undefined) return this.queuedListing;
     const running = this.runningListing;
-    if (running === undefined) return this.startListing();
+    if (running === undefined) return this.startListing(false);
     const queued = running
       .catch(() => undefined)
       .then(() => {
         this.queuedListing = undefined;
-        return this.startListing();
+        return this.startListing(false);
       });
     this.queuedListing = queued;
     return queued;
   }
 
-  private startListing(): Promise<readonly FileStat[]> {
-    const run = this.listSegments().finally(() => {
+  private startListing(exhaustive: boolean): Promise<readonly FileStat[]> {
+    const run = this.listSegments(exhaustive).finally(() => {
       if (this.runningListing === run) this.runningListing = undefined;
     });
     this.runningListing = run;
     return run;
   }
 
-  private async listSegments(): Promise<readonly FileStat[]> {
+  // Segments are immutable, contiguous, and named by the global position of
+  // their first event (the first segment of a day is `<day>.jsonl`). When the
+  // cache holds L events and is the newest listing, nothing newer exists exactly
+  // when no segment for position L+1 exists, which costs a few stats instead of
+  // a directory listing proportional to the whole history.
+  private async nothingNewerThanCache(): Promise<boolean> {
+    const cached = this.cached;
+    const last = cached?.entries.at(-1);
+    if (cached === undefined || last === undefined) return false;
+    if (Date.now() - this.lastFullListingMs > maxProbeOnlyMs) return false;
+    if (!sameEntries(cached.entries, this.latestEntries)) return false;
+    const next = String(cached.events.length + 1).padStart(20, '0');
+    const day = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString().slice(0, 10);
+    const days = new Set([last.file.slice(0, 10), day(0), day(24 * 60 * 60 * 1000)]);
+    const candidates = [...days].flatMap((d) => [`${d}~${next}.jsonl`, `${d}.jsonl`]);
+    const unknown = candidates.filter((name) => !this.knownSegments.has(name));
+    const found = await Promise.all(
+      unknown.map((name) =>
+        stat(join(this.root, 'events', name)).then(
+          () => true,
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return false;
+            throw error;
+          },
+        ),
+      ),
+    );
+    return !found.some(Boolean);
+  }
+
+  private async listSegments(exhaustive: boolean): Promise<readonly FileStat[]> {
     const directory = join(this.root, 'events');
+    if (!exhaustive && (await this.nothingNewerThanCache())) return this.latestEntries;
     const startedAtMs = Date.now();
     let stamp: DirectoryStamp;
     try {
@@ -486,17 +531,25 @@ export class FileEventJournal implements EventJournal {
     )
       return this.latestEntries;
     // The stamp is taken before the listing so a change during it cannot be hidden.
-    const names = (await readdir(directory)).filter(
-      (name) => this.knownSegments.has(name) || segmentName.test(name),
-    );
-    const present = new Set(names);
+    // One pass over the directory: names already known are only counted, and
+    // the set of present names is built only if a known segment has gone missing.
+    const listed = await readdir(directory);
+    const unseen: string[] = [];
+    let knownPresent = 0;
+    for (const name of listed) {
+      if (this.knownSegments.has(name)) knownPresent += 1;
+      else if (segmentName.test(name)) unseen.push(name);
+    }
     let removed = false;
-    for (const name of this.knownSegments.keys())
-      if (!present.has(name)) {
-        this.knownSegments.delete(name);
-        removed = true;
-      }
-    const unseen = names.filter((name) => !this.knownSegments.has(name)).sort();
+    if (knownPresent !== this.knownSegments.size) {
+      const present = new Set(listed);
+      for (const name of this.knownSegments.keys())
+        if (!present.has(name)) {
+          this.knownSegments.delete(name);
+          removed = true;
+        }
+    }
+    unseen.sort();
     for (let index = 0; index < unseen.length; index += statBatchSize)
       await Promise.all(
         unseen.slice(index, index + statBatchSize).map(async (file) => {
@@ -509,6 +562,7 @@ export class FileEventJournal implements EventJournal {
         }),
       );
     this.listing = { stamp, startedAtMs };
+    this.lastFullListingMs = startedAtMs;
     const added = unseen.flatMap((file) => this.knownSegments.get(file) ?? []);
     const last = this.latestEntries.at(-1);
     const consistent = this.latestEntries.length + added.length === this.knownSegments.size;
@@ -743,6 +797,8 @@ function sameEntries(a: readonly FileStat[], b: readonly FileStat[]): boolean {
       }))
   );
 }
+
+function noop(): void {}
 
 const key = (stream: StreamRef) => `${stream.kind}:${stream.id}`;
 

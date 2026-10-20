@@ -48,6 +48,39 @@ export async function applyProjectionEvent<Value>(
   });
 }
 
+const catchUpBatchSize = 500;
+
+/**
+ * Reads one projected key with read-your-writes consistency: the stored value
+ * plus any events the projection processor has not applied yet. The tail starts
+ * at the processor's checkpoint, not the key's own last position: everything at
+ * or below the checkpoint is already applied for every key, whereas a quiet
+ * key's position can trail the head by the whole history.
+ */
+export async function readCurrentProjection<Value>(
+  dependencies: {
+    readonly journal: Pick<EventJournal, 'readAll'>;
+    readonly projections: ProjectionStore;
+    readonly checkpoints: Pick<CheckpointStore, 'load'>;
+  },
+  definition: ProjectionDefinition<Value>,
+  key: string,
+): Promise<Value> {
+  const stored = await dependencies.projections.read<Value>(definition.name, key);
+  let value = stored?.value ?? definition.initial(key);
+  let position = Math.max(
+    stored?.lastGlobalPosition ?? 0,
+    await dependencies.checkpoints.load(projectionConsumer(definition)),
+  );
+  for (;;) {
+    const events = await dependencies.journal.readAll(position, catchUpBatchSize);
+    for (const event of events)
+      if (definition.select(event)?.key === key) value = definition.project(value, event);
+    if (events.length < catchUpBatchSize) return value;
+    position = events.at(-1)!.globalPosition;
+  }
+}
+
 export async function applyProjectionBatch<Value>(
   definition: ProjectionDefinition<Value>,
   projections: ProjectionStore,

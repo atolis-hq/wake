@@ -1,4 +1,4 @@
-import type { EventEnvelope, EventJournal } from '@atolis-hq/eventing';
+import { foldedJournalView, type EventEnvelope, type EventJournal } from '@atolis-hq/eventing';
 import { ResourceCorrelationRole, type ResourceService } from '../../../resources/index.js';
 import type { WorkItemId } from '../../../work/index.js';
 import { adapterId } from '../../contracts/identifiers.js';
@@ -56,6 +56,10 @@ export function createCommentHistoryReader(
   resources: Pick<ResourceService, 'correlationsForWork' | 'get'>,
   readerOptions: CommentHistoryReaderOptions = {},
 ): CommentHistoryReader {
+  const facts = foldedJournalView<CommentFacts>(journal, {
+    initial: emptyCommentFacts,
+    extend: extendCommentFacts,
+  });
   return {
     async forWorkItem(workItemId, options) {
       const resourcesById = new Map(
@@ -82,11 +86,25 @@ export function createCommentHistoryReader(
           githubAdapters.has(resource.externalKey.adapter) ? [resourceId] : [],
         ),
       );
-      return readCommentHistory(
-        await journal.readAll(0),
+      const known = await facts.get();
+      const intents = new Map(
+        [...known.intents].filter(([, intent]) =>
+          githubResourceIds.has(intent.event.payload.resourceId),
+        ),
+      );
+      const observed = new Map<string, ProviderComment>();
+      for (const key of keys)
+        for (const [messageId, comment] of known.observedByResource.get(key) ?? [])
+          observed.set(messageId, comment);
+      const confirmed = new Map<string, Confirmation>();
+      for (const [intentEventId, event] of known.confirmations) {
+        const intent = intents.get(intentEventId);
+        if (intent !== undefined) confirmed.set(intentEventId, { event, intent });
+      }
+      return reconcileCommentHistory(
+        observed,
+        confirmed,
         resourcesById,
-        keys,
-        githubResourceIds,
         options?.observedSince,
         readerOptions.publicUiUrl,
       );
@@ -94,68 +112,57 @@ export function createCommentHistoryReader(
   };
 }
 
-function readCommentHistory(
-  events: readonly EventEnvelope[],
-  resourcesById: ReadonlyMap<
-    string,
-    { readonly externalKey: { readonly adapter: string; readonly key: string } }
-  >,
-  keys: ReadonlySet<string>,
-  githubResourceIds: ReadonlySet<string>,
-  observedSince: string | undefined,
-  publicUiUrl: string | undefined,
-): readonly CommentHistoryEntry[] {
-  const intents = commentIntents(events, githubResourceIds);
-  const observed = providerComments(events, keys);
-  const confirmed = confirmations(events, intents);
-  return reconcileCommentHistory(observed, confirmed, resourcesById, observedSince, publicUiUrl);
+// Indexes every comment-bearing fact once, as the journal grows, so a query for
+// one Work item reads only its own resources' entries instead of the history.
+interface CommentFacts {
+  readonly intents: ReadonlyMap<string, ConfirmableCommentIntent>;
+  readonly observedByResource: ReadonlyMap<string, ReadonlyMap<string, ProviderComment>>;
+  /** Earliest confirming delivery event per intent. */
+  readonly confirmations: ReadonlyMap<string, EventEnvelope>;
 }
 
-function commentIntents(
-  events: readonly EventEnvelope[],
-  githubResourceIds: ReadonlySet<string>,
-): ReadonlyMap<string, ConfirmableCommentIntent> {
-  const intents = new Map<string, ConfirmableCommentIntent>();
+const emptyCommentFacts: CommentFacts = {
+  intents: new Map(),
+  observedByResource: new Map(),
+  confirmations: new Map(),
+};
+
+function extendCommentFacts(state: CommentFacts, events: readonly EventEnvelope[]): CommentFacts {
+  let intents = state.intents;
+  let observedByResource = state.observedByResource;
+  let confirmations = state.confirmations;
   for (const event of events) {
     const intent = selectDeliveryIntentEvent(event);
-    if (
-      intent !== null &&
-      isCommentIntent(intent) &&
-      githubResourceIds.has(intent.event.payload.resourceId)
-    )
-      intents.set(intent.event.eventId, intent);
-  }
-  return intents;
-}
-
-function providerComments(
-  events: readonly EventEnvelope[],
-  keys: ReadonlySet<string>,
-): ReadonlyMap<string, ProviderComment> {
-  const observed = new Map<string, ProviderComment>();
-  for (const event of events) {
-    const comment = providerComment(event, keys);
-    if (comment !== null) observed.set(comment.messageId, comment);
-  }
-  return observed;
-}
-
-function confirmations(
-  events: readonly EventEnvelope[],
-  intents: ReadonlyMap<string, ConfirmableCommentIntent>,
-): ReadonlyMap<string, Confirmation> {
-  const confirmed = new Map<string, Confirmation>();
-  for (const event of events) {
+    if (intent !== null) {
+      if (isCommentIntent(intent)) {
+        if (intents === state.intents) intents = new Map(intents);
+        (intents as Map<string, ConfirmableCommentIntent>).set(intent.event.eventId, intent);
+      }
+      continue;
+    }
     const delivery = selectDeliveryEvent(event);
-    if (delivery === null || !isConfirmed(delivery)) continue;
-    const intent = intents.get(delivery.event.payload.intentEventId);
-    if (intent === undefined) continue;
-    const candidate = { event, intent };
-    const current = confirmed.get(delivery.event.payload.intentEventId);
-    if (current === undefined || candidate.event.globalPosition < current.event.globalPosition)
-      confirmed.set(delivery.event.payload.intentEventId, candidate);
+    if (delivery !== null) {
+      if (!isConfirmed(delivery)) continue;
+      const key = delivery.event.payload.intentEventId;
+      const current = confirmations.get(key);
+      if (current === undefined || event.globalPosition < current.globalPosition) {
+        if (confirmations === state.confirmations) confirmations = new Map(confirmations);
+        (confirmations as Map<string, EventEnvelope>).set(key, event);
+      }
+      continue;
+    }
+    const comment = providerComment(event);
+    if (comment === null) continue;
+    if (observedByResource === state.observedByResource)
+      observedByResource = new Map(observedByResource);
+    const forResource = new Map(observedByResource.get(comment.resourceKey));
+    forResource.set(comment.messageId, comment);
+    (observedByResource as Map<string, ReadonlyMap<string, ProviderComment>>).set(
+      comment.resourceKey,
+      forResource,
+    );
   }
-  return confirmed;
+  return { intents, observedByResource, confirmations };
 }
 
 function reconcileCommentHistory(
@@ -236,13 +243,9 @@ function isConfirmed(value: NonNullable<ReturnType<typeof selectDeliveryEvent>>)
   );
 }
 
-function providerComment(event: EventEnvelope, keys: ReadonlySet<string>): ProviderComment | null {
+function providerComment(event: EventEnvelope): ProviderComment | null {
   const observed = selectGitHubAdapterEvent(event);
-  if (
-    !isCommentObserved(observed) ||
-    !keys.has(`${observed.stream.id}:${observed.event.payload.externalKey}`)
-  )
-    return null;
+  if (!isCommentObserved(observed)) return null;
   return {
     event,
     messageId: observedCommentExternalId(observed),

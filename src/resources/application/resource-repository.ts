@@ -1,4 +1,10 @@
-import { cachedJournalView, type CachedJournalView, type EventJournal } from '@atolis-hq/eventing';
+import {
+  decodeOnce,
+  foldedJournalView,
+  type EventEnvelope,
+  type EventJournal,
+  type JournalView,
+} from '@atolis-hq/eventing';
 import {
   ResourceEventType,
   decodeResourceEvent,
@@ -15,16 +21,18 @@ export interface LoadedResource {
   readonly resource: FoldedResource | null;
 }
 
+const selectResource = decodeOnce(selectResourceEvent);
+
 export class ResourceRepository {
-  private readonly resourceIds: CachedJournalView<readonly ResourceId[]>;
+  private readonly resourceIds: JournalView<readonly ResourceId[]>;
 
   constructor(private readonly journal: EventJournal) {
-    this.resourceIds = cachedJournalView(journal, deriveResourceIds);
+    this.resourceIds = foldedJournalView(journal, { initial: [], extend: extendResourceIds });
   }
 
   async load(resourceId: ResourceId): Promise<LoadedResource> {
     const events = await this.journal.readStream(resourceStream(resourceId));
-    const owned = events.map(selectResourceEvent).filter((event) => event !== null);
+    const owned = events.map(selectResource).filter((event) => event !== null);
     return { sequence: events.length, resource: foldResource(owned) };
   }
 
@@ -46,15 +54,13 @@ export class ResourceRepository {
   }
 }
 
-function deriveResourceIds(
-  events: Awaited<ReturnType<EventJournal['readAll']>>,
+function extendResourceIds(
+  known: readonly ResourceId[],
+  events: readonly EventEnvelope[],
 ): readonly ResourceId[] {
-  return [
-    ...new Set(
-      events
-        .map(selectResourceEvent)
-        .filter((event) => event?.event.eventType === ResourceEventType.ResourceDiscovered)
-        .map((event) => event!.stream.id),
-    ),
-  ];
+  const discovered = events
+    .map(selectResourceEvent)
+    .filter((event) => event?.event.eventType === ResourceEventType.ResourceDiscovered)
+    .map((event) => event!.stream.id);
+  return [...new Set([...known, ...discovered])];
 }

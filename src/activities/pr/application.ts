@@ -138,9 +138,9 @@ class JournalPullRequestService implements PullRequestService {
     workItemId: ObservePullRequest['workItemId'],
     context: CommandContext,
   ): Promise<boolean> {
-    const prior = await this.priorMergeDecision(context.commandId);
-    if (prior !== null) return prior;
     const input = await this.authorityInput(workItemId);
+    const prior = await this.priorMergeDecision(context.commandId, input, workItemId);
+    if (prior !== null) return prior;
     const decision = decidePullRequestAuthority(input);
     if (decision.allowed) {
       const stream = resourceStream(decision.resourceId);
@@ -203,19 +203,29 @@ class JournalPullRequestService implements PullRequestService {
     );
   }
 
-  private async priorMergeDecision(commandId: string): Promise<boolean | null> {
-    const events = await this.journal.readAll(0);
-    if (
-      events.some(
-        (event) => event.event.eventId === `${commandId}:${ActivityEventType.PrMergeAuthorized}`,
-      )
-    )
-      return true;
-    return events.some(
-      (event) => event.event.eventId === `${commandId}:${ActivityEventType.PrMergeDenied}`,
-    )
-      ? false
-      : null;
+  // Decisions are appended to the Work item's PR-like resource stream, or the
+  // Work item stream when it has none, with an event id derived from the
+  // command, so a replay is found by reading just those streams.
+  private async priorMergeDecision(
+    commandId: string,
+    input: PullRequestAuthorityInput,
+    workItemId: ObservePullRequest['workItemId'],
+  ): Promise<boolean | null> {
+    const streams = [
+      workItemStream(workItemId),
+      ...input.resources
+        .filter((entry) => isPullRequestLikeResource(entry.resource.capabilities))
+        .map((entry) => resourceStream(entry.resource.resourceId)),
+    ];
+    const authorized = `${commandId}:${ActivityEventType.PrMergeAuthorized}`;
+    const denied = `${commandId}:${ActivityEventType.PrMergeDenied}`;
+    let decision: boolean | null = null;
+    for (const stream of streams)
+      for (const event of await this.journal.readStream(stream)) {
+        if (event.event.eventId === authorized) return true;
+        if (event.event.eventId === denied) decision = false;
+      }
+    return decision;
   }
 
   private async hasVerifiedPrimaryCorrelation(command: ObservePullRequest): Promise<boolean> {
