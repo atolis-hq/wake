@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, expect, it, vi } from 'vitest';
+import { ActivityEventType, PullRequestState } from '../../../src/activities/index.js';
 import {
   createCompositionRoot,
   parseRootConfig,
@@ -23,6 +24,7 @@ import {
   RunStatus,
   type RunnerRequest,
 } from '../../../src/execution/index.js';
+import { DeliveryIntentKind, DeliveryResultKind } from '../../../src/integrations/index.js';
 import type { DelegationReservation } from '../../../src/orchestration/contracts/delegation.js';
 import {
   compileWorkflow,
@@ -32,7 +34,11 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
-import { BuiltInResourceKind, ResourceCorrelationRole } from '../../../src/resources/index.js';
+import {
+  BuiltInResourceKind,
+  ResourceCorrelationRole,
+  resourceId,
+} from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 import { ScriptedDelegationRunner } from '../../support/scripted-delegation-runner.js';
 
@@ -150,7 +156,9 @@ it.each([
                   maxDepth: 1,
                   maxDescendants: 8,
                   maxConcurrentRuns: 4,
-                  completion: mode === 'merge-required' ? 'merge-required' : 'qa-approved',
+                  completion: ['merge-required', 'repair'].includes(mode)
+                    ? 'merge-required'
+                    : 'qa-approved',
                   qa: { stage: 'qa' },
                 },
                 stages: {
@@ -169,11 +177,28 @@ it.each([
                     with: { prompt: 'ASSEMBLE-STAGE' },
                     on: { done: { then: 'qa', repeat: { max: 2 } } },
                   },
+                  ...(mode === 'repair'
+                    ? {
+                        integrate: {
+                          activity: 'pr.merge',
+                          with: {
+                            scope: { delivery: 'next' },
+                            method: 'squash',
+                            requireChecks: true,
+                          },
+                          requiresApproval: false,
+                          on: {
+                            done: { then: 'integrate', repeat: { max: 5 } },
+                            integrated: { then: 'done' },
+                          },
+                        },
+                      }
+                    : {}),
                   qa: {
                     ...stage('read-only', 'done'),
                     with: { prompt: 'QA-STAGE' },
                     on: {
-                      done: { then: 'done' },
+                      done: { then: mode === 'repair' ? 'integrate' : 'done' },
                       failed: { then: 'delegate', repeat: { max: 1 } },
                     },
                   },
@@ -213,6 +238,24 @@ it.each([
         checkpoints: new InMemoryCheckpointStore(),
         projections: new InMemoryProjectionStore(),
         decorateRunner: () => runner,
+        decorateDeliveryAdapter: (adapter) =>
+          mode !== 'repair'
+            ? adapter
+            : {
+                async deliver(intent) {
+                  if (intent.payload.kind === DeliveryIntentKind.PrMerge) {
+                    const pull = (await current.pullRequests.get(intent.resourceId))!;
+                    await current.pullRequests.observe(
+                      { ...pull, state: PullRequestState.Merged },
+                      context('merged-' + intent.intentEventId),
+                    );
+                  }
+                  return { kind: DeliveryResultKind.Confirmed, externalId: intent.intentEventId };
+                },
+                async reconcile() {
+                  return { kind: DeliveryResultKind.NotFound };
+                },
+              },
         decorateRepositoryCloneResolver: () => ({
           cloneLocator: async (id: string) => {
             if (sourceOutage) throw new Error('Temporary remote transport outage');
@@ -613,6 +656,17 @@ it.each([
         if (run.status !== RunStatus.Succeeded || run.workspace?.mode !== 'branch') continue;
         const child = children.find((child) => child.workflowInstanceId === run.workflowInstanceId);
         if (child !== undefined && !visiblePulls.has(child.workItemId)) {
+          const index = children.indexOf(child);
+          const resource = await current.resources.findByExternalKey({
+            adapter: 'fake',
+            key: pulls[index]!.key,
+          });
+          if (
+            resource === null ||
+            (await current.resources.primaryCorrelation(resource.resourceId))?.workItemId !==
+              child.workItemId
+          )
+            continue;
           visiblePulls.add(child.workItemId);
           changed = true;
         }
@@ -853,6 +907,14 @@ it.each([
         await current.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
         await settle();
         await advanceRepairs();
+        if (mode === 'repair' && repaired) {
+          for (let delivered = 0; delivered < 100; delivered++) {
+            await current.processorRuntime.catchUp('repair-delivery');
+            if ((await current.delivery.deliverNext(new AbortController().signal)) === null) break;
+          }
+          await current.processorRuntime.catchUp('repair-delivery-results');
+          await settle();
+        }
       }
     };
     const assertHandoff = async () => {
@@ -925,7 +987,42 @@ it.each([
       ).toHaveLength(2);
       return;
     }
+    const assertReplacementOwners = async () => {
+      const state = await current.orchestration.deliveryStateFor(parent.workflowInstanceId);
+      const mergeIntents = (await journal.readAll(0)).flatMap(({ event }) =>
+        event.eventType === ActivityEventType.PrMergeRequested ? [event.payload] : [],
+      );
+      expect(mergeIntents).toHaveLength(3);
+      for (const replacement of repairChildren) {
+        const selected = state.selection!.entries.find(
+          (entry) => entry.childWorkItemId === replacement.workItemId,
+        )!;
+        if (!('resourceId' in selected.output.reference))
+          throw new Error('Expected a replacement PR');
+        const target = resourceId(selected.output.reference.resourceId);
+        expect(await current.resources.primaryCorrelation(target)).toMatchObject({
+          workItemId: replacement.workItemId,
+        });
+        expect(await current.pullRequests.get(target)).toMatchObject({
+          state: PullRequestState.Merged,
+          workItemId: replacement.workItemId,
+        });
+        expect(mergeIntents).toContainEqual(
+          expect.objectContaining({
+            resourceId: target,
+            parent: expect.objectContaining({
+              ownerWorkItemId: replacement.workItemId,
+              requestingWorkItemId: parentWork,
+            }),
+          }),
+        );
+        expect((await current.orchestration.get(replacement.workflowInstanceId))!.status).toBe(
+          'completed',
+        );
+      }
+    };
     if (mode === 'repair') {
+      await assertReplacementOwners();
       expect(repaired).toBe(true);
       expect(
         (await current.orchestration.deliveryStateFor(parent.workflowInstanceId)).history,

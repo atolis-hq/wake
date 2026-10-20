@@ -206,6 +206,7 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
       z
         .object({
           workItemId: workItemIdSchema,
+          mergeRevision: z.string().min(1).optional(),
           state: stateSchema,
           mergeability: mergeabilitySchema.optional(),
           headRevision: z.string(),
@@ -227,7 +228,13 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
     ),
     resourceFactDraft(
       eventTypes.PrStateChanged,
-      z.object({ state: stateSchema, mergeability: mergeabilitySchema.optional() }).strict(),
+      z
+        .object({
+          state: stateSchema,
+          mergeability: mergeabilitySchema.optional(),
+          mergeRevision: z.string().min(1).optional(),
+        })
+        .strict(),
     ),
     resourceFactDraft(eventTypes.PrChecksChanged, z.object({ checks: checksSchema }).strict()),
     resourceFactDraft(eventTypes.PrReviewAccepted, reviewSchema),

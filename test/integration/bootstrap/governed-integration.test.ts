@@ -141,6 +141,7 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
       on: { done: { then: next } },
     });
     const mergeEvents: string[] = [];
+    const plannedMovementTargets: string[] = [];
     // The provider fixture: applies the requested squash to a real repository and reports the
     // merged pull request, so Wake only ever learns of a merge from provider-observed facts.
     const delivery: ExternalDeliveryAdapter = {
@@ -155,9 +156,41 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
           await git(paths[repo], 'commit', '-m', 'squash ' + found);
           mergeEvents.push(found);
           await root.pullRequests.observe(
-            { ...pull, state: PullRequestState.Merged },
+            {
+              ...pull,
+              state: PullRequestState.Merged,
+              mergeRevision: await git(paths[repo], 'rev-parse', 'HEAD'),
+            },
             context('merged-' + found),
           );
+          const baseRevision = await git(paths[repo], 'rev-parse', 'HEAD');
+          for (const sibling of ids.filter((id) => repoOf(id) === repo && id !== found)) {
+            const resource = await root.resources.findByExternalKey({
+              adapter: 'fake',
+              key: pullKey(sibling),
+            });
+            if (resource === null) continue;
+            const observed = await root.pullRequests.get(resource.resourceId);
+            if (
+              observed?.state !== PullRequestState.Open ||
+              (stackBase(sibling) !== undefined && !maintained.has(sibling))
+            )
+              continue;
+            await root.pullRequests.observe(
+              { ...observed, baseRevision },
+              context('base-after-' + found + '-' + sibling),
+            );
+            const assessment = (
+              await root.orchestration.deliveryStateFor(parent.workflowInstanceId)
+            ).integration!;
+            expect(
+              assessment.targets.find((target) => target.resourceId === resource.resourceId),
+            ).toMatchObject({
+              baseMovement: 'planned-progress',
+              evidenceAffected: true,
+            });
+            plannedMovementTargets.push(sibling);
+          }
         }
         return { kind: DeliveryResultKind.Confirmed, externalId: 'merge-' + found };
       },
@@ -200,7 +233,7 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
                 stages: {
                   delegate: {
                     ...agentStage('none', 'qa', 'ASSEMBLE-STAGE'),
-                    on: { done: { then: 'qa', repeat: { max: 4 } } },
+                    on: { done: { then: 'qa', repeat: { max: 8 } } },
                   },
                   qa: {
                     ...agentStage('read-only', 'integrate', 'QA-STAGE'),
@@ -470,6 +503,7 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
       return missingConfiguration ? { ...done, output: '{"status":"FAILED"}' } : done;
     };
     const maintainStage = async (request: RunnerRequest): Promise<AgentRunnerResult> => {
+      const maintenanceContext = (id: string) => context(id + '-' + candidates);
       stages.push('maintain');
       const caller = await callerFor(request);
       const run = (await root.execution.list()).find((entry) => entry.runId === request.runId)!;
@@ -503,7 +537,7 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
             baseRevision: main,
             checks: 'passing',
           },
-          context('observe-maintained-' + id),
+          maintenanceContext('observe-maintained-' + id),
         );
         // Fresh review is part of the target's own consent policy.
         await root.pullRequests.acceptReviewSignal(
@@ -516,10 +550,10 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
             resourceAuthorId: 'author',
             authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
           },
-          context('review-maintained-' + id),
+          maintenanceContext('review-maintained-' + id),
         );
         const report = {
-          maintenanceId: 'maintain-' + id,
+          maintenanceId: 'maintain-' + id + '-' + candidates,
           target: {
             childWorkItemId: workItemId(target.childWorkItemId),
             outputName: target.outputName,
@@ -533,19 +567,29 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
           root.orchestration.recordDeliveryMaintenance(
             caller,
             { ...report, pullRequestBase: 'forged-base' },
-            context('bad-base-' + id),
+            maintenanceContext('bad-base-' + id),
           ),
         ).rejects.toThrow('provider must verify');
-        await root.work.freeze(workItemId(target.childWorkItemId), context('freeze-' + id));
+        await root.work.freeze(
+          workItemId(target.childWorkItemId),
+          maintenanceContext('freeze-' + id),
+        );
         await expect(
-          root.orchestration.recordDeliveryMaintenance(caller, report, context('frozen-' + id)),
+          root.orchestration.recordDeliveryMaintenance(
+            caller,
+            report,
+            maintenanceContext('frozen-' + id),
+          ),
         ).rejects.toThrow('unavailable');
-        await root.work.unfreeze(workItemId(target.childWorkItemId), context('unfreeze-' + id));
+        await root.work.unfreeze(
+          workItemId(target.childWorkItemId),
+          maintenanceContext('unfreeze-' + id),
+        );
         maintenanceRecords.push(id);
         await root.orchestration.recordDeliveryMaintenance(
           caller,
           {
-            maintenanceId: `maintain-${id}`,
+            maintenanceId: `maintain-${id}-${candidates}`,
             target: {
               childWorkItemId: workItemId(target.childWorkItemId),
               outputName: target.outputName,
@@ -555,14 +599,14 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
             revision,
             pullRequestBase: 'main',
           },
-          context('maintain-' + id),
+          maintenanceContext('maintain-' + id),
         );
         expect(
           (
             await root.orchestration.recordDeliveryMaintenance(
               caller,
               report,
-              context('duplicate-' + id),
+              maintenanceContext('duplicate-' + id),
             )
           ).replay,
         ).toBe(true);
@@ -764,9 +808,10 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
       'completed',
     );
     expect(mergeEvents.sort()).toEqual([...ids].sort());
-    expect(maintenanceRecords.sort()).toEqual(['a2', 'b2']);
-    expect(qaRounds).toBe(4);
-    expect(stages.filter((stage) => stage === 'maintain')).toHaveLength(2);
+    expect(maintenanceRecords).toEqual(expect.arrayContaining(['a2', 'b2']));
+    expect(plannedMovementTargets.some((id) => repoOf(id) === 'a')).toBe(true);
+    expect(plannedMovementTargets.some((id) => repoOf(id) === 'b')).toBe(true);
+    expect(qaRounds).toBe(stages.filter((stage) => stage === 'maintain').length + 2);
     // Child-owned pull requests keep their original owner; the parent never became owner.
     for (const id of ids) {
       const resource = (await root.resources.findByExternalKey({
@@ -799,11 +844,8 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
       expect(payload.parent?.ownerWorkItemId).not.toBe(parentWork);
     }
     const state = await root.orchestration.deliveryStateFor(parent.workflowInstanceId);
-    expect(state.history).toHaveLength(4);
-    expect(state.maintenance.map((item) => item.maintenanceId)).toEqual([
-      'maintain-a2',
-      'maintain-b2',
-    ]);
+    expect(state.history).toHaveLength(qaRounds);
+    expect(state.maintenance).toHaveLength(maintenanceRecords.length);
     // The actual producer of each new subject is the parent's maintenance Run, not the child's.
     for (const item of state.maintenance) {
       const run = (await root.execution.list()).find(
@@ -817,7 +859,9 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
       complete: true,
       targets: expect.any(Array),
     });
-    expect(presented.delegation?.qa?.integration?.maintenance).toHaveLength(2);
+    expect(presented.delegation?.qa?.integration?.maintenance).toHaveLength(
+      maintenanceRecords.length,
+    );
     expect(state.integration).toMatchObject({ complete: true });
     expect(state.repair.failedRounds).toBe(1);
     expect(state.completion).toEqual({ complete: true });

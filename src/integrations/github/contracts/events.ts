@@ -47,6 +47,7 @@ export interface ExternalWorkObservedPayload {
   readonly revision: string;
   readonly headRevision?: string | undefined;
   readonly baseRevision?: string | undefined;
+  readonly mergeRevision?: string | undefined;
   readonly checks?:
     | typeof PullRequestCheckState.Unknown
     | typeof PullRequestCheckState.Pending
@@ -251,6 +252,7 @@ const githubEventSchemas = {
           .optional(),
         headRevision: z.string().optional(),
         baseRevision: z.string().optional(),
+        mergeRevision: z.string().min(1).optional(),
         checks: z
           .enum([
             PullRequestCheckState.Unknown,

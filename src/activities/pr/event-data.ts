@@ -50,6 +50,7 @@ export const stateChanged = (
     ...metadata(ActivityEventType.PrStateChanged, context),
     payload: {
       state: command.state,
+      ...(command.mergeRevision === undefined ? {} : { mergeRevision: command.mergeRevision }),
       ...(command.mergeability === undefined ? {} : { mergeability: command.mergeability }),
     },
   });

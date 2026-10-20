@@ -688,3 +688,42 @@ it('retains old PR conflict evidence and recurring transitions through restart a
   expect(observations).toHaveLength(3);
   expect(new Set(observations.map((event) => event.event.eventId)).size).toBe(3);
 });
+
+it('persists the actual merged commit independently of the reviewed head, including late provider evidence', async () => {
+  let merged = false;
+  let mergeRevision: string | null = null;
+  const runtime = sourceRuntime(
+    fakeClient({
+      pullRequests: async () => [
+        {
+          ...pullRequest(),
+          merge_commit_sha: mergeRevision,
+          ...(merged ? { state: 'closed', merged_at: '2026-10-20T00:00:00.000Z' } : {}),
+        },
+      ],
+    }),
+  );
+  await admitPullRequest(runtime, 'merge-evidence', 'owner/repo#7');
+  const observe = async () => {
+    await runtime.poll.pollOnce(new AbortController().signal);
+    await processInbound(runtime.translator, runtime.journal, runtime.checkpoints);
+    const resource = await runtime.resources.findByExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#7',
+    });
+    return runtime.pullRequests.get(resource!.resourceId);
+  };
+  mergeRevision = 'test-merge-before-integration';
+  expect((await observe())?.mergeRevision).toBeUndefined();
+  merged = true;
+  mergeRevision = null;
+  expect((await observe())?.state).toBe('merged');
+  mergeRevision = 'squash-commit';
+  const observed = await observe();
+  expect(observed).toMatchObject({ headRevision: 'head-a', mergeRevision: 'squash-commit' });
+  const replayed = createPullRequestService(runtime.journal, runtime.work, runtime.resources);
+  expect(await replayed.get(observed!.resourceId)).toMatchObject({
+    headRevision: 'head-a',
+    mergeRevision: 'squash-commit',
+  });
+});

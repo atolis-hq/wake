@@ -923,8 +923,10 @@ An unresolved earlier writer blocks another writer until reconciled.
 Maintenance records a new immutable subject and the actual producing Run. Earlier output, review,
 check and QA facts remain historical. Affected candidate evidence must be refreshed before another
 merge; unrelated outputs keep their evidence. Planned merges do not consume failed QA rounds.
-Unexplained base movement, including movement after another PR merged, is not proof of planned
-progress. Squash merges and stack retargets require explicit maintenance and refreshed QA.
+A base matching the provider-reported merge commit of a selected sibling is planned progress,
+including squash, merge and rebase integration. It still requires agent maintenance and fresh
+evidence for the changed base subject. A different base is unrelated movement; a merged sibling
+by itself never proves progress. Squash merges and stack retargets require explicit maintenance and refreshed QA.
 Existing durable delivery intents/results retain partial progress across restart; integration
 across repositories does not provide atomic rollback. Work detail API/web expose target states,
 maintenance reasons, affected evidence and maintenance history.

@@ -44,6 +44,7 @@ export const ActivityEventType = {
 export type ActivityEventTypes = typeof ActivityEventType;
 
 export interface PullRequestDiscoveredPayload {
+  readonly mergeRevision?: string | undefined;
   readonly mergeability?: PullRequestMergeability | undefined;
   readonly workItemId: WorkItemId;
   readonly state:
@@ -153,6 +154,7 @@ export interface ActivityEventPayloads {
     readonly changedFiles?: readonly string[] | undefined;
   };
   readonly [ActivityEventType.PrStateChanged]: {
+    readonly mergeRevision?: string | undefined;
     readonly state: PullRequestDiscoveredPayload['state'];
     readonly mergeability?: PullRequestMergeability | undefined;
   };

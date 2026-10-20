@@ -73,7 +73,12 @@ function projectPullRequest(
     case ActivityEventType.PrStateChanged:
       return previous === null
         ? previous
-        : { ...previous, state: data.payload.state, mergeability: data.payload.mergeability };
+        : {
+            ...previous,
+            state: data.payload.state,
+            mergeability: data.payload.mergeability,
+            mergeRevision: data.payload.mergeRevision,
+          };
     case ActivityEventType.PrChecksChanged:
       return previous === null ? previous : { ...previous, checks: data.payload.checks };
     case ActivityEventType.PrReviewAccepted:

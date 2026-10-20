@@ -22,6 +22,7 @@ export interface PullRequestView {
   readonly state: PullRequestState;
   readonly headRevision: string;
   readonly baseRevision: string;
+  readonly mergeRevision?: string | undefined;
   readonly checks: PullRequestCheckState;
   readonly mergeability?: PullRequestMergeability | undefined;
   readonly acceptedReview?: {
@@ -39,6 +40,7 @@ export interface ObservePullRequest {
   readonly state: PullRequestView['state'];
   readonly headRevision: string;
   readonly baseRevision: string;
+  readonly mergeRevision?: string | undefined;
   readonly checks: PullRequestView['checks'];
   readonly mergeability?: PullRequestMergeability | undefined;
   readonly changedFiles?: readonly string[] | undefined;

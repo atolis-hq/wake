@@ -164,6 +164,7 @@ class JournalPullRequestService implements PullRequestService {
       await this.append(command.resourceId, revisionChanged(command, context));
     if (
       current.state !== command.state ||
+      current.mergeRevision !== command.mergeRevision ||
       current.mergeability !== command.mergeability ||
       (revisionHasChanged && command.mergeability !== undefined)
     )

@@ -214,46 +214,54 @@ describe('governed integration decisions', () => {
     ).toBe(true);
   });
 
-  it('treats a base moved by a selected sibling merge as planned progress that keeps evidence', () => {
-    const items: Change[] = [
-      {
-        child: 'a1',
-        repository: 'repo-a',
-        branch: 'a1',
-        base: 'integration-a',
-        head: sha('1'),
-        baseRevision: sha('0'),
-      },
-      {
-        child: 'a2',
-        repository: 'repo-a',
-        branch: 'a2',
-        base: 'integration-a',
-        head: sha('2'),
-        baseRevision: sha('0'),
-      },
-    ];
-    const result = assessIntegration(
-      facts({ items }),
-      observe({
-        'pr-a1': merged(sha('1')),
-        'pr-a2': open(sha('2'), { baseRevision: sha('1') }),
-      }),
-      none,
-    );
-    expect(result.next).toMatchObject({
-      state: IntegrationState.Ready,
-      baseMovement: BaseMovement.PlannedProgress,
-      evidenceAffected: false,
-    });
-  });
+  it.each(['squash', 'merge', 'rebase'] as const)(
+    'requires fresh evidence for a planned %s integration commit distinct from its source head',
+    () => {
+      const items: Change[] = [
+        {
+          child: 'a1',
+          repository: 'repo-a',
+          branch: 'a1',
+          base: 'integration-a',
+          head: sha('1'),
+          baseRevision: sha('0'),
+        },
+        {
+          child: 'a2',
+          repository: 'repo-a',
+          branch: 'a2',
+          base: 'integration-a',
+          head: sha('2'),
+          baseRevision: sha('0'),
+        },
+      ];
+      const result = assessIntegration(
+        facts({ items }),
+        observe({
+          'pr-a1': { ...merged(sha('1')), mergeRevision: sha('e') },
+          'pr-a2': open(sha('2'), { baseRevision: sha('e') }),
+        }),
+        none,
+      );
+      expect(result.next).toBeNull();
+      expect(result.blocking).toMatchObject({
+        state: IntegrationState.MaintenanceRequired,
+        baseMovement: BaseMovement.PlannedProgress,
+        evidenceAffected: true,
+      });
+      expect(result.blocking?.detail).toContain('selected sibling merged');
+    },
+  );
 
   it('does not credit unrelated movement after a sibling has merged', () => {
     const result = assessIntegration(
       facts({
         items: [changes[0]!, { ...changes[1]!, base: 'integration-a', baseRevision: sha('0') }],
       }),
-      observe({ 'pr-a1': merged(sha('1')), 'pr-a2': open(sha('2'), { baseRevision: sha('f') }) }),
+      observe({
+        'pr-a1': { ...merged(sha('1')), mergeRevision: sha('e') },
+        'pr-a2': open(sha('2'), { baseRevision: sha('f') }),
+      }),
       none,
     );
     expect(result.blocking).toMatchObject({

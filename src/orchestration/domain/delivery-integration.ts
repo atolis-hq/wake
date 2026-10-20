@@ -15,6 +15,7 @@ export interface PullRequestObservation {
   readonly state: PullRequestState;
   readonly headRevision: string;
   readonly baseRevision: string;
+  readonly mergeRevision?: string | undefined;
   readonly mergeability?: PullRequestMergeability | undefined;
 }
 
@@ -108,7 +109,8 @@ export function assessIntegration(
           other.reference.pullRequestBase === change.reference.pullRequestBase &&
           merged(other) &&
           known(observed(change)?.baseRevision) &&
-          sameRevision(observed(change)!.baseRevision, other.reference.revision),
+          known(observed(other)?.mergeRevision) &&
+          sameRevision(observed(change)!.baseRevision, observed(other)!.mergeRevision!),
       );
       return decide(change, {
         observation: observed(change),
@@ -204,6 +206,11 @@ function decide(
   }
   if (observation.mergeability === PullRequestMergeability.Conflicting)
     return maintain(MaintenanceReason.Conflict, 'the provider reports conflicts with the base');
+  if (movement === BaseMovement.PlannedProgress)
+    return maintain(
+      MaintenanceReason.BaseMoved,
+      'a selected sibling merged into the base; refresh the changed base subject before continuing',
+    );
   if (movement === BaseMovement.Unrelated)
     return maintain(
       MaintenanceReason.BaseMoved,
@@ -212,7 +219,7 @@ function decide(
   return { ...base, baseMovement: movement, state: IntegrationState.Ready };
 }
 
-/** Credit only an exact selected merged head; squash or unexplained movement needs fresh evidence. */
+/** Match the actual integration commit, never assume a merged source head became the base. */
 function baseMovement(
   reference: ChangeReference,
   observation: PullRequestObservation,

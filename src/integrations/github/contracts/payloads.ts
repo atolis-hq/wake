@@ -43,6 +43,7 @@ export interface GitHubPullRequestPayload extends GitHubIssuePayload {
   readonly head?: { readonly sha?: string };
   readonly base?: { readonly sha?: string };
   readonly merged_at?: string | null;
+  readonly merge_commit_sha?: string | null;
 }
 
 export interface GitHubCheckRunPayload {

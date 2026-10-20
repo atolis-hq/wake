@@ -136,6 +136,7 @@ function pullRequestObservation(input: {
     title: pullRequest.title,
     body: fallback(pullRequest.body, ''),
     state: pullRequestState(pullRequest),
+    ...mergedRevision(pullRequest),
     mergeability:
       pullRequest.mergeable === false
         ? PullRequestMergeability.Conflicting
@@ -302,3 +303,11 @@ const GitHubCommitStatusState = {
   Pending: PullRequestCheckState.Pending,
   Success: 'success',
 } as const;
+
+function mergedRevision(pullRequest: GitHubPullRequestPayload): {
+  readonly mergeRevision?: string;
+} {
+  return pullRequestState(pullRequest) === PullRequestState.Merged && pullRequest.merge_commit_sha
+    ? { mergeRevision: pullRequest.merge_commit_sha }
+    : {};
+}

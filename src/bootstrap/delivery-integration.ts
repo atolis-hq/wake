@@ -27,6 +27,7 @@ export function createDeliveryIntegration(
             state: view.state,
             headRevision: view.headRevision,
             baseRevision: view.baseRevision,
+            mergeRevision: view.mergeRevision,
             mergeability: view.mergeability,
           };
     },

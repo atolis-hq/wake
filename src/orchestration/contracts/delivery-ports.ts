@@ -7,6 +7,7 @@ export interface DeliveryPullRequest {
   readonly state: PullRequestState;
   readonly headRevision: string;
   readonly baseRevision: string;
+  readonly mergeRevision?: string | undefined;
   readonly mergeability?: PullRequestMergeability | undefined;
 }
 
