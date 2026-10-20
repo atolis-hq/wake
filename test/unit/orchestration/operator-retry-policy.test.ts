@@ -28,6 +28,7 @@ import {
   requestOperatorRetry,
   selectChangesResumeTargets,
   selectOperatorRetryTarget,
+  stageName,
   startInstance,
   WatchGateVerdictSignal,
   workflowInstanceStream,
@@ -219,6 +220,52 @@ const retryInput = {
 };
 
 describe('operator retry policy', () => {
+  it.each([undefined, 1])(
+    'retries typed delivery gate blocks with follow-on index %s at the coordinating stage with retained budgets',
+    (followOnIndex) => {
+      const { definition, state } = blockedFailedFixture();
+      const blocked = {
+        ...state,
+        currentStage: stageName('qa'),
+        pendingActivation: {
+          ...state.pendingActivation!,
+          ...(followOnIndex === undefined ? {} : { followOnIndex }),
+        },
+        blockReason: 'Operational source fetch failed',
+        deliveryGateBlock: { retryStage: stageName('implement') },
+        repeatCounts: { 'implement:done': 2 },
+        retryCounts: { 'qa:failed': 1 },
+      };
+      expect(isOperatorRetryEligible(blocked)).toBe(true);
+      expect(
+        isOperatorRetryEligible({
+          ...blocked,
+          acceptedOutcomes: [],
+          pendingActivation: {
+            ...blocked.pendingActivation!,
+            status: ActivityActivationStatus.Waiting,
+          },
+        }),
+      ).toBe(true);
+      const decision = requestOperatorRetry(definition, blocked, retryInput);
+      expect(decision).toMatchObject({
+        kind: 'append',
+        events: [
+          { eventType: OrchestrationEventType.OperatorRetryRequested },
+          { eventType: OrchestrationEventType.StageEntered, payload: { stage: 'implement' } },
+          {
+            eventType: OrchestrationEventType.ActivityRequested,
+            payload: { stage: 'implement', sessionPolicy: 'fresh' },
+          },
+        ],
+      });
+      expect(blocked.repeatCounts).toEqual({ 'implement:done': 2 });
+      expect(blocked.retryCounts).toEqual({ 'qa:failed': 1 });
+      const { deliveryGateBlock: _gate, ...untyped } = blocked;
+      expect(isOperatorRetryEligible(untyped)).toBe(false);
+    },
+  );
+
   it('marks a fresh operator retry so execution starts a new runner session', () => {
     const { definition, state } = blockedFailedFixture();
 

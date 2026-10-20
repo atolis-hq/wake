@@ -1,3 +1,4 @@
+import { acquireCandidateWorkspaces } from './candidate-workspaces.js';
 /* eslint-disable max-lines */
 
 import { type EventJournal } from '@atolis-hq/eventing';
@@ -506,16 +507,7 @@ async function completeRun(
       ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
       ...(resumeStartedAt === undefined ? {} : { resumeStartedAt }),
       ...(usageBaseline === undefined ? {} : { usageBaseline }),
-      ...(lease === undefined
-        ? {}
-        : {
-            workspace: {
-              path: lease.path,
-              mode: lease.mode,
-              checkoutRevision: lease.checkoutRevision,
-              repository: context.repositoryAssignment,
-            },
-          }),
+      ...activityWorkspace(lease, context),
       reportRunnerStarted,
     });
     await stopRenewal();
@@ -927,6 +919,17 @@ async function acquireAttemptWorkspace(
   currentRunId: ReturnType<typeof runId>,
   signal?: AbortSignal,
 ) {
+  if (context.candidate !== undefined)
+    return acquireCandidateWorkspaces(
+      {
+        runId: currentRunId,
+        workItemId: context.workItemId,
+        candidate: context.candidate,
+        resources: context.resources,
+        signal: signal ?? new AbortController().signal,
+      },
+      runtime.dependencies.workspaces,
+    );
   const previous =
     context.repositoryAssignment === undefined
       ? undefined
@@ -973,4 +976,23 @@ function validateResources(
   resources: readonly ResourceView[],
 ): void {
   validateResourceRequirements(requirements, resources);
+}
+
+function activityWorkspace(lease: WorkspaceLease | undefined, context: ExecutionAttemptContext) {
+  return {
+    ...(lease === undefined
+      ? {}
+      : {
+          workspace: {
+            path: lease.path,
+            mode: lease.mode,
+            checkoutRevision: lease.checkoutRevision,
+            repository: context.repositoryAssignment,
+            candidate:
+              lease.candidate === undefined
+                ? undefined
+                : { ...context.candidate!, ...lease.candidate },
+          },
+        }),
+  };
 }

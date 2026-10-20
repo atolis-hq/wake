@@ -22,6 +22,12 @@ import type {
   DelegationResult,
 } from './delegation.js';
 import type {
+  DeliveryCandidate,
+  DeliveryCompletionBlock,
+  DeliveryQa,
+  DeliverySelection,
+} from './delivery.js';
+import type {
   CommandName,
   OrchestrationGroupId,
   SignalName,
@@ -52,6 +58,9 @@ export const OrchestrationEventType = {
   DelegationAttentionResponded: 'orchestration.delegation-attention-responded',
   DelegationAttentionResolved: 'orchestration.delegation-attention-resolved',
   DelegationReconciliationFailed: 'orchestration.delegation-reconciliation-failed',
+  DeliverySelectionRevised: 'orchestration.delivery-selection-revised',
+  DeliveryCandidateRecorded: 'orchestration.delivery-candidate-recorded',
+  DeliveryQaRecorded: 'orchestration.delivery-qa-recorded',
   WorkflowDefinitionRegistered: 'orchestration.workflow-definition-registered',
   InstanceStarted: 'orchestration.instance-started',
   StageEntered: 'orchestration.stage-entered',
@@ -122,6 +131,9 @@ export interface OrchestrationEventPayloads {
     readonly cohortId: string;
     readonly reason: string;
   };
+  readonly [OrchestrationEventType.DeliverySelectionRevised]: DeliverySelection;
+  readonly [OrchestrationEventType.DeliveryCandidateRecorded]: DeliveryCandidate;
+  readonly [OrchestrationEventType.DeliveryQaRecorded]: DeliveryQa;
   readonly [OrchestrationEventType.DelegationReserved]: DelegationReservation;
   readonly [OrchestrationEventType.DelegationRegistered]: { readonly cohortId: string };
   readonly [OrchestrationEventType.DelegationResultSelected]: DelegationResult;
@@ -195,7 +207,10 @@ export interface OrchestrationEventPayloads {
     readonly count: number;
   };
   readonly [OrchestrationEventType.InstanceCompleted]: Readonly<Record<never, never>>;
-  readonly [OrchestrationEventType.InstanceBlocked]: { readonly reason: string };
+  readonly [OrchestrationEventType.InstanceBlocked]: {
+    readonly reason: string;
+    readonly deliveryGate?: DeliveryCompletionBlock['deliveryGate'];
+  };
   readonly [OrchestrationEventType.OperatorRetryRequested]: {
     readonly activationId: ActivationId;
     readonly commandId: string;

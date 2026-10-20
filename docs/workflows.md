@@ -764,6 +764,63 @@ named shared context or operator instructions. Work detail shows delivery
 parent/root links, child workflows, status, resources and blockers; existing
 freeze controls stop dispatch for the selected subtree.
 
+### Parent QA and bounded repair
+
+After the delegating stage resumes with joined results, the parent agent assesses and
+verifies the combined work with three Run-bound tools; `wake_delegation_inspect` returns the
+state as `delivery` (selection revision, required outputs, stale results, current candidate,
+QA verdict, repair state and completion). Configure `delegation.qa.stage` to name a
+read-only agent stage and optionally `delegation.qa.recipe` for its environment/test recipe.
+The coordinating stage selects and records the candidate before routing to that QA stage.
+The QA stage cannot select its own candidate or submit child work. Its Run always starts a
+fresh session. Wake acquires every authorized repository checkout in repository-ID order,
+checks exact revisions, and releases all acquired leases if any checkout or environment
+preparation fails. The prompt includes criteria, contributing output/context revisions,
+recipe, and repository paths. Workspace prepare hooks apply to each checkout.
+
+- `wake_delivery_select` records the complete current selection: for every output of every
+  original assignment, the child output that covers it. A replacement names the output it
+  replaces. Omitting a requirement, selecting an unqualified output or replacing something
+  other than the current choice is rejected, and `expectedRevision` must be the current
+  `selectionRevision`.
+- `wake_delivery_candidate` records the exact combined candidate: one entry per repository
+  with selected changes. Use `{ kind: "output", tip }` for a single change or an intentional
+  stack (list the other members in `includes`), or `{ kind: "retained-ref", ref, revision,
+  contributions }` for a commit the agent assembled. Retained refs live under
+  `refs/wake/delivery/<root WorkItem>/<candidateId>/` and are retained, never deleted. Wake
+  fetches the commit from the authorized repository before recording, during QA preparation,
+  and before a pass. Retained refs must still resolve to the recorded commit during execution
+  preparation; deleting the assembly workspace does not affect reconstruction.
+- `wake_delivery_qa` records `pass`, `fail` (with findings) or `blocked` for a candidate. The
+  revisions named must equal the candidate's repository set exactly. An unavailable
+  environment must be `blocked`, and a pass must follow the configured `recipe`. Only the
+  configured QA activation's active Run, durably prepared for that candidate and exact
+  revision set, may record the verdict; the coordinating Run cannot approve its own work.
+
+Repair uses a new child: submit an assignment with `replaces: { cohortId, assignmentId }`
+naming the original. It must keep every original criterion, repository and output; if the
+original change is unmerged it must start from that contribution and keep the original
+pull request base. Only a completed or superseded child can be replaced; correcting a running
+child is not supported (`replacement-unsupported`). New children count against the same root
+`maxDescendants` and workflow repeat/retry limits. When a failing QA verdict is recorded with
+no root-wide descendant capacity or no configured QA failure-repeat capacity left, it is
+marked `exhausted` and the findings stay visible for a
+human. A replaced output makes its consumers stale until they are replaced too.
+
+`delegation.completion` is optional: `qa-approved` (default) lets the parent finish once the
+current candidate has a passing QA verdict without any merge; `merge-required` keeps the
+parent blocked until governed integration exists. These configured final gates apply to all
+completion paths, including accepted signals and resource transitions: missing, failing,
+blocked, historical-only or stale QA cannot complete the parent. Previously configured
+direct workflows without `delegation.qa` or explicit `delegation.completion` keep their
+existing routes. Work detail API and web views show candidate revisions, staleness, QA
+findings, exhaustion and the completion blocker. A final delivery gate block is eligible for
+operator retry: it starts the latest cohort's recorded delegating stage in a fresh activation,
+retaining the selection, QA history and existing workflow/root budgets. The agent can repair the candidate
+or rerun QA once the environment is available. Completion source checks distinguish a missing
+or moved ref from an operational fetch failure; a transport failure preserves the QA verdict
+and holds completion until the source can be verified again.
+
 ### Queued prerequisites and Git stacks
 
 Assignments may declare `prerequisites`. Each entry selects an `assignmentId`,

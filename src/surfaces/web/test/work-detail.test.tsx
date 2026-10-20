@@ -222,6 +222,46 @@ async function transcriptResponse(
 describe('work detail', () => {
   afterEach(cleanup);
 
+  it('shows exact delivery revisions, stale QA and exhausted repair findings', async () => {
+    const client = detailClient(
+      null,
+      undefined,
+      [],
+      { groups: [], entries: [] },
+      'DONE',
+      false,
+      [],
+      [],
+      false,
+      {
+        rootWorkItemKey: 'wk_a',
+        children: [],
+        qa: {
+          selectionRevision: 2,
+          candidateId: 'candidate-2',
+          repositories: [{ resourceId: 'repo-a', revision: 'a'.repeat(40) }],
+          stale: ['downstream'],
+          verdict: 'fail',
+          effective: false,
+          canComplete: false,
+          reason: 'Stale results need reverification',
+          exhausted: true,
+          findings: ['Integration test failed'],
+        },
+      },
+    );
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('heading', { name: 'Candidate QA' })).toBeTruthy();
+    expect(screen.getByText('Repair budget exhausted')).toBeTruthy();
+    expect(screen.getByText('Integration test failed')).toBeTruthy();
+    expect(screen.getByText('Stale: downstream')).toBeTruthy();
+    expect(screen.getByText('repo-a@' + 'a'.repeat(40))).toBeTruthy();
+  });
+
   it('places the workflow above the activity timeline', async () => {
     render(
       <MemoryRouter initialEntries={['/work/wk_a']}>

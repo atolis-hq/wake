@@ -30,6 +30,56 @@ async function repository(root: string, name: string) {
   return path;
 }
 
+it('refuses missing or moved retained refs during preparation and reconstructs a new candidate after deletion', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-candidate-preparation-'));
+  roots.push(root);
+  const source = await repository(root, 'candidate');
+  const resolver = { cloneLocator: async () => source };
+  const revision = await git(source, 'rev-parse', 'HEAD');
+  const ref = 'refs/wake/delivery/root/candidate/repository';
+  await git(source, 'update-ref', ref, revision);
+  const request = {
+    runId: runId('candidate'),
+    workItemId: workId('candidate'),
+    signal: new AbortController().signal,
+    mode: 'read-only' as const,
+    checkoutRevision: revision,
+    requiredSourceRef: ref,
+    assignment: {
+      resourceId: resId('candidate'),
+      sourceRef: ref,
+      sourceRevision: revision,
+      pullRequestBase: 'main',
+    },
+    repositoryResource: {
+      resourceId: resId('candidate'),
+      kind: BuiltInResourceKind.Repository,
+      externalKey: { adapter: 'fake', key: 'candidate' },
+      capabilities: [],
+    },
+  };
+  const provider = new GitWorkspaceProvider(join(root, 'workspaces'), resolver, workspaceLocks);
+  const first = await provider.acquire(request);
+  await first.release();
+  await rm(first.path, { recursive: true, force: true });
+  await git(source, 'update-ref', '-d', ref);
+  await expect(provider.acquire(request)).rejects.toThrow('unavailable');
+  await writeFile(join(source, 'file'), 'repaired');
+  await git(source, 'commit', '-am', 'repair');
+  const nextRevision = await git(source, 'rev-parse', 'HEAD');
+  await git(source, 'update-ref', ref, nextRevision);
+  await expect(provider.acquire(request)).rejects.toThrow('moved');
+  const restarted = new GitWorkspaceProvider(join(root, 'workspaces'), resolver, workspaceLocks);
+  const repaired = await restarted.acquire({
+    ...request,
+    checkoutRevision: nextRevision,
+    assignment: { ...request.assignment, sourceRevision: nextRevision },
+  });
+  expect(await repaired.readRevision()).toBe(nextRevision);
+  expect(await readFile(join(repaired.path, 'file'), 'utf8')).toBe('repaired');
+  await repaired.release();
+});
+
 it('pins two repository sources, survives branch movement and restart, and preserves dirty implementation work (DC-11, DC-21)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-assignment-'));
   roots.push(root);
@@ -161,4 +211,27 @@ it('reuses a direct workflow workspace when the work item moves from an issue to
     expect(pullRequest.path).toBe(issue.path);
     await pullRequest.release();
   }
+});
+
+it('distinguishes missing retained refs from operational fetch failures', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-source-diagnostics-'));
+  roots.push(root);
+  const source = await repository(root, 'source');
+  const request = {
+    resourceId: resId('source'),
+    sourceRef: 'refs/wake/delivery/root/candidate/missing',
+    pullRequestBase: 'main',
+  };
+  await expect(
+    resolveGitSource({ cloneLocator: async () => source }, request),
+  ).rejects.toMatchObject({
+    kind: 'ref-unavailable',
+    message: expect.stringContaining('remote ref is missing'),
+  });
+  await expect(
+    resolveGitSource({ cloneLocator: async () => join(root, 'unavailable-remote') }, request),
+  ).rejects.toMatchObject({
+    kind: 'fetch-failed',
+    message: expect.stringContaining('fetch failed; verify connectivity and permissions'),
+  });
 });

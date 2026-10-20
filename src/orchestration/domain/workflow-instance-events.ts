@@ -52,6 +52,7 @@ export type MutableWorkflowInstance = {
   delegationAttention?: WorkflowInstanceView['delegationAttention'];
   status: WorkflowInstanceView['status'];
   blockReason?: string;
+  deliveryGateBlock?: NonNullable<WorkflowInstanceView['deliveryGateBlock']>;
   currentStage: WorkflowInstanceView['currentStage'];
   pendingActivation?: ActivityActivationView;
   repeatCounts: Record<string, number>;
@@ -223,6 +224,8 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       delete state.delegationAttention;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceBlocked]!;
       state.blockReason = event.payload.reason;
+      if (event.payload.deliveryGate === undefined) delete state.deliveryGateBlock;
+      else state.deliveryGateBlock = event.payload.deliveryGate;
       return;
     case OrchestrationEventType.OperatorRetryRequested:
       state.operatorRetryCommandIds.push(event.payload.commandId);
@@ -299,6 +302,9 @@ function applyCoordinationFact(state: MutableWorkflowInstance, event: Coordinati
     case OrchestrationEventType.DelegationPrerequisiteBlocked:
     case OrchestrationEventType.DelegationChildBlocked:
     case OrchestrationEventType.DelegationResultSelected:
+    case OrchestrationEventType.DeliverySelectionRevised:
+    case OrchestrationEventType.DeliveryCandidateRecorded:
+    case OrchestrationEventType.DeliveryQaRecorded:
       return;
     case OrchestrationEventType.DelegationWaitStarted:
     case OrchestrationEventType.DelegationJoined:
@@ -370,6 +376,7 @@ function applyActivityRequested(
 ): void {
   state.status = orchestrationStatusTransitions[OrchestrationEventType.ActivityRequested]!;
   delete state.waitingFor;
+  delete state.deliveryGateBlock;
   state.pendingActivation = {
     ...(payload.notBefore === undefined ? {} : { notBefore: payload.notBefore }),
     activationId: payload.activationId,
@@ -413,6 +420,9 @@ export function immutableWorkflowInstanceView(
       : { delegationAttention: state.delegationAttention }),
     status: state.status,
     ...(state.blockReason === undefined ? {} : { blockReason: state.blockReason }),
+    ...(state.deliveryGateBlock === undefined
+      ? {}
+      : { deliveryGateBlock: state.deliveryGateBlock }),
     currentStage: state.currentStage,
     repeatCounts: state.repeatCounts,
     retryCounts: state.retryCounts,

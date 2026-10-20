@@ -23,6 +23,7 @@ import {
 import type { RunView } from '../../contracts/views.js';
 import { isActiveRunStatus, RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
 import type {
+  RepositoryCloneResolver,
   WorkspaceLock,
   WorkspaceLockProvider,
   WorkspaceProvider,
@@ -32,13 +33,12 @@ import type {
   WorkspaceRecoveryResult,
   WorkspaceRequest,
 } from '../../contracts/workspace.js';
+import { resolveGitSource } from './git-source.js';
 import { prepareWorkspace, type WorkspacePrepareHook } from './prepare-workspace.js';
 
 const exec = promisify(execFile);
 
-export interface RepositoryCloneResolver {
-  cloneLocator(resourceId: string, signal: AbortSignal): Promise<string>;
-}
+export type { RepositoryCloneResolver } from '../../contracts/workspace.js';
 
 export type GitRunner = (
   arguments_: readonly string[],
@@ -76,6 +76,15 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
   async acquire(request: WorkspaceRequest) {
     const { signal } = request;
     signal.throwIfAborted();
+    if (request.requiredSourceRef !== undefined) {
+      const source = await resolveGitSource(this.resolver, {
+        resourceId: request.repositoryResource.resourceId,
+        sourceRef: request.requiredSourceRef,
+        pullRequestBase: request.assignment?.pullRequestBase ?? request.requiredSourceRef,
+      });
+      if (source.sourceRevision !== request.checkoutRevision)
+        throw new Error('Candidate source moved from its exact revision');
+    }
     const locator = await this.resolver.cloneLocator(request.repositoryResource.resourceId, signal);
     signal.throwIfAborted();
     const name = `${request.workItemId}-${request.mode}-${slug(locator)}`;
@@ -681,6 +690,7 @@ function assertAssignment(
   )
     throw new Error('Workspace belongs to a different Repository Resource');
   if (
+    request.mode === WorkspaceMode.Branch &&
     previousMarker?.assignment !== undefined &&
     !isDeepStrictEqual(previousMarker.assignment, request.assignment)
   )

@@ -895,7 +895,16 @@ skip diagnostics remain operational processor state.
 orchestration.workflows.&lt;name&gt;.delegation is optional; omission disables
 agent requests. Its required keys are workflows (nonempty list of configured
 workflow names), maxDepth, maxDescendants, and maxConcurrentRuns (positive
-integers). Optional repositories is a nonempty list of Repository Resource IDs
+integers). Optional completion is `qa-approved` (default: the parent may finish once the
+current candidate has a passing QA verdict) or `merge-required` (never complete on QA alone).
+Optional `qa` is a strict object with `stage` (an existing read-only agent stage) and
+optional `recipe` (nonempty environment/test recipe). QA verdicts require that stage
+and a Run prepared for the exact current candidate. The recipe on the candidate and
+verdict must match this configured value. Configuring `qa` or explicit `completion`
+enforces the final gate on parent completion; absent configuration preserves existing
+direct delegation routes. QA sessions are fresh, and configured workspace preparation
+hooks run once per candidate repository checkout.
+Optional repositories is a nonempty list of Repository Resource IDs
 narrowing inherited assignment authority. A root with no correlated Repository Resource
 defaults to the repository of its provider-observed primary Issue. See [delegated delivery controls](workflows.md#delegated-delivery-controls)
 for submission, recovery and lifecycle semantics.

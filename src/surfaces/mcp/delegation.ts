@@ -3,8 +3,12 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   DelegationAttentionError,
   DelegationConflictError,
+  DeliveryRejectionError,
   delegationAttentionReplySchema,
   delegationSubmissionSchema,
+  deliveryCandidateCommandSchema,
+  deliveryQaCommandSchema,
+  deliverySelectionCommandSchema,
   type DelegationCaller,
   type OrchestrationService,
 } from '../../orchestration/index.js';
@@ -69,6 +73,63 @@ export function registerDelegationTools(
         };
       }
     },
+  );
+  // Rejections carry a typed code so the agent can correct the request instead of retrying.
+  const guarded = async (run: () => Promise<unknown>) => {
+    try {
+      return { content: [{ type: 'text' as const, text: JSON.stringify(await run()) }] };
+    } catch (error) {
+      if (!(error instanceof DeliveryRejectionError)) throw error;
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({ code: error.code, message: error.message }),
+          },
+        ],
+      };
+    }
+  };
+  server.registerTool(
+    'wake_delivery_select',
+    {
+      description:
+        'Record the complete current delivery selection: for every original required output, the qualifying child output that covers it, or an authorized replacement that names the output it replaces. Pass expectedRevision from wake_delegation_inspect (delivery.selectionRevision). Omitting a required output, selecting an unqualified output or replacing a stale choice is rejected.',
+      inputSchema: deliverySelectionCommandSchema,
+    },
+    async (command) =>
+      guarded(async () =>
+        input.orchestration.selectDelivery(await input.caller(), command, input.commandContext()),
+      ),
+  );
+  server.registerTool(
+    'wake_delivery_candidate',
+    {
+      description:
+        'Record the exact combined candidate for the current selection: one repository entry per repository with selected changes, using the selected output tip (a single change or intentional stack) or an assembled commit pushed under refs/wake/delivery/<root>/<candidateId>/. Wake verifies the commit is fetchable from the repository before QA can rely on it.',
+      inputSchema: deliveryCandidateCommandSchema,
+    },
+    async (command) =>
+      guarded(async () =>
+        input.orchestration.recordDeliveryCandidate(
+          await input.caller(),
+          command,
+          input.commandContext(),
+        ),
+      ),
+  );
+  server.registerTool(
+    'wake_delivery_qa',
+    {
+      description:
+        'Record the QA verdict for a recorded candidate. Name the exact repository revisions checked; they must equal the candidate set. Use verdict blocked when the environment or a source is unavailable, fail with findings when defects remain, and pass only after the configured recipe ran.',
+      inputSchema: deliveryQaCommandSchema,
+    },
+    async (command) =>
+      guarded(async () =>
+        input.orchestration.recordDeliveryQa(await input.caller(), command, input.commandContext()),
+      ),
   );
   server.registerTool(
     'wake_delegation_inspect',

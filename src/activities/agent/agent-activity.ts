@@ -498,6 +498,9 @@ function appendWorkspacePrompt(
   prompt: string,
   workspace: ActivityExecutionContext['workspace'],
 ): string {
+  if (workspace?.candidate !== undefined)
+    prompt +=
+      '\n\nExact delivery candidate prepared by Wake:\n' + JSON.stringify(workspace.candidate);
   if (workspace?.repository === undefined) return prompt;
   return (
     prompt +

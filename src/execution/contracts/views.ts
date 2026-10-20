@@ -5,6 +5,7 @@ import type {
   ActivityOutcome,
   ActivityWorkflowInstanceId,
 } from '../../activities/index.js';
+import type { PreparedCandidate } from './candidate.js';
 import type { RunId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
 import type { RepositoryAssignment } from './repository-assignment.js';
@@ -53,6 +54,7 @@ export interface RunView {
     readonly branch?: string | undefined;
     readonly repositoryResourceId?: string | undefined;
     readonly checkoutRevision?: string | undefined;
+    readonly candidate?: PreparedCandidate | undefined;
   };
   readonly lease?: Lease;
   readonly externalExecution?: ExternalExecutionReference;

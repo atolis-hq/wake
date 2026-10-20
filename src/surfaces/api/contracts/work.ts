@@ -21,8 +21,22 @@ export interface WorkItemResponse {
   readonly lastRunOutcome?: string;
 }
 
+export interface DeliveryQaResponse {
+  readonly selectionRevision: number;
+  readonly candidateId?: string;
+  readonly repositories: readonly { readonly resourceId: string; readonly revision: string }[];
+  readonly stale: readonly string[];
+  readonly verdict?: string;
+  readonly effective: boolean;
+  readonly canComplete: boolean;
+  readonly reason?: string;
+  readonly exhausted: boolean;
+  readonly findings: readonly string[];
+}
+
 export interface WorkDetailResponse {
   readonly delegation?: {
+    readonly qa?: DeliveryQaResponse;
     readonly rootWorkItemKey: WorkItemKey;
     readonly parentWorkItemKey?: WorkItemKey;
     readonly children: readonly {

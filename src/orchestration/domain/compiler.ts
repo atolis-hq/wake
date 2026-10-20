@@ -29,6 +29,7 @@ import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabu
 import { defaultApprovalAwait } from './approval-defaults.js';
 import { compileCommands } from './command-compiler.js';
 import { reportUnroutedOutcomes, type WorkflowCompileDiagnostic } from './compile-diagnostics.js';
+import { assertDeliveryQa } from './delivery-workflow-policy.js';
 import { compileResourceTransitions } from './resource-transition-compiler.js';
 import {
   compileTarget,
@@ -57,6 +58,7 @@ export function compileWorkflow(
   const compiledEntry = stageName(entry);
   const declaredWatchIds = new Set((config.watches ?? []).map((watch) => watch.id));
   const stages = compileStages(compiledName, config.stages, activities, declaredWatchIds);
+  assertDeliveryQa(config, stages, activities);
   const commands = compileCommands(config, activities);
   const watches = compileWatches(config, rawStageNames, knownWorkflowNames);
   assertReachable(compiledEntry, stages);

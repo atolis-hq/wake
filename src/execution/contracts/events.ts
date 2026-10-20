@@ -19,6 +19,7 @@ import {
   type ActivityWorkflowInstanceId,
 } from '../../activities/index.js';
 import { brandedStringSchema, offsetIsoTimestampSchema } from '../../kernel/index.js';
+import { preparedCandidateSchema, type PreparedCandidate } from './candidate.js';
 import { runId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
 import { repositoryAssignmentSchema, type RepositoryAssignment } from './repository-assignment.js';
@@ -58,6 +59,7 @@ export const runStartedPayloadSchema = z
         branch: z.string().min(1).optional(),
         repositoryResourceId: z.string().min(1).optional(),
         checkoutRevision: z.string().min(1).optional(),
+        candidate: preparedCandidateSchema.optional(),
       })
       .strict()
       .optional(),
@@ -177,6 +179,7 @@ export interface RunStartedPayload {
         readonly branch?: string | undefined;
         readonly repositoryResourceId?: string | undefined;
         readonly checkoutRevision?: string | undefined;
+        readonly candidate?: PreparedCandidate | undefined;
       }
     | undefined;
 }

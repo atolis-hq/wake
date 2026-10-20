@@ -86,7 +86,62 @@ const delegationReservation = {
   ],
 } as const;
 
+const deliverySamples = [
+  eventEnvelope(
+    OrchestrationEventType.DeliverySelectionRevised,
+    {
+      requestId: 'select-1',
+      revision: 1,
+      entries: [
+        {
+          cohortId: 'cohort-1',
+          assignmentId: 'investigate',
+          childWorkItemId: workId('2'),
+          output: delegationResult.outputs[0],
+        },
+      ],
+    },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DeliveryCandidateRecorded,
+    {
+      candidateId: 'candidate-1',
+      selectionRevision: 1,
+      repositories: [
+        {
+          resourceId: 'repository-1',
+          revision: 'a'.repeat(40),
+          pullRequestBase: 'main',
+          source: {
+            kind: 'retained-ref',
+            ref: 'refs/wake/delivery/work-1/candidate-1/repository-1',
+          },
+          contributions: [{ childWorkItemId: workId('2'), outputName: 'findings' }],
+        },
+      ],
+      context: [],
+      criteria: ['Findings published'],
+    },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DeliveryQaRecorded,
+    {
+      qaId: 'qa-1',
+      candidateId: 'candidate-1',
+      verdict: 'fail',
+      revisions: [{ resourceId: 'repository-1', revision: 'a'.repeat(40) }],
+      environment: { available: true },
+      findings: ['Contract mismatch'],
+      exhausted: true,
+    },
+    workflow,
+  ),
+];
+
 const delegationSamples = [
+  ...deliverySamples,
   eventEnvelope(
     OrchestrationEventType.DelegationChildBlocked,
     { childWorkItemId: workId('2'), reason: 'Upstream workflow failed' },

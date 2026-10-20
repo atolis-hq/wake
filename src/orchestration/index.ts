@@ -77,6 +77,22 @@ export {
 export type { DelegationAuthority } from './contracts/delegation-ports.js';
 
 export {
+  DeliveryRejectionError,
+  deliveryCandidateCommandSchema,
+  deliveryQaCommandSchema,
+  deliverySelectionCommandSchema,
+} from './contracts/delivery.js';
+
+export type {
+  DeliveryCandidate,
+  DeliveryCandidateCommand,
+  DeliveryQa,
+  DeliveryQaCommand,
+  DeliverySelection,
+  DeliverySelectionCommand,
+} from './contracts/delivery.js';
+
+export {
   delegationAttentionReplySchema,
   delegationSubmissionSchema,
 } from './contracts/delegation.js';

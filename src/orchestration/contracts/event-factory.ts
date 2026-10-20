@@ -32,6 +32,12 @@ export function createOrchestrationEventData(
       return createEventData(input);
     case OrchestrationEventType.DelegationAttentionResolved:
       return createEventData(input);
+    case OrchestrationEventType.DeliverySelectionRevised:
+      return createEventData(input);
+    case OrchestrationEventType.DeliveryCandidateRecorded:
+      return createEventData(input);
+    case OrchestrationEventType.DeliveryQaRecorded:
+      return createEventData(input);
     case OrchestrationEventType.DelegationReserved:
       return createEventData(input);
     case OrchestrationEventType.DelegationRegistered:

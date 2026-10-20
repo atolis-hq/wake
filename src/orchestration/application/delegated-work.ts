@@ -28,6 +28,7 @@ import {
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import { nextOrdinal } from '../domain/decision-events.js';
+import { assertCriteriaPreserving, originalOf } from '../domain/delivery-replacement.js';
 import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import {
@@ -53,6 +54,7 @@ import {
   type ReservationParent,
 } from './delegation-reservation.js';
 import { resolvePrerequisites } from './delegation-wait-graph.js';
+import { readDeliveryFacts } from './delivery-facts-reader.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { PrerequisiteReadiness } from './prerequisite-readiness.js';
 import type { StartWorkflow } from './start-workflow.js';
@@ -215,6 +217,7 @@ export class DelegatedWork {
       return prior;
     }
     const pinned = await this.pinAssignments(parent, assignments);
+    await this.assertPinnedReplacements(parent, pinned);
     let reservation = buildReservation(identity.parent, caller, cohortId, pinned, limits);
     for (let attempt = 0; attempt < 8; attempt++) {
       const { events: rootFacts, sequence } = await this.repository.history(identity.root);
@@ -269,6 +272,25 @@ export class DelegatedWork {
       }
     }
     throw new Error('Delegation reservation contention exceeded retry limit');
+  }
+
+  private async assertPinnedReplacements(
+    parent: WorkflowInstanceView,
+    pinned: readonly DelegatedAssignment[],
+  ) {
+    const replacementFacts = await readDeliveryFacts(
+      this.repository,
+      parent,
+      (await this.repository.history(parent.workflowInstanceId)).events,
+    );
+    for (const assignment of pinned) {
+      if (assignment.replaces !== undefined)
+        assertCriteriaPreserving(
+          replacementFacts,
+          originalOf(replacementFacts, assignment.replaces),
+          assignment,
+        );
+    }
   }
 
   private async pinAssignments(
