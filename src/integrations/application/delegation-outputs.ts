@@ -84,24 +84,26 @@ export function createDelegationOutputs(input: OutputDependencies): DelegationAr
   };
 }
 
+/** Latest run's claim for a name; identical repeats collapse, conflicting repeats yield no claim. */
 function reportedChange(runs: readonly RunView[], name: string) {
-  return runs
-    .flatMap((run) => {
-      const data = reportsSchema.safeParse(run.outcome?.data);
-      if (
-        data.success &&
-        data.data.reportedArtifacts.filter((entry) => entry.name === name).length > 1
-      )
-        throw new Error('Duplicate named change report');
-      return data.success
-        ? data.data.reportedArtifacts
-            .filter(
-              (entry) => entry.name === name && entry.kind === BuiltInResourceKind.PullRequest,
-            )
-            .map((report) => ({ run, report }))
-        : [];
-    })
-    .at(-1);
+  const claims = runs.flatMap((run) => {
+    const data = reportsSchema.safeParse(run.outcome?.data);
+    const reports = data.success
+      ? data.data.reportedArtifacts.filter(
+          (entry) => entry.name === name && entry.kind === BuiltInResourceKind.PullRequest,
+        )
+      : [];
+    return reports.length === 0 ? [] : [{ run, reports }];
+  });
+  const latest = claims.at(-1);
+  const report = latest?.reports[0];
+  if (latest === undefined || report === undefined) return undefined;
+  const conflicting = latest.reports.some(
+    (entry) =>
+      entry.externalKey.adapter !== report.externalKey.adapter ||
+      entry.externalKey.key !== report.externalKey.key,
+  );
+  return conflicting ? undefined : { run: latest.run, report };
 }
 
 async function verifiedChange(

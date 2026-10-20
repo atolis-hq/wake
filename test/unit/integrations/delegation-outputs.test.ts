@@ -267,15 +267,24 @@ describe('independent named change outputs (DC-17, DC-29)', () => {
     expect(await f.service.qualifyingOutputs(child as never, f.outputs as never)).not.toBeNull();
   });
 
-  it('fails closed on duplicate names rather than choosing a reported PR', async () => {
+  it('collapses identical duplicate reports and fails closed, without throwing, on conflicting ones', async () => {
     const f = fixture();
-    f.runs[0]!.outcome.data.reportedArtifacts.push({
-      ...f.runs[0]!.outcome.data.reportedArtifacts[0]!,
-      externalKey: { adapter: 'fake', key: 'other' },
+    const reports = f.runs[0]!.outcome.data.reportedArtifacts;
+    reports.push({ ...reports[0]! });
+    expect(await f.service.qualifyingOutputs(child as never, f.outputs as never)).not.toBeNull();
+    reports.push({ ...reports[0]!, externalKey: { adapter: 'fake', key: 'other' } });
+    expect(await f.service.qualifyingOutputs(child as never, f.outputs as never)).toBeNull();
+    expect(
+      await f.service.prerequisiteOutput!(child as never, f.outputs[0] as never, 'pushed-change'),
+    ).toBeNull();
+    // A later corrected report recovers; the earlier conflict does not poison the child forever.
+    f.runs.push({
+      ...f.runs[0]!,
+      runId: 'run-a2',
+      activationId: 'a2',
+      outcome: { kind: 'done', data: { reportedArtifacts: reports.slice(0, 2) } },
     });
-    await expect(f.service.qualifyingOutputs(child as never, f.outputs as never)).rejects.toThrow(
-      'Duplicate named change report',
-    );
+    expect(await f.service.qualifyingOutputs(child as never, f.outputs as never)).not.toBeNull();
   });
 });
 

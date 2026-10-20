@@ -6,6 +6,7 @@ import type {
   DeliveryQa,
   DeliverySelection,
 } from '../../../src/orchestration/contracts/delivery.js';
+import { staleEntries } from '../../../src/orchestration/domain/delivery-selection.js';
 import { OrchestrationEventType } from '../../../src/orchestration/index.js';
 import { resId, workId } from '../../support/identities.js';
 
@@ -130,4 +131,72 @@ it('requires a named parent target for two PRs from one child and preserves its 
       output: { childWorkItemId: child, outputName: 'missing' },
     } as never),
   ).toMatchObject({ kind: 'denied' });
+});
+
+it('stales only the consumers of the replaced output of a multi-output child (DC-17)', () => {
+  const [a, a2, b, c] = ['owner', 'owner-fix', 'api-consumer', 'web-consumer'].map(workId);
+  const change = (owner: typeof a, name: string, revision: string) => ({
+    name,
+    reference: {
+      workItemId: owner,
+      resourceId: resId(name),
+      repositoryResourceId: 'repo',
+      revision: revision.repeat(40),
+      branch: name,
+      pullRequestBase: 'main',
+      runId: 'run',
+    },
+  });
+  const api = change(a!, 'api', '1');
+  const web = change(a!, 'web', '2');
+  const fixedApi = change(a2!, 'api', '3');
+  const entry = (
+    assignmentId: string,
+    owner: typeof a,
+    output: typeof api,
+    replaces?: { childWorkItemId: typeof a; outputName: string },
+  ) => ({
+    cohortId: 'cohort',
+    assignmentId,
+    childWorkItemId: owner!,
+    output,
+    ...(replaces === undefined ? {} : { replaces }),
+  });
+  const consumer = (assignmentId: string, owner: typeof a) =>
+    entry(assignmentId, owner, change(owner!, 'out', '4'));
+  const before = {
+    requestId: 'one',
+    revision: 1,
+    entries: [
+      entry('api', a, api),
+      entry('web', a, web),
+      consumer('api-consumer', b),
+      consumer('web-consumer', c),
+    ],
+  };
+  const after = {
+    requestId: 'two',
+    revision: 2,
+    entries: [
+      entry('api', a2, fixedApi, { childWorkItemId: a, outputName: 'api' }),
+      ...before.entries.slice(1),
+    ],
+  };
+  const facts = {
+    reservations: [],
+    results: [
+      { childWorkItemId: a, outputs: [api, web] },
+      { childWorkItemId: a2, outputs: [fixedApi] },
+    ],
+    consumed: new Map([
+      [b, [api]],
+      [c, [web]],
+    ]),
+    selections: [before, after],
+    candidates: [],
+    qa: [],
+    maintenance: [],
+  };
+  // The sibling web output and its consumer stay effective; only the api consumer is stale.
+  expect([...staleEntries(facts as never)]).toEqual(['cohort/api-consumer/out']);
 });

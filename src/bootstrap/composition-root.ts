@@ -66,7 +66,6 @@ import {
 } from '../integrations/index.js';
 import { SystemClock, UlidIdGenerator, type Clock } from '../kernel/index.js';
 import {
-  DelegationOutputKind,
   compileWorkflow,
   createAgentActivityClassifier,
   createOrchestrationService,
@@ -357,7 +356,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
       sessions: artifactMcpSessions,
       wakeRoot: paths.wakeRoot,
       now: () => clock.now().toISOString(),
-      nextId: () => ids.next(DelegationOutputKind.Artifact),
+      nextId: () => ids.next('artifact'),
       sharedContext: artifactTriggerContext.provision,
       operatorInstructions,
       journal,

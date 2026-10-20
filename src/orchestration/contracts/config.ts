@@ -4,6 +4,7 @@ import {
   ConversationSurfaceCapability,
   DelegationOutputKind,
   DeliveryCompletion,
+  WorkflowArtifactOutputKind,
   WorkflowStatus,
 } from './vocabulary.js';
 
@@ -210,7 +211,7 @@ export type DelegationPolicy = z.infer<typeof delegationPolicySchema>;
 
 export const workflowOutputSchema = z
   .object({
-    kind: z.enum(DelegationOutputKind),
+    kind: z.enum([WorkflowArtifactOutputKind, DelegationOutputKind.Change]),
     required: z.boolean().optional(),
   })
   .strict();

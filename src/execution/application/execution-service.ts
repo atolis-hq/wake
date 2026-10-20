@@ -933,7 +933,7 @@ async function acquireAttemptWorkspace(
         runId: currentRunId,
         context,
         mode: activation.execution.workspace,
-        runs: await runtime.repository.list(),
+        runs,
         signal: signal ?? new AbortController().signal,
       },
       runtime.dependencies.workspaces,
@@ -944,7 +944,7 @@ async function acquireAttemptWorkspace(
         runId: currentRunId,
         resources: context.resources,
         maintenance: context.maintenance,
-        runs: await runtime.repository.list(),
+        runs,
         signal: signal ?? new AbortController().signal,
       },
       runtime.dependencies.workspaces,
@@ -963,7 +963,7 @@ async function acquireAttemptWorkspace(
   const previous =
     context.repositoryAssignment === undefined
       ? undefined
-      : (await runtime.repository.list())
+      : runs
           .filter(
             (run) =>
               run.orchestrationGroupId === context.orchestrationGroupId &&

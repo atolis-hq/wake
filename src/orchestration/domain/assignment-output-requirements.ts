@@ -4,7 +4,7 @@ import type {
   DelegationReservation,
   DelegationResult,
 } from '../contracts/delegation.js';
-import { DelegationOutputKind } from '../contracts/vocabulary.js';
+import { WorkflowArtifactOutputKind } from '../contracts/vocabulary.js';
 
 /** An assignment may add obligations, but cannot remove the workflow's declared obligations. */
 export function assertConfiguredOutputs(
@@ -19,7 +19,7 @@ export function assertConfiguredOutputs(
       continue;
     }
     if (
-      ('kind' in output ? output.kind : DelegationOutputKind.Artifact) !== requirement.kind ||
+      ('kind' in output ? output.kind : WorkflowArtifactOutputKind) !== requirement.kind ||
       (requirement.required !== false && output.required === false)
     )
       throw new Error('Assignment weakens configured output: ' + name);

@@ -28,7 +28,6 @@ import {
   type PromptTemplate,
 } from '../execution/index.js';
 import { SystemClock, UlidIdGenerator } from '../kernel/index.js';
-import { DelegationOutputKind } from '../orchestration/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
   DockerProcessError,
@@ -260,7 +259,7 @@ export function createSurfaceCliApplications(
           artifactMcpSessions,
           sessionPath,
           token,
-          { now, nextId: () => artifactMcpIds.next(DelegationOutputKind.Artifact) },
+          { now, nextId: () => artifactMcpIds.next('artifact') },
         );
         await serveMcpOverStdio(server);
       },
