@@ -37,8 +37,24 @@ it('composes the registered report and independent summary, validates identifier
         { id: 'run-breakdowns-by-dimension' },
         { id: 'token-and-cost-usage' },
         { id: 'work-item-throughput' },
+        { id: 'delivery-activity' },
         { id: 'run-duration' },
       ],
+    },
+  });
+  // DC-25: root deliveries, accepted child results and corrective activations are separate.
+  expect(
+    await dispatcher.dispatch(
+      'GET',
+      '/api/v1/observability/reports?window=1d&report=delivery-activity',
+      undefined,
+    ),
+  ).toMatchObject({
+    status: 200,
+    body: {
+      data: {
+        totals: { 'root-deliveries': 0, 'accepted-child-results': 0, 'corrective-activations': 0 },
+      },
     },
   });
   expect(
@@ -52,7 +68,15 @@ it('composes the registered report and independent summary, validates identifier
     await dispatcher.dispatch('GET', '/api/v1/observability/summary?window=1d', undefined),
   ).toMatchObject({
     status: 200,
-    body: { data: { runs: 0, workItemsDone: 0, medianRunDurationMs: null } },
+    body: {
+      data: {
+        runs: 0,
+        workItemsDone: 0,
+        acceptedChildResults: 0,
+        correctiveActivations: 0,
+        medianRunDurationMs: null,
+      },
+    },
   });
   for (const query of [
     'window=2d',

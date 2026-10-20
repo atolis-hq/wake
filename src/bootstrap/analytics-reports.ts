@@ -7,7 +7,13 @@ import {
   queryRunAnalytics,
 } from '../execution/index.js';
 import { reportWindow, type ReportDefinition, type ReportWindowId } from '../kernel/index.js';
-import { createWorkThroughputReport, queryWorkCompletionSummary } from '../orchestration/index.js';
+import {
+  DeliveryActivityMeasure,
+  createDeliveryActivityReport,
+  createWorkThroughputReport,
+  queryDeliveryActivity,
+  queryWorkCompletionSummary,
+} from '../orchestration/index.js';
 import type { ResourceRepositoryIdentityResolver } from '../resources/index.js';
 import { createRunRepositoryLookup } from './run-repository-lookup.js';
 import { sampledMeta } from './surface-api-metadata.js';
@@ -22,6 +28,7 @@ export function createAnalyticsReports(
     createRunBreakdownReport(journal, createRunRepositoryLookup(journal, resolveIdentity)),
     createRunUsageReport(journal),
     createWorkThroughputReport(journal),
+    createDeliveryActivityReport(journal),
     createRunDurationReport(journal),
   ];
   return {
@@ -44,12 +51,20 @@ export function createAnalyticsReports(
         window: reportWindow(windowId, collectedAt),
         ...(signal === undefined ? {} : { signal }),
       };
-      const [runs, work] = await Promise.all([
+      const [runs, work, delivery] = await Promise.all([
         queryRunAnalytics(journal, query),
         queryWorkCompletionSummary(journal, query),
+        queryDeliveryActivity(journal, query),
       ]);
       return {
-        data: { window: query.window, ...runs.summary, ...work },
+        data: {
+          window: query.window,
+          ...runs.summary,
+          ...work,
+          acceptedChildResults: delivery.totals[DeliveryActivityMeasure.AcceptedChildResults] ?? 0,
+          correctiveActivations:
+            delivery.totals[DeliveryActivityMeasure.CorrectiveActivations] ?? 0,
+        },
         meta: sampledMeta(collectedAt),
       };
     },

@@ -358,9 +358,15 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                     ))}
                   </ul>
                   <ul>
-                    {query.data.data.delegation.qa.stale.map((entry) => (
-                      <li key={entry}>Stale: {entry}</li>
-                    ))}
+                    {(query.data.data.delegation.qa.staleOutputs ?? []).length > 0
+                      ? query.data.data.delegation.qa.staleOutputs!.map((entry) => (
+                          <li key={entry.workItemKey + '/' + entry.outputName}>
+                            Stale: {entry.outputName} ({entry.reason})
+                          </li>
+                        ))
+                      : query.data.data.delegation.qa.stale.map((entry) => (
+                          <li key={entry}>Stale: {entry}</li>
+                        ))}
                   </ul>
                   <ul>
                     {query.data.data.delegation.qa.findings.map((entry) => (
@@ -403,6 +409,29 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                     {child.workflowName}
                     {' · '}
                     {child.status}
+                    {child.currentStage && <> · stage {child.currentStage}</>}
+                    {child.replaces && <> · corrects {child.replaces.assignmentId}</>}
+                    {child.repository && (
+                      <>
+                        {' · '}
+                        {child.repository.resourceId} → {child.repository.pullRequestBase}
+                      </>
+                    )}
+                    {child.prerequisites && child.prerequisites.length > 0 && (
+                      <> · waits for {child.prerequisites.length} prerequisite(s)</>
+                    )}
+                    {child.outputs && (
+                      <ul>
+                        {child.outputs.map((output) => (
+                          <li key={output.name}>
+                            {output.name} ({output.kind},{' '}
+                            {output.required ? 'required' : 'optional'})
+                            {output.selected && ' · selected'}
+                            {output.stale && ' · stale'}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {child.blockReason && <p>{child.blockReason}</p>}
                     {child.resources.map((resource) => (
                       <span key={resource.resourceId}>

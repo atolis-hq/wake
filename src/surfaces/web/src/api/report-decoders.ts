@@ -168,6 +168,8 @@ export const decodeSummary: Decoder<AnalyticsSummaryResponse> = (value, path = '
     totalCostUsd: metric('totalCostUsd'),
     medianRunDurationMs: duration('medianRunDurationMs'),
     workItemsDone: metric('workItemsDone'),
+    acceptedChildResults: metric('acceptedChildResults'),
+    correctiveActivations: metric('correctiveActivations'),
     medianEndToEndDurationMs: duration('medianEndToEndDurationMs'),
   };
 };

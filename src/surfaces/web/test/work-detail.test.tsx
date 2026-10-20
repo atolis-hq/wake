@@ -1502,7 +1502,7 @@ it.each(['/approved', '/accepted', '/changes Please revise.'])(
   },
 );
 
-it('shows delivery ancestry, child status, repository links and blockers', async () => {
+it('shows delivery ancestry, child status, repository links and blockers (DC-23)', async () => {
   const client = detailClient(null, undefined, [], undefined, 'DONE', false, [], [], false, {
     rootWorkItemKey: 'wk_root',
     parentWorkItemKey: 'wk_parent',
@@ -1513,7 +1513,12 @@ it('shows delivery ancestry, child status, repository links and blockers', async
         objective: 'Investigate child',
         workflowName: 'investigation',
         status: 'blocked',
+        currentStage: 'implement',
         cohortId: 'cohort',
+        repository: { resourceId: 'repository-1', pullRequestBase: 'release' },
+        prerequisites: ['wk_upstream'],
+        replaces: { cohortId: 'cohort', assignmentId: 'original' },
+        outputs: [{ name: 'change', kind: 'change', required: true, selected: true, stale: true }],
         blockReason: 'Upstream branch moved; agent assessment required',
         resources: [
           {
@@ -1553,6 +1558,13 @@ it('shows delivery ancestry, child status, repository links and blockers', async
       '/work/wk_parent',
     );
     expect(screen.getByText('Upstream branch moved; agent assessment required')).toBeTruthy();
+    // DC-23: workflow position, repository base, prerequisites, correction and evidence state.
+    expect(screen.getByText(/stage implement/)).toBeTruthy();
+    expect(screen.getByText(/repository-1 → release/)).toBeTruthy();
+    expect(screen.getByText(/waits for 1 prerequisite/)).toBeTruthy();
+    expect(screen.getByText(/corrects original/)).toBeTruthy();
+    expect(screen.getByText(/change \(change, required\)/)).toBeTruthy();
+    expect(screen.getByText(/selected/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Wake repository' }).getAttribute('href')).toBe(
       'https://github.com/atolis-hq/wake',
     );

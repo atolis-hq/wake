@@ -15,6 +15,8 @@ interface CompletionFacts {
   readonly titles: Map<string, string>;
   readonly instances: Map<string, string>;
   readonly completed: Map<string, number>;
+  /** Registered delegated descendants: their completion is a child result, not a delivered root. */
+  readonly delegated: Set<string>;
 }
 
 export async function queryWorkCompletionSummary(journal: EventJournal, query: ReportQuery) {
@@ -42,12 +44,16 @@ function acceptFact(facts: CompletionFacts, event: EventEnvelope): void {
   if (work?.event.eventType === WorkEventType.ItemCreated) {
     facts.created.set(work.stream.id, Date.parse(work.event.occurredAt));
     facts.titles.set(work.stream.id, work.event.payload.objective);
+    if (work.event.payload.delegation !== undefined) facts.delegated.add(work.stream.id);
   }
   const workflow = selectWorkflowOrchestrationEvent(event);
   if (workflow === null) return;
   switch (workflow.event.eventType) {
     case OrchestrationEventType.InstanceStarted:
-      if (!('parentWorkflowInstanceId' in workflow.event.payload))
+      if (
+        !('parentWorkflowInstanceId' in workflow.event.payload) &&
+        !facts.delegated.has(workflow.event.payload.workItemId)
+      )
         facts.instances.set(workflow.stream.id, workflow.event.payload.workItemId);
       return;
     case OrchestrationEventType.InstanceCompleted: {
@@ -61,12 +67,13 @@ function acceptFact(facts: CompletionFacts, event: EventEnvelope): void {
   }
 }
 
-async function readCompletionFacts(journal: EventJournal, query: ReportQuery) {
+export async function readCompletionFacts(journal: EventJournal, query: ReportQuery) {
   const facts: CompletionFacts = {
     created: new Map(),
     titles: new Map(),
     instances: new Map(),
     completed: new Map(),
+    delegated: new Set(),
   };
   for await (const event of scanJournal(journal, query.signal)) acceptFact(facts, event);
   return facts;
