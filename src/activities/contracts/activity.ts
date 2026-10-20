@@ -133,6 +133,14 @@ export interface ActivityExecutionContext {
   /** Isolated workspace leased by Execution for this invocation, when requested. */
   readonly workspace?: {
     readonly path: string;
+    readonly changeOutputs?:
+      | readonly {
+          readonly name: string;
+          readonly path: string;
+          readonly branch: string;
+          readonly revision: string;
+        }[]
+      | undefined;
     readonly mode: ActivityWorkspaceMode;
     readonly checkoutRevision?: string | undefined;
     readonly candidate?:

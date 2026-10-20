@@ -1,6 +1,7 @@
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { PreparedCandidate } from './candidate.js';
+import type { ChangeOutputWorkspace } from './change-output.js';
 import type { RunId } from './identifiers.js';
 import type { PreparedMaintenance } from './maintenance.js';
 import type { RepositoryAssignment } from './repository-assignment.js';
@@ -8,6 +9,7 @@ import type { RunView } from './views.js';
 import type { WorkspaceMode } from './vocabulary.js';
 
 export interface WorkspaceRequest {
+  readonly outputName?: string;
   readonly runId: RunId;
   readonly signal: AbortSignal;
   readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
@@ -20,6 +22,8 @@ export interface WorkspaceRequest {
 }
 
 export interface WorkspaceLease {
+  readonly changeOutputs?: readonly ChangeOutputWorkspace[];
+  readChangeOutputs?(): Promise<readonly ChangeOutputWorkspace[]>;
   readonly candidate?: PreparedCandidate;
   readonly maintenance?: PreparedMaintenance;
   readonly workspaceId: string;

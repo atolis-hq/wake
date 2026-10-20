@@ -1,10 +1,14 @@
 import type { WorkItemId } from '../../work/index.js';
 import type { DelegationAuthority } from '../contracts/delegation-ports.js';
+import {
+  assertConfiguredOutputs,
+  hasRequiredOutputs,
+} from '../domain/assignment-output-requirements.js';
 /* eslint-disable max-lines */
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
 import type { ActivityName } from '../../activities/index.js';
 import { activationId } from '../../activities/index.js';
-import { WorkspaceMode } from '../../execution/index.js';
+import { repositoryAssignmentSchema, WorkspaceMode } from '../../execution/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { DelegationArtifacts, DelegationRepositories } from '../contracts/delegation-ports.js';
 import type {
@@ -166,6 +170,26 @@ export class DelegatedWork {
     );
   }
 
+  async changeOutputAssignments(workItemId: string) {
+    const child = (await this.ledger.reservations())
+      .flatMap((entry) => entry.children)
+      .find((entry) => entry.workItemId === workItemId);
+    const repository = await this.repositoryFor(workItemId);
+    return child?.outputs.flatMap((output) =>
+      'kind' in output
+        ? [
+            {
+              name: output.name,
+              isolated:
+                child.outputs.filter((entry) => 'kind' in entry).length > 1 ||
+                output.repository !== undefined,
+              repository: repositoryAssignmentSchema.parse(output.repository ?? repository),
+            },
+          ]
+        : [],
+    );
+  }
+
   async repositoryFor(workItemId: string) {
     const inputs = await this.prerequisites.inputs(workItemId);
     if (inputs?.repository !== undefined) return inputs.repository;
@@ -305,6 +329,17 @@ export class DelegatedWork {
         return {
           ...assignment,
           repository: await this.repositories.resolve(parent, assignment.repository),
+          outputs: await Promise.all(
+            assignment.outputs.map(async (output) => {
+              if (!('kind' in output) || output.repository === undefined) return output;
+              if (output.repository.resourceId !== assignment.repository!.resourceId)
+                throw new Error('Change outputs must use the assigned repository');
+              return {
+                ...output,
+                repository: await this.repositories!.resolve(parent, output.repository),
+              };
+            }),
+          ),
         };
       }),
     );
@@ -443,6 +478,7 @@ export class DelegatedWork {
     if (current.fingerprint !== child.workflowFingerprint)
       throw new Error('Delegation workflow fingerprint must match current configuration');
     const definition = current.definition;
+    assertConfiguredOutputs(definition.outputs, child.outputs);
     if (
       child.repository === undefined &&
       Object.values(definition.stages).some(
@@ -809,15 +845,7 @@ export class DelegatedWork {
       await this.missingOutputs(root, reservation, child, context);
       return;
     }
-    const satisfied =
-      outputs.length === child.outputs.length &&
-      child.outputs.every(
-        (required) =>
-          outputs.filter(
-            (output) =>
-              output.name === required.name && output.reference.workItemId === child.workItemId,
-          ).length === 1,
-      );
+    const satisfied = hasRequiredOutputs(child, outputs);
     if (!satisfied) {
       await this.failChild(reservation, child, 'Invalid qualifying output contract', context);
       return;

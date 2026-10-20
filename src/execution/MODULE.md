@@ -25,6 +25,11 @@ advance to a later authorized candidate while writable assignment identity stays
 Run start records the candidate and exact prepared repository paths/revisions, and QA
 starts a fresh session with the configured recipe, criteria and contributing references.
 
+Multi-output delegated Runs lease separate branches for each named change. Started and
+successful Run facts retain each output workspace, repository pin and observed HEAD.
+Review checkouts follow each branch independently, and recovery protects every sublease.
+Maintenance keys include the output name so one child can retain several PR branches.
+
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration

@@ -111,7 +111,7 @@ async function executeApproval(
   const parentTarget = await resolveParentTarget(
     parentActions,
     invocation,
-    invocation.input.scope !== undefined,
+    invocation.input.scope,
     ParentActionKind.Approve,
   );
   if (parentTarget.kind === 'fully-integrated')

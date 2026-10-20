@@ -25,6 +25,7 @@ export interface ArtifactVerificationUnresolvedPayload {
   readonly workflowInstanceId: ReturnType<typeof workflowInstanceId>;
   readonly activationId: ReturnType<typeof activationId>;
   readonly artifact: {
+    readonly name?: string | undefined;
     readonly kind: ResourceKind;
     readonly externalKey: { readonly adapter: AdapterId; readonly key: string };
   };
@@ -51,6 +52,7 @@ const schema: z.ZodType<ArtifactEvent> = eventEnvelopeSchema
           activationId: brandedStringSchema(activationId),
           artifact: z
             .object({
+              name: z.string().min(1).optional(),
               kind: brandedStringSchema(resourceKind),
               externalKey: z
                 .object({ adapter: brandedStringSchema(adapterId), key: z.string().min(1) })

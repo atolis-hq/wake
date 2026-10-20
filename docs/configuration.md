@@ -908,6 +908,14 @@ Optional `maintenance` is a strict object with `stage` naming an existing agent 
 with workspace `none`, distinct from QA, in a `merge-required` workflow. Wake prepares
 and leases the selected child branches for that stage. Scoped `pr.approve` and `pr.merge`
 inputs accept `scope: { delivery: next }`; route `integrated` when all targets are merged.
+When one child contributes several selected changes, scope.output must name
+outputName and, when that name is not unique across the selection, childWorkItemId;
+the default is ambiguous.
+A workflow may declare outputs as a map of output names to `{ kind: artifact | change,
+required: true | false }` (required defaults true). Delegation assignments may strengthen
+these requirements but cannot omit or weaken required declarations. Named change outputs
+may supply a repository source/base override within the assignment repository; each source
+is resolved and pinned before reservation, and each output receives its own branch lease.
 See [governed child integration](workflows.md#governed-child-integration-and-stack-maintenance).
 The fake provider's optional `eventsFile` supplies a JSON array of current PR evidence for
 artifact verification, using the same schema as `events`; it is re-read for each verification.

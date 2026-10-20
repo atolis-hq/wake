@@ -34,18 +34,21 @@ export function buildReservation(
     throw new Error('Duplicate assignment identity');
   for (const assignment of parsed) {
     if (
-      assignment.outputs.filter(
-        (output) => 'kind' in output && output.kind === DelegationOutputKind.Change,
-      ).length > 1
-    )
-      throw new Error('One change output per child is currently supported');
-    if (
       assignment.outputs.some(
         (output) => 'kind' in output && output.kind === DelegationOutputKind.Change,
       ) &&
       assignment.repository === undefined
     )
       throw new Error('Change outputs require an explicit repository assignment');
+    if (
+      assignment.outputs.some(
+        (output) =>
+          'kind' in output &&
+          output.repository !== undefined &&
+          output.repository.resourceId !== assignment.repository?.resourceId,
+      )
+    )
+      throw new Error('Change outputs must use the assigned repository');
     if (new Set(assignment.outputs.map((output) => output.name)).size !== assignment.outputs.length)
       throw new Error('Duplicate named output');
   }
@@ -91,6 +94,19 @@ export function matchesAssignments(
   assignments: readonly DelegatedAssignment[],
 ): boolean {
   if (
+    assignments.some((assignment) =>
+      assignment.outputs.some((output) => {
+        if (!('kind' in output) || output.repository?.sourceRevision === undefined) return false;
+        const recorded = reservation.children
+          .find((child) => child.assignmentId === assignment.assignmentId)
+          ?.outputs.find((entry) => entry.name === output.name);
+        return (
+          recorded === undefined ||
+          !('kind' in recorded) ||
+          recorded.repository?.sourceRevision !== output.repository.sourceRevision
+        );
+      }),
+    ) ||
     assignments.some(
       (assignment) =>
         assignment.repository?.sourceRevision !== undefined &&
@@ -109,6 +125,22 @@ export function matchesAssignments(
         ...assignment
       }) => ({
         ...assignment,
+        outputs: assignment.outputs.map((output) => {
+          if (!('kind' in output) || output.repository === undefined) return output;
+          const requested = assignments
+            .find((entry) => entry.assignmentId === assignment.assignmentId)
+            ?.outputs.find((entry) => entry.name === output.name);
+          return {
+            ...output,
+            repository: {
+              ...output.repository,
+              sourceRevision:
+                requested !== undefined && 'kind' in requested
+                  ? requested.repository?.sourceRevision
+                  : undefined,
+            },
+          };
+        }),
         ...(assignment.repository === undefined
           ? {}
           : {

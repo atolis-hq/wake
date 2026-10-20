@@ -344,3 +344,25 @@ Structured ticket context (JSON):
     expect(requests).toEqual([expect.objectContaining({ model: 'activity-model' })]);
   });
 });
+
+it('retains distinct output names when normalizing several PR URLs', () => {
+  const result = translateAgentResult(
+    'Published two outputs.\n```wake-artifacts\n' +
+      JSON.stringify({
+        artifacts: [
+          { name: 'api', kind: 'pr', url: 'https://github.com/org/repo/pull/1' },
+          { name: 'web', kind: 'pr', url: 'https://github.com/org/repo/pull/2' },
+        ],
+      }) +
+      '\n```\n[[STATUS: DONE]]',
+  );
+  expect(result).toMatchObject({
+    kind: 'done',
+    data: {
+      reportedArtifacts: [
+        { name: 'api', externalKey: { adapter: 'github', key: 'org/repo#1' } },
+        { name: 'web', externalKey: { adapter: 'github', key: 'org/repo#2' } },
+      ],
+    },
+  });
+});

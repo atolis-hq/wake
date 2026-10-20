@@ -44,9 +44,10 @@ export function reviseSelection(
       `Selection is at revision ${revision}, not ${command.expectedRevision}; inspect and retry`,
     );
   const required = requirements(facts.reservations);
+  const available = requirements(facts.reservations, true);
   const seen = new Set<string>();
   const entries = command.entries.map((entry) => {
-    const requirement = required.find(
+    const requirement = available.find(
       (candidate) =>
         candidate.cohortId === entry.cohortId &&
         candidate.assignmentId === entry.assignmentId &&

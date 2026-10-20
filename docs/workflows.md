@@ -764,6 +764,26 @@ named shared context or operator instructions. Work detail shows delivery
 parent/root links, child workflows, status, resources and blockers; existing
 freeze controls stop dispatch for the selected subtree.
 
+### Named child outputs
+
+An assignment may mix artifact outputs (name and path) with several change outputs
+(name and kind: change). Every output is required unless required: false is explicit.
+A workflow may declare an outputs map keyed by name, with kind: artifact or change
+and optional required (default true). Assignments must include each configured required
+output with the same kind, and may strengthen optional requirements.
+
+For multiple change outputs, Wake leases a separate branch workspace per name and
+includes every path, branch and source revision in the agent prompt. An output may
+supply repository with resourceId, sourceRef, optional sourceRevision and pullRequestBase
+to choose its own pinned source and logical base within the assignment repository.
+Otherwise it inherits the assignment repository pin. Reports use reportedArtifacts
+entries with name, kind: pull-request and externalKey (or a named PR URL in a
+wake-artifacts fence). Wake verifies each PR against its own recorded workspace HEAD,
+branch, repository and base; a claim alone cannot register another branch's PR.
+Review and checks apply to each explicit Resource. Missing or stale evidence for one
+required output prevents qualification without affecting another output's prerequisites.
+Ordinary single-output assignments retain their existing branch and report behavior.
+
 ### Parent QA and bounded repair
 
 After the delegating stage resumes with joined results, the parent agent assesses and
@@ -778,7 +798,7 @@ checks exact revisions, and releases all acquired leases if any checkout or envi
 preparation fails. The prompt includes criteria, contributing output/context revisions,
 recipe, and repository paths. Workspace prepare hooks apply to each checkout.
 
-- `wake_delivery_select` records the complete current selection: for every output of every
+- `wake_delivery_select` records the complete current selection: for every required output of every
   original assignment, the child output that covers it. A replacement names the output it
   replaces. Omitting a requirement, selecting an unqualified output or replacing something
   other than the current choice is rejected, and `expectedRevision` must be the current
@@ -904,7 +924,10 @@ own configured `pr.merge` lane, or consume already merged work incrementally.
 ### Governed child integration and stack maintenance
 
 A merge-required parent uses `pr.approve` or `pr.merge` with
-`scope: { delivery: next }`. Wake derives the next target from the current selected outputs,
+`scope: { delivery: next }`. If a child contributes several selected PRs, name the
+exact target with `scope: { delivery: next, output: { childWorkItemId: "work-…", outputName: "api" } }`;
+omitting it is rejected as ambiguous. The childWorkItemId may be omitted when outputName
+resolves uniquely across the selection, so a configured stage can name a stable output key. Wake derives the next target from the current selected outputs,
 current passing candidate QA, repository and stack ordering. The activity outcome stays on the
 parent; the terminal child's workflow and PR primary ownership stay intact. Direct PR activities
 keep their primary-resource selection. A scoped action cannot name an arbitrary foreign PR.

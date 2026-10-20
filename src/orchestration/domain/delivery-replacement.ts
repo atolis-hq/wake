@@ -37,9 +37,15 @@ export function assertCriteriaPreserving(
   const unmerged = facts.results
     .filter((entry) => entry.childWorkItemId === original.workItemId)
     .flatMap((entry) => entry.outputs.filter(isChange))
-    .map((output) => output.reference)
-    .filter((reference) => reference.merged !== true);
-  for (const reference of unmerged) assertCarriesContribution(assignment, reference);
+    .filter((output) => output.reference.merged !== true);
+  for (const output of unmerged) {
+    const counterpart = assignment.outputs.find((entry) => entry.name === output.name);
+    const repository =
+      counterpart !== undefined && 'kind' in counterpart
+        ? (counterpart.repository ?? assignment.repository)
+        : assignment.repository;
+    assertCarriesContribution(repository, output.reference);
+  }
 }
 
 function assertOutputsProvided(original: Child, assignment: DelegatedAssignment): void {
@@ -47,15 +53,16 @@ function assertOutputsProvided(original: Child, assignment: DelegatedAssignment)
     const counterpart = assignment.outputs.find((entry) => entry.name === output.name);
     if (counterpart === undefined || 'kind' in output !== 'kind' in counterpart)
       throw invalid(`A replacement must provide the original output ${output.name}`);
+    if (output.required !== false && counterpart.required === false)
+      throw invalid('A replacement must preserve the original required output ' + output.name);
     if ('kind' in output && 'kind' in counterpart) assertChangeRequirements(output, counterpart);
   }
 }
 
 function assertCarriesContribution(
-  assignment: DelegatedAssignment,
+  repository: DelegatedAssignment['repository'],
   reference: { branch: string; revision: string; pullRequestBase: string },
 ): void {
-  const repository = assignment.repository;
   if (repository?.sourceRevision !== reference.revision)
     throw invalid(
       `A replacement must start from the unmerged contribution ${reference.branch}@${reference.revision}`,

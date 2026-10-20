@@ -7,6 +7,7 @@ import type {
   ParentActionAuthorizer,
   ParentActionDecision,
   ParentActionKind,
+  ParentDeliveryScope,
 } from './parent-scope.js';
 import { PullRequestDenialCode } from './vocabulary.js';
 
@@ -22,7 +23,7 @@ export type ParentTarget =
 export async function resolveParentTarget(
   authorizer: ParentActionAuthorizer | undefined,
   invocation: Pick<ActivityInvocation, 'workflowInstanceId' | 'activationId'>,
-  scoped: boolean,
+  scoped: boolean | ParentDeliveryScope | undefined,
   action: ParentActionKind,
 ): Promise<ParentTarget> {
   if (!scoped) return { kind: 'unscoped' };
@@ -32,6 +33,7 @@ export async function resolveParentTarget(
     workflowInstanceId: invocation.workflowInstanceId,
     activationId: invocation.activationId,
     action,
+    ...(typeof scoped === 'object' && scoped.output !== undefined ? { output: scoped.output } : {}),
   });
 }
 

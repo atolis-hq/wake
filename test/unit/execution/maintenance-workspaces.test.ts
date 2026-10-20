@@ -67,7 +67,7 @@ it('reconciles ambiguous prior writers before acquiring any branch', async () =>
   const prior = {
     runId: runId('prior'),
     status: RunStatus.Ambiguous,
-    workspace: { maintenance: { targets: [{ childWorkItemId: ids[0] }] } },
+    workspace: { maintenance: { targets: [{ childWorkItemId: ids[0], outputName: 'change' }] } },
   } as unknown as RunView;
   await expect(
     acquireMaintenanceWorkspaces(
@@ -81,4 +81,37 @@ it('reconciles ambiguous prior writers before acquiring any branch', async () =>
     ),
   ).rejects.toThrow('unresolved earlier writer');
   expect(acquired).toBe(false);
+});
+
+it('leases two outputs owned by one child independently and releases both', async () => {
+  const acquired: string[] = [],
+    released: string[] = [];
+  const targets = ['web', 'api'].map((outputName) => ({
+    ...request.maintenance.targets[0]!,
+    childWorkItemId: ids[0]!,
+    outputName,
+    resourceId: resId(outputName),
+    branch: ids[0] + '-output-' + outputName,
+  }));
+  const lease = await acquireMaintenanceWorkspaces(
+    { ...request, maintenance: { targets } },
+    {
+      acquire: async (entry) => {
+        acquired.push(entry.outputName!);
+        return {
+          path: '/' + entry.outputName,
+          workspaceId: entry.outputName!,
+          mode: entry.mode,
+          branch: targets.find((target) => target.outputName === entry.outputName)!.branch,
+          release: async () => {
+            released.push(entry.outputName!);
+          },
+        };
+      },
+    },
+  );
+  expect(acquired).toEqual(['api', 'web']);
+  expect(lease.maintenance?.targets.map((target) => target.path)).toEqual(['/api', '/web']);
+  await lease.release();
+  expect(released).toEqual(['web', 'api']);
 });

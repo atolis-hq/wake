@@ -32,6 +32,8 @@ export * from './contracts/views.js';
 
 export * from './contracts/vocabulary.js';
 
+export * from './contracts/change-output.js';
+
 export * from './contracts/workspace.js';
 
 export * from './domain/run-result.js';

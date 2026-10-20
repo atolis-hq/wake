@@ -41,7 +41,7 @@ commit point (identities, pinned workflow fingerprints, root-wide depth and
 descendant limits). Wait, WorkItem, claim, artifact grant, child start, result
 selection and join are reconciled idempotently from it. The parent is fenced
 from ordinary advancement until `delegation-joined` or terminal `delegation-failed`; a child qualifies only when
-its workflow reached configured terminal completion without a failure outcome and every named output resolves to
+its workflow reached configured terminal completion without a failure outcome and every required named output resolves to
 an accepted exact artifact revision. Run-scoped production commands enforce opt-in workflow policy and Bootstrap-supplied Run/repository authority. Delivery-wide limits are recorded on root reservations. Work ancestry gates dispatch, outcomes and continuation when an ancestor is unavailable. Bootstrap wires an Artifacts-owned adapter through an immutable
 Orchestration-owned port; Orchestration has no dependency on Artifacts or its schemas.
 The public surface exposes the port, accepted-activation and joined-results queries,
@@ -113,7 +113,7 @@ carry it: `delivery-selection-revised` (the complete current selection, revision
 compared with `expectedRevision`), `delivery-candidate-recorded` (the exact repository
 revision set, its retained-ref or selected-output sources, contributing outputs and shared
 criteria) and `delivery-qa-recorded` (a typed pass, fail or blocked verdict over exactly the
-candidate's revisions). A selection must cover every output of every original required
+candidate's revisions). A selection must cover every required output of every original
 assignment with its own qualifying result or a replacement; a manifest that omits one is
 rejected (`uncovered-requirement`), so a requirement cannot be waived. A replacement is a new
 child whose assignment names `replaces` (cohort and assignment); it must keep every original
@@ -160,14 +160,18 @@ a checkout selection.
 A child workflow with a branch or read-only stage now requires a repository
 assignment (no first-repository fallback); this tightens delivery 01 behaviour.
 Direct workflows are unchanged: artifact verification checks the branch only.
-Named outputs retain artifact references or exact change provenance. This slice
-supports one change output per child, reported through a named reportedArtifacts
-entry; a later revision run need not repeat it, because the provider must
-confirm the PR now points at the latest implementation head. Qualification
-checks provider identity, head, branch, base, original
-child ownership and the output's review/check requirements (both default true).
-Successful terminal routing can therefore join an open reviewed PR without a
-merge or parent issue closure. General multi-change joins remain deferred.
+Named outputs retain artifact references or exact change provenance. Multiple change
+outputs use separate child-owned branch leases, each with a pinned source and logical
+base in the assignment repository. Execution records each output's workspace and HEAD;
+provider registration and qualification use that output's own provenance. A revision
+Run may omit a repeated report, but must still attest the named output's current head.
+Qualification checks provider identity, head, branch, base, original child ownership
+and that output's review/check requirements (both default true). Required outputs
+(default true) qualify independently; optional outputs never waive required ones.
+Workflow output declarations cannot be weakened by an assignment. Successful terminal
+routing may join open reviewed PRs without a merge or parent issue closure.
+Parent integration of a child with multiple selected changes requires an explicit
+child/output target; an ambiguous next-target default is rejected.
 
 ## Public contracts
 

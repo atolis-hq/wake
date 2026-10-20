@@ -66,6 +66,9 @@ export type ConversationSurfaceCapability = ValueOf<typeof ConversationSurfaceCa
 
 export const DelegationOutputKind = defineClosedVocabulary({ Change: 'change' } as const);
 
+/** Path-addressed outputs; kept outside the vocabulary so unrelated 'artifact' strings stay free. */
+export const WorkflowArtifactOutputKind = 'artifact';
+
 export const DelegationPrerequisiteCondition = defineClosedVocabulary({
   AcceptedOutput: 'accepted-output',
   PushedChange: 'pushed-change',

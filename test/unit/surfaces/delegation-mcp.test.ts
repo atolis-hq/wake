@@ -201,3 +201,34 @@ it('binds maintenance reports to the session and rejects forged identities', asy
   expect(maintain).toHaveBeenCalledTimes(1);
   await client.close();
 });
+
+it('accepts two named change outputs with independent source pins through the bound submission tool', async () => {
+  const submit = vi.fn(async (_caller, command) => command);
+  const client = await connect({ submitDelegation: submit });
+  const repository = { resourceId: 'repo', sourceRef: 'main', pullRequestBase: 'main' };
+  const command = {
+    cohortId: 'two-prs',
+    assignments: [
+      {
+        assignmentId: 'coherent',
+        objective: 'Deliver two changes',
+        criteria: ['Both reviewed'],
+        workflowName: 'child',
+        context: [],
+        repository,
+        outputs: [
+          { name: 'api', kind: 'change', repository },
+          {
+            name: 'web',
+            kind: 'change',
+            repository: { ...repository, sourceRef: 'release', pullRequestBase: 'release' },
+          },
+        ],
+      },
+    ],
+  };
+  const result = await client.callTool({ name: 'wake_delegation_submit', arguments: command });
+  expect(result.isError).not.toBe(true);
+  expect(submit).toHaveBeenCalledWith(caller, command, expect.anything());
+  await client.close();
+});

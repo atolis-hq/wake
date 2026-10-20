@@ -72,6 +72,7 @@ export function compileWorkflow(
       ),
     ),
     ...(config.delegation === undefined ? {} : { delegation: config.delegation }),
+    ...(config.outputs === undefined ? {} : { outputs: config.outputs }),
     name: compiledName,
     entry: compiledEntry,
     commands: Object.freeze(commands),

@@ -1,6 +1,7 @@
 /* eslint-disable max-lines */
 
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   access,
   mkdir,
@@ -87,7 +88,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     }
     const locator = await this.resolver.cloneLocator(request.repositoryResource.resourceId, signal);
     signal.throwIfAborted();
-    const name = `${request.workItemId}-${request.mode}-${slug(locator)}`;
+    const name = `${workspaceBranch(request)}-${request.mode}-${slug(locator)}`;
     const path = resolve(this.root, name);
     const markerPath = join(this.markerRoot, `${name}.json`);
     const lockPath = join(this.markerRoot, `${name}.lease`);
@@ -184,7 +185,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     }
     if (initialRevision === undefined)
       initialRevision = await readCheckoutRevision(path, this.git, signal);
-    const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
+    const branch = request.mode === WorkspaceMode.Branch ? workspaceBranch(request) : undefined;
     if (branch !== undefined) {
       initialRevision = await initializeBranch(
         {
@@ -422,7 +423,10 @@ async function reclaimUnlockedMarker(
     input.runs.some(
       (run) =>
         (isActiveRunStatus(run.status) || run.status === RunStatus.Ambiguous) &&
-        (run.runId === marker.runId || run.workspace?.path === marker.path),
+        (run.runId === marker.runId ||
+          run.workspace?.path === marker.path ||
+          run.workspace?.changeOutputs?.some((entry) => entry.path === marker.path) === true ||
+          run.workspace?.maintenance?.targets.some((entry) => entry.path === marker.path) === true),
     )
   )
     return emptyRecovery();
@@ -731,4 +735,12 @@ async function initializeBranch(
     signal,
   );
   return initialRevision;
+}
+
+function workspaceBranch(request: WorkspaceRequest): string {
+  return request.outputName === undefined
+    ? request.workItemId
+    : request.workItemId +
+        '-output-' +
+        createHash('sha256').update(request.outputName).digest('hex');
 }

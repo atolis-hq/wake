@@ -221,6 +221,10 @@ export class OrchestrationService {
     return this.delegatedWork.repositoryScope(workItemId);
   }
 
+  changeOutputAssignments(workItemId: string) {
+    return this.delegatedWork.changeOutputAssignments(workItemId);
+  }
+
   repositoryAssignment(workItemId: string) {
     return this.delegatedWork.repositoryFor(workItemId);
   }
@@ -284,7 +288,10 @@ export class OrchestrationService {
     const prepared: ExecutionMaintenance['targets'][number][] = [];
     for (const target of targets) {
       // The same assignment that created the child's workspace, so its lease is reused exactly.
-      const repository = await this.delegatedWork.repositoryFor(target.ownerWorkItemId);
+      const outputs = await this.delegatedWork.changeOutputAssignments(target.ownerWorkItemId);
+      const repository =
+        outputs?.find((output) => output.name === target.output.outputName)?.repository ??
+        (await this.delegatedWork.repositoryFor(target.ownerWorkItemId));
       if (repository === undefined) continue;
       prepared.push({
         childWorkItemId: target.ownerWorkItemId,

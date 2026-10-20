@@ -31,6 +31,11 @@ export interface OrchestrationPort {
   deliveryMaintenancePreparation?(
     workflowInstanceId: string,
   ): Promise<ExecutionMaintenance | undefined>;
+  changeOutputAssignments?(
+    workItemId: string,
+  ): Promise<
+    readonly { name: string; repository: RepositoryAssignment; isolated?: boolean }[] | undefined
+  >;
   repositoryAssignment?(workItemId: string): Promise<RepositoryAssignment | undefined>;
   get?(workflowInstanceId: string): Promise<WorkflowInstanceView | null>;
   expireTimedOutWaits?(context: CommandContext): Promise<readonly WorkflowInstanceView[]>;
@@ -88,6 +93,11 @@ export interface ExecutionPort {
       workItemId: WorkflowInstanceView['workItemId'];
       workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
       orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
+      changeOutputAssignments?: readonly {
+        name: string;
+        repository: RepositoryAssignment;
+        isolated?: boolean;
+      }[];
       repositoryAssignment?: RepositoryAssignment;
       candidate?: ExecutionCandidate;
       maintenance?: ExecutionMaintenance;

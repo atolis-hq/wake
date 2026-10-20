@@ -1,5 +1,5 @@
 import { deliveryCapacity } from '../domain/delivery-capacity.js';
-import { dispatchResources } from './dispatch-resources.js';
+import { dispatchRepositoryContext } from './dispatch-resources.js';
 import {
   isRunnerQuotaOutcome,
   reportUnappliedRunnerQuotaRetry,
@@ -192,11 +192,10 @@ export async function runDispatchLoop(
       );
       startedWorkflowIds.add(selected.workflow.workflowInstanceId);
       const { workItemId } = selected.workflow;
-      const repositoryAssignment = await ctx.orchestration.repositoryAssignment?.(workItemId);
-      const resourceViews = await dispatchResources(
+      const repositoryContext = await dispatchRepositoryContext(
+        ctx.orchestration,
         ctx.resources,
         workItemId,
-        repositoryAssignment,
       );
       const instanceId = selected.workflow.workflowInstanceId;
       const candidate = await ctx.orchestration.deliveryQaPreparation?.(instanceId);
@@ -205,10 +204,9 @@ export async function runDispatchLoop(
         workItemId,
         workflowInstanceId: instanceId,
         orchestrationGroupId: selected.workflow.orchestrationGroupId,
-        resources: resourceViews,
+        ...repositoryContext,
         ...(candidate === undefined ? {} : { candidate }),
         ...(maintenance === undefined ? {} : { maintenance }),
-        ...(repositoryAssignment === undefined ? {} : { repositoryAssignment }),
         sessionPolicy:
           (candidate ?? maintenance) !== undefined ||
           selected.activation.sessionPolicy === 'fresh' ||

@@ -148,7 +148,11 @@ function wakeArtifacts(output: string): readonly unknown[] {
 
 function normalizeWakeArtifact(value: unknown): readonly unknown[] {
   if (typeof value !== 'object' || value === null) return [];
-  const artifact = value as { readonly kind?: unknown; readonly url?: unknown };
+  const artifact = value as {
+    readonly name?: unknown;
+    readonly kind?: unknown;
+    readonly url?: unknown;
+  };
   if (
     (artifact.kind !== 'pr' && artifact.kind !== 'pull-request') ||
     typeof artifact.url !== 'string'
@@ -161,6 +165,7 @@ function normalizeWakeArtifact(value: unknown): readonly unknown[] {
   if (match?.groups === undefined) return [];
   return [
     {
+      ...(typeof artifact.name === 'string' ? { name: artifact.name } : {}),
       kind: 'pull-request',
       externalKey: {
         adapter: 'github',

@@ -20,6 +20,7 @@ import {
 } from '../../activities/index.js';
 import { brandedStringSchema, offsetIsoTimestampSchema } from '../../kernel/index.js';
 import { preparedCandidateSchema, type PreparedCandidate } from './candidate.js';
+import { changeOutputWorkspaceSchema, type ChangeOutputWorkspace } from './change-output.js';
 import { runId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
 import { preparedMaintenanceSchema, type PreparedMaintenance } from './maintenance.js';
@@ -62,6 +63,7 @@ export const runStartedPayloadSchema = z
         checkoutRevision: z.string().min(1).optional(),
         candidate: preparedCandidateSchema.optional(),
         maintenance: preparedMaintenanceSchema.optional(),
+        changeOutputs: z.array(changeOutputWorkspaceSchema).optional(),
       })
       .strict()
       .optional(),
@@ -118,6 +120,7 @@ export const runnerResultPayloadSchema = z
           .array(
             z
               .object({
+                name: z.string().min(1).optional(),
                 kind: z.string().min(1),
                 externalKey: z
                   .object({ adapter: z.string().min(1), key: z.string().min(1) })
@@ -183,6 +186,7 @@ export interface RunStartedPayload {
         readonly checkoutRevision?: string | undefined;
         readonly candidate?: PreparedCandidate | undefined;
         readonly maintenance?: PreparedMaintenance | undefined;
+        readonly changeOutputs?: readonly ChangeOutputWorkspace[] | undefined;
       }
     | undefined;
 }
@@ -215,6 +219,7 @@ export interface RunExecutionEventPayloads {
   readonly [ExecutionEventType.RunPreparationStarted]: RunPreparationStartedPayload;
   readonly [ExecutionEventType.RunStarted]: RunStartedPayload;
   readonly [ExecutionEventType.RunSucceeded]: {
+    readonly changeOutputs?: readonly ChangeOutputWorkspace[] | undefined;
     readonly workspaceRevision?: string | undefined;
     readonly outcome: ActivityOutcome;
     readonly finishedAt: string;
@@ -316,6 +321,7 @@ const runEventSchema: z.ZodType<RunExecutionEvent> = eventEnvelopeSchema.extend(
       eventType: z.literal(ExecutionEventType.RunSucceeded),
       payload: z
         .object({
+          changeOutputs: z.array(changeOutputWorkspaceSchema).optional(),
           workspaceRevision: z
             .string()
             .regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i)
