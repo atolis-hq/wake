@@ -1,11 +1,12 @@
 import {
-  cachedJournalView,
   createEventData,
+  foldedJournalView,
   WrongExpectedSequenceError,
   type StreamRef as EntityRef,
   type EventData,
 } from '@atolis-hq/eventing';
 import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
+import { existsSync } from 'node:fs';
 import type * as FsPromises from 'node:fs/promises';
 import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -456,7 +457,10 @@ it('refreshes a cached view when another file-journal instance appends', async (
   const writer = new FileEventJournal(root, new FakeClock());
   const readerClock = new FakeClock();
   const reader = new FileEventJournal(root, readerClock);
-  const view = cachedJournalView(reader, (events) => events.length);
+  const view = foldedJournalView(reader, {
+    initial: 0,
+    extend: (count, events) => count + events.length,
+  });
 
   expect(await view.get()).toBe(0);
   await writer.appendToStream(stream, 0, [draft]);
@@ -484,7 +488,7 @@ it('reuses validated segment fingerprints without parsing an unchanged warm jour
   statMock.mockClear();
   await journal.readAll(0);
 
-  expect(statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(0);
+  expectNoExistingSegmentStats();
   expect(
     statMock.mock.calls.filter(([path]) => String(path).endsWith('index-manifest.json')),
   ).toHaveLength(0);
@@ -675,7 +679,7 @@ it('answers any number of concurrent reads with at most two listings and no segm
   expect(reads.every((events) => events.length === 40)).toBe(true);
   expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(2);
   // Segments are immutable, so those already seen are never stat'ed again.
-  expect(statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(0);
+  expectNoExistingSegmentStats();
 });
 
 it('does not answer a read with a listing that began before its call', async () => {
@@ -1327,4 +1331,83 @@ it('stream reads observe cross-host appends immediately', async () => {
     'first',
     'second',
   ]);
+});
+
+// Probing for the next segment stats names that do not exist yet; a segment
+// that is already known must never be stat'ed again.
+function expectNoExistingSegmentStats(): void {
+  const existing = statMock.mock.calls
+    .map(([path]) => String(path))
+    .filter((path) => path.endsWith('.jsonl') && existsSync(path));
+  expect(existing).toEqual([]);
+}
+
+it('does not list the directory while a probe for the next segment finds nothing', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-probe-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  // A recent clock, as in production: a cache far behind today is listed, not probed.
+  const clock = { now: () => new Date() } as never;
+  const journal = new FileEventJournal(root, clock);
+  for (let index = 0; index < 5; index += 1)
+    await journal.appendToStream(stream, index, [journalDraft(`event-${index}`)]);
+  await journal.latestGlobalPosition();
+  readdirMock.mockClear();
+
+  // The directory changed moments ago, so its stamp alone could not be trusted.
+  for (let call = 0; call < 50; call += 1) expect(await journal.latestGlobalPosition()).toBe(5);
+
+  expect(readdirMock).not.toHaveBeenCalled();
+});
+
+it('still sees an append by another journal instance immediately', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-probe-foreign-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clock = new FakeClock();
+  const reader = new FileEventJournal(root, clock);
+  const writer = new FileEventJournal(root, clock);
+  await writer.appendToStream(stream, 0, [journalDraft('event-0')]);
+  expect(await reader.latestGlobalPosition()).toBe(1);
+
+  for (let index = 1; index < 6; index += 1) {
+    await writer.appendToStream(stream, index, [journalDraft(`event-${index}`)]);
+    expect(await reader.latestGlobalPosition()).toBe(index + 1);
+    expect((await reader.readStream(stream)).length).toBe(index + 1);
+  }
+});
+
+it('relists the directory once the probe-only interval has passed', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    const root = await mkdtemp(join(tmpdir(), 'wake-journal-probe-interval-'));
+    const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+    const journal = new FileEventJournal(root, new FakeClock());
+    await journal.appendToStream(stream, 0, [journalDraft('event-0')]);
+    await journal.latestGlobalPosition();
+    readdirMock.mockClear();
+
+    vi.setSystemTime(Date.now() + 6_000);
+    await journal.latestGlobalPosition();
+
+    expect(readdirMock).toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('sees a first-of-day append by an instance whose clock is on an earlier day than today', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-probe-skew-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clockAt = (iso: string) => ({ now: () => new Date(iso) });
+  const writerA = new FileEventJournal(root, clockAt('2026-01-01T12:00:00Z') as never);
+  const reader = new FileEventJournal(root, clockAt('2026-01-01T12:00:00Z') as never);
+  // The writer's clock names its segment for a day that is neither the reader's
+  // last segment day, today, nor tomorrow.
+  const skewed = new FileEventJournal(root, clockAt('2026-01-05T23:59:59Z') as never);
+  await writerA.appendToStream(stream, 0, [journalDraft('event-0')]);
+  expect(await reader.latestGlobalPosition()).toBe(1);
+
+  await skewed.appendToStream(stream, 1, [journalDraft('event-1')]);
+
+  expect(await reader.latestGlobalPosition()).toBe(2);
+  expect((await reader.readStream(stream)).length).toBe(2);
 });

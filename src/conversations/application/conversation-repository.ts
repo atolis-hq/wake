@@ -1,4 +1,4 @@
-import type { EventJournal } from '@atolis-hq/eventing';
+import { decodeOnce, type EventJournal } from '@atolis-hq/eventing';
 import {
   decodeConversationEvent,
   selectConversationEvent,
@@ -10,6 +10,8 @@ import { conversationStream } from '../contracts/streams.js';
 import type { ConversationView } from '../contracts/views.js';
 import { foldConversation } from '../domain/conversation.js';
 
+const selectConversation = decodeOnce(selectConversationEvent);
+
 export class ConversationRepository {
   constructor(private readonly journal: EventJournal) {}
   async load(
@@ -20,7 +22,7 @@ export class ConversationRepository {
       sequence: events.length,
       view: foldConversation(
         events
-          .map(selectConversationEvent)
+          .map(selectConversation)
           .filter((event): event is ConversationEvent => event !== null),
       ),
     };

@@ -532,7 +532,11 @@ function sourceRuntime(client: GitHubPullRequestSourceClient) {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
   const checkpoints = new InMemoryCheckpointStore();
-  const lookup = createResourceLookup({ journal, projections: new InMemoryProjectionStore() });
+  const lookup = createResourceLookup({
+    journal,
+    projections: new InMemoryProjectionStore(),
+    checkpoints: new InMemoryCheckpointStore(),
+  });
   const resources = createResourceService(journal, lookup);
   const work = createWorkService(journal);
   const pullRequests = createPullRequestService(journal, work, resources);

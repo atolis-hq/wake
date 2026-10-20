@@ -16,7 +16,7 @@ export * from './projections/projection-processor.js';
 
 export * from './projections/projection-store.js';
 
-export * from './runtime/cached-journal-view.js';
+export * from './runtime/journal-view.js';
 
 export * from './runtime/clock.js';
 

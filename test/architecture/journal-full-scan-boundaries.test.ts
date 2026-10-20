@@ -45,18 +45,15 @@ describe('journal full-scan boundaries', () => {
     await expect(restrictedRules(filePath)).resolves.toEqual([]);
   });
 
-  // These three are exact-file exemptions (their directory siblings stay
-  // covered), so the boundary can only be exercised against the real path —
-  // real-path type-checked linting is slower than a fixture path.
+  // These formerly scanned the whole journal under an exemption; they now read
+  // streams or fold incrementally, so the rule applies to them like any module.
   it.each([
-    // Bounded by actual pr.merge command volume, not a resident tick.
     'src/activities/pr/application.ts',
-    // Bounded by actual agent-activation volume, not a resident tick.
     'src/integrations/github/application/comment-history-reader.ts',
   ])(
-    'permits the exact %s boundary',
+    'rejects an unscoped readAll(0) full-history rescan in %s',
     async (filePath) => {
-      await expect(restrictedRules(filePath)).resolves.toEqual([]);
+      await expect(restrictedRules(filePath)).resolves.toEqual(['no-restricted-syntax']);
     },
     15000,
   );

@@ -1,4 +1,8 @@
-import { InMemoryEventJournal, InMemoryProjectionStore } from '@atolis-hq/eventing/memory';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '@atolis-hq/eventing/memory';
 import { describe, expect, it, vi } from 'vitest';
 import { DeliveryIntentKind } from '../../../src/integrations/delivery/contracts/vocabulary.js';
 import { gitHubProviderDefinition } from '../../../src/integrations/github/provider.js';
@@ -154,7 +158,11 @@ async function composeProvider(
 ) {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
-  const lookup = createResourceLookup({ journal, projections: new InMemoryProjectionStore() });
+  const lookup = createResourceLookup({
+    journal,
+    projections: new InMemoryProjectionStore(),
+    checkpoints: new InMemoryCheckpointStore(),
+  });
   const resources = createResourceService(journal, lookup);
   await resources.discover(
     {

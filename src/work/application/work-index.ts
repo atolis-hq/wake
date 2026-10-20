@@ -1,8 +1,8 @@
 import {
   foldedJournalView,
-  type CachedJournalView,
   type EventEnvelope,
   type EventJournal,
+  type JournalView,
 } from '@atolis-hq/eventing';
 import { selectWorkEvent, type WorkEvent } from '../contracts/events.js';
 import { isWorkItemStream } from '../contracts/streams.js';
@@ -36,7 +36,7 @@ interface WorkIndexState {
  * includes writes by other processes.
  */
 export class WorkIndex {
-  private readonly state: CachedJournalView<WorkIndexState>;
+  private readonly state: JournalView<WorkIndexState>;
 
   constructor(journal: Pick<EventJournal, 'readAll' | 'latestGlobalPosition'>) {
     this.state = foldedJournalView(journal, {

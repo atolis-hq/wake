@@ -4,7 +4,7 @@ import type { TransitionTarget } from '../contracts/config.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { commandName, type SignalName, type WorkflowInstanceId } from '../contracts/identifiers.js';
-import { WorkflowStatus } from '../contracts/vocabulary.js';
+import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabulary.js';
 import { workflowEventData } from '../domain/decision-events.js';
 import {
   requestChangesResume as decideChangesResume,
@@ -89,7 +89,11 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const loaded = await this.repository.load(id);
-    if (loaded.view?.pendingActivation?.activationId !== activationId) return loaded.view;
+    const pending = loaded.view?.pendingActivation;
+    if (pending?.activationId !== activationId) return loaded.view;
+    // Dispatch marks before every attempt; a retried tick must not append a new
+    // fact for an activation whose recorded state already says it is running.
+    if (pending.status === ActivityActivationStatus.Running) return loaded.view;
     const event = workflowEventData({
       eventId: `${context.commandId}:${OrchestrationEventType.ActivityStarted}`,
       eventType: OrchestrationEventType.ActivityStarted,
