@@ -64,6 +64,7 @@ initialized roots already include it.
 | Effort | `--effort` | `-c model_reasoning_effort=<value>` | No adapter flag |
 | `maxTurns` | `--max-turns` | No adapter flag | No adapter flag |
 | `allowedTools` | `--allowedTools` | No adapter flag | No adapter flag |
+| Always-blocked tools | `--disallowedTools ScheduleWakeup` (a pending wakeup keeps `claude -p` alive after the agent finishes) | None | None |
 | Read-only workspace | Prompt/tool policy only | `--sandbox workspace-write` | `--mode ask` |
 | Branch workspace | Prompt/tool policy only | `--sandbox danger-full-access` | `--force` |
 | Session id parsing | JSON `session_id` | JSONL `thread.started.thread_id` | JSON `session_id` |
